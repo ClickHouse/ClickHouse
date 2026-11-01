@@ -7,20 +7,22 @@ Test select text + hasAnyTokens:	Alick a01
 Test hasToken and hasToken:	0
 Test hasAnyTokens or hasToken:	2
 Test NOT hasAllTokens:	1
-Added: [__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_4ee2bec532c6178dac3d1abb4b4de13a], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f], Removed: [text]
-Added: [__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526]
-Added: [__text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f]
-Added: [__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526, __text_index_idx_hasToken_03ba1ee9f8f5547fa3472607e74b54ab], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_6ba31a5fd94cf84b5980ef5b2f57c99c, __text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_0cf595e5be4a417195d691692e9a6bbb], Removed: [text]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_5fa51b2c623f1a486d9249d7757ec915], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899], Removed: [text]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a]
+Added: [__text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a, __text_index_idx_hasToken_d0c9a08c3b0871a03e9eec9b8f2d9b10], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_0c8fc52ed37da16d57305d1bb45c0abb, __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_062af83dff7b50ae332d4792a157bd19], Removed: [text]
 - Test direct read optimization with EXPLAIN
-Filter column: __text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526 (removed)
-Filter column: __text_index_idx_hasAllTokens_4ee2bec532c6178dac3d1abb4b4de13a (removed)
-Filter column: __text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f (removed)
-Filter column: or(__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526, greater(length(text), 1)) (removed)
-Prewhere filter column: __text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f (removed)
-Prewhere filter column: and(__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526, __text_index_idx_hasToken_03ba1ee9f8f5547fa3472607e74b54ab) (removed)
-Filter column: or(__text_index_idx_hasAnyTokens_6ba31a5fd94cf84b5980ef5b2f57c99c, __text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526) (removed)
-Filter column: not(__text_index_idx_hasAllTokens_0cf595e5be4a417195d691692e9a6bbb) (removed)
+Actions: INPUT : 0 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_5fa51b2c623f1a486d9249d7757ec915 UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899 UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 2
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899 UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_d0c9a08c3b0871a03e9eec9b8f2d9b10 UInt8 : 1
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_0c8fc52ed37da16d57305d1bb45c0abb UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 1
+Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_062af83dff7b50ae332d4792a157bd19 UInt8 : 0

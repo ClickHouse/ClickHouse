@@ -3,6 +3,7 @@
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessRights.h>
 #include <Access/CachedAccessChecking.h>
@@ -31,12 +32,12 @@ namespace
     void getGrantsFromAccess(
         ASTs & res,
         const AccessRights & access,
-        const std::shared_ptr<ASTRolesOrUsersSet> grantees,
+        const boost::intrusive_ptr<ASTRolesOrUsersSet> grantees,
         const AccessControl * access_control,
         bool attach_mode = false,
         bool with_implicit = false)
     {
-        std::shared_ptr<ASTGrantQuery> current_query = nullptr;
+        boost::intrusive_ptr<ASTGrantQuery> current_query = nullptr;
 
         AccessRightsElements elements;
         if (with_implicit)
@@ -59,7 +60,7 @@ namespace
 
             if (!current_query)
             {
-                current_query = std::make_shared<ASTGrantQuery>();
+                current_query = make_intrusive<ASTGrantQuery>();
                 current_query->grantees = grantees;
                 current_query->attach_mode = attach_mode;
                 if (element.is_partial_revoke)
@@ -91,14 +92,26 @@ namespace
     {
         ASTs res;
 
-        std::shared_ptr<ASTRolesOrUsersSet> grantees = std::make_shared<ASTRolesOrUsersSet>();
-        grantees->names.push_back(grantee.getName());
+        boost::intrusive_ptr<ASTRolesOrUsersSet> grantees = make_intrusive<ASTRolesOrUsersSet>();
+        grantees->names = make_intrusive<ASTUserNamesWithHost>(grantee.getName());
 
-        AccessRights access = grantee.access;
+        AccessRights access_copy;
+
         if (final)
-            unionAccessFromRoles(access, grantee, access_control);
+        {
+            access_copy = grantee.access;
+            unionAccessFromRoles(access_copy, grantee, access_control);
+        }
 
-        getGrantsFromAccess(res, access, grantees, access_control, attach_mode, with_implicit);
+        const AccessRights & access = final ? access_copy : grantee.access;
+
+        getGrantsFromAccess(
+            res,
+            access,
+            grantees,
+            access_control,
+            attach_mode,
+            with_implicit);
 
         if (!final)
         {
@@ -107,7 +120,7 @@ namespace
                 if (element.empty())
                     continue;
 
-                auto grant_query = std::make_shared<ASTGrantQuery>();
+                auto grant_query = make_intrusive<ASTGrantQuery>();
                 grant_query->grantees = grantees;
                 grant_query->admin_option = element.admin_option;
                 grant_query->attach_mode = attach_mode;
@@ -196,8 +209,8 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
         bool is_enabled_or_granted_role = entity->isTypeOf<Role>()
             && (current_user->granted_roles.isGranted(id) || roles_info->enabled_roles.contains(id));
 
-        if ((is_current_user /* Any user can see his own grants */)
-            || (is_enabled_or_granted_role /* and grants from the granted roles */)
+        if (is_current_user /* Any user can see his own grants */
+            || is_enabled_or_granted_role /* and grants from the granted roles */
             || (entity->isTypeOf<User>() && show_users.checkAccess(throw_if_access_denied))
             || (entity->isTypeOf<Role>() && show_roles.checkAccess(throw_if_access_denied)))
             entities.push_back(entity);
@@ -233,6 +246,7 @@ ASTs InterpreterShowGrantsQuery::getAttachGrantQueries(const IAccessEntity & use
     return getGrantQueriesImpl(user_or_role, nullptr, true, false);
 }
 
+void registerInterpreterShowGrantsQuery(InterpreterFactory & factory);
 void registerInterpreterShowGrantsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

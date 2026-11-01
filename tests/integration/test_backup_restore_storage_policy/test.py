@@ -41,7 +41,7 @@ def create_table_backup(backup_name, storage_policy=None):
     if storage_policy is not None:
         create_query += f" SETTINGS storage_policy = '{storage_policy}'"
     instance.query(create_query)
-    instance.query(f"INSERT INTO test.table SELECT number FROM numbers(10)")
+    instance.query("INSERT INTO test.table SELECT number FROM numbers(10)")
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
     instance.query("DROP TABLE test.table SYNC")
 

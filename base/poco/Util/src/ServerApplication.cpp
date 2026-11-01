@@ -184,7 +184,7 @@ void ServerApplication::beDaemon()
 	if ((pid = fork()) < 0)
 		throw SystemException("cannot fork daemon process");
 	else if (pid != 0)
-		exit(0);
+		_exit(0);
 
 	setsid();
 	umask(027);

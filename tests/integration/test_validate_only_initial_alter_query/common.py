@@ -2,7 +2,7 @@ from helpers.cluster import ClickHouseInstance
 
 # Used also in private, so when changing this please verify that it still works in private
 def run_test(node1: ClickHouseInstance, node2: ClickHouseInstance, database_engine_spec: str, table_engine: str):
-    database_name = "test_validate_only_initial_query"
+    database_name = f"test_validate_only_initial_query_{table_engine.lower()}"
     nodes = [node1, node2]
     create_table_query = f"""
         SET cast_ipv4_ipv6_default_on_conversion_error=1;

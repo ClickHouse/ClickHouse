@@ -21,12 +21,22 @@ protected:
     IAsynchronousReader & reader;
     Priority base_priority;
 
+    /// Buffer to prefetch into. Note that internal_buffer is initialized in constructor and never
+    /// changed; working_buffer doesn't necessarily point into internal_buffer.
+    /// The 3 buffers (internal_buffer, memory, prefetch_buffer) all have equal length when not empty.
+    /// How buffers are used:
+    ///  * If prefetching is used (prefetch() called), we swap buffers `prefetch` and `memory`
+    ///    after each prefetched. `existing_memory` passed to constructor ends up ignored.
+    ///  * If prefetching is not used (prefetch() never called), we read synchronously into
+    ///    `internal_buffer`, which points either into `memory` or to `existing_memory`.
+    ///  * If prefetch() is only sometimes called, the non-prefetched synchronous reads use `memory`
+    ///    and ignore `existing_memory`.
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
 
     const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
-    size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
+    size_t bytes_to_ignore = 0;           /// How many bytes the next read request, or the one in flight, skips.
     int fd;
     bool direct_io;
     ThrottlerPtr throttler;
@@ -62,7 +72,7 @@ public:
 
     off_t getPosition() override
     {
-        return file_offset_of_buffer_end - (working_buffer.end() - pos);
+        return file_offset_of_buffer_end - (working_buffer.end() - pos) + bytes_to_ignore;
     }
 
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
@@ -75,7 +85,19 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
+    bool supportsExternalBufferMode() const override { return false; }
+
 private:
+    /// True if the next logical read would start at or past the known EOF, accounting for a
+    /// pending seek's bytes_to_ignore. Such a read must not be submitted: some kernels and
+    /// filesystems reject an O_DIRECT read starting at EOF with EINVAL instead of returning 0.
+    bool isNextReadAtOrPastKnownEOF() const
+    {
+        return file_size.has_value()
+            && (file_offset_of_buffer_end >= *file_size
+                || bytes_to_ignore >= *file_size - file_offset_of_buffer_end);
+    }
+
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 
     const std::string query_id;

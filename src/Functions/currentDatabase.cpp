@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -10,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentDatabase : public IFunction
+class FunctionCurrentDatabase final : public IFunction
 {
     const String db_name;
 
@@ -34,14 +35,16 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "() -> String";
     }
 
     bool isDeterministic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool allowsOmittingParentheses() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -57,7 +60,7 @@ REGISTER_FUNCTION(CurrentDatabase)
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
 
-Also see the [`SET` statement](/sql-reference/statements/use).
+Also see the [`SET` statement](/reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentDatabase()";
     FunctionDocumentation::Arguments arguments = {};
@@ -71,17 +74,27 @@ SELECT currentDatabase()
 ┌─currentDatabase()─┐
 │ default           │
 └───────────────────┘
-        )"
-    }
+        )"},
+        {"SQL standard syntax without parentheses", R"(
+SELECT CURRENT_DATABASE
+        )",
+        R"(
+┌─CURRENT_DATABASE─┐
+│ default          │
+└──────────────────┘
+        )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCurrentDatabase>(documentation);
     factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("SCHEMA", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_database", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
+    /// ClickHouse databases are exposed as schemas over the PostgreSQL wire protocol, and unqualified names
+    /// are resolved in the current database, so `current_schema` is the current database.
+    factory.registerAlias("current_schema", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
 }
 
 }

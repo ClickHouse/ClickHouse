@@ -7,10 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
 
-/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
-#if defined(__x86_64__) || defined(__i386__)
-#include <immintrin.h>
-#endif
 #include <usearch/index_dense.hpp>
 
 namespace DB
@@ -153,6 +149,7 @@ public:
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
     NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    std::string getDescription() const override { return ""; }
 
 private:
     std::optional<VectorSearchParameters> parameters;
@@ -169,6 +166,7 @@ class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexVectorSimilarity(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,

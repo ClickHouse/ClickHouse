@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -8,9 +9,6 @@ namespace DB
 class ASTSelectQuery;
 struct SettingChange;
 class SettingsChanges;
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 /// Pushdown SETTINGS clause to the INSERT from the SELECT query:
 /// (since SETTINGS after SELECT will be parsed by the SELECT parser.)

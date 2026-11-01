@@ -1,0 +1,4 @@
+x	UInt32					
+y	Enum8('a' = 1, 'b' = 2)	EPHEMERAL	defaultValueOfTypeName('Enum8(\'a\' = 1, \'b\' = 2)')			
+x	UInt32					
+y	Enum16('foo' = 100, 'bar' = 200)	EPHEMERAL	defaultValueOfTypeName('Enum16(\'foo\' = 100, \'bar\' = 200)')			

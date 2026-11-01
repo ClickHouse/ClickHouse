@@ -1,0 +1,71 @@
+---
+slug: /cloud/get-started/cloud/use-cases/real-time-analytics
+title: '实时分析'
+description: '了解如何借助 ClickHouse Cloud 构建实时分析应用，实现即时洞察并支持数据驱动的决策'
+keywords: ['使用场景', '实时分析']
+sidebarTitle: '实时分析'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+在分析领域，&quot;实时&quot;通常意味着用户体验本身就要让人感觉是即时的。
+用户刷新仪表板、打开排行榜或排查问题时，会期望数据能反映刚刚发生的情况。
+从技术角度看，这不仅意味着要提供低延迟的分析查询，还意味着要在数据持续大规模写入的同时做到这一点。
+
+<div id="system-properties">
+  ## 实时分析系统的特性
+</div>
+
+当客户评估一个实时分析平台时，往往只关注查询延迟。“它能否在 50ms 内返回结果？”这是个合理的问题；如果针对的是静态数据集，并投入足够的计算资源，大多数分析引擎都能给出令人信服的答案。
+
+但真正决定用户实际体验的问题更难回答：当面对的是**一秒前才刚刚到达的数据**，而且摄取仍在进行中、其他用户也在同时查询时，系统还能否在 50ms 内返回结果？
+
+数据可用性取决于端到端的洞察时间，它包含三个组成部分。
+
+* **摄取时间**：新生成的数据要多久才能进入平台并被持久化存储？
+* **转换和准备时间**：清洗、增强、连接、预聚合，或更新查询实际访问的服务结构 (materialized views、rollup、索引) 需要多久？
+* **查询时间**：数据可用后，完成查询规划和执行读取需要多久？
+
+<Image img="/images/use-cases/rta-considerations.webp" alt="实时分析：摄取、转换和查询所需时间" />
+
+<div id="clickhouse-rta">
+  ## ClickHouse 如何支撑实时分析
+</div>
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="ClickHouse 如何支撑实时分析" />
+  </div>
+
+  <ExclusiveGroup name="rta-arch">
+    <AccordionGroup>
+      <Accordion title="数据摄取" defaultOpen>
+        借助仅在 ClickHouse Cloud 中提供的 [ClickPipes](/zh/integrations/clickpipes/home)，您可以获得开箱即用的集成引擎，轻松摄取海量数据。选择传入的数据源和格式，调整 schema，然后让管道持续运行即可。
+
+        ClickHouse 丰富的[表引擎](/zh/reference/engines/table-engines)库支持从 Kafka topic、S3 bucket、OLTP 数据库等来源摄取数据。与其他需要通过批量插入来实现高吞吐的 OLAP 数据库不同，ClickHouse 对较小的载荷同样处理出色——[异步插入](/zh/concepts/features/operations/insert/asyncinserts)会自动按批次处理这些请求，以获得最佳写入性能。
+      </Accordion>
+
+      <Accordion title="数据转换与查询">
+        [Materialized views](/zh/concepts/features/materialized-views)让数据转换变得顺畅无缝——新数据一旦插入便会自动触发，可在数据到达时完成提取、聚合和修改，无需专门构建定制管道。将它们串联起来还能带来更强的模块化灵活性。
+
+        对 materialized views 的查询速度非常快，因为结果会存储在专用表中。ClickHouse Cloud 包含[查询缓存](/zh/concepts/features/performance/caches/query-cache)、[稀疏索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)和[投影](/zh/concepts/features/projections/projections)，无需额外升级套餐层级。
+      </Accordion>
+
+      <Accordion title="应用程序和仪表盘">
+        ClickHouse 为金融服务、游戏、电商等行业的面向用户分析提供支撑。它支持 REST 接口，因此 Web 开发者无需处理复杂的二进制协议，也能构建轻量级应用程序。
+
+        它还为 [Grafana](/zh/integrations/connectors/data-visualization/grafana)、[Tableau](/zh/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) 和 [Looker](/zh/integrations/connectors/data-visualization/looker-and-clickhouse) 等 BI 工具提供原生连接器，并支持语言客户端、SQL 客户端以及 [MySQL wire 协议](/zh/concepts/features/interfaces/mysql)，从而兼容那些没有原生连接器的工具。
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>

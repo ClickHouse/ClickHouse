@@ -1,0 +1,4 @@
+SELECT count() AS `count()`
+FROM default.test AS __table1
+WHERE __table1.`a.x.size0` != 0
+999

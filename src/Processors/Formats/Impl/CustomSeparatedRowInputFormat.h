@@ -47,7 +47,7 @@ public:
 
     using EscapingRule = FormatSettings::EscapingRule;
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
@@ -107,7 +107,7 @@ private:
     size_t columns = 0;
 };
 
-class CustomSeparatedSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class CustomSeparatedSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);

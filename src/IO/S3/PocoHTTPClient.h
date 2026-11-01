@@ -14,7 +14,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/HTTPRequestThrottler.h>
-#include <IO/SessionAwareIOStream.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/S3Defines.h>
 
 #include <aws/core/client/ClientConfiguration.h>
@@ -23,6 +23,8 @@
 #include <aws/core/http/standard/StandardHttpResponse.h>
 
 #include <base/types.h>
+
+#include <fmt/format.h>
 
 
 namespace Aws::Http::Standard
@@ -35,9 +37,26 @@ namespace DB
 class Context;
 }
 
+namespace Poco::Net
+{
+class HTTPMessage;
+}
 
 namespace DB::S3
 {
+
+/// HTTP 400 from S3 with non-empty `x-amz-bucket-region` (wrong SigV4 signing region for the bucket).
+bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response);
+
+/// Renders an HTTP response code for logs and error messages.
+/// The AWS SDK reports `REQUEST_NOT_MADE` (-1) when no response has been received at all, e.g. after a network error.
+/// Printing that as a number is confusing, and casting it to an unsigned type turns it into 18446744073709551615.
+String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code);
+
+/// Bounds only the response wait of a credential-acquisition round trip; the connect timeout stays
+/// as the caller set it. An already tighter wait is kept, a non-positive one is unbounded downstream
+/// and so takes the cap.
+ConnectionTimeouts getCredentialAcquisitionTimeouts(const ConnectionTimeouts & timeouts);
 
 class ClientFactory;
 class PocoHTTPClient;
@@ -57,6 +76,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     RetryStrategy retry_strategy;
+    UInt64 expired_token_retry_timeout_ms = 0;
     bool s3_slow_all_threads_after_network_error;
     bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
@@ -64,11 +84,14 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
-    HTTPHeaderEntries extra_headers;
+    NormalizedHTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
     String request_token_path;
+    String google_adc_client_id;
+    String google_adc_client_secret;
+    String google_adc_refresh_token;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -82,6 +105,22 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::function<void(const ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
+
+    /// `remote_host_filter` is a reference, so it must not be bound to a temporary.
+    PocoHTTPClientConfiguration(
+        std::function<ProxyConfiguration()> per_request_configuration_,
+        const String & force_region_,
+        const RemoteHostFilter && remote_host_filter_,
+        unsigned int s3_max_redirects_,
+        RetryStrategy retry_strategy_,
+        bool s3_slow_all_threads_after_network_error_,
+        bool s3_slow_all_threads_after_retryable_error_,
+        bool enable_s3_requests_logging_,
+        bool for_disk_s3_,
+        std::optional<std::string> opt_disk_name_,
+        bool s3_use_adaptive_timeouts_,
+        const HTTPRequestThrottler & request_throttler_,
+        std::function<void(const ProxyConfiguration &)> error_report_) = delete;
 
 private:
     PocoHTTPClientConfiguration(
@@ -115,11 +154,14 @@ public:
     {
     }
 
-    void SetResponseBody(Aws::IStream & incoming_stream, SessionPtr & session_) /// NOLINT
+    /// Takes the body of the response as a ReadBuffer, which reads from the socket of the
+    /// session. The buffer keeps the session alive, and is reachable through the `rdbuf` of the
+    /// stream, so that ClickHouse can read the body through the buffer while the AWS SDK, which
+    /// only accepts an `std::iostream`, can still parse it as a stream.
+    void SetResponseBody(std::unique_ptr<ReadBuffer> body, size_t body_size) /// NOLINT
     {
         body_stream = Aws::Utils::Stream::ResponseStream(
-            Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
-        );
+            Aws::New<StdStreamFromReadBuffer>("http result streambuf", std::move(body), body_size));
     }
 
     void SetResponseBody(std::string & response_body) /// NOLINT
@@ -206,13 +248,13 @@ protected:
 
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
-    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency = 1) const;
+    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int s3_max_redirects = 0;
+    unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     bool s3_use_adaptive_timeouts = true;
     const UInt64 http_max_fields = 1000000;
     const UInt64 http_max_field_name_size = 128 * 1024;
@@ -222,7 +264,7 @@ protected:
 
     HTTPRequestThrottler request_throttler;
 
-    const HTTPHeaderEntries extra_headers;
+    const NormalizedHTTPHeaderEntries extra_headers;
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient
@@ -247,13 +289,26 @@ private:
     const String service_account;
     const String metadata_service;
     const String request_token_path;
+    const String google_adc_client_id;
+    const String google_adc_client_secret;
+    const String google_adc_refresh_token;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
+    BearerToken requestBearerTokenFromADC() const;
 };
 
 }
+
+/// Without this, `{}` prints the underlying number, which is meaningless for `REQUEST_NOT_MADE`.
+template <> struct fmt::formatter<Aws::Http::HttpResponseCode> : fmt::formatter<std::string>
+{
+    auto format(Aws::Http::HttpResponseCode response_code, auto & ctx) const
+    {
+        return formatter<std::string>::format(DB::S3::httpResponseCodeToString(response_code), ctx);
+    }
+};
 
 #endif

@@ -1,0 +1,360 @@
+---
+description: 'ClickHouse를 빌드하고 DEFLATE_QPL 코덱으로 벤치마크를 실행하는 방법'
+sidebarTitle: 'DEFLATE_QPL 빌드 및 벤치마킹'
+slug: /development/building_and_benchmarking_deflate_qpl
+title: 'DEFLATE_QPL로 벤치마크 실행'
+doc_type: 'guide'
+---
+
+* 호스트 머신이 QPL의 필수 [사전 요구 사항](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)을 충족하는지 확인하세요
+
+* `cmake` 빌드 중에는 deflate&#95;qpl이 기본적으로 활성화됩니다. 실수로 변경한 경우 빌드 플래그를 다시 확인하세요: ENABLE&#95;QPL=1
+
+* 일반적인 요구 사항은 ClickHouse의 일반 [빌드 지침](/ko/resources/develop-contribute/build/build)을 참조하세요
+
+<div id="files-list">
+  ## 파일 목록
+</div>
+
+[qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) 아래의 `benchmark_sample` 폴더에는 Python 스크립트로 벤치마크를 실행하는 예시가 포함되어 있습니다:
+
+`client_scripts`에는 일반적인 벤치마크를 실행하기 위한 Python 스크립트가 포함되어 있습니다. 예시는 다음과 같습니다:
+
+* `client_stressing_test.py`: [1~4]개의 서버 인스턴스를 대상으로 쿼리 스트레스 테스트를 수행하는 Python 스크립트입니다.
+* `queries_ssb.sql`: [Star Schema Benchmark](/ko/get-started/sample-datasets/star-schema)의 모든 쿼리가 나열된 파일입니다.
+* `allin1_ssb.sh`: 이 셸 스크립트는 전체 벤치마크 워크플로를 자동으로 한 번에 실행합니다.
+
+`database_files`는 lz4/deflate/zstd 코덱에 따라 데이터베이스 파일이 저장됨을 의미합니다.
+
+<div id="run-benchmark-automatically-for-star-schema">
+  ## Star Schema용 벤치마크 자동 실행:
+</div>
+
+```bash
+$ cd ./benchmark_sample/client_scripts
+$ sh run_ssb.sh
+```
+
+완료되면 이 폴더에서 모든 결과를 확인하세요:`./output/`
+
+실패한 경우 아래 섹션에 따라 벤치마크를 수동으로 실행하세요.
+
+<div id="definition">
+  ## 정의
+</div>
+
+[CLICKHOUSE&#95;EXE]는 ClickHouse 실행 파일의 경로를 의미합니다.
+
+<div id="environment">
+  ## 환경
+</div>
+
+* CPU: Sapphire Rapid
+* OS 요구 사항은 [QPL 시스템 요구 사항](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements)을 참조하십시오
+* IAA 설정은 [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration)을 참조하십시오
+* Python 모듈을 설치하십시오:
+
+```bash
+pip3 install clickhouse_driver numpy
+```
+
+[IAA 자체 점검]
+
+```bash
+$ accel-config list | grep -P 'iax|state'
+```
+
+예상 출력은 다음과 같습니다:
+
+```bash
+    "dev":"iax1",
+    "state":"enabled",
+            "state":"enabled",
+```
+
+아무 출력도 표시되지 않으면 IAA가 아직 준비되지 않은 상태입니다. IAA 설정을 다시 확인하십시오.
+
+<div id="generate-raw-data">
+  ## 원시 데이터 생성
+</div>
+
+```bash
+$ cd ./benchmark_sample
+$ mkdir rawdata_dir && cd rawdata_dir
+```
+
+[`dbgen`](/ko/get-started/sample-datasets/star-schema)을 사용해 다음 매개변수로 1억 개의 행 데이터를 생성합니다:
+-s 20
+
+`*.tbl` 같은 파일은 `./benchmark_sample/rawdata_dir/ssb-dbgen` 아래에 생성되어야 합니다:
+
+<div id="database-setup">
+  ## 데이터베이스 설정
+</div>
+
+LZ4 코덱을 사용해 데이터베이스를 설정합니다
+
+```bash
+$ cd ./database_dir/lz4
+$ [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+여기에서 콘솔에 `Connected to ClickHouse server` 메시지가 표시되어야 합니다. 이 메시지는 클라이언트가 서버와의 연결을 성공적으로 설정했음을 의미합니다.
+
+[Star Schema Benchmark](/ko/get-started/sample-datasets/star-schema)에 나와 있는 아래 3단계를 완료하십시오.
+
+* ClickHouse에서 테이블 생성
+* 데이터 삽입. 여기서는 입력 데이터로 `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl`을 사용하십시오.
+* &quot;star schema&quot;를 비정규화된 &quot;flat schema&quot;로 변환
+
+IAA Deflate 코덱으로 DB 설정
+
+```bash
+$ cd ./database_dir/deflate
+$ [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+위의 lz4와 동일한 3단계를 완료합니다
+
+ZSTD 코덱으로 데이터베이스를 설정합니다
+
+```bash
+$ cd ./database_dir/zstd
+$ [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+위의 lz4와 동일하게 3단계를 완료하십시오
+
+[자체 점검]
+각 코덱(lz4/zstd/deflate)별로 데이터베이스가 정상적으로 생성되었는지 확인하려면 아래 쿼리를 실행하세요:
+
+```sql
+SELECT count() FROM lineorder_flat
+```
+
+다음과 같은 출력이 표시되어야 합니다:
+
+```sql
+┌───count()─┐
+│ 119994608 │
+└───────────┘
+```
+
+[IAA Deflate 코덱 자체 점검]
+
+클라이언트에서 처음으로 삽입 또는 쿼리를 실행하면 ClickHouse 서버 콘솔에 다음 로그가 출력될 것으로 예상됩니다:
+
+```text
+Hardware-assisted DeflateQpl codec is ready!
+```
+
+이 로그가 보이지 않고 대신 아래와 같은 다른 로그가 표시된다면:
+
+```text
+하드웨어 가속 DeflateQpl 코덱 초기화에 실패했습니다
+```
+
+이는 IAA 장치가 아직 준비되지 않았다는 뜻이므로, IAA 설정을 다시 확인해야 합니다.
+
+<div id="benchmark-with-single-instance">
+  ### 단일 인스턴스에서 벤치마크하기
+</div>
+
+* 벤치마크를 시작하기 전에 C6를 비활성화하고 CPU 주파수 거버너를 `performance`로 설정하십시오.
+
+```bash
+$ cpupower idle-set -d 3
+$ cpupower frequency-set -g performance
+```
+
+* 소켓 간 교차 메모리 바인딩으로 인한 영향을 없애기 위해 `numactl`을 사용하여 서버는 한 소켓에, 클라이언트는 다른 소켓에 바인딩합니다.
+* 단일 인스턴스는 단일 클라이언트가 연결된 단일 서버를 의미합니다.
+
+이제 LZ4/Deflate/ZSTD 각각에 대해 벤치마크를 실행합니다:
+
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4 
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > lz4.log
+```
+
+IAA deflate:
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > deflate.log
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > zstd.log
+```
+
+이제 예상대로 3개의 로그가 출력되어야 합니다:
+
+```text
+lz4.log
+deflate.log
+zstd.log
+```
+
+성능 메트릭을 확인하는 방법:
+
+여기서는 QPS를 중점적으로 보므로 `QPS_Final` 키워드를 검색하여 통계를 확인하십시오
+
+<div id="benchmark-with-multi-instances">
+  ## 다중 인스턴스로 벤치마크하기
+</div>
+
+* 과도한 스레드로 인한 메모리 병목의 영향을 줄이기 위해 다중 인스턴스로 벤치마크를 실행하는 것을 권장합니다.
+* 다중 인스턴스는 각각의 클라이언트에 연결된 여러 대(2대 또는 4대)의 서버를 의미합니다.
+* 하나의 소켓에 있는 코어는 균등하게 나누어 각 서버에 할당해야 합니다.
+* 다중 인스턴스의 경우 각 코덱마다 새 폴더를 생성하고, 단일 인스턴스와 유사한 단계에 따라 데이터셋을 삽입해야 합니다.
+
+차이점은 2가지입니다:
+
+* 클라이언트 측에서는 테이블 생성 및 데이터 삽입 시 할당된 포트로 ClickHouse를 실행해야 합니다.
+* 서버 측에서는 포트가 할당된 특정 xml 구성 파일로 ClickHouse를 실행해야 합니다. 다중 인스턴스용 사용자 지정 xml 구성 파일은 모두 ./server&#95;config 아래에 제공됩니다.
+
+여기서는 소켓당 코어가 60개라고 가정하고, 예시로 2개의 인스턴스를 사용합니다.
+첫 번째 인스턴스용 서버 실행
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+```
+
+IAA Deflate:
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+```
+
+[두 번째 인스턴스용 서버 시작]
+
+LZ4:
+
+```bash
+$ cd ./database_dir && mkdir lz4_s2 && cd lz4_s2
+$ cp ../../server_config/config_lz4_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir && mkdir zstd_s2 && cd zstd_s2
+$ cp ../../server_config/config_zstd_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null&
+```
+
+IAA Deflate:
+
+```bash
+$ cd ./database_dir && mkdir deflate_s2 && cd deflate_s2
+$ cp ../../server_config/config_deflate_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
+```
+
+두 번째 인스턴스용 테이블 생성 &amp;&amp; 데이터 삽입
+
+테이블 생성:
+
+```bash
+$ [CLICKHOUSE_EXE] client -m --port=9001 
+```
+
+데이터 삽입:
+
+```bash
+$ [CLICKHOUSE_EXE] client --query "INSERT INTO [TBL_FILE_NAME] FORMAT CSV" < [TBL_FILE_NAME].tbl  --port=9001
+```
+
+* [TBL&#95;FILE&#95;NAME]은 `./benchmark_sample/rawdata_dir/ssb-dbgen` 아래에서 정규식 *. tbl에 맞게 이름이 지정된 파일 이름을 나타냅니다.
+* `--port=9001`은 서버 인스턴스에 할당된 포트를 의미하며, 이 포트는 config&#95;lz4&#95;s2.xml/config&#95;zstd&#95;s2.xml/config&#95;deflate&#95;s2.xml에도 정의되어 있습니다. 인스턴스를 더 추가하려면 이를 각각 s3/s4 인스턴스에 해당하는 값 9002/9003으로 대체해야 합니다. 이를 지정하지 않으면 기본 포트는 9000이며, 이 값은 첫 번째 인스턴스에서 이미 사용 중입니다.
+
+2개 인스턴스로 벤치마크
+
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ cd ./database_dir/lz4_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2  > lz4_2insts.log
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ cd ./database_dir/zstd_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null& 
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > zstd_2insts.log
+```
+
+IAA deflate
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ cd ./database_dir/deflate_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > deflate_2insts.log
+```
+
+여기서 client&#95;stressing&#95;test.py의 마지막 인수인 `2`는 인스턴스 수를 의미합니다. 더 많은 인스턴스를 사용하려면 이 값을 3 또는 4로 대체해야 합니다. 이 스크립트는 최대 4개의 인스턴스를 지원합니다/
+
+이제 예상한 대로 3개의 로그가 출력되어야 합니다:
+
+```text
+lz4_2insts.log
+deflate_2insts.log
+zstd_2insts.log
+```
+
+성능 메트릭을 확인하는 방법:
+
+여기서는 QPS를 중점적으로 보므로 `QPS_Final` 키워드를 검색해 통계를 수집하십시오.
+
+4개 인스턴스에 대한 벤치마크 설정은 위의 2개 인스턴스와 유사합니다.
+검토용 최종 보고서에는 2개 인스턴스의 벤치마크 데이터를 사용하는 것을 권장합니다.
+
+<div id="tips">
+  ## 팁
+</div>
+
+새 ClickHouse 서버를 시작하기 전에 항상 백그라운드에서 실행 중인 ClickHouse 프로세스가 없는지 확인하고, 기존 프로세스가 있으면 종료하십시오:
+
+```bash
+$ ps -aux| grep clickhouse
+$ kill -9 [PID]
+```
+
+./client&#95;scripts/queries&#95;ssb.sql의 쿼리 목록을 공식 [Star Schema Benchmark](/ko/get-started/sample-datasets/star-schema)와 비교해 보면, 포함되지 않은 3개의 쿼리(Q1.2/Q1.3/Q3.4)가 있음을 확인할 수 있습니다. 이는 이러한 쿼리의 CPU 사용률이 매우 낮아 &lt; 10%에 불과하므로 성능 차이를 보여주기 어렵기 때문입니다.

@@ -1,0 +1,8 @@
+# Aggregations Test
+1501	1	1	1	1
+1501	1	1	1	1
+# Granule Test
+First Granule	2048	0
+Middle granules	2048	0
+Last granule	1904	0
+Sparse read	4	0

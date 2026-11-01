@@ -1,17 +1,15 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Helpers.h>
-#include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesInstantValue.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesExtrapolatedValue.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/IDataType.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/readDecimalText.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.h>
+
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -25,77 +23,81 @@ namespace ErrorCodes
 }
 
 
-/// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+namespace Setting
 {
-    auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
+    extern const SettingsBool enable_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_table;
+}
 
+namespace
+{
+    /// The grid has at least millisecond precision, so fractional parameters are not truncated to whole seconds
+    /// when the timestamps in the input columns have a coarser scale.
+    constexpr UInt32 MIN_PARAMETERS_SCALE = 3;
+}
+
+
+void checkTimeseriesAggregateFunctionsEnabled(const std::string & name, const Settings * settings)
+{
+    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+            "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
+            name);
+}
+
+
+void assertTimeseriesParametersCount(const std::string & name, const Array & parameters, size_t expected_parameter_count, std::string_view parameter_names)
+{
+    if (parameters.size() != expected_parameter_count)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires {} parameters: {}", name, expected_parameter_count, parameter_names);
+}
+
+
+/// Extracts a timestamp parameter value and converts it to decimal with the target scale (scale of the timestamp column)
+DateTime64 extractTimeseriesTimestampParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+{
+    try
+    {
+        return parseTimeSeriesTimestamp(parameter_field, target_scale);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While parsing {} parameter of aggregate function {}", parameter_name, function_name);
+        throw;
+    }
+}
+
+
+/// Extracts a duration parameter value and converts it to decimal with the target scale (scale of the timestamp column)
+Decimal64 extractTimeseriesDurationParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+{
+    try
+    {
+        return parseTimeSeriesDuration(parameter_field, target_scale);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While parsing {} parameter of aggregate function {}", parameter_name, function_name);
+        throw;
+    }
+}
+
+
+Float64 extractTimeseriesFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+{
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
         auto value = parameter_field.safeGet<DecimalField<Decimal64>>();
-        auto value_scale_multiplier = value.getScaleMultiplier();
-        return (Decimal128(value.getValue()) * Decimal128(target_scale_multiplier)) / Decimal128(value_scale_multiplier);
+        return static_cast<Float64>(value.getValue()) / static_cast<Float64>(value.getScaleMultiplier());
     }
     else if (parameter_field.getType() == Field::Types::Decimal32)
     {
         auto value = parameter_field.safeGet<DecimalField<Decimal32>>();
-        auto value_scale_multiplier = value.getScaleMultiplier();
-        return Decimal64(value.getValue()) / value_scale_multiplier * target_scale_multiplier;
+        return static_cast<Float64>(value.getValue()) / static_cast<Float64>(value.getScaleMultiplier());
     }
-    else if (Int64 int_value = 0; parameter_field.tryGet(int_value))
-    {
-        return Decimal64(int_value) * target_scale_multiplier;
-    }
-    else if (UInt64 uint_value = 0; parameter_field.tryGet(uint_value))
-    {
-        return Decimal64(uint_value) * target_scale_multiplier;
-    }
-    else if (String string_value; parameter_field.tryGet(string_value))
-    {
-        Decimal64 value{};
-        UInt32 scale = target_scale;
-        ReadBufferFromString buf(string_value);
-        if (tryReadDecimalText(buf, value, 20, scale))
-            return value * DecimalUtils::scaleMultiplier<Decimal64>(scale);
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of {} parameter for aggregate function {}",
-            parameter_field.getTypeName(), parameter_name, function_name);
-    }
-}
-
-UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
-{
-    if (UInt64 int_value = 0; parameter_field.tryGet(int_value))
-    {
-        return int_value;
-    }
-    else if (String string_value; parameter_field.tryGet(string_value))
-    {
-        UInt64 value{};
-        ReadBufferFromString buf(string_value);
-        if (tryReadIntText(value, buf))
-            return value;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of {} parameter for aggregate function {}",
-            parameter_field.getTypeName(), parameter_name, function_name);
-    }
-}
-
-Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
-{
-    if (Float64 float_value = 0; parameter_field.tryGet(float_value))
+    else if (Float64 float_value = 0; parameter_field.tryGet(float_value))
     {
         return float_value;
     }
@@ -111,7 +113,7 @@ Float64 extractFloatParameter(const std::string & function_name, const std::stri
     {
         Float64 value{};
         ReadBufferFromString buf(string_value);
-        if (tryReadFloatText(value, buf))
+        if (tryReadFloatTextPrecise(value, buf))
             return value;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -126,167 +128,62 @@ Float64 extractFloatParameter(const std::string & function_name, const std::stri
 }
 
 
-namespace Setting
+UInt32 getTimeseriesParametersScale(const Array & parameters)
 {
-    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
-    extern const SettingsBool allow_experimental_time_series_table;
+    UInt32 scale = MIN_PARAMETERS_SCALE;
+    const size_t num_grid_parameters = std::min<size_t>(parameters.size(), 4);
+    for (size_t i = 0; i < num_grid_parameters; ++i)
+    {
+        const auto & parameter = parameters[i];
+        if (parameter.getType() == Field::Types::Decimal64)
+            scale = std::max(scale, parameter.safeGet<DecimalField<Decimal64>>().getScale());
+        else if (parameter.getType() == Field::Types::Decimal32)
+            scale = std::max(scale, parameter.safeGet<DecimalField<Decimal32>>().getScale());
+    }
+    return scale;
 }
 
-namespace
+
+std::pair<DataTypePtr, DataTypePtr> getTimeseriesTimestampAndValueTypes(const std::string & name, const DataTypes & argument_types, size_t num_extra_arguments)
 {
-
-template <
-    bool is_rate_or_resets,
-    bool is_predict,
-    bool array_arguments,
-    typename ValueType,
-    template <bool, typename, typename, typename, bool> class FunctionTraits,
-    template <typename> class Function
->
-AggregateFunctionPtr createWithValueType(const std::string & name, const DataTypes & argument_types, const Array & parameters)
-{
-    const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
-
-    if (!is_predict && parameters.size() != 4)
+    if (argument_types.size() != 1 + num_extra_arguments && argument_types.size() != 2 + num_extra_arguments)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        "Aggregate function {} requires 4 parameters: start_timestamp, end_timestamp, step, window", name);
+            "Aggregate function {} requires {} or {} arguments: the samples as (timestamp, value) or as a single array of tuples{}",
+            name, 1 + num_extra_arguments, 2 + num_extra_arguments,
+            num_extra_arguments ? fmt::format(", followed by {} more argument(s)", num_extra_arguments) : "");
 
-    if (is_predict && parameters.size() != 5)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        "Aggregate function {} requires 5 parameters: start_timestamp, end_timestamp, step, window, predict_offset", name);
+    DataTypes sample_types(argument_types.begin(), argument_types.end() - num_extra_arguments);
 
-    const Field & start_timestamp_param = parameters[0];
-    const Field & end_timestamp_param = parameters[1];
-    const Field & step_param = parameters[2];
-    const Field & window_param = parameters[3];
-    const Field & predict_offset_param = is_predict ? parameters[4] : Field();
-
-    AggregateFunctionPtr res;
-    if (isDateTime64(timestamp_type))
+    if (sample_types.size() == 1)
     {
-        /// Convert start, end, step and staleness parameters to the scale of the timestamp column
-        auto timestamp_decimal = std::dynamic_pointer_cast<const DataTypeDateTime64>(timestamp_type);
-        auto target_scale = timestamp_decimal->getScale();
+        /// The single argument form: samples are passed as Array(Tuple(timestamp, value)).
+        const auto * array_type = typeid_cast<const DataTypeArray *>(sample_types[0].get());
+        const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
+        if (!tuple_type || tuple_type->getElements().size() != 2)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument for aggregate function {}, expected Array(Tuple(timestamp, value))",
+                sample_types[0]->getName(), name);
 
-        DateTime64 start_timestamp = normalizeParameter(name, "start", start_timestamp_param, target_scale);
-        DateTime64 end_timestamp = normalizeParameter(name, "end", end_timestamp_param, target_scale);
-        DateTime64 step = normalizeParameter(name, "step", step_param, target_scale);
-        DateTime64 window = normalizeParameter(name, "window", window_param, target_scale);
-
-        if constexpr (is_predict)
-        {
-            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * DecimalUtils::scaleMultiplier<Int64>(target_scale);
-            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
-        }
-        else
-        {
-            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate_or_resets>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
-        }
-    }
-    else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
-    {
-        UInt64 start_timestamp = extractIntParameter(name, "start", start_timestamp_param);
-        UInt64 end_timestamp = extractIntParameter(name, "end", end_timestamp_param);
-        Int64 step = extractIntParameter(name, "step", step_param);
-        Int64 window = extractIntParameter(name, "window", window_param);
-
-        if constexpr (is_predict)
-        {
-            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
-            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 0, predict_offset);
-        }
-        else
-        {
-            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate_or_resets>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 0);
-        }
+        return {tuple_type->getElements()[0], tuple_type->getElements()[1]};
     }
 
-    if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
-                        timestamp_type->getName(), name);
+    if (sample_types.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires the samples as two arguments (timestamp, value) or as a single array of tuples", name);
 
-    return res;
-}
-
-template <
-    bool is_rate_or_resets,
-    bool is_predict,
-    template <bool, typename, typename, typename, bool> class FunctionTraits,
-    template <typename> class Function
->
-AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-{
-    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
-        throw Exception(
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
-            name);
-
-    assertBinary(name, argument_types);
-
-    if ((argument_types[0]->getTypeId() == TypeIndex::Array) != (argument_types[1]->getTypeId() == TypeIndex::Array))
+    if ((sample_types[0]->getTypeId() == TypeIndex::Array) != (sample_types[1]->getTypeId() == TypeIndex::Array))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal combination of argument type {} and {} for aggregate function {}, expected both arguments to be arrays or not arrays",
-            argument_types[0]->getName(), argument_types[1]->getName(), name);
+            sample_types[0]->getName(), sample_types[1]->getName(), name);
 
-    const bool array_arguments = argument_types[1]->getTypeId() == TypeIndex::Array;
-    const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType() : argument_types[1];
-
-    AggregateFunctionPtr res;
-    if (value_type->getTypeId() == TypeIndex::Float64)
+    if (sample_types[1]->getTypeId() == TypeIndex::Array)
     {
-        if (array_arguments)
-            res = createWithValueType<is_rate_or_resets, is_predict, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
-        else
-            res = createWithValueType<is_rate_or_resets, is_predict, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
-    }
-    else if (value_type->getTypeId() == TypeIndex::Float32)
-    {
-        if (array_arguments)
-            res = createWithValueType<is_rate_or_resets, is_predict, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
-        else
-            res = createWithValueType<is_rate_or_resets, is_predict, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
+        const auto & timestamp_type = typeid_cast<const DataTypeArray *>(sample_types[0].get())->getNestedType();
+        const auto & value_type = typeid_cast<const DataTypeArray *>(sample_types[1].get())->getNestedType();
+        return {timestamp_type, value_type};
     }
 
-    return res;
-}
-
-}
-
-void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
-{
-    factory.registerFunction("timeSeriesRateToGrid",
-        createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>);
-    factory.registerFunction("timeSeriesDeltaToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>);
-
-    factory.registerFunction("timeSeriesInstantRateToGrid",
-        createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
-    factory.registerFunction("timeSeriesInstantDeltaToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>);
-
-    factory.registerFunction("timeSeriesDerivToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
-    factory.registerFunction("timeSeriesPredictLinearToGrid",
-        createAggregateFunctionTimeseries<false, true, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>);
-
-    factory.registerFunction("timeSeriesChangesToGrid",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesChangesTraits, AggregateFunctionTimeseriesChanges>);
-    factory.registerFunction("timeSeriesResetsToGrid",
-        createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesChangesTraits, AggregateFunctionTimeseriesChanges>);
-
-    factory.registerFunction("timeSeriesResampleToGridWithStaleness",
-        createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>);
-    factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
+    return {sample_types[0], sample_types[1]};
 }
 
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel, no-replicated-database, no-parallel-replicas
+# Tags: no-shared-merge-tree, no-replicated-database, no-parallel-replicas
 # no-shared-merge-tree - this test relies that there are different
 # parts on different replicas which is inapplicable for SharedMergeTree.
 # no-replicated-database: fails due to additional replicas or shards.
@@ -76,7 +76,7 @@ SELECT
     ProfileEvents['ReadTasksWithAppliedMutationsOnFly'],
     ProfileEvents['MutationsAppliedOnFlyInAllReadTasks']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query ILIKE 'SELECT%FROM t_mutation_events_%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query ILIKE 'SELECT%FROM t_mutation_events_%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_mutation_events_1;

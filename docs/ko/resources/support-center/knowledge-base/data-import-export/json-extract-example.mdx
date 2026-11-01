@@ -1,0 +1,72 @@
+---
+title: JSONExtract 예시
+description: "JSON에서 기본 타입을 추출하는 간단한 예시"
+date: 2021-09-01
+tags: ['데이터 포맷']
+keywords: ['JSON', '기본 타입 추출']
+---
+
+<div id="json-extract-example">
+  ## JSONExtract 예시
+</div>
+
+다음은 [JSONExtract](/ko/reference/functions/regular-functions/json-functions) 함수 사용을 보여주는 간단한 예시입니다.
+
+테이블을 생성합니다:
+
+```sql
+CREATE TABLE default.json_extract_example
+(
+    `rawJSON` String EPHEMERAL,
+    `a1` String DEFAULT JSONExtractString(rawJSON, 'a1'),
+    `a2` Boolean DEFAULT JSONExtractBool(rawJSON, 'a2'),
+    `a3.aa1` Float DEFAULT JSONExtractFloat(JSONExtractRaw(rawJSON, 'a3'), 'aa1'),
+    `a3.aa2` UInt8 DEFAULT JSONExtractUInt(JSONExtractRaw(rawJSON, 'a3'), 'aa2')
+)
+ENGINE = MergeTree
+ORDER BY (a1, a2)
+```
+
+JSON raw string을 추가합니다:
+
+```sql
+INSERT INTO default.json_extract_example (rawJSON) VALUES ('{"a1": "XX", "a2": true, "a3":{"aa1":23.11,"aa2":12}}');
+```
+
+데이터 쿼리:
+
+```
+SELECT *
+FROM json_extract_example
+FORMAT Pretty
+```
+
+다음과 같은 결과가 출력됩니다:
+
+```
+┏━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃ a1 ┃ a2   ┃ a3.aa1 ┃ a3.aa2 ┃
+┡━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ XX │ true │  23.11 │     12 │
+└────┴──────┴────────┴────────┘
+```
+
+각 항목은 원본 JSON 타입으로 저장됩니다:
+
+```sql
+SELECT
+    toTypeName(a1),
+    toTypeName(a2),
+    toTypeName(a3.aa1),
+    toTypeName(a3.aa2)
+FROM default.json_extract_example
+FORMAT Pretty
+```
+
+```
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ toTypeName(a1) ┃ toTypeName(a2) ┃ toTypeName(a3.aa1) ┃ toTypeName(a3.aa2) ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ String         │ Bool           │ Float32            │ UInt8              │
+└────────────────┴────────────────┴────────────────────┴────────────────────┘
+```

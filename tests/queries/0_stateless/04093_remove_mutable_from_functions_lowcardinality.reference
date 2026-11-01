@@ -1,0 +1,65 @@
+toStartOfInterval with LC
+2024-01-15 14:00:00
+2024-01-15 15:00:00
+2024-01-15 00:00:00
+2024-01-15 00:00:00
+2024-01-01
+2024-01-01
+toStartOfInterval with LC origin
+2024-01-15 14:00:00
+2024-01-15 14:00:00
+2024-01-15 15:00:00
+dateTrunc with LC
+2024-01-15 14:00:00
+2024-01-15 15:00:00
+2024-01-15 00:00:00
+2024-01-15 00:00:00
+2024-01-01
+2024-01-01
+2024-01-15 14:00:00
+toInterval with LC
+1
+5
+10
+1
+5
+10
+3
+initializeAggregation with LC
+10
+20
+30
+10
+20
+30
+10
+20
+30
+hello
+world
+arrayReduce with LC
+6
+arrayReduceInRanges with LC
+[6,14]
+transform with LC
+10
+20
+30
+4
+10
+20
+30
+0
+x
+y
+z
+d
+x
+y
+z
+?
+verify equivalence
+1
+1
+1
+1

@@ -89,7 +89,14 @@ private:
                 need_visit_child = Matcher::needChildVisit(ast, child);
 
             if (need_visit_child)
+            {
+                IAST * old_ptr = child.get();
                 visitImpl<with_dump>(child);
+                /// Some AST classes have raw pointers to children elements as members.
+                /// We have to replace them if the child was replaced.
+                if (child.get() != old_ptr)
+                    ast->updatePointerToChild(old_ptr, child);
+            }
         }
     }
 };

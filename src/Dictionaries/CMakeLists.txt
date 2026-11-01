@@ -4,17 +4,24 @@ add_headers_and_sources(clickhouse_dictionaries .)
 
 add_headers_and_sources(clickhouse_dictionaries "${CMAKE_CURRENT_BINARY_DIR}/generated/")
 
+# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
+# TUs where libcxx hardening needs to be disabled are specified here.
+set(LIBCPP_HARDENING_DISABLE_FILES
+    HashedDictionary.cpp
+    HashedArrayDictionary.cpp
+    RangeHashedDictionary.cpp
+)
+set_property(SOURCE ${LIBCPP_HARDENING_DISABLE_FILES}
+    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
-    set_source_files_properties(
+    set_property(SOURCE
+        ${LIBCPP_HARDENING_DISABLE_FILES}
         FlatDictionary.cpp
-        HashedDictionary.cpp
         SparseHashedDictionary.cpp
-        HashedArrayDictionary.cpp
         CacheDictionary.cpp
-        RangeHashedDictionary.cpp
         DirectDictionary.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
+        APPEND_STRING PROPERTY COMPILE_FLAGS " -g1")
 endif()
 
 extract_into_parent_list(clickhouse_dictionaries_sources dbms_sources
@@ -41,8 +48,10 @@ target_link_libraries(clickhouse_dictionaries
 
 target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)
 
-if (TARGET ch_contrib::cassandra)
-    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::cassandra)
+# For the compression in the Cassandra client.
+target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::lz4)
+if (TARGET ch_contrib::snappy)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::snappy)
 endif()
 
 if (TARGET ch_contrib::yaml_cpp)
@@ -51,6 +60,10 @@ endif()
 
 if (TARGET ch_contrib::vectorscan)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::vectorscan)
+endif()
+
+if (TARGET ch_contrib::xgboost)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::xgboost)
 endif()
 
 add_subdirectory(Embedded)

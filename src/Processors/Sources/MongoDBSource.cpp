@@ -16,6 +16,8 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/BSONCXXHelper.h>
+#include <Common/config_version.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 
 namespace DB
@@ -85,7 +87,7 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
 
-            assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000)));
             break;
         }
         case TypeIndex::Date32:
@@ -151,6 +153,22 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
     }
 }
 
+namespace
+{
+
+/// Identify ClickHouse in the MongoDB connection handshake, so that server operators can tell
+/// ClickHouse connections apart from other clients in mongod/mongos logs, `currentOp` output
+/// and monitoring tools (the driver reports itself as "mongoc / mongocxx / ClickHouse").
+/// See https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.md#wrapping-libraries
+mongocxx::client createClient(const mongocxx::uri & uri)
+{
+    mongocxx::client client{uri};
+    /// The metadata is sent with the initial `hello` command, so it has to be appended before the first operation.
+    client.append_metadata("ClickHouse", VERSION_STRING);
+    return client;
+}
+
+}
 
 MongoDBSource::MongoDBSource(
     const mongocxx::uri & uri,
@@ -159,8 +177,8 @@ MongoDBSource::MongoDBSource(
     const mongocxx::options::find & options,
     SharedHeader sample_block_,
     const UInt64 & max_block_size_)
-    : ISource{sample_block_}
-    , client{uri}
+    : ISource{std::make_shared<const Block>(sample_block_->cloneEmpty())}
+    , client{createClient(uri)}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
@@ -202,6 +220,8 @@ MongoDBSource::~MongoDBSource() = default;
 
 Chunk MongoDBSource::generate()
 {
+    LOG_TEST(getLogger("MongoDBSource"), "Generate a chunk");
+
     if (all_read)
         return {};
 
@@ -211,6 +231,9 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     for (const auto & doc : cursor)
     {
+        if (isCancelled())
+            break;
+
         for (auto idx : collections::range(0, size))
         {
             auto & sample_column = sample_block.getByPosition(idx);
@@ -224,7 +247,7 @@ Chunk MongoDBSource::generate()
                     const auto & type_nullable = assert_cast<const DataTypeNullable &>(*sample_column.type);
 
                     insertValue(column_nullable.getNestedColumn(), idx, type_nullable.getNestedType(), sample_column.name, value);
-                    column_nullable.getNullMapData().emplace_back(0);
+                    column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                     insertValue(*columns[idx], idx, sample_column.type, sample_column.name, value);

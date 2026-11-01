@@ -1,0 +1,89 @@
+---
+slug: /managing-data/drop_partition
+sidebarTitle: 'Удалить партицию'
+title: 'Удаление партиций'
+hide_title: false
+description: 'Страница с описанием удаления партиций'
+keywords: ['DROP PARTITION', 'удаление партиции', 'удалить партицию', 'удалить партицию', 'управление партициями']
+doc_type: 'reference'
+---
+
+<div id="background">
+  ## Общие сведения
+</div>
+
+Партиционирование задаётся для таблицы при её первоначальном определении с помощью предложения `PARTITION BY`. Это предложение может содержать SQL-выражение для любых столбцов, результат которого определяет, в какую партицию попадёт строка.
+
+Части данных логически связаны с каждой партицией на диске и могут запрашиваться по отдельности. В примере ниже мы разбиваем таблицу `posts` на партиции по году с помощью выражения `toYear(CreationDate)`. По мере вставки строк в ClickHouse это выражение вычисляется для каждой строки, и строка направляется в соответствующую партицию, если она уже существует (если для данного года это первая строка, партиция будет создана).
+
+```sql
+ CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+Прочитайте о том, как задавать выражение партиционирования, в разделе [Как задать выражение партиционирования](/ru/reference/statements/alter/partition#how-to-set-partition-expression).
+
+В ClickHouse пользователям следует в первую очередь рассматривать партиционирование как возможность управления данными, а не как способ оптимизации запросов. При логическом разделении данных по ключу с каждой партицией можно работать независимо, например удалять её. Это позволяет пользователям перемещать партиции, а значит и подмножества данных, между [уровнями хранения](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) по мере устаревания данных или [настраивать срок хранения данных / эффективно удалять их из кластера](/ru/reference/statements/alter/partition).
+
+<div id="drop-partitions">
+  ## Удаление партиций
+</div>
+
+`ALTER TABLE ... DROP PARTITION` — это экономичный способ удалить партицию целиком.
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+```
+
+Этот запрос помечает партицию как неактивную и полностью удаляет данные примерно через 10 минут. Запрос реплицируется — данные удаляются на всех репликах.
+
+В примере ниже мы удаляем посты за 2008 год из ранее созданной таблицы, удаляя соответствующую партицию.
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+0 rows in set. Elapsed: 0.103 sec.
+```

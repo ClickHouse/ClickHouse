@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -87,7 +86,7 @@ namespace
                         res_offsets[i] = res_prev_offset;
 
                         if (nullable)
-                            res_null_map->push_back(1); /// Push NULL.
+                            res_null_map->push_back(static_cast<uint8_t>(1)); /// Push NULL.
                     }
 
                     src_prev_offset = src_offsets[i];
@@ -153,7 +152,7 @@ namespace
                         res_offsets[i] = res_prev_offset;
 
                         if (nullable)
-                            res_null_map->push_back(1);
+                            res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
                     }
 
                     src_prev_offset = src_offsets[i];
@@ -237,7 +236,7 @@ namespace
                     else
                     {
                         if (nullable)
-                            res_null_map->push_back(1);
+                            res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
 
                         res_string_offsets.push_back(res_string_prev_offset);
 
@@ -297,7 +296,7 @@ namespace
                     res_offsets[i] = res_prev_offset;
 
                     if (nullable)
-                        res_null_map->push_back(1);
+                        res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
                 }
 
                 src_prev_offset = src_offsets[i];
@@ -329,15 +328,6 @@ namespace
     }
 }
 
-DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-    if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
-
-    return arguments[0];
-}
-
 ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     if (auto res = FunctionEmptyArrayToSingleImpl::executeConst(arguments, result_type, input_rows_count))
@@ -359,8 +349,8 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
     const NullMap * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
 
-    const IColumn * inner_col;
-    IColumn * inner_res_col;
+    const IColumn * inner_col = nullptr;
+    IColumn * inner_res_col = nullptr;
 
     const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
     if (nullable_col)
@@ -409,12 +399,12 @@ INSERT INTO test VALUES ([], [], []);
 SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM test;
 )", R"(
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEmptyArrayToSingle>(documentation);
 }

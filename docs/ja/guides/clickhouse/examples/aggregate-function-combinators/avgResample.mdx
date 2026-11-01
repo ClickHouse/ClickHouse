@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'avgでResample コンビネータを使用する例'
+keywords: ['avg', 'Resample', 'combinator', 'examples', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Resample`](/ja/reference/functions/aggregate-functions/combinators#-resample)
+コンビネータは、[`count`](/ja/reference/functions/aggregate-functions/count)
+集約関数に適用することで、指定したキーカラムの値を固定数 (`N`)
+のインターバルに分けてカウントできます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="basic-example">
+  ### 基本例
+</div>
+
+例を見てみましょう。従業員の `name`、`age`、`wage` を持つ
+テーブルを作成し、そこにいくつかのデータを挿入します:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+年齢が区間 `[30,60)`
+および `[60,75)` に含まれる人々の平均賃金を求めてみましょう (`[` は排他的、`)` は包含的です) 。年齢は整数で
+表現されるため、対象となる年齢は区間 `[30, 59]` および `[60,74]` になります。
+これを行うには、`avg` 集約関数に `Resample` コンビネータを適用します。
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`count`](/ja/reference/functions/aggregate-functions/count)
+* [`Resample コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-resample)

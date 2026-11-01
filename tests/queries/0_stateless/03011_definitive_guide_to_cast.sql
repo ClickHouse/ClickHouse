@@ -89,10 +89,11 @@ SELECT CAST(-1 AS DateTime('Europe/Amsterdam'));
 
 SELECT CAST(1e20 AS DateTime64(6, 'Europe/Amsterdam'));
 
--- A special case is DateTime64(9) - the maximum resolution, where is does not cover the usual range,
--- and in this case, it throws an exception on overflow (I don't mind if we change this behavior in the future):
+-- A special case is DateTime64(9) - the maximum resolution, where the representable range is narrower than the usual range,
+-- because the ticks are stored in an Int64 (with nanosecond precision the maximum is around 2262-04-11). Out-of-range
+-- values saturate to the representable boundary, consistently with the other DateTime64 scales:
 
- SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam')); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam'));
 
 -- If a number is converted to a Date data type, the value is interpreted as the number of days since the Unix epoch,
 -- but if the number is larger than the range of the data type, it is interpreted as a unix timestamp
@@ -183,11 +184,11 @@ SELECT 123::String;
 
 SELECT 1.1::Decimal(30, 20);
 
--- In this example, `1.1` is first parsed as usual, yielding a Float64 value, and then converted to Decimal, producing a wrong result:
+-- The `CAST` operator does the same whenever the target type reads the literal more precisely than a Float64 carries it, which is the case for Decimal and for the integers wider than 64 bits:
 
 SELECT CAST(1.1 AS Decimal(30, 20));
 
--- We can change this behavior in the future.
+-- For every other target type it keeps parsing the literal as usual and converting the resulting value, because there reading the text of the literal would not be more precise, just different: `1` is one second past the epoch for `DateTime`, but a calendar date as text.
 
 -- Another example:
 

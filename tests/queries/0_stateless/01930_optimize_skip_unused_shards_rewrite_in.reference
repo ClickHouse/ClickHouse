@@ -150,3 +150,21 @@ select distinct _shard_num, * from remote('127.{1..4}', view(select toInt16(id) 
 -- modulo(UInt8)
 select distinct _shard_num, * from remote('127.{1..4}', view(select toInt16(id) id from data), toUInt8(id)%255) where id in (-1) order by _shard_num, id;
 1	-1
+-- A sharding key that the analyzer const-folds (e.g. `if(1, x, y)` -> `x`) produces an
+-- expression whose output name differs from the unfolded key name. This must not throw
+-- "Cannot find sharding key column"; the result must match the equivalent plain key.
+-- Folds to a computed output `toInt32(id)`:
+select _shard_num, * from remote('127.{1..4}', view(select toInt32(id) id from data), if(1, toInt32(id), toInt32(id) + 1)) where id in (0, 1, 0x7fffffff) order by _shard_num, id;
+1	0
+1	0
+2	1
+4	2147483647
+-- Folds all the way down to the bare source column `id` (the expression output is then an input):
+select _shard_num, * from remote('127.{1..4}', view(select id from data), if(1, id, id + 1)) where id in (0, 1, 0x7fffffff) order by _shard_num, id;
+1	0
+2	1
+4	2147483647
+select _shard_num, * from remote('127.{1..4}', view(select id from data), id) where id in (0, 1, 0x7fffffff) order by _shard_num, id;
+1	0
+2	1
+4	2147483647

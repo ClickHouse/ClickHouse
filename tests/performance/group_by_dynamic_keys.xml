@@ -1,0 +1,57 @@
+<test>
+    <!--
+        GROUP BY over Dynamic keys, and over JSON path subcolumns (which yield a Dynamic).
+
+        Several such keys select AggregationMethodSerialized, whose getKeyHolder serializes every
+        key column for the row. That serialization is the dominant cost of the aggregation, so the
+        Aggregator's look-ahead prefetch - which builds the key holder a second time per row - must
+        stay disabled for this method. See has_cheap_key_holder.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>8</max_insert_threads>
+        <allow_suspicious_types_in_group_by>1</allow_suspicious_types_in_group_by>
+    </settings>
+
+    <create_query>CREATE TABLE t_json_group_by (j JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>
+        INSERT INTO t_json_group_by
+        SELECT toJSONString(map('a', toString(number % 1000), 'b', toString(number % 7),
+                                'c', toString(number % 13),   'd', toString(number % 97),
+                                'e', toString(number % 31),   'f', toString(number % 53),
+                                'g', toString(number % 11)))::JSON
+        FROM numbers(1000000)
+    </fill_query>
+
+    <query>
+        SELECT (number % 1000)::Dynamic AS a,
+               (number %    7)::Dynamic AS b,
+               (number %   13)::Dynamic AS c,
+               (number %   97)::Dynamic AS d,
+               (number %   31)::Dynamic AS e,
+               (number %   53)::Dynamic AS f,
+               (number %   11)::Dynamic AS g
+        FROM numbers(2000000)
+        GROUP BY 1, 2, 3, 4, 5, 6, 7
+        FORMAT Null
+    </query>
+
+    <!-- Control: the same shape with plain String keys, which uses the prealloc serialized
+         method and does its own prefetching from precomputed hashes. -->
+    <query>
+        SELECT toString(number % 1000) AS a,
+               toString(number %    7) AS b,
+               toString(number %   13) AS c,
+               toString(number %   97) AS d,
+               toString(number %   31) AS e,
+               toString(number %   53) AS f,
+               toString(number %   11) AS g
+        FROM numbers(2000000)
+        GROUP BY 1, 2, 3, 4, 5, 6, 7
+        FORMAT Null
+    </query>
+
+    <query>SELECT j.a, j.b, j.c, j.d, j.e, j.f, j.g FROM t_json_group_by GROUP BY 1, 2, 3, 4, 5, 6, 7 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_group_by</drop_query>
+</test>

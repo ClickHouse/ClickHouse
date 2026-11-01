@@ -1,0 +1,256 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+# ─── Baselines ─────────────────────────────────────────────────────────────
+- id: prod-mix-no-fault
+  name: Prod mix (no faults)
+  description: Full request mix (get, create, set, multi, list). Baseline for prod-mix-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/prod_mix.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+  - type: count_paths
+    prefixes:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+# - id: replay
+#   name: Replay (no faults)
+#   description: Replay workload from parquet. Baseline for replay-light.
+#   topology: 3
+#   duration: 120
+#   workload:
+#     config: workloads/prod_mix.yaml
+#     replay: tests/stress/keeper/workloads/zookeeper_log_extended.parquet
+#   pre:
+#   - kind: ensure_paths
+#     'on': leader
+#     paths:
+#     - /e2e/prod
+#     - /e2e/prod/create
+#     - /e2e/prod/set
+#   faults: []
+#   gates:
+#   - type: single_leader
+#   - type: error_rate_le
+#     max_ratio: 0.5
+#   - type: p99_le
+#     max_ms: 200000
+#   - type: log_sanity_ok
+#   - type: print_summary
+#   - type: mntr_print
+#   - type: count_paths
+#     prefixes:
+#     - /e2e/prod
+#     - /e2e/prod/create
+#     - /e2e/prod/set
+# ─── Workload variants ─────────────────────────────────────────────────────
+- id: read-no-fault
+  name: Read-only (no faults)
+  description: get 90%, list 10%. Baseline for read-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/read_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: write-no-fault
+  name: Write-only (no faults)
+  description: create 60%, set 40%. Baseline for write-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/write_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: read-multi-no-fault
+  name: MultiRead batching (no faults)
+  description: Batched get/list. Baseline for read-multi-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/read_multi_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+  opts:
+    feature_flags:
+      multi_read: 1
+- id: write-multi-no-fault
+  name: Multi-op batches (no faults)
+  description: Batch multi create/set. Baseline for write-multi-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/write_multi_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: list-heavy-no-fault
+  name: List-heavy (no faults)
+  description: list 75%, get 25%. Baseline for list-heavy-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/list_heavy_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: churn-no-fault
+  name: Churn (no faults)
+  description: create 80%, set 20%, remove_factor 0.7. Baseline for churn-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/churn_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: large-payload-no-fault
+  name: Large payload (no faults)
+  description: 1–4 KB values, prod mix. Baseline for large-payload-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/large_payload.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: single-hot-get-no-fault
+  name: Single hot path (no faults)
+  description: 100% get on one path. Baseline for single-hot-get-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/single_hot_get.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary
+- id: multi-large-no-fault
+  name: Multi-large batches (no faults)
+  description: 10–30 ops per batch. Baseline for multi-large-fault.
+  topology: 3
+  duration: 120
+  workload:
+    config: workloads/multi_large_requests.yaml
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /e2e/prod
+    - /e2e/prod/create
+    - /e2e/prod/set
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: log_sanity_ok
+  - type: print_summary

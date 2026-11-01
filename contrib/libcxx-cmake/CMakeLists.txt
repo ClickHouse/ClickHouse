@@ -76,15 +76,24 @@ target_include_directories(cxx-headers INTERFACE ${LIBCXX_GENERATED_INCLUDE_DIR}
 add_library(cxx ${SRCS})
 set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
 
+set(LIBC_NAMESPACE "__llvm_libc")
+
 target_include_directories(cxx SYSTEM BEFORE PRIVATE $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/src>)
 target_include_directories(cxx SYSTEM BEFORE PUBLIC  $<$<COMPILE_LANGUAGE:CXX>:$<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>>)
-target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
+target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI -DLIBC_NAMESPACE=${LIBC_NAMESPACE})
+target_compile_definitions(cxx PUBLIC -D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1)
 
 # Enable capturing stack traces for all exceptions.
 target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 
 if (USE_MUSL)
     target_compile_definitions(cxx PUBLIC -D_LIBCPP_HAS_MUSL_LIBC=1)
+    add_dependencies(cxx musl-headers)
+    # The arch dirs are not in the toolchain flags to avoid include order issues in musl's own build.
+    target_include_directories(cxx SYSTEM BEFORE PRIVATE
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}"
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic"
+    )
 endif ()
 
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)

@@ -3,7 +3,7 @@
 #include <string_view>
 #include <utility>
 #include <IO/HTTPCommon.h>
-#include <Poco/StreamCopier.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
@@ -21,13 +21,13 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
     auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
 
-    session->sendRequest(request);
+    sendHTTPRequest(*session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    auto & response_body_stream = session->receiveResponse(response);
+    auto response_body = receiveHTTPResponse(*session, response);
 
     std::string body;
-    Poco::StreamCopier::copyToString(response_body_stream, body);
+    readStringUntilEOF(body, *response_body);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw HTTPException(
@@ -93,7 +93,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     cached_config.protocol = proxy_protocol;
     cached_config.host = proxy_host;
-    cached_config.port = proxy_port;
+    cached_config.port = static_cast<uint16_t>(proxy_port);
     cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
     cached_config.original_request_protocol = request_protocol;
     cached_config.no_proxy_hosts = no_proxy_hosts;

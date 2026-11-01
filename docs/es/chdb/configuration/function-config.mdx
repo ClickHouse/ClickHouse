@@ -1,0 +1,301 @@
+---
+title: 'Configuración a nivel de función'
+sidebarTitle: 'Configuración de funciones'
+slug: /chdb/configuration/function-config
+description: 'Configura el motor de ejecución y la corrección de Dtype a nivel de función'
+keywords: ['chdb', 'DataStore', 'función', 'configuración', 'Dtype', 'corrección']
+doc_type: 'referencia'
+---
+
+DataStore permite un control preciso de la ejecución a nivel de función, incluida la selección del motor y la corrección de Dtype.
+
+<div id="function-engine">
+  ## Configuración de Function Motor
+</div>
+
+Sobrescribe el motor de ejecución de funciones específicas.
+
+<div id="setting-engines">
+  ### Configurar Function Motors
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# Forzar funciones específicas para usar chdb
+function_config.use_chdb('length', 'substring', 'concat')
+
+# Forzar funciones específicas para usar pandas
+function_config.use_pandas('upper', 'lower', 'capitalize')
+
+# Establecer preferencia predeterminada
+function_config.prefer_chdb()    # Usar chdb por defecto
+function_config.prefer_pandas()  # Usar pandas por defecto
+
+# Restablecer a automático
+function_config.reset()
+```
+
+<div id="when-to-use">
+  ### Cuándo usar
+</div>
+
+**Forzar chdb para:**
+
+* Funciones con mejor rendimiento en ClickHouse
+* Funciones que se benefician de la optimización SQL
+* Operaciones de cadenas de texto/fecha y hora a gran escala
+
+**Forzar pandas para:**
+
+* Funciones con comportamiento específico de pandas
+* Cuando se requiere compatibilidad exacta con pandas
+* Operaciones de cadenas de texto personalizadas
+
+<div id="function-example">
+  ### Ejemplo
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import function_config
+
+# Configurar motores de funciones
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper')
+
+ds = pd.read_csv("data.csv")
+
+# length() usará chdb
+ds['name_len'] = ds['name'].str.len()
+
+# substring() usará chdb  
+ds['prefix'] = ds['name'].str.slice(0, 3)
+
+# upper() usará pandas
+ds['name_upper'] = ds['name'].str.upper()
+```
+
+***
+
+<div id="overlapping">
+  ## Funciones coincidentes
+</div>
+
+Hay más de 159 funciones disponibles en los motores chdb y pandas:
+
+| Categoría        | Funciones                                                                                                                               |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cadenas**      | `length`, `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `concat`, `substring`, `replace`, `reverse`, `contains`, `startswith`, `endswith` |
+| **Matemáticas**  | `abs`, `round`, `floor`, `ceil`, `exp`, `log`, `log10`, `sqrt`, `pow`, `sin`, `cos`, `tan`                                              |
+| **Fecha y hora** | `year`, `month`, `day`, `hour`, `minute`, `second`, `dayofweek`, `dayofyear`, `quarter`                                                 |
+| **Agregación**   | `sum`, `avg`, `min`, `max`, `count`, `std`, `var`, `median`                                                                             |
+
+Para las funciones coincidentes, el motor se selecciona en función de:
+
+1. La configuración explícita de la función (si se ha definido)
+2. La configuración global de execution&#95;engine
+3. La selección automática según el contexto
+
+***
+
+<div id="chdb-only">
+  ## Funciones solo de chdb
+</div>
+
+Algunas funciones solo están disponibles a través de ClickHouse:
+
+| Categoría       | Funciones                                                                          |
+| --------------- | ---------------------------------------------------------------------------------- |
+| **Array**       | `arraySum`, `arrayAvg`, `arraySort`, `arrayDistinct`, `groupArray`, `arrayElement` |
+| **JSON**        | `JSONExtractString`, `JSONExtractInt`, `JSONExtractFloat`, `JSONHas`               |
+| **URL**         | `domain`, `path`, `protocol`, `extractURLParameter`                                |
+| **IP**          | `IPv4StringToNum`, `IPv4NumToString`, `isIPv4String`                               |
+| **Geo**         | `greatCircleDistance`, `geoDistance`, `geoToH3`                                    |
+| **Hash**        | `cityHash64`, `xxHash64`, `sipHash64`, `MD5`, `SHA256`                             |
+| **Condicional** | `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`                                      |
+
+Estas funciones usan automáticamente el motor chdb, independientemente de la configuración.
+
+***
+
+<div id="pandas-only">
+  ## Funciones exclusivas de pandas
+</div>
+
+Algunas funciones solo están disponibles a través de pandas:
+
+| Categoría          | Funciones                                                           |
+| ------------------ | ------------------------------------------------------------------- |
+| **Aplicar**        | Funciones lambda personalizadas, funciones definidas por el usuario |
+| **Pivot complejo** | Tablas dinámicas con agregaciones personalizadas                    |
+| **Stack/Unstack**  | Operaciones complejas de reorganización                             |
+| **Interpolate**    | Métodos de interpolación de series temporales                       |
+
+Estas funciones usan automáticamente el motor de pandas, independientemente de la configuración.
+
+***
+
+<div id="dtype-correction">
+  ## Corrección de dtype
+</div>
+
+Configura cómo DataStore corrige los tipos de datos entre motores.
+
+<div id="correction-levels">
+  ### Niveles de corrección
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# Sin corrección
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Solo tipos críticos (manejo de NULL, booleano)
+config.set_correction_level(CorrectionLevel.CRITICAL)
+
+# Alta prioridad (predeterminado) - discrepancias de tipos comunes
+config.set_correction_level(CorrectionLevel.HIGH)
+
+# Medio - corrección más agresiva
+config.set_correction_level(CorrectionLevel.MEDIUM)
+
+# Todos - corregir todos los tipos posibles
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+<div id="level-details">
+  ### Detalles del nivel de corrección
+</div>
+
+| Nivel                   | Descripción               | Tipos corregidos                                                      |
+| ----------------------- | ------------------------- | --------------------------------------------------------------------- |
+| `NONE`                  | Sin corrección automática | Ninguno                                                               |
+| `CRITICAL`              | Correcciones esenciales   | Manejo de NULL, conversión de valores booleanos                       |
+| `HIGH` (predeterminado) | Correcciones habituales   | Precisión de enteros/flotantes, fecha y hora, codificación de cadenas |
+| `MEDIUM`                | Más correcciones          | Precisión decimal, manejo de zonas horarias                           |
+| `ALL`                   | Corrección máxima         | Todas las diferencias de tipos                                        |
+
+<div id="when-correction">
+  ### Cuando es necesario corregir los tipos
+</div>
+
+Las diferencias entre tipos pueden producirse cuando:
+
+1. **ClickHouse → pandas**: Distintos tamaños de enteros (Int64 vs int64)
+2. **pandas → ClickHouse**: Objetos de Python convertidos a tipos SQL
+3. **Manejo de NULL**: pandas NA vs ClickHouse NULL
+4. **Boolean**: Distintas representaciones booleanas
+5. **DateTime**: Diferencias de zona horaria
+
+<div id="function-example">
+  ### Ejemplo
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# Modo estricto - espera coincidencias exactas de tipos
+config.set_correction_level(CorrectionLevel.NONE)
+
+# Modo relajado - corrige automáticamente problemas de tipos
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+***
+
+<div id="api">
+  ## API de configuración de funciones
+</div>
+
+<div id="function-config-object">
+  ### Objeto function_config
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# Forzar motor para funciones
+function_config.use_chdb(*function_names)
+function_config.use_pandas(*function_names)
+
+# Establecer preferencia predeterminada
+function_config.prefer_chdb()
+function_config.prefer_pandas()
+
+# Restablecer al valor predeterminado (auto)
+function_config.reset()
+
+# Verificar configuración
+function_config.get_engine('length')  # Devuelve 'chdb', 'pandas' o 'auto'
+```
+
+<div id="per-call">
+  ### Sobrescritura en cada llamada
+</div>
+
+Algunos métodos permiten sobrescribir el motor en cada llamada:
+
+```python
+# Usando el parámetro engine (donde sea compatible)
+ds['result'] = ds['col'].str.upper(engine='pandas')
+```
+
+***
+
+<div id="best-practices">
+  ## Buenas prácticas
+</div>
+
+<div id="start-with-defaults">
+  ### 1. Empiece por los valores predeterminados
+</div>
+
+```python
+# Usar el modo automático, dejar que DataStore decida
+config.use_auto()
+```
+
+<div id="configure-for-specific-workloads">
+  ### 2. Configurar para cargas de trabajo específicas
+</div>
+
+```python
+# Para procesamiento de cadenas optimizado para ClickHouse
+function_config.use_chdb('length', 'substring', 'concat')
+
+# Para comportamiento de cadenas compatible con pandas
+function_config.use_pandas('upper', 'lower')
+```
+
+<div id="use-appropriate-correction-level">
+  ### 3. Usar el nivel de corrección adecuado
+</div>
+
+```python
+# Desarrollo: más permisivo
+config.set_correction_level(CorrectionLevel.ALL)
+
+# Producción: más estricto
+config.set_correction_level(CorrectionLevel.HIGH)
+```
+
+<div id="test-both-engines">
+  ### 4. Pruebe ambos motores
+</div>
+
+```python
+# Probar con chdb
+config.use_chdb()
+result_chdb = process_data()
+
+# Probar con pandas
+config.use_pandas()
+result_pandas = process_data()
+
+# Comparar resultados
+assert result_chdb.equals(result_pandas)
+```

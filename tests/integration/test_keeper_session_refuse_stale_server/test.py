@@ -70,6 +70,7 @@ def test_session_refused_on_stale_keeper(started_cluster):
         )
     started_cluster.stop_zookeeper_nodes(ZOOKEEPER_CONTAINERS)
     started_cluster.start_zookeeper_nodes(ZOOKEEPER_CONTAINERS)
+    started_cluster.wait_zookeeper_to_start()
 
     # all the connection attempts should fail because keeper client's last_zxid_seen is larger than the server's
     error = node.query_and_get_error(f"CREATE DATABASE {t2} ENGINE = Replicated('/clickhouse/databases/{t2}', 's1', 'r1')")

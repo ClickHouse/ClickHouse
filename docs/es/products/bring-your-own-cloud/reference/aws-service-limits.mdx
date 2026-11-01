@@ -1,0 +1,56 @@
+---
+title: 'Gestión de los límites de servicio y las cuotas de AWS'
+slug: /cloud/reference/byoc/aws-service-limits
+sidebarTitle: 'Límites de servicio y cuotas de AWS'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'cuotas de servicio', 'límites de servicio', 'EC2', 'EKS', 'VPC', 'EBS']
+description: 'Cuotas de servicio de AWS que debe verificar antes del onboarding de BYOC, cómo solicitar aumentos y qué supervisar a medida que los servicios escalan'
+doc_type: 'reference'
+---
+
+Una implementación exitosa de BYOC depende de contar con cuotas de servicio de AWS suficientes (antes llamadas *límites de servicio*) en su cuenta de AWS. AWS aplica cuotas predeterminadas por región a la mayoría de los servicios. Muchos de estos valores predeterminados están por debajo de lo que necesita una implementación de BYOC en producción, especialmente en cuentas de AWS creadas recientemente o con poco uso.
+
+Esta página ofrece una lista de comprobación de cuotas previa a la implementación. Supervise su uso y trabaje directamente con el proveedor de servicios en la nube para solicitar aumentos de cuota.
+
+<div id="pre-deployment-quota-checklist">
+  ## Lista de comprobación de cuotas previa al despliegue
+</div>
+
+Antes de iniciar el onboarding de BYOC, verifique las siguientes cuotas en la región de AWS donde tiene previsto desplegar. Las cuotas se aplican por región y por cuenta.
+
+<div id="required-quotas">
+  ### QUOTAS necesarias
+</div>
+
+| Servicio                   | Nombre de la QUOTA                                                     | Requisito de BYOC                                                                                                                                                                  | Predeterminado                          | Acción                                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **EC2**                    | instancias estándar On-Demand en ejecución (A, C, D, H, I, M, R, T, Z) | ≥ vCPU pico de su nivel de servicio × 1.5 (holgura para el escalado automático y las actualizaciones MBB) + 100 núcleos de vCPU para las cargas de trabajo del sistema y de Keeper | A menudo, 32–256 vCPU en cuentas nuevas | **Solicite un aumento** para cumplir el requisito de BYOC                                                             |
+| **EC2 (VPC)**              | VPC por Región                                                         | ≥ 1 (BYOC crea 1 VPC dedicada)                                                                                                                                                     | 5                                       | Verifique que haya disponibilidad                                                                                     |
+| **EC2 (VPC)**              | IP elásticas por Región                                                | ≥ 3 (una por AZ para gateway NAT)                                                                                                                                                  | 5                                       | Verifique que haya disponibilidad. Solicite un aumento si ejecuta varias implementaciones de BYOC en la misma Región. |
+| **EC2 (VPC)**              | gateways NAT por AZ                                                    | ≥ 1                                                                                                                                                                                | 5                                       | Verifique que haya disponibilidad                                                                                     |
+| **EC2 (VPC)**              | gateways de Internet por Región                                        | ≥ 1                                                                                                                                                                                | 5                                       | Verifique que haya disponibilidad                                                                                     |
+| **EC2 (VPC)**              | subredes por VPC                                                       | ≥ 6 (3 públicas + 3 privadas)                                                                                                                                                      | 200                                     | Ninguna acción                                                                                                        |
+| **EC2 (VPC)**              | grupos de seguridad por VPC                                            | ≥ 10                                                                                                                                                                               | 2,500                                   | Ninguna acción                                                                                                        |
+| **EKS**                    | clústeres por Región                                                   | ≥ 1                                                                                                                                                                                | 100                                     | Ninguna acción                                                                                                        |
+| **EKS**                    | grupos de nodos administrados por clúster                              | ≥ 4                                                                                                                                                                                | 30                                      | Ninguna acción                                                                                                        |
+| **EKS**                    | nodos por grupo de nodos administrado                                  | ≥ número pico de nodos para su nivel de servicio                                                                                                                                   | 450                                     | Ninguna acción                                                                                                        |
+| **S3**                     | buckets por cuenta                                                     | ≥ 4 (datos, copia de seguridad, facturación, monitorización)                                                                                                                       | 100 (se admiten aumentos hasta 1,000)   | Verifique la holgura para otras cargas de trabajo                                                                     |
+| **EBS**                    | almacenamiento para SSD de uso general (gp3)                           | ≥ pico de logs de ClickHouse + volumen del SO × número de nodos                                                                                                                    | 50 TiB                                  | Verifique que haya disponibilidad                                                                                     |
+| **Elastic Load Balancing** | balanceadores de carga de red por Región                               | ≥ 1 por servicio de ClickHouse                                                                                                                                                     | 50                                      | Verifique que haya disponibilidad                                                                                     |
+| **CloudWatch Logs**        | grupos de logs por Región                                              | ≥ 5                                                                                                                                                                                | 1,000,000                               | Ninguna acción                                                                                                        |
+
+<div id="optional-feature-quotas">
+  ### QUOTAS para verificar si las funciones opcionales están habilitadas
+</div>
+
+| Función habilitada | Servicio  | QUOTA                                                                                                                                                               |
+| ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AWS PrivateLink    | EC2 (VPC) | Servicios de endpoint de VPC por región (20 de forma predeterminada) — solicite un aumento por cada servicio con PrivateLink habilitado usado de forma concurrente. |
+| Peering de VPC     | EC2 (VPC) | Conexiones activas de peering de VPC por VPC (50 de forma predeterminada).                                                                                          |
+
+<div id="related">
+  ## Artículos relacionados
+</div>
+
+* [Servicios facturables de AWS](/es/products/bring-your-own-cloud/reference/billable-aws-services) — inventario completo de los servicios de AWS que aprovisiona BYOC
+* [Modelo de costos de BYOC (AWS)](/es/products/bring-your-own-cloud/reference/cost-model-aws) — cómo se combinan los cargos de ClickHouse Cloud y AWS
+* [Arquitectura de BYOC](/es/products/bring-your-own-cloud/overview/architecture) — componentes que ClickHouse Cloud implementa en tu cuenta

@@ -23,13 +23,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionULIDStringToDateTime : public IFunction
+class FunctionULIDStringToDateTime final : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;
@@ -49,36 +48,31 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    String getSignatureString() const override
+    {
+        /// `FixedString(26)` encodes the exact ULID byte length, so a wrong-width FixedString is
+        /// rejected during analysis (with ILLEGAL_TYPE_OF_ARGUMENT) rather than only at execution.
+        static_assert(ULID_LENGTH == 26, "the signature string below hardcodes the ULID length");
+        return
+            "(String | FixedString(26), const tz StringOrFixedString) -> DateTime64(3, tz)"
+            " OR (String | FixedString(26)) -> DateTime64(3)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Wrong number of arguments for function {}: should be 1 or 2",
-                getName());
+        /// Validate arity and argument types through the declarative signature first (it also
+        /// enforces the FixedString(26) width now), so e.g. `ULIDStringToDateTime(1, 2)` is rejected
+        /// on its non-string first argument with ILLEGAL_TYPE_OF_ARGUMENT (and a zero-argument call
+        /// with NUMBER_OF_ARGUMENTS_DOESNT_MATCH) before we inspect the optional timezone argument.
+        /// This also computes the result type and guarantees `arguments` is non-empty below.
+        auto result_type = IFunction::getReturnTypeImpl(arguments);
 
-        const auto * arg_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].type.get());
-        const auto * arg_string = checkAndGetDataType<DataTypeString>(arguments[0].type.get());
-
-        if (!arg_string && !(arg_fixed_string && arg_fixed_string->getN() == ULID_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Must be String or FixedString(26).",
-                arguments[0].type->getName(),
-                getName());
-
-        String timezone;
-        if (arguments.size() == 2)
-        {
-            timezone = extractTimeZoneNameFromColumn(arguments[1].column.get(), arguments[1].name);
-
-            if (timezone.empty())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
-                    getName());
-        }
-
-        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE, timezone);
+        /// Preserve the legacy rejection of an explicitly provided empty timezone; the DSL
+        /// `DateTime64(3, tz)` type function silently falls back to the server timezone when tz == ''.
+        if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports a 2nd argument (optional) that must be a valid time zone", getName());
+        return result_type;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -147,6 +141,18 @@ public:
 
     static DateTime64 decode(const UInt8 * data)
     {
+        /// Validate that all bytes are ASCII before passing to ulid_decode,
+        /// which uses char values as array indices. Signed chars with values
+        /// >= 128 would produce negative indices and out-of-bounds reads.
+        for (size_t i = 0; i < ULID_LENGTH; ++i)
+        {
+            if (data[i] >= 128)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse ULID: non-ASCII character at position {}",
+                    i);
+        }
+
         unsigned char buffer[16];
         int ret = ulid_decode(buffer, reinterpret_cast<const char *>(data));
         if (ret != 0)
@@ -171,16 +177,16 @@ public:
 REGISTER_FUNCTION(ULIDStringToDateTime)
 {
     /// ULIDStringToDateTime documentation
-    FunctionDocumentation::Description description_ULIDStringToDateTime = R"(
-This function extracts the timestamp from a [ULID]((https://github.com/ulid/spec).
+    FunctionDocumentation::Description description = R"(
+This function extracts the timestamp from a [ULID](https://github.com/ulid/spec).
     )";
-    FunctionDocumentation::Syntax syntax_ULIDStringToDateTime = "ULIDStringToDateTime(ulid[, timezone])";
-    FunctionDocumentation::Arguments arguments_ULIDStringToDateTime = {
+    FunctionDocumentation::Syntax syntax = "ULIDStringToDateTime(ulid[, timezone])";
+    FunctionDocumentation::Arguments arguments = {
         {"ulid", "Input ULID.", {"String", "FixedString(26)"}},
         {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ULIDStringToDateTime = {"Timestamp with milliseconds precision.", {"DateTime64(3)"}};
-    FunctionDocumentation::Examples examples_ULIDStringToDateTime = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Timestamp with milliseconds precision.", {"DateTime64(3)"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -193,11 +199,11 @@ SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_ULIDStringToDateTime = {23, 3};
-    FunctionDocumentation::Category category_ULIDStringToDateTime = FunctionDocumentation::Category::ULID;
-    FunctionDocumentation documentation_ULIDStringToDateTime = {description_ULIDStringToDateTime, syntax_ULIDStringToDateTime, arguments_ULIDStringToDateTime, returned_value_ULIDStringToDateTime, examples_ULIDStringToDateTime, introduced_in_ULIDStringToDateTime, category_ULIDStringToDateTime};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::ULID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionULIDStringToDateTime>(documentation_ULIDStringToDateTime);
+    factory.registerFunction<FunctionULIDStringToDateTime>(documentation);
 }
 
 }

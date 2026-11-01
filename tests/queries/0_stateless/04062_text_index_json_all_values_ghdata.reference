@@ -1,0 +1,127 @@
+-- Point lookup by string value
+SELECT count() FROM ghdata WHERE data.actor.login = 'dependabot[bot]'
+33
+Condition: (mode: All; tokens: ["bot", "dependabot"])
+Parts: 1/1
+Granules: 25/50
+-- Point lookup by numeric value
+SELECT count() FROM ghdata WHERE data.repo.id = 323586805
+3
+Condition: (mode: All; tokens: ["323586805"])
+Parts: 1/1
+Granules: 2/50
+-- Equality on event type
+SELECT count() FROM ghdata WHERE data.type = 'WatchEvent'
+282
+Condition: (mode: All; tokens: ["watchevent"])
+Parts: 1/1
+Granules: 50/50
+-- Equality on nested path
+SELECT count() FROM ghdata WHERE data.payload.action = 'opened'
+227
+Condition: (mode: All; tokens: ["opened"])
+Parts: 1/1
+Granules: 50/50
+-- LIKE pattern matching (index cannot help, all granules scanned)
+SELECT count() FROM ghdata WHERE data.repo.name LIKE '%python%'
+36
+Condition: (mode: All; tokens: [])
+Parts: 1/1
+Granules: 50/50
+-- hasToken on string field
+SELECT count() FROM ghdata WHERE hasToken(data.actor.login, 'dependabot')
+37
+Condition: (mode: All; tokens: ["dependabot"])
+Parts: 1/1
+Granules: 28/50
+-- hasAllTokens on string field with cast
+SELECT count() FROM ghdata WHERE hasAllTokens(data.payload.pull_request.title::String, 'Fix spelling')
+4
+Condition: (mode: All; tokens: ["fix", "spelling"])
+Parts: 1/1
+Granules: 4/50
+-- hasAnyTokens on string field with cast
+SELECT count() FROM ghdata WHERE hasAnyTokens(data.payload.pull_request.title::String, ['Fix', 'fix'])
+18
+Condition: (mode: Any; tokens: ["Fix", "fix"])
+Parts: 1/1
+Granules: 50/50
+-- IN operator on string field (rare values, granules should be skipped)
+SELECT count() FROM ghdata WHERE data.type::String IN ('MemberEvent', 'ForkEvent')
+112
+Condition: (mode: Any; tokens: ["forkevent", "memberevent"])
+Parts: 1/1
+Granules: 45/50
+-- IN operator on nested path (rare values, granules should be skipped)
+SELECT count() FROM ghdata WHERE data.payload.action::String IN ('reopened', 'published')
+42
+Condition: (mode: Any; tokens: ["published", "reopened"])
+Parts: 1/1
+Granules: 32/50
+-- Combined conditions on different paths
+SELECT count() FROM ghdata WHERE data.type = 'WatchEvent' AND data.repo.name = 'leonardomso/33-js-concepts'
+3
+Condition: (mode: All; tokens: ["33", "concepts", "js", "leonardomso", "watchevent"])
+Parts: 1/1
+Granules: 3/50
+-- Schema-agnostic search with JSONAllValues and hasAllTokens
+SELECT count() FROM ghdata WHERE hasAllTokens(JSONAllValues(data), ['football', 'team'])
+3
+Condition: (mode: All; tokens: ["football", "team"])
+Parts: 1/1
+Granules: 2/50
+-- Schema-agnostic search with JSONAllValues and hasAnyTokens
+SELECT count() FROM ghdata WHERE hasAnyTokens(JSONAllValues(data), ['football', 'calculator'])
+11
+Condition: (mode: Any; tokens: ["calculator", "football"])
+Parts: 1/1
+Granules: 7/50
+-- Array: has() on nested array of labels in pull requests
+SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'bug')
+3
+Condition: (mode: All; tokens: ["bug"])
+Parts: 1/1
+Granules: 42/50
+-- Array: has() on nested array of labels in issues
+SELECT count() FROM ghdata WHERE has(data.payload.issue.labels[].name::Array(String), 'bug')
+14
+Condition: (mode: All; tokens: ["bug"])
+Parts: 1/1
+Granules: 42/50
+-- Array: has() with a less common label
+SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'enhancement')
+2
+Condition: (mode: All; tokens: ["enhancement"])
+Parts: 1/1
+Granules: 25/50
+-- Array: equality on array subcolumn
+SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']
+5
+Condition: (mode: All; tokens: ["dependencies", "submodules"])
+Parts: 1/1
+Granules: 3/50
+-- SELECT JSONAllValues with filter returning 1 row
+SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id::UInt64 = 14690746673
+310	1997184657549209849	310	15450791830078104110
+Condition: (mode: All; tokens: ["14690746673"])
+Parts: 1/1
+Granules: 1/50
+-- Verify correctness: results match with index disabled
+33
+3
+282
+227
+36
+37
+4
+18
+112
+42
+3
+3
+11
+3
+14
+2
+5
+310	1997184657549209849	310	15450791830078104110

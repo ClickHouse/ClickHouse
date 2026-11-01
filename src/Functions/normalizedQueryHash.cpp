@@ -16,16 +16,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
 {
 
-class FunctionNormalizedQueryHash : public IFunction
+class FunctionNormalizedQueryHash final : public IFunction
 {
 private:
     bool keep_names;
+    bool unordered;
 
     void process(
         const ColumnString::Chars & data,
@@ -39,18 +39,19 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            res_data[i] = normalizedQueryHash(
-                reinterpret_cast<const char *>(&data[prev_src_offset]),
-                reinterpret_cast<const char *>(&data[curr_src_offset]),
-                keep_names);
+            const char * begin = reinterpret_cast<const char *>(&data[prev_src_offset]);
+            const char * end = reinterpret_cast<const char *>(&data[curr_src_offset]);
+            res_data[i] = unordered ? normalizedQueryHashUnordered(begin, end) : normalizedQueryHash(begin, end, keep_names);
             prev_src_offset = curr_src_offset;
         }
     }
 public:
-    explicit FunctionNormalizedQueryHash(bool keep_names_) : keep_names(keep_names_) {}
+    explicit FunctionNormalizedQueryHash(bool keep_names_, bool unordered_ = false) : keep_names(keep_names_), unordered(unordered_) {}
 
     String getName() const override
     {
+        if (unordered)
+            return "normalizedQueryHashUnordered";
         return keep_names ? "normalizedQueryHashKeepNames" : "normalizedQueryHash";
     }
 
@@ -59,13 +60,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt64>();
-    }
+    String getSignatureString() const override { return "(String) -> UInt64"; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
@@ -75,6 +70,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -121,7 +120,7 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
     };
     FunctionDocumentation::IntroducedIn normalizedQueryHash_introduced_in = {20, 8};
     FunctionDocumentation::Category normalizedQueryHash_category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation normalizedQueryHash_documentation = {normalizedQueryHash_description, normalizedQueryHash_syntax, normalizedQueryHash_arguments, normalizedQueryHash_returned_value, normalizedQueryHash_examples, normalizedQueryHash_introduced_in, normalizedQueryHash_category};
+    FunctionDocumentation normalizedQueryHash_documentation = {normalizedQueryHash_description, normalizedQueryHash_syntax, normalizedQueryHash_arguments, {}, normalizedQueryHash_returned_value, normalizedQueryHash_examples, normalizedQueryHash_introduced_in, normalizedQueryHash_category};
 
     FunctionDocumentation::Description normalizedQueryHashKeepNames_description = R"(
 Like [`normalizedQueryHash`](#normalizedQueryHash) it returns identical 64 bit hash values without the values of literals for similar queries, but it does not replace complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with a placeholder before hashing.
@@ -151,10 +150,44 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
     };
     FunctionDocumentation::IntroducedIn normalizedQueryHashKeepNames_introduced_in = {21, 2};
     FunctionDocumentation::Category normalizedQueryHashKeepNames_category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation normalizedQueryHashKeepNames_documentation = {normalizedQueryHashKeepNames_description, normalizedQueryHashKeepNames_syntax, normalizedQueryHashKeepNames_arguments, normalizedQueryHashKeepNames_returned_value, normalizedQueryHashKeepNames_examples, normalizedQueryHashKeepNames_introduced_in, normalizedQueryHashKeepNames_category};
+    FunctionDocumentation normalizedQueryHashKeepNames_documentation = {normalizedQueryHashKeepNames_description, normalizedQueryHashKeepNames_syntax, normalizedQueryHashKeepNames_arguments, {}, normalizedQueryHashKeepNames_returned_value, normalizedQueryHashKeepNames_examples, normalizedQueryHashKeepNames_introduced_in, normalizedQueryHashKeepNames_category};
 
     factory.registerFunction("normalizedQueryHashKeepNames", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(true); }, normalizedQueryHashKeepNames_documentation);
     factory.registerFunction("normalizedQueryHash", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(false); }, normalizedQueryHash_documentation);
+
+    FunctionDocumentation::Description normalizedQueryHashUnordered_description = R"(
+Like [`normalizedQueryHash`](#normalizedQueryHash) it returns identical 64 bit hash values without the values of literals for similar queries,
+but it combines the hashes of the tokens with a sum, so the order of the tokens does not matter at all.
+`SELECT a, b FROM t` and `SELECT b, a FROM t` get the same hash.
+
+The query is not parsed, only split into tokens, so the function is lossy on purpose: any reordering of the same tokens gets the same hash,
+including ones that change the meaning (`a - b` and `b - a`) or that are not valid SQL at all (`SELECT 1` and `1 SELECT`).
+Use it to group a workload by shape, for example over `system.query_log`, and never to decide that two queries may be substituted for each other.
+It never throws: text that does not tokenize cleanly is hashed as well.
+    )";
+    FunctionDocumentation::Syntax normalizedQueryHashUnordered_syntax = "normalizedQueryHashUnordered(x)";
+    FunctionDocumentation::Arguments normalizedQueryHashUnordered_arguments = {
+        {"x", "Sequence of characters.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue normalizedQueryHashUnordered_returned_value = {"Returns a 64 bit hash value.", {"UInt64"}};
+    FunctionDocumentation::Examples normalizedQueryHashUnordered_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normalizedQueryHashUnordered('SELECT b, a FROM t WHERE x = 2') AS res
+        )",
+        R"(
+┌─res─┐
+│   1 │
+└─────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn normalizedQueryHashUnordered_introduced_in = {26, 10};
+    FunctionDocumentation::Category normalizedQueryHashUnordered_category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation normalizedQueryHashUnordered_documentation = {normalizedQueryHashUnordered_description, normalizedQueryHashUnordered_syntax, normalizedQueryHashUnordered_arguments, {}, normalizedQueryHashUnordered_returned_value, normalizedQueryHashUnordered_examples, normalizedQueryHashUnordered_introduced_in, normalizedQueryHashUnordered_category};
+
+    factory.registerFunction("normalizedQueryHashUnordered", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(false, true); }, normalizedQueryHashUnordered_documentation);
 }
 
 }

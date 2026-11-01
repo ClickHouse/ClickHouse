@@ -1,0 +1,203 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-cloud-v1
+title: 'عمليات النشر السحابية عبر Helm ‏(v1.x)'
+description: 'إعدادات خاصة بالسحابة لنشر ClickStack على GKE وEKS وAKS باستخدام مخطط Helm ‏v1.x'
+doc_type: 'guide'
+keywords: ['ClickStack GKE', 'ClickStack EKS', 'ClickStack AKS', 'نشر Kubernetes السحابي', 'نشر الإنتاج']
+---
+
+<Warning>
+  **مهمل — مخطط v1.x**
+
+  توثّق هذه الصفحة عمليات النشر السحابية لمخطط Helm **v1.x** ذي القوالب المضمّنة، وهو الآن في وضع الصيانة. للاطلاع على مخطط v2.x، راجع [عمليات النشر السحابية عبر Helm](/ar/clickstack/deployment/helm-cloud). وللترحيل، راجع [دليل الترقية](/ar/clickstack/deployment/helm-upgrade).
+</Warning>
+
+يغطي هذا الدليل الإعدادات الخاصة بالسحابة لنشر ClickStack على خدمات Kubernetes المُدارة. للتثبيت الأساسي، راجع [دليل النشر الأساسي باستخدام Helm](/ar/clickstack/deployment/helm-v1).
+
+<div id="google-kubernetes-engine-gke">
+  ## Google Kubernetes Engine (GKE)
+</div>
+
+عند النشر على GKE، قد تحتاج إلى تعديل بعض القيم بسبب سلوك الشبكات الخاص بالسحابة.
+
+<div id="loadbalancer-dns-resolution-issue">
+  ### مشكلة في حل أسماء DNS لـ LoadBalancer
+</div>
+
+قد تتسبب خدمة LoadBalancer في GKE في حدوث مشكلات داخلية في حل أسماء DNS، بحيث يُوجَّه الاتصال بين الكبسولات إلى عناوين IP خارجية بدلًا من أن يبقى داخل شبكة العنقود. يؤثر ذلك تحديدًا في اتصال OTel collector بـ OpAMP server.
+
+**الأعراض:**
+
+* سجلات OTel collector تعرض أخطاء &quot;connection refused&quot; مع عناوين IP الخاصة بالعنقود
+* حالات فشل في اتصال OpAMP مثل: `dial tcp 34.118.227.30:4320: connect: connection refused`
+
+**الحل:**
+
+استخدم الاسم المؤهل بالكامل للنطاق (FQDN) في عنوان URL الخاص بـ OpAMP server:
+
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set hyperdx.frontendUrl="http://your-external-ip-or-domain.com" \
+  --set otel.opampServerUrl="http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+```
+
+<div id="other-gke-considerations">
+  ### اعتبارات أخرى تتعلق بـ GKE
+</div>
+
+```yaml
+# values-gke.yaml
+hyperdx:
+  frontendUrl: "http://34.123.61.99"  # Use your LoadBalancer external IP
+
+otel:
+  opampServerUrl: "http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+
+# Adjust for GKE pod networking if needed
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.8.0.0/16"  # GKE commonly uses this range
+      - "10.0.0.0/8"   # Fallback for other configurations
+```
+
+<div id="amazon-eks">
+  ## Amazon EKS
+</div>
+
+في عمليات نشر EKS، راعِ هذه التكوينات الشائعة:
+
+```yaml
+# values-eks.yaml
+hyperdx:
+  frontendUrl: "http://your-alb-domain.com"
+
+# EKS typically uses these pod CIDRs
+clickhouse:
+  config:
+    clusterCidrs:
+      - "192.168.0.0/16"
+      - "10.0.0.0/8"
+
+# Enable ingress for production
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+```
+
+<div id="azure-aks">
+  ## Azure AKS
+</div>
+
+بالنسبة إلى عمليات النشر على AKS:
+
+```yaml
+# values-aks.yaml
+hyperdx:
+  frontendUrl: "http://your-azure-lb.com"
+
+# AKS pod networking
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.244.0.0/16"  # Common AKS pod CIDR
+      - "10.0.0.0/8"
+```
+
+<div id="production-cloud-deployment-checklist">
+  ## قائمة التحقق لنشر Cloud في بيئة الإنتاج
+</div>
+
+قبل نشر ClickStack في بيئة الإنتاج على أي موفّر سحابي:
+
+* [ ] اضبط `frontendUrl` بشكل صحيح باستخدام نطاقك أو عنوان IP الخارجي
+* [ ] أعدّ مورد Ingress مع TLS للوصول عبر HTTPS
+* [ ] استبدل قيمة `otel.opampServerUrl` باستخدام FQDN إذا واجهت مشاكل في الاتصال (خصوصًا على GKE)
+* [ ] عدّل `clickhouse.config.clusterCidrs` ليتوافق مع CIDR الخاص بشبكة الـpod لديك
+* [ ] اضبط التخزين الدائم لأعباء العمل في بيئة الإنتاج
+* [ ] عيّن طلبات الموارد وحدودها بما يناسب
+* [ ] فعّل المراقبة والتنبيهات
+* [ ] اضبط النسخ الاحتياطي والتعافي من الكوارث
+* [ ] طبّق إدارة الأسرار بالشكل المناسب
+
+<div id="production-best-practices">
+  ## أفضل الممارسات لبيئة الإنتاج
+</div>
+
+<div id="resource-management">
+  ### إدارة الموارد
+</div>
+
+```yaml
+hyperdx:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+```
+
+<div id="high-availability">
+  ### الإتاحة العالية
+</div>
+
+```yaml
+hyperdx:
+  replicaCount: 3
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - clickstack
+            topologyKey: kubernetes.io/hostname
+```
+
+<div id="persistent-storage">
+  ### التخزين الدائم
+</div>
+
+تأكّد من تهيئة وحدات التخزين الدائمة للاحتفاظ بالبيانات:
+
+```yaml
+clickhouse:
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "fast-ssd"  # Use cloud-specific storage class
+```
+
+**فئات التخزين الخاصة بكل بيئة سحابية:**
+
+* **GKE**: `pd-ssd` أو `pd-balanced`
+* **EKS**: `gp3` أو `io2`
+* **AKS**: `managed-premium` أو `managed-csi`
+
+<div id="browser-compatibility-notes">
+  ### ملاحظات حول توافق المتصفحات
+</div>
+
+في عمليات النشر التي تستخدم HTTP فقط (للتطوير/الاختبار)، قد تظهر بعض المتصفحات أخطاء في crypto API بسبب متطلبات السياق الآمن. أما في عمليات النشر في بيئة الإنتاج، فاستخدم دائمًا HTTPS مع شهادات TLS مناسبة من خلال إعداد Ingress.
+
+راجع [إعداد Ingress](/ar/clickstack/deployment/helm-configuration-v1#ingress-setup) للحصول على إرشادات إعداد TLS.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [دليل التهيئة (v1.x)](/ar/clickstack/deployment/helm-configuration-v1) - مفاتيح API، والأسرار، وIngress
+* [خيارات النشر (v1.x)](/ar/clickstack/deployment/helm-deployment-options-v1) - تهيئة الأنظمة الخارجية
+* [دليل Helm الأساسي (v1.x)](/ar/clickstack/deployment/helm-v1) - التثبيت الأساسي
+* [عمليات النشر السحابية (v2.x)](/ar/clickstack/deployment/helm-cloud) - دليل السحابة للإصدار v2.x
+* [دليل الترقية](/ar/clickstack/deployment/helm-upgrade) - الترحيل من v1.x إلى v2.x

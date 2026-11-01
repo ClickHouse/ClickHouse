@@ -1,0 +1,13 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <max_memory_usage>10000000000</max_memory_usage>
+            <constraints>
+                <max_memory_usage>
+                    <min>5000000000</min>
+                    <max>20000000000</max>
+                </max_memory_usage>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>

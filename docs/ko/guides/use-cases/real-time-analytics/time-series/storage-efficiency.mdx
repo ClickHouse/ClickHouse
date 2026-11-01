@@ -1,0 +1,130 @@
+---
+title: '스토리지 효율성 - 시계열'
+sidebarTitle: '스토리지 효율성'
+description: '시계열 스토리지 효율성 개선'
+slug: /use-cases/time-series/storage-efficiency
+keywords: ['시계열', '스토리지 효율성', '압축', '데이터 보존', 'TTL', '스토리지 최적화', '디스크 사용량']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Wikipedia 통계 데이터셋을 쿼리하는 방법을 살펴보았으니, 이제 ClickHouse에서 이 데이터셋의 스토리지 효율성을 최적화하는 방법에 집중하겠습니다.
+이 섹션에서는 쿼리 성능을 유지하면서 스토리지 사용량을 줄일 수 있는 실용적인 기법을 설명합니다.
+
+<div id="time-series-type-optimization">
+  ## 타입 최적화
+</div>
+
+스토리지 효율성을 높이는 일반적인 방법은 적절한 데이터 타입을 사용하는 것입니다.
+`project` 및 `subproject` 컬럼을 살펴보겠습니다. 이 컬럼은 String 타입이지만, 고유값의 수는 비교적 적습니다:
+
+```sql
+SELECT
+    uniq(project),
+    uniq(subproject)
+FROM wikistat;
+```
+
+```text
+┌─uniq(project)─┬─uniq(subproject)─┐
+│          1332 │              130 │
+└───────────────┴──────────────────┘
+```
+
+즉, 딕셔너리 기반 인코딩을 사용하는 LowCardinality() 데이터 타입을 사용할 수 있습니다. 그러면 ClickHouse는 원래 문자열 값 대신 내부 값 ID를 저장하게 되어, 결과적으로 상당한 저장 공간을 절약할 수 있습니다:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `project` LowCardinality(String),
+MODIFY COLUMN `subproject` LowCardinality(String)
+```
+
+또한 `hits` 컬럼에는 8바이트를 차지하고 최댓값이 비교적 작은 UInt64 유형을 사용했습니다:
+
+```sql
+SELECT max(hits)
+FROM wikistat;
+```
+
+```text
+┌─max(hits)─┐
+│    449017 │
+└───────────┘
+```
+
+이 값을 고려하면, 대신 4바이트만 사용하는 `UInt32`를 사용할 수 있으며, 최대 약 40억까지 저장할 수 있습니다:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `hits` UInt32;
+```
+
+이렇게 하면 메모리에서 이 컬럼의 크기를 최소 절반으로 줄일 수 있습니다. 디스크에서의 크기는 압축으로 인해 변경되지 않는다는 점에 유의하십시오. 다만, 너무 작은 데이터 타입을 선택하지 않도록 주의하십시오!
+
+<div id="time-series-specialized-codecs">
+  ## 특수 코덱
+</div>
+
+시계열과 같은 시계열 데이터를 다룰 때는 특수 코덱을 사용해 스토리지 효율성을 더욱 높일 수 있습니다.
+핵심 개념은 절대값 자체를 저장하는 대신 값 사이의 변화량을 저장하는 것이며, 이렇게 하면 천천히 변하는 데이터를 다룰 때 필요한 공간을 훨씬 줄일 수 있습니다:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `time` CODEC(Delta, ZSTD);
+```
+
+`time` 컬럼에는 Delta 코덱을 사용했으며, 이는 시계열 데이터에 적합합니다.
+
+적절한 정렬 키를 선택하면 디스크 공간도 절약할 수 있습니다.
+일반적으로 경로를 기준으로 필터링하므로 정렬 키에 `path`를 추가합니다.
+이 경우 테이블을 다시 생성해야 합니다.
+
+아래에서 초기 테이블과 최적화된 테이블의 `CREATE` 명령을 확인할 수 있습니다:
+
+```sql
+CREATE TABLE wikistat
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (time);
+```
+
+```sql
+CREATE TABLE optimized_wikistat
+(
+    `time` DateTime CODEC(Delta(4), ZSTD(1)),
+    `project` LowCardinality(String),
+    `subproject` LowCardinality(String),
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (path, time);
+```
+
+그리고 각 테이블의 데이터가 차지하는 공간도 살펴보겠습니다:
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    count() AS parts
+FROM system.parts
+WHERE table LIKE '%wikistat%'
+GROUP BY ALL;
+```
+
+```text
+┌─table──────────────┬─uncompressed─┬─compressed─┬─parts─┐
+│ wikistat           │ 35.28 GiB    │ 12.03 GiB  │     1 │
+│ optimized_wikistat │ 30.31 GiB    │ 2.84 GiB   │     1 │
+└────────────────────┴──────────────┴────────────┴───────┘
+```
+
+최적화된 테이블은 압축하면 차지하는 공간이 4배를 조금 넘게 줄어듭니다.

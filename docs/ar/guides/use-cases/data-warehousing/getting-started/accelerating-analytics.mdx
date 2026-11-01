@@ -1,0 +1,231 @@
+---
+title: 'تسريع التحليلات باستخدام MergeTree'
+sidebarTitle: 'تسريع الاستعلامات'
+slug: /use-cases/data-lake/getting-started/accelerating-analytics
+toc_max_heading_level: 3
+description: 'حمّل البيانات من تنسيقات الجداول المفتوحة إلى جداول ClickHouse MergeTree للحصول على استعلامات تحليلية أسرع بكثير.'
+keywords: ['data lake', 'lakehouse', 'MergeTree', 'تسريع', 'التحليلات', 'inverted index', 'full-text index', 'INSERT INTO SELECT']
+doc_type: 'guide'
+---
+
+في [القسم السابق](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)، قمت بتوصيل ClickHouse بكتالوج بيانات ونفّذت الاستعلام عن تنسيقات الجداول المفتوحة مباشرةً. ورغم أن الاستعلام عن البيانات في مكانها ملائم، فإن تنسيقات الجداول المفتوحة ليست مُحسّنة لأعباء العمل منخفضة زمن الانتقال وعالية التزامن التي تُشغّل لوحات المعلومات والتقارير التشغيلية. ولهذه الحالات، يوفّر تحميل البيانات إلى محرك [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) في ClickHouse أداءً أفضل بكثير.
+
+يوفّر MergeTree عدة مزايا مقارنةً بقراءة تنسيقات الجداول المفتوحة مباشرةً:
+
+* **[الفهرس الأساسي المتناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes)** - يرتّب البيانات على القرص وفقًا لمفتاح محدد، مما يتيح لـ ClickHouse تجاوز نطاقات كبيرة من الصفوف غير ذات الصلة أثناء الاستعلامات.
+* **أنواع بيانات محسّنة** - دعم أصلي لأنواع مثل [JSON](/ar/concepts/best-practices/json-type) و[LowCardinality](/ar/reference/data-types/lowcardinality) و[Enum](/ar/reference/data-types/enum)، مما يتيح تخزينًا أكثر كثافة ومعالجة أسرع.
+* **[فهارس التخطي](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)** و**[فهارس النص الكامل](/ar/reference/engines/table-engines/mergetree-family/textindexes)** - بُنى فهارس ثانوية تتيح لـ ClickHouse تخطي الحبيبات التي لا تطابق شروط التصفية في الاستعلام، وتكون فعّالة بشكل خاص مع أعباء عمل البحث النصي.
+* **عمليات إدراج سريعة مع دمج تلقائي** - صُمم ClickHouse لعمليات الإدراج عالية الإنتاجية، ويقوم تلقائيًا بدمج أجزاء البيانات في الخلفية، على نحو مماثل لعملية compaction في تنسيقات الجداول المفتوحة.
+* **محسّن لعمليات القراءة المتزامنة** - يوفّر تخطيط التخزين العمودي في MergeTree، إلى جانب [طبقات متعددة من التخزين المؤقت](/ar/concepts/features/performance/caches/caches)، دعمًا لأعباء العمل التحليلية في الوقت الفعلي وعالية التزامن، وهو ما لم تُصمم له تنسيقات الجداول المفتوحة.
+
+يوضح هذا الدليل كيفية تحميل البيانات من كتالوج إلى جدول MergeTree باستخدام `INSERT INTO SELECT` للحصول على تحليلات أسرع.
+
+<div id="connect-catalog">
+  ## الاتصال بالكتالوج
+</div>
+
+سنستخدم اتصال Unity Catalog نفسه الوارد في [الدليل السابق](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)، عبر نقطة نهاية REST الخاصة بـ Iceberg:
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+```
+
+<div id="list-tables">
+  ### عرض الجداول
+</div>
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+```
+
+<div id="explore-schema">
+  ### استكشاف المخطط
+</div>
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+يحتوي هذا الجدول على نحو 283 مليون صف من سجلات عمليات تشغيل اختبارات ClickHouse CI، وهي مجموعة بيانات واقعية لاستكشاف الأداء التحليلي.
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 282.63 million
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+<div id="query-lakehouse">
+  ## الاستعلام في جدول بحيرة البيانات
+</div>
+
+لنُجرِ استعلامًا يُصفّي السجلات حسب اسم الخيط ونوع المثيل، ويبحث في نص الرسالة عن الأخطاء، ويجمع النتائج حسب المُسجِّل:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM icebench.`icebench.single_day_log`
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 8.921 sec. Processed 282.63 million rows, 5.42 GB (31.68 million rows/s., 607.26 MB/s.)
+Peak memory usage: 4.35 GiB.
+```
+
+يستغرق الاستعلام ما يقارب **9 ثوانٍ** لأن ClickHouse يضطر إلى إجراء فحص كامل للجدول عبر جميع ملفات Parquet في تخزين الكائنات. ويمكن تحسين الأداء باستخدام التقسيم، لكن أعمدة مثل `logger_name` قد تكون عالية التفرّد بدرجة تجعل تقسيمها بفعالية أمرًا صعبًا. كما لا تتوفر لدينا فهارس مثل [الفهارس النصية](/ar/reference/engines/table-engines/mergetree-family/mergetree#text) لتقليص البيانات بدرجة أكبر. وهنا يتفوّق MergeTree.
+
+<div id="load-data">
+  ## إدخال البيانات إلى MergeTree
+</div>
+
+<div id="create-table">
+  ### أنشئ جدولًا مُحسَّنًا
+</div>
+
+ننشيء جدول MergeTree مع بذل بعض الجهد لتحسين المخطط. لاحظ بعض الاختلافات الرئيسية مقارنةً بمخطط Iceberg:
+
+* **من دون مغلِّفات `Nullable`** - تؤدي إزالة `Nullable` إلى تحسين كفاءة التخزين وأداء الاستعلامات.
+* **`LowCardinality(String)`** في الأعمدة `level` و`instance_type` و`thread_name` و`check_name` - يطبّق ترميزًا قاموسيًا على العمود عندما يكون عدد القيم المميّزة فيه قليلًا، مما يحسّن الضغط ويُسرّع التصفية.
+* **[فهرس النص الكامل](/ar/reference/engines/table-engines/mergetree-family/textindexes)** على العمود `message` - يسرّع عمليات البحث النصي المعتمدة على الرموز مثل `hasToken(message, 'error')`.
+* **مفتاح `ORDER BY`** بالقيمة `(instance_type, thread_name, toStartOfMinute(event_time))` - يرتّب البيانات على القرص بما يتوافق مع أنماط التصفية الشائعة، بحيث يتمكن [الفهرس الأساسي المتناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) من تخطّي الحبيبات غير ذات الصلة.
+
+```sql
+SET enable_full_text_index = 1;
+
+CREATE TABLE single_day_log
+(
+    `pull_request_number` Int64,
+    `commit_sha` String,
+    `check_start_time` DateTime64(6, 'UTC'),
+    `check_name` LowCardinality(String),
+    `instance_type` LowCardinality(String),
+    `instance_id` String,
+    `event_date` Date32,
+    `event_time` DateTime64(6, 'UTC'),
+    `event_time_microseconds` DateTime64(6, 'UTC'),
+    `thread_name` LowCardinality(String),
+    `thread_id` Decimal(20, 0),
+    `level` LowCardinality(String),
+    `query_id` String,
+    `logger_name` String,
+    `message` String,
+    `revision` Int64,
+    `source_file` String,
+    `source_line` Decimal(20, 0),
+    `message_format_string` String,
+    INDEX text_idx(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (instance_type, thread_name, toStartOfMinute(event_time))
+```
+
+<div id="insert-data">
+  ### إدراج البيانات من الكتالوج
+</div>
+
+استخدم `INSERT INTO SELECT` لتحميل نحو 300 مليون صف من جدول بحيرة البيانات إلى جدول ClickHouse لدينا:
+
+```sql
+INSERT INTO single_day_log SELECT * FROM icebench.`icebench.single_day_log`
+```
+
+```response
+282634391 rows in set. Elapsed: 237.680 sec. Processed 282.63 million rows, 5.42 GB (1.19 million rows/s., 22.79 MB/s.)
+Peak memory usage: 18.62 GiB.
+```
+
+<div id="reexecute-query">
+  ## أعد تنفيذ الاستعلام
+</div>
+
+إذا نفّذنا الآن الاستعلام نفسه على جدول MergeTree، فسنلاحظ تحسنًا كبيرًا في الأداء:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM single_day_log
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 0.220 sec. Processed 13.84 million rows, 2.85 GB (62.97 million rows/s., 12.94 GB/s.)
+Peak memory usage: 1.12 GiB.
+```
+
+يكتمل الاستعلام نفسه الآن في **0.22 ثانية** — أي **أسرع بنحو ~40 مرة**. ويعود هذا التحسن إلى تحسينين أساسيين:
+
+* **الفهرس الأساسي المتناثر** - يعني المفتاح `ORDER BY (instance_type, thread_name, ...)` أن ClickHouse يمكنه الانتقال مباشرةً إلى الحبيبات المطابقة لـ `instance_type = 'm6i.4xlarge'` و`thread_name = 'TCPHandler'`، مما يقلل عدد الصفوف المُعالجة من 283 مليونًا إلى 14 مليونًا فقط.
+* **فهرس النص الكامل** - يتيح الفهرس `text_idx` على العمود `message` حلَّ `hasToken(message, 'error')` عبر الفهرس بدلًا من فحص كل سلسلة رسائل، مما يقلل أكثر حجم البيانات التي يحتاج ClickHouse إلى قراءتها.
+
+والنتيجة هي استعلام يمكنه تشغيل لوحة معلومات آنية بكفاءة — وعلى نطاق وزمن استجابة لا يمكن للاستعلام عن ملفات Parquet في تخزين الكائنات مجاراتهما.

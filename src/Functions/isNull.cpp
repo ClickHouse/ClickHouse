@@ -13,22 +13,13 @@
 
 namespace DB
 {
-namespace Setting
+FunctionPtr FunctionIsNull::create(ContextPtr)
 {
-    extern const SettingsBool allow_experimental_analyzer;
-}
-
-FunctionPtr FunctionIsNull::create(ContextPtr context)
-{
-    return std::make_shared<FunctionIsNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+    return std::make_shared<FunctionIsNull>();
 }
 
 ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
 {
-    /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
-    if (!use_analyzer)
-        return nullptr;
-
     /// SELECT arrayFilter(x -> (x IS NULL), []) can trigger `defaultImplementationForNothing()`
     /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
     if (isNothing(result_type))
@@ -44,7 +35,8 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
     return result_type->createColumnConst(1, UInt8(0));
 }
 
-ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
+
+ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
     const ColumnWithTypeAndName & elem = arguments[0];
 
@@ -74,8 +66,13 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
     {
-        /// Merely return the embedded null map.
-        return nullable->getNullMapColumnPtr();
+        /// A null map byte only has to be non-zero to mean NULL, so it cannot be returned as the result.
+        auto res_column = ColumnUInt8::create(input_rows_count);
+        const auto & null_map = nullable->getNullMapData();
+        auto & res_data = res_column->getData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res_data[i] = null_map[i] != 0;
+        return res_column;
     }
 
     /// Since no element is nullable, return a zero-constant column representing
@@ -83,12 +80,27 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
     return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
 }
 
+#if USE_EMBEDDED_COMPILER
+llvm::Value *
+FunctionIsNull::compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const
+{
+    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+    if (arguments[0].type->isNullable())
+    {
+        auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+        return b.CreateSelect(is_null, b.getInt8(1), b.getInt8(0));
+    }
+    else
+        return b.getInt8(0);
+}
+#endif
+
 REGISTER_FUNCTION(IsNull)
 {
     FunctionDocumentation::Description description = R"(
 Checks if the argument is `NULL`.
 
-Also see: operator [`IS NULL`](/sql-reference/operators#is_null).
+Also see: operator [`IS NULL`](/reference/operators#is_null).
     )";
     FunctionDocumentation::Syntax syntax = "isNull(x)";
     FunctionDocumentation::Arguments arguments = {
@@ -120,9 +132,8 @@ SELECT x FROM t_null WHERE isNull(y);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNull>(documentation, FunctionFactory::Case::Insensitive);
 }
-
-}
+};

@@ -16,11 +16,10 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
-        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunction
+    class ExecutableFunctionToModifiedJulianDay final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -101,10 +100,18 @@ namespace DB
         {
             return true;
         }
+
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so the throwing variant must not be executed on the whole dictionary -
+        /// the empty string is not a date and it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override
+        {
+            return nullOnErrors;
+        }
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class FunctionBaseToModifiedJulianDay : public IFunctionBase
+    class FunctionBaseToModifiedJulianDay final : public IFunctionBase
     {
     public:
         explicit FunctionBaseToModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -135,7 +142,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool hasInformationAboutMonotonicity() const override
@@ -145,6 +152,9 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple invalid inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
@@ -154,7 +164,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
+    class ToModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -176,23 +186,13 @@ namespace DB
             return std::make_unique<FunctionBaseToModifiedJulianDay<Name, ToDataType, nullOnErrors>>(argument_types, return_type);
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            if (!isStringOrFixedString(arguments[0]))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
-                    getName());
-            }
-
-            DataTypePtr base_type = std::make_shared<ToDataType>();
+            const String to = ToDataType{}.getName();
             if constexpr (nullOnErrors)
-            {
-                return std::make_shared<DataTypeNullable>(base_type);
-            }
+                return "(StringOrFixedString) -> Nullable(" + to + ")";
             else
-            {
-                return base_type;
-            }
+                return "(StringOrFixedString) -> " + to;
         }
 
         size_t getNumberOfArguments() const override
@@ -202,7 +202,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 
@@ -242,7 +242,7 @@ SELECT toModifiedJulianDay('2020-01-01')
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDay = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_toModifiedJulianDay = {description_toModifiedJulianDay, syntax_toModifiedJulianDay, arguments_toModifiedJulianDay, returned_value_toModifiedJulianDay, examples_toModifiedJulianDay, introduced_in_toModifiedJulianDay, category_toModifiedJulianDay};
+        FunctionDocumentation documentation_toModifiedJulianDay = {description_toModifiedJulianDay, syntax_toModifiedJulianDay, arguments_toModifiedJulianDay, {}, returned_value_toModifiedJulianDay, examples_toModifiedJulianDay, introduced_in_toModifiedJulianDay, category_toModifiedJulianDay};
 
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>(documentation_toModifiedJulianDay);
 
@@ -264,18 +264,18 @@ SELECT toModifiedJulianDayOrNull('2020-01-01');
 SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         )",
             R"(
-┌─toModifiedJu⋯020-01-01')─┐
-│                    58849 │
-└──────────────────────────┘
-┌─toModifiedJu⋯000-00-00')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+┌─toModifiedJulianDayOrNull('0000-00-00')─┐
+│                                    ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation documentation_toModifiedJulianDayOrNull =
-        {description_toModifiedJulianDayOrNull, syntax_toModifiedJulianDayOrNull, arguments_toModifiedJulianDayOrNull, returned_value_toModifiedJulianDayOrNull, examples_toModifiedJulianDayOrNull, introduced_in_toModifiedJulianDayOrNull, category_toModifiedJulianDayOrNull};
+        {description_toModifiedJulianDayOrNull, syntax_toModifiedJulianDayOrNull, arguments_toModifiedJulianDayOrNull, {}, returned_value_toModifiedJulianDayOrNull, examples_toModifiedJulianDayOrNull, introduced_in_toModifiedJulianDayOrNull, category_toModifiedJulianDayOrNull};
 
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>(documentation_toModifiedJulianDayOrNull);
     }

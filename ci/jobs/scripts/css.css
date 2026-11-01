@@ -1,0 +1,132 @@
+/* ClickHouse Coverage Report - Light Theme */
+:root {
+    --bg: #ffffff; --bg2: #f0f0f0; --bg3: #e0e0e0; --border: #ccc;
+    --text: #000; --text2: #333; --text3: #666;
+    --yellow: #a07800; --yellow-bg: #FCFF74;
+    --hi: #0a6c2e; --med: #8a5d00; --lo: #b91c1c;
+    --hi-bg: #c6f6d5; --med-bg: #fef08a; --lo-bg: #fecaca;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { color: var(--text); background: var(--bg); font: 13px/1.5 -apple-system, system-ui, sans-serif; padding: 24px; }
+  a { color: var(--yellow); text-decoration: none; }
+  a:visited { color: #996600; }
+  a:hover { text-decoration: underline; }
+  
+  /* Header */
+  td.title { font: 600 20px -apple-system, system-ui, sans-serif; padding: 16px 0; color: var(--text); }
+  td.headerItem { text-align: right; padding: 4px 12px 4px 0; color: var(--text2); font-weight: 500; white-space: nowrap; }
+  td.headerValue { color: var(--text); font-weight: 500; padding: 4px 0; white-space: nowrap; }
+  td.headerCovTableHead { text-align: center; padding: 6px 10px; color: var(--text3); font: 600 10px -apple-system, system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; }
+  td.headerCovTableEntry { text-align: right; font: 600 13px ui-monospace, 'SF Mono', monospace; padding: 6px 10px; background: var(--bg2); color: var(--text); }
+  td.headerCovTableEntryHi { text-align: right; font: 600 13px ui-monospace, 'SF Mono', monospace; padding: 6px 10px; background: var(--hi-bg); color: var(--hi); }
+  td.headerCovTableEntryMed { text-align: right; font: 600 13px ui-monospace, 'SF Mono', monospace; padding: 6px 10px; background: var(--med-bg); color: var(--med); }
+  td.headerCovTableEntryLo { text-align: right; font: 600 13px ui-monospace, 'SF Mono', monospace; padding: 6px 10px; background: var(--lo-bg); color: var(--lo); }
+  
+  /* Ruler */
+  td.ruler { background: var(--text); height: 2px; }
+  td.ruler img { display: none; }
+  
+  /* Legend */
+  td.headerValueLeg { color: var(--text2); font-size: 12px; padding: 6px 0; }
+  td.headerValueLegL, td.headerValueLegM, td.headerValueLegH { font: 700 10px -apple-system, system-ui, sans-serif; padding: 3px 10px; }
+  td.headerValueLegL { background: #b91c1c; color: #fff; }
+  td.headerValueLegM { background: #a16207; color: #fff; }
+  td.headerValueLegH { background: #0a6c2e; color: #fff; }
+  span.coverLegendCovLo, span.coverLegendCovMed, span.coverLegendCovHi { padding: 3px 10px; font: 700 10px -apple-system, system-ui, sans-serif; margin: 0 4px; }
+  span.coverLegendCovLo { background: #b91c1c; color: #fff; }
+  span.coverLegendCovMed { background: #a16207; color: #fff; }
+  span.coverLegendCovHi { background: #0a6c2e; color: #fff; }
+  
+  /* Table header */
+  td.tableHead { text-align: center; color: #fff; background: var(--text); font: 700 11px -apple-system, system-ui, sans-serif; padding: 10px 14px; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.5px; }
+  span.tableHeadSort { padding-right: 4px; }
+  
+  /* Directory & File rows */
+  td.coverDirectory, td.coverFile { text-align: left; padding: 8px 14px; background: var(--bg); font: 500 12px ui-monospace, 'SF Mono', monospace; border-bottom: 1px solid var(--border); }
+  td.coverDirectory a, td.coverFile a { color: var(--yellow); }
+  td.coverDirectory { background: var(--bg2); }
+  td.coverDirectory a::before { content: "▸ "; color: var(--text3); }
+  td.coverFile a::before { content: "  "; }
+  
+  /* Coverage bar */
+  td.coverBar { padding: 8px 14px; background: var(--bg); border-bottom: 1px solid var(--border); }
+  td.coverBarOutline { background: var(--bg3); display: flex; flex-direction: row; }
+  td.coverBarOutline img { height: 8px !important; display: block; flex-shrink: 0; }
+  
+  /* Coverage percentage */
+  td.coverPerHi, td.coverPerMed, td.coverPerLo { text-align: right; padding: 8px 14px; font: 700 12px ui-monospace, 'SF Mono', monospace; border-bottom: 1px solid var(--border); }
+  td.coverPerHi { background: var(--hi-bg); color: var(--hi); }
+  td.coverPerMed { background: var(--med-bg); color: var(--med); }
+  td.coverPerLo { background: var(--lo-bg); color: var(--lo); }
+  
+  /* Coverage numbers */
+  td.coverNumDflt, td.coverNumHi, td.coverNumMed, td.coverNumLo { text-align: right; padding: 8px 10px; font: 500 11px ui-monospace, 'SF Mono', monospace; background: var(--bg); border-bottom: 1px solid var(--border); color: var(--text2); }
+  td.coverNumHi { background: var(--hi-bg); color: var(--hi); }
+  td.coverNumMed { background: var(--med-bg); color: var(--med); }
+  td.coverNumLo { background: var(--lo-bg); color: var(--lo); }
+  
+  /* Source code */
+  pre.source { font: 12px/1.6 ui-monospace, 'SF Mono', monospace; margin: 0; white-space: pre; tab-size: 4; }
+  pre.sourceHeading { font: 600 12px ui-monospace, 'SF Mono', monospace; margin: 0; padding: 10px 14px; background: var(--bg2); border-left: 3px solid var(--text); }
+  span.lineNum { background: var(--bg2); color: var(--text3); padding: 0 12px; margin-right: 12px; min-width: 54px; display: inline-block; text-align: right; user-select: none; border-right: 1px solid var(--border); }
+  span.coverLegendCov { padding: 2px 8px; background: #c6f6d5; color: #064e1c; }
+  span.coverLegendNoCov { padding: 2px 8px; background: #fecaca; color: #7f1d1d; }
+  
+  /* TLA classes - uncovered (red) */
+  td.tlaUNC, span.tlaUNC, td.tlaBgUNC, span.tlaBgUNC, td.tlaLBC, span.tlaLBC, td.tlaBgLBC, span.tlaBgLBC, td.tlaUIC, span.tlaUIC, td.tlaBgUIC, span.tlaBgUIC, td.tlaUBC, span.tlaUBC, td.tlaBgUBC, span.tlaBgUBC { background: #fecaca !important; color: #7f1d1d; }
+  /* TLA classes - covered (green) */
+  td.tlaGBC, span.tlaGBC, td.tlaBgGBC, span.tlaBgGBC, td.tlaGIC, span.tlaGIC, td.tlaBgGIC, span.tlaBgGIC, td.tlaGNC, span.tlaGNC, td.tlaBgGNC, span.tlaBgGNC, td.tlaCBC, span.tlaCBC, td.tlaBgCBC, span.tlaBgCBC { background: #c6f6d5 !important; color: #064e1c; }
+  /* TLA classes - excluded (grey) */
+  td.tlaEUB, td.tlaECB, td.tlaDUB, td.tlaDCB, span.tlaEUB, span.tlaECB, span.tlaDUB, span.tlaDCB { background: #e0e0e0 !important; color: #555; }
+  
+  /* Function coverage */
+  td.coverFn { text-align: left; padding: 6px 14px; background: var(--bg); font: 11px ui-monospace, 'SF Mono', monospace; border-bottom: 1px solid var(--border); }
+  td.coverFn a { color: var(--yellow); }
+  td.coverFnHi { text-align: right; padding: 6px 14px; background: #c6f6d5; font: 600 11px ui-monospace, 'SF Mono', monospace; color: #064e1c; border-bottom: 1px solid var(--border); }
+  td.coverFnLo { text-align: right; padding: 6px 14px; background: #fecaca; font: 600 11px ui-monospace, 'SF Mono', monospace; color: #7f1d1d; border-bottom: 1px solid var(--border); }
+  td.coverFnAlias { text-align: right; padding: 6px 14px 6px 28px; background: var(--bg2); font: 10px ui-monospace, 'SF Mono', monospace; color: var(--text2); border-bottom: 1px solid var(--border); }
+  td.coverFnAliasLo { background: #fecaca; color: #7f1d1d; }
+  td.coverFnAliasHi { background: var(--bg); color: var(--text2); }
+  
+  /* Footer */
+  td.versionInfo { text-align: center; padding: 20px; color: var(--text3); font-size: 11px; }
+  a.detail:link, a.detail:visited { color: #fff; font-size: 10px; font-weight: 600; padding: 2px 6px; background: var(--text2); }
+  td.footnote { padding: 14px; background: var(--bg2); color: var(--text2); font-size: 11px; border-left: 3px solid var(--text); }
+  
+  /* Owner section */
+  td.ownerName, td.overallOwner { background: var(--bg2); color: var(--text2); padding: 6px 10px; }
+  td.owner_coverBar { background: var(--bg2); padding: 8px 14px; }
+  td.owner_coverPerHi { background: var(--hi-bg); color: var(--hi); text-align: right; padding: 8px 14px; font: 700 12px ui-monospace, 'SF Mono', monospace; }
+  td.owner_coverPerMed { background: var(--med-bg); color: var(--med); text-align: right; padding: 8px 14px; font: 700 12px ui-monospace, 'SF Mono', monospace; }
+  td.owner_coverPerLo { background: var(--lo-bg); color: var(--lo); text-align: right; padding: 8px 14px; font: 700 12px ui-monospace, 'SF Mono', monospace; }
+  td.owner_coverNumHi, td.owner_coverNumMed, td.owner_coverNumLo, td.ownerTla { background: var(--bg2); color: var(--text2); text-align: right; padding: 6px 10px; }
+  
+  /* Test tables */
+  td.testName, td.testPer, td.testNum { padding: 6px 10px; background: var(--bg); border-bottom: 1px solid var(--border); font: 12px ui-monospace, 'SF Mono', monospace; }
+  td.testDescription { padding: 14px; background: var(--bg2); }
+  dt { color: var(--text); font-weight: 600; }
+  td.subTableHeader { font: 600 12px -apple-system, system-ui, sans-serif; padding: 6px; color: var(--text); }
+  
+  /* Misc */
+  span.missBins { background: var(--lo-bg); color: var(--lo); }
+  span.elidedSource { font-style: italic; background: var(--bg2); color: var(--text3); padding: 2px 6px; }
+  span.lineNumWithDelete { background: var(--bg2); color: var(--text3); }
+  
+  /* Table container */
+  center > table { background: var(--bg); border-collapse: collapse; border: 1px solid var(--border); }
+  img[src*="glass.png"] { opacity: 0; height: 1px !important; }
+  
+  /* Hover */
+  tr:hover td.coverDirectory, tr:hover td.coverFile, tr:hover td.coverBar, tr:hover td.coverNumDflt { background: var(--bg2); }
+  
+  /* Header TLA columns */
+  td.headerCovTableHeadUNC, td.headerCovTableHeadLBC, td.headerCovTableHeadUIC, td.headerCovTableHeadUBC { background: #fecaca; color: #7f1d1d; text-align: center; padding: 6px 10px; font: 600 10px -apple-system, system-ui, sans-serif; }
+  td.headerCovTableHeadGBC, td.headerCovTableHeadGIC, td.headerCovTableHeadGNC, td.headerCovTableHeadCBC { background: #c6f6d5; color: #064e1c; text-align: center; padding: 6px 10px; font: 600 10px -apple-system, system-ui, sans-serif; }
+  td.headerCovTableHeadEUB, td.headerCovTableHeadECB, td.headerCovTableHeadDUB, td.headerCovTableHeadDCB { background: #e0e0e0; color: #555; text-align: center; padding: 6px 10px; font: 600 10px -apple-system, system-ui, sans-serif; }
+  a.tlaBgUNC, a.tlaBgLBC, a.tlaBgUIC, a.tlaBgUBC { background: #fecaca; color: #7f1d1d; }
+  a.tlaBgGBC, a.tlaBgGIC, a.tlaBgGNC, a.tlaBgCBC { background: #c6f6d5; color: #064e1c; }
+  a.branchTla:link, a.branchTla:visited, a.mcdcTla:link, a.mcdcTla:visited { color: var(--text); }
+  
+  /* Highlighted line from URL hash (#L362) */
+  :target { background: #fef08a !important; outline: 2px solid #a07800; }
+  :target span.lineNum { background: #FCFF74 !important; color: #000 !important; font-weight: 700; }

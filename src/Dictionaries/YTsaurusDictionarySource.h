@@ -8,6 +8,7 @@
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Core/YTsaurus/YTsaurusClient.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
 namespace DB
@@ -17,7 +18,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
 class YTsarususDictionarySource final : public IDictionarySource
 {
 public:
@@ -25,7 +25,8 @@ public:
         ContextPtr context_,
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-        const Block & sample_block_);
+        const Block & sample_block_,
+        const String & name);
 
     YTsarususDictionarySource(const YTsarususDictionarySource & other);
 
@@ -40,9 +41,9 @@ public:
 
     bool supportsSelectiveLoad() const override;
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     bool isModified() const override { return true; }
 
@@ -59,6 +60,8 @@ private:
     const std::shared_ptr<YTsaurusStorageConfiguration> configuration;
     SharedHeader sample_block;
     YTsaurusClientPtr client;
+    const ThrottlerPtr lookup_throttler;
+    const String name;
 };
 
 }

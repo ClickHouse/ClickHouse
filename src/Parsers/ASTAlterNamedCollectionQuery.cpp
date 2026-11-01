@@ -1,5 +1,6 @@
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HiddenSecret.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/formatSettingName.h>
@@ -9,7 +10,7 @@ namespace DB
 
 ASTPtr ASTAlterNamedCollectionQuery::clone() const
 {
-    return std::make_shared<ASTAlterNamedCollectionQuery>(*this);
+    return make_intrusive<ASTAlterNamedCollectionQuery>(*this);
 }
 
 void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
@@ -34,7 +35,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::Fo
             if (settings.show_secrets)
                 ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
             else
-                ostr << " = '[HIDDEN]'";
+                ostr << " = " << HIDDEN_SECRET_LITERAL;
             auto override_value = overridability.find(change.name);
             if (override_value != overridability.end())
                 ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";

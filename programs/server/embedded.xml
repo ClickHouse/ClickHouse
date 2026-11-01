@@ -14,6 +14,20 @@
 
     <mlock_executable>true</mlock_executable>
 
+    <!-- The `default` single-node cluster, same as in the packaged `config.xml`. Without it a
+         server started with no config file has no clusters at all, so `cluster('default', ...)`,
+         `clusterAllReplicas('default', ...)` and `cluster_for_parallel_replicas = 'default'` all
+         fail with `CLUSTER_DOESNT_EXIST`. -->
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+
     <send_crash_reports>
         <enabled>true</enabled>
         <send_logical_errors>true</send_logical_errors>
@@ -52,6 +66,11 @@
 
             <access_management>1</access_management>
             <named_collection_control>1</named_collection_control>
+
+            <!-- Uncomment to also let this user see the values stored in named collections.
+                 Without it the user does not have the complete set of privileges,
+                 and a query such as `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` will be rejected. -->
+            <!-- <show_named_collections_secrets>1</show_named_collections_secrets> -->
         </default>
     </users>
 
@@ -62,4 +81,25 @@
     <quotas>
         <default />
     </quotas>
+
+    <user_directories>
+        <users_xml>
+            <path>config.xml</path>
+        </users_xml>
+        <local_directory>
+            <path>access/</path>
+        </local_directory>
+    </user_directories>
+
+    <access_control_improvements>
+        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+        <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+        <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+        <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+        <table_engines_require_grant>true</table_engines_require_grant>
+        <enable_read_write_grants>true</enable_read_write_grants>
+        <enable_user_name_access_type>true</enable_user_name_access_type>
+        <throw_on_invalid_replicated_access_entities>true</throw_on_invalid_replicated_access_entities>
+    </access_control_improvements>
 </clickhouse>

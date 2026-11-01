@@ -38,15 +38,15 @@ REGISTER_FUNCTION(hasSubsequenceCaseInsensitiveUTF8)
         "Usage example",
         "SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');",
         R"(
-┌─hasSubsequen⋯ 'СИСТЕМА')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHasSubsequenceCaseInsensitiveUTF8>(documentation, FunctionFactory::Case::Insensitive);
 }

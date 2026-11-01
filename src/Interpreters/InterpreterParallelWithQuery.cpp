@@ -27,6 +27,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsMaxThreads max_threads;
 }
 
@@ -55,6 +56,10 @@ BlockIO InterpreterParallelWithQuery::execute()
                                                    max_threads);
         runner = std::make_unique<ThreadPoolCallbackRunnerLocal<void>>(*thread_pool, ThreadName::PARALLEL_WITH_QUERY);
     }
+
+    /// Signalled before executeSubqueries. Waiting for all of them would block a background query
+    /// on the subqueries which do their work inside IInterpreter::execute(), like DDL.
+    getContext()->onQueryExecutionStarted();
 
     /// Call the interpreters of all the subqueries - it may produce some pipelines which we combine together into
     /// one combined pipeline.
@@ -106,7 +111,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
             };
 
             if (runner)
-                (*runner)(callback);
+                runner->enqueueAndKeepTrack(callback);
             else
                 callback();
         }
@@ -121,7 +126,16 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
-    auto query_io = executeQuery(subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
+    /// The subqueries are nested, hence `internal`, but their text comes from the user, hence `user_initiated`:
+    /// without it the access checks of `CREATE` subqueries would be skipped.
+    auto query_io = executeQuery(
+        subquery->formatWithSecretsOneLine(),
+        subquery_context,
+        QueryFlags{
+            .internal = true,
+            .user_initiated = true,
+            .parse_server_owned_query_without_limits = subquery_context->shouldParseServerOwnedQueryWithoutLimits(),
+        }).second;
 
     auto & pipeline = query_io.pipeline;
 
@@ -170,6 +184,8 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
     try
     {
         CompletedPipelineExecutor executor(combined_pipeline);
+        if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
         executor.execute();
     }
     catch (...)
@@ -188,6 +204,7 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
 }
 
 
+void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

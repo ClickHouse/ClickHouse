@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'C#'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
+slug: /integrations/csharp
+description: 'Los Clients oficiales de C# para conectarse a ClickHouse mediante HTTP o el protocolo TCP nativo.'
+title: 'Clients C# de ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+Los Clients oficiales de C# se conectan a ClickHouse mediante HTTP o el protocolo TCP nativo.
+Ambos Clients se distribuyen en el paquete NuGet `ClickHouse.Driver`.
+
+## HTTP {#http}
+
+El Client HTTP ofrece la API de alto nivel `ClickHouseClient`, segura para subprocesos, y la API ADO.NET
+que utilizan los ORM. Es compatible con .NET 6.0 y versiones posteriores y se recomienda para la mayoría de las aplicaciones.
+
+Utilice el Client HTTP si necesita:
+
+* ADO.NET o un ORM;
+* entrada y salida en CSV, JSONEachRow, Parquet o flujos sin procesar;
+* autenticación bearer o encabezados HTTP personalizados;
+* resolución personalizada de tipos de parámetros, formato de parámetros o conversión de lectura;
+* especificar una base de datos o un rol para cada consulta;
+* un mejor rendimiento con `JSON`. El Client TCP solo puede transferir valores `JSON` como texto.
+
+[Consulte la documentación del Client HTTP](./http).
+
+## TCP nativo {#native-tcp}
+
+El Client TCP nativo es experimental y su API pública puede cambiar en futuras versiones. Ofrece
+la API `ClickHouseTcpClient` para leer bloques de datos columnares, usar compresión nativa y conexiones agrupadas, y
+mantener sesiones asociadas a una conexión. Requiere .NET 8.0 o una versión posterior.
+
+Utilice el Client TCP nativo cuando necesite:
+
+* un mejor rendimiento, especialmente al procesar datos por columnas;
+* bloques de datos columnares;
+* conexiones persistentes;
+* sesiones asociadas a una conexión mediante `OpenSessionAsync`;
+* callbacks de progreso, perfil, log, totales y valores extremos;
+* propagación del contexto de trazas W3C a ClickHouse.
+
+[Lea la documentación del Client TCP nativo](./tcp).

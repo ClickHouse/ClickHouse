@@ -109,11 +109,11 @@ private:
 
     AzureLatencyType getByteLatencyType(size_t sdk_attempt, size_t ch_attempt) const;
     void addMetric(const std::string & method, AzureMetricType type, ProfileEvents::Count amount = 1) const;
-    void observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency = 1) const;
+    void observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency) const;
 
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
-    const UInt32 max_redirects = 0;
+    const UInt64 max_redirects = 0;
     bool use_adaptive_timeouts = true;
     const UInt64 http_max_fields;
     const UInt64 http_max_field_name_size;

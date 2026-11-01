@@ -1,6 +1,9 @@
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Common/Exception.h>
+#include <Common/maskURIPassword.h>
+
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -27,11 +30,23 @@ namespace ErrorCodes
     #if USE_MONGODB
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
 }
 
+/// A connection string or option list given as an SQL string literal in a dictionary `SOURCE`, keeping its quotes.
+static bool maskQuotedMongoDBConnectionString(String & literal)
+{
+    String value = literal.substr(1, literal.size() - 2);
+    if (!maskMongoDBConnectionString(value))
+        return false;
+    literal = "'" + value + "'";
+    return true;
+}
+
+void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
@@ -50,7 +65,9 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         {
             if (named_collection->has("uri"))
             {
-                validateNamedCollection(*named_collection, {"collection"}, {});
+                if (named_collection->has("options"))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'options' key should not be set when using 'uri', as connection options are already part of the URI");
+                validateNamedCollection(*named_collection, {"uri", "collection"}, {});
                 configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
             }
             else
@@ -95,6 +112,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         }
 
         configuration->checkHosts(context);
+        configuration->checkCollection();
 
         return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::make_shared<const Block>(sample_block));
     };
@@ -113,7 +131,93 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source);
+    factory.registerSource("mongodb", create_dictionary_source,
+        SecretArgumentsSpec{
+            .secret_keys = {"password"},
+            .partial = {{"uri", maskQuotedMongoDBConnectionString}, {"options", maskQuotedMongoDBConnectionString}}},
+        Documentation{
+        .description = R"DOCS_MD(
+# MongoDB dictionary source
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(MONGODB(
+    host 'localhost'
+    port 27017
+    user ''
+    password ''
+    db 'test'
+    collection 'dictionary_source'
+    options 'ssl=true'
+))
+```
+
+Or using a URI:
+
+```sql
+SOURCE(MONGODB(
+    uri 'mongodb://localhost:27017/clickhouse'
+    collection 'dictionary_source'
+))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+    <mongodb>
+        <host>localhost</host>
+        <port>27017</port>
+        <user></user>
+        <password></password>
+        <db>test</db>
+        <collection>dictionary_source</collection>
+        <options>ssl=true</options>
+    </mongodb>
+</source>
+```
+
+Or using a URI:
+
+```xml
+<source>
+    <mongodb>
+        <uri>mongodb://localhost:27017/test?ssl=true</uri>
+        <collection>dictionary_source</collection>
+    </mongodb>
+</source>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `host` | The MongoDB host. |
+| `port` | The port on the MongoDB server. |
+| `user` | Name of the MongoDB user. |
+| `password` | Password of the MongoDB user. |
+| `db` | Name of the database. |
+| `collection` | Name of the collection. |
+| `options` | MongoDB connection string options. Optional. |
+| `uri` | URI for establishing the connection (alternative to individual host/port/db fields). |
+
+[More information about the engine](/reference/engines/table-engines/integrations/mongodb)
+)DOCS_MD"
+#if !USE_MONGODB
+            "\n\nCurrently unavailable, because this ClickHouse build does not include MongoDB support."
+#endif
+        ,
+        .syntax = "SOURCE(MONGODB(host 'host' port 27017 user '' password '' db 'db' collection 'collection'))",
+        .related = {}});
 }
 
 #if USE_MONGODB
@@ -144,7 +248,7 @@ BlockIO MongoDBDictionarySource::loadAll()
     return io;
 }
 
-BlockIO MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO MongoDBDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -159,7 +263,7 @@ BlockIO MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 }
 
 
-BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -199,7 +303,10 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}", configuration->uri->to_string());
+    /// Shown in `system.dictionaries` and in the logs.
+    String uri = configuration->uri->to_string();
+    maskMongoDBConnectionString(uri);
+    return fmt::format("MongoDB: {}", uri);
 }
 #endif
 

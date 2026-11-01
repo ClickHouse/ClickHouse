@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class ColumnsDescription;
@@ -48,10 +48,10 @@ public:
     static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context, bool with_structure)
     {
         if (args.empty() || args.size() > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
 
-        auto format_literal = std::make_shared<ASTLiteral>(format);
-        auto structure_literal = std::make_shared<ASTLiteral>(structure);
+        auto format_literal = make_intrusive<ASTLiteral>(format);
+        auto structure_literal = make_intrusive<ASTLiteral>(structure);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -89,6 +89,10 @@ protected:
     virtual void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context);
     virtual std::optional<String> tryGetFormatFromFirstArgument();
 
+    /// Protected (rather than private) so that wrappers like TableFunctionURL can fall back to the
+    /// default file-like behavior when they do not dispatch to another engine.
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
     String filename;
     String format = "auto";
     String structure = "auto";
@@ -96,8 +100,6 @@ protected:
     ColumnsDescription structure_hint;
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-
     virtual StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method, bool is_insert_query) const = 0;

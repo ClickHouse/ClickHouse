@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
-#include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/IStorage.h>
@@ -16,13 +15,18 @@
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 
-
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -48,7 +52,16 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
-    if (ast_insert_query->format.empty())
+    const Settings & settings = context->getSettingsRef();
+
+    /// Allow `format` / `input_format` settings to override the FORMAT specified in the INSERT query.
+    String resolved_format = ast_insert_query->format;
+    if (!settings[Setting::input_format].value.empty())
+        resolved_format = settings[Setting::input_format].value;
+    else if (!settings[Setting::format].value.empty())
+        resolved_format = settings[Setting::format].value;
+
+    if (resolved_format.empty())
     {
         if (input_function)
             throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -56,11 +69,15 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     }
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast)
+        ? getReadBufferFromASTInsertQuery(ast, settings[Setting::snappy_mode])
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
-    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
+    auto format = context->getInputFormat(resolved_format, *input_buffer, header,
+                                          settings[Setting::max_insert_block_size], std::nullopt,
+                                          settings[Setting::max_insert_block_size_bytes],
+                                          settings[Setting::min_insert_block_size_rows],
+                                          settings[Setting::min_insert_block_size_bytes]);
     format->addBuffer(std::move(input_buffer));
     return format;
 }
@@ -74,16 +91,29 @@ Pipe getSourceFromInputFormat(
     Pipe pipe(format);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
-    if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && ast_insert_query->table_id && !input_function)
+    if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && !input_function)
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        const auto & columns = metadata_snapshot->getColumns();
-        if (columns.hasDefaults())
+        /// Resolve the destination columns. For a plain table the id is in the query;
+        /// for a table function (remote(), file(), ...) the id is empty, but the resolved
+        /// storage columns (including DEFAULTs) are saved in the context by InterpreterInsertQuery.
+        StorageMetadataHandle metadata_snapshot;
+        const ColumnsDescription * columns = nullptr;
+        if (ast_insert_query->table_id)
+        {
+            StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
+            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            columns = &metadata_snapshot->getColumns();
+        }
+        else if (const auto & insertion_columns = context->getInsertionTableColumnsDescription())
+        {
+            columns = insertion_columns.get();
+        }
+
+        if (columns && columns->hasDefaults())
         {
             pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
+                return std::make_shared<AddingDefaultsTransform>(cur_header, *columns, *format, context);
             });
         }
     }
@@ -102,7 +132,7 @@ Pipe getSourceFromASTInsertQuery(
     return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
@@ -124,10 +154,12 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 
         /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
         /// Buffer for reading from file is created and wrapped with appropriate compression method
-        return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method),
+            /*zstd_window_log_max=*/ 0, snappy_mode);
     }
 
-    std::vector<ReadBufferUniquePtr> buffers;
+    ConcatReadBuffer::Buffers buffers;
     if (insert_query->data)
     {
         /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.

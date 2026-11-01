@@ -1,0 +1,12 @@
+-- Compute the result and write it to disk
+499500
+QueryCacheOnDiskMisses
+QueryCacheOnDiskWrittenBytes
+-- Corrupt the body of the entry, leaving the fixed header intact
+-- With reads from disk disabled, the write must still replace the corrupt entry
+499500
+QueryCacheOnDiskWrittenBytes
+-- The replacement is a valid entry: the next run is served from disk
+499500
+QueryCacheOnDiskHits
+QueryCacheOnDiskReadBytes

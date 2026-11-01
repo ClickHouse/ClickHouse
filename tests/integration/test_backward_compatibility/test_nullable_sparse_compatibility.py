@@ -4,7 +4,7 @@
 
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 upstream_node = cluster.add_instance("upstream_node")

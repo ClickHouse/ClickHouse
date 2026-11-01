@@ -18,15 +18,18 @@
 #include <base/getThreadId.h>
 #include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/StatusFile.h>
 #include <Loggers/Loggers.h>
+
+class SignalListener;
 
 
 /// \brief Base class for applications that can run as daemons.
 ///
 /// \code
 /// # Some possible command line options:
-/// #    --config-file, -C or --config - path to configuration file. By default - config.xml in the current directory.
+/// #    --config-file, -C or --config - path to configuration file. By default - config.xml, config.yaml or config.yml in the current directory.
 /// #    --log-file
 /// #    --errorlog-file
 /// #    --daemon - run as daemon; without this option, the program will be attached to the terminal and also output logs to stderr.
@@ -47,8 +50,6 @@ public:
 
     /// Load configuration, prepare loggers, etc.
     void initialize(Poco::Util::Application &) override;
-
-    void reloadConfiguration();
 
     /// Process command line parameters
     void defineOptions(Poco::Util::OptionSet & new_options) override;
@@ -121,14 +122,26 @@ public:
     /// Hash of the binary for integrity checks.
     String getStoredBinaryHash() const;
 
+    /// The working directory at the time the daemon was started, before any chdir calls.
+    const std::string & getOriginalWorkingDirectory() const { return original_working_directory; }
+
 protected:
+    void loadConfiguration();
+
     virtual void logRevision() const;
 
-    /// thread safe
-    void handleSignal(int signal_id);
+    void onTerminateRequestSignal();
 
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
+
+    /// Start the signal listener thread with the asynchronously delivered handled signals blocked in it.
+    void startSignalListener();
+
+    /// Ask the signal listener thread to stop and join it. The thread first drains every record already
+    /// queued in the signal pipe (they are ordered before the stop request), so after this returns no
+    /// queued signal work remains pending inside the thread. It can be started again with `startSignalListener`.
+    void stopSignalListener();
 
     /// fork the main process and watch if it was killed
     void setupWatchdog();
@@ -140,6 +153,9 @@ protected:
 
     virtual std::string getDefaultCorePath() const;
 
+    /// The name of the configuration file to use when `--config-file` is not specified. The extension is
+    /// only the preferred one: the file is looked up with every supported extension, see
+    /// `getConfigPathForAnySupportedFormat`.
     virtual std::string getDefaultConfigFileName() const;
 
     std::optional<DB::StatusFile> pid_file;
@@ -150,17 +166,20 @@ protected:
 
     /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
-    std::unique_ptr<Poco::Runnable> signal_listener;
+    /// `Poco::Thread::isRunning` becomes false before `join` and therefore cannot tell whether its
+    /// native thread handle has already been joined.
+    bool signal_listener_thread_started = false;
+    std::unique_ptr<SignalListener> signal_listener;
 
-    std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
-
-    std::mutex signal_handler_mutex;
-    std::condition_variable signal_event;
-    std::atomic_size_t terminate_signals_counter{0};
+    DB::MapWithMemoryTracking<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
-    Poco::Util::AbstractConfiguration * last_configuration = nullptr;
+
+    /// The working directory at the time the daemon object was constructed,
+    /// before Poco's beDaemon/chdir or any other directory changes.
+    /// Used to resolve relative config paths correctly.
+    std::string original_working_directory;
 
     String build_id;
     String stored_binary_hash;

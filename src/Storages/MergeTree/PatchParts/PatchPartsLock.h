@@ -47,8 +47,11 @@ struct PlainLightweightUpdatesSync
     std::condition_variable in_progress_cv;
     UpdateAffectedColumnsWithCounters in_progress_columns;
 
-    void lockColumns(const UpdateAffectedColumns & affected_columns, size_t timeout_ms);
+    void lockColumns(const ContextPtr & context, const UpdateAffectedColumns & affected_columns, Int64 timeout_ms);
     void releaseColumns(const UpdateAffectedColumns & affected_columns);
+
+    /// Returns false if the timeout expired. Throws if the query was cancelled while waiting.
+    bool lockSyncMutex(const ContextPtr & context, std::unique_lock<std::timed_mutex> & sync_lock, Int64 timeout_ms);
 };
 
 struct PlainLightweightUpdateLock
@@ -68,6 +71,8 @@ struct PlainLightweightUpdateHolder
 
 struct LightweightUpdateHolderInKeeper
 {
+    void reset();
+
     zkutil::ZooKeeperPtr zookeeper;
     zkutil::EphemeralNodeHolderPtr lock;
     PartitionBlockNumbersHolder partition_block_numbers;

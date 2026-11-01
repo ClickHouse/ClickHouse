@@ -29,10 +29,10 @@ function login_test()
     echo "> Try to login to the user account with correct password"
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "pass" --query "select 1 format Null"
 
-    echo "> Successfull login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields."
+    echo "> Successful login should reset failed authentications counter. Check the failed_sequential_authentications, max_failed_sequential_authentications fields."
     ${CLICKHOUSE_CLIENT} -q "SELECT failed_sequential_authentications, max_failed_sequential_authentications FROM system.quotas_usage WHERE quota_name = '${QUOTA}'"
 
-    echo "> Login to the user account using the wrong password before exeeding the quota."
+    echo "> Login to the user account using the wrong password before exceeding the quota."
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "wrong_pass" --query "select 1 format Null" 2>&1 | grep -m1 -o 'password is incorrect'
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "wrong_pass" --query "select 1 format Null" 2>&1 | grep -m1 -o 'password is incorrect'
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "wrong_pass" --query "select 1 format Null" 2>&1 | grep -m1 -o 'password is incorrect'
@@ -45,7 +45,7 @@ function login_test()
     echo "> Check the failed_sequential_authentications, max_failed_sequential_authentications fields."
     ${CLICKHOUSE_CLIENT} -q "SELECT failed_sequential_authentications, max_failed_sequential_authentications FROM system.quotas_usage WHERE quota_name = '${QUOTA}'"
 
-    echo "> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and succesfull login"
+    echo "> Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and successful login"
     echo "> and check failed_sequential_authentications, max_failed_sequential_authentications."
     ${CLICKHOUSE_CLIENT} -q "ALTER QUOTA ${QUOTA} FOR INTERVAL 100 YEAR MAX FAILED SEQUENTIAL AUTHENTICATIONS = 7 TO ${USER}"
     ${CLICKHOUSE_CLIENT} --user ${USER} --password "pass" --query "select 1 format Null"

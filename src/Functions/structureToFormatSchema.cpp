@@ -1,11 +1,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
@@ -17,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -29,10 +26,11 @@ namespace
     };
 }
 
-class FunctionStructureToFormatSchema : public IFunction
+class FunctionStructureToFormatSchema final : public IFunction
 {
 private:
     Impl impl;
+    ContextPtr context;
 
 public:
     explicit FunctionStructureToFormatSchema(Impl impl_, ContextPtr context_) : impl(impl_), context(std::move(context_))
@@ -56,33 +54,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, expected 1 or 2",
-                getName(), arguments.size());
-
-        if (!isString(arguments[0]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the first argument of function {}, expected constant string",
-                arguments[0]->getName(),
-                getName());
-        }
-
-        if (arguments.size() > 1 && !isString(arguments[1]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the second argument of function {}, expected constant string",
-                arguments[1]->getName(),
-                getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "(const String, [const String]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -95,6 +69,7 @@ public:
 
         String structure{arguments[0].column->getDataAt(0)};
         String message_name = arguments.size() == 2 ? std::string{arguments[1].column->getDataAt(0)} : "Message";
+
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();
@@ -116,8 +91,6 @@ public:
         return ColumnConst::create(std::move(col_res), input_rows_count);
     }
 
-private:
-    ContextPtr context;
 };
 
 
@@ -130,6 +103,7 @@ REGISTER_FUNCTION(StructureToCapnProtoSchema)
             .description=R"(
 Function that converts ClickHouse table structure to CapnProto format schema
 )",
+            .syntax = "structureToCapnProtoSchema(table_structure, message)",
             .examples{
                 {"random", "SELECT structureToCapnProtoSchema('s String, x UInt32', 'MessageName') format TSVRaw", "struct MessageName\n"
 "{\n"
@@ -137,6 +111,7 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "    x @1 : UInt32;\n"
 "}"},
             },
+            .introduced_in = {23, 8},
             .category = FunctionDocumentation::Category::Other
         });
 }
@@ -175,7 +150,7 @@ message MessageName
     };
     FunctionDocumentation::IntroducedIn structureToProtobufSchema_introduced_in = {23, 8};
     FunctionDocumentation::Category structureToProtobufSchema_category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation structureToProtobufSchema_documentation = {structureToProtobufSchema_description, structureToProtobufSchema_syntax, structureToProtobufSchema_arguments, structureToProtobufSchema_returned_value, structureToProtobufSchema_examples, structureToProtobufSchema_introduced_in, structureToProtobufSchema_category};
+    FunctionDocumentation structureToProtobufSchema_documentation = {structureToProtobufSchema_description, structureToProtobufSchema_syntax, structureToProtobufSchema_arguments, {}, structureToProtobufSchema_returned_value, structureToProtobufSchema_examples, structureToProtobufSchema_introduced_in, structureToProtobufSchema_category};
 
     factory.registerFunction(StructureToProtobufSchema::name,
         [](ContextPtr context){ return std::make_shared<FunctionStructureToFormatSchema>(Impl::Protobuf, std::move(context)); },

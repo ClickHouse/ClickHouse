@@ -4,6 +4,8 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select=0"
+
 FILE_NAME=conversion_to_datetime64_test.parquet
 cp "$CURDIR/data_parquet/$FILE_NAME" "$USER_FILES_PATH/$FILE_NAME"
 

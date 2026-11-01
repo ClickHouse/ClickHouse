@@ -1,8 +1,13 @@
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedMergeTree.h>
+#endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/saturatedDuration.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
@@ -24,10 +29,21 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds async_block_ids_cache_update_wait_ms;
-    extern const MergeTreeSettingsBool use_async_block_ids_cache;
+    extern const MergeTreeSettingsMilliseconds deduplication_hashes_cache_update_wait_ms;
 }
 
 static constexpr int FAILURE_RETRY_MS = 3000;
+
+/// `deduplication_hashes_cache_update_wait_ms` is the current name of this knob; the legacy
+/// `async_block_ids_cache_update_wait_ms` is still honored for one release when the new setting is left
+/// at its default, so existing configs keep working. The legacy name will be removed afterwards.
+static std::chrono::milliseconds getCacheUpdateWaitMs(const MergeTreeSettings & settings)
+{
+    if (settings[MergeTreeSetting::deduplication_hashes_cache_update_wait_ms].changed
+        || !settings[MergeTreeSetting::async_block_ids_cache_update_wait_ms].changed)
+        return std::chrono::milliseconds(settings[MergeTreeSetting::deduplication_hashes_cache_update_wait_ms].totalMilliseconds());
+    return std::chrono::milliseconds(settings[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds());
+}
 
 template <typename TStorage>
 struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
@@ -43,6 +59,7 @@ template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::update()
 try
 {
+    auto component_guard = Coordination::setCurrentComponent("AsyncBlockIDsCache");
     auto zookeeper = storage.getZooKeeper();
     std::vector<String> paths = zookeeper->getChildren(path);
     std::unordered_set<String> set;
@@ -64,21 +81,20 @@ catch (...)
 }
 
 template <typename TStorage>
-AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
+AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
-    , update_wait((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms])
-    , path(storage.getZooKeeperPath() + "/async_blocks")
+    , update_wait(saturatedMilliseconds(getCacheUpdateWaitMs(*storage.getSettings()).count()))
+    , path(fs::path(storage.getZooKeeperPath()) / dir_name)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ update(); });
+    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this]{ update(); });
 }
 
 template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::start()
 {
-    if ((*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
-        task->activateAndSchedule();
+    task->activateAndSchedule();
 }
 
 template <typename TStorage>
@@ -97,45 +113,52 @@ void AsyncBlockIDsCache<TStorage>::triggerCacheUpdate()
         LOG_TRACE(log, "Task is already scheduled, will wait for update for {}ms", update_wait.count());
 }
 
-/// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.
 template <typename TStorage>
-Strings AsyncBlockIDsCache<TStorage>::detectConflicts(const Strings & paths, UInt64 & last_version)
+void AsyncBlockIDsCache<TStorage>::truncate()
 {
-    if (!(*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
-        return {};
+    std::lock_guard lock(mu);
+    cache_ptr.reset();
+}
 
+template <typename TStorage>
+typename AsyncBlockIDsCache<TStorage>::Conflicts
+AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 min_version)
+{
+    Conflicts conflicts;
     CachePtr cur_cache;
     {
         std::unique_lock lk(mu);
-        /// For first time access of this cache, the `last_version` is zero, so it will not block here.
-        /// For retrying request, We compare the request version and cache version, because zk only returns
-        /// incomplete information of duplication, we need to update the cache to find out more duplication.
-        cv.wait_for(lk, update_wait, [&]{return version != last_version;});
+        if (min_version)
+        {
+            cv.wait_for(lk, update_wait, [&]{ return version >= min_version; });
 
-        if (version == last_version)
-            LOG_INFO(log, "Read cache with a old version {}", last_version);
+            if (version < min_version)
+                LOG_INFO(log, "Read cache with a old version {}", version);
+        }
 
         cur_cache = cache_ptr;
-        last_version = version;
+        conflicts.version = version;
     }
 
     if (cur_cache == nullptr)
-        return {};
+        return conflicts;
 
-    Strings conflicts;
-    for (const String & p : paths)
+    for (const auto & hash : deduplication_hashes)
     {
-        if (cur_cache->contains(p))
+        if (cur_cache->contains(hash.getBlockId()))
         {
-            conflicts.push_back(p);
+            conflicts.hashes.push_back(hash);
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits, !conflicts.empty());
+    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits, !conflicts.hashes.empty());
 
     return conflicts;
 }
 
 template class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
+#if CLICKHOUSE_CLOUD
+template class AsyncBlockIDsCache<StorageSharedMergeTree>;
+#endif
 
 }

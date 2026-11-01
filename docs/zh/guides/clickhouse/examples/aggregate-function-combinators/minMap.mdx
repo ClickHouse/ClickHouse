@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/minMap'
+title: 'minMap'
+description: 'minMap 组合器使用示例'
+keywords: ['min', 'map', '组合器', '示例', 'minMap']
+sidebarTitle: 'minMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 说明
+</div>
+
+[`Map`](/zh/reference/functions/aggregate-functions/combinators#-map) 组合器可应用于 [`min`](/zh/reference/functions/aggregate-functions/min)
+函数，使用 `minMap`
+聚合组合器函数按每个键计算 Map 中的最小值。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+在本示例中，我们将创建一个表，用于存储不同时间段的状态码及其计数，
+其中每一行都包含一个将状态码映射到对应计数的 Map。我们将使用
+`minMap` 找出每个时间段内各状态码的最小计数。
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    minMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+`minMap` 函数会找出每个时间片内各状态码的最小计数。例如：
+
+* 在时间片 &#39;2000-01-01 00:00:00&#39; 中：
+  * 状态 &#39;a&#39;：15
+  * 状态 &#39;b&#39;：25
+  * 状态 &#39;c&#39;：min(35, 45) = 35
+  * 状态 &#39;d&#39;：55
+  * 状态 &#39;e&#39;：65
+* 在时间片 &#39;2000-01-01 00:01:00&#39; 中：
+  * 状态 &#39;d&#39;：75
+  * 状态 &#39;e&#39;：85
+  * 状态 &#39;f&#39;：min(95, 105) = 95
+  * 状态 &#39;g&#39;：min(115, 125) = 115
+
+```response title="Response"
+   ┌────────────timeslot─┬─minMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':95,'g':115}       │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':35,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`min`](/zh/reference/functions/aggregate-functions/min)
+* [`Map 组合器`](/zh/reference/functions/aggregate-functions/combinators#-map)

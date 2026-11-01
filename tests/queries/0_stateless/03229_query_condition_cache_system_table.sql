@@ -1,9 +1,8 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-release
 -- Tag no-parallel: Messes with internal cache
+-- Tag release: Checks fields in system.query_condition_cache which are not available in release builds
 
 -- Tests system table 'system.query_condition_cache'
-
-SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -13,7 +12,7 @@ INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sou
 SELECT '--- with move to PREWHERE';
 SET optimize_move_to_prewhere = true;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Expect one entry in the cache after the first query.';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;
@@ -26,7 +25,7 @@ SELECT count(*) FROM system.query_condition_cache;
 SELECT '--- without move to PREWHERE';
 SET optimize_move_to_prewhere = false;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Expect one entry in the cache after the first query.';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;

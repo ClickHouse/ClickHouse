@@ -49,7 +49,7 @@ namespace ErrorCodes
   * IPv6NumToString (num) - See below.
   * IPv6StringToNum(string) - Convert, for example, '::1' to 1 and vice versa.
   */
-class FunctionIPv6NumToString : public IFunction
+class FunctionIPv6NumToString final : public IFunction
 {
 public:
     static constexpr auto name = "IPv6NumToString";
@@ -61,18 +61,11 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        const auto * arg_ipv6 = checkAndGetDataType<DataTypeIPv6>(arguments[0].get());
-        if (!arg_ipv6 && !(arg_string && arg_string->getN() == IPV6_BINARY_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}, expected IPv6 or FixedString({})",
-                arguments[0]->getName(), getName(), IPV6_BINARY_LENGTH
-            );
-
-        return std::make_shared<DataTypeString>();
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads, so a
+        /// wrong-width FixedString is rejected at analysis time on every path.
+        return "(IPv6 | FixedString(16)) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -130,7 +123,7 @@ public:
 };
 
 
-class FunctionCutIPv6 : public IFunction
+class FunctionCutIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "cutIPv6";
@@ -142,26 +135,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!checkAndGetDataType<DataTypeIPv6>(arguments[0].get()))
-        {
-            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-            if (!ptr || ptr->getN() != IPV6_BINARY_LENGTH)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of argument 1 of function {}, expected FixedString({})",
-                                arguments[0]->getName(), getName(), toString(IPV6_BINARY_LENGTH));
-        }
-
-        if (!WhichDataType(arguments[1]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 2 of function {}",
-                            arguments[1]->getName(), getName());
-
-        if (!WhichDataType(arguments[2]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 3 of function {}",
-                            arguments[2]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads. The
+        /// two byte-count arguments are always constant (see `getArgumentsThatAreAlwaysConstant`).
+        return "(IPv6 | FixedString(16), const UInt8, const UInt8) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -268,7 +246,7 @@ private:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv6StringToNum : public IFunction
+class FunctionIPv6StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -288,26 +266,26 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
-
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+            return "(MaybeNullable(StringOrFixedString)) -> Nullable(FixedString(16))";
+        else
+            return
+                "(Nullable(StringOrFixedString)) -> Nullable(FixedString(16))"
+                " OR (StringOrFixedString) -> FixedString(16)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -348,7 +326,7 @@ private:
 /** If mask_tail_octets > 0, the last specified number of octets will be filled with "xxx".
   */
 template <size_t mask_tail_octets, typename Name>
-class FunctionIPv4NumToString : public IFunction
+class FunctionIPv4NumToString final : public IFunction
 {
 private:
     template <typename ArgType>
@@ -398,17 +376,9 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return mask_tail_octets == 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        WhichDataType arg_type(arguments[0]);
-        if (!(arg_type.isIPv4() || arg_type.isUInt8() || arg_type.isUInt16() || arg_type.isUInt32()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv4 or UInt8 or UInt16 or UInt32",
-                arguments[0]->getName(), getName()
-            );
-
-        return std::make_shared<DataTypeString>();
+        return "(IPv4 | UInt8 | UInt16 | UInt32) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -439,7 +409,7 @@ public:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv4StringToNum : public IFunction
+class FunctionIPv4StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -459,26 +429,26 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return exception_mode != IPStringToNumExceptionMode::Throw || cast_ipv4_ipv6_default_on_conversion_error;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = std::make_shared<DataTypeUInt32>();
-
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+            return "(MaybeNullable(String)) -> Nullable(UInt32)";
+        else
+            return
+                "(Nullable(String)) -> Nullable(UInt32)"
+                " OR (String) -> UInt32";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -516,7 +486,7 @@ private:
 };
 
 
-class FunctionIPv4ToIPv6 : public IFunction
+class FunctionIPv4ToIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "IPv4ToIPv6";
@@ -528,21 +498,12 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// for backward compatibility IPv4ToIPv6 is overloaded, and result type depends on type of argument -
-    ///   if it is UInt32 (presenting IPv4) then result is FixedString(16), if IPv4 - result is IPv6
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// For backward compatibility IPv4ToIPv6 is overloaded: UInt32 → FixedString(16), IPv4 → IPv6.
+    String getSignatureString() const override
     {
-        const auto * dt_uint32 = checkAndGetDataType<DataTypeUInt32>(arguments[0].get());
-        const auto * dt_ipv4 = checkAndGetDataType<DataTypeIPv4>(arguments[0].get());
-        if (!dt_uint32 && !dt_ipv4)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}", arguments[0]->getName(), getName()
-            );
-
-        if (dt_uint32)
-            return std::make_shared<DataTypeFixedString>(16);
-        return std::make_shared<DataTypeIPv6>();
+        return
+            "(UInt32) -> FixedString(16)"
+            " OR (IPv4) -> IPv6";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -600,7 +561,7 @@ private:
     }
 };
 
-class FunctionMACNumToString : public IFunction
+class FunctionMACNumToString final : public IFunction
 {
 public:
     static constexpr auto name = "MACNumToString";
@@ -612,16 +573,14 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    /// Not injective: only the low 6 bytes of the argument are formatted, the higher two bytes are ignored,
+    /// so 2^64 possible inputs are mapped onto 2^48 possible outputs.
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!WhichDataType(arguments[0]).isUInt64())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected UInt64",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(UInt64) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -634,17 +593,17 @@ public:
         /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
         /// Higher two bytes in UInt64 are just ignored.
 
-        writeHexByteUppercase(mac >> 40, &out[0]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 40), &out[0]);
         out[2] = ':';
-        writeHexByteUppercase(mac >> 32, &out[3]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 32), &out[3]);
         out[5] = ':';
-        writeHexByteUppercase(mac >> 24, &out[6]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 24), &out[6]);
         out[8] = ':';
-        writeHexByteUppercase(mac >> 16, &out[9]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 16), &out[9]);
         out[11] = ':';
-        writeHexByteUppercase(mac >> 8, &out[12]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 8), &out[12]);
         out[14] = ':';
-        writeHexByteUppercase(mac, &out[15]);
+        writeHexByteUppercase(static_cast<UInt8>(mac), &out[15]);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -733,7 +692,7 @@ struct ParseOUIImpl
 
 
 template <typename Impl>
-class FunctionMACStringTo : public IFunction
+class FunctionMACStringTo final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -748,13 +707,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(String) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -799,7 +754,7 @@ public:
     }
 };
 
-class FunctionIPv6CIDRToRange : public IFunction
+class FunctionIPv6CIDRToRange final : public IFunction
 {
 private:
 
@@ -828,7 +783,7 @@ private:
         for (size_t i = 0; i < 16; ++i)
         {
             dst_lower[i] = src[i] & mask[i];
-            dst_upper[i] = dst_lower[i] | ~mask[i];
+            dst_upper[i] = static_cast<char>(dst_lower[i] | ~mask[i]);
         }
     }
 
@@ -842,27 +797,12 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * ipv6 = checkAndGetDataType<DataTypeIPv6>(arguments[0].get());
-        const auto * str = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        if (!ipv6 && !(str && str->getN() == IPV6_BINARY_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv6 or FixedString({})",
-                arguments[0]->getName(), getName(), IPV6_BINARY_LENGTH
-            );
-
-        const DataTypePtr & second_argument = arguments[1];
-        if (!isUInt8(second_argument))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected UInt8",
-                second_argument->getName(), getName()
-            );
-
-        DataTypePtr element = std::make_shared<DataTypeIPv6>();
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width the implementation reads
+        /// (16 raw bytes per row); a narrower FixedString is rejected at analysis time, avoiding
+        /// out-of-bounds reads.
+        return "(IPv6 | FixedString(16), UInt8) -> Tuple(IPv6, IPv6)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -935,7 +875,7 @@ public:
 };
 
 
-class FunctionIPv4CIDRToRange : public IFunction
+class FunctionIPv4CIDRToRange final : public IFunction
 {
 private:
     static std::pair<UInt32, UInt32> applyCIDRMask(UInt32 src, UInt8 bits_to_keep)
@@ -1001,27 +941,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        WhichDataType arg_type(arguments[0]);
-        if (!(arg_type.isIPv4() || arg_type.isUInt8() || arg_type.isUInt16() || arg_type.isUInt32()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv4 or UInt8 or UInt16 or UInt32",
-                arguments[0]->getName(), getName()
-            );
-
-
-        const DataTypePtr & second_argument = arguments[1];
-        if (!isUInt8(second_argument))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected UInt8",
-                second_argument->getName(), getName()
-            );
-
-        DataTypePtr element = DataTypeFactory::instance().get("IPv4");
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        return "(IPv4 | UInt8 | UInt16 | UInt32, UInt8) -> Tuple(IPv4, IPv4)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1052,7 +974,7 @@ public:
     }
 };
 
-class FunctionIsIPv4String : public IFunction
+class FunctionIsIPv4String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv4String";
@@ -1067,12 +989,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        return std::make_shared<DataTypeUInt8>();
+        return "(String) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -1109,7 +1028,7 @@ public:
     }
 };
 
-class FunctionIsIPv6String : public IFunction
+class FunctionIsIPv6String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv6String";
@@ -1124,15 +1043,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(String) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -1205,7 +1118,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_cutipv6 = {1, 1};
     FunctionDocumentation::Category category_cutipv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_cutipv6 = {description_cutipv6, syntax_cutipv6, arguments_cutipv6, returned_value_cutipv6, examples_cutipv6, introduced_in_cutipv6, category_cutipv6};
+    FunctionDocumentation documentation_cutipv6 = {description_cutipv6, syntax_cutipv6, arguments_cutipv6, {}, returned_value_cutipv6, examples_cutipv6, introduced_in_cutipv6, category_cutipv6};
 
     factory.registerFunction<FunctionCutIPv6>(documentation_cutipv6);
 
@@ -1229,12 +1142,12 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4toipv6 = {1, 1};
     FunctionDocumentation::Category category_ipv4toipv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4toipv6 = {description_ipv4toipv6, syntax_ipv4toipv6, arguments_ipv4toipv6, returned_value_ipv4toipv6, examples_ipv4toipv6, introduced_in_ipv4toipv6, category_ipv4toipv6};
+    FunctionDocumentation documentation_ipv4toipv6 = {description_ipv4toipv6, syntax_ipv4toipv6, arguments_ipv4toipv6, {}, returned_value_ipv4toipv6, examples_ipv4toipv6, introduced_in_ipv4toipv6, category_ipv4toipv6};
 
     factory.registerFunction<FunctionIPv4ToIPv6>(documentation_ipv4toipv6);
 
     FunctionDocumentation::Description description_macnumtostring = R"(
-Interprets a [`UInt64`](/sql-reference/data-types/int-uint) number as a MAC address in big endian format.
+Interprets a [`UInt64`](/reference/data-types/int-uint) number as a MAC address in big endian format.
 Returns the corresponding MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form) as string.
     )";
     FunctionDocumentation::Syntax syntax_macnumtostring = "MACNumToString(num)";
@@ -1250,14 +1163,14 @@ SELECT MACNumToString(149809441867716) AS mac_address;
         )",
         R"(
 ┌─mac_address───────┐
-│ 88:00:11:22:33:44 │
+│ 88:40:3A:91:07:C4 │
 └───────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_macnumtostring = {1, 1};
     FunctionDocumentation::Category category_macnumtostring = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_macnumtostring = {description_macnumtostring, syntax_macnumtostring, arguments_macnumtostring, returned_value_macnumtostring, examples_macnumtostring, introduced_in_macnumtostring, category_macnumtostring};
+    FunctionDocumentation documentation_macnumtostring = {description_macnumtostring, syntax_macnumtostring, arguments_macnumtostring, {}, returned_value_macnumtostring, examples_macnumtostring, introduced_in_macnumtostring, category_macnumtostring};
 
     factory.registerFunction<FunctionMACNumToString>(documentation_macnumtostring);
 
@@ -1282,7 +1195,7 @@ SELECT MACStringToNum('01:02:03:04:05:06') AS mac_numeric;
     FunctionDocumentation::ReturnedValue returned_value_macstringtonum = {"Returns a UInt64 number.", {"UInt64"}};
     FunctionDocumentation::Category category_macstringtonum = FunctionDocumentation::Category::Other;
     FunctionDocumentation::IntroducedIn introduced_in_macstringtonum = {1, 1};
-    FunctionDocumentation documentation_macstringtonum = {description_macstringtonum, syntax_macstringtonum, arguments_macstringtonum, returned_value_macstringtonum, examples_macstringtonum, introduced_in_macstringtonum, category_macstringtonum};
+    FunctionDocumentation documentation_macstringtonum = {description_macstringtonum, syntax_macstringtonum, arguments_macstringtonum, {}, returned_value_macstringtonum, examples_macstringtonum, introduced_in_macstringtonum, category_macstringtonum};
 
     factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>(documentation_macstringtonum);
 
@@ -1307,7 +1220,7 @@ SELECT MACStringToOUI('00:50:56:12:34:56') AS oui;
     FunctionDocumentation::ReturnedValue returned_value_macstringtooui = {"First three octets as UInt64 number.", {"UInt64"}};
     FunctionDocumentation::Category category_macstringtooui = FunctionDocumentation::Category::Other;
     FunctionDocumentation::IntroducedIn introduced_in_macstringtooui = {1, 1};
-    FunctionDocumentation documentation_macstringtooui = {description_macstringtooui, syntax_macstringtooui, arguments_macstringtooui, returned_value_macstringtooui, examples_macstringtooui, introduced_in_macstringtooui, category_macstringtooui};
+    FunctionDocumentation documentation_macstringtooui = {description_macstringtooui, syntax_macstringtooui, arguments_macstringtooui, {}, returned_value_macstringtooui, examples_macstringtooui, introduced_in_macstringtooui, category_macstringtooui};
 
     factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>(documentation_macstringtooui);
 
@@ -1333,7 +1246,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
     };
     FunctionDocumentation::IntroducedIn introduced_ipv6cidr = {20, 1};
     FunctionDocumentation::Category category_ipv6cidr = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6cidr = {description_ipv6cidr, syntax_ipv6cidr, arguments_ipv6cidr, returned_value_ipv6cidr, examples_ipv6cidr, introduced_ipv6cidr, category_ipv6cidr};
+    FunctionDocumentation documentation_ipv6cidr = {description_ipv6cidr, syntax_ipv6cidr, arguments_ipv6cidr, {}, returned_value_ipv6cidr, examples_ipv6cidr, introduced_ipv6cidr, category_ipv6cidr};
 
     factory.registerFunction<FunctionIPv6CIDRToRange>(documentation_ipv6cidr);
 
@@ -1359,7 +1272,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16);
     };
     FunctionDocumentation::IntroducedIn introduced_ipv4cidr = {20, 1};
     FunctionDocumentation::Category category_ipv4cidr = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4cidr = {description_ipv4cidr, syntax_ipv4cidr, arguments_ipv4cidr, returned_value_ipv4cidr, examples_ipv4cidr, introduced_ipv4cidr, category_ipv4cidr};
+    FunctionDocumentation documentation_ipv4cidr = {description_ipv4cidr, syntax_ipv4cidr, arguments_ipv4cidr, {}, returned_value_ipv4cidr, examples_ipv4cidr, introduced_ipv4cidr, category_ipv4cidr};
 
     factory.registerFunction<FunctionIPv4CIDRToRange>(documentation_ipv4cidr);
 
@@ -1394,7 +1307,7 @@ ARRAY JOIN addr;
     };
     FunctionDocumentation::IntroducedIn introduced_isipv4  = {21, 1};
     FunctionDocumentation::Category category_isipv4 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_isipv4 = {description_isipv4, syntax_isipv4, arguments_isipv4, returned_value_isipv4, examples_isipv4, introduced_isipv4, category_isipv4};
+    FunctionDocumentation documentation_isipv4 = {description_isipv4, syntax_isipv4, arguments_isipv4, {}, returned_value_isipv4, examples_isipv4, introduced_isipv4, category_isipv4};
 
     factory.registerFunction<FunctionIsIPv4String>(documentation_isipv4);
 
@@ -1428,7 +1341,7 @@ ARRAY JOIN addr;
     };
     FunctionDocumentation::IntroducedIn introduced_isipv6  = {21, 1};
     FunctionDocumentation::Category category_isipv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_isipv6 = {description_isipv6, syntax_isipv6, arguments_isipv6, returned_value_isipv6, examples_isipv6, introduced_isipv6, category_isipv6};
+    FunctionDocumentation documentation_isipv6 = {description_isipv6, syntax_isipv6, arguments_isipv6, {}, returned_value_isipv6, examples_isipv6, introduced_isipv6, category_isipv6};
 
     factory.registerFunction<FunctionIsIPv6String>(documentation_isipv6);
 
@@ -1445,13 +1358,13 @@ Interprets the input using big-endian byte ordering.
     FunctionDocumentation::Examples example_ipv4numtostring = {
     {
         "Usage example",
-        "IPv4NumToString(3232235521)",
+        "SELECT IPv4NumToString(3232235521)",
         "192.168.0.1"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4numtostring  = {1, 1};
     FunctionDocumentation::Category category_ipv4numtostring = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4numtostring = {description_ipv4numtostring, syntax_ipv4numtostring, arguments_ipv4numtostring, returned_value_ipv4numtostring, example_ipv4numtostring, introduced_in_ipv4numtostring, category_ipv4numtostring};
+    FunctionDocumentation documentation_ipv4numtostring = {description_ipv4numtostring, syntax_ipv4numtostring, arguments_ipv4numtostring, {}, returned_value_ipv4numtostring, example_ipv4numtostring, introduced_in_ipv4numtostring, category_ipv4numtostring};
 
     factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>(documentation_ipv4numtostring);
 
@@ -1468,30 +1381,25 @@ similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the 
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
-FROM test.hits
+FROM VALUES('ClientIP UInt32',
+    (toUInt32(toIPv4('83.149.9.10'))), (toUInt32(toIPv4('83.149.9.11'))), (toUInt32(toIPv4('83.149.9.12'))),
+    (toUInt32(toIPv4('217.118.81.5'))), (toUInt32(toIPv4('217.118.81.6'))),
+    (toUInt32(toIPv4('213.87.129.1'))))
 GROUP BY k
-ORDER BY c DESC
-LIMIT 10
+ORDER BY c DESC, k
         )",
         R"(
-┌─k──────────────┬─────c─┐
-│ 83.149.9.xxx   │ 26238 │
-│ 217.118.81.xxx │ 26074 │
-│ 213.87.129.xxx │ 25481 │
-│ 83.149.8.xxx   │ 24984 │
-│ 217.118.83.xxx │ 22797 │
-│ 78.25.120.xxx  │ 22354 │
-│ 213.87.131.xxx │ 21285 │
-│ 78.25.121.xxx  │ 20887 │
-│ 188.162.65.xxx │ 19694 │
-│ 83.149.48.xxx  │ 17406 │
-└────────────────┴───────┘
+┌─k──────────────┬─c─┐
+│ 83.149.9.xxx   │ 3 │
+│ 217.118.81.xxx │ 2 │
+│ 213.87.129.xxx │ 1 │
+└────────────────┴───┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4numtostringclassc  = {1, 1};
     FunctionDocumentation::Category category_ipv4numtostringclassc = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4numtostringclassc = {description_ipv4numtostringclassc, syntax_ipv4numtostringclassc, arguments_ipv4numtostringclassc, returned_value_ipv4numtostringclassc, examples_ipv4numtostringclassc, introduced_in_ipv4numtostringclassc, category_ipv4numtostringclassc};
+    FunctionDocumentation documentation_ipv4numtostringclassc = {description_ipv4numtostringclassc, syntax_ipv4numtostringclassc, arguments_ipv4numtostringclassc, {}, returned_value_ipv4numtostringclassc, examples_ipv4numtostringclassc, introduced_in_ipv4numtostringclassc, category_ipv4numtostringclassc};
 
     factory.registerFunction<FunctionIPv4NumToString<1, NameFunctionIPv4NumToStringClassC>>(documentation_ipv4numtostringclassc);
 
@@ -1508,13 +1416,13 @@ If the IPv4 address has an invalid format, an exception is thrown.
     FunctionDocumentation::Examples examples_ipv4stringtonum = {
     {
         "Usage example",
-        "IPv4StringToNum('192.168.0.1')",
+        "SELECT IPv4StringToNum('192.168.0.1')",
         "3232235521"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonum = {1, 1};
     FunctionDocumentation::Category category_ipv4stringtonum = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonum = {description_ipv4stringtonum, syntax_ipv4stringtonum, arguments_ipv4stringtonum, returned_value_ipv4stringtonum, examples_ipv4stringtonum, introduced_in_ipv4stringtonum, category_ipv4stringtonum};
+    FunctionDocumentation documentation_ipv4stringtonum = {description_ipv4stringtonum, syntax_ipv4stringtonum, arguments_ipv4stringtonum, {}, returned_value_ipv4stringtonum, examples_ipv4stringtonum, introduced_in_ipv4stringtonum, category_ipv4stringtonum};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv4stringtonum);
 
@@ -1540,7 +1448,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonumordefault  = {22, 3};
     FunctionDocumentation::Category category_ipv4stringtonumordefault = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonumordefault = {description_ipv4stringtonumordefault, syntax_ipv4stringtonumordefault, arguments_ipv4stringtonumordefault, returned_value_ipv4stringtonumordefault, examples_ipv4stringtonumordefault, introduced_in_ipv4stringtonumordefault, category_ipv4stringtonumordefault};
+    FunctionDocumentation documentation_ipv4stringtonumordefault = {description_ipv4stringtonumordefault, syntax_ipv4stringtonumordefault, arguments_ipv4stringtonumordefault, {}, returned_value_ipv4stringtonumordefault, examples_ipv4stringtonumordefault, introduced_in_ipv4stringtonumordefault, category_ipv4stringtonumordefault};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv4stringtonumordefault);
 
@@ -1571,7 +1479,7 @@ IPv4StringToNumOrNull('invalid') AS invalid;
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonumornull = {22, 3};
     FunctionDocumentation::Category category_ipv4stringtonumornull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonumornull = {description_ipv4stringtonumornull, syntax_ipv4stringtonumornull, arguments_ipv4stringtonumornull, returned_value_ipv4stringtonumornull, examples_ipv4stringtonumornull, introduced_in_ipv4stringtonumornull, category_ipv4stringtonumornull};
+    FunctionDocumentation documentation_ipv4stringtonumornull = {description_ipv4stringtonumornull, syntax_ipv4stringtonumornull, arguments_ipv4stringtonumornull, {}, returned_value_ipv4stringtonumornull, examples_ipv4stringtonumornull, introduced_in_ipv4stringtonumornull, category_ipv4stringtonumornull};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv4stringtonumornull);
 
@@ -1600,61 +1508,57 @@ SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 
      {
          "IPv6 with hits analysis",
          R"(
+CREATE TABLE hits_all (EventDate Date, ClientIP6 FixedString(16)) ENGINE = Memory;
+
+INSERT INTO hits_all SELECT today(), IPv6StringToNum(addr) FROM VALUES('addr String',
+    ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'),
+    ('2a02:6b8:0:fff::ff'), ('2a02:6b8:0:fff::ff'),
+    ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'),
+    ('::ffff:37.143.222.4'));
+
+-- The addresses that are not an IPv4 address mapped into the IPv6 space.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today() AND substring(ClientIP6, 1, 12) != unhex('00000000000000000000FFFF')
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
          )",
          R"(
-┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
-│ 2a02:2168:aaa:bbbb::2                   │ 24695 │
-│ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
-│ 2a02:6b8:0:fff::ff                      │ 16389 │
-│ 2a01:4f8:111:6666::2                    │ 16016 │
-│ 2a02:2168:888:222::1                    │ 15896 │
-│ 2a01:7e00::ffff:ffff:ffff:222           │ 14774 │
-│ 2a02:8109:eee:ee:eeee:eeee:eeee:eeee    │ 14443 │
-│ 2a02:810b:8888:888:8888:8888:8888:8888  │ 14345 │
-│ 2a02:6b8:0:444:4444:4444:4444:4444      │ 14279 │
-│ 2a01:7e00::ffff:ffff:ffff:ffff          │ 13880 │
-└─────────────────────────────────────────┴───────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+└───────────────────────┴───┘
         )"
     },
     {
         "IPv6 mapped IPv4 addresses",
         R"(
+-- Without the filter, the mapped IPv4 addresses show up as well.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today()
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
         )",
         R"(
-┌─IPv6NumToString(ClientIP6)─┬──────c─┐
-│ ::ffff:94.26.111.111       │ 747440 │
-│ ::ffff:37.143.222.4        │ 529483 │
-│ ::ffff:5.166.111.99        │ 317707 │
-│ ::ffff:46.38.11.77         │ 263086 │
-│ ::ffff:79.105.111.111      │ 186611 │
-│ ::ffff:93.92.111.88        │ 176773 │
-│ ::ffff:84.53.111.33        │ 158709 │
-│ ::ffff:217.118.11.22       │ 154004 │
-│ ::ffff:217.118.11.33       │ 148449 │
-│ ::ffff:217.118.11.44       │ 148243 │
-└────────────────────────────┴────────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ ::ffff:94.26.111.111  │ 4 │
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+│ ::ffff:37.143.222.4   │ 1 │
+└───────────────────────┴───┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6numtostring = {1, 1};
     FunctionDocumentation::Category category_ipv6numtostring = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6numtostring = {description_ipv6numtostring, syntax_ipv6numtostring, arguments_ipv6numtostring, returned_value_ipv6numtostring, examples_ipv6numtostring, introduced_in_ipv6numtostring, category_ipv6numtostring};
+    FunctionDocumentation documentation_ipv6numtostring = {description_ipv6numtostring, syntax_ipv6numtostring, arguments_ipv6numtostring, {}, returned_value_ipv6numtostring, examples_ipv6numtostring, introduced_in_ipv6numtostring, category_ipv6numtostring};
 
     factory.registerFunction<FunctionIPv6NumToString>(documentation_ipv6numtostring);
 
@@ -1676,11 +1580,10 @@ HEX can be uppercase or lowercase.
     {
         "Basic example",
         R"(
-SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
+SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
         )",
         R"(
 ┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
-│ notaddress │ ::                                   │
 │ 127.0.0.1  │ ::ffff:127.0.0.1                     │
 │ 1111::ffff │ 1111::ffff                           │
 └────────────┴──────────────────────────────────────┘
@@ -1689,7 +1592,7 @@ SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '1
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonum = {1, 1};
     FunctionDocumentation::Category category_ipv6stringtonum = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonum = {description_ipv6stringtonum, syntax_ipv6stringtonum, arguments_ipv6stringtonum, returned_value_ipv6stringtonum, examples_ipv6stringtonum, introduced_in_ipv6stringtonum, category_ipv6stringtonum};
+    FunctionDocumentation documentation_ipv6stringtonum = {description_ipv6stringtonum, syntax_ipv6stringtonum, arguments_ipv6stringtonum, {}, returned_value_ipv6stringtonum, examples_ipv6stringtonum, introduced_in_ipv6stringtonum, category_ipv6stringtonum};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv6stringtonum);
 
@@ -1717,7 +1620,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonumordefault = {22, 3};
     FunctionDocumentation::Category category_ipv6stringtonumordefault = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonumordefault = {description_ipv6stringtonumordefault, syntax_ipv6stringtonumordefault, arguments_ipv6stringtonumordefault, returned_value_ipv6stringtonumordefault, examples_ipv6stringtonumordefault, introduced_in_ipv6stringtonumordefault, category_ipv6stringtonumordefault};
+    FunctionDocumentation documentation_ipv6stringtonumordefault = {description_ipv6stringtonumordefault, syntax_ipv6stringtonumordefault, arguments_ipv6stringtonumordefault, {}, returned_value_ipv6stringtonumordefault, examples_ipv6stringtonumordefault, introduced_in_ipv6stringtonumordefault, category_ipv6stringtonumordefault};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv6stringtonumordefault);
 
@@ -1742,14 +1645,14 @@ SELECT
         )",
         R"(
 ┌─valid───────┬─invalid─┐
-│ 2001:db8::1 │    ᴺᵁᴸᴸ │
+│ 2001:db8::1 │ ᴺᵁᴸᴸ    │
 └─────────────┴─────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonumornull = {22, 3};
     FunctionDocumentation::Category category_ipv6stringtonumornull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonumornull = {description_ipv6stringtonumornull, syntax_ipv6stringtonumornull, arguments_ipv6stringtonumornull, returned_value_ipv6stringtonumornull, examples_ipv6stringtonumornull, introduced_in_ipv6stringtonumornull, category_ipv6stringtonumornull};
+    FunctionDocumentation documentation_ipv6stringtonumornull = {description_ipv6stringtonumornull, syntax_ipv6stringtonumornull, arguments_ipv6stringtonumornull, {}, returned_value_ipv6stringtonumornull, examples_ipv6stringtonumornull, introduced_in_ipv6stringtonumornull, category_ipv6stringtonumornull};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv6stringtonumornull);
 

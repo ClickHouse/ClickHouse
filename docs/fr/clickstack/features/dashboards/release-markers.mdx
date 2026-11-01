@@ -1,0 +1,98 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/release-markers
+title: 'Marqueurs de version sur les graphiques du dashboard'
+sidebarTitle: 'Marqueurs de version'
+description: 'Superposez, sur les graphiques temporels du dashboard, le moment où chaque version d’un service est apparue pour la première fois, à partir de l’expression de version du service configurée dans la source de la tuile'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'marqueurs de version', 'suivi des déploiements', 'service.version', 'annotations', 'observability']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La première question face à un pic de latence ou d’erreurs est généralement de savoir si une nouvelle version a été déployée. Les graphiques temporels des dashboards permettent d’y répondre directement : activez les marqueurs de version, et chaque tuile trace une ligne verticale en pointillés au moment où une version d’un service apparaît pour la première fois dans sa télémétrie.
+
+Les versions proviennent de la télémétrie que vous envoyez déjà, lue via une expression définie sur la source de la tuile. Aucune intégration d’intégration continue n’est nécessaire, et rien n’est à envoyer au moment du déploiement.
+
+<div id="turn-on">
+  ## Activer les marqueurs
+</div>
+
+Les marqueurs de version sont désactivés par défaut. Ouvrez le menu d’options d’un dashboard et sélectionnez **Afficher les marqueurs de version**.
+
+<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="Menu d’options du dashboard avec l’élément Afficher les marqueurs de version dans la section Affichage, sous Afficher les annotations d’alertes" size="sm" />
+
+Le commutateur ajoute `releaseMarkers=true` à l’URL du dashboard, afin que les liens que vous partagez s’ouvrent avec les marqueurs déjà activés. Il s’agit d’un état d’affichage et non de la configuration du dashboard : il n’est pas enregistré avec le dashboard et sa désactivation supprime à nouveau le paramètre.
+
+Les marqueurs sont affichés sur les tuiles de séries temporelles dont la source est une source de logs ou de traces. Les [annotations d’alertes](/fr/clickstack/features/alerts) sont accessibles depuis le même menu et peuvent être affichées simultanément : les deux types de marqueurs sont affichés ensemble et conservent chacun leurs propres libellés.
+
+<div id="version-expression">
+  ## Configurer la source de la version
+</div>
+
+Par défaut, ClickStack lit `ResourceAttributes['service.version']`, l’attribut de ressource OpenTelemetry. Si vos services respectent les [conventions sémantiques des ressources de service](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/), les marqueurs fonctionnent sans configuration.
+
+Pour lire la version depuis un autre emplacement, définissez **Expression de version du service** dans la source de logs ou de traces. Modifiez la source sous **Paramètres de l’équipe → Sources**. Dans une source de logs, le champ se trouve sous **Configurer les champs facultatifs** ; dans une source de traces, il apparaît directement dans le formulaire, sous **Expression du nom du service**.
+
+<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Champ Expression de version du service dans les champs facultatifs d’une source de logs, affichant l’espace réservé par défaut ResourceAttributes['service.version']" size="lg" />
+
+La valeur est une expression SQL, et non un nom d’attribut, ce qui couvre deux cas courants :
+
+* **L’identifiant de version se trouve dans un autre attribut.** Avec GitOps, l’élément qui identifie une version est généralement le tag de l’image de conteneur, transmis sous la forme `container.image.tag`. Pointer la source vers `ResourceAttributes['container.image.tag']` est bien moins coûteux que de modifier l’instrumentation sur l’ensemble du parc.
+* **Les services d’une même table utilisent des attributs différents.** Utilisez `coalesce` pour basculer d’un attribut à l’autre :
+
+```sql
+coalesce(
+  nullIf(ResourceAttributes['service.version'], ''),
+  nullIf(ResourceAttributes['container.image.tag'], '')
+)
+```
+
+Le champ est également disponible sous le nom `serviceVersionExpression` pour les sources de logs et de traces dans l’[API des sources](/fr/clickstack/api-reference), ce qui vous permet de le définir lors de l’approvisionnement programmatique des sources. Consultez la liste complète des paramètres des sources pour les [logs](/fr/clickstack/managing/config#logs) et les [traces](/fr/clickstack/managing/config#traces).
+
+<div id="what-a-marker-means">
+  ## Ce que signifie un marqueur
+</div>
+
+Un marqueur indique qu&#39;une valeur de version apparaît pour la première fois dans les données de la tuile au sein de la fenêtre visible. Cela s&#39;apparente à un déploiement, mais il ne s&#39;agit délibérément pas du même signal. C&#39;est pourquoi il s&#39;agit de marqueurs de version plutôt que de marqueurs de déploiement :
+
+* Un déploiement qui ne modifie pas la chaîne de version ne produit aucun marqueur.
+* Un service qui reste inactif plus longtemps que la période de recherche affiche un marqueur lorsqu&#39;il remonte en charge.
+
+La version qui était déjà en cours d&#39;exécution à l&#39;ouverture de la fenêtre est reconnue et écartée, plutôt que représentée comme une version qui n&#39;a jamais existé. Pour ce faire, la requête remonte avant le début de la fenêtre — de 30 minutes, ou de 10 % de la fenêtre si cette durée est plus longue — afin d&#39;identifier la version en cours.
+
+<div id="scoping">
+  ## Quelles versions une tuile affiche
+</div>
+
+La requête sur les versions s’exécute sur la source de la tuile, avec ses propres prédicats : sa clause `WHERE`, le filtre de chaque série et les éventuels [filtres du dashboard](/fr/clickstack/features/dashboards/overview#custom-filters). Ce qu’affiche une tuile dépend de ce qu’elle représente dans le graphique :
+
+| Tuile                                | Marqueurs                                                                                                        |
+| :----------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| Filtrée sur un seul service          | Les versions de ce service                                                                                       |
+| Regroupée par service                | Les versions de chaque service représenté dans le graphique, chacune colorée pour correspondre à sa propre ligne |
+| Ligne agrégée sur plusieurs services | Aucune, sauf si toutes les versions de la fenêtre proviennent d’un seul service                                  |
+
+Dans le troisième cas, le service d’un marqueur n’a aucune ligne correspondante dans le graphique ; les marqueurs sont donc supprimés. Si toutes les versions de la fenêtre proviennent d’un seul service, elles sont affichées à la place, dans la couleur de marqueur par défaut.
+
+<div id="reading-markers">
+  ## Consulter les marqueurs sur un graphique dense
+</div>
+
+Survolez l’étiquette d’un marqueur pour afficher toutes les versions à cet endroit, ainsi que le service qui les a publiées, leur numéro de version et l’heure.
+
+<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="Infobulle au survol d’un marqueur de version indiquant le service frontend et la version 2.0.2, avec l’heure à laquelle cette version est apparue pour la première fois, sur un graphique représentant deux services" size="sm" />
+
+La couleur associe un marqueur à sa série, mais la légende d’un graphique affiche au maximum quatre entrées avant de regrouper les autres sous « +N autres ». Il n’y a alors plus rien à l’écran permettant d’identifier la couleur. L’infobulle indique explicitement le nom du service et fonctionne donc quel que soit le nombre de séries affichées dans la tuile.
+
+Les marqueurs trop rapprochés pour être étiquetés individuellement sont regroupés sous une seule ancre libellée `N versions` ; son survol les répertorie toutes. Un regroupement couvrant plusieurs services est affiché dans une couleur neutre plutôt que dans celle de l’un d’eux, afin que le nombre reste exact sans laisser entendre qu’un service en est propriétaire.
+
+Le glissement horizontal sur le tracé permet toujours de zoomer lorsque les marqueurs sont affichés.
+
+<div id="limitations">
+  ## Limitations
+</div>
+
+* **Uniquement les tuiles de séries temporelles.** Les tables, nombres et heatmaps n&#39;affichent pas de marqueurs.
+* **Uniquement les sources de logs et de traces.** Une source de métriques résout sa table en fonction du type de métrique ; il n&#39;existe donc pas de table unique à réagréger ni de moyen de donner un sens aux filtres d&#39;une tuile. Pour annoter des données de métriques, placez une tuile de logs ou de traces à côté, sur le même dashboard.
+* **Les valeurs de version vides sont ignorées.** Un service qui n&#39;émet aucune version ne génère aucun marqueur. Si une tuile ne détecte aucun changement de version, ClickStack affiche `No releases found` plutôt que de vous laisser vous demander si la fonctionnalité est défaillante.
+* **Jusqu&#39;à 500 versions distinctes** sont lues par fenêtre.

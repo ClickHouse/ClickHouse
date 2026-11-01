@@ -16,6 +16,10 @@ UPDATE t_lwu_on_fly SET a = 2 WHERE id = 2;
 
 ALTER TABLE t_lwu_on_fly UPDATE b = 20 WHERE a = 2 SETTINGS mutations_sync = 0;
 
+-- Ensure the mutation entry is fetched from ZooKeeper into the local replica's queue,
+-- so that `apply_mutations_on_fly` can see it when the next UPDATE evaluates its WHERE clause.
+SYSTEM SYNC REPLICA t_lwu_on_fly PULL;
+
 UPDATE t_lwu_on_fly SET c = 200 WHERE b = 20;
 
 SELECT * FROM t_lwu_on_fly ORDER BY id;

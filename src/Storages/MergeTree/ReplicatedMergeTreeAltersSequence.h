@@ -4,6 +4,8 @@
 #include <mutex>
 #include <map>
 
+#include <Common/SharedMutex.h>
+
 namespace DB
 {
 /// ALTERs in StorageReplicatedMergeTree have to be executed sequentially (one
@@ -35,27 +37,27 @@ private:
 public:
 
     /// Add mutation for alter (alter data stage).
-    void addMutationForAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/);
+    void addMutationForAlter(int alter_version, std::lock_guard<SharedMutex> & /*state_lock*/);
 
     /// Add metadata for alter (alter metadata stage).
-    void addMetadataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/);
+    void addMetadataAlter(int alter_version, std::lock_guard<SharedMutex> & /*state_lock*/);
 
     /// Finish metadata alter. If corresponding data alter finished, than we can remove
     /// alter from sequence.
-    void finishMetadataAlter(int alter_version, std::unique_lock <std::mutex> & /*state_lock*/);
+    void finishMetadataAlter(int alter_version, std::unique_lock <SharedMutex> & /*state_lock*/);
 
     /// Finish data alter. If corresponding metadata alter finished, than we can remove
     /// alter from sequence.
-    void finishDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/);
+    void finishDataAlter(int alter_version, std::lock_guard<SharedMutex> & /*state_lock*/);
 
     /// Check that we can execute this data alter. If it's metadata stage finished.
-    bool canExecuteDataAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const;
+    bool canExecuteDataAlter(int alter_version, std::unique_lock<SharedMutex> & /*state_lock*/) const;
 
     /// Check that we can execute metadata alter with version.
-    bool canExecuteMetaAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const;
+    bool canExecuteMetaAlter(int alter_version, std::unique_lock<SharedMutex> & /*state_lock*/) const;
 
     /// Just returns smallest alter version in sequence (first entry)
-    int getHeadAlterVersion(std::unique_lock<std::mutex> & /*state_lock*/) const;
+    int getHeadAlterVersion(std::unique_lock<SharedMutex> & /*state_lock*/) const;
 };
 
 }

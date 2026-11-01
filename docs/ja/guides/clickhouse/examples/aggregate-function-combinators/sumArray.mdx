@@ -1,0 +1,62 @@
+---
+slug: '/examples/aggregate-function-combinators/sumArray'
+title: 'sumArray'
+description: 'sumArray combinatorの使用例'
+keywords: ['sum', 'array', 'combinator', 'examples', 'sumArray']
+sidebarTitle: 'sumArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Array`](/ja/reference/functions/aggregate-functions/combinators#-array) combinator は、
+[`sum`](/ja/reference/functions/aggregate-functions/sum)
+関数に適用でき、`sumArray`
+aggregate combinator 関数を使用して、配列内のすべての要素の合計を計算します。
+
+`sumArray` 関数は、データセット内の複数の配列全体にわたる
+すべての要素の合計値を計算する必要がある場合に便利です。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、異なる
+製品カテゴリにおける日次売上のサンプルデータセットを使って、`sumArray` の動作を説明します。各日について、すべてのカテゴリにわたる
+売上合計を計算します。
+
+```sql title="Query"
+CREATE TABLE daily_category_sales
+(
+    date Date,
+    category_sales Array(UInt32)
+) ENGINE = Memory;
+
+INSERT INTO daily_category_sales VALUES
+    ('2024-01-01', [100, 200, 150]),
+    ('2024-01-02', [120, 180, 160]),
+    ('2024-01-03', [90, 220, 140]);
+
+SELECT 
+    date,
+    category_sales,
+    sumArray(category_sales) AS total_sales_sumArray,
+    sum(arraySum(category_sales)) AS total_sales_arraySum
+FROM daily_category_sales
+GROUP BY date, category_sales;
+```
+
+`sumArray` 関数は、各 `category_sales` Array 内のすべての要素を合計します。
+たとえば、`2024-01-01` では `100 + 200 + 150 = 450` となります。これは
+`arraySum` と同じ結果になります。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`sum`](/ja/reference/functions/aggregate-functions/sum)
+* [`arraySum`](/ja/reference/functions/regular-functions/array-functions#arraySum)
+* [`Array combinator`](/ja/reference/functions/aggregate-functions/combinators#-array)
+* [`sumMap`](/ja/guides/clickhouse/examples/aggregate-function-combinators/sumMap)

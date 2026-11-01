@@ -1,0 +1,4 @@
+id	String					
+details	Tuple(\n    name String,\n    age Int32)					
+type	Enum8(\'omitted\' = 0, \'details\' = 3, \'nothing\' = 4, \'nothing2\' = 5, \'nothing3\' = 6)					
+type	Enum8(\'omitted\' = 0, \'nothing\' = 1, \'nothing2\' = 2)					

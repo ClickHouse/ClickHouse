@@ -187,11 +187,16 @@ class BaseLayoutTester:
         self.layouts = []
 
     def get_dict_directory(self):
-        return os.path.join(DICT_CONFIG_PATH, self.test_name)
+        # Append the pytest-xdist worker id so concurrent workers running the same
+        # test module (e.g. with --dist=each in targeted/flaky CI runs) do not race
+        # on the same on-disk config directory.
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "")
+        suffix = f"-{worker}" if worker else ""
+        return os.path.join(DICT_CONFIG_PATH, self.test_name + suffix)
 
     def cleanup(self):
         shutil.rmtree(self.get_dict_directory(), ignore_errors=True)
-        os.makedirs(self.get_dict_directory())
+        os.makedirs(self.get_dict_directory(), exist_ok=True)
 
     def list_dictionaries(self):
         dictionaries = []
@@ -201,6 +206,7 @@ class BaseLayoutTester:
         return dictionaries
 
     def create_dictionaries(self, source_):
+        os.makedirs(self.get_dict_directory(), exist_ok=True)
         for layout in self.layouts:
             if source_.compatible_with_layout(Layout(layout)):
                 self.layout_to_dictionary[layout] = self.get_dict(

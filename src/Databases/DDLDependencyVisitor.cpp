@@ -1,3 +1,4 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
@@ -21,6 +22,7 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Poco/String.h>
 
 
@@ -41,8 +43,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_)
         {
         }
 
@@ -79,7 +81,7 @@ namespace
             }
             else if (const auto * function = ast->as<ASTFunction>())
             {
-                if (function->kind == ASTFunction::Kind::TABLE_ENGINE)
+                if (function->getKind() == ASTFunction::Kind::TABLE_ENGINE)
                     visitTableEngine(*function);
                 else
                     visitFunction(*function);
@@ -95,6 +97,8 @@ namespace
         ContextPtr global_context;
         TableNamesSet dependencies;
         bool can_throw;
+        bool validate_current_database;
+        size_t max_expanded_ast_elements;
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
 
@@ -122,10 +126,28 @@ namespace
                             mv_to_dependency->uuid = target.inner_uuid;
                         }
                     }
-                    else if (target.kind == ViewTarget::Kind::Inner && !create.is_window_view)
+                    else if (target.kind == ViewTarget::Kind::Inner)
                     {
                         mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
+                    }
+                    else if (target.kind == ViewTarget::Kind::Samples
+                        || target.kind == ViewTarget::Kind::RecentSamples
+                        || target.kind == ViewTarget::Kind::Tags
+                        || target.kind == ViewTarget::Kind::TimeRanges
+                        || target.kind == ViewTarget::Kind::MetricFamilies)
+                    {
+                        /// External target tables of a TimeSeries table are referential dependencies.
+                        /// Inner target tables (created and owned by the TimeSeries table) are not, the same way
+                        /// the inner "TO" table of a materialized view is not registered as a dependency.
+                        const auto & table_id = target.table_id;
+                        if (!table_id.table_name.empty())
+                        {
+                            QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                            if (target_name.database.empty())
+                                target_name.database = current_database;
+                            dependencies.emplace(std::move(target_name));
+                        }
                     }
 
                     if (mv_to_dependency && mv_to_dependency->database_name.empty())
@@ -151,9 +173,23 @@ namespace
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor(global_context).visit(select_copy);
+                        /// The limit comes from the context of the query creating the view. A definition loaded
+                        /// from metadata was bounded when it was created, so it is not limited here.
+                        ApplyWithSubqueryVisitor::visit(select_copy, max_expanded_ast_elements);
 
-                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, global_context);
+                        /// Use the database where the materialized view is created to resolve nested views.
+                        /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery
+                        /// (which strips the database before serialization). In that case, keep the global context's current database.
+                        ContextMutablePtr mv_db_context = Context::createCopy(global_context);
+                        if (!table_name.database.empty())
+                        {
+                            /// During bootstrap/restore scenarios, the database may not exist yet, so we provide a way to skip this validation
+                            if (validate_current_database)
+                                mv_db_context->setCurrentDatabase(table_name.database);
+                            else
+                                mv_db_context->setCurrentDatabaseUnchecked(table_name.database);
+                        }
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, mv_db_context);
                         if (!select_query.select_table_id.empty())
                         {
                             mv_from_dependency = select_query.select_table_id;
@@ -207,7 +243,6 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
-            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 
@@ -248,10 +283,12 @@ namespace
                 visitDistributedTableEngine(table_engine);
 
             /// Alias(table_name) or Alias(db_name, table_name)
+            /// Note: Alias resolves non-qualified target names to its own database (not current_database),
+            /// so we use addQualifiedNameFromArgumentUsingTableDatabase for the single-argument case.
             if (table_engine.name == "Alias" && table_engine.arguments)
             {
                 if (table_engine.arguments->children.size() == 1)
-                    addQualifiedNameFromArgument(table_engine, 0);
+                    addQualifiedNameFromArgumentUsingTableDatabase(table_engine, 0);
                 else
                     addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
             }
@@ -286,9 +323,10 @@ namespace
             }
             else if (functionIsInOrGlobalInOperator(function.name))
             {
-                /// x IN table_name.
+                /// x IN table_name. A literal, as in x IN ('db.table'), is a set of values, not a table name.
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
-                addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
+                if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>())
+                    addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
             {
@@ -404,14 +442,15 @@ namespace
                 /// We're just searching for dependencies here, it's not safe to execute subqueries now.
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                global_context_copy->setCurrentDatabase(current_database);
+                if (!current_database.empty())
+                    global_context_copy->setCurrentDatabase(current_database);
                 auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                 const auto * literal = evaluated->as<ASTLiteral>();
                 if (!literal || (literal->value.getType() != Field::Types::String))
                     return {};
                 return literal->value.safeGet<String>();
             }
-            catch (...)
+            catch (const Exception &)
             {
                 return {};
             }
@@ -468,6 +507,19 @@ namespace
         {
             if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate))
                 dependencies.emplace(std::move(qualified_name).value());
+        }
+
+        /// Like addQualifiedNameFromArgument, but uses the database of the table being created
+        /// as the default database (instead of current_database). This matches the behavior of
+        /// engines like Alias that resolve non-qualified target names to their own database.
+        void addQualifiedNameFromArgumentUsingTableDatabase(const ASTFunction & function, size_t arg_idx, bool evaluate = true)
+        {
+            if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate, /* apply_current_database= */ false))
+            {
+                if (qualified_name->database.empty())
+                    qualified_name->database = table_name.database;
+                dependencies.emplace(std::move(qualified_name).value());
+            }
         }
 
         /// Returns a database name and a table name extracted from two separate arguments.
@@ -552,9 +604,9 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
@@ -562,7 +614,7 @@ CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
 {
-    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true, /*max_expanded_ast_elements=*/0};
     tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }

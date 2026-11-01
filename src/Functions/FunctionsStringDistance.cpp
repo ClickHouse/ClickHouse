@@ -4,14 +4,24 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSimilarity.h>
+#include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
+#include <Common/TargetSpecific.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
+#include <bit>
+#include <climits>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
+#endif
+#if USE_MULTITARGET_CODE
+#    include <immintrin.h>
 #endif
 
 namespace DB
@@ -114,7 +124,8 @@ struct ByteHammingDistanceImpl
     }
 };
 
-void parseUTF8String(const char * __restrict data, size_t size, std::function<void(UInt32)> utf8_consumer, std::function<void(unsigned char)> ascii_consumer = nullptr)
+template <typename UTF8Consumer>
+void parseUTF8String(const char * __restrict data, size_t size, UTF8Consumer && utf8_consumer)
 {
     const char * end = data + size;
     while (data < end)
@@ -122,10 +133,7 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
         size_t len = UTF8::seqLength(*data);
         if (len == 1)
         {
-            if (ascii_consumer)
-                ascii_consumer(static_cast<unsigned char>(*data));
-            else
-                utf8_consumer(static_cast<UInt32>(*data));
+            utf8_consumer(static_cast<UInt32>(*data));
             ++data;
         }
         else
@@ -148,6 +156,27 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
 template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
+
+    /// For byte strings (and ASCII chars of UTF8) use an array
+    struct ScratchASCII
+    {
+        using CalcType = UInt8;
+        constexpr static size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
+        UInt8 haystack_set[max_size]{};
+        UInt8 needle_set[max_size]{};
+    };
+
+    /// For UTF8 use a hash set for wider codepoints
+    struct ScratchUTF8
+    {
+        using CalcType = UInt32;
+        using Set = HashSet<UInt32, DefaultHash<UInt32>>;
+        Set haystack_utf8_set;
+        Set needle_utf8_set;
+    };
+
+    using ScratchType = std::conditional_t<is_utf8, ScratchUTF8, ScratchASCII>;
+
     using ResultType = Float64;
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
@@ -158,69 +187,56 @@ struct ByteJaccardIndexImpl
         const char * haystack_end = haystack + haystack_size;
         const char * needle_end = needle + needle_size;
 
-        /// For byte strings use plain array as a set
-        constexpr size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
-        std::array<UInt8, max_size> haystack_set;
-        std::array<UInt8, max_size> needle_set;
-
-        /// For UTF-8 strings we also use sets of code points greater than max_size
-        std::set<UInt32> haystack_utf8_set;
-        std::set<UInt32> needle_utf8_set;
-
-        haystack_set.fill(0);
-        needle_set.fill(0);
+        ScratchType scratch;
 
         if constexpr (is_utf8)
         {
             parseUTF8String(
                 haystack,
                 haystack_size,
-                [&](UInt32 data) { haystack_utf8_set.insert(data); },
-                [&](unsigned char data) { haystack_set[data] = 1; });
+                [&](UInt32 data) { scratch.haystack_utf8_set.insert(data); });
             parseUTF8String(
-                needle, needle_size, [&](UInt32 data) { needle_utf8_set.insert(data); }, [&](unsigned char data) { needle_set[data] = 1; });
+                needle, needle_size, [&](UInt32 data) { scratch.needle_utf8_set.insert(data); });
         }
         else
         {
             while (haystack < haystack_end)
             {
-                haystack_set[static_cast<unsigned char>(*haystack)] = 1;
+                scratch.haystack_set[static_cast<unsigned char>(*haystack)] = 1;
                 ++haystack;
             }
             while (needle < needle_end)
             {
-                needle_set[static_cast<unsigned char>(*needle)] = 1;
+                scratch.needle_set[static_cast<unsigned char>(*needle)] = 1;
                 ++needle;
             }
         }
 
-        UInt8 intersection = 0;
-        UInt8 union_size = 0;
+        using CalcType = typename ScratchType::CalcType;
+
+        CalcType intersection = 0;
+        CalcType union_size = 0;
 
         if constexpr (is_utf8)
         {
-            auto lit = haystack_utf8_set.begin();
-            auto rit = needle_utf8_set.begin();
-            while (lit != haystack_utf8_set.end() && rit != needle_utf8_set.end())
-            {
-                if (*lit == *rit)
-                {
-                    ++intersection;
-                    ++lit;
-                    ++rit;
-                }
-                else if (*lit < *rit)
-                    ++lit;
-                else
-                    ++rit;
-            }
-            union_size = haystack_utf8_set.size() + needle_utf8_set.size() - intersection;
-        }
+            const auto & small = (scratch.haystack_utf8_set.size() < scratch.needle_utf8_set.size()) ? scratch.haystack_utf8_set : scratch.needle_utf8_set;
+            const auto & large = (scratch.haystack_utf8_set.size() < scratch.needle_utf8_set.size()) ? scratch.needle_utf8_set : scratch.haystack_utf8_set;
 
-        for (size_t i = 0; i < max_size; ++i)
+            for (auto it = small.begin(); it != small.end(); ++it)
+            {
+                const auto & key = it->getKey();
+                if (large.has(key))
+                    ++intersection;
+            }
+            union_size = static_cast<UInt32>(scratch.haystack_utf8_set.size() + scratch.needle_utf8_set.size() - intersection);
+        }
+        else
         {
-            intersection += haystack_set[i] & needle_set[i];
-            union_size += haystack_set[i] | needle_set[i];
+            for (size_t i = 0; i < ScratchType::max_size; ++i)
+            {
+                intersection += (scratch.haystack_set[i] & scratch.needle_set[i]);
+                union_size += (scratch.haystack_set[i] | scratch.needle_set[i]);
+            }
         }
 
         return static_cast<ResultType>(intersection) / static_cast<ResultType>(union_size);
@@ -229,22 +245,392 @@ struct ByteJaccardIndexImpl
 
 static constexpr size_t max_string_size = 1u << 16;
 
-template<bool is_utf8>
+template<bool is_utf8, typename WorkType = UInt64>
+struct ByteEditDistanceMyersImpl
+{
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+    using Word = WorkType;
+
+    struct ScratchASCII
+    {
+        Word ascii_masks[256]{};
+    };
+    struct ScratchUTF8
+    {
+        HashMapWithStackMemory<UInt32, Word, DefaultHash<UInt32>, 6> unicode_masks;
+    };
+
+    using ScratchT = std::conditional_t<is_utf8, ScratchUTF8, ScratchASCII>;
+
+    static UInt32 distance(const SymbolT* __restrict haystack, UInt32 haystack_len, const SymbolT* __restrict needle, UInt32 needle_len)
+    {
+        ScratchT scratch;
+
+        if constexpr (!is_utf8)
+        {
+            for (size_t i = 0; i < needle_len; ++i)
+                scratch.ascii_masks[needle[i]] |= Word(1) << i;
+        }
+        else
+        {
+            for (size_t i = 0; i < needle_len; ++i)
+                scratch.unicode_masks[needle[i]] = scratch.unicode_masks[needle[i]] | (Word(1) << i);
+        }
+
+        Word VP = ~Word(0);
+        Word VN = 0;
+        uint32_t score = needle_len;
+
+        const Word highest_bit = Word(1) << (needle_len - 1);
+
+        // From: Bit-Parallel Approximate String Matching Algorithms with Transposition (Heikki Hyyro)
+        for (size_t i = 0; i < haystack_len; ++i)
+        {
+            // PM = pattern match mask for current text symbol
+            // PM[j] = 1 iff needle[j] == haystack[i]
+            Word PM;
+            if constexpr (!is_utf8)
+            {
+                PM = scratch.ascii_masks[haystack[i]];
+            }
+            else
+            {
+                auto it = scratch.unicode_masks.find(haystack[i]);
+                PM = (it == scratch.unicode_masks.end()) ? Word(0) : it->getMapped();
+            }
+
+            // X combines matches and vertical negative deltas
+            Word X = PM | VN;
+            // D0: diagonal zero-delta vector
+            // D0[j] = 1 iff D[i][j] == D[i-1][j-1]
+            Word D0 = (((X & VP) + VP) ^ VP) | X;
+            // HP: horizontal positive deltas
+            // HP[j] = 1 iff D[i][j] - D[i][j-1] == +1
+            Word HP = VN | ~(D0 | VP);
+            // HN: horizontal negative deltas
+            // HN[j] = 1 iff D[i][j] - D[i][j-1] == -1
+            Word HN = VP & D0;
+
+            // Update the edit distance score using the last pattern position (corresponds to D[m][i])
+            if (HP & highest_bit) ++score;
+            if (HN & highest_bit) --score;
+
+            // Update vertical positive deltas for next column
+            VP = (HN << 1) | ~(D0 | ((HP << 1) | 1));
+            // Update vertical negative deltas for next column
+            VN = ((HP << 1) | 1) & D0;
+        }
+
+        return score;
+    }
+};
+
+template <bool is_utf8, typename Word = UInt64>
+struct BlockMyersEditDistance
+{
+    struct PatternMasksASCII
+    {
+        static constexpr size_t W = sizeof(Word) * 8;
+        // Needles up to stack_blocks * W chars keep the pattern table in inline storage,
+        // avoiding a per-row heap allocation in the hot edit-distance loop. Longer needles
+        // spill to a tracked allocation.
+        static constexpr size_t stack_blocks = 8;
+        UInt32 num_blocks = 0;
+        // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
+        PODArrayWithStackMemory<Word, 256 * stack_blocks * sizeof(Word)> tbl;
+
+        void build(const UInt8 * needle, UInt32 m)
+        {
+            num_blocks = (m + W - 1) / W;
+            tbl.assign(static_cast<size_t>(num_blocks) * 256, Word(0));
+            for (UInt32 i = 0; i < m; ++i)
+                tbl[needle[i] * num_blocks + i / W] |= Word(1) << (i % W);
+        }
+
+        const Word * operator[](UInt8 c) const { return tbl.data() + c * num_blocks; }
+    };
+
+    struct PatternMasksUTF8
+    {
+        static constexpr size_t W = sizeof(Word) * 8;
+        UInt32 num_blocks = 0;
+        using Map = HashMapWithStackMemory<UInt32, UInt32, DefaultHash<UInt32>, 6>;
+        Map offset_map;
+        VectorWithMemoryTracking<Word> arena; // flat: arena[offset_map[c] + k] = bitmask of positions of char c in block k
+
+        void build(const UInt32 * needle, UInt32 m)
+        {
+            num_blocks = (m + W - 1) / W;
+
+            // Pass 1: count unique codepoints and assign offsets
+            UInt32 num_unique = 0;
+            for (UInt32 i = 0; i < m; ++i)
+            {
+                Map::LookupResult it = nullptr;
+                bool inserted = false;
+                offset_map.emplace(needle[i], it, inserted);
+                if (inserted)
+                {
+                    it->getMapped() = num_unique++ * num_blocks;
+                }
+            }
+
+            arena.assign(num_unique * num_blocks, Word(0));
+
+            // Pass 2: fill masks
+            for (UInt32 i = 0; i < m; ++i)
+                arena[offset_map[needle[i]] + i / W] |= Word(1) << (i % W);
+        }
+
+        const Word * operator[](UInt32 c) const
+        {
+            const auto * it = offset_map.find(c);
+            return (it == offset_map.end()) ? nullptr : arena.data() + it->getMapped();
+        }
+    };
+
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+    static constexpr size_t W = sizeof(Word) * 8;
+
+    // Requires haystack_len and needle_len > 0
+    static UInt32 distance(
+        const SymbolT * __restrict haystack, UInt32 haystack_len,
+        const SymbolT * __restrict needle,   UInt32 needle_len)
+    {
+        const UInt32 num_blocks   = (needle_len + W - 1) / W;
+        const UInt32 last         = num_blocks - 1;
+        const UInt32 bits_in_last = needle_len - last * W;   // in [1, W]
+        const Word last_mask  = (bits_in_last == W)
+                                    ? ~Word(0)
+                                    : (Word(1) << bits_in_last) - Word(1);
+
+        // score_mask selects the bit corresponding to the last character
+        // of the needle (position m-1). Its state determines whether
+        // the edit distance increases or decreases for this column.
+        const Word score_mask = Word(1) << (bits_in_last - 1);
+
+        using PatternMasks = std::conditional_t<is_utf8, PatternMasksUTF8, PatternMasksASCII>;
+        PatternMasks PM_tbl;
+        PM_tbl.build(needle, needle_len);
+
+        // Inline storage for needles up to stack_limit * W = 8192 chars keeps these
+        // per-row buffers off the heap, avoiding a per-row allocation and memory-tracker
+        // atomics in the hot loop. Longer needles spill to a tracked allocation.
+        constexpr size_t stack_limit = 128;
+        using StackVec = PODArrayWithStackMemory<Word, stack_limit * sizeof(Word)>;
+
+        // As in the non-blocked version, but this time per block:
+        // VP all ones, VN all zeros encodes that the first column's edit distances equal the row index (0,1,2,...,m).
+        StackVec VP;
+        StackVec VN;
+        VP.assign(static_cast<size_t>(num_blocks), ~Word(0));
+        VN.assign(static_cast<size_t>(num_blocks), Word(0));
+        UInt32 score = needle_len;
+
+        // HP/HN/D0 per-block scratch, allocated once and reused across columns.
+        StackVec hp_arr;
+        StackVec hn_arr;
+        StackVec d0_arr;
+        hp_arr.resize(num_blocks);
+        hn_arr.resize(num_blocks);
+        d0_arr.resize(num_blocks);
+
+        for (UInt32 col = 0; col < haystack_len; ++col)
+        {
+            const SymbolT ch = haystack[col];
+            const Word *  pm = PM_tbl[ch]; // may be nullptr (no match anywhere)
+
+            // Pass 1: compute D0, HP, HN per block (cannot update VP/VN until we have HP/HN for all blocks).
+            // We store HP/HN/D0 in scratch arrays because we cannot overwrite VP/VN yet (we still need their old values).
+            // Carry from the addition within block k propagates to block k+1.
+            // carry = 0 initially (there is no carry into block 0).
+            Word add_carry = 0;
+
+            for (UInt32 k = 0; k < num_blocks; ++k)
+            {
+                const Word pm_k = pm ? pm[k] : Word(0);
+                const Word vp   = VP[k];
+                const Word vn   = VN[k];
+
+                Word X  = pm_k | vn;
+                Word Y  = X & vp;
+
+                // Blocked addition: sum = Y + vp + add_carry
+                // carry_out = overflow of the Word addition
+                Word s1 = Y + vp;
+                Word c1 = (s1 < Y) ? Word(1) : Word(0);
+                Word s2 = s1 + add_carry;
+                Word c2 = (s2 < s1) ? Word(1) : Word(0);
+                add_carry = c1 | c2;  // single-bit carry out
+
+                Word D0 = (s2 ^ vp) | X;
+                Word HP = vn  | ~(D0 | vp);
+                Word HN = vp & D0;
+
+                hp_arr[k] = HP;
+                hn_arr[k] = HN;
+                d0_arr[k] = D0;
+            }
+
+            // Update the edit distance score from the last block
+            if (hp_arr[last] & score_mask) ++score;
+            if (hn_arr[last] & score_mask) --score;
+
+            // Pass 2: shift HP/HN left by 1 (cross-block) and update VP/VN
+            // In the single-word version this is just: (HP << 1) | 1.
+            // With multiple blocks, the shift must carry across block boundaries:
+            //   - For block 0: shift left and insert 1 as the lowest bit.
+            //   - For block k > 0: shift left and insert the top bit (MSB)
+            //     from the previous block.
+            // HN is shifted the same way, except its first inserted bit is 0.
+            Word hp_carry_in = Word(1); // the "+1" in the original formula
+            Word hn_carry_in = Word(0);
+
+            // For each block:
+            // 1) Shift HP and HN left by one bit.
+            //    - The highest bit becomes the carry into the next block.
+            //    - The lowest bit comes from the previous block (hp_carry_in / hn_carry_in).
+            // 2) In the last block, mask off bits beyond the pattern length
+            //    so we don’t affect unused bits.
+            // 3) Update VP and VN using the standard Myers formulas.
+            // 4) Pass the outgoing carry to the next block.
+            for (UInt32 k = 0; k < num_blocks; ++k)
+            {
+                Word HP = hp_arr[k];
+                Word HN = hn_arr[k];
+                Word D0 = d0_arr[k];
+
+                // Capture the bit that will shift into the next block
+                Word hp_carry_out = HP >> (W - 1);
+                Word hn_carry_out = HN >> (W - 1);
+
+                Word HP_sh = (HP << 1) | hp_carry_in;
+                Word HN_sh = (HN << 1) | hn_carry_in;
+
+                // Mask last block: bits above needle_len - 1 must stay 0/1
+                // VP is initialised to ~0 so we must keep top bits of last block as 1.
+                // The mask only applies to HP_sh and HN_sh (and D0 for last block).
+                if (k == last)
+                {
+                    HP_sh &= last_mask;
+                    HN_sh &= last_mask;
+                    D0    &= last_mask;
+                }
+
+                // VP/VN update (same formula as single-block)
+                VP[k] = HN_sh | ~(D0 | HP_sh);
+                VN[k] = HP_sh & D0;
+
+                hp_carry_in = hp_carry_out;
+                hn_carry_in = hn_carry_out;
+            }
+        }
+
+        return score;
+    }
+};
+
+
+template <bool is_utf8>
+struct ByteEditDistanceDPImpl
+{
+    using WorkingType = UInt32;
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+
+    static UInt32 distance(const SymbolT * __restrict haystack, UInt32 haystack_size, const SymbolT * __restrict needle, UInt32 needle_size)
+    {
+        PaddedPODArray<WorkingType> distances0(haystack_size + 1);
+        PaddedPODArray<WorkingType> distances1(haystack_size + 1);
+        auto * __restrict prev = distances0.data();
+        auto * __restrict curr = distances1.data();
+
+        WorkingType substitution = 0;
+        WorkingType insertion = 0;
+        WorkingType deletion = 0;
+
+        iota(distances0.data(), haystack_size + 1, WorkingType(0));
+
+        const auto has_tail = (haystack_size % 2) == 1;
+
+        for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
+        {
+            curr[0] = static_cast<WorkingType>(pos_needle + 1);
+
+            const auto needle_char = needle[pos_needle];
+
+            size_t pos_haystack = 0;
+            for (; pos_haystack + 1 < haystack_size; pos_haystack += 2)
+            {
+                // First:
+                deletion = prev[pos_haystack + 1] + 1;
+                insertion = curr[pos_haystack] + 1;
+                substitution = prev[pos_haystack];
+
+                if (needle_char != *(haystack + pos_haystack))
+                    substitution += 1;
+
+                curr[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+                // Second:
+                deletion = prev[pos_haystack + 2] + 1;
+                insertion = curr[pos_haystack + 1] + 1;
+                substitution = prev[pos_haystack + 1];
+
+                if (needle_char != *(haystack + pos_haystack + 1))
+                    substitution += 1;
+                curr[pos_haystack + 2] = std::min({deletion, substitution, insertion});
+            }
+            if (has_tail)
+            {
+                deletion = prev[pos_haystack + 1] + 1;
+                insertion = curr[pos_haystack] + 1;
+                substitution = prev[pos_haystack];
+                if (needle_char != *(haystack + pos_haystack))
+                    substitution += 1;
+                curr[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+            }
+            std::swap(curr, prev);
+        }
+
+        return prev[haystack_size];
+    }
+};
+
+template <bool is_utf8>
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
+    using WorkingType = UInt32;
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
 
+    /// If `max_length` is set, it gets the length of the longer string, counted as for the distance.
     static ResultType process(
-        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+        const char * __restrict haystack,
+        size_t haystack_size,
+        const char * __restrict needle,
+        size_t needle_size,
+        size_t * max_length = nullptr)
     {
+        /// The distance to an empty string is the length of the other string: its size in bytes,
+        /// or its number of code points for the UTF8 variant (validated as in the general case).
         if (haystack_size == 0 || needle_size == 0)
-            return haystack_size + needle_size;
+        {
+            size_t length = haystack_size + needle_size;
+            if constexpr (is_utf8)
+            {
+                length = 0;
+                parseUTF8String(haystack_size ? haystack : needle, haystack_size + needle_size, [&](UInt32) { ++length; });
+            }
+            if (max_length)
+                *max_length = length;
+            return length;
+        }
 
         /// Safety threshold against DoS, since we use two arrays to calculate the distance.
         if (haystack_size > max_string_size || needle_size > max_string_size)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "The string size is too big for function editDistance, should be at most {}", max_string_size);
+                "The string size is too big for function editDistance, should be at most {}",
+                max_string_size);
 
         PaddedPODArray<UInt32> haystack_utf8;
         PaddedPODArray<UInt32> needle_utf8;
@@ -255,42 +641,210 @@ struct ByteEditDistanceImpl
             haystack_size = haystack_utf8.size();
             needle_size = needle_utf8.size();
         }
-
-        PaddedPODArray<ResultType> distances0(haystack_size + 1, 0);
-        PaddedPODArray<ResultType> distances1(haystack_size + 1, 0);
-
-        ResultType substitution = 0;
-        ResultType insertion = 0;
-        ResultType deletion = 0;
-
-        iota(distances0.data(), haystack_size + 1, ResultType(0));
-
-        for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
+        if (needle_size > haystack_size)
         {
-            distances1[0] = pos_needle + 1;
-
-            for (size_t pos_haystack = 0; pos_haystack < haystack_size; pos_haystack++)
+            std::swap(needle_size, haystack_size);
+            if constexpr (is_utf8)
             {
-                deletion = distances0[pos_haystack + 1] + 1;
-                insertion = distances1[pos_haystack] + 1;
-                substitution = distances0[pos_haystack];
-
-                if constexpr (is_utf8)
-                {
-                    if (needle_utf8[pos_needle] != haystack_utf8[pos_haystack])
-                        substitution += 1;
-                }
-                else
-                {
-                    if (*(needle + pos_needle) != *(haystack + pos_haystack))
-                        substitution += 1;
-                }
-                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+                std::swap(needle_utf8, haystack_utf8);
             }
-            distances0.swap(distances1);
+            else
+            {
+                std::swap(needle, haystack);
+            }
+        }
+        if (max_length)
+            *max_length = haystack_size;
+
+        auto dispatchMyers = [&]<typename F>()
+        {
+            if constexpr (is_utf8)
+            {
+                return F::distance(
+                    haystack_utf8.data(), static_cast<UInt32>(haystack_size), needle_utf8.data(), static_cast<UInt32>(needle_size));
+            }
+            else
+            {
+                return F::distance(
+                    reinterpret_cast<const SymbolT *>(haystack),
+                    static_cast<UInt32>(haystack_size),
+                    reinterpret_cast<const SymbolT *>(needle),
+                    static_cast<UInt32>(needle_size));
+            }
+        };
+
+        constexpr auto cutoff_size = []{
+            if constexpr (!is_utf8)
+                return 8192;
+            else
+                return 4096;
+        }();
+
+        if (needle_size <= sizeof(UInt64) * CHAR_BIT)
+            return dispatchMyers.template operator()<ByteEditDistanceMyersImpl<is_utf8, UInt64>>();
+        else if (needle_size <= sizeof(UInt128) * CHAR_BIT)
+            return dispatchMyers.template operator()<ByteEditDistanceMyersImpl<is_utf8, UInt128>>();
+        else if (needle_size <= sizeof(UInt256) * CHAR_BIT)
+            return dispatchMyers.template operator()<ByteEditDistanceMyersImpl<is_utf8, UInt256>>();
+        else if (needle_size <= cutoff_size)
+            return dispatchMyers.template operator()<BlockMyersEditDistance<is_utf8, UInt64>>();
+        else
+        {
+            if constexpr (is_utf8)
+            {
+                return ByteEditDistanceDPImpl<is_utf8>::distance(
+                    haystack_utf8.data(), static_cast<UInt32>(haystack_size), needle_utf8.data(), static_cast<UInt32>(needle_size));
+            }
+            else
+            {
+                return ByteEditDistanceDPImpl<is_utf8>::distance(
+                    reinterpret_cast<const SymbolT *>(haystack),
+                    static_cast<UInt32>(haystack_size),
+                    reinterpret_cast<const SymbolT *>(needle),
+                    static_cast<UInt32>(needle_size));
+            }
+        }
+    }
+};
+
+/// Normalized Levenshtein similarity: 1 - editDistance / max(length1, length2),
+/// with lengths in bytes, or in code points for the UTF8 variant. Two empty strings are equal (1).
+template <bool is_utf8>
+struct ByteEditDistanceRatioImpl
+{
+    using ResultType = Float64;
+
+    static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Safety threshold against DoS, as for editDistance. It protects the distance computation, which does not run
+        /// when one string is empty.
+        if (haystack_size != 0 && needle_size != 0 && (haystack_size > max_string_size || needle_size > max_string_size))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function editDistanceRatio, should be at most {}",
+                max_string_size);
+
+        /// The length comes from the same parse as the distance, so they count the same symbols: a byte from 0x80 to 0xBF
+        /// without a lead byte is one symbol in both. A non-empty string against an empty one gives 0.
+        size_t max_length = 0;
+        const UInt64 distance = ByteEditDistanceImpl<is_utf8>::process(haystack, haystack_size, needle, needle_size, &max_length);
+        if (max_length == 0)
+            return 1;
+
+        return 1 - static_cast<Float64>(distance) / static_cast<Float64>(max_length);
+    }
+};
+
+/// Length of the longest common subsequence, bit-parallel: one bit per needle symbol, 64 symbols per word.
+/// From: Bit-Parallel LCS-length Computation Revisited (Heikki Hyyro, 2004).
+/// For each haystack symbol c: U = S & PM[c], S = (S + U) | (S - U). The zero bits of S count the LCS.
+/// U is a subset of S, so S - U never borrows and only the addition carries from word to word.
+template <bool is_utf8, typename Word = UInt64>
+struct LongestCommonSubsequenceImpl
+{
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+    static constexpr size_t W = sizeof(Word) * 8;
+
+    /// Requires needle_len > 0
+    static UInt32 length(const SymbolT * __restrict haystack, UInt32 haystack_len, const SymbolT * __restrict needle, UInt32 needle_len)
+    {
+        using PatternMasks = std::conditional_t<is_utf8,
+            typename BlockMyersEditDistance<is_utf8, Word>::PatternMasksUTF8,
+            typename BlockMyersEditDistance<is_utf8, Word>::PatternMasksASCII>;
+        PatternMasks pm_table;
+        pm_table.build(needle, needle_len);
+
+        const UInt32 num_blocks = static_cast<UInt32>((needle_len + W - 1) / W);
+        constexpr size_t stack_limit = 128;
+        PODArrayWithStackMemory<Word, stack_limit * sizeof(Word)> s;
+        s.assign(static_cast<size_t>(num_blocks), ~Word(0));
+
+        for (UInt32 i = 0; i < haystack_len; ++i)
+        {
+            const Word * pm = pm_table[haystack[i]];
+            if (!pm)
+                continue; /// The symbol does not occur in the needle, S stays the same.
+
+            Word carry = 0;
+            for (UInt32 k = 0; k < num_blocks; ++k)
+            {
+                const Word u = s[k] & pm[k];
+                const Word sum = s[k] + u;
+                const Word with_carry = sum + carry;
+                carry = (sum < u) | (with_carry < sum);
+                s[k] = with_carry | (s[k] - u);
+            }
         }
 
-        return distances0[haystack_size];
+        /// Bits above needle_len in the last word do not belong to the needle.
+        const size_t bits_in_last = needle_len - (num_blocks - 1) * W;
+        UInt32 lcs = 0;
+        for (UInt32 k = 0; k < num_blocks; ++k)
+        {
+            Word zeros = ~s[k];
+            if (k == num_blocks - 1 && bits_in_last < W)
+                zeros &= (Word(1) << bits_in_last) - 1;
+            lcs += static_cast<UInt32>(std::popcount(zeros));
+        }
+        return lcs;
+    }
+};
+
+/// Normalized indel similarity, as in Python's Levenshtein.ratio: 2 * LCS / (length1 + length2),
+/// i.e. 1 - (insertions + deletions) / (length1 + length2). Two empty strings are equal (1).
+template <bool is_utf8>
+struct ByteStringSimilarityRatioImpl
+{
+    using ResultType = Float64;
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+
+    static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Safety threshold against DoS, as for editDistance. It protects the LCS computation, which does not run
+        /// when one string is empty.
+        if (haystack_size != 0 && needle_size != 0 && (haystack_size > max_string_size || needle_size > max_string_size))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function stringSimilarityRatio, should be at most {}",
+                max_string_size);
+
+        PaddedPODArray<UInt32> haystack_utf8;
+        PaddedPODArray<UInt32> needle_utf8;
+        const SymbolT * haystack_symbols = nullptr;
+        const SymbolT * needle_symbols = nullptr;
+        if constexpr (is_utf8)
+        {
+            parseUTF8String(haystack, haystack_size, [&](UInt32 code_point) { haystack_utf8.push_back(code_point); });
+            parseUTF8String(needle, needle_size, [&](UInt32 code_point) { needle_utf8.push_back(code_point); });
+            haystack_symbols = haystack_utf8.data();
+            haystack_size = haystack_utf8.size();
+            needle_symbols = needle_utf8.data();
+            needle_size = needle_utf8.size();
+        }
+        else
+        {
+            haystack_symbols = reinterpret_cast<const SymbolT *>(haystack);
+            needle_symbols = reinterpret_cast<const SymbolT *>(needle);
+        }
+
+        const size_t total_length = haystack_size + needle_size;
+        if (total_length == 0)
+            return 1;
+        if (haystack_size == 0 || needle_size == 0)
+            return 0;
+
+        /// The bit vector runs over the shorter string.
+        if (needle_size > haystack_size)
+        {
+            std::swap(haystack_symbols, needle_symbols);
+            std::swap(haystack_size, needle_size);
+        }
+
+        const UInt32 lcs = LongestCommonSubsequenceImpl<is_utf8>::length(
+            haystack_symbols, static_cast<UInt32>(haystack_size), needle_symbols, static_cast<UInt32>(needle_size));
+        /// Computed as 1 - indel / total rather than 2 * lcs / total to give bit-for-bit the same value as Python.
+        const size_t indel_distance = total_length - 2 * static_cast<size_t>(lcs);
+        return 1 - static_cast<Float64>(indel_distance) / static_cast<Float64>(total_length);
     }
 };
 
@@ -323,8 +877,8 @@ struct ByteDamerauLevenshteinDistanceImpl
 
         /// Dynamically allocate memory for the 2D array
         /// Allocating a 2D array, for convenience starts is an array of pointers to the start of the rows.
-        std::vector<int> d((needle_size + 1) * (haystack_size + 1));
-        std::vector<int *> starts(haystack_size + 1);
+        VectorWithMemoryTracking<int> d((needle_size + 1) * (haystack_size + 1));
+        VectorWithMemoryTracking<int *> starts(haystack_size + 1);
 
         /// Setting the pointers in starts to the beginning of (needle_size + 1)-long intervals.
         /// Also initialize the row values based on the mentioned algorithm.
@@ -358,37 +912,207 @@ struct ByteDamerauLevenshteinDistanceImpl
     }
 };
 
+/// AVX2-accelerated greedy Jaro matcher. For each i in s1 (ascending), we
+/// find the smallest unmatched j in [i-d, i+d] with s2[j] == s1[i]. Two
+/// kernels split by needle length:
+///   * `|needle| <= 64`: hoist all of `needle` into one or two `__m256i`
+///     registers. Per s1 char: broadcast/cmpeq/movemask -> 64-bit eq
+///     mask; AND with window AND ~matched_s2; ctzll picks the smallest j.
+///   * `|needle|  > 64`: slide a 4xAVX2 (= 128 byte) window over needle
+///     with a single branch per 128 bytes. The 128-bit eq mask is AND-ed
+///     with ~matched_s2 loaded at the current bit offset.
+/// `matched_s1` is recorded in encounter order; `matched_s2` is a bitmap
+/// walked via ctzll/blsr in the transposition pass. Result is byte-
+/// identical to the scalar reference.
+///
+/// Wrapped in `DECLARE_X86_64_V3_SPECIFIC_CODE` so the helpers are compiled
+/// with the AVX2 target attribute regardless of the default build flags and
+/// selected at runtime via `isArchSupported(TargetArch::x86_64_v3)`. The
+/// `apply_to=function` pragma ensures the lambda inside `jaroScan` also
+/// inherits the attribute.
+#if USE_MULTITARGET_CODE
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+
+/// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo <= hi <= 64.
+inline UInt64 jaroWindowMask(int lo, int hi)
+{
+    const UInt64 hi_mask = (hi == 64) ? ~UInt64{0} : ((UInt64{1} << hi) - 1);
+    const UInt64 lo_mask = (UInt64{1} << lo) - 1;
+    return hi_mask & ~lo_mask;
+}
+
+inline double jaroFinishScore(int matches, int trans2, int s1_len, int s2_len)
+{
+    if (matches == 0)
+        return 0.0;
+    const double m = static_cast<double>(matches);
+    const double t = static_cast<double>(trans2) * 0.5;
+    return (1.0 / 3.0) * (m / s1_len + m / s2_len + (m - t) / m);
+}
+
+static double jaroSmall(const unsigned char * s1, int s1_len,
+                        const unsigned char * s2, int s2_len,
+                        int max_range)
+{
+    alignas(32) unsigned char buf[64] = {};
+    memcpy(buf, s2, s2_len);
+    const __m256i s2v0 = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf));
+    const __m256i s2v1 = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf + 32));
+    const UInt64 valid = (s2_len == 64) ? ~UInt64{0} : ((UInt64{1} << s2_len) - 1);
+
+    /// matches <= s2_len <= 64, so the encounter list fits on the stack.
+    int idx_buf[64];
+    int matches = 0;
+    UInt64 matched_s2 = 0;
+
+    for (int i = 0; i < s1_len; ++i)
+    {
+        const int lo = std::max(0, i - max_range);
+        const int hi = std::min(s2_len, i + max_range + 1);
+        if (lo >= hi)
+            continue;
+        const __m256i target = _mm256_set1_epi8(static_cast<char>(s1[i]));
+        const UInt32 e0 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, s2v0)));
+        const UInt32 e1 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, s2v1)));
+        const UInt64 eq = UInt64(e0) | (UInt64(e1) << 32);
+        const UInt64 cand = eq & jaroWindowMask(lo, hi) & valid & ~matched_s2;
+        if (cand)
+        {
+            const int j = static_cast<int>(getTrailingZeroBitsUnsafe(cand));
+            matched_s2 |= UInt64{1} << j;
+            idx_buf[matches++] = i;
+        }
+    }
+
+    int trans2 = 0;
+    UInt64 b = matched_s2;
+    for (int k = 0; k < matches; ++k)
+    {
+        const int j = static_cast<int>(getTrailingZeroBitsUnsafe(b));
+        b &= b - 1;
+        trans2 += (s1[idx_buf[k]] != s2[j]);
+    }
+    return jaroFinishScore(matches, trans2, s1_len, s2_len);
+}
+
+/// Read 64 bits from a packed bitmap starting at an arbitrary bit offset.
+/// Caller must provide a sentinel word past the last live position so this
+/// can blindly load `bits[word + 1]`.
+inline UInt64 jaroBits64At(const UInt64 * bits, int bit_off)
+{
+    const int word = bit_off >> 6;
+    const int sh   = bit_off & 63;
+    const UInt64 lo = bits[word] >> sh;
+    const UInt64 hi = (sh == 0) ? 0 : (bits[word + 1] << (64 - sh));
+    return lo | hi;
+}
+
+static double jaroScan(const unsigned char * s1, int s1_len,
+                       const unsigned char * s2, int s2_len,
+                       int max_range)
+{
+    const int s2_words = (s2_len + 63) / 64;
+    /// One sentinel word past the end so jaroBits64At can load [word + 1].
+    PaddedPODArray<UInt64> matched_s2_bits(s2_words + 1, 0);
+    PaddedPODArray<int> idx_buf(s1_len);
+    int matches = 0;
+
+    /// Returns the smallest unmatched j in [lo, hi) with s2[j] == c, or -1.
+    auto findMatch = [&](unsigned char c, int lo, int hi) -> int
+    {
+        const __m256i target = _mm256_set1_epi8(static_cast<char>(c));
+        int j = lo;
+
+        /// 128-byte unroll: one branch per 128 bytes keeps mispredict cost
+        /// bounded even for randomized inputs.
+        while (j + 128 <= hi)
+        {
+            const __m256i c0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j));
+            const __m256i c1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j + 32));
+            const __m256i c2 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j + 64));
+            const __m256i c3 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j + 96));
+            const UInt32 e0 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c0, target)));
+            const UInt32 e1 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c1, target)));
+            const UInt32 e2 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c2, target)));
+            const UInt32 e3 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(c3, target)));
+            const UInt64 eq_lo = UInt64(e0) | (UInt64(e1) << 32);
+            const UInt64 eq_hi = UInt64(e2) | (UInt64(e3) << 32);
+            const UInt64 cand_lo = eq_lo & ~jaroBits64At(matched_s2_bits.data(), j);
+            const UInt64 cand_hi = eq_hi & ~jaroBits64At(matched_s2_bits.data(), j + 64);
+            if (cand_lo | cand_hi)
+                return cand_lo
+                    ? j      + static_cast<int>(getTrailingZeroBitsUnsafe(cand_lo))
+                    : j + 64 + static_cast<int>(getTrailingZeroBitsUnsafe(cand_hi));
+            j += 128;
+        }
+        while (j + 32 <= hi)
+        {
+            const __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s2 + j));
+            UInt32 eq_mask = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, target)));
+            eq_mask &= ~static_cast<UInt32>(jaroBits64At(matched_s2_bits.data(), j) & 0xFFFFFFFFu);
+            if (eq_mask)
+                return j + static_cast<int>(getTrailingZeroBitsUnsafe(eq_mask));
+            j += 32;
+        }
+        for (; j < hi; ++j)
+        {
+            const UInt64 bit = UInt64{1} << (j & 63);
+            if (s2[j] == c && !(matched_s2_bits[j >> 6] & bit))
+                return j;
+        }
+        return -1;
+    };
+
+    for (int i = 0; i < s1_len; ++i)
+    {
+        const int lo = std::max(0, i - max_range);
+        const int hi = std::min(s2_len, i + max_range + 1);
+        if (lo >= hi)
+            continue;
+
+        const int jj = findMatch(s1[i], lo, hi);
+        if (jj >= 0)
+        {
+            matched_s2_bits[jj >> 6] |= UInt64{1} << (jj & 63);
+            idx_buf[matches++] = i;
+        }
+    }
+
+    int trans2 = 0;
+    int wb = 0;
+    UInt64 b = matched_s2_bits[0];
+    for (int k = 0; k < matches; ++k)
+    {
+        while (!b)
+        {
+            ++wb;
+            if (wb >= s2_words)
+                return jaroFinishScore(matches, trans2, s1_len, s2_len);
+            b = matched_s2_bits[wb];
+        }
+        const int j = (wb << 6) + static_cast<int>(getTrailingZeroBitsUnsafe(b));
+        b &= b - 1;
+        trans2 += (s1[idx_buf[k]] != s2[j]);
+    }
+    return jaroFinishScore(matches, trans2, s1_len, s2_len);
+}
+
+) // DECLARE_X86_64_V3_SPECIFIC_CODE
+#endif
+
 struct ByteJaroSimilarityImpl
 {
     using ResultType = Float64;
 
-    static ResultType process(
-        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    /// Scalar reference implementation, used as fallback when AVX2 is not
+    /// available at runtime (or at compile time, for non-x86 builds).
+    static ResultType processScalar(
+        const char * __restrict haystack,
+        const char * __restrict needle,
+        int s1len, int s2len, int max_range)
     {
-        /// Safety threshold against DoS
-        if (haystack_size > max_string_size || needle_size > max_string_size)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "The string size is too big for function jaroSimilarity, should be at most {}", max_string_size);
-
-        /// Shortcuts:
-
-        if (haystack_size == 0)
-            return needle_size;
-
-        if (needle_size == 0)
-            return haystack_size;
-
-        if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
-            return 1.0;
-
-        const int s1len = static_cast<int>(haystack_size);
-        const int s2len = static_cast<int>(needle_size);
-
-        /// Window size to search for matches in the other string
-        const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
-        std::vector<int> s1_matching(s1len, -1);
-        std::vector<int> s2_matching(s2len, -1);
+        VectorWithMemoryTracking<int> s1_matching(s1len, -1);
+        VectorWithMemoryTracking<int> s2_matching(s2len, -1);
 
         /// Calculate matching characters
         size_t matching_characters = 0;
@@ -426,11 +1150,56 @@ struct ByteJaroSimilarityImpl
             s2i++;
         }
 
-        double m = static_cast<double>(matching_characters);
-        double jaro_similarity = 1.0 / 3.0  * (m / static_cast<double>(s1len)
-                                            + m / static_cast<double>(s2len)
-                                            + (m - transpositions) / m);
-        return jaro_similarity;
+        const double m = static_cast<double>(matching_characters);
+        return 1.0 / 3.0 * (m / static_cast<double>(s1len)
+                          + m / static_cast<double>(s2len)
+                          + (m - transpositions) / m);
+    }
+
+    static ResultType process(
+        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Shortcuts:
+
+        if (haystack_size == 0 || needle_size == 0)
+            return 0.0;
+
+        /// Safety threshold against DoS
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function jaroSimilarity, should be at most {}", max_string_size);
+
+        if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
+            return 1.0;
+
+        const int s1len = static_cast<int>(haystack_size);
+        const int s2len = static_cast<int>(needle_size);
+
+        /// Window size to search for matches in the other string
+        const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
+
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            const auto * s1 = reinterpret_cast<const unsigned char *>(haystack);
+            const auto * s2 = reinterpret_cast<const unsigned char *>(needle);
+            /// `jaroSmall` hoists the second string into two AVX2 registers, so it requires that
+            /// string to be at most 64 bytes. Which of the two arguments ends up here as the
+            /// needle is not under our control: `FunctionStringDistanceImpl::vectorConstant`
+            /// forwards `jaroSimilarity(column, const)` through `constantVector(const, column)`,
+            /// so the row value can arrive as the needle. Jaro similarity is symmetric - both the
+            /// matching window `max_range` and the final score are - so pick the kernel by the
+            /// shorter of the two strings rather than by the argument position, and swap the
+            /// arguments when the needle is the longer one.
+            if (s2len <= 64)
+                return TargetSpecific::x86_64_v3::jaroSmall(s1, s1len, s2, s2len, max_range);
+            if (s1len <= 64)
+                return TargetSpecific::x86_64_v3::jaroSmall(s2, s2len, s1, s1len, max_range);
+            return TargetSpecific::x86_64_v3::jaroScan(s1, s1len, s2, s2len, max_range);
+        }
+#endif
+        return processScalar(haystack, needle, s1len, s2len, max_range);
     }
 };
 
@@ -444,6 +1213,9 @@ struct ByteJaroWinklerSimilarityImpl
         static constexpr int max_prefix_length = 4;
         static constexpr double scaling_factor =  0.1;
         static constexpr double boost_threshold = 0.7;
+
+        if (haystack_size == 0 || needle_size == 0)
+            return 0.0;
 
         /// Safety threshold against DoS
         if (haystack_size > max_string_size || needle_size > max_string_size)
@@ -469,6 +1241,8 @@ struct ByteJaroWinklerSimilarityImpl
     }
 };
 
+#ifndef STRING_SIMILARITY_GTEST_UNIT_TEST
+
 struct NameByteHammingDistance
 {
     static constexpr auto name = "byteHammingDistance";
@@ -485,6 +1259,28 @@ struct NameEditDistanceUTF8
     static constexpr auto name = "editDistanceUTF8";
 };
 using FunctionEditDistanceUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<true>>, NameEditDistanceUTF8>;
+
+struct NameEditDistanceRatio
+{
+    static constexpr auto name = "editDistanceRatio";
+};
+using FunctionEditDistanceRatio = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceRatioImpl<false>>, NameEditDistanceRatio>;
+struct NameEditDistanceRatioUTF8
+{
+    static constexpr auto name = "editDistanceRatioUTF8";
+};
+using FunctionEditDistanceRatioUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceRatioImpl<true>>, NameEditDistanceRatioUTF8>;
+
+struct NameStringSimilarityRatio
+{
+    static constexpr auto name = "stringSimilarityRatio";
+};
+using FunctionStringSimilarityRatio = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteStringSimilarityRatioImpl<false>>, NameStringSimilarityRatio>;
+struct NameStringSimilarityRatioUTF8
+{
+    static constexpr auto name = "stringSimilarityRatioUTF8";
+};
+using FunctionStringSimilarityRatioUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteStringSimilarityRatioImpl<true>>, NameStringSimilarityRatioUTF8>;
 
 struct NameDamerauLevenshteinDistance
 {
@@ -540,7 +1336,7 @@ Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_hamming = {description_hamming, syntax_hamming, arguments_hamming, returned_value_hamming, examples_hamming, introduced_in, category};
+    FunctionDocumentation documentation_hamming = {description_hamming, syntax_hamming, arguments_hamming, {}, returned_value_hamming, examples_hamming, introduced_in, category};
 
     FunctionDocumentation::Description description_edit = R"(
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
@@ -562,7 +1358,7 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
         )"
     }
     };
-    FunctionDocumentation documentation_edit = {description_edit, syntax_edit, arguments_edit, returned_value_edit, examples_edit, introduced_in, category};
+    FunctionDocumentation documentation_edit = {description_edit, syntax_edit, arguments_edit, {}, returned_value_edit, examples_edit, introduced_in, category};
 
     FunctionDocumentation::Description description_edit_utf8 = R"(
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two UTF8 strings.
@@ -576,16 +1372,120 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
     FunctionDocumentation::Examples examples_edit_utf8 = {
     {
         "Usage example",
-        "SELECT editDistanceUTF8('我是谁', '我是我')",
+        "SELECT editDistanceUTF8('我是谁', '我是我') AS distance",
         R"(
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_utf8 = {24, 6};
-    FunctionDocumentation documentation_edit_utf8 = {description_edit_utf8, syntax_edit_utf8, arguments_edit_utf8, returned_value_edit_utf8, examples_edit_utf8, introduced_in_utf8, category};
+    FunctionDocumentation documentation_edit_utf8 = {description_edit_utf8, syntax_edit_utf8, arguments_edit_utf8, {}, returned_value_edit_utf8, examples_edit_utf8, introduced_in_utf8, category};
+
+    FunctionDocumentation::Description description_edit_ratio = R"(
+Calculates the normalized [edit distance](https://en.wikipedia.org/wiki/Edit_distance) similarity between two byte strings:
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+Returns a value between `0` (the edit distance equals the length of the longer string, as for `'ab'` and `'ba'`) and `1` (equal strings). Two empty strings are equal.
+)";
+    FunctionDocumentation::Syntax syntax_edit_ratio = "editDistanceRatio(s1, s2)";
+    FunctionDocumentation::Arguments arguments_edit_ratio = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_edit_ratio = {"Returns the normalized edit distance similarity between the two strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_edit_ratio = {
+    {
+        "Usage example",
+        "SELECT editDistanceRatio('kitten', 'sitting')",
+        R"(
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ratio = {26, 11};
+    FunctionDocumentation documentation_edit_ratio = {description_edit_ratio, syntax_edit_ratio, arguments_edit_ratio, {}, returned_value_edit_ratio, examples_edit_ratio, introduced_in_ratio, category};
+
+    FunctionDocumentation::Description description_edit_ratio_utf8 = R"(
+Like [`editDistanceRatio`](#editDistanceRatio) but for UTF8-encoded strings: the edit distance and the lengths are counted in code points.
+)";
+    FunctionDocumentation::Syntax syntax_edit_ratio_utf8 = "editDistanceRatioUTF8(s1, s2)";
+    FunctionDocumentation::Arguments arguments_edit_ratio_utf8 = {
+        {"s1", "First input UTF8 string.", {"String"}},
+        {"s2", "Second input UTF8 string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_edit_ratio_utf8 = {"Returns the normalized edit distance similarity between the two UTF8 strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_edit_ratio_utf8 = {
+    {
+        "Usage example",
+        "SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio",
+        R"(
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_edit_ratio_utf8 = {description_edit_ratio_utf8, syntax_edit_ratio_utf8, arguments_edit_ratio_utf8, {}, returned_value_edit_ratio_utf8, examples_edit_ratio_utf8, introduced_in_ratio, category};
+
+    FunctionDocumentation::Description description_similarity_ratio = R"(
+Calculates the normalized indel similarity between two byte strings, the same value as Python's `Levenshtein.ratio`:
+`2 * LCS / (length(s1) + length(s2))`, where `LCS` is the length of the [longest common subsequence](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+Equivalently, `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+Returns a value between `0` (nothing in common) and `1` (equal strings). Two empty strings are equal.
+)";
+    FunctionDocumentation::Syntax syntax_similarity_ratio = "stringSimilarityRatio(s1, s2)";
+    FunctionDocumentation::Arguments arguments_similarity_ratio = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_similarity_ratio = {"Returns the normalized indel similarity between the two strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_similarity_ratio = {
+    {
+        "Usage example",
+        "SELECT stringSimilarityRatio('kitten', 'sitting')",
+        R"(
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Fuzzy matching of names",
+        "SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7",
+        R"(
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_similarity_ratio = {description_similarity_ratio, syntax_similarity_ratio, arguments_similarity_ratio, {}, returned_value_similarity_ratio, examples_similarity_ratio, introduced_in_ratio, category};
+
+    FunctionDocumentation::Description description_similarity_ratio_utf8 = R"(
+Like [`stringSimilarityRatio`](#stringSimilarityRatio) but for UTF8-encoded strings: the lengths are counted in code points.
+)";
+    FunctionDocumentation::Syntax syntax_similarity_ratio_utf8 = "stringSimilarityRatioUTF8(s1, s2)";
+    FunctionDocumentation::Arguments arguments_similarity_ratio_utf8 = {
+        {"s1", "First input UTF8 string.", {"String"}},
+        {"s2", "Second input UTF8 string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_similarity_ratio_utf8 = {"Returns the normalized indel similarity between the two UTF8 strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_similarity_ratio_utf8 = {
+    {
+        "Usage example",
+        "SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio",
+        R"(
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_similarity_ratio_utf8 = {description_similarity_ratio_utf8, syntax_similarity_ratio_utf8, arguments_similarity_ratio_utf8, {}, returned_value_similarity_ratio_utf8, examples_similarity_ratio_utf8, introduced_in_ratio, category};
 
     FunctionDocumentation::Description description_damerau = R"(
 Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
@@ -608,7 +1508,7 @@ Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Dame
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_damerau = {24, 1};
-    FunctionDocumentation documentation_damerau = {description_damerau, syntax_damerau, arguments_damerau, returned_value_damerau, examples_damerau, introduced_in_damerau, category};
+    FunctionDocumentation documentation_damerau = {description_damerau, syntax_damerau, arguments_damerau, {}, returned_value_damerau, examples_damerau, introduced_in_damerau, category};
 
     FunctionDocumentation::Description description_jaccard = R"(
 Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
@@ -631,7 +1531,7 @@ Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaccard = {23, 11};
-    FunctionDocumentation documentation_jaccard = {description_jaccard, syntax_jaccard, arguments_jaccard, returned_value_jaccard, examples_jaccard, introduced_in_jaccard, category};
+    FunctionDocumentation documentation_jaccard = {description_jaccard, syntax_jaccard, arguments_jaccard, {}, returned_value_jaccard, examples_jaccard, introduced_in_jaccard, category};
 
     FunctionDocumentation::Description description_jaccard_utf8 = R"(
 Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
@@ -645,19 +1545,20 @@ Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
     FunctionDocumentation::Examples examples_jaccard_utf8 = {
     {
         "Usage example",
-        "SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')",
+        "SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index",
         R"(
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaccard_utf8 = {23, 11};
-    FunctionDocumentation documentation_jaccard_utf8 = {description_jaccard_utf8, syntax_jaccard_utf8, arguments_jaccard_utf8, returned_value_jaccard_utf8, examples_jaccard_utf8, introduced_in_jaccard_utf8, category};
+    FunctionDocumentation documentation_jaccard_utf8 = {description_jaccard_utf8, syntax_jaccard_utf8, arguments_jaccard_utf8, {}, returned_value_jaccard_utf8, examples_jaccard_utf8, introduced_in_jaccard_utf8, category};
 
     FunctionDocumentation::Description description_jaro = R"(
 Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+Returns `0` if either string is empty.
 )";
     FunctionDocumentation::Syntax syntax_jaro = "jaroSimilarity(s1, s2)";
     FunctionDocumentation::Arguments arguments_jaro = {
@@ -677,10 +1578,11 @@ Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Wink
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaro = {24, 1};
-    FunctionDocumentation documentation_jaro = {description_jaro, syntax_jaro, arguments_jaro, returned_value_jaro, examples_jaro, introduced_in_jaro, category};
+    FunctionDocumentation documentation_jaro = {description_jaro, syntax_jaro, arguments_jaro, {}, returned_value_jaro, examples_jaro, introduced_in_jaro, category};
 
     FunctionDocumentation::Description description_jaro_winkler = R"(
 Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) between two byte strings.
+Returns `0` if either string is empty.
 )";
     FunctionDocumentation::Syntax syntax_jaro_winkler = "jaroWinklerSimilarity(s1, s2)";
     FunctionDocumentation::Arguments arguments_jaro_winkler = {
@@ -700,7 +1602,7 @@ Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%8
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaro_winkler = {24, 1};
-    FunctionDocumentation documentation_jaro_winkler = {description_jaro_winkler, syntax_jaro_winkler, arguments_jaro_winkler, returned_value_jaro_winkler, examples_jaro_winkler, introduced_in_jaro_winkler, category};
+    FunctionDocumentation documentation_jaro_winkler = {description_jaro_winkler, syntax_jaro_winkler, arguments_jaro_winkler, {}, returned_value_jaro_winkler, examples_jaro_winkler, introduced_in_jaro_winkler, category};
 
     factory.registerFunction<FunctionByteHammingDistance>(documentation_hamming);
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
@@ -710,6 +1612,16 @@ Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%8
 
     factory.registerFunction<FunctionEditDistanceUTF8>(documentation_edit_utf8);
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
+    factory.registerAlias("levenshtein_distance", NameEditDistanceUTF8::name, FunctionFactory::Case::Insensitive);
+
+    factory.registerFunction<FunctionEditDistanceRatio>(documentation_edit_ratio);
+    factory.registerAlias("levenshteinRatio", NameEditDistanceRatio::name);
+
+    factory.registerFunction<FunctionEditDistanceRatioUTF8>(documentation_edit_ratio_utf8);
+    factory.registerAlias("levenshteinRatioUTF8", NameEditDistanceRatioUTF8::name);
+
+    factory.registerFunction<FunctionStringSimilarityRatio>(documentation_similarity_ratio);
+    factory.registerFunction<FunctionStringSimilarityRatioUTF8>(documentation_similarity_ratio_utf8);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(documentation_damerau);
 
@@ -720,4 +1632,6 @@ Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%8
 
     factory.registerFunction<FunctionJaroWinklerSimilarity>(documentation_jaro_winkler);
 }
+
+#endif // STRING_SIMILARITY_GTEST_UNIT_TEST
 }

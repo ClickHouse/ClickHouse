@@ -1,0 +1,71 @@
+---
+sidebarTitle: 'BYOC 보안 플레이북'
+slug: /cloud/security/audit-logging/byoc-security-playbook
+title: 'BYOC 보안 플레이북'
+description: '이 페이지에서는 고객이 잠재적인 보안 이벤트를 식별하는 데 활용할 수 있는 방법을 설명합니다'
+doc_type: 'guide'
+keywords: ['byoc', 'security', 'playbook', 'best practices', 'compliance']
+---
+
+ClickHouse는 보안에 대한 공유 책임 모델에 따라 Bring Your Own Cloud (BYOC)를 운영하며, 관련 문서는 Trust Center(https://trust.clickhouse.com)에서 다운로드할 수 있습니다. 아래 정보는 BYOC 고객이 잠재적인 보안 이벤트를 식별하는 방법을 보여주는 예시로 제공됩니다. 추가적인 탐지 및 알림이 유용한지 판단하려면, 각자의 보안 프로그램 맥락에서 이 정보를 검토해야 합니다.
+
+<div id="compromised-clickhouse-credentials">
+  ## 침해되었을 가능성이 있는 ClickHouse 자격 증명
+</div>
+
+자격 증명 기반 공격을 탐지하거나 악의적인 활동을 조사하는 데 사용할 쿼리는 [데이터베이스 감사 로그](/ko/products/cloud/guides/security/audit-logging/database-audit-log) 문서를 참조하십시오.
+
+<div id="application-layer-dos-attack">
+  ## 애플리케이션 계층 서비스 거부 공격
+</div>
+
+서비스 거부(DoS) 공격을 수행하는 방법은 다양합니다. 공격이 특정 payload를 사용해 ClickHouse 인스턴스를 비정상 종료시키는 데 초점이 맞춰져 있다면, 시스템을 다시 실행 상태로 복구하거나 시스템을 재부팅한 뒤 액세스를 제한하여 제어권을 되찾으십시오. 공격에 대한 자세한 정보를 확인하려면 다음 쿼리를 사용해 [system.crash&#95;log](/ko/reference/system-tables/crash_log)를 검토하십시오.
+
+```sql
+SELECT * 
+FROM clusterAllReplicas('default',system.crash_log)
+```
+
+<div id="compromised-clickhouse-created-aws-roles">
+  ## 침해된 ClickHouse 생성 AWS 역할
+</div>
+
+ClickHouse는 시스템 기능을 수행하기 위해 미리 생성된 역할을 사용합니다. 이 섹션에서는 사용자가 CloudTrail과 함께 AWS를 사용하고 있으며 CloudTrail 로그에 액세스할 수 있다고 가정합니다.
+
+사고가 침해된 역할 때문에 발생했을 가능성이 있다면, ClickHouse IAM 역할 및 관련 작업에 대한 CloudTrail과 CloudWatch의 활동을 검토하십시오. IAM 역할 목록은 설정의 일부로 제공된 [CloudFormation](/ko/products/bring-your-own-cloud/reference/privilege#aws-iam-roles) 스택 또는 Terraform 모듈을 참조하십시오.
+
+<div id="unauthorized-access-eks-cluster">
+  ## EKS 클러스터 무단 액세스
+</div>
+
+ClickHouse BYOC는 EKS 내에서 실행됩니다. 이 섹션에서는 고객이 AWS에서 CloudTrail과 CloudWatch를 사용하고 있으며 로그에 액세스할 수 있다고 가정합니다.
+
+사고가 침해된 EKS 클러스터로 인해 발생했을 가능성이 있다면, 아래 쿼리를 EKS CloudWatch 로그에서 사용하여 구체적인 위협을 식별하십시오.
+
+username별 Kubernetes API 호출 수 나열
+
+```sql
+fields user.username
+| stats count(*) as count by user.username
+```
+
+사용자가 ClickHouse 엔지니어인지 확인합니다
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter user.username like /clickhouse.com/
+| limit 10000
+```
+
+Kubernetes 시크릿에 액세스하는 사용자 검토, 서비스 역할 제외
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter requestURI like /secret/
+| filter verb="get"
+| filter ispresent(user.extra.sessionName.0)
+| filter user.username not like /ClickHouseManagementRole/
+| filter user.username not like /data-plane-mgmt/
+```

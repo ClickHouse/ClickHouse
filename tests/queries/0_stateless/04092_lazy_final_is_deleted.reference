@@ -1,0 +1,30 @@
+=== Correctness: all rows ===
+450	32416950
+450	32416950
+=== Correctness: no WHERE filter ===
+1550	162610150
+=== Correctness: deleted rows absent ===
+0
+0
+=== Correctness: non-intersecting deleted rows ===
+0
+0
+=== True path: optimization enabled ===
+1
+=== False path: set truncated ===
+450	32416950
+1
+=== Plan: optimization ON ===
+1
+1
+=== Plan: optimization OFF ===
+0
+=== All non-intersecting with is_deleted ===
+180	98910
+180	98910
+0
+=== is_deleted in SELECT ===
+250	0
+1000	0
+250	0
+1000	0

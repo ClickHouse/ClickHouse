@@ -14,7 +14,7 @@ struct SettingFieldOptionalUInt64
 
     explicit SettingFieldOptionalUInt64(const Field & field);
 
-    explicit operator Field() const { return Field(value ? toString(*value) : ""); }
+    explicit operator Field() const;
 };
 
 }

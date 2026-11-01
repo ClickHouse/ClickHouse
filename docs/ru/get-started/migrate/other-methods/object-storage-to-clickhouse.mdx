@@ -1,0 +1,28 @@
+---
+title: Перенос данных из облачного объектного хранилища в ClickHouse Cloud
+description: 'Перенос данных из объектного хранилища в ClickHouse Cloud'
+keywords: ['объектное хранилище', 's3', 'azure blob', 'gcs', 'миграция']
+slug: /integrations/migration/object-storage-to-clickhouse
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<Image img="/images/integrations/migration/object-storage-01.webp" size="md" alt="Миграция самоуправляемого ClickHouse" />
+
+Если вы используете объектное хранилище Cloud как озеро данных и хотите импортировать эти данные в ClickHouse Cloud,
+или если ваша текущая система баз данных может напрямую выгружать данные в объектное хранилилище Cloud, вы можете использовать одну из
+табличных функций для миграции данных, хранящихся в объектном хранилище Cloud, в таблицу ClickHouse Cloud:
+
+* [s3](/ru/reference/functions/table-functions/s3) или [s3Cluster](/ru/reference/functions/table-functions/s3Cluster)
+* [gcs](/ru/reference/functions/table-functions/gcs)
+* [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage)
+
+Если ваша текущая система баз данных не может напрямую выгружать данные в объектное хранилище Cloud, вы можете использовать [сторонний инструмент ETL/ELT](/ru/get-started/migrate/other-methods/etl-tool-to-clickhouse) или [clickhouse-local](/ru/get-started/migrate/other-methods/clickhouse-local-etl) для переноса данных
+из вашей текущей системы баз данных в объектное хранилище Cloud, чтобы на втором этапе затем перенести эти данные в таблицу ClickHouse Cloud.
+
+Хотя это двухэтапный процесс (выгрузка данных в объектное хранилище Cloud, затем загрузка в ClickHouse), его преимущество в том, что он
+масштабируется до PB благодаря [надежной поддержке ClickHouse Cloud](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) высокопараллельного чтения из объектного хранилища Cloud.
+Кроме того, вы можете использовать эффективные сжатые форматы, такие как [Parquet](/ru/reference/formats/Parquet/Parquet).
+
+Есть [статья в блоге](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) с конкретными примерами кода, показывающими, как загружать данные в ClickHouse Cloud с помощью S3.

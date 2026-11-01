@@ -43,7 +43,12 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return nested;
+    }
 
     Field getDefault() const override;
 
@@ -59,7 +64,8 @@ public:
     /// Array column doesn't have subcolumns by itself but allows to read subcolumns of nested column.
     /// If nested column has dynamic subcolumns, Array of this type should also be able to read these dynamic subcolumns.
     bool hasDynamicSubcolumnsData() const override { return nested->hasDynamicSubcolumnsData(); }
-    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
+    std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {
@@ -68,12 +74,15 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
+
+private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 };
 
 }

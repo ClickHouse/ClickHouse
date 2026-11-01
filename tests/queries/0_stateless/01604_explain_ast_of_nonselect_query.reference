@@ -7,7 +7,7 @@ AlterQuery  t1 (children 2)
      Function today (children 1)
       ExpressionList
  Identifier t1
-CreateFunctionQuery double (children 2)
+CreateSQLFunctionQuery double (children 2)
  Identifier double
  Function lambda (children 1)
   ExpressionList (children 2)

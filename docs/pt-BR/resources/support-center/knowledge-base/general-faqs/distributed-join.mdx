@@ -1,0 +1,21 @@
+---
+title: 'O ClickHouse oferece suporte a JOIN distribuído?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'O ClickHouse oferece suporte a JOIN distribuído'
+doc_type: 'reference'
+keywords: ['distribuído', 'junção']
+---
+
+Sim, o ClickHouse oferece suporte a joins distribuídos em um cluster.
+
+Quando os dados estão co-localizados no cluster (por exemplo, a junção é feita pelo identificador do usuário, que também é uma chave de sharding), o ClickHouse oferece uma forma de realizar a junção sem movimentação de dados pela rede.
+
+Quando os dados não estão co-localizados, o ClickHouse permite um broadcast join, em que partes dos dados envolvidos na junção são distribuídas entre os nós do cluster.
+
+Em 2025, o ClickHouse não realiza shuffle joins, o que significa que nenhum dos lados da junção é redistribuído pela rede do cluster de acordo com as chaves da junção.
+
+<Tip>
+  Para obter informações sobre junções no ClickHouse de modo geral, consulte a página [&quot;cláusula JOIN&quot;](/pt-BR/reference/statements/select/join#supported-types-of-join).
+</Tip>

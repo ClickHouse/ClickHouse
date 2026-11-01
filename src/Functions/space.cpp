@@ -21,7 +21,7 @@ namespace
 
 /// Prints whitespace n-times. Actually, space() could also be pushed down to repeat(). Chose a standalone-implementation because
 /// we can do memset() whereas repeat() does memcpy().
-class FunctionSpace : public IFunction
+class FunctionSpace final : public IFunction
 {
 private:
     static constexpr auto space = ' ';
@@ -42,15 +42,9 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
-        };
-
-            validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeString>();
+        return "(Integer) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -191,7 +185,7 @@ Concatenates a space (` `) as many times with itself as specified.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSpace>(documentation, FunctionFactory::Case::Insensitive);
 }

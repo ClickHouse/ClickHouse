@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/NaNUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <cmath>
 
 namespace DB
@@ -15,11 +16,10 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences)
-class FunctionSeriesOutliersDetectTukey : public IFunction
+class FunctionSeriesOutliersDetectTukey final : public IFunction
 {
 public:
     static constexpr auto name = "seriesOutliersDetectTukey";
@@ -36,24 +36,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 1 && arguments.size() != 4)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} needs either 1 or 4 arguments; passed {}.",
-                getName(),
-                arguments.size());
-
-        FunctionArgumentDescriptors mandatory_args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
-        FunctionArgumentDescriptors optional_args{
-            {"min_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
-            {"max_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
-            {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), isColumnConst, "Number"}};
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+        return "(Array, [const Float, const Float, const NativeNumber]) -> Array(Float64)";
     }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
@@ -131,7 +116,7 @@ private:
         ColumnArray::ColumnOffsets::MutablePtr res_offsets = ColumnArray::ColumnOffsets::create();
         auto & res_offsets_data = res_offsets->getData();
 
-        std::vector<Float64> src_sorted;
+        VectorWithMemoryTracking<Float64> src_sorted;
 
         ColumnArray::Offset prev_src_offset = 0;
         for (auto src_offset : arr_offsets)
@@ -144,11 +129,11 @@ private:
             src_sorted.assign(src_vec.begin() + prev_src_offset, src_vec.begin() + src_offset);
             std::sort(src_sorted.begin(), src_sorted.end());
 
-            Float64 q1;
-            Float64 q2;
+            Float64 q1 = 0;
+            Float64 q2 = 0;
 
-            Float64 p1 = len * min_percentile;
-            if (p1 == static_cast<Int64>(p1))
+            Float64 p1 = static_cast<Float64>(len) * min_percentile;
+            if (p1 == static_cast<Float64>(static_cast<Int64>(p1)))
             {
                 size_t index = static_cast<size_t>(p1) - 1;
                 q1 = (src_sorted[index] + src_sorted[index + 1]) / 2;
@@ -159,8 +144,8 @@ private:
                 q1 = src_sorted[index];
             }
 
-            Float64 p2 = len * max_percentile;
-            if (p2 == static_cast<Int64>(p2))
+            Float64 p2 = static_cast<Float64>(len) * max_percentile;
+            if (p2 == static_cast<Float64>(static_cast<Int64>(p2)))
             {
                 size_t index = static_cast<size_t>(p2) - 1;
                 q2 = (src_sorted[index] + src_sorted[index + 1]) / 2;
@@ -178,7 +163,7 @@ private:
 
             for (ColumnArray::Offset j = prev_src_offset; j < src_offset; ++j)
             {
-                auto score = std::min((src_vec[j] - lower_fence), 0.0) + std::max((src_vec[j] - upper_fence), 0.0);
+                auto score = std::min((static_cast<Float64>(src_vec[j]) - lower_fence), 0.0) + std::max((static_cast<Float64>(src_vec[j]) - upper_fence), 0.0);
                 outlier_data.push_back(score);
             }
             res_offsets_data.push_back(outlier_data.size());
@@ -208,9 +193,9 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
         "Basic outlier detection",
         "SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0",
         R"(
-┌───────────print_0─────────────────┐
-│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└───────────────────────────────────┘
+┌─print_0────────────────────────────┐
+│ [0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
+└────────────────────────────────────┘
         )"
     },
     {
@@ -225,7 +210,7 @@ Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wi
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSeriesOutliersDetectTukey>(documentation);
 }

@@ -1,0 +1,178 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-02
+title: '演示日 - 2026-07-02'
+sidebarTitle: '2026-07-02'
+description: 'ClickStack 演示日 - 2026-07-02'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="notebook-citations">
+  ## 笔记本引用
+</div>
+
+*演示：[@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/ns5aVkpgTQg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在可以直接链接到笔记本卡片 (单元) ，包括跨分支链接。在自定义 Markdown 中，你既可以使用绝对链接，也可以使用相对哈希链接，从而更轻松地把别人引导到某项结论背后的确切证据。
+
+更大的变化在 agent 端。现在，笔记本中生成的摘要会引用其所依据的卡片，因此读者可以直接跳转到底层数据，而不必只凭摘要照单全收。
+
+我们还调整了现有笔记本的打开方式。摘要卡片现在默认展开，而不是折叠；当你重新打开笔记本时，这通常正是你想要的效果。
+
+<div id="otel-metrics-table-primary-key-optimization">
+  ## OTel 指标表主键优化
+</div>
+
+*演示：[@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/GIwNxRJGQKg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+深入解析如何验证并缩减 OTel 指标表的主键。这里有一个很有用的衡量指标：每个粒度的主键字节数，即主键总大小除以粒度数量。这样就把大表天然拥有更多粒度这一因素纳入了考虑，因此能进行更公平的比较。
+
+原始 schema 约为每个粒度 148 字节。新 schema 接近 17 字节，主键大小缩减了约 9 倍，生产环境中的内存使用量也有类似幅度的下降。
+
+这些 schema 变更其实不大。`MetricName` 现在使用 `LowCardinality`，除非你要处理数量极其庞大的不同指标名称，否则通常没有问题。即便如此，也只有在极端情况下才需要担心。时间戳从具有纳秒精度的 `DateTime64` 改为普通的 `DateTime` (秒级精度) ，对于指标来说已经完全足够。如果你愿意自行修改 schema，仍然可以保留纳秒精度。
+
+我们还为时间添加了显式的最小/最大索引，并将主键中的完整属性 map 替换为哈希。相同的变更已应用到所有指标表 schema 中，我们也正在将这些变更提交到 OTel collector 上游。
+
+**相关 PR：** [#2545](https://github.com/hyperdxio/hyperdx/pull/2545) fix: change metrics PK for better memory usage
+
+<div id="trend-and-spark-lines-behind-numbers">
+  ## 数值后方的趋势线/迷你图
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4XwOkyNqDEY" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+数值卡片现在可以在数值后方显示趋势线或面积图。这项功能长期以来一直是 Grafana 中很受欢迎的特性，如今也已加入 ClickStack。
+
+你可以在卡片的 Display Settings 中启用它。默认不显示背景图表，另外还可选择折线和面积图。它几乎不需要额外配置，但能让仪表盘看起来明显更完整。
+
+目前，背景图表仅适用于声明式数值卡片，因此暂时还不能使用 custom SQL。我们正在考虑根据用户反馈在后续支持这一点，尤其是那些希望更精细控制图表绘制内容的用户。
+
+**相关 PR：** [#2489](https://github.com/hyperdxio/hyperdx/pull/2489) feat(dashboards): 为数值卡片添加背景趋势迷你图, [#2501](https://github.com/hyperdxio/hyperdx/pull/2501) fix(dashboards): 使数值卡片背景迷你图与显示的数值一致, [#2520](https://github.com/hyperdxio/hyperdx/pull/2520) refactor(dashboards): 从数值卡片中提取共享的 Sparkline 基本类型
+
+<div id="table-visual-improvements">
+  ## 表格视觉改进
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yl7j7E9OGk4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+表格卡片在可读性方面做了一些改进，而且每一项都来自具体的用户反馈。现在，你可以在 Display Settings 中启用交替行背景，这会让宽表或内容密集的表更容易查看。此外，表头与下方数据之间的分隔线也更清晰、更醒目了。
+
+现在，列也可以像数值卡片一样，使用相同的样式选项设置各自的颜色。你可以设置一个默认颜色，也可以添加按单元格逐个计算的阈值，这样 error 可以显示为红色，而正常值保持绿色。
+
+这些改动虽然不大，但每一项都来自用户真实的“我希望这个表能支持这个功能”的反馈。
+
+**相关 PR：** [#2519](https://github.com/hyperdxio/hyperdx/pull/2519) feat(dashboard): table tile header separator and optional alternate row background, [#2517](https://github.com/hyperdxio/hyperdx/pull/2517) feat(dashboards): per-column color on table tiles
+
+<div id="grafana-plugin-improvements">
+  ## Grafana 插件改进
+</div>
+
+*演示者：[ @alex-fedotyev ](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/doFNUMZotJU" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+以下汇总了 ClickStack Grafana 插件即将推出的内容。
+
+数据源配置现在除了现有的多数据库设置外，还支持单表模式。将其指向某一张表，例如生产日志表，查询编辑器就会切换到专为探索设计的紧凑型构建器。你可以快速为 service name 等字段添加过滤器，进行包含和排除筛选，并且在需要时仍然可以使用 SQL。
+
+我们还将提供适用于 OTel 日志和链路追踪的现成仪表盘，沿用大家熟悉的下钻模式。日志仪表盘包含按服务划分的概览、日志量图表和日志详情。Trace Explore 包括服务视图、延迟热力图以及操作细分。此外还有一个组合式服务仪表盘，将日志和链路追踪整合在一起，并按 span 名称分组，这样你无需在不同工具之间来回切换，就能排查单个服务。
+
+所有这些仪表盘都可直接配合默认 schema 开箱即用。新用户可以立即上手，然后以它们为起点构建自己的仪表盘。
+
+此外还有两个新的向导式构建器。变量构建器让你可以直接选择列值，而不用编写 custom SQL。例如，你可以基于 pod（容器组）名称创建一个变量，并预览它返回的值。
+
+注解构建器会基于所选字段的变更检测查询生成注解。将它指向某个服务的 version attribute 后，每当该值发生变化时，它就可以添加一个部署标记，而无需你自己编写 SQL。
+
+<div id="sidebar-and-span-view-improvements">
+  ## 侧边栏和 span 视图改进
+</div>
+
+*演示者：[@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vbeufXNyBkw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+这一批改进主要打磨了导航和 trace 查看体验。
+
+现在，你在搜索页面操作时可以将侧边栏固定展开，这样无需关闭侧边栏，就能滚动并选择其他行。导航也会保留当前选项卡的上下文。返回按钮会根据面包屑路径将你准确带回来源位置，而不只是简单地关闭面板。
+
+另外还新增了一个键盘快捷键弹窗，方便快速查看可用的快捷键绑定。与 trace 关联的日志现在会显示一个标签，点击即可直接跳转到对应 trace。
+
+span 视图的升级最为明显。span 现在会按服务名称着色，并在服务切换时轮换不同颜色；新增的迷你地图也让大型链路追踪比一整片灰色条块更易读。你可以拖选某个时间范围进行缩放，也可以单击重置视图。新的历史栈还允许你在不同 trace 之间切换，并返回之前所在的位置。
+
+选中的 span 现在有了更好的展开和折叠控件，不用再逐个关闭每个子项。我们还合并了一项来自社区的修复，为非常短的 span 设置了最小渲染宽度。例如，持续几微秒的 span 也能在线路图中保持可见，无需你一路放大到最大。
+
+**相关 PR：** [#2552](https://github.com/hyperdxio/hyperdx/pull/2552) feat: 添加 trace 时间线迷你地图
+
+<div id="metrics-queries-dashboard-evals-and-better-alert-error-reporting-in-mcp">
+  ## MCP 中的指标查询、仪表盘评测，以及更完善的告警错误报告
+</div>
+
+*演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yjceqgveZr8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+这一周期里，MCP Server 有三项改进一同落地。
+
+现在，MCP 可以直接运行指标查询，包括来自笔记本的查询，无需再通过仪表盘中转才能访问底层数据。
+
+我们还为仪表盘构建新增了端到端评测。目前它在大约 75% 的案例中可以通过，我们也在持续加入干扰项，避免模型通过“投机取巧”过关。当 MCP 在真实环境中创建出损坏的仪表盘时，这类失败也可以回流到评测集中。随着时间推移，这应该能在诸如 Raw SQL source 生成错误查询之类的问题演变为反复出现的故障之前，就将其捕获出来。
+
+现在，工具错误会按类别分类，而不是统统归入同一个通用 bucket。用户提交的错误 SQL 查询，会与数据库超时这类内部故障分开处理。这样一来，我们就具备了构建更有用的 MCP 健康状况告警所需的区分能力。
+
+**相关 PR：** [#2437](https://github.com/hyperdxio/hyperdx/pull/2437) feat(mcp): first-class metric source support, [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): add dashboard-build eval scenario, [#2570](https://github.com/hyperdxio/hyperdx/pull/2570) feat(mcp): classify MCP tool errors by category for alerting
+
+<div id="otel-collector-batch-processor-updates">
+  ## OTel collector 批处理器更新
+</div>
+
+*演示者：[ @SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/rlSm_9ivsQ4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+OpenTelemetry 正在将批处理功能从独立的 batch processor 中移出，改为纳入 exporter 配置。ClickStack collector 早已同时支持这两种方式，因此无需修改任何代码。最终，这只是一次文档更新。
+
+在旧模型下，专用的 batch processor 位于管道中，在将行传给 exporter 之前先进行缓冲。它有自己的批次大小、最大批次大小和 timeout 设置。
+
+OpenTelemetry 正在标准化的新模型，是将 batcher 放在 exporter 旁边，而不是放在 processors 链中。大多数相同的概念都被保留下来，包括最小和最大批次大小以及队列大小。基于 exporter 的配置还支持阻塞行为、基于字节的限制和持久化，而这些都是旧版 batch processor 不具备的。
+
+现在，文档推荐使用基于 exporter 的配置，并说明了如何迁移现有的 batch processor 设置。文档还建议将至少 5,000 行配合较短的 timeout，作为大多数部署的合理默认值。批处理配置不佳，仍然是导致用户初次使用 ClickHouse 体验不佳的最常见原因之一。
+
+<div id="surrounding-context-for-arbitrary-attributes">
+  ## 任意属性的周边上下文
+</div>
+
+*演示者：[@MikeShi42](https://github.com/MikeShi42)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BZTG8TTTyoA" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+周边上下文功能可让你打开一条日志，查看其前后还发生了哪些事情。默认情况下，上下文会按 service、pod (容器组) 或节点分组。这对于大多数采用 OTel schema 的部署都很适用，但对于使用自定义 schema 的用户来说，以前一直没有一种简洁的方式能围绕自己的属性构建此视图。
+
+现在，你可以使用日志中的任意属性来驱动上下文视图，无论它来自 OTel schema 还是自定义 schema。熟悉的 service、pod (容器组) 和节点选项仍然保留，但你同样可以按 telemetry SDK 版本或日志中的任何其他字段分组。你也可以随时清除当前选择，重新开始。
+
+**相关 PR：** [#2558](https://github.com/hyperdxio/hyperdx/pull/2558) 修复：在周边上下文中支持 service name expression 和快速属性过滤器

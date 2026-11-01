@@ -1,0 +1,2 @@
+ALTER TABLE t\n    (MODIFY COLUMN `id` UInt64 CODEC(count() IGNORE NULLS, Delta))
+ALTER TABLE t\n    (MODIFY COLUMN `id` UInt64 CODEC(count() RESPECT NULLS, Delta))

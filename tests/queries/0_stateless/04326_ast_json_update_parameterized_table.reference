@@ -1,0 +1,5 @@
+UPDATE {tbl:Identifier} SET x = 1 WHERE 1
+UPDATE {db:Identifier}.{tbl:Identifier} SET x = 1 WHERE 1
+UPDATE {tbl:Identifier} SET x = 1 WHERE 1
+UPDATE {db:Identifier}.{tbl:Identifier} SET x = 1 WHERE 1
+UPDATE db.`tbl 1` SET x = 1 WHERE 1

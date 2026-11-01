@@ -16,14 +16,16 @@ system flush logs filesystem_read_prefetches_log, query_log;
 with (
     select query_id
     from system.query_log
-    where current_database = currentDatabase()
+    where event_date >= yesterday() AND event_time >= now() - 600
+      and current_database = currentDatabase()
       and log_comment = '{{ disk }}'
       and type != 'QueryStart'
 ) as initial_query_id_,
 query_ids_ as (
     select query_id
     from system.query_log
-    where initial_query_id = initial_query_id_
+    where event_date >= yesterday() AND event_time >= now() - 600
+      and initial_query_id = initial_query_id_
       and log_comment = '{{ disk }}'
       and type != 'QueryStart'
 )

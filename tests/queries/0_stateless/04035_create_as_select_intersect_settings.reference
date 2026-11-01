@@ -1,0 +1,3 @@
+CREATE TABLE t\nENGINE = `Null`\nAS (SELECT 1 AS x\nINTERSECT\nSELECT 1 AS x)\nSETTINGS enable_global_with_statement = 0
+1
+CREATE TABLE t\nENGINE = `Null`\nAS SELECT 1 AS x\nINTERSECT\nSELECT 1 AS x

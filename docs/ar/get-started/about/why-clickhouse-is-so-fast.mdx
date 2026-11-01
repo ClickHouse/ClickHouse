@@ -1,0 +1,174 @@
+---
+sidebarTitle: 'لماذا يُعد ClickHouse سريعًا إلى هذا الحد؟'
+description: 'لقد صُمّم ليكون سريعًا. لطالما كان أداء تنفيذ الاستعلامات أولوية قصوى خلال عملية التطوير، لكن روعيت أيضًا خصائص مهمة أخرى مثل سهولة الاستخدام، وقابلية التوسع، والأمان، حتى يصبح ClickHouse نظامًا جاهزًا للإنتاج بحق.'
+title: 'لماذا يُعد ClickHouse سريعًا إلى هذا الحد؟'
+slug: /concepts/why-clickhouse-is-so-fast
+keywords: ['البنية', 'VLDB', 'الأداء']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+تسهم عوامل عديدة أخرى في أداء قاعدة البيانات إلى جانب [طريقة تنظيم بياناتها](/ar/get-started/about/intro#row-oriented-vs-column-oriented-storage).
+وفيما يلي، سنشرح بمزيد من التفصيل ما الذي يجعل ClickHouse سريعًا إلى هذا الحد، ولا سيما بالمقارنة مع قواعد البيانات الأخرى الموجّهة بالأعمدة.
+
+من المنظور المعماري، تتكوّن قواعد البيانات، على الأقل، من طبقة تخزين وطبقة معالجة الاستعلامات. فبينما تتولى طبقة التخزين حفظ بيانات الجدول وتحميلها وصيانتها، تنفّذ طبقة معالجة الاستعلامات استعلامات المستخدمين. وبالمقارنة مع قواعد البيانات الأخرى، يقدّم ClickHouse ابتكارات في كلتا الطبقتين تتيح عمليات إدراج واستعلامات SELECT فائقة السرعة.
+
+<div id="storage-layer-concurrent-inserts-are-isolated-from-each-other">
+  ## طبقة التخزين: عمليات الإدراج المتزامنة معزولة عن بعضها بعضًا
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vsykFYns0Ws?si=hE2qnOf6cDKn-otP" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+في ClickHouse، يتكوّن كل جدول من عدة &quot;أجزاء جدول&quot;. ويُنشأ [جزء](/ar/concepts/core-concepts/parts) كلما أدرج مستخدم بيانات إلى الجدول (عبارة INSERT). ويُنفَّذ أي استعلام دائمًا على جميع أجزاء الجدول الموجودة وقت بدء الاستعلام.
+
+ولتجنّب تراكم عدد كبير جدًا من الأجزاء، يشغّل ClickHouse عملية [دمج](/ar/concepts/core-concepts/merges) في الخلفية تجمع باستمرار عدة أجزاء صغيرة في جزء أكبر واحد.
+
+ولهذا النهج عدة مزايا: إذ يمكن [إسناد جميع عمليات معالجة البيانات إلى عمليات دمج الأجزاء في الخلفية](/ar/get-started/about/why-clickhouse-is-so-fast#storage-layer-merge-time-computation)، مما يُبقي عمليات كتابة البيانات خفيفة وعالية الكفاءة. كما أن عمليات الإدراج الفردية &quot;محلية&quot; بمعنى أنها لا تحتاج إلى تحديث هياكل بيانات عامة، أي على مستوى الجدول كله. ونتيجةً لذلك، لا تحتاج عمليات الإدراج المتزامنة المتعددة إلى مزامنة متبادلة ولا إلى مزامنة مع بيانات الجدول الموجودة، وبالتالي يمكن تنفيذ عمليات الإدراج بسرعة تكاد توازي سرعة إدخال/إخراج القرص.
+
+🤿 تعمّق في هذا الموضوع في قسم [On-Disk Format](/ar/concepts/core-concepts/academic-overview#3-1-on-disk-format) من نسخة الويب لورقتنا في VLDB 2024.
+
+<div id="storage-layer-concurrent-inserts-and-selects-are-isolated">
+  ## طبقة التخزين: عمليات الإدراج وعمليات SELECT المتزامنة معزولة عن بعضها
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dvGlPh2bJFo?si=F3MSALPpe0gAoq5k" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تكون عمليات الإدراج معزولة بالكامل عن استعلامات SELECT، وتُدمَج أجزاء البيانات المُدرجة في الخلفية من دون التأثير في الاستعلامات المتزامنة.
+
+🤿 تعمّق أكثر في هذا الموضوع في قسم [طبقة التخزين](/ar/concepts/core-concepts/academic-overview#3-storage-layer) من نسخة الويب لورقتنا VLDB 2024.
+
+<div id="storage-layer-merge-time-computation">
+  ## طبقة التخزين: الحوسبة أثناء الدمج
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_w3zQg695c0?si=g0Wa_Petn-LcmC-6" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+على عكس قواعد البيانات الأخرى، يحافظ ClickHouse على خفة وكفاءة عمليات كتابة البيانات من خلال تنفيذ جميع تحويلات البيانات الإضافية أثناء عملية [الدمج](/ar/concepts/core-concepts/merges) في الخلفية. ومن أمثلة ذلك:
+
+* **عمليات الدمج الاستبدالية** التي تحتفظ فقط بأحدث إصدار من الصف ضمن أجزاء الإدخال، وتتخلص من جميع إصدارات الصف الأخرى. ويمكن اعتبار عمليات الدمج الاستبدالية عملية تنظيف تُنفَّذ وقت الدمج.
+
+* **عمليات الدمج التجميعية** التي تدمج حالات التجميع الوسيطة في جزء الإدخال لتكوين حالة تجميع جديدة. ورغم أن ذلك قد يبدو معقدًا، فهو في الواقع ليس سوى تجميع تزايدي.
+
+* **عمليات دمج TTL (time-to-live)** التي تضغط الصفوف أو تنقلها أو تحذفها استنادًا إلى قواعد زمنية محددة.
+
+الهدف من هذه التحويلات هو نقل العمل (الحوسبة) من وقت تشغيل استعلامات المستخدم إلى وقت الدمج. وهذا مهم لسببين:
+
+من ناحية، قد تصبح استعلامات المستخدم أسرع بكثير، وأحيانًا بما يصل إلى 1000 ضعف أو أكثر، إذا أمكنها الاستفادة من البيانات &quot;المحوّلة&quot;، مثل البيانات المجمّعة مسبقًا.
+
+ومن ناحية أخرى، يُستهلك معظم وقت تشغيل عمليات الدمج في تحميل أجزاء الإدخال وحفظ الجزء الناتج. وعادةً لا يؤثر الجهد الإضافي لتحويل البيانات أثناء الدمج كثيرًا في وقت تشغيل عمليات الدمج. وكل هذا يحدث بشفافية تامة ولا يؤثر في نتائج الاستعلامات (باستثناء أدائها).
+
+🤿 تعمّق أكثر في هذا الموضوع في قسم [Merge-time Data Transformation](/ar/concepts/core-concepts/academic-overview#3-3-merge-time-data-transformation) من الإصدار الويب لورقتنا في VLDB 2024.
+
+<div id="storage-layer-data-pruning">
+  ## طبقة التخزين: استبعاد البيانات
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/UJpVAx7o1aY?si=w-AfhBcRIO-e3Ysj" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+عمليًا، تكون كثير من الاستعلامات متكررة، أي تُشغَّل دون تغيير أو مع تعديلات طفيفة فقط (مثل اختلاف قيم المعلَمات) على فترات دورية. ويتيح تشغيل الاستعلامات نفسها أو المتشابهة مرارًا وتكرارًا إضافة فهارس أو إعادة تنظيم البيانات بطريقة تمكّن الاستعلامات المتكررة من الوصول إليها بسرعة أكبر. ويُعرف هذا النهج أيضًا باسم &quot;استبعاد البيانات&quot;، ويوفر ClickHouse ثلاث تقنيات لتحقيق ذلك:
+
+1. [فهارس المفتاح الأساسي](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design) التي تحدد ترتيب فرز بيانات الجدول. ويتيح اختيار مفتاح أساسي مناسب تقييم عوامل التصفية (مثل عبارات WHERE في الاستعلام أعلاه) باستخدام عمليات بحث ثنائي سريعة بدلًا من إجراء مسح كامل للأعمدة. وبصياغة أكثر تقنية، يصبح زمن تنفيذ عمليات المسح لوغاريتميًا بدلًا من أن يكون خطيًا مع حجم البيانات.
+
+2. [إسقاطات الجدول](/ar/reference/statements/alter/projection) بوصفها نُسخًا داخلية بديلة من الجدول، تخزّن البيانات نفسها ولكن مرتبة وفق مفتاح أساسي مختلف. ويمكن أن تكون الإسقاطات مفيدة عندما يوجد أكثر من شرط تصفية متكرر.
+
+3. [فهارس التخطي](/ar/concepts/features/performance/skip-indexes/skipping-indexes) التي تُضمّن إحصاءات إضافية عن البيانات داخل الأعمدة، مثل الحد الأدنى والحد الأقصى لقيمة العمود، ومجموعة القيم الفريدة، وما إلى ذلك. وتُعد فهارس التخطي مستقلة عن المفاتيح الأساسية وإسقاطات الجداول، ويمكنها، بحسب توزيع البيانات في العمود، أن تسرّع تقييم عوامل التصفية بدرجة كبيرة.
+
+تهدف التقنيات الثلاث جميعًا إلى تخطي أكبر عدد ممكن من الصفوف أثناء القراءات الكاملة للأعمدة، لأن أسرع طريقة لقراءة البيانات هي ألّا تقرأها أصلًا.
+
+🤿 تعمّق أكثر في هذا الموضوع في قسم [استبعاد البيانات](/ar/concepts/core-concepts/academic-overview#3-2-data-pruning) في الإصدار المتاح على الويب من ورقتنا البحثية VLDB 2024.
+
+<div id="storage-layer-data-compression">
+  ## طبقة التخزين: ضغط البيانات
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MH10E3rVvnM?si=duWmS_OatCLx-akH" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+إلى جانب ذلك، تقوم طبقة التخزين في ClickHouse أيضًا، بشكل اختياري، بضغط البيانات الخام للجداول باستخدام ترميزات مختلفة.
+
+وتُعد أنظمة التخزين العمودي مناسبة جدًا لهذا النوع من الضغط، لأن القيم من النوع نفسه وذات التوزيع نفسه للبيانات تكون متجاورة.
+
+يمكن للمستخدمين [تحديد](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) ضغط الأعمدة باستخدام خوارزميات ضغط عامة متنوعة (مثل ZSTD) أو ترميزات متخصصة، مثل Gorilla وFPC للقيم ذات الفاصلة العائمة، وDelta وGCD للقيم الصحيحة، أو حتى AES كترميز للتشفير.
+
+ولا يقتصر ضغط البيانات على تقليل حجم تخزين جداول قاعدة البيانات فحسب، بل يحسّن أيضًا أداء الاستعلامات في كثير من الحالات، لأن الأقراص المحلية وعمليات الإدخال/الإخراج على الشبكة غالبًا ما يقيّدها انخفاض معدل النقل.
+
+🤿 اطّلع على شرح أعمق لهذا الموضوع في قسم [تنسيق التخزين على القرص](/ar/concepts/core-concepts/academic-overview#3-1-on-disk-format) ضمن النسخة المنشورة على الويب من ورقتنا في VLDB 2024.
+
+<div id="state-of-the-art-query-processing-layer">
+  ## طبقة معالجة الاستعلامات الأحدث
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/O5qecdQ7Y18?si=XVtOIuVd8NLbqyox" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أخيرًا، يستخدم ClickHouse طبقة معالجة استعلامات متجهة توازي تنفيذ الاستعلامات إلى أقصى حد ممكن للاستفادة من جميع الموارد وتحقيق أعلى سرعة وكفاءة.
+
+تعني &quot;المعالجة المتجهة&quot; أن مُشغِّلات مخطط الاستعلام تمرّر صفوف النتائج الوسيطة على دفعات بدلًا من صفوف مفردة. ويؤدي ذلك إلى تحسين الاستفادة من الذاكرات المخبئية لوحدة CPU، كما يتيح للمُشغِّلات تطبيق تعليمات SIMD لمعالجة عدة قيم دفعة واحدة. بل إن كثيرًا من المُشغِّلات يتوفر في عدة إصدارات - إصدار لكل جيل من مجموعات تعليمات SIMD. وسيختار ClickHouse تلقائيًا أحدث إصدار وأسرعه استنادًا إلى إمكانات العتاد الذي يعمل عليه.
+
+تضم الأنظمة الحديثة عشرات من أنوية CPU. ولاستغلال جميع الأنوية، يفكك ClickHouse مخطط الاستعلام إلى عدة مسارات متوازية، عادةً مسارًا واحدًا لكل نواة. ويعالج كل مسار نطاقًا منفصلًا من بيانات الجدول. وبهذه الطريقة، يتوسع أداء قاعدة البيانات &quot;عموديًا&quot; مع عدد الأنوية المتاحة.
+
+إذا أصبحت العقدة الواحدة صغيرة جدًا بحيث لا تستوعب بيانات الجدول، يمكن إضافة المزيد من العقد لتشكيل عنقود. ويمكن تقسيم الجداول إلى شظايا (&quot;sharded&quot;) وتوزيعها عبر العقد. وسيشغّل ClickHouse الاستعلامات على جميع العقد التي تخزّن بيانات الجدول، وبذلك يتوسع &quot;أفقيًا&quot; مع عدد العقد المتاحة.
+
+🤿 اطّلع على شرح أعمق لهذا في قسم [طبقة معالجة الاستعلامات](/ar/concepts/core-concepts/academic-overview#4-query-processing-layer) ضمن الإصدار المخصص للويب من ورقتنا البحثية VLDB 2024.
+
+<div id="meticulous-attention-to-detail">
+  ## عناية فائقة بالتفاصيل
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dccGLSuYWy0?si=rQ-Jp-z5Ik_-Rb8S" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+> **&quot;ClickHouse نظام فريد بحق — لديكم 20 نسخة من جدول تجزئة. لديكم كل هذه الأشياء المذهلة، بينما تكتفي معظم الأنظمة بجدول تجزئة واحد** **...** **ويحقق ClickHouse هذا الأداء المذهل لأنه يضم كل هذه المكوّنات المتخصصة&quot;** [Andy Pavlo, Database Professor at CMU](https://www.youtube.com/watch?v=Vy2t_wZx4Is\&t=3579s)
+
+ما يميّز ClickHouse [عن غيره](https://www.youtube.com/watch?v=CAS2otEoerM) هو عنايته الفائقة بالتحسينات منخفضة المستوى. فبناء قاعدة بيانات تعمل فحسب شيء، لكن تصميمها هندسيًا لتقدّم السرعة عبر أنواع الاستعلامات المختلفة، وبُنى البيانات، والتوزيعات، وتهيئات الفهارس المتنوعة، هو المجال الذي تتجلّى فيه براعة &quot;[النظام الفريد](https://youtu.be/Vy2t_wZx4Is?si=K7MyzsBBxgmGcuGU\&t=3579)&quot;.
+
+**جداول التجزئة.** لنأخذ جدول التجزئة مثالًا. فجداول التجزئة من بُنى البيانات الأساسية التي تُستخدم في عمليات الربط والتجميع. وبصفتك مبرمجًا، عليك مراعاة قرارات التصميم التالية:
+
+* دالة التجزئة التي ستختارها،
+* معالجة التصادم: [العنونة المفتوحة](https://en.wikipedia.org/wiki/Open_addressing) أم [السلاسل المنفصلة](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining)،
+* تخطيط الذاكرة: هل تُستخدم مصفوفة واحدة للمفاتيح والقيم أم مصفوفات منفصلة؟
+* عامل الامتلاء: متى وكيف تتم إعادة التحجيم؟ وكيف تُنقل القيم أثناء ذلك؟
+* الحذف: هل ينبغي أن يسمح جدول التجزئة بإزالة الإدخالات؟
+
+سيعمل جدول تجزئة قياسي توفّره مكتبة خارجية من الناحية الوظيفية، لكنه لن يكون سريعًا. فالأداء الممتاز يتطلّب اختبارات أداء دقيقة وتجريبًا مكثفًا.
+
+ويختار [تنفيذ جدول التجزئة في ClickHouse](https://clickhouse.com/blog/hash-tables-in-clickhouse-and-zero-cost-abstractions) أحد **أكثر من 30 نوعًا من جداول التجزئة المُجمَّعة مسبقًا** بناءً على خصائص الاستعلام والبيانات.
+
+**الخوارزميات.** وينطبق الأمر نفسه على الخوارزميات. فعلى سبيل المثال، عند الفرز، قد تنظر في ما يلي:
+
+* ما الذي سيُفرز: أرقام أم tuples أم strings أم بُنى؟
+* هل البيانات موجودة في RAM؟
+* هل يجب أن يكون الفرز مستقراً؟
+* هل ينبغي فرز جميع البيانات أم يكفي فرز جزئي؟
+
+غالبًا ما تحقق الخوارزميات التي تعتمد على خصائص البيانات أداءً أفضل من نظيراتها العامة. وإذا لم تكن خصائص البيانات معروفة مسبقًا، فيمكن للنظام تجربة عدة تطبيقات واختيار ما يعمل بأفضل شكل في وقت التشغيل. للاطلاع على مثال، راجع [المقالة حول كيفية تنفيذ فك ضغط LZ4 في ClickHouse](https://habr.com/en/company/yandex/blog/457612/).
+
+🤿 تعمّق أكثر في هذا الموضوع في قسم [Holistic Performance Optimization](/ar/concepts/core-concepts/academic-overview#4-4-holistic-performance-optimization) من نسخة الويب لورقتنا في VLDB 2024.
+
+<div id="vldb-2024-paper">
+  ## ورقة VLDB لعام 2024
+</div>
+
+في أغسطس 2024، قُبلت أول ورقة بحثية لنا في VLDB ونُشرت.
+VLDB مؤتمر دولي معني بقواعد البيانات الضخمة جدًا، ويُنظر إليه على نطاق واسع باعتباره أحد أبرز المؤتمرات في مجال إدارة البيانات.
+ومن بين مئات الأوراق المقدَّمة، يبلغ معدل القبول في VLDB عمومًا نحو 20٪.
+
+يمكنك قراءة [نسخة PDF من الورقة](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) أو [نسخة الويب](/ar/concepts/core-concepts/academic-overview) الخاصة بنا، التي تقدم وصفًا موجزًا لأبرز المكوّنات المعمارية ومكوّنات تصميم النظام في ClickHouse التي تجعله بهذه السرعة.
+
+قدّم Alexey Milovidov، المدير التقني لدينا ومبتكر ClickHouse، الورقة (الشرائح [هنا](https://raw.githubusercontent.com/ClickHouse/clickhouse-presentations/master/2024-vldb/VLDB_2024_presentation.pdf))، ثم تلت ذلك جلسة أسئلة وأجوبة (لكن الوقت نفد بسرعة!).
+يمكنك مشاهدة العرض التقديمي المسجّل هنا:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7QXKBKDOkJE?si=5uFerjqPSXQWqDkF" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

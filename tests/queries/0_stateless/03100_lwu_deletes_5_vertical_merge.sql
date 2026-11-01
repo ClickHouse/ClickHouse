@@ -12,6 +12,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
@@ -45,7 +46,7 @@ SELECT
     rows,
     ProfileEvents['ReadTasksWithAppliedPatches'],
     ProfileEvents['PatchesReadRows']
-FROM system.part_log WHERE database = currentDatabase() AND table = 't_lwu_deletes_vertical' AND event_type = 'MergeParts'
+FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_lwu_deletes_vertical' AND event_type = 'MergeParts'
 ORDER BY event_time_microseconds;
 
 DROP TABLE IF EXISTS t_lwu_deletes_vertical;

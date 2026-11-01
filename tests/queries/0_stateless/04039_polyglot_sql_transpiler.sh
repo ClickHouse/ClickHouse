@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: polyglot requires Rust build
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+POLYGLOT_OPTS="--allow_experimental_polyglot_dialect 1 --dialect polyglot"
+
+# SQLite: TYPEOF() does not exist in ClickHouse
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q "SELECT TYPEOF(42)"
+
+# MySQL: double-quoted strings are string literals in MySQL but identifiers in ClickHouse
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q 'SELECT "hello world"'
+
+# PostgreSQL: FETCH FIRST N ROWS ONLY is not supported by the ClickHouse parser
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect postgresql \
+    -q "SELECT number FROM numbers(10) FETCH FIRST 3 ROWS ONLY"
+
+# Snowflake: IFF() does not exist in ClickHouse (it uses if() instead)
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect snowflake \
+    -q "SELECT IFF(1 > 0, 'yes', 'no')"
+
+# DuckDB: SELECT * EXCLUDE(col) is not supported by the ClickHouse parser
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect duckdb \
+    -q "SELECT * EXCLUDE(b) FROM (SELECT 1 AS a, 2 AS b, 3 AS c)"
+
+# Test that polyglot dialect requires the experimental setting
+$CLICKHOUSE_CLIENT --dialect polyglot --polyglot_dialect sqlite -q "SELECT 1" 2>&1 | grep -om1 "SUPPORT_IS_DISABLED"
+
+# Test that an invalid dialect name produces a clear error
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect invalid_dialect \
+    -q "SELECT 1" 2>&1 | grep -om1 'SYNTAX_ERROR'
+
+# Test that an empty dialect name produces a clear error
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect '' \
+    -q "SELECT 1" 2>&1 | grep -om1 'SYNTAX_ERROR'
+
+# Test that multi-statement input is rejected
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q "SELECT 1; SELECT 2" 2>&1 | grep -om1 'SYNTAX_ERROR'
+
+# Test that a SET statement is still handled as ClickHouse SQL, so the dialect can be reset
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q "SET dialect = 'clickhouse'" && echo OK
+
+# Test that SET ROLE is dispatched as a role statement, not a `ROLE = true` setting shorthand
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q "SET ROLE NONE" && echo OK
+
+# Test that `SET TRANSACTION SNAPSHOT` is handled as ClickHouse SQL too, before the feature gate and the
+# transpiler: without `allow_experimental_polyglot_dialect` it still reaches the server, which rejects
+# it only because there is no open transaction
+$CLICKHOUSE_CLIENT --dialect polyglot --polyglot_dialect sqlite \
+    -q "SET TRANSACTION SNAPSHOT 1" 2>&1 | grep -om1 'INVALID_TRANSACTION'
+
+# Test that `SET` without a setting name reaches the dialect parser instead of being
+# rejected by the ClickHouse lexer before it gets there
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
+    -q 'SET ~' 2>&1 | grep -cim1 'polyglot'
+
+# Test that a foreign SET which ClickHouse's SET parser only partially accepts reaches the transpiler:
+# MySQL `SET SESSION sql_mode = ...` must not be taken as the shorthand `SET SESSION` plus trailing junk
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET SESSION sql_mode = 'ANSI_QUOTES'" 2>&1 | grep -cim1 'polyglot'
+
+# Test that a ClickHouse SET which parses but leaves trailing input stays a ClickHouse SET,
+# so the ordinary syntax error is reported instead of a transpiler failure
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads = 1 garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads = 1 garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET ROLE NONE garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET ROLE NONE garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
+
+# Test that a malformed ClickHouse shorthand SET stays a ClickHouse SET too: only foreign prefixes
+# like `SESSION` / `GLOBAL` fall through to the transpiler, not every `SET <setting>` prefix
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET max_threads garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET GLOBAL max_connections = 10" 2>&1 | grep -cim1 'polyglot'
+
+# Test that `SET TIME` plus junk stays a ClickHouse SET: `SET TIME ZONE 'tz'` is native ClickHouse syntax
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET TIME garbage" 2>&1 | grep -ci 'polyglot'
+$CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect mysql \
+    -q "SET TIME garbage" 2>&1 | grep -om1 'SYNTAX_ERROR'

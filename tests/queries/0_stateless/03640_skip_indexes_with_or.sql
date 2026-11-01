@@ -1,9 +1,11 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: funny EXPLAIN PLAN output
+-- add_minmax_index_for_numeric_columns=0: Different plan
 
 -- Test that the skip indexes are utilized for AND and OR connected filter conditions
 
 -- Settings needed to achieve stable EXPLAIN PLAN output
+SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
@@ -27,7 +29,8 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    use_const_adaptive_granularity = 1;
+    use_const_adaptive_granularity = 1,
+    add_minmax_index_for_numeric_columns=0;
 
 -- 157 ranges in total
 INSERT INTO tab SELECT number + 1, number + 1, (10000 - number), (number * 5) FROM numbers(10000);
@@ -105,7 +108,8 @@ SETTINGS
     index_granularity = 100, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    use_const_adaptive_granularity = 1;
+    use_const_adaptive_granularity = 1,
+    add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO tab SELECT (number + 1) / 10, (number + 1) % 100, number + 1, (10000 - number), (number * 5) FROM numbers(1000);
 

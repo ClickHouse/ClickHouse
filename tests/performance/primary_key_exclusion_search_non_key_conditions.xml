@@ -1,0 +1,24 @@
+<test>
+    <!-- Conditions on non-key columns must not make the primary key exclusion search split ranges down to single marks. -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <!-- Four values of `a`, so that a condition on `b` uses the exclusion search, not the binary search. -->
+    <create_query>
+        CREATE TABLE t_exclusion_search (a UInt8, b UInt64, c UInt64, s String)
+        ENGINE = MergeTree ORDER BY (a, b)
+        SETTINGS index_granularity = 64
+    </create_query>
+
+    <fill_query>INSERT INTO t_exclusion_search SELECT number % 4, intDiv(number, 4), number, toString(number) FROM numbers_mt(50000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_exclusion_search FINAL</fill_query>
+
+    <!-- `LIMIT 1` stops reading early, so the query time is mostly the index analysis. -->
+    <query>SELECT * FROM t_exclusion_search WHERE b BETWEEN 1000000 AND 11000000 LIMIT 1 FORMAT Null</query>
+    <query>SELECT * FROM t_exclusion_search WHERE b BETWEEN 1000000 AND 11000000 AND c % 7 = 1 LIMIT 1 FORMAT Null</query>
+    <query>SELECT * FROM t_exclusion_search WHERE b BETWEEN 1000000 AND 11000000 AND NOT startsWith(s, '1') LIMIT 1 FORMAT Null</query>
+    <query>SELECT * FROM t_exclusion_search WHERE (b &lt; 2000000 OR c % 7 = 1) AND b BETWEEN 1000000 AND 11000000 LIMIT 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_exclusion_search</drop_query>
+</test>

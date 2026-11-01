@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 DROP DATABASE IF EXISTS test_truncate_database;
 

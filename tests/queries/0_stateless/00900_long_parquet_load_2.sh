@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-asan, no-msan, no-tsan
-#asdqwe no-debug
+# Tags: long, no-fasttest, no-asan, no-msan, no-tsan, no-debug
 
 # Load various .parquet files from the internet, and files used by other tests.
 
@@ -35,6 +34,74 @@ EXCLUDE=(
     string_int_list_inconsistent_offset_multiple_batches.parquet
     # Date out of range.
     02716_data.parquet
+    # GeoParquet files with Geometry (Variant) columns tested separately.
+    03600_geoparquet_multi_geometry_empty_types.parquet
+    03600_geoparquet_multi_geometry_explicit_types.parquet
+    04614_geoparquet_multipoint_mixed.parquet
+    04059_geo_spatial_pruning.parquet
+    04060_geo_page_pruning.parquet
+    04512_geo_pruning_iceberg.parquet
+    04514_geo_pruning_iceberg_geostats.parquet
+    04515_geo_pruning_iceberg_malformed_bbox.parquet
+    04691_geo_page_pruning_null_bbox.parquet
+    # Files with the `GEOMETRY` and `GEOGRAPHY` logical types, tested separately.
+    05361_geospatial_crs_default.parquet
+    05361_geospatial_crs_geography.parquet
+    05361_geospatial_crs_srid.parquet
+    05361_geospatial_geography_points.parquet
+    # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
+    04045_delta_no_padding_3vals.parquet
+    04045_delta_no_padding_5vals.parquet
+    04045_delta_sample_93093.parquet
+    # `FILE` logical type fixture with raw binary `inline` values, tested by 05361.
+    file_logical_type_arrow_rs.parquet
+    # Hand-crafted file for testing dictionary memory estimation with sparse nullables.
+    04099_dict_nullable_string_memory.parquet
+    # Schema fixtures for the 04757 schema-inference cache key test. The VARIANT one carries a
+    # logical type this reader rejects, so loading it here would print an exception.
+    parquet_variant_logical_type.parquet
+    parquet_required_json_column.parquet
+    # Schema fixtures for 04065 Nullable(Tuple) wrapper test (LIST/MAP optional wrappers).
+    04065_optional_list_wrapper_required_element.parquet
+    04065_optional_map_wrapper_required_value.parquet
+    04065_optional_struct_under_list.parquet
+    04065_optional_struct_nullable_leaf_under_list.parquet
+    # Hand-crafted file with an inconsistent bloom filter size for the 04654 out-of-bounds test.
+    04654_bloom_filter_bitset_out_of_bounds.parquet
+    # Fixtures for 05446 with long strings and no `size_statistics`; they blow up the output.
+    dictionary_short_strings_without_size_statistics.parquet
+    dictionary_strings_without_size_statistics.parquet
+    # Hand-crafted DELTA_BYTE_ARRAY files for the 05035 malformed-input test. The first one is
+    # malformed on purpose, so loading it here would print an exception.
+    05035_delta_byte_array_zero_values.parquet
+    05035_delta_byte_array_decimal.parquet
+    # Variant fixtures for the 04928-04933 tests. This test hashes a file through GROUP BY, which
+    # rejects the Dynamic columns they are read as, so there is nothing for it to check here.
+    04928_variant_spark.parquet
+    04929_variant_all_types.parquet
+    04930_variant_shredded.parquet
+    04931_variant_max_dynamic_types.parquet
+    04932_variant_null.parquet
+    04933_variant_binary_and_string.parquet
+    05227_variant_nested_types.parquet
+    05296_variant_json_objects.parquet
+    05297_variant_json_shared_data.parquet
+    # Its object has a duplicate path on purpose, so loading it here would print an exception.
+    05298_variant_json_duplicate_path.parquet
+    05299_variant_read_as_json.parquet
+    # Intentionally truncated variant blobs for the 05228 malformed-input test.
+    05228_variant_malformed.parquet
+    # Unsupported `VARIANT` specification version and one-sided null leaves, on purpose.
+    05306_variant_unsupported_version.parquet
+    05307_variant_one_sided_null.parquet
+    # Hand-crafted files with only min or only max statistics for the 05230 partial-statistics test.
+    05230_date_max_only_statistics.parquet
+    05230_date_min_only_statistics.parquet
+    # Hand-crafted RLE-encoded files for the 05318 filter-in-decoder test.
+    05318_parquet_dictionary_bit_width_0.parquet
+    05318_parquet_rle_boolean.parquet
+    # File for the 05334 test of string filters with `DELTA_BYTE_ARRAY` pages.
+    string_filters_delta_byte_array.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do
@@ -44,9 +111,6 @@ for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parque
     # pseudorandomly chosen rows. We use a dummy GROUP BY WITH TOTALS for that.
     # (Maybe the unnecessary GROUP BY could be expensive if there are lots of rows, but these test
     #  files don't have lots of rows or they would be too big to check into git.)
-    # TODO [parquet]: Delete the input_format_parquet_enable_json_parsing=0 when cityHash64
-    #                 supports JSON: https://github.com/ClickHouse/ClickHouse/issues/87734
-    # TODO [parquet]: Delete the session_timezone='UTC' after https://github.com/ClickHouse/ClickHouse/pull/87872
     ${CLICKHOUSE_LOCAL} --query="
-        SELECT _row_number, *, count(), sum(cityHash64(_row_number, *)) FROM file('$DATA_DIR/$NAME') GROUP BY all WITH TOTALS ORDER BY cityHash64(_row_number) LIMIT 20 SETTINGS input_format_parquet_enable_json_parsing=0, session_timezone='UTC';" 2>&1
+        SELECT _row_number, *, count(), sum(cityHash64(_row_number, *)) FROM file('$DATA_DIR/$NAME') GROUP BY all WITH TOTALS ORDER BY cityHash64(_row_number) LIMIT 20;" 2>&1
 done

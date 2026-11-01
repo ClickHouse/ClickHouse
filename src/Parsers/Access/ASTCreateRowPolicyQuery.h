@@ -37,13 +37,15 @@ public:
     bool or_replace = false;
     String storage_name;
 
-    std::shared_ptr<ASTRowPolicyNames> names;
+    boost::intrusive_ptr<ASTRowPolicyNames> names;
     String new_short_name;
 
     std::optional<bool> is_restrictive;
-    std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters; /// `nullptr` means set to NONE.
+    /// `nullptr` means set to NONE. The filters are not in `children`: a filter is evaluated later, in the context of
+    /// the query reading the table, so the generic visitors rewriting this query must not see it.
+    std::vector<std::pair<RowPolicyFilterType, ASTPtr>> filters;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

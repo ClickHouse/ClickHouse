@@ -1,0 +1,14 @@
+proj_compact	10
+proj_compact	10
+proj_wide	10
+proj_wide	10
+idx_compact	10
+idx_wide	10
+mat_compact_before	60
+mat_compact_after	50
+mat_wide_before	60
+mat_wide_after	50
+combined	5
+combined	0
+multi_clear_before	110
+multi_clear_after	0

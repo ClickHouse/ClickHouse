@@ -29,24 +29,24 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
             )",
             R"(
-┌─JSON_EXISTS(⋯ '$.hello')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯llo.world')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯.hello[*]')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯.hello[0]')─┐
-│                        1 │
-└──────────────────────────┘
+┌─JSON_EXISTS('{"hello":1}', '$.hello')─┐
+│                                     1 │
+└───────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":{"world":1}}', '$.hello.world')─┐
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":["world"]}', '$.hello[*]')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":["world"]}', '$.hello[0]')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
             )"
         }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONExists, JSONExistsImpl>>(documentation);
     }
 
@@ -81,7 +81,7 @@ String
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONQuery, JSONQueryImpl>>(documentation);
     }
 
@@ -113,13 +113,13 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_retur
 world
 0
 2
-ᴺᵁᴸᴸ
+\N
             )"
         }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONValue, JSONValueImpl>>(documentation);
     }
 }

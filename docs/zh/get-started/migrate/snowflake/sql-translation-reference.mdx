@@ -1,0 +1,108 @@
+---
+sidebarTitle: 'SQL 转换参考'
+slug: /migrations/snowflake-translation-reference
+description: 'SQL 转换参考'
+keywords: ['Snowflake']
+title: '从 Snowflake 迁移到 ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+<div id="data-types">
+  ## 数据类型
+</div>
+
+<div id="numerics">
+  ### 数值类型
+</div>
+
+在 ClickHouse 和 Snowflake 之间迁移数据的用户会立刻注意到，
+在数值类型声明方面，ClickHouse 提供了更细致的精度控制。例如，
+Snowflake 使用 Number 类型表示数值。这要求用户指定
+precision (总位数) 和 scale (小数点右侧的位数) ，
+总位数最高可达 38。整数声明与 Number 等价，只是定义了固定的
+precision 和 scale，并且取值范围相同。之所以能做到这一点，
+是因为在 Snowflake 中，修改 precision (整数的 scale 为 0) 并不会影响
+磁盘上的数据大小——在写入时，系统会在微分区级别根据数值范围使用
+所需的最少字节数。不过，scale 确实会影响存储空间，
+而这部分影响可以通过压缩来抵消。`Float64` 类型则提供了
+更大的取值范围，但会损失一定精度。
+
+相比之下，ClickHouse 为浮点数和整数提供了多种有符号和无符号的
+精度选项。借助这些类型，你可以明确指定整数所需的精度，
+以优化存储和内存开销。与 Snowflake 的 Number 类型等价的
+Decimal 类型，还提供了两倍的 precision 和 scale，上限可达 76 位。
+除了类似的 `Float64` 类型外，
+ClickHouse 还提供了 `Float32`，适用于对精度要求不那么高而
+更看重压缩效果的场景。
+
+<div id="strings">
+  ### 字符串
+</div>
+
+ClickHouse 和 Snowflake 在字符串数据的存储方式上采取了截然不同的方案。Snowflake 中的 `VARCHAR` 以 UTF-8 编码存储 Unicode 字符，并允许用户指定最大长度。这个长度对存储或性能没有影响，系统始终会使用最少的字节数来存储字符串；它更多只是用于提供对下游工具有帮助的约束。其他类型 (如 `Text` 和 `NChar`) 都只是该类型的别名。相比之下，ClickHouse 使用 `String` 类型将所有[字符串数据按原始字节存储](/zh/reference/data-types/string) (无需指定长度) ，并将编码处理交由用户决定，同时提供适用于不同编码的[查询时函数](/zh/reference/functions/regular-functions/string-functions#lengthUTF8)。关于这样设计背后的原因，我们建议读者参阅 [&quot;Opaque data argument&quot;](https://utf8everywhere.org/#cookie)。因此，从实现方式来看，ClickHouse 的 `String` 更接近 Snowflake 的 Binary 类型。[Snowflake](https://docs.snowflake.com/en/sql-reference/collation) 和 [ClickHouse](/zh/reference/statements/select/order-by#collation-support) 都支持“排序规则”，允许用户覆盖字符串的排序和比较方式。
+
+<div id="semi-structured-data">
+  ### 半结构化类型
+</div>
+
+Snowflake 支持用于半结构化
+数据的 `VARIANT`、`OBJECT` 和 `ARRAY` 类型。
+
+ClickHouse 提供了对应的 [`Variant`](/zh/reference/data-types/variant)、
+`Object` (现已弃用，推荐改用原生 `JSON` 类型) 和 [`Array`](/zh/reference/data-types/array)
+类型。此外，ClickHouse 还提供了 [`JSON`](/zh/reference/data-types/newjson)
+类型，用于替代现已弃用的 `Object('json')` 类型，并且与[其他原生 JSON 类型相比](https://jsonbench.com/)在
+性能和存储效率方面尤为出色。
+
+ClickHouse 还通过 [`Nested`](/zh/reference/data-types/nested-data-structures/index) 类型
+支持具名 [`Tuple`s](/zh/reference/data-types/tuple) 和 Tuple 数组，
+使用户能够显式映射嵌套结构。这样便可以在整个层级中应用编解码器和类型
+优化；而 Snowflake 则不同，它要求用户对外层
+对象使用 `OBJECT`、`VARIANT` 和 `ARRAY` 类型，并且不允许[显式定义内部类型](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#characteristics-of-an-object)。
+这种内部类型定义也简化了 ClickHouse 中对嵌套数值的查询，
+因为它们无需进行类型转换，并且可用于索引定义。
+
+在 ClickHouse 中，编解码器和优化类型也可以应用到子结构。
+这还带来了额外的好处：嵌套结构的压缩效果
+依然非常出色，并且可与扁平化数据相媲美。相比之下，由于
+无法将特定类型应用到子结构，Snowflake 建议[将数据扁平化，
+以获得最佳压缩效果](https://docs.snowflake.com/en/user-guide/semistructured-considerations#storing-semi-structured-data-in-a-variant-column-vs-flattening-the-nested-structure)。
+Snowflake 还对这些[数据类型施加了大小限制](https://docs.snowflake.com/en/user-guide/semistructured-considerations#data-size-limitations)。
+
+<div id="type-reference">
+  ### 类型参考
+</div>
+
+| Snowflake                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ClickHouse                                                                                                             | 说明                                                                                                                                                                                           |   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | - |
+| [`NUMBER`](https://docs.snowflake.com/en/sql-reference/data-types-numeric)                                                                                                                                                                                                                                                                                                                                                                                                      | [`Decimal`](/zh/reference/data-types/decimal)                                                                             | ClickHouse 支持的精度和标度是 Snowflake 的两倍：76 位，而 Snowflake 为 38 位。                                                                                                                                  |   |
+| [`FLOAT`, `FLOAT4`, `FLOAT8`](https://docs.snowflake.com/en/sql-reference/data-types-numeric#data-types-for-floating-point-numbers)                                                                                                                                                                                                                                                                                                                                             | [`Float32`, `Float64`](/zh/reference/data-types/float)                                                                    | Snowflake 中所有浮点类型均为 64 位。                                                                                                                                                                    |   |
+| [`VARCHAR`](https://docs.snowflake.com/en/sql-reference/data-types-text#varchar)                                                                                                                                                                                                                                                                                                                                                                                                | [`String`](/zh/reference/data-types/string)                                                                               |                                                                                                                                                                                              |   |
+| [`BINARY`](https://docs.snowflake.com/en/sql-reference/data-types-text#binary)                                                                                                                                                                                                                                                                                                                                                                                                  | [`String`](/zh/reference/data-types/string)                                                                               |                                                                                                                                                                                              |   |
+| [`BOOLEAN`](https://docs.snowflake.com/en/sql-reference/data-types-logical)                                                                                                                                                                                                                                                                                                                                                                                                     | [`Bool`](/zh/reference/data-types/boolean)                                                                                |                                                                                                                                                                                              |   |
+| [`DATE`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#date)                                                                                                                                                                                                                                                                                                                                                                                                  | [`Date`](/zh/reference/data-types/date), [`Date32`](/zh/reference/data-types/date32)                                         | Snowflake 中的 `DATE` 支持的日期范围比 ClickHouse 更广，例如 `Date32` 的最小值为 `1900-01-01`，而 `Date` 的最小值为 `1970-01-01`。ClickHouse 中的 `Date` 提供了更具成本效益的存储方式 (两字节) 。                                            |   |
+| [`TIME(N)`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#time)                                                                                                                                                                                                                                                                                                                                                                                               | 没有完全对应的类型，但可以用 [`DateTime`](/zh/reference/data-types/datetime) 和 [`DateTime64(N)`](/zh/reference/data-types/datetime64) 来表示。 | `DateTime64` 在精度方面采用相同的概念。                                                                                                                                                                   |   |
+| [`TIMESTAMP`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp) - [`TIMESTAMP_LTZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz), [`TIMESTAMP_NTZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz), [`TIMESTAMP_TZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz) | [`DateTime`](/zh/reference/data-types/datetime) 和 [`DateTime64`](/zh/reference/data-types/datetime64)                        | `DateTime` 和 `DateTime64` 可以选择为该列指定 TZ 参数。若未指定，则使用服务器的时区。此外，客户端还可使用 `--use_client_time_zone` 参数。                                                                                             |   |
+| [`VARIANT`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#variant)                                                                                                                                                                                                                                                                                                                                                                                      | [`JSON`, `Tuple`, `Nested`](/zh/reference/formats/index)                                                                  | 在 ClickHouse 中，`JSON` 类型目前仍属 Experimental。该类型会在写入时推断列的数据类型。也可以改用 `Tuple`、`Nested` 和 `Array` 来显式构建类型结构。                                                                                       |   |
+| [`OBJECT`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#object)                                                                                                                                                                                                                                                                                                                                                                                        | [`Tuple`, `Map`, `JSON`](/zh/reference/formats/index)                                                                     | `OBJECT` 和 `Map` 都类似于 ClickHouse 中键为 `String` 的 `JSON` 类型。ClickHouse 要求值保持一致且具备强类型，而 Snowflake 使用 `VARIANT`。这意味着不同键对应的值可以是不同类型。如果在 ClickHouse 中需要这种能力，可以使用 `Tuple` 显式定义层级结构，或直接使用 `JSON` 类型。 |   |
+| [`ARRAY`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#array)                                                                                                                                                                                                                                                                                                                                                                                          | [`数组`](/zh/reference/data-types/array), [`嵌套`](/zh/reference/data-types/nested-data-structures/index)                        | Snowflake 中的 `ARRAY` 使用 `VARIANT` 作为元素类型——即一种超类型。相比之下，ClickHouse 中的这些元素是强类型的。                                                                                                                |   |
+| [`GEOGRAPHY`](https://docs.snowflake.com/en/sql-reference/data-types-geospatial#geography-data-type)                                                                                                                                                                                                                                                                                                                                                                            | [`Point`, `Ring`, `Polygon`, `MultiPolygon`](/zh/reference/data-types/geo)                                                | Snowflake 强制采用坐标系 (WGS 84) ，而 ClickHouse 则在查询时应用该坐标系。                                                                                                                                        |   |
+| [`GEOMETRY`](https://docs.snowflake.com/en/sql-reference/data-types-geospatial#geometry-data-type)                                                                                                                                                                                                                                                                                                                                                                              | [`Point`, `Ring`, `Polygon`, `MultiPolygon`](/zh/reference/data-types/geo)                                                |                                                                                                                                                                                              |   |
+
+| ClickHouse 类型    | 描述                                   |
+| ---------------- | ------------------------------------ |
+| `IPv4` 和 `IPv6`  | IP 专用类型，相比 Snowflake 可能具有更高的存储效率。    |
+| `FixedString`    | 支持使用固定长度的字节，这对哈希值很有用。                |
+| `LowCardinality` | 支持对任意类型进行字典编码。在预期基数 &lt; 100k 时非常有用。 |
+| `Enum`           | 支持在 8 位或 16 位范围内对命名值进行高效编码。          |
+| `UUID`           | 用于高效存储 UUID。                         |
+| `Array(Float32)` | 向量可表示为由 Float32 组成的 Array，并支持距离函数。   |
+
+最后，ClickHouse 还提供了一项独特能力，可以存储
+[聚合函数状态](/zh/reference/data-types/aggregatefunction)这样的中间结果。这种
+状态取决于具体实现，但它允许将聚合结果存储起来，
+并在之后进行查询 (配合相应的 merge 函数) 。通常，这项
+功能通过 materialized view 使用，并且如下所示，它能够以极低的存储成本
+通过存储针对已插入数据的查询增量结果，提升特定查询的性能
+(更多细节见此处) 。

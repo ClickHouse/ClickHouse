@@ -1,0 +1,26 @@
+services:
+    openldap2:
+        image: bitnamilegacy/openldap:2.6.8
+        stop_grace_period: 5s
+        restart: always
+        environment:
+            LDAP_ROOT: dc=referral,dc=org
+            LDAP_ADMIN_DN: cn=admin,dc=referral,dc=org
+            LDAP_ADMIN_USERNAME: admin
+            LDAP_ADMIN_PASSWORD: clickhouse
+            LDAP_USER_DC: users
+            LDAP_USERS: janedoe,johndoe
+            LDAP_PASSWORDS: qwerty,qwertz
+            LDAP_PORT_NUMBER: ${LDAP2_INTERNAL_PORT:-1389}
+        volumes:
+            - /misc/openldap2/setup_referral.sh:/docker-entrypoint-initdb.d/setup_referral.sh
+        healthcheck:
+            test: >
+                test -f /tmp/.openldap-initialized
+                && ldapsearch -x -H ldap://localhost:$$LDAP_PORT_NUMBER -D cn=admin,dc=referral,dc=org -w clickhouse -b dc=referral,dc=org
+                | grep -c -E "^dn: cn=j(ohn|ane)doe,ou=users,dc=referral,dc=org$$"
+                | grep 2 >> /dev/null
+            interval: 10s
+            retries: 10
+            timeout: 2s
+        cpus: 3

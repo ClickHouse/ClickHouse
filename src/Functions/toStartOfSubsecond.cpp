@@ -35,13 +35,13 @@ WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
         )", R"(
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999000000 │
+│               2020-01-01 13:20:30.999000000 │
 └─────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfMillisecond>(documentation);
 }
@@ -75,13 +75,13 @@ WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfMicrosecond(dt64, 'Asia/Istanbul');
         )", R"(
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999999000 │
+│               2020-01-01 13:20:30.999999000 │
 └─────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfMicrosecond>(documentation);
 }
@@ -115,13 +115,13 @@ WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
 SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
         )", R"(
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 12:20:30.999999999 │
+│              2020-01-01 13:20:30.999999999 │
 └────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfNanosecond>(documentation);
 }

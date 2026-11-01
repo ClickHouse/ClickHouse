@@ -1,6 +1,7 @@
 -- Tags: shard
 
 SET output_format_write_statistics = 0;
+SET optimize_skip_unused_shards = 0;
 
 DROP TABLE IF EXISTS 03408_local;
 DROP TABLE IF EXISTS 03408_dist;

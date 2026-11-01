@@ -1,0 +1,28 @@
+---
+title: 配置说明
+---
+
+* `config.d` 目录包含 ClickHouse server 配置文件 `config.xml`，
+  其中定义了每个 ClickHouse 节点的自定义配置。该
+  配置会与每个 ClickHouse 安装自带的默认 `config.xml` ClickHouse 配置
+  文件合并。
+* `users.d` 目录包含用户配置文件 `users.xml`，其中
+  定义了用户的自定义配置。该配置会与每个
+  ClickHouse 安装自带的默认 ClickHouse `users.xml` 配置文件合并。
+
+<Tip>
+  **自定义配置目录**
+
+  最佳实践是，在编写自己的配置时使用 `config.d` 和 `users.d` 目录，
+  而不是直接修改 `/etc/clickhouse-server/config.xml` 和 `etc/clickhouse-server/users.xml` 中的默认配置。
+
+  这一行
+
+  ```xml
+  <clickhouse replace="true">
+  ```
+
+  可确保在 `config.d` 和 `users.d`
+  目录中定义的配置部分会覆盖默认
+  `config.xml` 和 `users.xml` 文件中定义的默认配置部分。
+</Tip>

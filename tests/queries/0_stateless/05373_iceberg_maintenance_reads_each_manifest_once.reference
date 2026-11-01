@@ -1,0 +1,8 @@
+remove_orphan_files
+deleted_data_files_count	1
+deleted_metadata_files_count	1
+0	10
+expire_snapshots
+deleted_manifest_lists_count	1
+dry_run	1
+0	10

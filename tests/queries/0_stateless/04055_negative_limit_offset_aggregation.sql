@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (x UInt64) ENGINE=MergeTree ORDER BY tuple();
+INSERT INTO t VALUES (5),(3),(8),(1),(9),(2),(7),(4),(6),(0);
+SELECT max(x) FROM (SELECT x FROM t ORDER BY x OFFSET -3);

@@ -1,0 +1,13 @@
+<test>
+    <settings>
+        <optimize_read_in_order>1</optimize_read_in_order>
+    </settings>
+
+    <create_query>CREATE TABLE IF NOT EXISTS test_nullable_order_by (x UInt32, y UInt32) ENGINE=MergeTree ORDER BY x</create_query>
+    <fill_query>INSERT INTO test_nullable_order_by SELECT number, number FROM numbers(30000000)</fill_query>
+
+    <query>SELECT y FROM test_nullable_order_by ORDER BY x::UInt64 LIMIT 100000 FORMAT Null</query>
+    <query>SELECT y FROM test_nullable_order_by ORDER BY x::Nullable(UInt64) LIMIT 100000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_nullable_order_by</drop_query>
+</test>

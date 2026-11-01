@@ -3,6 +3,7 @@ set use_variant_as_common_type = 1;
 set allow_experimental_dynamic_type = 1;
 set allow_suspicious_low_cardinality_types = 1;
 set session_timezone = 'UTC';
+set cast_string_to_date_time_mode = 'basic';
 
 select accurateCastOrDefault(variant, 'UInt32'), multiIf(number % 4 == 0, NULL, number % 4 == 1, number, number % 4 == 2, 'str_' || toString(number), range(number)) as variant from numbers(8);
 select accurateCastOrNull(variant, 'UInt32'), multiIf(number % 4 == 0, NULL, number % 4 == 1, number, number % 4 == 2, 'str_' || toString(number), range(number)) as variant from numbers(8);
@@ -11,7 +12,9 @@ select accurateCastOrDefault(dynamic, 'UInt32'), multiIf(number % 4 == 0, NULL, 
 select accurateCastOrNull(dynamic, 'UInt32'), multiIf(number % 4 == 0, NULL, number % 4 == 1, number, number % 4 == 2, 'str_' || toString(number), range(number))::Dynamic as dynamic from numbers(8);
 
 drop table if exists t;
-create table t (id UInt64 DEFAULT generateSerialID('03212_variant_seq'), d Dynamic) engine=MergeTree order by id;
+-- Pin map_serialization_version to 'basic' to prevent non-deterministic Map key ordering
+-- when randomized bucket settings route Map serialization through hash buckets.
+create table t (id UInt64 DEFAULT generateSerialID('03212_variant_seq'), d Dynamic) engine=MergeTree order by id settings map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 -- Integer types: signed and unsigned integers (UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256)
 INSERT INTO t (d) VALUES (-128::Int8), (-127::Int8), (-1::Int8), (0::Int8), (1::Int8), (126::Int8), (127::Int8);
@@ -87,12 +90,16 @@ WITH
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL
-      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
+      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'),
+          toIPv4('0.0.0.1'), toIPv4('0.0.0.254'), toIPv4('0.0.0.255'),
+          toIPv4('0.0.255.254'), toIPv4('0.0.255.255'),
+          toIPv4('255.255.255.254'), toIPv4('255.255.255.255'))
   ) AS bad_v4,
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL
-      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
+      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'),
+          toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'))
   ) AS bad_v6,
   bad_v4 + bad_v6 AS bad_cnt
 SELECT
@@ -109,12 +116,16 @@ WITH
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL
-      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
+      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'),
+          toIPv4('0.0.0.1'), toIPv4('0.0.0.254'), toIPv4('0.0.0.255'),
+          toIPv4('0.0.255.254'), toIPv4('0.0.255.255'),
+          toIPv4('255.255.255.254'), toIPv4('255.255.255.255'))
   ) +
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL
-      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
+      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'),
+          toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'))
   ) AS bad_cnt
 SELECT
   'ch_dbg_offenders' AS tag,
@@ -127,9 +138,13 @@ FROM t
 WHERE bad_cnt > 0
   AND (
         (accurateCastOrNull(d,'IPv4') IS NOT NULL
-         AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1')))
+         AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'),
+          toIPv4('0.0.0.1'), toIPv4('0.0.0.254'), toIPv4('0.0.0.255'),
+          toIPv4('0.0.255.254'), toIPv4('0.0.255.255'),
+          toIPv4('255.255.255.254'), toIPv4('255.255.255.255')))
      OR (accurateCastOrNull(d,'IPv6') IS NOT NULL
-         AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1')))
+         AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'),
+          toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')))
       )
 ORDER BY id
 LIMIT 20;

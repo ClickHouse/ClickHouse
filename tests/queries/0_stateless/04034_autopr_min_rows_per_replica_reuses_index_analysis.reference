@@ -1,0 +1,4 @@
+query	stats_collected	pr_used
+04034_autopr_min_rows_per_replica_reuses_index_analysis_query_0	1	0
+04034_autopr_min_rows_per_replica_reuses_index_analysis_query_1	0	1
+04034_autopr_min_rows_per_replica_reuses_index_analysis_query_2	0	1

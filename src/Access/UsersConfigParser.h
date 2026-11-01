@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Common/Logger_fwd.h>
 #include <Core/UUID.h>
 #include <vector>
 #include <memory>

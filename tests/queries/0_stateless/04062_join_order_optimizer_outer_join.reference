@@ -1,0 +1,34 @@
+RIGHT+LEFT no opt:
+0		3	v2_3	0	
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+RIGHT+LEFT greedy:
+0		3	v2_3	0	
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+LEFT+LEFT no opt:
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+2	v1_2	0		0	v3_0
+LEFT+LEFT greedy:
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+2	v1_2	0		0	v3_0
+RIGHT+RIGHT no opt:
+0		0		4	v3_4
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+RIGHT+RIGHT greedy:
+0		0		4	v3_4
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+LEFT+RIGHT no opt:
+0		0		4	v3_4
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+2	v1_2	0		0	v3_0
+LEFT+RIGHT greedy:
+0		0		4	v3_4
+0	v1_0	0	v2_0	0	v3_0
+1	v1_1	1	v2_1	1	v3_1
+2	v1_2	0		0	v3_0

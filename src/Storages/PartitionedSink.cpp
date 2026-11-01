@@ -85,7 +85,7 @@ void PartitionedSink::consume(Chunk & source_chunk)
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
-        MutableColumns partition_index_to_column_split = columns_to_consume[column_index]->scatter(partitions_size, chunk_row_index_to_partition_index);
+        auto partition_index_to_column_split = columns_to_consume[column_index]->scatter(partitions_size, chunk_row_index_to_partition_index);
 
         /// Add chunks into partition_index_to_chunk with sizes of result columns
         if (column_index == 0)

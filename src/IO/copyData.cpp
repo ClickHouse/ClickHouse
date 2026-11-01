@@ -4,6 +4,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 
+#include <istream>
+
 
 namespace DB
 {
@@ -11,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_READ_FROM_ISTREAM;
 }
 
 namespace
@@ -109,9 +112,36 @@ void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, co
     copyDataImpl(from, to, true, bytes, &is_cancelled, throttler);
 }
 
-void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, std::function<void()> cancellation_hook, ThrottlerPtr throttler)
+size_t copyFromIStreamToWriteBuffer(std::istream & from, WriteBuffer & to)
 {
-    copyDataImpl(from, to, false, std::numeric_limits<size_t>::max(), cancellation_hook, throttler);
+    size_t total_copied = 0;
+
+    while (true)
+    {
+        to.nextIfAtEnd();
+
+        const size_t space = to.available();
+        chassert(space != 0);
+
+        from.read(to.position(), static_cast<std::streamsize>(space));
+        const size_t copied = static_cast<size_t>(from.gcount());
+
+        to.position() += copied;
+        total_copied += copied;
+
+        if (copied != space)
+        {
+            if (!from.eof())
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_FROM_ISTREAM,
+                    "{} after {} bytes",
+                    from.fail() ? "Cannot read from istream" : "Unexpected state of istream",
+                    total_copied);
+            break;
+        }
+    }
+
+    return total_copied;
 }
 
 }

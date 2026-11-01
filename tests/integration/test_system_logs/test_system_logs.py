@@ -72,10 +72,25 @@ def test_system_logs_order_by_expr(start_cluster):
 
     # Check 'sorting_key' of  system.query_thread_log.
     assert (
-        node1.query(
-            "SELECT sorting_key FROM system.tables WHERE database='system' and name='query_thread_log'"
+        node1.query_with_retry(
+            "SELECT sorting_key FROM system.tables WHERE database='system' and name='query_thread_log'",
+            check_callback=lambda x: len(x) > 0
         )
         == "event_date, event_time, query_id\n"
+    )
+
+
+def test_system_logs_order_by_alias(start_cluster):
+    node1.query("SYSTEM FLUSH LOGS opentelemetry_span_log")
+
+    # 'finish_date' in the configured keys and TTL (including GROUP BY keys and
+    # SET assignments) is an alias and should be replaced with the underlying
+    # 'event_date' column.
+    assert (
+        node1.query(
+            "SELECT partition_key, sorting_key, extract(engine_full, 'TTL (.*) SETTINGS') FROM system.tables WHERE database='system' and name='opentelemetry_span_log'"
+        )
+        == "toYYYYMM(event_date)\tevent_date, finish_time_us\tevent_date + toIntervalDay(30) GROUP BY event_date SET event_date = max(event_date)\n"
     )
 
 
@@ -89,6 +104,12 @@ def test_system_logs_engine_expr(start_cluster):
     assert expected in node2.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
+    comment = node2.query(
+        "SELECT comment FROM system.tables WHERE database='system' and name='query_log'"
+    )
+    assert ".examples" in comment
+    assert "Configured query log comment." in comment
+    assert comment.count("It is safe to truncate or drop this table at any time.") == 1
 
 
 def test_system_logs_engine_s3_plain_rw_expr(start_cluster):
@@ -124,10 +145,10 @@ def test_max_size_0(start_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
-                <max_size_rows replace=\\"replace\\">0</max_size_rows> 
+                <max_size_rows replace=\\"replace\\">0</max_size_rows>
                 <reserved_size_rows replace=\\"replace\\">0</reserved_size_rows>
             </query_log>
         </clickhouse>
@@ -139,7 +160,7 @@ def test_max_size_0(start_cluster):
         node1.restart_clickhouse()
 
     node1.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node1.restart_clickhouse()
 
@@ -148,11 +169,11 @@ def test_reserved_size_greater_max_size(start_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <max_size_rows replace=\\"replace\\">10</max_size_rows>
-                <reserved_size_rows replace=\\"replace\\">11</reserved_size_rows> 
+                <reserved_size_rows replace=\\"replace\\">11</reserved_size_rows>
             </query_log>
         </clickhouse>
         " > /etc/clickhouse-server/config.d/yyy-override-query_log.xml
@@ -163,6 +184,6 @@ def test_reserved_size_greater_max_size(start_cluster):
         node1.restart_clickhouse()
 
     node1.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node1.restart_clickhouse()

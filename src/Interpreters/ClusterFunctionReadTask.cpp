@@ -1,17 +1,18 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/Context.h>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
 namespace DB
 {
@@ -42,6 +43,9 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    if (!send_over_whole_archive)
+        archive_entry_index = object->archive_entry_index;
+    read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
 }
 
@@ -71,6 +75,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     {
         object = std::make_shared<ObjectInfo>(path);
     }
+    object->relative_path_with_metadata.read_source_index = read_source_index;
+    object->archive_entry_index = archive_entry_index;
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
 
@@ -87,10 +93,18 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
         SerializedSetsRegistry registry;
-        if (data_lake_metadata.transform)
-            data_lake_metadata.transform->serialize(out, registry);
+        if (data_lake_metadata.schema_transform)
+            data_lake_metadata.schema_transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
+
+        if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS)
+        {
+            if (data_lake_metadata.excluded_rows)
+                data_lake_metadata.excluded_rows->write(out);
+            else
+                DataLakeObjectMetadata::ExcludedRows().write(out);
+        }
     }
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
@@ -120,6 +134,43 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             writeVarUInt(0, out);
         }
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX)
+    {
+        writeVarUInt(read_source_index.has_value(), out);
+        if (read_source_index)
+            writeVarUInt(*read_source_index, out);
+    }
+    else if (read_source_index.has_value())
+    {
+        /// Fail closed: downgrading the task to a path-only `ObjectInfo` would make the worker treat all
+        /// web URL shards as failover for that path, reading only the first available source and silently
+        /// missing rows from the other shards. A worker that cannot carry `read_source_index` must not run
+        /// such a task.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `read_source_index`, which is required for distributed "
+            "reads of wildcard URL shards (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX);
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX)
+    {
+        writeVarUInt(archive_entry_index.has_value(), out);
+        if (archive_entry_index)
+            writeVarUInt(*archive_entry_index, out);
+    }
+    else if (archive_entry_index.has_value())
+    {
+        /// Fail closed: without the position the worker would read the first entry with this name.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `archive_entry_index`, which is required to read an archive entry "
+            "whose name an earlier entry of the archive has (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -140,11 +191,17 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
         DeserializedSetsRegistry registry;
-        auto transform = std::make_shared<ActionsDAG>(ActionsDAG::deserialize(in, registry, Context::getGlobalContextInstance()));
+        /// Trusted intra-cluster metadata: decode types without the input complexity limit.
+        auto transform = std::make_shared<ActionsDAG>(ActionsDAG::deserialize(in, registry, Context::getGlobalContextInstance(), 0));
 
         if (!path.empty() && !transform->getInputs().empty())
         {
-            data_lake_metadata.transform = std::move(transform);
+            data_lake_metadata.schema_transform = std::move(transform);
+        }
+        if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS)
+        {
+            data_lake_metadata.excluded_rows = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+            data_lake_metadata.excluded_rows->read(in);
         }
     }
 
@@ -166,6 +223,28 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         {
             iceberg_info = Iceberg::IcebergObjectSerializableInfo{};
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX)
+    {
+        bool has_read_source_index = false;
+        readVarUInt(has_read_source_index, in);
+        if (has_read_source_index)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            read_source_index = value;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX)
+    {
+        bool has_archive_entry_index = false;
+        readVarUInt(has_archive_entry_index, in);
+        if (has_archive_entry_index)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            archive_entry_index = value;
         }
     }
 }

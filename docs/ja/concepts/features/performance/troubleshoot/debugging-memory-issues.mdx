@@ -1,0 +1,93 @@
+---
+slug: /guides/developer/debugging-memory-issues
+sidebarTitle: 'メモリ問題のデバッグ'
+description: 'メモリ問題のデバッグに役立つクエリです。'
+keywords: ['メモリ問題']
+title: 'メモリ問題のデバッグ'
+doc_type: 'guide'
+---
+
+メモリの問題やメモリリークが発生した際には、どのクエリやリソースが大量のメモリを消費しているかを把握することが重要です。以下では、最適化の対象となるクエリ、データベース、テーブルを特定し、メモリ問題のデバッグに役立てるためのクエリを紹介します。
+
+<div id="list-currently-running-processes-by-peak-memory">
+  ## 現在実行中のプロセスをピークメモリ使用量の順に一覧表示
+</div>
+
+```sql
+SELECT
+    initial_query_id,
+    query,
+    elapsed,
+    formatReadableSize(memory_usage),
+    formatReadableSize(peak_memory_usage),
+FROM system.processes
+ORDER BY peak_memory_usage DESC
+LIMIT 100;
+```
+
+<div id="list-metrics-for-memory-usage">
+  ## メモリ使用量に関するメトリクスを一覧表示する
+</div>
+
+```sql
+SELECT
+    metric, description, formatReadableSize(value) size
+FROM
+    system.asynchronous_metrics
+WHERE
+    metric LIKE '%Cach%'
+    OR metric LIKE '%Mem%'
+ORDER BY
+    value DESC;
+```
+
+<div id="list-tables-by-current-memory-usage">
+  ## 現在のメモリ使用量別にテーブルを一覧表示
+</div>
+
+```sql
+SELECT
+    database,
+    name,
+    formatReadableSize(total_bytes)
+FROM system.tables
+WHERE engine IN ('Memory','Set','Join');
+```
+
+<div id="output-total-memory-used-by-merges">
+  ## マージで使用される合計メモリを出力する
+</div>
+
+```sql
+SELECT formatReadableSize(sum(memory_usage)) FROM system.merges;
+```
+
+<div id="output-total-memory-used-by-currently-running-processes">
+  ## 現在実行中のプロセスが使用している総メモリ量を出力
+</div>
+
+```sql
+SELECT formatReadableSize(sum(memory_usage)) FROM system.processes;
+```
+
+<div id="output-total-memory-used-by-dictionaries">
+  ## 辞書が使用する合計メモリを出力
+</div>
+
+```sql
+SELECT formatReadableSize(sum(bytes_allocated)) FROM system.dictionaries;
+```
+
+<div id="output-total-memory-used-by-primary-keys">
+  ## 主キーと索引の粒度が使用する合計メモリを出力する
+</div>
+
+```sql
+SELECT
+    sumIf(data_uncompressed_bytes, part_type = 'InMemory') AS memory_parts,
+    formatReadableSize(sum(primary_key_bytes_in_memory)) AS primary_key_bytes_in_memory,
+    formatReadableSize(sum(primary_key_bytes_in_memory_allocated)) AS primary_key_bytes_in_memory_allocated,
+    formatReadableSize(sum(index_granularity_bytes_in_memory)) AS index_granularity_bytes_in_memory,
+    formatReadableSize(sum(index_granularity_bytes_in_memory_allocated)) AS index_granularity_bytes_in_memory_allocated
+FROM system.parts;
+```

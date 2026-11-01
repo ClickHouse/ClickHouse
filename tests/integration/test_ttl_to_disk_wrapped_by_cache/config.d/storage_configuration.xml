@@ -1,0 +1,36 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
+            </s3>
+
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/tmp/s3_cache/</path>
+                <max_size>1000000000</max_size>
+            </s3_cache>
+        </disks>
+
+        <policies>
+            <s3_cold>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+
+                    <external>
+                        <disk>s3_cache</disk>
+                        <perform_ttl_move_on_insert>0</perform_ttl_move_on_insert>
+                    </external>
+                </volumes>
+                <move_factor>0.0</move_factor> <!-- Disable automatic moves -->
+            </s3_cold>
+        </policies>
+    </storage_configuration>
+</clickhouse>

@@ -1,0 +1,10 @@
+<test>
+    <!-- Repeat runs of `ORDER BY ... LIMIT n` (TopK) queries whose sort column is uncorrelated
+         with the primary key: granules fully dropped by the dynamic `__topKFilter` threshold are
+         recorded in the query condition cache, so warm runs skip most of the table at the
+         mark-selection stage instead of re-reading and re-filtering it (issue #114639,
+         ClickBench Q24/Q26 shapes). -->
+    <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10</query>
+    <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10</query>
+    <query>SELECT SearchPhrase FROM hits_100m_single ORDER BY EventTime LIMIT 10</query>
+</test>

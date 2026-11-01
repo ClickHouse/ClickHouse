@@ -1,0 +1,13 @@
+DROP VIEW IF EXISTS mv;
+DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS dst;
+create table dst (e Enum('a' = 0, 'b' = 1)) engine=Memory;
+create table src (e Enum('a' = 0)) engine=Memory;
+create materialized view mv to dst (e Enum('a' = 0)) as select * from src;
+insert into src select * from generateRandom('e Enum(\'a\' = 0)', 1) limit 10;
+SELECT * FROM src;
+SELECT * FROM dst;
+SELECT * FROM mv;
+DROP VIEW mv;
+DROP TABLE src;
+DROP TABLE dst;

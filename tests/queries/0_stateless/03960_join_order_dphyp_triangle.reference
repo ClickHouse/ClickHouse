@@ -1,0 +1,17 @@
+Expression ((Project names + Projection))
+  Expression (Post Join Actions)
+    Join (JOIN FillRightFirst)
+      Expression (Left Pre Join Actions)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.tri_hub)
+            Expression (Right Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.tri_arm1)
+      Expression (Right Pre Join Actions)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.tri_arm2)
+8116708025881160369
+8116708025881160369

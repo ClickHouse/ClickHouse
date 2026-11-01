@@ -1,0 +1,315 @@
+---
+slug: /best-practices/use-json-where-appropriate
+sidebarTitle: 'Utiliser JSON'
+title: 'Utiliser JSON à bon escient'
+description: 'Page expliquant quand utiliser JSON'
+keywords: ['JSON']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+import WhenToUseJson from '/snippets/fr/_when-to-use-json.mdx';
+
+ClickHouse propose désormais un type de colonne JSON natif conçu pour les données semi-structurées et dynamiques. Il est important de préciser qu’**il s’agit d’un type de colonne, et non d’un format de données** — vous pouvez insérer du JSON dans ClickHouse sous forme de chaîne ou via des formats pris en charge comme [JSONEachRow](/fr/reference/formats/JSON/JSONEachRow), mais cela ne signifie pas que vous utilisez le type de colonne JSON. Vous ne devez utiliser le type JSON que lorsque la structure de vos données est dynamique, et non lorsque vous vous contentez de stocker du JSON.
+
+<WhenToUseJson />
+
+<div id="considerations-and-tips-for-using-json">
+  ## Considérations et conseils pour l’utilisation de JSON
+</div>
+
+Le type JSON permet un stockage colonnaire efficace en aplatissant les chemins en sous-colonnes. Mais cette flexibilité s’accompagne de certaines contraintes. Pour l’utiliser efficacement :
+
+* **Spécifiez les types des chemins** à l’aide des [indications dans la définition de colonne](/fr/reference/data-types/newjson) afin de définir les types des sous-colonnes connues et d’éviter une inférence de type inutile.
+* **Ignorez certains chemins** si vous n’avez pas besoin des valeurs, avec [SKIP and SKIP REGEXP](/fr/reference/data-types/newjson) afin de réduire le volume de stockage et d’améliorer les performances.
+* **Évitez de définir [`max_dynamic_paths`](/fr/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) à une valeur trop élevée** : des valeurs importantes augmentent la consommation de ressources et réduisent l’efficacité. En règle générale, gardez-la en dessous de 10 000.
+
+<Info>
+  **Indications de type**
+
+  Les indications de type offrent bien plus qu’un simple moyen d’éviter une inférence de type inutile : elles éliminent entièrement l’indirection liée au stockage et au traitement. Les chemins JSON assortis d’indications de type sont toujours stockés comme des colonnes classiques, sans nécessiter de [**colonnes discriminantes**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) ni de résolution dynamique à l’exécution de la requête. Cela signifie qu’avec des indications de type bien définies, les champs JSON imbriqués atteignent les mêmes performances et la même efficacité que s’ils avaient été modélisés dès le départ comme des champs de premier niveau. Par conséquent, pour les jeux de données globalement cohérents qui bénéficient malgré tout de la flexibilité de JSON, les indications de type constituent un moyen pratique de préserver les performances sans avoir à restructurer votre schéma ni votre pipeline d’ingestion.
+</Info>
+
+<div id="advanced-features">
+  ## Fonctionnalités avancées
+</div>
+
+* Les colonnes JSON **peuvent être utilisées dans les clés primaires** comme n’importe quelles autres colonnes. Il n’est pas possible de spécifier de codecs pour une sous-colonne.
+* Elles prennent en charge l’introspection via des fonctions comme [`JSONAllPathsWithTypes()` and `JSONDynamicPaths()`](/fr/reference/data-types/newjson#introspection-functions).
+* Vous pouvez lire des sous-objets imbriqués à l’aide de la syntaxe `.^`.
+* La syntaxe des requêtes peut différer du SQL standard et nécessiter des conversions de type ou des opérateurs spécifiques pour les champs imbriqués.
+
+Pour en savoir plus, consultez[ la documentation JSON de ClickHouse](/fr/reference/data-types/newjson) ou découvrez notre article de blog[ A New Powerful JSON Data Type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse).
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Considérons l’exemple JSON suivant, qui représente une ligne du [Python PyPI dataset](https://clickpy.clickhouse.com/) :
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+Supposons que ce schéma soit statique et que les types puissent être clairement définis. Même si les données sont au format NDJSON (un enregistrement JSON par ligne), il n&#39;est pas nécessaire d&#39;utiliser le type JSON pour un tel schéma. Définissez simplement le schéma avec des types classiques.
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+et insérez des lignes JSON :
+
+```sql
+INSERT INTO pypi FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"ES","project":"clickhouse-connect","type":"bdist_wheel","installer":"pip","python_minor":"3.9","system":"Linux","version":"0.3.0"}
+```
+
+Prenons le [jeu de données arXiv](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download), qui contient 2,5 millions d’articles scientifiques. Chaque ligne de ce jeu de données, fourni au format NDJSON, représente un article scientifique publié. Un exemple de ligne est présenté ci-dessous :
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+Bien que le JSON soit complexe ici, avec des structures imbriquées, il reste prévisible. Le nombre et le type des champs ne changeront pas. Bien que nous puissions utiliser le type JSON pour cet exemple, nous pouvons aussi définir explicitement la structure à l’aide des types [Tuples](/fr/reference/data-types/tuple) et [Nested](/fr/reference/data-types/nested-data-structures/index) :
+
+```sql
+CREATE TABLE arxiv
+(
+  `id` String,
+  `submitter` String,
+  `authors` String,
+  `title` String,
+  `comments` String,
+  `journal-ref` String,
+  `doi` String,
+  `report-no` String,
+  `categories` String,
+  `license` String,
+  `abstract` String,
+  `versions` Array(Tuple(created String, version String)),
+  `update_date` Date,
+  `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+Là encore, nous pouvons insérer les données au format JSON :
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}
+```
+
+Supposons qu’une autre colonne appelée `tags` soit ajoutée. S’il s’agissait simplement d’une liste de chaînes, nous pourrions la modéliser sous la forme d’un `Array(String)`, mais supposons que vous puissiez ajouter des structures de tags arbitraires contenant des types mixtes (notez que `score` peut être une chaîne ou un entier). Voici notre document JSON modifié :
+
+```sql
+{
+ "id": "2101.11408",
+ "submitter": "Daniel Lemire",
+ "authors": "Daniel Lemire",
+ "title": "Number Parsing at a Gigabyte per Second",
+ "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+ "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+ "doi": "10.1002/spe.2984",
+ "report-no": null,
+ "categories": "cs.DS cs.MS",
+ "license": "http://creativecommons.org/licenses/by/4.0/",
+ "abstract": "With disks and networks providing gigabytes per second ....\n",
+ "versions": [
+ {
+   "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+   "version": "v1"
+ },
+ {
+   "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+   "version": "v2"
+ }
+ ],
+ "update_date": "2022-11-07",
+ "authors_parsed": [
+ [
+   "Lemire",
+   "Daniel",
+   ""
+ ]
+ ],
+ "tags": {
+   "tag_1": {
+     "name": "ClickHouse user",
+     "score": "A+",
+     "comment": "A good read, applicable to ClickHouse"
+   },
+   "28_03_2025": {
+     "name": "professor X",
+     "score": 10,
+     "comment": "Didn't learn much",
+     "updates": [
+       {
+         "name": "professor X",
+         "comment": "Wolverine found more interesting"
+       }
+     ]
+   }
+ }
+}
+```
+
+Dans ce cas, nous pourrions modéliser les documents d’arXiv soit entièrement en JSON, soit en ajoutant simplement une colonne JSON `tags`. Nous fournissons les deux exemples ci-dessous :
+
+```sql
+CREATE TABLE arxiv
+(
+  `doc` JSON(update_date Date)
+)
+ENGINE = MergeTree
+ORDER BY doc.update_date
+```
+
+<Note>
+  Nous fournissons une indication de type pour la colonne `update_date` dans la définition JSON, car nous l’utilisons dans la clé de tri / clé primaire. Cela permet à ClickHouse de savoir que cette colonne ne sera pas NULL et de déterminer quelle sous-colonne `update_date` utiliser (il peut y en avoir plusieurs pour chaque type, ce qui serait ambigu sinon).
+</Note>
+
+Nous pouvons insérer des données dans cette table, puis afficher le schéma inféré à l’aide de la fonction [`JSONAllPathsWithTypes`](/fr/reference/functions/regular-functions/json-functions#JSONAllPathsWithTypes) et du format de sortie [`PrettyJSONEachRow`](/fr/reference/formats/JSON/PrettyJSONEachRow) :
+
+```sql
+INSERT INTO arxiv FORMAT JSONAsObject 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+```sql
+SELECT JSONAllPathsWithTypes(doc)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(doc)": {
+    "abstract": "String",
+    "authors": "String",
+    "authors_parsed": "Array(Array(Nullable(String)))",
+    "categories": "String",
+    "comments": "String",
+    "doi": "String",
+    "id": "String",
+    "journal-ref": "String",
+    "license": "String",
+    "submitter": "String",
+    "tags.28_03_2025.comment": "String",
+    "tags.28_03_2025.name": "String",
+    "tags.28_03_2025.score": "Int64",
+    "tags.28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tags.tag_1.comment": "String",
+    "tags.tag_1.name": "String",
+    "tags.tag_1.score": "String",
+    "title": "String",
+    "update_date": "Date",
+    "versions": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))"
+  }
+}
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+Sinon, nous pourrions modéliser cela en utilisant notre schéma précédent et une colonne JSON `tags`. Cette approche est généralement préférable, car elle réduit au minimum l’inférence requise de la part de ClickHouse :
+
+```sql
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String)),
+    `tags` JSON()
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+Nous pouvons maintenant inférer les types de la sous-colonne `tags`.
+
+```sql
+SELECT JSONAllPathsWithTypes(tags)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(tags)": {
+    "28_03_2025.comment": "String",
+    "28_03_2025.name": "String",
+    "28_03_2025.score": "Int64",
+    "28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tag_1.comment": "String",
+    "tag_1.name": "String",
+    "tag_1.score": "String"
+  }
+}
+```
+
+```response
+1 row in set. Elapsed: 0.002 sec.
+```

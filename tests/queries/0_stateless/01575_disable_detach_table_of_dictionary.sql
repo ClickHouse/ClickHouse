@@ -1,28 +1,29 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE database_for_dict;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE TABLE database_for_dict.table_for_dict (k UInt64, v UInt8) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.table_for_dict (k UInt64, v UInt8) ENGINE = MergeTree ORDER BY k;
 
-DROP DICTIONARY IF EXISTS database_for_dict.dict1;
+DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-CREATE DICTIONARY database_for_dict.dict1 (k UInt64 DEFAULT 0, v UInt8 DEFAULT 1) PRIMARY KEY k
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1 (k UInt64 DEFAULT 0, v UInt8 DEFAULT 1) PRIMARY KEY k
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB currentDatabase()))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
-DETACH TABLE database_for_dict.dict1; -- { serverError CANNOT_DETACH_DICTIONARY_AS_TABLE }
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dict1; -- { serverError CANNOT_DETACH_DICTIONARY_AS_TABLE }
 
-DETACH DICTIONARY database_for_dict.dict1;
+DETACH DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-ATTACH TABLE database_for_dict.dict1; -- { serverError INCORRECT_QUERY }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dict1; -- { serverError INCORRECT_QUERY }
 
-ATTACH DICTIONARY database_for_dict.dict1;
+ATTACH DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-DROP DICTIONARY database_for_dict.dict1;
+DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-DROP TABLE database_for_dict.table_for_dict;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.table_for_dict;
 
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

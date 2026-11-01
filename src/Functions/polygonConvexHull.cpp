@@ -1,13 +1,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
 
-#include <Columns/ColumnTuple.h>
-
+#include <algorithm>
 #include <memory>
-#include <string>
 
 namespace DB
 {
@@ -20,8 +16,23 @@ namespace ErrorCodes
 namespace
 {
 
+/// `boost::geometry::convex_hull` takes only the exterior rings of polygons into account,
+/// but it checks for emptiness with `boost::geometry::is_empty`, which also looks at the interior rings.
+/// For a polygon with an empty exterior ring and a non-empty interior ring it reads uninitialized points.
+/// Returns true if there are no points for the convex hull to be built from.
+template <typename Geometry>
+bool hasNoPointsForConvexHull(const Geometry & geometry)
+{
+    if constexpr (std::is_same_v<boost::geometry::tag_t<Geometry>, boost::geometry::polygon_tag>)
+        return geometry.outer().empty();
+    else if constexpr (std::is_same_v<boost::geometry::tag_t<Geometry>, boost::geometry::multi_polygon_tag>)
+        return std::ranges::all_of(geometry, [](const auto & polygon) { return polygon.outer().empty(); });
+    else
+        return boost::geometry::is_empty(geometry);
+}
+
 template <typename Point>
-class FunctionPolygonConvexHull : public IFunction
+class FunctionPolygonConvexHull final : public IFunction
 {
 public:
     static const char * name;
@@ -50,9 +61,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return DataTypeFactory::instance().get("Polygon");
+        return "(Any) -> Polygon";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -73,7 +84,8 @@ public:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     Polygon<Point> convex_hull{};
-                    boost::geometry::convex_hull(geometries[i], convex_hull);
+                    if (!hasNoPointsForConvexHull(geometries[i]))
+                        boost::geometry::convex_hull(geometries[i], convex_hull);
                     serializer.add(convex_hull);
                 }
             }
@@ -96,7 +108,33 @@ const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHul
 
 REGISTER_FUNCTION(PolygonConvexHull)
 {
-    factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
+    FunctionDocumentation::Description description = R"(
+Calculates a convex hull. [Reference](https://www.boost.org/doc/libs/1_61_0/libs/geometry/doc/html/geometry/reference/algorithms/convex_hull.html)
+
+Coordinates are in Cartesian coordinate system.
+    )";
+    FunctionDocumentation::Syntax syntax = "polygonConvexHullCartesian(multipolygon)";
+    FunctionDocumentation::Arguments arguments = {
+        {"multipolygon", "A MultiPolygon value.", {"MultiPolygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the convex hull as a Polygon.", {"Polygon"}};
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Conve hull example",
+        R"(
+SELECT wkt(polygonConvexHullCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.), (2., 3.)]]]))
+        )",
+        R"(
+POLYGON((0 0,0 5,5 5,5 0,0 0))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>(function_documentation);
 }
 
 }

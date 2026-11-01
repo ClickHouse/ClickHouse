@@ -1,30 +1,23 @@
 #include <memory>
 #include <stack>
+#include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Core/NamesAndTypes.h>
-#include <Core/TypeId.h>
 
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/misc.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -38,27 +31,27 @@
 
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/StorageSnapshot.h>
+#include <Common/HashTable/HashSet.h>
 
 
 namespace DB
@@ -67,6 +60,7 @@ namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
 }
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -75,16 +69,15 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+static bool buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
+    bool all_sets_are_ready = true;
+
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
-            if (!column_set)
-                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
-
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -97,15 +90,71 @@ void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, boo
                         else
                             set_from_subquery->buildSetInplace(context);
                     }
+
+                    /// The set can stay unbuilt: an in-place build is a no-op once the subquery plan has been
+                    /// moved out of the set (`DelayedCreatingSetsStep::makePlansForSets` does that during plan
+                    /// optimization), and then the set is only created when the pipeline runs.
+                    if (!future_set->get())
+                        all_sets_are_ready = false;
                 }
             }
         }
     }
+
+    return all_sets_are_ready;
 }
 
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
-    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+    return buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// Collect ColumnSet nodes that are arguments to globalIn/globalNotIn functions.
+    /// These sets must NOT be built synchronously here because ReadFromRemote needs to
+    /// attach external tables to them first (via setExternalTable). Building them early
+    /// would make the set "created" without explicit elements, causing a LOGICAL_ERROR.
+    std::unordered_set<const ActionsDAG::Node *> global_in_set_nodes;
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            auto name = node.function_base->getName();
+            if (functionIsGlobalInOperator(name))
+            {
+                /// The set is the second argument (index 1)
+                if (node.children.size() >= 2)
+                    global_in_set_nodes.insert(node.children[1]);
+            }
+        }
+    }
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
+        {
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        /// Prefer ordered build so that the set retains explicit elements,
+                        /// which `KeyCondition` and skip-index analysis require to use the set
+                        /// for primary-key / skip-index filtering (via `buildOrderedSetInplace`).
+                        /// If `use_index_for_in_with_subqueries` is disabled, the ordered build
+                        /// returns `nullptr` without building; fall back to unordered so the set
+                        /// is still ready when PREWHERE is evaluated at read time.
+                        if (!set_from_subquery->buildOrderedSetInplace(context))
+                            set_from_subquery->buildSetInplace(context);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
@@ -113,10 +162,18 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
     buildSetsForDagImpl(dag, context, /* ordered = */ true);
 }
 
+void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// The ordered build leaves a set alone when the setting forbids it; the plain build then
+    /// creates it, and skips the sets the first pass already created.
+    buildSetsForDagImpl(dag, context, /* ordered = */ true);
+    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    return std::make_shared<ExpressionActions>(std::move(dag));
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
@@ -161,12 +218,54 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
         {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
         {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
         {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
+        {"_iceberg_metadata_file_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_last_updated_sequence_number", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_row_id", makeNullable(std::make_shared<DataTypeUInt64>())},
     };
 }
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
     return getCommonVirtualsForFileLikeStorage().getNameSet();
+}
+
+/// Virtual columns that can only be materialized after the read buffer is opened (e.g. HTTP response
+/// headers exposed as `_headers` for web reads). They are not known during object listing, so they must
+/// not participate in the path/file pre-listing predicate split, where the listing-time block can only
+/// materialize `_path`/`_file`/hive columns/`_idx`.
+static bool isReaderOnlyVirtualColumn(const String & name)
+{
+    return name == "_headers";
+}
+
+std::string_view findHivePartitioningInPath(const String & path)
+{
+    auto key_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+
+    if (key_values.empty())
+        return std::string_view();
+
+    // All keys and values are string_view over 'path', so starts and ends must be inside 'path'
+    auto kv = key_values.begin();
+    const auto * start = kv->first.data();
+    const auto * end = kv->second.data() + kv->second.size();
+    ++kv;
+    while (kv != key_values.end())
+    {
+        start = std::min(kv->first.data(), start);
+        end = std::max(kv->second.data() + kv->second.size(), end);
+        ++kv;
+    }
+
+    if (start < path.data() || start > path.data() + path.size()
+            || end < path.data() || end > path.data() + path.size()
+            || end < start)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "String views are not inside initial string");
+    }
+
+    return std::string_view(start, end - start);
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
@@ -185,7 +284,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
             return;
 
         const auto & type = pair.getTypeInStorage();
-        desc.addEphemeral(name, type, "");
+        desc.addEphemeral(name, type, "", VirtualsMaterializationPlace::Reader);
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
@@ -209,42 +308,56 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     return desc;
 }
 
+/// Appends one row to the already-detached mutable columns of `block`. The columns are detached once
+/// by the caller (see `getFilterByPathAndFileIndexes`) so this per-row helper does not pay any
+/// copy-on-write plumbing: it inserts directly through the mutable holders. `block` is used only for
+/// name/type/position lookup; its columns have been moved out into `columns`.
 static void addPathAndFileToVirtualColumns(
-    Block & block,
+    const Block & block,
+    MutableColumns & columns,
     const String & path,
     size_t idx,
     const FormatSettings & format_settings,
-    bool parse_hive_columns)
+    const String * file_name = nullptr)
 {
     if (block.has("_path"))
-        block.getByName("_path").column->assumeMutableRef().insert(path);
+        columns[block.getPositionByName("_path")]->insert(path);
 
     if (block.has("_file"))
     {
-        auto pos = path.find_last_of('/');
         String file;
-        if (pos != std::string::npos)
-            file = path.substr(pos + 1);
-        else
-            file = path;
-
-        block.getByName("_file").column->assumeMutableRef().insert(file);
-    }
-
-    if (parse_hive_columns)
-    {
-        const auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-        for (const auto & [key, value] : keys_and_values)
+        if (file_name)
         {
-            if (const auto * column = block.findByName(key))
-            {
-                ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
-            }
+            file = *file_name;
         }
+        else
+        {
+            auto pos = path.find_last_of('/');
+            if (pos != std::string::npos)
+                file = path.substr(pos + 1);
+            else
+                file = path;
+        }
+
+        columns[block.getPositionByName("_file")]->insert(file);
     }
 
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
+    /// Any other column of the block, except `_idx`, is a Hive partition column.
+    std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> keys_and_values;
+    for (size_t pos = 0; pos < block.columns(); ++pos)
+    {
+        const auto & column = block.getByPosition(pos);
+        if (column.name == "_path" || column.name == "_file" || column.name == "_idx")
+            continue;
+
+        if (!keys_and_values)
+            keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+
+        ReadBufferFromString buf(HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.name, path));
+        column.type->getDefaultSerialization()->deserializeWholeText(*columns[pos], buf, format_settings);
+    }
+
+    columns[block.getPositionByName("_idx")]->insert(idx);
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
@@ -260,13 +373,16 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     for (const auto & column : hive_columns)
     {
-        block.insert({column.type->createColumn(), column.type, column.name});
+        /// In the filter block `_path` and `_file` are the path and the file name, never a Hive column with that name.
+        if (column.name != "_path" && column.name != "_file" && !block.has(column.name))
+            block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -278,47 +394,90 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings,
+    const std::vector<String> * file_names)
 {
+    if (file_names && file_names->size() != paths.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of paths and file names do not match: {} != {}", paths.size(), file_names->size());
+
+    /// Only the columns the filter reads: a path may lack a Hive column the filter does not use.
+    const NameSet required = actions->getRequiredColumnsWithTypes().getNameSet();
+
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (required.contains(column.name) && (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name))))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     for (const auto & column : hive_columns)
     {
-        block.insert({column.type->createColumn(), column.type, column.name});
+        if (required.contains(column.name) && !block.has(column.name))
+            block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
+    const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+
+    /// Detach all block columns into mutable holders once, append all rows through them, and
+    /// assign them back once. This keeps `IColumn::mutate` (and its recursive subcolumn re-wrapping
+    /// for `LowCardinality` virtuals such as `_path`/`_file`) off the per-row append path.
+    MutableColumns columns = block.mutateColumns();
     for (size_t i = 0; i != paths.size(); ++i)
     {
         addPathAndFileToVirtualColumns(
             block,
+            columns,
             paths[i],
             /* idx */i,
-            getFormatSettings(context),
-            /* parse_hive_columns */context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty());
+            hive_format_settings,
+            file_names ? &(*file_names)[i] : nullptr);
     }
+    block.setColumns(std::move(columns));
 
     filterBlockWithExpression(actions, block);
 
     return block.getByName("_idx").column;
 }
 
+/// Builds a `Nullable(UInt64)` row lineage column out of the values materialized in the data file,
+/// falling back to the value derived from the file metadata wherever the file has no value.
+template <typename FallbackFn>
+static ColumnPtr buildRowLineageColumn(size_t num_rows, const IColumn * materialized, FallbackFn && fallback)
+{
+    auto column = ColumnUInt64::create();
+    auto null_map = ColumnUInt8::create();
+    column->reserve(num_rows);
+    null_map->reserve(num_rows);
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        std::optional<UInt64> value;
+        if (materialized && !materialized->isNullAt(row))
+            value = materialized->getUInt(row);
+        else
+            value = fallback(row);
+
+        column->insertValue(value.value_or(0));
+        null_map->insertValue(value.has_value() ? 0 : 1);
+    }
+
+    return ColumnNullable::create(std::move(column), std::move(null_map));
+}
+
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context)
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings)
 {
-    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+    std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> hive_map;
+    FormatSettings hive_format_settings;
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -395,22 +554,103 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 for (size_t i = 0; i < num_indices; ++i)
                     if (!applied_filter.has_value() || applied_filter.value()[i])
                         column->insertValue(i + row_num_offset);
-                auto null_map = ColumnUInt8::create(chunk.getNumRows(), 0);
+                auto null_map = ColumnUInt8::create(chunk.getNumRows(), static_cast<UInt8>(0));
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
-                return;
+                continue;
+            }
+            else
+            {
+                /// Row numbers not known, _row_number = NULL.
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            }
+#else
+            // If Parquet format is not used, we don't have row numbers info, so _row_number = NULL.
+            chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+#endif
+        }
+        else if (virtual_column.name == "_iceberg_metadata_file_path")
+        {
+            if (virtual_values.iceberg_metadata_file_path)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.iceberg_metadata_file_path)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_last_updated_sequence_number")
+        {
+            if (virtual_values.materialized_last_updated_sequence_numbers)
+            {
+                chunk.addColumn(buildRowLineageColumn(
+                    chunk.getNumRows(),
+                    virtual_values.materialized_last_updated_sequence_numbers.get(),
+                    [&](size_t) { return virtual_values.last_updated_sequence_number; }));
+            }
+            else if (virtual_values.last_updated_sequence_number)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.last_updated_sequence_number)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_row_id")
+        {
+            std::vector<UInt64> row_positions;
+#if USE_PARQUET
+            if (auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>(); chunk_info && virtual_values.first_row_id)
+            {
+                const auto & applied_filter = chunk_info->applied_filter;
+                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : chunk.getNumRows();
+                row_positions.reserve(chunk.getNumRows());
+                for (size_t i = 0; i < num_indices; ++i)
+                    if (!applied_filter.has_value() || applied_filter.value()[i])
+                        row_positions.push_back(chunk_info->row_num_offset + i);
             }
 #endif
-            /// Row numbers not known, _row_number = NULL.
-            chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            if (row_positions.empty() && !virtual_values.materialized_row_ids)
+            {
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+                continue;
+            }
+
+            chunk.addColumn(buildRowLineageColumn(
+                chunk.getNumRows(),
+                virtual_values.materialized_row_ids.get(),
+                [&](size_t row) -> std::optional<UInt64>
+                {
+                    if (row >= row_positions.size())
+                        return std::nullopt;
+                    return *virtual_values.first_row_id + row_positions[row];
+                }));
         }
-        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
+        else if (virtual_column.name == "_table")
         {
+            if (!virtual_values.storage_id.empty())
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.storage_id.getTableName())->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (!isReaderOnlyVirtualColumn(virtual_column.name))
+        {
+            /// Any other virtual column, except the reader-only ones the caller adds later, is a Hive partition column.
+            if (!hive_map)
+            {
+                hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+                hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+            }
+
+            const auto value = HivePartitioningUtils::getPartitionValueFromPath(*hive_map, virtual_column.getNameInStorage(), virtual_values.path);
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
+                    convertFieldToType(Field(String(value)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
         }
     }
+}
+
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns)
+{
+    return std::any_of(
+        requested_virtual_columns.begin(),
+        requested_virtual_columns.end(),
+        [](const auto & col)
+        { return col.name == "_row_number" || col.name == "_row_id" || col.name == "_last_updated_sequence_number"; });
 }
 
 static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
@@ -425,8 +665,16 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
         if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
 
-        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs && !allowed_inputs->has(cur->result_name))
-            return false;
+        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs)
+        {
+            /// Match the type as well as the name: the predicate may come from a scope where a
+            /// column of the same name has a different type (e.g. `engine` is `Nullable(String)`
+            /// in the `information_schema.tables` view but `String` in `system.tables`), and
+            /// evaluating the subtree over a block with a mismatched column type fails.
+            const auto * input = allowed_inputs->findByName(cur->result_name);
+            if (!input || !input->type->equals(*cur->result_type))
+                return false;
+        }
 
         for (const auto * child : cur->children)
             nodes.push(child);
@@ -434,6 +682,11 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
 
     return true;
 }
+
+/// Both walks below have to look at more than the `FUNCTION` nodes of this DAG. Constant folding turns a
+/// lambda whose captures are all constant into a `COLUMN` node holding a `ColumnFunction` carrier, and the
+/// interesting call - the one that takes the lambda argument - lives in that lambda's own `ActionsDAG`, not
+/// here. `allNodeFunctions` walks the carrier (and the lambdas nested in it) for exactly that reason.
 
 bool isDeterministic(const ActionsDAG::Node * node)
 {
@@ -443,16 +696,30 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
+    /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
+    if (!node->isDeterministic())
         return false;
 
-    return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
+}
+
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministicAllowingTopKFilter(child))
+            return false;
+    }
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter")
+        return true;
+
+    /// Same checks as `isDeterministic`, including the walk into a constant-folded lambda carrier: only a
+    /// top-level `__topKFilter` call is allowed, never a non-deterministic function hidden in a lambda body.
+    if (!node->isDeterministic())
+        return false;
+
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
@@ -463,13 +730,20 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+}
 
-    if (!node->function_base->isDeterministicInScopeOfQuery())
-        return false;
-
-    return true;
+/// `splitFilterNodeForAllowedInputs` owns no DAG: it collects new nodes in `additional_nodes`.
+static const ActionsDAG::Node & addBooleanCondition(
+    const ActionsDAG::Node & node,
+    const DataTypePtr & result_type,
+    ActionsDAG::Nodes & additional_nodes,
+    const ContextPtr & context)
+{
+    ActionsDAG tmp_dag;
+    const auto & res = tmp_dag.addBooleanCondition(node, result_type, context);
+    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+    return res;
 }
 
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
@@ -501,11 +775,22 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 /// Expression like (not_allowed AND 256) can't be reduced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 if (!res->result_type->equals(*node->result_type))
-                {
-                    ActionsDAG tmp_dag;
-                    res = &tmp_dag.addCast(*res, node->result_type, {}, context);
-                    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
-                }
+                    res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
+
+                return res;
+            }
+
+            if (node_copy.children.size() < node->children.size())
+            {
+                /// The copy still has the function built for all the arguments of `node`.
+                ActionsDAG tmp_dag;
+                FunctionOverloadResolverPtr func_builder_and
+                    = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                const ActionsDAG::Node * res = &tmp_dag.addFunction(func_builder_and, node_copy.children, {});
+                additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+
+                if (!res->result_type->equals(*node->result_type))
+                    res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
 
                 return res;
             }
@@ -529,10 +814,15 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 {
                     auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
+                    /// An atom whose type has no boolean interpretation is dropped, so the hint
+                    /// contributes no filter rather than throwing or inventing a truth value.
                     for (const auto & output : index_hint_dag.getOutputs())
-                        if (const auto * child_copy
-                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result))
+                    {
+                        const auto * child_copy
+                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result);
+                        if (child_copy && child_copy->result_type->canBeUsedInBooleanContext())
                             atoms.push_back(child_copy);
+                    }
 
                     if (!atoms.empty())
                     {
@@ -545,10 +835,11 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                             res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 
-                        if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag.addCast(*res, node->result_type, {}, context);
-
                         additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
+
+                        if (!res->result_type->equals(*node->result_type))
+                            res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
+
                         return res;
                     }
                 }
@@ -588,26 +879,13 @@ void filterBlockWithPredicate(
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
-std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
+std::optional<Strings> extractConstantStringValues(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit)
 {
-    if (!filter_dag)
-        return {};
-    if (filter_dag->getOutputs().size() != 1)
+    if (!predicate || !column_node)
         return {};
 
-    const ActionsDAG::Node * path_node = nullptr;
-    for (const auto * input : filter_dag->getInputs())
-    {
-        if (input->result_name == "_path")
-        {
-            path_node = input;
-            break;
-        }
-    }
-    if (!path_node)
-        return {};
-
-    auto variants = evaluateExpressionOverConstantCondition(filter_dag->getOutputs().at(0), {path_node}, context, limit);
+    auto variants = evaluateExpressionOverConstantCondition(predicate, {column_node}, context, limit);
 
     if (!variants)
         return {};
@@ -625,10 +903,171 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
 
         const auto & column = block.at(0).column;
         for (size_t i = 0; i < column->size(); ++i)
-            result.push_back((*column)[i].safeGet<String>());
+        {
+            Field field = (*column)[i];
+            /// A NULL variant (`col IN (NULL, 'a')` over a Nullable column) never matches a
+            /// String value, so dropping it keeps the result a valid over-approximation.
+            if (field.isNull())
+                continue;
+            result.push_back(field.safeGet<String>());
+        }
     }
 
     return result;
+}
+
+std::optional<Strings> extractConstantStringValuesForColumn(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit)
+{
+    if (!predicate)
+        return {};
+
+    /// Find the input the column is read through. Looking inside the predicate rather than at
+    /// the whole DAG's inputs is equivalent - an input the predicate does not use constrains
+    /// nothing - and lets the caller pass a bare predicate node.
+    const ActionsDAG::Node * column_node = nullptr;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(predicate);
+    while (!nodes.empty() && !column_node)
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name)
+        {
+            column_node = node;
+            break;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+
+    return extractConstantStringValues(predicate, column_node, context, limit);
+}
+
+std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
+{
+    if (!filter_dag)
+        return {};
+    if (filter_dag->getOutputs().size() != 1)
+        return {};
+
+    const ActionsDAG::Node * path_node = nullptr;
+    for (const auto * input : filter_dag->getInputs())
+    {
+        if (input->result_name == "_path")
+        {
+            path_node = input;
+            break;
+        }
+    }
+
+    return extractConstantStringValues(filter_dag->getOutputs().at(0), path_node, context, limit);
+}
+
+DataPartsVector filterDataPartsWithExpression(
+    const DataPartsVector & data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter)
+{
+    if (!virtual_columns_filter)
+        return data_parts;
+
+    auto all_part_names = ColumnString::create();
+    for (const auto & part : data_parts)
+        all_part_names->insert(part->name);
+
+    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), "part_name"}};
+    filterBlockWithExpression(virtual_columns_filter, filtered_block);
+
+    if (!filtered_block.rows())
+        return {};
+
+    auto part_names = filtered_block.getByPosition(0).column;
+    const auto & part_names_str = assert_cast<const ColumnString &>(*part_names);
+
+    HashSet<std::string_view> part_names_set;
+    for (size_t i = 0; i < part_names_str.size(); ++i)
+        part_names_set.insert(part_names_str.getDataAt(i));
+
+    DataPartsVector filtered_parts;
+    for (const auto & part : data_parts)
+        if (part_names_set.has(part->name))
+            filtered_parts.push_back(part);
+
+    return filtered_parts;
+}
+
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter)
+{
+    Names result;
+    result.reserve(column_names.size());
+    for (const auto & name : column_names)
+    {
+        if (metadata_snapshot->isVirtualColumn(name))
+            if (metadata_snapshot->virtuals.tryGet(name, kind_to_filter, place_to_filter))
+                continue;
+
+        result.push_back(name);
+    }
+
+    /// If all requested columns were common virtuals, we still need at least one
+    /// physical column so the storage has something to read.
+    if (result.empty())
+        if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
+            result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+
+    return result;
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns)
+{
+    return getColumnsWithVirtualsForAnalysis(
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns)
+{
+    auto result = columns;
+    for (const auto & col : virtual_columns)
+        if (!result.contains(col.name))
+            result.push_back(col);
+
+    return result;
+}
+
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
+{
+    Names physical_names;
+    Names virtual_names;
+    for (const auto & name : column_names)
+    {
+        /// If the column exists in the table schema, treat it as physical even if
+        /// a virtual column with the same name is registered.
+        if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name))
+            physical_names.push_back(name);
+        else if (storage_snapshot->metadata->virtuals.tryGetDescription(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+            virtual_names.push_back(name);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is neither physical nor virtual", name);
+    }
+
+    /// We must always read at least one physical column to determine the number of rows.
+    if (physical_names.empty())
+    {
+        auto smallest = ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical());
+        physical_names.push_back(smallest.name);
+    }
+
+    return {std::move(physical_names), std::move(virtual_names)};
 }
 
 }

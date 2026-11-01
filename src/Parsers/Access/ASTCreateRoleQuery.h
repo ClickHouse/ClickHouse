@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
 {
+class ASTUserNameWithHost;
+class ASTUserNamesWithHost;
 class ASTSettingsProfileElements;
 class ASTAlterSettingsProfileElements;
 
@@ -32,15 +35,16 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    Strings names;
-    String new_name;
+    boost::intrusive_ptr<ASTUserNamesWithHost> names;
+    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
     String storage_name;
 
-    std::shared_ptr<ASTSettingsProfileElements> settings;
-    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRoleQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }

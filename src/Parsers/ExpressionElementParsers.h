@@ -4,18 +4,28 @@
 #include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
+#include <optional>
+#include <string_view>
+
 
 namespace DB
 {
 
+class ASTLiteral;
 
-/** The SELECT subquery, in parentheses.
+/** The SELECT or EXPLAIN subquery, in parentheses.
   */
 class ParserSubquery : public IParserBase
 {
+public:
+    bool startsWithValidSelectOrExplain() const { return starts_with_valid_select_or_explain; }
+
 protected:
-    const char * getName() const override { return "SELECT subquery"; }
+    const char * getName() const override { return "SELECT or EXPLAIN subquery"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool starts_with_valid_select_or_explain = false;
 };
 
 
@@ -26,7 +36,10 @@ class ParserIdentifier : public IParserBase
 {
 public:
     explicit ParserIdentifier(bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
-        : allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_) {}
+        : allow_query_parameter(allow_query_parameter_)
+        , highlight_type(highlight_type_)
+    {
+    }
     Highlight highlight() const override { return highlight_type; }
 
 protected:
@@ -53,7 +66,7 @@ protected:
 
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
  *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'.
- *  There is also special delimiters `.:` and `.^` for JSON type subcolumns. In case of special delimiter
+ *  There is also special delimiters `.:`, `.^` and `.@` for JSON type subcolumns. In case of special delimiter
  *  the next identifier part after it will include special delimiter and be back quoted always: json.a.b.:UInt32 -> ['json', 'a', 'b', ':`UInt32`'].
  *  It's needed to distinguish identifiers json.a.b.:UInt32 and json.a.b.`:UInt32`.
  *  There is also a special syntax sugar for reading JSON subcolumns of type Array(JSON): json.a.b[][].c -> json.a.b.:Array(Array(JSON)).c
@@ -61,13 +74,16 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
+    explicit ParserCompoundIdentifier(
+        bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_)
+        , allow_query_parameter(allow_query_parameter_)
+        , highlight_type(highlight_type_)
     {
     }
 
     /// Checks if the identirier is actually a pair of a special delimiter and the identifier in back quotes.
-    /// For example: :`UInt64` or ^`path` from special JSON subcolumns.
+    /// For example: :`UInt64`, ^`path` or @`path` from special JSON subcolumns.
     static std::optional<std::pair<char, String>> splitSpecialDelimiterAndIdentifierIfAny(const String & name);
 
 protected:
@@ -76,6 +92,7 @@ protected:
         NONE = '\0',
         JSON_PATH_DYNAMIC_TYPE = ':',
         JSON_PATH_PREFIX = '^',
+        JSON_PATH_COMBINED = '@',
     };
 
     const char * getName() const override { return "compound identifier"; }
@@ -97,12 +114,16 @@ public:
         REPLACE,
     };
     using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
-    static constexpr auto AllTransformers = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
+    static constexpr auto AllTransformers
+        = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
 
     explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
         : allowed_transformers(allowed_transformers_)
         , is_strict(is_strict_)
-    {}
+    {
+    }
+
+    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
     const char * getName() const override { return "COLUMNS transformers"; }
@@ -119,7 +140,8 @@ public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
     explicit ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
-    {}
+    {
+    }
 
 protected:
     const char * getName() const override { return "asterisk"; }
@@ -145,7 +167,8 @@ public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
     explicit ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
-    {}
+    {
+    }
 
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
@@ -162,7 +185,8 @@ public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
     explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
         : allowed_transformers(allowed_transformers_)
-    {}
+    {
+    }
 
 protected:
     const char * getName() const override { return "qualified COLUMNS matcher"; }
@@ -233,6 +257,7 @@ class ParserCollation : public IParserBase
 protected:
     const char * getName() const override { return "collation"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
 private:
     static const char * valid_collations[];
 };
@@ -292,7 +317,11 @@ protected:
 class ParserStringLiteral : public IParserBase
 {
 public:
-    explicit ParserStringLiteral(Highlight color_ = Highlight::string) : color(color_) {}
+    explicit ParserStringLiteral(Highlight color_ = Highlight::string)
+        : color(color_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -313,10 +342,15 @@ class ParserCollectionOfLiterals : public IParserBase
 {
 public:
     ParserCollectionOfLiterals(TokenType opening_bracket_, TokenType closing_bracket_)
-        : opening_bracket(opening_bracket_), closing_bracket(closing_bracket_) {}
+        : opening_bracket(opening_bracket_)
+        , closing_bracket(closing_bracket_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "collection of literals"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
 private:
     TokenType opening_bracket;
     TokenType closing_bracket;
@@ -327,24 +361,20 @@ class ParserTupleOfLiterals : public IParserBase
 {
 public:
     ParserCollectionOfLiterals<Tuple> tuple_parser{TokenType::OpeningRoundBracket, TokenType::ClosingRoundBracket};
+
 protected:
     const char * getName() const override { return "tuple"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return tuple_parser.parse(pos, node, expected);
-    }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override { return tuple_parser.parse(pos, node, expected); }
 };
 
 class ParserArrayOfLiterals : public IParserBase
 {
 public:
     ParserCollectionOfLiterals<Array> array_parser{TokenType::OpeningSquareBracket, TokenType::ClosingSquareBracket};
+
 protected:
     const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return array_parser.parse(pos, node, expected);
-    }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override { return array_parser.parse(pos, node, expected); }
 };
 
 /** Parses all collections of literals and their various combinations
@@ -353,7 +383,10 @@ protected:
 class ParserAllCollectionsOfLiterals : public IParserBase
 {
 public:
-    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true) : allow_map(allow_map_) {}
+    explicit ParserAllCollectionsOfLiterals(bool allow_map_ = true)
+        : allow_map(allow_map_)
+    {
+    }
 
 protected:
     const char * getName() const override { return "combination of maps, arrays, tuples"; }
@@ -379,7 +412,10 @@ protected:
 class ParserAlias : public IParserBase
 {
 public:
-    explicit ParserAlias(bool allow_alias_without_as_keyword_) : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) { }
+    explicit ParserAlias(bool allow_alias_without_as_keyword_)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
+    {
+    }
 
 private:
     static const char * restricted_keywords[];
@@ -430,7 +466,11 @@ class ParserWithOptionalAlias : public IParserBase
 {
 public:
     ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
-    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+        : elem_parser(std::move(elem_parser_))
+        , allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
+    {
+    }
+
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
@@ -444,7 +484,10 @@ protected:
 class ParserStorageOrderByElement : public IParserBase
 {
 public:
-    explicit ParserStorageOrderByElement(bool allow_order_) : allow_order(allow_order_) {}
+    explicit ParserStorageOrderByElement(bool allow_order_)
+        : allow_order(allow_order_)
+    {
+    }
 
 protected:
     bool allow_order;
@@ -480,12 +523,12 @@ protected:
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
 public:
-    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false) : brackets_can_be_omitted(brackets_can_be_omitted_)
+    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
+        : brackets_can_be_omitted(brackets_can_be_omitted_)
     {
     }
 
 protected:
-
     const char * getName() const override { return "function with key-value arguments"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
@@ -499,7 +542,7 @@ protected:
 class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
-    const char * getName() const  override{ return "identifier with optional parameters"; }
+    const char * getName() const override { return "identifier with optional parameters"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -517,10 +560,72 @@ protected:
 class ParserAssignment : public IParserBase
 {
 protected:
-    const char * getName() const  override{ return "column assignment"; }
+    const char * getName() const override { return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
+/** Parses a data type and returns its text - see `astText` - or nothing if there is no data type at
+  * `pos`. The parsed AST is thrown away: every place that parses a type inside an expression needs
+  * only the text, because that is how `CAST` and `defaultValueOfTypeName` carry a type.
+  */
+std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected);
+
+/** A literal read as text by `parseLiteralAsText`, together with what the numbers in it look like.
+  * The shape says which target types read the text back as the value it stands for: an integer type
+  * does not read a fractional numeral, an unsigned one does not read a negative number, and none of
+  * them reads a quoted string.
+  */
+struct LiteralAsText
+{
+    String text;
+    /// Nothing in it is a string literal.
+    bool all_numbers = true;
+    /// Every number in it is written without a fractional part and without an exponent.
+    bool all_integers = true;
+    /// No number in it is negative.
+    bool all_non_negative = true;
+    /// It holds a `NULL`, which only a `Nullable` target reads back.
+    bool has_null = false;
+};
+
+/** Reads a literal - a number, or an array or a tuple of numbers, strings and `NULL`s - as text, leaving
+  * `pos` right after it. Casting the text with the target type is what makes `CAST` exact:
+  * `0.1::Decimal256(76)` keeps all 76 digits, instead of reading `0.1` as a `Float64` and rounding
+  * it on the way to the `Decimal`.
+  *
+  * Returns false, leaving `pos` where it was, if there is no such literal ahead, or if it holds a
+  * number written in a form that no type reads back - see `isPlainDecimalNumeral`.
+  */
+bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal);
+
+/** The text of a literal that was not written as one `parseLiteralAsText` reads - `(0.1)`, `0xFF`,
+  * `+1` - taken from the literal as it is formatted, which is how it is written back into a query:
+  * `255` for `0xFF`. Nothing if the formatted literal is not something `parseLiteralAsText` reads,
+  * such as a string or a `Bool`. `outer_pos` only lends its recursion limits.
+  */
+std::optional<LiteralAsText> literalAsText(const ASTLiteral & literal, const IParser::Pos & outer_pos);
+
+/** True if the type written as `type_text` reads `literal` back as the value it stands for, and more
+  * precisely than a numeric literal carries it. Only `Decimal` and the integers wider than 64 bits
+  * do: for every other type, reading the text is either no more precise or means something else
+  * entirely - `CAST(1 AS DateTime)` is one second past the epoch, while `'1'` as a `DateTime` is a
+  * calendar date. `outer_pos` is the position in the query the type came from, and only lends its
+  * recursion limits to parsing `type_text`.
+  */
+bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & literal, const IParser::Pos & outer_pos);
+
+/** The argument of a cast to the type written as `type_text`, put back as the text the type reads
+  * when the argument is a literal and the type reads the text more precisely than the literal
+  * carries the value - see `typeReadsLiteralExactly` - or `argument` itself otherwise. `spelled` is
+  * the argument as read off the query by `parseLiteralAsText`, when it was written as a plain
+  * literal; without it, the text is taken from the literal as it is formatted - see `literalAsText`.
+  * The decision is the same for a query and for the query written back from its AST, which is what
+  * keeps the AST the same after being formatted and parsed back.
+  */
+ASTPtr exactCastArgument(
+    const ASTPtr & argument, const std::optional<LiteralAsText> & spelled, const String & type_text, const IParser::Pos & pos);
+
+/// `CAST(expr, 'type')`, the canonical form of every way of writing a cast.
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text);
 
 }

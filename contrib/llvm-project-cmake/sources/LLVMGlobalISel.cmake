@@ -1,0 +1,33 @@
+# Source files for LLVMGlobalISel
+set(LLVMGLOBALISEL_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CallLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/Combiner.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CombinerHelperArtifacts.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CombinerHelperCasts.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CombinerHelperCompares.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CombinerHelper.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CombinerHelperVectorOps.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CSEInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/CSEMIRBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/GIMatchTableExecutor.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/GISelChangeObserver.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/GISelValueTracking.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/GlobalISel.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/InlineAsmLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/InstructionSelect.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/InstructionSelector.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/IRTranslator.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegacyLegalizerInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegalityPredicates.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegalizeMutations.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/Legalizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegalizerHelper.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LegalizerInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LoadStoreOpt.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/Localizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/LostDebugLocObserver.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/MachineFloatingPointPredicateUtils.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/MachineIRBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/RegBankSelect.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/GlobalISel/Utils.cpp
+)

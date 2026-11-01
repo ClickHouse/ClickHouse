@@ -1,28 +1,77 @@
-#include <base/getFQDNOrHostName.h>
-#include <base/demangle.h>
-#include <Common/DateLUTImpl.h>
-#include <Interpreters/InstrumentationManager.h>
-#include <Interpreters/TraceLog.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/InstrumentationManager.h>
+#include <Interpreters/TraceLog.h>
+#include <base/demangle.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/AddressToLineCache.h>
+#include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/HashTable/HashMap.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/ErrnoException.h>
+#include <Common/SipHash.h>
+#include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
-#include <Common/Dwarf.h>
-#include <IO/WriteBufferFromArena.h>
 
-#include <filesystem>
+#include <array>
+#include <cstring>
+#include <unistd.h>
 
+#if defined(OS_LINUX)
+#include <sys/syscall.h>
+#else
+#include <sys/random.h>
+#endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYSTEM_ERROR;
+}
+
+namespace
+{
+
+/// A keyed hash of an allocation address: the allocation and the deallocation of a chunk still get the
+/// same value, but the heap address is not published. 0 stays 0 (no address).
+UInt64 hideAllocationAddress(UInt64 ptr)
+{
+    /// The key must not be predictable, so it is read from the OS randomness source.
+    static const std::array<UInt64, 2> key = []
+    {
+        std::array<UInt64, 2> words{};
+#if defined(OS_LINUX)
+        /// Old glibc (e.g. the ppc64le sysroot) has no `getentropy`, so call `getrandom` directly.
+        if (::syscall(SYS_getrandom, words.data(), sizeof(words), 0) != static_cast<ssize_t>(sizeof(words)))
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getrandom");
+#else
+        if (::getentropy(words.data(), sizeof(words)) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getentropy");
+#endif
+        return words;
+    }();
+
+    if (ptr == 0)
+        return 0;
+    const UInt64 hash = sipHash64Keyed(key[0], key[1], reinterpret_cast<const char *>(&ptr), sizeof(ptr));
+    return hash ? hash : 1;
+}
+
+}
 
 using TraceDataType = TraceLogElement::TraceDataType;
 const TraceDataType::Values TraceLogElement::trace_values =
@@ -36,6 +85,7 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"JemallocSample", static_cast<UInt8>(TraceType::JemallocSample)},
     {"MemoryAllocatedWithoutCheck", static_cast<UInt8>(TraceType::MemoryAllocatedWithoutCheck)},
     {"Instrumentation", static_cast<UInt8>(TraceType::Instrumentation)},
+    {"MemoryLargeAllocation", static_cast<UInt8>(TraceType::MemoryLargeAllocation)},
 };
 
 static_assert(TraceSender::MEMORY_CONTEXT_UNKNOWN == -1);
@@ -73,11 +123,13 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of sampling moment."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the sampling moment."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Timestamp of the sampling moment with microseconds precision."},
         {"timestamp_ns", std::make_shared<DataTypeUInt64>(), "Timestamp of the sampling moment in nanoseconds."},
-        {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse server build revision."},
+        {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse server build revision. When connecting to the server by `clickhouse-client`, you see a string similar to `Connected to ClickHouse server version 19.18.1.`. This field contains the `revision`, but not the `version` of a server."},
         {"trace_type", std::make_shared<TraceDataType>(trace_values), "Trace type: "
             "`Real` represents collecting stack traces by wall-clock time. "
             "`CPU` represents collecting stack traces by CPU time. "
@@ -86,22 +138,27 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`MemoryPeak` represents collecting updates of peak memory usage. "
             "`ProfileEvent` represents collecting of increments of profile events. "
             "`JemallocSample` represents collecting of jemalloc samples. "
-            "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
+            "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only). "
             "`Instrumentation` represents traces collected by the instrumentation performed through XRay."
+            " `MemoryLargeAllocation` represents a single charge to the global memory tracker whose size reached `min_allocation_size_to_log_stack_trace`; such a trace is also written to the server log (for ClickHouse developers only)."
         },
         {"cpu_id", std::make_shared<DataTypeUInt64>(), "CPU identifier."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Thread name."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process."},
-        {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
-        {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
-        {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory/MemoryPeak): {}", context_description)},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. "
+            "On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
+            "and frames outside it (shared libraries, JIT code) are stored as 0."},
+        {"size", std::make_shared<DataTypeInt64>(), "For the memory trace types is a size in bytes: the allocated size for Memory and MemoryAllocatedWithoutCheck; "
+            "the allocated size, negated on a deallocation, for MemorySample and JemallocSample; the new peak of the tracker for MemoryPeak; "
+            "the size of the charge to the global memory tracker for MemoryLargeAllocation. For other trace types is 0."},
+        {"ptr", std::make_shared<DataTypeUInt64>(), "An identifier of the allocated chunk, the same for its allocation and deallocation during one run of the server. It is not the address of the chunk, which is not published."},
+        {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory, MemoryPeak and MemoryLargeAllocation): {}", context_description)},
         {"memory_blocked_context", std::make_shared<ContextDataType>(context_values), fmt::format("Context for which memory tracker is blocked (for ClickHouse developers only): {}", context_description)},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
-        {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."},
-        {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."},
+        {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`. Symbolization can be enabled or disabled in the `symbolize` setting under `trace_log` in the server configuration file; the setting applies to profiler-collected trace types, while rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD this column is always empty."},
+        {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`. The `symbolize` setting applies to profiler-collected trace types, while rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD this column is always empty. Source locations are best-effort: they require debug info (a `.dSYM` bundle on macOS) and are resolved for whichever loaded object (the main ClickHouse binary or a shared library) contains the frame's address; unresolved frames have empty entries."},
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},
         {"handler", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, handler of the instrumented function."},
@@ -113,7 +170,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
 NamesAndAliases TraceLogElement::getNamesAndAliases()
 {
     String build_id_hex;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id_hex = SymbolIndex::instance().getBuildIDHex();
 #endif
     return
@@ -122,157 +179,117 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
     };
 }
 
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-namespace
-{
-    class AddressToLineCache
-    {
-    private:
-        Arena arena;
-        using Map = HashMap<uintptr_t, std::string_view>;
-        Map map;
-        std::unordered_map<std::string, Dwarf> dwarfs;
-
-        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
-        {
-            const char * arena_begin = nullptr;
-            WriteBufferFromArena out(arena, arena_begin);
-
-            writeString(location.file.toString(), out);
-            writeChar(':', out);
-            writeIntText(location.line, out);
-
-            out.finalize();
-            result = out.complete();
-        }
-
-        std::string_view impl(uintptr_t addr)
-        {
-            const SymbolIndex & symbol_index = SymbolIndex::instance();
-
-            if (const auto * object = symbol_index.thisObject())
-            {
-                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-                if (!std::filesystem::exists(object->name))
-                    return {};
-
-                Dwarf::LocationInfo location;
-                std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-                std::string_view result;
-                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
-                {
-                    setResult(result, location, frames);
-                    return result;
-                }
-                return object->name;
-            }
-            return {};
-        }
-
-        std::string_view implCached(uintptr_t addr)
-        {
-            typename Map::LookupResult it;
-            bool inserted;
-            map.emplace(addr, it, inserted);
-            if (inserted)
-                it->getMapped() = impl(addr);
-            return it->getMapped();
-        }
-
-    public:
-        static std::string_view get(uintptr_t addr)
-        {
-            static AddressToLineCache cache;
-            return cache.implCached(addr);
-        }
-    };
-}
-#endif
-
-
 void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
-    columns[i++]->insert(event_time);
-    columns[i++]->insert(event_time_microseconds);
-    columns[i++]->insert(timestamp_ns);
-    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
-    columns[i++]->insert(static_cast<UInt8>(trace_type));
-    columns[i++]->insert(cpu_id);
-    columns[i++]->insert(thread_id);
+    const auto & hostname = getFQDNOrHostName();
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    const std::string_view version = VERSION_STRING;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(version.data(), version.size());
+    const std::string_view system_processor = SYSTEM_PROCESSOR;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(system_processor.data(), system_processor.size());
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(event_time));
+    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(timestamp_ns);
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(trace_type));
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(cpu_id);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(thread_id);
     auto thread_name_str = toString(thread_name);
-    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
-    columns[i++]->insertData(query_id.data(), query_id.size());
-    columns[i++]->insert(Array(trace.begin(), trace.end()));
-    columns[i++]->insert(size);
-    columns[i++]->insert(ptr);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(thread_name_str.data(), thread_name_str.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(query_id.data(), query_id.size());
+
+    auto & column_trace = typeid_cast<ColumnArray &>(*columns[i++]);
+    auto & column_trace_inner = typeid_cast<ColumnUInt64 &>(column_trace.getData()).getData();
+    for (const UInt64 address : trace)
+        column_trace_inner.push_back(StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(address)));
+    auto & offsets = column_trace.getOffsets();
+    offsets.push_back(offsets.back() + trace.size());
+
+    typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(size);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(hideAllocationAddress(ptr));
     if (memory_context.has_value())
-        columns[i++]->insert(static_cast<Int8>(memory_context.value()));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_context.value()));
     else
-        columns[i++]->insert(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
     if (memory_blocked_context.has_value())
-        columns[i++]->insert(static_cast<Int8>(memory_blocked_context.value()));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_blocked_context.value()));
     else
-        columns[i++]->insert(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
 
-    String event_name;
     if (event != ProfileEvents::end())
-        event_name = ProfileEvents::getName(event);
+    {
+        auto event_name = ProfileEvents::getName(event);
+        typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(event_name.data(), event_name.size());
+    }
+    else
+    {
+        typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertDefault();
+    }
 
-    columns[i++]->insert(event_name);
-    columns[i++]->insert(increment);
+    typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(increment);
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (symbolize)
     {
-        Array symbols;
-        Array lines;
-        size_t num_frames = trace.size();
-        symbols.reserve(num_frames);
-        lines.reserve(num_frames);
+        /// `system.trace_log` is a high-frequency table, so symbolize directly into the
+        /// output columns to avoid per-row temporaries. Note that `trace` stores integer
+        /// addresses, so we cast each element to a pointer individually rather than
+        /// reinterpreting the whole buffer (which would violate strict aliasing).
+        /// The runtime addresses are used, so frames outside the main executable keep their names.
+        auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_symbols_inner = typeid_cast<ColumnLowCardinality &>(column_symbols.getData());
+
+        auto & column_lines = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_lines_inner = typeid_cast<ColumnLowCardinality &>(column_lines.getData());
 
         const SymbolIndex & symbol_index = SymbolIndex::instance();
-
+        size_t num_frames = trace.size();
         for (size_t frame = 0; frame < num_frames; ++frame)
         {
+            /// The symbol name and the source location are looked up independently, exactly as in
+            /// `symbolizeTrace` and `StackTrace::forEachFrame`: DWARF line resolution does not depend
+            /// on the symbol table, so each column defaults to an empty string only when its own
+            /// lookup fails.
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
-                std::string_view mangled_symbol(symbol->name);
-
                 auto demangled = tryDemangle(symbol->name);
                 if (demangled)
-                    symbols.emplace_back(std::string_view(demangled.get()));
+                    column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
                 else
-                    symbols.emplace_back(std::string_view(symbol->name));
-
-                lines.emplace_back(AddressToLineCache::get(trace[frame]));
+                    column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
             }
             else
             {
-                symbols.emplace_back(String());
-                lines.emplace_back(String());
+                column_symbols_inner.insertDefault();
             }
+
+            /// For non-innermost frames the address is a return address; subtract 1 so DWARF
+            /// resolves the `call` instruction itself (mirrors `StackTrace::forEachFrame`).
+            column_lines_inner.insert(AddressToLineCache::get(trace[frame] - (frame > 0 ? 1 : 0)));
         }
 
-        columns[i++]->insert(symbols);
-        columns[i++]->insert(lines);
+        column_symbols.getOffsets().push_back(column_symbols.getOffsets().back() + num_frames);
+        column_lines.getOffsets().push_back(column_lines.getOffsets().back() + num_frames);
     }
     else
 #endif
     {
-        columns[i++]->insertDefault();
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
+        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
     }
 
-    columns[i++]->insert(function_id > 0 ? function_id : Field());
-    columns[i++]->insert(!function_name.empty() ? function_name : Field());
-    columns[i++]->insert(!handler.empty() ? handler : Field());
-    columns[i++]->insert(entry_type.has_value() ? entry_type.value() : Field());
-    columns[i++]->insert(duration_nanoseconds.has_value() ? duration_nanoseconds.value() : Field());
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(function_id > 0 ? reinterpret_cast<const char *>(&function_id) : nullptr, sizeof(function_id));
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(!function_name.empty() > 0 ? function_name.data() : nullptr, function_name.size());
+    typeid_cast<ColumnNullable &>(*columns[i++]).insertData(!handler.empty() > 0 ? handler.data() : nullptr, handler.size());
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(entry_type.has_value() ? reinterpret_cast<const char *>(&entry_type.value()) : nullptr, sizeof(Instrumentation::EntryType));
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(duration_nanoseconds.has_value() ? reinterpret_cast<const char *>(&duration_nanoseconds.value()) : nullptr, sizeof(UInt64));
 }
 
 }

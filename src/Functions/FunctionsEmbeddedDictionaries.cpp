@@ -22,27 +22,27 @@ Accepts a region ID from the geobase. If this region is a city or part of a city
                 "Usage example",
                 "SELECT regionToName(number::UInt32, 'en'), regionToCity(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);",
                 R"(
-┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCity(CAST(number, 'UInt32')), 'en')─┐
-│                                            │  0 │                                                          │
-│ World                                      │  0 │                                                          │
-│ USA                                        │  0 │                                                          │
-│ Colorado                                   │  0 │                                                          │
-│ Boulder County                             │  0 │                                                          │
-│ Boulder                                    │  5 │ Boulder                                                  │
-│ China                                      │  0 │                                                          │
-│ Sichuan                                    │  0 │                                                          │
-│ Chengdu                                    │  8 │ Chengdu                                                  │
-│ America                                    │  0 │                                                          │
-│ North America                              │  0 │                                                          │
-│ Eurasia                                    │  0 │                                                          │
-│ Asia                                       │  0 │                                                          │
-└────────────────────────────────────────────┴────┴──────────────────────────────────────────────────────────┘
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(id, 'en')─┐
+│                                            │  0 │                        │
+│ World                                      │  0 │                        │
+│ USA                                        │  0 │                        │
+│ Colorado                                   │  0 │                        │
+│ Boulder County                             │  0 │                        │
+│ Boulder                                    │  5 │ Boulder                │
+│ China                                      │  0 │                        │
+│ Sichuan                                    │  0 │                        │
+│ Chengdu                                    │  8 │ Chengdu                │
+│ America                                    │  0 │                        │
+│ North America                              │  0 │                        │
+│ Eurasia                                    │  0 │                        │
+│ Asia                                       │  0 │                        │
+└────────────────────────────────────────────┴────┴────────────────────────┘
             )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToCity>(documentation);
     }
@@ -87,7 +87,7 @@ LIMIT 15
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToArea>(documentation);
     }
@@ -127,7 +127,7 @@ Converts a region to a federal district (type 4 in the geobase).
     };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToDistrict>(documentation);
     }
@@ -146,27 +146,27 @@ Converts a region to a country (type 3 in the geobase).
                 "Usage example",
                 "SELECT regionToName(number::UInt32, 'en'), regionToCountry(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);",
                 R"(
-┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCountry(CAST(number, 'UInt32')), 'en')─┐
-│                                            │  0 │                                                             │
-│ World                                      │  0 │                                                             │
-│ USA                                        │  2 │ USA                                                         │
-│ Colorado                                   │  2 │ USA                                                         │
-│ Boulder County                             │  2 │ USA                                                         │
-│ Boulder                                    │  2 │ USA                                                         │
-│ China                                      │  6 │ China                                                       │
-│ Sichuan                                    │  6 │ China                                                       │
-│ Chengdu                                    │  6 │ China                                                       │
-│ America                                    │  0 │                                                             │
-│ North America                              │  0 │                                                             │
-│ Eurasia                                    │  0 │                                                             │
-│ Asia                                       │  0 │                                                             │
-└────────────────────────────────────────────┴────┴─────────────────────────────────────────────────────────────┘
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(id, 'en')─┐
+│                                            │  0 │                        │
+│ World                                      │  0 │                        │
+│ USA                                        │  2 │ USA                    │
+│ Colorado                                   │  2 │ USA                    │
+│ Boulder County                             │  2 │ USA                    │
+│ Boulder                                    │  2 │ USA                    │
+│ China                                      │  6 │ China                  │
+│ Sichuan                                    │  6 │ China                  │
+│ Chengdu                                    │  6 │ China                  │
+│ America                                    │  0 │                        │
+│ North America                              │  0 │                        │
+│ Eurasia                                    │  0 │                        │
+│ Asia                                       │  0 │                        │
+└────────────────────────────────────────────┴────┴────────────────────────┘
             )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToCountry>(documentation);
     }
@@ -185,27 +185,27 @@ Converts a region to a continent (type 1 in the geobase).
                 "Usage example",
                 "SELECT regionToName(number::UInt32, 'en'), regionToContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);",
                 R"(
-┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToContinent(CAST(number, 'UInt32')), 'en')─┐
-│                                            │  0 │                                                               │
-│ World                                      │  0 │                                                               │
-│ USA                                        │ 10 │ North America                                                 │
-│ Colorado                                   │ 10 │ North America                                                 │
-│ Boulder County                             │ 10 │ North America                                                 │
-│ Boulder                                    │ 10 │ North America                                                 │
-│ China                                      │ 12 │ Asia                                                          │
-│ Sichuan                                    │ 12 │ Asia                                                          │
-│ Chengdu                                    │ 12 │ Asia                                                          │
-│ America                                    │  9 │ America                                                       │
-│ North America                              │ 10 │ North America                                                 │
-│ Eurasia                                    │ 11 │ Eurasia                                                       │
-│ Asia                                       │ 12 │ Asia                                                          │
-└────────────────────────────────────────────┴────┴───────────────────────────────────────────────────────────────┘
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(id, 'en')─┐
+│                                            │  0 │                        │
+│ World                                      │  0 │                        │
+│ USA                                        │ 10 │ North America          │
+│ Colorado                                   │ 10 │ North America          │
+│ Boulder County                             │ 10 │ North America          │
+│ Boulder                                    │ 10 │ North America          │
+│ China                                      │ 12 │ Asia                   │
+│ Sichuan                                    │ 12 │ Asia                   │
+│ Chengdu                                    │ 12 │ Asia                   │
+│ America                                    │  9 │ America                │
+│ North America                              │ 10 │ North America          │
+│ Eurasia                                    │ 11 │ Eurasia                │
+│ Asia                                       │ 12 │ Asia                   │
+└────────────────────────────────────────────┴────┴────────────────────────┘
             )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToContinent>(documentation);
     }
@@ -224,33 +224,33 @@ Finds the highest continent in the hierarchy for the region.
                 "Usage example",
                 "SELECT regionToName(number::UInt32, 'en'), regionToTopContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);",
                 R"(
-┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToTopContinent(CAST(number, 'UInt32')), 'en')─┐
-│                                            │  0 │                                                                  │
-│ World                                      │  0 │                                                                  │
-│ USA                                        │  9 │ America                                                          │
-│ Colorado                                   │  9 │ America                                                          │
-│ Boulder County                             │  9 │ America                                                          │
-│ Boulder                                    │  9 │ America                                                          │
-│ China                                      │ 11 │ Eurasia                                                          │
-│ Sichuan                                    │ 11 │ Eurasia                                                          │
-│ Chengdu                                    │ 11 │ Eurasia                                                          │
-│ America                                    │  9 │ America                                                          │
-│ North America                              │  9 │ America                                                          │
-│ Eurasia                                    │ 11 │ Eurasia                                                          │
-│ Asia                                       │ 11 │ Eurasia                                                          │
-└────────────────────────────────────────────┴────┴──────────────────────────────────────────────────────────────────┘
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(id, 'en')─┐
+│                                            │  0 │                        │
+│ World                                      │  0 │                        │
+│ USA                                        │  9 │ America                │
+│ Colorado                                   │  9 │ America                │
+│ Boulder County                             │  9 │ America                │
+│ Boulder                                    │  9 │ America                │
+│ China                                      │ 11 │ Eurasia                │
+│ Sichuan                                    │ 11 │ Eurasia                │
+│ Chengdu                                    │ 11 │ Eurasia                │
+│ America                                    │  9 │ America                │
+│ North America                              │  9 │ America                │
+│ Eurasia                                    │ 11 │ Eurasia                │
+│ Asia                                       │ 11 │ Eurasia                │
+└────────────────────────────────────────────┴────┴────────────────────────┘
             )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToTopContinent>(documentation);
     }
     {
         FunctionDocumentation::Description description = R"(
-Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../dictionaries#embedded-dictionaries).
+Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](/reference/statements/create/dictionary/embedded).
 If the population is not recorded for the region, it returns `0`. In the geobase, the population might be recorded for child regions, but not for parent regions.
         )";
         FunctionDocumentation::Syntax syntax = "regionToPopulation(id[, geobase])";
@@ -264,27 +264,27 @@ If the population is not recorded for the region, it returns `0`. In the geobase
                 "Usage example",
                 "SELECT regionToName(number::UInt32, 'en'), regionToPopulation(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);",
                 R"(
-┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─population─┐
-│                                            │          0 │
-│ World                                      │ 4294967295 │
-│ USA                                        │  330000000 │
-│ Colorado                                   │    5700000 │
-│ Boulder County                             │     330000 │
-│ Boulder                                    │     100000 │
-│ China                                      │ 1500000000 │
-│ Sichuan                                    │   83000000 │
-│ Chengdu                                    │   20000000 │
-│ America                                    │ 1000000000 │
-│ North America                              │  600000000 │
-│ Eurasia                                    │ 4294967295 │
-│ Asia                                       │ 4294967295 │
-└────────────────────────────────────────────┴────────────┘
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─────────id─┬─regionToName(id, 'en')─┐
+│                                            │          0 │                        │
+│ World                                      │ 4294967295 │                        │
+│ USA                                        │  330000000 │                        │
+│ Colorado                                   │    5700000 │                        │
+│ Boulder County                             │     330000 │                        │
+│ Boulder                                    │     100000 │                        │
+│ China                                      │ 1500000000 │                        │
+│ Sichuan                                    │   83000000 │                        │
+│ Chengdu                                    │   20000000 │                        │
+│ America                                    │ 1000000000 │                        │
+│ North America                              │  600000000 │                        │
+│ Eurasia                                    │ 4294967295 │                        │
+│ Asia                                       │ 4294967295 │                        │
+└────────────────────────────────────────────┴────────────┴────────────────────────┘
             )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToPopulation>(documentation);
     }
@@ -319,7 +319,7 @@ USA is not in Boulder
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionIn>(documentation);
     }
@@ -338,19 +338,19 @@ Given a region ID from the geobase, returns an array of region IDs consisting of
                 "Get region hierarchy",
                 "SELECT regionHierarchy(number::UInt32) AS arr, arrayMap(id -> regionToName(id, 'en'), arr) FROM numbers(5);",
                 R"(
-┌─arr────────────┬─arrayMap(lambda(tuple(id), regionToName(id, 'en')), regionHierarchy(CAST(number, 'UInt32')))─┐
-│ []             │ []                                                                                           │
-│ [1]            │ ['World']                                                                                    │
-│ [2,10,9,1]     │ ['USA','North America','America','World']                                                    │
-│ [3,2,10,9,1]   │ ['Colorado','USA','North America','America','World']                                         │
-│ [4,3,2,10,9,1] │ ['Boulder County','Colorado','USA','North America','America','World']                        │
-└────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─arr────────────┬─arrayMap(lambda(tuple(id), regionToName(id, 'en')), arr)──────────────┐
+│ []             │ []                                                                    │
+│ [1]            │ ['World']                                                             │
+│ [2,10,9,1]     │ ['USA','North America','America','World']                             │
+│ [3,2,10,9,1]   │ ['Colorado','USA','North America','America','World']                  │
+│ [4,3,2,10,9,1] │ ['Boulder County','Colorado','USA','North America','America','World'] │
+└────────────────┴───────────────────────────────────────────────────────────────────────┘
                 )"
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionHierarchy>(documentation);
     }
@@ -381,7 +381,7 @@ Given a region ID from the geobase, returns the name of the region in the specif
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionRegionToName>(documentation);
     }

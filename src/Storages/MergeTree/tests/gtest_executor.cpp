@@ -1,13 +1,18 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
+#include <array>
 #include <atomic>
 #include <barrier>
+#include <chrono>
 #include <functional>
+#include <future>
+#include <latch>
 #include <memory>
 #include <random>
 #include <thread>
@@ -154,6 +159,35 @@ TEST(Executor, Simple)
     barrier.arrive_and_wait(); // Do not finish until tasks are done
     executor->wait();
     ASSERT_EQ(schedule, expected_schedule);
+}
+
+TEST(Executor, ReserveTaskSlotsWaitsForAvailableSlot)
+{
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    ASSERT_EQ(executor->tryReserveTaskSlots(1), 1);
+
+    auto reserved_slot = std::async(std::launch::async, [&]
+    {
+        return executor->reserveTaskSlots(1);
+    });
+
+    ASSERT_EQ(reserved_slot.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    executor->releaseTaskSlots(1);
+    ASSERT_EQ(reserved_slot.get(), 1);
+    executor->releaseTaskSlots(1);
+    executor->wait();
 }
 
 
@@ -305,4 +339,178 @@ TEST(Executor, UpdatePolicy)
     barrier.arrive_and_wait(); // Do not finish until tasks are done
     executor->wait();
     ASSERT_EQ(schedule, expected_schedule);
+}
+
+
+/// Task whose destructor is artificially slow, simulating expensive cleanup
+/// (e.g. finalizing write buffers, releasing table locks).
+class SlowDestructorTask : public IExecutableTask
+{
+public:
+    SlowDestructorTask(const String & name_, std::latch & destruction_started_, std::chrono::milliseconds delay_)
+        : name(name_)
+        , destruction_started(destruction_started_)
+        , delay(delay_)
+    {}
+
+    ~SlowDestructorTask() override
+    {
+        destruction_started.count_down();
+        std::this_thread::sleep_for(delay);
+    }
+
+    bool executeStep() override { return false; }
+    void cancel() noexcept override {}
+    StorageID getStorageID() const override { return {"test", name}; }
+    void onCompleted() override {}
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return "test::slow_destructor"; }
+
+private:
+    String name;
+    std::latch & destruction_started;
+    std::chrono::milliseconds delay;
+};
+
+
+/// Demonstrates that slow task destruction blocks `removeTasksCorrespondingToStorage`
+/// because `resetTask` is called while holding the executor's mutex.
+///
+/// The test schedules a task with a slow destructor for storage "slow_storage",
+/// waits for destruction to begin (meaning the mutex is held), then calls
+/// `removeTasksCorrespondingToStorage` for a completely UNRELATED storage.
+/// That call should complete instantly but instead gets blocked for the
+/// entire duration of the task destructor.
+TEST(Executor, SlowTaskDestructionBlocksRemoveTasks)
+{
+    static constexpr int DESTRUCTION_DELAY_MS = 500;
+
+    /// Declared before executor so it outlives it (executor's destructor calls `wait`).
+    std::latch destruction_started(1);
+
+    auto executor = std::make_shared<MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        10, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    executor->trySchedule(std::make_shared<SlowDestructorTask>(
+        "slow_storage", destruction_started, std::chrono::milliseconds(DESTRUCTION_DELAY_MS)));
+
+    /// Wait until the worker thread enters the task's destructor,
+    /// which means the executor's mutex is held by `release_task`.
+    destruction_started.wait();
+
+    /// Call `removeTasksCorrespondingToStorage` for a completely unrelated storage.
+    /// This needs the mutex only briefly (scan queues, find nothing, return),
+    /// but will be blocked for the entire duration of the slow destructor.
+    Stopwatch watch;
+    executor->removeTasksCorrespondingToStorage({"test", "unrelated_storage"});
+    auto elapsed_ms = watch.elapsedMilliseconds();
+
+    /// After fixing the issue (moving `resetTask` outside the lock),
+    /// this should complete in under 50 ms. Currently it takes ~500 ms.
+    EXPECT_LT(elapsed_ms, 100)
+        << "removeTasksCorrespondingToStorage for an unrelated storage was blocked for "
+        << elapsed_ms << " ms by slow task destruction holding the mutex";
+
+    executor->wait();
+}
+
+
+/// Task that always asks for another step, so `routine` keeps re-pushing it to the pending queue.
+/// It records whether it was cancelled; a real merge task releases most of its resources in
+/// `cancel` and keeps its `TableLockHolder` alive for as long as the task object exists.
+class NeverFinishingTask : public IExecutableTask
+{
+public:
+    NeverFinishingTask(const String & name_, std::latch & step_executed_, std::atomic<bool> & cancelled_)
+        : name(name_)
+        , step_executed(step_executed_)
+        , cancelled(cancelled_)
+    {}
+
+    bool executeStep() override
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!step_reported.exchange(true))
+            step_executed.count_down();
+        return true;
+    }
+
+    void cancel() noexcept override { cancelled = true; }
+    StorageID getStorageID() const override { return {"test", name}; }
+    void onCompleted() override {}
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return "test::never_finishing"; }
+
+private:
+    String name;
+    std::latch & step_executed;
+    std::atomic<bool> & cancelled;
+    std::atomic<bool> step_reported{false};
+};
+
+
+/// A multi-step task waiting in the pending queue must not survive `wait()`.
+///
+/// `threadFunction` breaks out of its loop before popping once `shutdown` is set, so a task that
+/// `routine` re-pushed for another step is neither resumed nor cancelled. A real merge task holds
+/// a `TableLockHolder` (a table share lock) for its whole lifetime, so such an abandoned task
+/// blocks every later exclusive lock on its table until the acquisition times out. That is how a
+/// `RENAME` rotating an obsolete `system.session_log` during shutdown ends in `DEADLOCK_AVOIDED`
+/// once that timeout expires.
+TEST(Executor, ShutdownReleasesPendingTasks)
+{
+    /// More than one task, so that draining a single one is not enough to pass.
+    static constexpr size_t tasks_count = 3;
+
+    /// Declared before the executor so they outlive it (its destructor calls `wait`).
+    std::latch step_executed(tasks_count);
+    std::array<std::atomic<bool>, tasks_count> cancelled{};
+    std::array<std::weak_ptr<IExecutableTask>, tasks_count> weak_tasks;
+
+    auto executor = std::make_shared<MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        10, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    for (size_t i = 0; i < tasks_count; ++i)
+    {
+        auto task = std::make_shared<NeverFinishingTask>(
+            "pending_storage_" + std::to_string(i), step_executed, cancelled[i]);
+        weak_tasks[i] = task;
+        ASSERT_TRUE(executor->trySchedule(std::move(task)));
+    }
+
+    /// Wait until every task has run a step, so each is known to be cycling through the pending
+    /// queue rather than never having been picked up. The single worker pops them in turn, and
+    /// `routine` re-pushes each one, so all of them are queued again by the time `wait()` runs.
+    step_executed.wait();
+
+    executor->wait();
+
+    for (size_t i = 0; i < tasks_count; ++i)
+    {
+        EXPECT_TRUE(weak_tasks[i].expired())
+            << "task " << i << " was left in the pending queue and outlived executor shutdown, so "
+               "the resources it owns (for a merge task, a table share lock) were never released";
+        EXPECT_TRUE(cancelled[i].load())
+            << "task " << i << " was left in the pending queue and not cancelled on executor shutdown";
+    }
 }

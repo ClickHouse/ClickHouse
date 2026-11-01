@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/ClientEmbeddedRunner.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -73,6 +71,12 @@ void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_que
         auto descr = client_descriptors->getDescriptorsForClient();
         auto stre = client_descriptors->getStreamsForClient();
         ClientEmbedded client(std::move(db_session), descr.in, descr.out, descr.err, stre.in, stre.out, stre.err);
+        client.setWaitingForQueryInputCallback([this](bool waiting)
+        {
+            if (waiting)
+                prompts_count.fetch_add(1);
+            waiting_for_query_input.store(waiting);
+        });
         exit_code = client.run(envs, starting_query);
     }
     catch (...)
@@ -81,11 +85,12 @@ void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_que
     }
 
     finished.test_and_set();
-    char c = 0;
-    // Server may poll on a descriptor waiting for client output, wake him up with invisible character
-    (void)write(client_descriptors->getDescriptorsForClient().out, &c, 1);
+    if (client_descriptors->isPty())
+    {
+        char c = 0;
+        // Server may poll on a descriptor waiting for client output, wake him up with invisible character
+        (void)write(client_descriptors->getDescriptorsForClient().out, &c, 1);
+    }
 }
 
 }
-
-#endif

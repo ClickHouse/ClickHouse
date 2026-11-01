@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Common/StackTrace.h>
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
-#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -17,7 +18,6 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 
     const char * caller{nullptr};
     LoggerRawPtr log;
-    UInt64 thread_id{0};
 
     std::optional<Stopwatch> wait_watch;
     std::optional<std::lock_guard<std::mutex>> lock;
@@ -27,9 +27,6 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
         : caller(caller_)
         , log(log_)
     {
-        if (CurrentThread::isInitialized())
-            thread_id = CurrentThread::get().thread_id;
-
         wait_watch.emplace(CLOCK_MONOTONIC);
         lock.emplace(mutex_);
         wait_watch->stop();
@@ -49,16 +46,20 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
         lock.reset();
         lock_watch->stop();
 
+        /// These are diagnostics of the server internals, not of the query, but they are logged in
+        /// the context of whatever query happened to wait for the lock (e.g. `DROP TABLE`), so with
+        /// `send_logs_level = 'warning'` they would reach the client. A thread holding the lock can be
+        /// descheduled by the OS on a loaded machine, so do not log them as warnings.
         if (wait_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
         {
-            LOG_WARNING(log, "Lock acquisition took {} ms for thread {} in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
-                wait_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
+            LOG_INFO(log, "Lock acquisition took {} ms in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
+                wait_watch->elapsedMilliseconds(), caller, StackTrace().toString());
         }
 
         if (lock_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
         {
-            LOG_WARNING(log, "Lock was held for {} ms by thread {} in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
-                lock_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
+            LOG_INFO(log, "Lock was held for {} ms in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
+                lock_watch->elapsedMilliseconds(), caller, StackTrace().toString());
         }
     }
 

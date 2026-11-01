@@ -1,0 +1,11 @@
+--- CROSS JOIN ---
+1	one	2	dos
+1	one	3	tres
+2	two	2	dos
+2	two	3	tres
+--- INNER JOIN ---
+2	two	dos
+--- With alias ---
+2	dos
+--- Nested in outer query ---
+4

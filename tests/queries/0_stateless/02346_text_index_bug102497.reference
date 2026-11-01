@@ -1,0 +1,17 @@
+Scalar baseline.
+- hasTokenOrNull with separator-only needle returns NULL
+\N
+Without text index.
+- hasToken with separator-only needle throws BAD_ARGUMENTS
+- hasTokenOrNull with separator-only needle returns NULL per row
+2
+- Empty needle matches nothing, no exception
+0
+2
+With text index.
+- hasToken with separator-only needle throws BAD_ARGUMENTS
+- hasTokenOrNull with separator-only needle returns NULL per row
+2
+- Empty needle matches nothing, no exception
+0
+2

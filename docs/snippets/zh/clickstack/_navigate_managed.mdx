@@ -1,0 +1,37 @@
+---
+title: Navigate Managed
+---
+
+选择“Launch ClickStack”以访问 ClickStack UI (HyperDX) 。系统会自动完成身份验证并将你重定向到相应页面。
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    系统会为所有 OpenTelemetry 数据预先创建数据源。
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+
+  <Tab title="Vector">
+    如果你使用的是 Vector，则需要自行创建数据源。首次登录时，系统会提示你创建一个。下面展示的是一个日志数据源的示例配置。
+
+    <img src="/images/clickstack/create-vector-datasource.webp" alt="" />
+
+    此配置假定使用 Nginx 风格的 schema，并将 `time_local` 列用作时间戳。在可能的情况下，它应为主键中声明的时间戳列。**此列为必填项**。
+
+    我们还建议更新 `Default SELECT`，以显式指定日志视图中返回哪些列。如果还有其他可用字段，例如服务名称、日志级别或 body 列，也可以一并配置。如果用于显示的时间戳列与表主键中使用且在上方配置的列不同，也可以对其进行覆盖。
+
+    在上面的示例中，数据里并不存在 `Body` 列。相反，它是通过一个 SQL 表达式定义的，用于根据现有字段重建一行 Nginx 日志。
+
+    有关其他可选配置，请参阅[配置参考](/zh/clickstack/managing/config)。
+
+    创建完成后，你将进入搜索视图，并可立即开始探索你的数据。
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+</Tabs>
+
+<br />
+
+就是这样——你已全部设置就绪。🎉
+
+现在就开始探索 ClickStack：搜索日志和链路追踪，查看日志、链路追踪和指标如何实时关联，构建仪表盘，探索服务地图，发掘 Event deltas 和 Patterns，并设置告警以提前发现问题。

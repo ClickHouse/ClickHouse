@@ -1,0 +1,3 @@
+id	Tuple(UInt64, LowCardinality(UUID))	
+timestamp	DateTime64(3)	CODEC(Delta(8), T64, ZSTD(3))
+value	Float64	CODEC(ALP, ZSTD(3))

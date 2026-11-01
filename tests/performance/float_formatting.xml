@@ -50,4 +50,7 @@
 
     <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(toString({expr}))</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(toString({expr_zero}))</query>
+
+    <!-- Float64 large integers (exp 53+): tests the extended itoa fast path with rounding -->
+    <query>SELECT count() FROM numbers(9007199254740992, 10000000) WHERE NOT ignore(toString(toFloat64(number)))</query>
 </test>

@@ -27,4 +27,4 @@ SELECT
     countIf(query LIKE '%system.processes%' AND type = 'QueryStart'),
     countIf(query LIKE '%system.processes%' AND type = 'QueryFinish')
 FROM system.query_log
-WHERE is_internal = 1 AND current_database = currentDatabase()"
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND is_internal = 1 AND current_database = currentDatabase()"

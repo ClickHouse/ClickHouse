@@ -1,8 +1,11 @@
 #pragma once
 
 #include <Columns/ColumnObject.h>
-#include <DataTypes/DataTypeObject.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/re2.h>
+
 #include <list>
 
 namespace DB
@@ -10,6 +13,7 @@ namespace DB
 
 class SerializationObjectDynamicPath;
 class SerializationSubObject;
+class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of an Object type (currently only JSON).
 class SerializationObject : public ISerialization
@@ -56,6 +60,8 @@ public:
         Value value;
 
         static void checkVersion(UInt64 version);
+        /// Each version is written into one channel only, so reading data of the other channel means the data is corrupted.
+        static void checkVersion(UInt64 version, bool native_format);
 
         explicit SerializationVersion(UInt64 version);
         explicit SerializationVersion(MergeTreeObjectSerializationVersion version);
@@ -64,9 +70,11 @@ public:
 
     SerializationObject(
         const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const DataTypePtr & dynamic_type_);
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -95,8 +103,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -113,15 +120,21 @@ public:
 
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
+    const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
+    const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
+
+    static void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings);
+
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
+    friend SerializationObjectDistinctPaths;
 
     /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         SerializationVersion serialization_version;
-        std::shared_ptr<std::vector<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
+        std::shared_ptr<VectorWithMemoryTracking<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
         std::unordered_set<std::string_view> dynamic_paths;
         SerializationObjectSharedData::SerializationVersion shared_data_serialization_version;
         size_t shared_data_buckets = 1;
@@ -129,7 +142,7 @@ private:
         ColumnObject::StatisticsPtr statistics;
 
         /// For flattened serialization only.
-        std::vector<String> flattened_paths;
+        VectorWithMemoryTracking<String> flattened_paths;
 
         explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_)
             : serialization_version(serialization_version_)
@@ -137,7 +150,7 @@ private:
         {
         }
 
-        DeserializeBinaryBulkStatePtr clone() const override
+        DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
         {
             return std::make_shared<DeserializeBinaryBulkStateObjectStructure>(*this);
         }
@@ -162,7 +175,7 @@ protected:
     bool shouldSkipPath(const String & path) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
-    std::unordered_map<std::string_view, SerializationPtr> typed_paths_serializations;
+    std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
@@ -170,6 +183,8 @@ protected:
     SerializationPtr dynamic_serialization;
 
 private:
+    void checkPathIsNotTyped(const String & path, bool native_format) const;
+
     std::vector<String> sorted_typed_paths;
 };
 

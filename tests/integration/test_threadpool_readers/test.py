@@ -9,7 +9,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/overrides.yaml"],
+    main_configs=["configs/overrides.yaml", "configs/config.xml"],
     with_minio=True,
 )
 

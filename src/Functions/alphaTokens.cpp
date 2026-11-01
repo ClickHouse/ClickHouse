@@ -19,14 +19,15 @@ using Pos = const char *;
 class SplitByAlphaImpl
 {
 private:
-    Pos pos;
-    Pos end;
+    Pos pos{};
+    Pos end{};
     std::optional<size_t> max_splits;
-    size_t splits;
-    bool max_substrings_includes_remaining_string;
+    size_t splits{};
+    bool max_substrings_includes_remaining_string{};
 
 public:
     static constexpr auto name = "alphaTokens";
+    static constexpr auto signature = "(String, [const NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
 
@@ -121,7 +122,7 @@ Selects substrings of consecutive bytes from the ranges `a-z` and `A-Z` and retu
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSplitByAlpha>(documentation);
     factory.registerAlias("splitByAlpha", FunctionSplitByAlpha::name);

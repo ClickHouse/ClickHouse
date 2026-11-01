@@ -25,27 +25,14 @@ namespace ErrorCodes
     DECLARE(Milliseconds, poll_directory_watch_events_backoff_init, 500, "The initial sleep value for watch directory thread.", 0) \
     DECLARE(Milliseconds, poll_directory_watch_events_backoff_max, 32000, "The max sleep value for watch directory thread.", 0) \
     DECLARE(UInt64, poll_directory_watch_events_backoff_factor, 2, "The speed of backoff, exponential by default", 0) \
-    DECLARE(StreamingHandleErrorMode, handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for FileLog engine. Possible values: default (throw an exception after nats_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
+    DECLARE(StreamingHandleErrorMode, handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (save broken records and errors in virtual columns `_raw_record`, `_error`).", 0) \
 
 #define LIST_OF_FILELOG_SETTINGS(M, ALIAS) \
     FILELOG_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS)
-
-struct FileLogSettingsImpl : public BaseSettings<FileLogSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) FileLogSettings##TYPE NAME = &FileLogSettingsImpl ::NAME;
-
-namespace FileLogSetting
-{
-LIST_OF_FILELOG_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FILELOG_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(FileLogSettingsTraits, LIST_OF_FILELOG_SETTINGS, FileLogSettings, FileLogSetting)
 
 FileLogSettings::FileLogSettings() : impl(std::make_unique<FileLogSettingsImpl>())
 {
@@ -55,10 +42,7 @@ FileLogSettings::FileLogSettings(const FileLogSettings & settings) : impl(std::m
 {
 }
 
-FileLogSettings::FileLogSettings(FileLogSettings && settings) noexcept
-    : impl(std::make_unique<FileLogSettingsImpl>(std::move(*settings.impl)))
-{
-}
+FileLogSettings::FileLogSettings(FileLogSettings && settings) noexcept = default;
 
 FileLogSettings::~FileLogSettings() = default;
 
@@ -81,16 +65,16 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
 
     /// Check that batch size is not too high (the same as we check setting max_block_size).
     constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
-    if (impl->poll_max_batch_size > max_sane_block_rows_size)
+    if ((*impl)[FileLogSetting::poll_max_batch_size] > max_sane_block_rows_size)
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", impl->poll_max_batch_size.value);
+            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", (*impl)[FileLogSetting::poll_max_batch_size].value);
 }
 
 bool FileLogSettings::hasBuiltin(std::string_view name)

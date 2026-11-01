@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -12,51 +12,40 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
-#include <constants.h>
-#include <h3api.h>
-
-
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
-    class FunctionH3ToCenterChild : public IFunction
+    class FunctionH3ToCenterChild final : public IFunction
     {
     public:
         static constexpr auto name = "h3ToCenterChild";
 
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToCenterChild>(); }
+        H3Validator validator;
+
+        explicit FunctionH3ToCenterChild(const ContextPtr & context) : validator(context) {}
+
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToCenterChild>(context); }
 
         std::string getName() const override { return name; }
 
         size_t getNumberOfArguments() const override { return 2; }
         bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        arg = arguments[1].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 2, getName());
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(UInt64, UInt8) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -104,7 +93,13 @@ namespace
                     getName(),
                     toString(MAX_H3_RES));
 
-            UInt64 res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            UInt64 res = 0;
+            if (validator.validateCell(data_hindex[row]))
+            {
+                H3Index child = 0;
+                if (!cellToCenterChild(data_hindex[row], data_resolution[row], &child))
+                    res = child;
+            }
 
             dst_data[row] = res;
         }
@@ -143,7 +138,7 @@ This function finds the center child of an H3 index at a specified finer resolut
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToCenterChild>(documentation);
 }
 

@@ -1,7 +1,9 @@
 #include <Backups/SettingsFieldOptionalUInt64.h>
 #include <Common/ErrorCodes.h>
+#include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
+
 
 namespace DB
 {
@@ -10,6 +12,8 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
 }
+
+SettingFieldOptionalUInt64::operator Field() const { return Field(value ? toString(*value) : ""); }
 
 SettingFieldOptionalUInt64::SettingFieldOptionalUInt64(const Field & field)
 {

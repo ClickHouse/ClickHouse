@@ -1,0 +1,45 @@
+---
+date: 2023-06-07
+title: アクティブまたはキューにあるミューテーションの数を確認するにはどうすればよいですか？
+description: 特に `ALTER` や `UPDATE` 操作を実行する際に、ClickHouse でアクティブまたはキューにあるミューテーションの数を監視します。ミューテーションの追跡には `system.mutations` テーブルを使用します。
+tags: ['システムテーブル']
+keywords: ['アクティブなミューテーション', 'キューにあるミューテーション']
+---
+
+<div id="question">
+  ## 質問
+</div>
+
+進行中またはキュー内のミューテーション数を確認するにはどうすればよいですか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+テーブルに対して `ALTER` や `UPDATE` のステートメントを多数実行している場合、実行中またはキューに入っている ミューテーション の数を監視することは重要です。これらのクエリはデータパーツを書き換えるもので、アトミックではありません。ミューテーション は作成されたパーツの順に並べられ、その順序で各パーツに適用されます。ミューテーション の詳細は[ドキュメント](/ja/reference/statements/alter/index#mutations)を参照してください。
+
+各 ミューテーション は `system.mutations` テーブルに 1 つのエントリを生成します。多数の ミューテーション を実行する場合は、次の方法で実行中およびキューに入っている ミューテーション の数を監視できます。
+
+```
+SELECT
+   hostname() AS host,
+   count()
+   FROM clusterAllReplicas('default', 'system.mutations') WHERE not is_done
+   GROUP BY host;
+```
+
+<Note>
+  このクエリは、`default` という名前のクラスターを使用していることを前提としています。これは ClickHouse Cloud でのクラスター名です。`default` は実際のクラスター名に置き換えてください。
+
+  クラスターがない場合は、次のコマンドを使用してください。
+
+  ```sql
+  SELECT
+     hostname() AS host,
+     count()
+     FROM system.mutations WHERE not is_done
+     GROUP BY host;
+  ```
+</Note>
+
+あわせて、[updates と deletes に関する最近のブログ記事](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)もご覧ください。

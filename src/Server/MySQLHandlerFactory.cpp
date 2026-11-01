@@ -16,13 +16,19 @@
 namespace DB
 {
 
-MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, bool secure_required_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+MySQLHandlerFactory::MySQLHandlerFactory(
+    IServer & server_,
+    bool secure_required_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_,
+    std::optional<String> default_session_user_)
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
 #if USE_SSL
     , keypair(KeyPair::generateRSA())
 #endif
     , secure_required(secure_required_)
+    , default_session_user(std::move(default_session_user_))
     , read_event(read_event_)
     , write_event(write_event_)
 {
@@ -57,7 +63,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, bool secure_required
 #endif
 }
 
-Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
+Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
     uint32_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
@@ -69,10 +75,11 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
         ssl_enabled,
         secure_required,
         connection_id,
+        default_session_user,
         keypair
     );
 #else
-    return new MySQLHandler(server, tcp_server, socket, ssl_enabled, secure_required, connection_id);
+    return new MySQLHandler(server, tcp_server, socket, ssl_enabled, secure_required, connection_id, default_session_user);
 #endif
 
 }

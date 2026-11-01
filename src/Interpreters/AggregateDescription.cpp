@@ -2,6 +2,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Analyzer/TableQualifiers.h>
+#include <Core/Block.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -16,11 +19,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
+void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const
 {
-    String prefix(indent, ' ');
+    std::string prefix_with_indent = prefix;
+    prefix_with_indent.append(additonal_indent, ' ');
 
-    out << prefix << column_name << '\n';
+    out << prefix_with_indent << column_name << '\n';
 
     auto dump_params = [&](const Array & arr)
     {
@@ -39,7 +43,7 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
     if (function)
     {
         /// Double whitespace is intentional.
-        out << prefix << "  Function: " << function->getName();
+        out << prefix_with_indent << "  Function: " << function->getName();
 
         const auto & params = function->getParameters();
         if (!params.empty())
@@ -64,16 +68,16 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
         out << ") → " << function->getResultType()->getName() << "\n";
     }
     else
-        out << prefix << "  Function: nullptr\n";
+        out << prefix_with_indent << "  Function: nullptr\n";
 
     if (!parameters.empty())
     {
-        out << prefix << "  Parameters: ";
+        out << prefix_with_indent << "  Parameters: ";
         dump_params(parameters);
         out << '\n';
     }
 
-    out << prefix << "  Arguments: ";
+    out << prefix_with_indent << "  Arguments: ";
 
     if (argument_names.empty())
         out << "none\n";
@@ -90,6 +94,36 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
         }
         out << "\n";
     }
+}
+
+void AggregateDescription::explainPretty(ExplainFormatSettings & settings) const
+{
+    auto & out = settings.out;
+
+    if (function)
+        out << function->getName();
+
+    const Array & aggregate_parameters = function ? function->getParameters() : parameters;
+    bool first_param = true;
+    for (const auto & param : aggregate_parameters)
+    {
+        out << (first_param ? "(" : ", ");
+        first_param = false;
+        out << applyVisitor(FieldVisitorToString(), param);
+    }
+    if (!aggregate_parameters.empty())
+        out << ')';
+
+    out << '(';
+    bool first = true;
+    for (const auto & arg : argument_names)
+    {
+        if (!first)
+            out << ", ";
+        first = false;
+        out << QueryPlanFormat::formatColumnPretty(arg, settings.pretty_names);
+    }
+    out << ')';
 }
 
 void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
@@ -129,12 +163,21 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Arguments", std::move(args_array));
 }
 
-void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
+void serializeAggregateDescriptions(
+    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        writeStringBinary(aggregate.column_name, out);
+        /// `column_name` is the rendered call (`calculateActionNodeName`), a label rather than semantic
+        /// state, and the shard rewrite can render it differently for the same aggregate by inlining
+        /// aliases. A cache key leaves it out and keeps what the call is made of - the argument names, the
+        /// function and its parameters, all written below. The argument names, which are column
+        /// references, still go through `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeStringBinary(String{}, out);
+        else
+            writeStringBinary(aggregate.column_name, out);
 
         UInt64 num_args = aggregate.argument_names.size();
         const auto & argument_types = aggregate.function->getArgumentTypes();
@@ -142,7 +185,7 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
         if (argument_types.size() != num_args)
         {
             WriteBufferFromOwnString buf;
-            aggregate.explain(buf, 0);
+            aggregate.explain(buf, "", 0);
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Invalid number of for aggregate function. Expected {}, got {}. Description:\n{}",
                 argument_types.size(), num_args, buf.str());
@@ -151,7 +194,10 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
         writeVarUInt(num_args, out);
         for (size_t i = 0; i < num_args; ++i)
         {
-            writeStringBinary(aggregate.argument_names[i], out);
+            if (for_cache_key)
+                writeCacheKeyColumnName(aggregate.argument_names[i], input_header, out);
+            else
+                writeStringBinary(aggregate.argument_names[i], out);
             encodeDataType(argument_types[i], out);
         }
 
@@ -163,16 +209,16 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
     }
 }
 
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
 {
-    UInt64 num_aggregates;
+    UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
     aggregates.resize(num_aggregates);
     for (auto & aggregate : aggregates)
     {
         readStringBinary(aggregate.column_name, in);
 
-        UInt64 num_args;
+        UInt64 num_args = 0;
         readVarUInt(num_args, in);
         aggregate.argument_names.resize(num_args);
 
@@ -182,13 +228,13 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         for (auto & arg_name : aggregate.argument_names)
         {
             readStringBinary(arg_name, in);
-            argument_types.emplace_back(decodeDataType(in));
+            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
         }
 
         String function_name;
         readStringBinary(function_name, in);
 
-        UInt64 num_params;
+        UInt64 num_params = 0;
         readVarUInt(num_params, in);
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)
@@ -200,6 +246,62 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
             function_name, action, argument_types, aggregate.parameters, properties);
     }
 
+}
+
+void serializeAggregateDescriptionsWithoutArguments(
+    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * /*input_header*/)
+{
+    writeVarUInt(aggregates.size(), out);
+    for (const auto & aggregate : aggregates)
+    {
+        /// A rendered label, left out of a cache key - see `serializeAggregateDescriptions`.
+        if (for_cache_key)
+            writeStringBinary(String{}, out);
+        else
+            writeStringBinary(aggregate.column_name, out);
+        writeStringBinary(aggregate.function->getName(), out);
+
+        const auto & argument_types = aggregate.function->getArgumentTypes();
+        writeVarUInt(argument_types.size(), out);
+        for (const auto & argument_type : argument_types)
+            encodeDataType(argument_type, out);
+
+        writeVarUInt(aggregate.parameters.size(), out);
+        for (const auto & param : aggregate.parameters)
+            writeFieldBinary(param, out);
+    }
+}
+
+void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
+{
+    UInt64 num_aggregates = 0;
+    readVarUInt(num_aggregates, in);
+    aggregates.resize(num_aggregates);
+    for (auto & aggregate : aggregates)
+    {
+        readStringBinary(aggregate.column_name, in);
+
+        String function_name;
+        readStringBinary(function_name, in);
+
+        UInt64 num_args = 0;
+        readVarUInt(num_args, in);
+        DataTypes argument_types;
+        argument_types.reserve(num_args);
+        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
+            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+
+        UInt64 num_params = 0;
+        readVarUInt(num_params, in);
+        aggregate.parameters.resize(num_params);
+        for (auto & param : aggregate.parameters)
+            param = readFieldBinary(in);
+
+        /// `argument_names` stays empty, mirroring the writer's state (see the header comment).
+        AggregateFunctionProperties properties;
+        aggregate.function = AggregateFunctionFactory::instance().get(
+            function_name, NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
+    }
 }
 
 }

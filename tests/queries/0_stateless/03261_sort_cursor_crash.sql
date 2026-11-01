@@ -3,8 +3,6 @@
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 
-SET allow_suspicious_primary_key = 1;
-
 CREATE TABLE t0 (c0 Int) ENGINE = AggregatingMergeTree() ORDER BY tuple();
 INSERT INTO TABLE t0 (c0) VALUES (1);
 SELECT 42 FROM t0 FINAL PREWHERE t0.c0 = 1;

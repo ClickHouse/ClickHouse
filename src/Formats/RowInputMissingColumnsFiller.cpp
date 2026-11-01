@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Formats/RowInputMissingColumnsFiller.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -25,7 +26,7 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const NamesAndTypesLi
         const auto & name_and_type = *it;
         if (isArray(name_and_type.type))
         {
-            auto split = Nested::splitName(name_and_type.name);
+            auto split = Nested::splitName(std::string_view{name_and_type.name});
             if (!split.second.empty()) /// Is it really a column of Nested data structure?
                 nested_groups[split.first].push_back(i);
         }
@@ -40,7 +41,7 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const Names & names, 
     {
         if (isArray(types[i]))
         {
-            auto split = Nested::splitName(names[i]);
+            auto split = Nested::splitName(std::string_view{names[i]});
             if (!split.second.empty()) /// Is it really a column of Nested data structure?
                 nested_groups[split.first].push_back(i);
         }

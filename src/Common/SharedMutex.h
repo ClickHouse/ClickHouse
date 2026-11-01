@@ -62,18 +62,18 @@ public:
     SharedMutex & operator=(SharedMutex &&) = delete;
 
     // Exclusive ownership
-    void lock() TSA_ACQUIRE() { WriterLock(); }
+    void lock() TSA_ACQUIRE() { absl::Mutex::lock(); }
 
-    bool try_lock() TSA_TRY_ACQUIRE(true) { return WriterTryLock(); }
+    bool try_lock() TSA_TRY_ACQUIRE(true) { return absl::Mutex::try_lock(); }
 
-    void unlock() TSA_RELEASE() { WriterUnlock(); }
+    void unlock() TSA_RELEASE() { absl::Mutex::unlock(); }
 
     // Shared ownership
-    void lock_shared() TSA_ACQUIRE_SHARED() { ReaderLock(); }
+    void lock_shared() TSA_ACQUIRE_SHARED() { absl::Mutex::lock_shared(); }
 
-    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true) { return ReaderTryLock(); }
+    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true) { return absl::Mutex::try_lock_shared(); }
 
-    void unlock_shared() TSA_RELEASE_SHARED() { ReaderUnlock(); }
+    void unlock_shared() TSA_RELEASE_SHARED() { absl::Mutex::unlock_shared(); }
 };
 }
 

@@ -9,7 +9,7 @@ AS select *, '2023-12-25' from numbers(100);
 CREATE TABLE IF NOT EXISTS test_d as test
 ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test);
 
-SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
+SET automatic_parallel_replicas_mode = 0;
 
 SELECT count(), sum(id)
 FROM test_d

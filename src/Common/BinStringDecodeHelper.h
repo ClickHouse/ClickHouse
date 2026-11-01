@@ -1,9 +1,23 @@
 #pragma once
 
-#include <base/hex.h>
+#include <Common/Hex.h>
+#include <base/types.h>
 
 namespace DB
 {
+
+static void inline hexStringDecode2(const char * pos, const char * end, char *& out)
+{
+    if ((end - pos) & 1)
+    {
+        *out = unhex(*pos);
+        ++out;
+        ++pos;
+    }
+    const auto raw_size = (end - pos) / 2;
+    unHexString(reinterpret_cast<UInt8*>(out), reinterpret_cast<const UInt8*>(pos), raw_size);
+    out += raw_size;
+}
 
 static void inline hexStringDecode(const char * pos, const char * end, char *& out, size_t word_size)
 {
@@ -35,7 +49,7 @@ static void inline binStringDecode(const char * pos, const char * end, char *& o
     /// then, left_cnt is 0, remain input is '01000001'.
     for (UInt8 left_cnt = (end - pos) & 7; left_cnt > 0; --left_cnt)
     {
-        left = left << 1;
+        left = static_cast<UInt8>(left << 1);
         if (*pos != '0')
             left += 1;
         ++pos;
@@ -54,7 +68,7 @@ static void inline binStringDecode(const char * pos, const char * end, char *& o
         UInt8 c = 0;
         for (UInt8 i = 0; i < 8; ++i)
         {
-            c = c << 1;
+            c = static_cast<UInt8>(c << 1);
             if (*pos != '0')
                 c += 1;
             ++pos;

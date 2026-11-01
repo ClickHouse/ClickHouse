@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS sharded_table;
 CREATE TABLE sharded_table (dummy UInt8) ENGINE = Distributed('test_cluster_two_shards', 'system', 'one');
 

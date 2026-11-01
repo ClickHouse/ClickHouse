@@ -1,0 +1,12 @@
+filter deep relation greedy:
+0	Join_2_Value_0	0	Join_3_Value_0	0	Join_1_Value_0
+filter deep relation dpsize:
+0	Join_2_Value_0	0	Join_3_Value_0	0	Join_1_Value_0
+four way filter last greedy:
+0	0	0	0	Join_4_Value_0
+four way filter last dpsize:
+0	0	0	0	Join_4_Value_0
+two filters greedy:
+0	0	0
+two filters dpsize:
+0	0	0

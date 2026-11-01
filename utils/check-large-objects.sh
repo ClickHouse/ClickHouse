@@ -7,6 +7,7 @@ export LC_ALL=C # The "total" should be printed without localization
 TU_EXCLUDES=(
     AggregateFunctionUniq
     Aggregator
+    FunctionsNumericIndexedVector
 )
 
 if find $1 -name '*.o' | xargs wc -c | grep --regexp='\.o$' | sort -rn | awk '{ if ($1 > 50000000) print }' \

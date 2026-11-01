@@ -48,7 +48,7 @@ alter_thread &
 
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.
-    while true; do
+    while clickhouse_test_time_left; do
         $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
     done
 done

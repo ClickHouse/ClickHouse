@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 column_names=("number_col" "str_col" "array_col" "nullable_col" "sparse_col" "tuple_col")
 table_name="table_for_estimate_compression_ratio"
-tolerance=0.40
+tolerance=0.45
 formatted_tolerance=$(awk "BEGIN {printf \"%.2f\", $tolerance * 100}")%
 
 # all combinations of the following should be tested

@@ -125,6 +125,11 @@ public:
         return max_size_in_bytes;
     }
 
+    size_t maxCount() const override
+    {
+        return max_count;
+    }
+
     void setMaxCount(size_t max_count_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
@@ -205,6 +210,11 @@ public:
     void set(const Key & key, const MappedPtr & mapped) override
     {
         chassert(mapped.get());
+
+        /// A limit of 0 means that the cache stores nothing. Otherwise an entry with a weight of 0 would fit into a cache with
+        /// `max_size_in_bytes = 0`.
+        if (max_size_in_bytes == 0 || max_count == 0)
+            return;
 
         const size_t old_size_in_bytes = size_in_bytes;
         const size_t old_size = cache.size();

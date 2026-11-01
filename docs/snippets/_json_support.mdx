@@ -1,0 +1,5 @@
+## Schema choice: Map vs JSON {#schema-choice-map-vs-json}
+
+ClickStack stores attributes as `Map(LowCardinality(String), String)` columns by default. This is the recommended schema for observability workloads. Combined with [bucketed map serialization](/reference/data-types/map#bucketed-map-serialization) and text indexes on map keys and values, it provides selective lookups without the per-key ingest overhead of dynamic JSON subcolumns.
+
+A `JSON`-typed schema is available in beta for evaluation on workloads with a small, stable attribute key-set. It is **not recommended** as the default. See [Map vs JSON type](/clickstack/ingesting-data/schema/map-vs-json) for the full comparison and the env vars required to enable JSON support.

@@ -1,0 +1,173 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-cloud-v1
+title: 'Helm cloud deployments (v1.x)'
+description: 'Cloud-specific configurations for deploying ClickStack on GKE, EKS, and AKS with the v1.x Helm chart'
+doc_type: 'guide'
+keywords: ['ClickStack GKE', 'ClickStack EKS', 'ClickStack AKS', 'Kubernetes cloud deployment', 'production deployment']
+---
+
+<Warning>
+**Deprecated — v1.x chart**
+
+This page documents cloud deployments for the **v1.x** inline-template Helm chart, which is in maintenance mode. For the v2.x chart, see [Helm cloud deployments](/clickstack/deployment/helm-cloud). To migrate, see the [Upgrade guide](/clickstack/deployment/helm-upgrade).
+</Warning>
+
+This guide covers cloud-specific configurations for deploying ClickStack on managed Kubernetes services. For basic installation, see the [main Helm deployment guide](/clickstack/deployment/helm-v1).
+
+## Google Kubernetes Engine (GKE) {#google-kubernetes-engine-gke}
+
+When deploying to GKE, you may need to override certain values due to cloud-specific networking behavior.
+
+### LoadBalancer DNS resolution issue {#loadbalancer-dns-resolution-issue}
+
+GKE's LoadBalancer service can cause internal DNS resolution issues where pod-to-pod communication resolves to external IPs instead of staying within the cluster network. This specifically affects the OTEL collector's connection to the OpAMP server.
+
+**Symptoms:**
+- OTEL collector logs showing "connection refused" errors with cluster IP addresses
+- OpAMP connection failures like: `dial tcp 34.118.227.30:4320: connect: connection refused`
+
+**Solution:**
+
+Use the fully qualified domain name (FQDN) for the OpAMP server URL:
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set hyperdx.frontendUrl="http://your-external-ip-or-domain.com" \
+  --set otel.opampServerUrl="http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+```
+
+### Other GKE considerations {#other-gke-considerations}
+
+```yaml
+# values-gke.yaml
+hyperdx:
+  frontendUrl: "http://34.123.61.99"  # Use your LoadBalancer external IP
+
+otel:
+  opampServerUrl: "http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+
+# Adjust for GKE pod networking if needed
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.8.0.0/16"  # GKE commonly uses this range
+      - "10.0.0.0/8"   # Fallback for other configurations
+```
+
+## Amazon EKS {#amazon-eks}
+
+For EKS deployments, consider these common configurations:
+```yaml
+# values-eks.yaml
+hyperdx:
+  frontendUrl: "http://your-alb-domain.com"
+
+# EKS typically uses these pod CIDRs
+clickhouse:
+  config:
+    clusterCidrs:
+      - "192.168.0.0/16"
+      - "10.0.0.0/8"
+
+# Enable ingress for production
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+```
+
+## Azure AKS {#azure-aks}
+
+For AKS deployments:
+```yaml
+# values-aks.yaml
+hyperdx:
+  frontendUrl: "http://your-azure-lb.com"
+
+# AKS pod networking
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.244.0.0/16"  # Common AKS pod CIDR
+      - "10.0.0.0/8"
+```
+
+## Production Cloud deployment checklist {#production-cloud-deployment-checklist}
+
+Before deploying ClickStack to production on any cloud provider:
+
+- [ ] Configure proper `frontendUrl` with your external domain/IP
+- [ ] Set up ingress with TLS for HTTPS access
+- [ ] Override `otel.opampServerUrl` with FQDN if experiencing connection issues (especially on GKE)
+- [ ] Adjust `clickhouse.config.clusterCidrs` for your pod network CIDR
+- [ ] Configure persistent storage for production workloads
+- [ ] Set appropriate resource requests and limits
+- [ ] Enable monitoring and alerting
+- [ ] Configure backup and disaster recovery
+- [ ] Implement proper secret management
+
+## Production best practices {#production-best-practices}
+
+### Resource management {#resource-management}
+
+```yaml
+hyperdx:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+```
+
+### High availability {#high-availability}
+
+```yaml
+hyperdx:
+  replicaCount: 3
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - clickstack
+            topologyKey: kubernetes.io/hostname
+```
+
+### Persistent storage {#persistent-storage}
+
+Ensure persistent volumes are configured for data retention:
+```yaml
+clickhouse:
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "fast-ssd"  # Use cloud-specific storage class
+```
+
+**Cloud-specific storage classes:**
+- **GKE**: `pd-ssd` or `pd-balanced`
+- **EKS**: `gp3` or `io2`
+- **AKS**: `managed-premium` or `managed-csi`
+
+### Browser compatibility notes {#browser-compatibility-notes}
+
+For HTTP-only deployments (development/testing), some browsers may show crypto API errors due to secure context requirements. For production deployments, always use HTTPS with proper TLS certificates through ingress configuration.
+
+See [Ingress configuration](/clickstack/deployment/helm-configuration-v1#ingress-setup) for TLS setup instructions.
+
+## Next steps {#next-steps}
+
+- [Configuration guide (v1.x)](/clickstack/deployment/helm-configuration-v1) - API keys, secrets, and ingress
+- [Deployment options (v1.x)](/clickstack/deployment/helm-deployment-options-v1) - External systems configuration
+- [Main Helm guide (v1.x)](/clickstack/deployment/helm-v1) - Basic installation
+- [Cloud deployments (v2.x)](/clickstack/deployment/helm-cloud) - v2.x cloud guide
+- [Upgrade guide](/clickstack/deployment/helm-upgrade) - Migrating from v1.x to v2.x

@@ -1,0 +1,4 @@
+plaintext	780E91631CC153F683	plaintext
+test_decrypt_func_default	CREATE FUNCTION test_decrypt_func_default AS ciphertext -> decrypt(\'aes-256-ofb\', \'[HIDDEN]\')
+test_encrypt_func_default	CREATE FUNCTION test_encrypt_func_default AS plaintext -> encrypt(\'aes-256-ofb\', \'[HIDDEN]\')
+0

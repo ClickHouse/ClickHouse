@@ -37,7 +37,6 @@ std::vector<size_t> getOtherColumnIndexes(const Block & block, const SortDescrip
     const size_t all_columns_count = block.columns();
 
     std::vector<size_t> other_column_indexes;
-    other_column_indexes.reserve(all_columns_count - sorting_key_columns_count);
 
     if (sorting_key_columns_count == 0)
     {
@@ -53,7 +52,8 @@ std::vector<size_t> getOtherColumnIndexes(const Block & block, const SortDescrip
             size_t idx = block.getPositionByName(sort_column.column_name);
             sorted_column_indexes.emplace_back(idx);
         }
-        ::sort(sorted_column_indexes.begin(), sorted_column_indexes.end());
+        std::sort(sorted_column_indexes.begin(), sorted_column_indexes.end());
+        sorted_column_indexes.erase(std::unique(sorted_column_indexes.begin(), sorted_column_indexes.end()), sorted_column_indexes.end());
 
         std::vector<size_t> all_column_indexes(all_columns_count);
         std::iota(all_column_indexes.begin(), all_column_indexes.end(), 0);
@@ -64,7 +64,7 @@ std::vector<size_t> getOtherColumnIndexes(const Block & block, const SortDescrip
             sorted_column_indexes.end(),
             std::back_inserter(other_column_indexes));
     }
-    chassert(other_column_indexes.size() == all_columns_count - sorting_key_columns_count);
+
     return other_column_indexes;
 }
 
@@ -134,7 +134,7 @@ void updatePermutationInEqualRange(
     auto cmp = [&](size_t lhs, size_t rhs) -> bool { return cardinalities[lhs] < cardinalities[rhs]; };
     stable_sort(column_order.begin(), column_order.end(), cmp);
 
-    std::vector<EqualRange> ranges = {equal_range};
+    EqualRanges ranges = {equal_range};
     LOG_TEST(log, "equal_range: .from: {}, .to: {}", equal_range.from, equal_range.to);
     for (size_t i : column_order)
     {

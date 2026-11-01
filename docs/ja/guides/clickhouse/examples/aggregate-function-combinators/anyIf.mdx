@@ -1,0 +1,63 @@
+---
+slug: '/examples/aggregate-function-combinators/anyIf'
+title: 'anyIf'
+description: 'anyIf コンビネータの使用例'
+keywords: ['any', 'if', 'コンビネータ', '例', 'anyIf']
+sidebarTitle: 'anyIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`If`](/ja/reference/functions/aggregate-functions/combinators#-if) コンビネータは、[`any`](/ja/reference/functions/aggregate-functions/any)
+集約関数に適用でき、指定した条件に一致する
+指定のカラム内の最初の要素を選択します。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、成功フラグ付きの売上データを格納するテーブルを作成し、
+`anyIf` を使用して、金額が 200 を超えるものと下回るもののうち、最初の `transaction_id` を選択します。
+
+まず、テーブルを作成し、そこにデータを insert します。
+
+```sql title="Query"
+CREATE TABLE sales(
+    transaction_id UInt32,
+    amount Decimal(10,2),
+    is_successful UInt8
+) 
+ENGINE = MergeTree()
+ORDER BY tuple();
+
+INSERT INTO sales VALUES
+    (1, 100.00, 1),
+    (2, 150.00, 1),
+    (3, 155.00, 0),
+    (4, 300.00, 1),
+    (5, 250.50, 0),
+    (6, 175.25, 1);
+```
+
+```sql
+SELECT
+    anyIf(transaction_id, amount < 200) AS tid_lt_200,
+    anyIf(transaction_id, amount > 200) AS tid_gt_200
+FROM sales;
+```
+
+```response title="Response"
+┌─tid_lt_200─┬─tid_gt_200─┐
+│          1 │          4 │
+└────────────┴────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`any`](/ja/reference/functions/aggregate-functions/any)
+* [`If combinator`](/ja/reference/functions/aggregate-functions/combinators#-if)

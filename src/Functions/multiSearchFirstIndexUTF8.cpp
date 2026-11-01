@@ -37,15 +37,15 @@ Assumes `haystack` and `needle` are UTF-8 encoded strings.
         "Usage example",
         "SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте']);",
         R"(
-┌─multiSearchF⋯вствуйте'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
+│                                                                      1 │
+└────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiSearchFirstIndexUTF8>(documentation);
 }

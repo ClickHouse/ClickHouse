@@ -20,7 +20,7 @@ class WriteBuffer;
 class BackupInMemory : public std::enable_shared_from_this<BackupInMemory>
 {
 public:
-    BackupInMemory(const String & backup_name_, BackupsInMemoryHolder & holder_);
+    BackupInMemory(const String & backup_name_, std::weak_ptr<BackupsInMemoryHolder> holder_);
 
     bool isEmpty() const;
     bool fileExists(const String & file_name) const;
@@ -37,7 +37,7 @@ private:
     class WriteBufferToBackupInMemory;
 
     const String backup_name;
-    BackupsInMemoryHolder & holder;
+    std::weak_ptr<BackupsInMemoryHolder> holder;
     std::unordered_map<String, String> files TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };

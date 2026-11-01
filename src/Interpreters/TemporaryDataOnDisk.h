@@ -14,7 +14,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
-#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/FileCache/FileSegment.h>
 
 #include <IO/ReadBufferFromFile.h>
 
@@ -38,19 +38,30 @@ class TemporaryFileHolder;
 
 class FileCache;
 
+struct TemporaryDataMetrics
+{
+    CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
+    std::optional<ProfileEvents::Event> bytes_compressed = {};
+    std::optional<ProfileEvents::Event> bytes_uncompressed = {};
+    std::optional<ProfileEvents::Event> num_files = {};
+
+    /// Name of the operator that owns this temporary data
+    std::string_view spilled_to_disk_operator = {};
+};
+
 struct TemporaryDataOnDiskSettings
 {
     /// Max size on disk, if 0 there will be no limit
     size_t max_size_on_disk = 0;
 
     /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
-    String compression_codec = "LZ4";
+    String compression_codec = {};
 
     /// Read/Write internal buffer size
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
-    /// Metrics counter to increment when temporary file in current scope are created
-    CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
+    /// Counters to update when files are created or data is written
+    TemporaryDataMetrics metrics;
 };
 
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
@@ -74,6 +85,9 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag);
 class TemporaryDataOnDiskScope : boost::noncopyable, public std::enable_shared_from_this<TemporaryDataOnDiskScope>
 {
 public:
+    /// Name of the gauge profile event reporting the current size of temporary data on disk for a query.
+    static constexpr auto USAGE_EVENT_NAME = "TemporaryDataOnDiskUsage";
+
     struct StatAtomic
     {
         std::atomic<size_t> compressed_size;
@@ -94,9 +108,15 @@ public:
         , settings(std::move(settings_))
     {}
 
-    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric, UInt64 buffer_size_ = 0);
+    TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {});
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
+
+    /// Currently used amount of temporary data on disk in bytes (compressed) for this scope.
+    size_t currentCompressedSize() const { return stat.compressed_size.load(std::memory_order_relaxed); }
+
+    /// Cumulative compressed bytes written by this scope and its children, including deleted files.
+    size_t getSpilledBytes() const { return spilled_bytes.load(std::memory_order_relaxed); }
 protected:
     friend class TemporaryDataBuffer;
 
@@ -107,6 +127,7 @@ protected:
     TemporaryFileProvider file_provider;
 
     StatAtomic stat;
+    std::atomic<size_t> spilled_bytes{0};
     const TemporaryDataOnDiskSettings settings;
 };
 
@@ -161,7 +182,7 @@ protected:
 class TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileHolder(CurrentMetrics::Metric current_metric_ = CurrentMetrics::TemporaryFilesUnknown);
+    explicit TemporaryFileHolder(const TemporaryDataMetrics &);
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
     virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
@@ -210,7 +231,13 @@ public:
     void cancelImpl() noexcept override;
 
     std::unique_ptr<ReadBuffer> read();
-    std::unique_ptr<SeekableReadBuffer> readRaw();
+    std::unique_ptr<SeekableReadBuffer> readRaw(size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
+
+    /// Puts the data written so far into separate compressed blocks and returns the position
+    /// in the file from which the data written after this call can be read with `readFromPosition`.
+    size_t startNewBlock();
+    /// Reads the data from `position` returned by `startNewBlock`, finishes writing if needed.
+    std::unique_ptr<ReadBuffer> readFromPosition(size_t position);
 
     CompressedWriteBuffer & getCompressedWriteBuffer();
 
@@ -230,11 +257,19 @@ private:
     std::once_flag write_finished;
 
     Stat stat;
+    TemporaryDataMetrics metrics;
+
+    bool reported_spilled_to_disk = false;
 };
 
 
 /// High level interfaces for reading and writing temporary data by blocks.
-using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
+class TemporaryBlockStreamReaderHolder : public WrapperGuard<NativeReader, ReadBuffer>
+{
+public:
+    using WrapperGuard<NativeReader, ReadBuffer>::WrapperGuard;
+};
+
 
 class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
 {

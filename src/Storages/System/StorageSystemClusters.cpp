@@ -1,12 +1,15 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -37,6 +40,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"estimated_recovery_time", std::make_shared<DataTypeUInt32>(), "Seconds remaining until the replica error count is zeroed and it is considered to be back to normal."},
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
+        {"replica_group", std::make_shared<DataTypeString>(), "The replica group of the node (for clusters that belong to a `Replicated` database), published by the database replica from the `replica_group_name` server configuration."},
         {"is_shared_catalog_cluster", std::make_shared<DataTypeUInt8>(), "Bool indicating if the cluster belongs to shared catalog."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
            {"unsynced_after_recovery", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Indicates if a Replicated database replica has replication lag more than max_replication_lag_to_enqueue after creating or recovering the replica."},
@@ -53,6 +57,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
 
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemClusters::fillData");
     for (const auto & name_and_cluster : context->getClusters())
         writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {});
 
@@ -159,6 +164,8 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
                 res_columns[res_index++]->insert(address.database_shard_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.database_replica_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.replica_group);
 
             /// make sure these five columns remain the last ones, see is_active_column_idx, etc
             if (columns_mask[src_index++])
@@ -217,3 +224,6 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
     }
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemClusters) }

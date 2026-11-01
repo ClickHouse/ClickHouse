@@ -1,0 +1,145 @@
+---
+sidebarTitle: 'Visão geral'
+description: 'Conecte suas fontes de dados externas ao ClickHouse Cloud sem esforço.'
+slug: /integrations/clickpipes
+title: 'Integração com o ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'plataforma de ingestão de dados', 'dados em streaming', 'plataforma de integração', 'ClickHouse Cloud']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ClickPipesConnectors from '/snippets/pt-BR/_clickpipes_connectors.mdx';
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+[ClickPipes](/pt-BR/integrations/clickpipes/home) é uma plataforma de integração gerenciada que torna a ingestão de dados de um conjunto diverso de fontes tão simples quanto clicar em alguns botões. Projetada para as workloads mais exigentes, a arquitetura robusta e escalável do ClickPipes garante desempenho e confiabilidade consistentes. O ClickPipes pode ser usado para ingestão contínua de dados ou para uma carga de dados pontual.
+
+O ClickPipes pode ser implantado e gerenciado usando a UI do ClickPipes, bem como de forma programática com [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) e [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="clickpipes-connectors">
+  ## Conectores
+</div>
+
+<ClickPipesConnectors />
+
+Mais conectores serão adicionados ao ClickPipes. Para saber mais, [entre em contato conosco](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="aws-iam-database-authentication">
+  ## Autenticação de banco de dados com AWS IAM
+</div>
+
+O ClickPipes oferece suporte à autenticação de banco de dados com AWS IAM para Amazon RDS e Aurora. A configuração varia de acordo com o mecanismo de banco de dados e o serviço da AWS, portanto escolha o guia de configuração da origem correspondente ao seu banco de dados:
+
+| Mecanismo de banco de dados | Serviço da AWS | Guia de configuração                                                                                       |
+| --------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL                  | Amazon RDS     | [RDS para PostgreSQL](/pt-BR/integrations/clickpipes/postgres/source/rds#iam-authentication)                     |
+| PostgreSQL                  | Amazon Aurora  | [Aurora PostgreSQL-Compatible Edition](/pt-BR/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL                       | Amazon RDS     | [RDS para MySQL](/pt-BR/integrations/clickpipes/mysql/source/rds#iam-authentication)                             |
+| MySQL                       | Amazon Aurora  | [Aurora MySQL-Compatible Edition](/pt-BR/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB                     | Amazon RDS     | [RDS para MariaDB](/pt-BR/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                     |
+
+<div id="list-of-static-ips">
+  ## Lista de IPs estáticos
+</div>
+
+A lista de IPs estáticos de NAT do ClickPipes foi movida para a [documentação de rede do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips).
+
+<div id="adjusting-clickhouse-settings">
+  ## Ajustando as configurações do ClickHouse
+</div>
+
+O ClickHouse Cloud fornece padrões adequados para a maioria dos casos de uso. No entanto, se você precisar ajustar algumas configurações do ClickHouse para as tabelas de destino do ClickPipes, uma função dedicada para o ClickPipes é a solução mais flexível.
+Etapas:
+
+1. crie uma função personalizada `CREATE ROLE my_clickpipes_role SETTINGS ...`. Consulte a sintaxe de [CREATE ROLE](/pt-BR/reference/statements/create/role) para mais detalhes.
+2. adicione a função personalizada ao usuário do ClickPipes na etapa `Details and Settings`, durante a criação do ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="Atribuir uma função personalizada" size="lg" border />
+
+<div id="clickpipes-advanced-settings">
+  ## Ajustando as configurações avançadas do ClickPipes
+</div>
+
+O ClickPipes oferece padrões sensatos que atendem aos requisitos da maioria dos casos de uso. Se o seu caso de uso exigir ajustes mais finos, você pode ajustar as seguintes configurações:
+
+<div id="clickpipes-advanced-settings-object-storage">
+  ### ClickPipes de armazenamento de objetos
+</div>
+
+| Configuração                         | Valor padrão | Descrição                                                                                                                                                                     |
+| ------------------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB        | Número de bytes a serem processados em um único lote de inserção.                                                                                                             |
+| `Max file count`                     | 100          | Número máximo de arquivos a serem processados em um único lote de inserção.                                                                                                   |
+| `Max threads`                        | auto(3)      | [Número máximo de threads simultâneas](/pt-BR/reference/settings/session-settings/max-threads#max_threads) para processamento de arquivos.                                          |
+| `Max insert threads`                 | 1            | [Número máximo de threads de inserção simultâneas](/pt-BR/reference/settings/session-settings/max-insert#max_insert_threads) para processamento de arquivos.                        |
+| `Min insert block size bytes`        | 1 GB         | [Tamanho mínimo, em bytes, do bloco](/pt-BR/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) que pode ser inserido em uma tabela.                        |
+| `Max download threads`               | 4            | [Número máximo de threads de download simultâneas](/pt-BR/reference/settings/session-settings/max-download#max_download_threads).                                                   |
+| `Object storage polling interval`    | 30 s         | Configura o período máximo de espera antes de inserir os dados no cluster do ClickHouse.                                                                                      |
+| `Parallel distributed insert select` | 2            | [Configuração de insert select distribuído em paralelo](/pt-BR/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                                    |
+| `Parallel view processing`           | false        | Define se o envio para views anexadas deve ser habilitado [de forma simultânea em vez de sequencial](/pt-BR/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true         | Define se os arquivos devem ser processados em paralelo em vários nós.                                                                                                        |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configurações avançadas do ClickPipes" size="lg" border />
+
+<div id="clickpipes-advanced-settings-streaming">
+  ### ClickPipes de streaming
+</div>
+
+| Configuração                     | Valor padrão | Descrição                                                                            |
+| -------------------------------- | ------------ | ------------------------------------------------------------------------------------ |
+| `Streaming max insert wait time` | 5 s          | Define o tempo máximo de espera antes da inserção de dados no cluster do ClickHouse. |
+
+<div id="error-reporting">
+  ## Relatório de erros
+</div>
+
+O ClickPipes armazenará os erros em duas tabelas separadas, dependendo do tipo de erro encontrado durante o processo de ingestão.
+
+<Note>
+  Atualmente, isso não se aplica aos pipes de CDC (Postgres, MySQL e MongoDB), para os quais os logs operacionais e de erros estão disponíveis diretamente no console do ClickHouse Cloud.
+</Note>
+
+<div id="record-errors">
+  ### Registrar erros
+</div>
+
+O ClickPipes criará uma tabela ao lado da sua tabela de destino com o sufixo `<destination_table_name>_clickpipes_error`. Essa tabela conterá todos os erros causados por dados malformados ou incompatibilidade de esquema e incluirá a mensagem inválida completa. Essa tabela tem um [TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 dias.
+
+<div id="system-errors">
+  ### Erros do sistema
+</div>
+
+Os erros relacionados à operação do ClickPipe serão armazenados na tabela `system.clickpipes_log`. Nela também serão armazenados todos os outros erros relacionados à operação do seu ClickPipe (rede, conectividade etc.). Essa tabela tem um [TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 dias.
+
+Se o ClickPipes não conseguir se conectar a uma fonte de dados após 15 min ou a um destino após 1 h, a instância do ClickPipes será interrompida, e uma mensagem apropriada será armazenada na tabela de erro do sistema (desde que a instância do ClickHouse esteja disponível).
+
+<div id="monitoring">
+  ## Monitoramento
+</div>
+
+Além do monitoramento no Console, ClickPipes expõe métricas em um [endpoint compatível com Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus) para coleta. Essas métricas são publicadas junto com outras métricas do serviço ClickHouse Cloud e permitem integrar o monitoramento do ClickPipes à sua stack de observabilidade existente (por exemplo, [Grafana](/pt-BR/products/cloud/features/monitoring/prometheus#integrating-with-grafana), [Datadog](/pt-BR/products/cloud/features/monitoring/prometheus#integrating-with-datadog)). Consulte [Monitoramento do ClickPipes](/pt-BR/integrations/clickpipes/monitoring) para ver a lista completa de métricas disponíveis.
+
+<div id="faq">
+  ## FAQ
+</div>
+
+* **O que é ClickPipes?**
+
+  ClickPipes é um recurso do ClickHouse Cloud que facilita a conexão dos seus serviços do ClickHouse a fontes de dados externas, especificamente o Kafka. Com o ClickPipes for Kafka, você pode carregar dados continuamente no ClickHouse com facilidade, tornando-os disponíveis para analytics em tempo real.
+
+* **O ClickPipes oferece suporte à transformação de dados?**
+
+  Sim, o ClickPipes oferece suporte à transformação básica de dados ao expor o DDL de criação. Depois, você pode aplicar transformações mais avançadas aos dados à medida que eles são carregados na tabela de destino em um serviço ClickHouse Cloud, aproveitando o [recurso de visões materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views) do ClickHouse.
+
+* **O uso do ClickPipes gera um custo adicional?**
+
+  O ClickPipes é cobrado com base em duas dimensões: Ingested Data e Compute. Todos os detalhes de preços estão disponíveis [nesta página](/pt-BR/products/cloud/reference/billing/clickpipes/index). Executar o ClickPipes também pode gerar um custo indireto de computação e armazenamento no serviço ClickHouse Cloud de destino, como acontece com qualquer carga de ingestão.
+
+* **Existe uma maneira de lidar com erros ou falhas ao usar o ClickPipes for Kafka?**
+
+  Sim, o ClickPipes for Kafka fará novas tentativas automaticamente em caso de falhas ao consumir dados do Kafka por qualquer problema operacional, incluindo problemas de rede, de conectividade etc. Em caso de dados malformados ou esquema inválido, o ClickPipes armazenará o registro na tabela record&#95;error e continuará o processamento.

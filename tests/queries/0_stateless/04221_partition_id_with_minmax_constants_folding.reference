@@ -1,0 +1,23 @@
+== result ==
+1	2
+2	4
+== explain ==
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.partition_id_with_minmax_folding)
+    Indexes:
+      Min-Max
+        Keys:
+          _block_number
+        Condition: or((_block_number in [6, +Inf)), (_block_number in [2, +Inf)))
+        Parts: 2/6
+        Granules: 2/6
+      Partition
+        Condition: true
+        Parts: 2/2
+        Granules: 2/2
+      PrimaryKey
+        Condition: true
+        Parts: 2/2
+        Granules: 2/2
+      Ranges: 2

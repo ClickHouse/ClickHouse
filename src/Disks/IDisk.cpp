@@ -1,18 +1,22 @@
 #include <Disks/IDisk.h>
-#include <Core/Field.h>
-#include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Storages/PartitionCommands.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <boost/algorithm/string.hpp>
+
 
 namespace CurrentMetrics
 {
@@ -28,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -71,6 +74,16 @@ void IDisk::copyFile( /// NOLINT
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
+}
+
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    ReadPipeline pipeline;
+    prepareRead(path, settings, read_hint, pipeline);
+    return pipeline.build();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
@@ -126,7 +139,7 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-void asyncCopy(
+static void asyncCopy(
     IDisk & from_disk,
     String from_path,
     IDisk & to_disk,
@@ -138,7 +151,7 @@ void asyncCopy(
 {
     if (from_disk.existsFile(from_path))
     {
-        runner(
+        runner.enqueueAndKeepTrack(
             [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
                 from_disk.copyFile(
                     from_path, to_disk, to_path, read_settings, write_settings, cancellation_hook);
@@ -149,6 +162,8 @@ void asyncCopy(
         fs::path dest(to_path);
         to_disk.createDirectories(dest);
 
+        /// Calling asyncCopy recursively is fine here. Each call will capture by reference what were already references
+        /// dest is an exception, but it's passed as value, not reference
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
             asyncCopy(from_disk, it->path(), to_disk, dest / it->name(), runner, read_settings, write_settings, cancellation_hook);
     }
@@ -169,6 +184,7 @@ void IDisk::copyThroughBuffers(
     write_settings.s3_allow_parallel_part_upload = false;
     write_settings.azure_allow_parallel_part_upload = false;
 
+    /// This will capture by reference, which is fine since we got references ourselves and runner will be destroyed before returning
     asyncCopy(*this, from_path, *to_disk, to_path, runner, read_settings, write_settings, cancellation_hook);
 
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -191,6 +207,11 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
+void ISyncGuard::sync()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Explicit synchronization is not implemented for this guard");
+}
+
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
@@ -198,7 +219,12 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 
 void IDisk::startup(bool skip_access_check)
 {
+    auto component_guard = Coordination::setCurrentComponent("IDisk::startup");
+
+    startupImpl();
+
     if (!skip_access_check)
+    try
     {
         if (isReadOnly())
         {
@@ -209,17 +235,17 @@ void IDisk::startup(bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl();
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        shutdown();
+        throw;
+    }
 }
 
 void IDisk::checkAccess()
 {
-    DB::UUID server_uuid = DB::ServerUUID::get();
-    if (server_uuid == DB::UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
-
-    checkAccessImpl(path);
+    checkAccessImpl(fmt::format("clickhouse_access_check_{}", toString(UUIDHelpers::generateV4())));
 }
 
 /// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
@@ -234,17 +260,9 @@ try
     /// write
     {
         auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
-        try
-        {
-            file->write(payload.data(), payload.size());
-            file->finalize();
-        }
-        catch (...)
-        {
-            /// Log current exception, because finalize() can throw a different exception.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
+        file->write(payload.data(), payload.size());
+        file->finalize();
+        file->sync();
     }
 
     /// read
@@ -273,6 +291,13 @@ try
         }
     }
 
+    /// check case sensitivity
+    {
+        std::unique_lock lock(case_sensitivity_check_mutex);
+        is_case_insensitive = existsFile(boost::to_upper_copy(path));
+        is_case_sensitivity_checked = true;
+    }
+
     /// remove
     removeFile(path);
 }
@@ -280,6 +305,33 @@ catch (Exception & e)
 {
     e.addMessage(fmt::format("While checking access for disk {}", name));
     throw;
+}
+
+bool IDisk::isCaseInsensitive()
+{
+    /// For readonly disk we cannot perform the case sensitivity check.
+    if (isReadOnly())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check if filesystem is case insensitive: disk {} is readonly", name);
+
+    if (is_case_sensitivity_checked)
+        return is_case_insensitive;
+
+    std::unique_lock lock(case_sensitivity_check_mutex);
+    const String path = fmt::format("clickhouse_case_sensitivity_check_{}", toString(DB::UUIDHelpers::generateV4()));
+    try
+    {
+        createFile(path);
+        is_case_insensitive = existsFile(boost::to_upper_copy(path));
+        is_case_sensitivity_checked = true;
+        removeFile(path);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("While checking case sensitivity for disk {}", name));
+        throw;
+    }
+
+    return is_case_insensitive;
 }
 
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)

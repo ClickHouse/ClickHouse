@@ -1,0 +1,4 @@
+=== EXECUTE AS forwards the caller's query parameters ===
+7	1
+=== a parameterized EXECUTE AS handler works at invocation, not only at creation ===
+42

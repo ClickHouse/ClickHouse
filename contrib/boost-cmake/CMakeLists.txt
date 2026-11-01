@@ -35,6 +35,15 @@ target_compile_definitions (_boost_headers_only INTERFACE
   BOOST_ASIO_STANDALONE=1
   BOOST_ASIO_HAS_STD_INVOKE_RESULT=1 # Avoid using of deprecated in c++ > 17 std::result_of
   BOOST_TIMER_ENABLE_DEPRECATED=1 # wordnet-blast (enabled via USE_NLP) uses Boost legacy timer classes
+  # Make Boost.Math (`studentTTest`, `welchTTest`, `meanZTest`, ...) return the same bits on every architecture.
+  # By default it evaluates `double` functions in `long double`: 80-bit x87 on x86_64, but 128-bit on aarch64,
+  # where musl implements `expl`, `logl`, `powl` and others merely by calling their `double` counterparts.
+  # In `double` the results depend only on the correctly rounded llvm-libc functions.
+  BOOST_MATH_PROMOTE_DOUBLE_POLICY=false
+  # On x86_64 Boost.Math replaces the `double` Lanczos approximation (used by the gamma, beta and incomplete beta
+  # functions) with an SSE2 version that sums in a different order and rounds differently. It has no switch,
+  # so pre-define the include guard of `detail/lanczos_sse2.hpp` to keep the portable version.
+  BOOST_MATH_SPECIAL_FUNCTIONS_LANCZOS_SSE2
 )
 
 # iostreams
@@ -82,9 +91,6 @@ target_include_directories (_boost_program_options SYSTEM BEFORE PUBLIC ${LIBRAR
 
 set (SRCS_REGEX
     "${LIBRARY_DIR}/libs/regex/src/posix_api.cpp"
-    "${LIBRARY_DIR}/libs/regex/src/regex_debug.cpp"
-    "${LIBRARY_DIR}/libs/regex/src/regex.cpp"
-    "${LIBRARY_DIR}/libs/regex/src/static_mutex.cpp"
     "${LIBRARY_DIR}/libs/regex/src/wide_posix_api.cpp"
 )
 
@@ -92,15 +98,11 @@ add_library (_boost_regex ${SRCS_REGEX})
 add_library (boost::regex ALIAS _boost_regex)
 target_include_directories (_boost_regex PRIVATE ${LIBRARY_DIR})
 
-# system
+# system (header-only since Boost 1.69)
 
-set (SRCS_SYSTEM
-    "${LIBRARY_DIR}/libs/system/src/error_code.cpp"
-)
-
-add_library (_boost_system ${SRCS_SYSTEM})
+add_library (_boost_system INTERFACE)
 add_library (boost::system ALIAS _boost_system)
-target_include_directories (_boost_system PRIVATE ${LIBRARY_DIR})
+target_include_directories (_boost_system SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
 
 # context
 option (BOOST_USE_UCONTEXT "Use ucontext_t for context switching of boost::fiber within boost::context" OFF)
@@ -110,6 +112,7 @@ SET(ASM_OPTIONS "-x assembler-with-cpp")
 
 set (SRCS_CONTEXT
     "${LIBRARY_DIR}/libs/context/src/dummy.cpp"
+    "${LIBRARY_DIR}/libs/context/src/fcontext.cpp"
     "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp"
 )
 
@@ -153,6 +156,10 @@ elseif (ARCH_LOONGARCH64)
     )
 elseif (ARCH_E2K)
     # using BOOST_USE_UCONTEXT=ON, don't use ASM
+elseif (ARCH_WASM)
+    # WebAssembly has no assembler and no way to switch stacks from user code, so the fiber
+    # backend has to go through the `ucontext` family, which Emscripten emulates.
+    set (BOOST_USE_UCONTEXT ON)
 elseif(OS_DARWIN)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S"
@@ -180,11 +187,17 @@ target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
 if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
+    if (USE_MUSL)
+        # musl does not implement the ucontext functions.
+        target_link_libraries(_boost_context PUBLIC ch_contrib::ucontext)
+    endif()
 endif()
 
-if (SANITIZE STREQUAL "address")
+if (SANITIZE MATCHES "address")
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_ASAN)
-elseif (SANITIZE STREQUAL "thread")
+elseif (SANITIZE MATCHES "memory")
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_MSAN)
+elseif (SANITIZE MATCHES "thread")
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_TSAN)
 endif()
 

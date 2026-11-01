@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -22,11 +23,20 @@ namespace
 struct RepeatImpl
 {
     /// Safety threshold against DoS.
-    static void checkRepeatTime(UInt64 repeat_time)
+    /// A 128- or 256-bit count is compared in `T` before any narrowing, so a count above `UINT64_MAX` is not
+    /// truncated into a small one. A narrower count is widened instead, because the threshold does not fit
+    /// into an 8- or 16-bit `T`. `repeat_time` must already be non-negative.
+    template <typename T>
+    static void checkRepeatTime(T repeat_time)
     {
         static constexpr UInt64 max_repeat_times = 1'000'000;
-        if (repeat_time > max_repeat_times)
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}", repeat_time, max_repeat_times);
+        bool too_many = false;
+        if constexpr (sizeof(T) > sizeof(UInt64))
+            too_many = repeat_time > static_cast<T>(max_repeat_times);
+        else
+            too_many = static_cast<UInt64>(repeat_time) > max_repeat_times;
+        if (too_many)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}", toString(repeat_time), max_repeat_times);
     }
 
     static void checkStringSize(UInt64 size)
@@ -52,7 +62,7 @@ struct RepeatImpl
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
-            size_t repeated_size = (offsets[i] - offsets[i - 1]) * repeat_time;
+            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[i - 1]) * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -60,7 +70,11 @@ struct RepeatImpl
         res_data.resize(data_size);
         for (UInt64 i = 0; i < res_offsets.size(); ++i)
         {
-            process(data.data() + offsets[i - 1], res_data.data() + res_offsets[i - 1], offsets[i] - offsets[i - 1], repeat_time);
+            process(
+                data.data() + offsets[i - 1],
+                res_data.data() + res_offsets[i - 1],
+                offsets[i] - offsets[i - 1],
+                static_cast<UInt64>(repeat_time));
         }
     }
 
@@ -77,7 +91,10 @@ struct RepeatImpl
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
-            size_t repeated_size = (offsets[i] - offsets[i - 1]) * repeat_time;
+            /// Bound the multiplier before multiplying: an unbounded one overflows the product and
+            /// slips past `checkStringSize`, which would then under-size `res_data`.
+            checkRepeatTime(repeat_time);
+            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[i - 1]) * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -88,7 +105,11 @@ struct RepeatImpl
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
             checkRepeatTime(repeat_time);
-            process(data.data() + offsets[i - 1], res_data.data() + res_offsets[i - 1], offsets[i] - offsets[i - 1], repeat_time);
+            process(
+                data.data() + offsets[i - 1],
+                res_data.data() + res_offsets[i - 1],
+                offsets[i] - offsets[i - 1],
+                static_cast<UInt64>(repeat_time));
         }
     }
 
@@ -106,7 +127,10 @@ struct RepeatImpl
         for (UInt64 i = 0; i < col_size; ++i)
         {
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
-            size_t repeated_size = str_size * repeat_time;
+            /// Bound the multiplier before multiplying: an unbounded one overflows the product and
+            /// slips past `checkStringSize`, which would then under-size `res_data`.
+            checkRepeatTime(repeat_time);
+            size_t repeated_size = static_cast<size_t>(str_size * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -120,7 +144,7 @@ struct RepeatImpl
                 reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data())),
                 res_data.data() + res_offsets[i - 1],
                 str_size,
-                repeat_time);
+                static_cast<UInt64>(repeat_time));
         }
     }
 
@@ -159,7 +183,7 @@ private:
 };
 
 
-class FunctionRepeat : public IFunction
+class FunctionRepeat final : public IFunction
 {
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -189,17 +213,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"},
-        };
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeString>();
+        return "(String, Integer) -> String";
     }
+
+    /// `repeat` throws `TOO_LARGE_STRING_SIZE` when the number of repetitions or the size of the
+    /// resulting string exceeds the limit, and both of them depend on the data of a single row.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
@@ -303,7 +324,7 @@ Concatenates a string as many times with itself as specified.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRepeat>(documentation, FunctionFactory::Case::Insensitive);
 }

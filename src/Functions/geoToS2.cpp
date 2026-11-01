@@ -5,9 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <base/range.h>
 
 #include <Functions/s2_fwd.h>
 
@@ -30,7 +28,7 @@ namespace
  * Accepts points of the form (longitude, latitude)
  * Returns s2 identifier
  */
-class FunctionGeoToS2 : public IFunction
+class FunctionGeoToS2 final : public IFunction
 {
 public:
     static constexpr auto name = "geoToS2";
@@ -51,19 +49,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isFloat64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be Float64",
-                    arg->getName(), i, getName());
-        }
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(Float64, Float64) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -130,7 +118,7 @@ public:
             if (!lat_lng.is_valid())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Point ({}, {}) is invalid in function {}. For valid point the latitude is between -90 and 90 degrees inclusive"
+                    "Point ({}, {}) is invalid in function {}. For valid point the latitude is between -90 and 90 degrees inclusive "
                     "and the longitude is between -180 and 180 degrees inclusive.",
                     lon,
                     lat,
@@ -149,7 +137,22 @@ public:
 
 REGISTER_FUNCTION(GeoToS2)
 {
-    factory.registerFunction<FunctionGeoToS2>();
+    FunctionDocumentation::Description description = R"(
+Returns the S2 point index corresponding to the provided coordinates (longitude, latitude).
+An S2 point index is a number that internally encodes a point on the surface of a unit sphere, unlike traditional (longitude, latitude) pairs. Use `s2ToGeo` to get the coordinates from an S2 point index.
+    )";
+    FunctionDocumentation::Syntax syntax = "geoToS2(lon, lat)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lon", "Longitude.", {"Float64"}},
+        {"lat", "Latitude.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the S2 cell identifier.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT geoToS2(37.79506683, 55.71290588)", "4704772434919038107"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGeoToS2>(documentation);
 }
 
 }

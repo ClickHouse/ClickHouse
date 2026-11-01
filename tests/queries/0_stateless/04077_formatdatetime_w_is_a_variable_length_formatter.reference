@@ -1,0 +1,64 @@
+--- Test with formatdatetime_parsedatetime_m_is_month_name:
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12
+---
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12
+--- Test with formatdatetime_f_prints_single_zero:
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12
+---
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12
+--- Test with formatdatetime_f_prints_scale_number_of_digits:
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12
+---
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12
+--- Test with formatdatetime_format_without_leading_zeros:
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12
+---
+Monday 06
+Tuesday 07
+Wednesday 08
+Thursday 09
+Friday 10
+Saturday 11
+Sunday 12

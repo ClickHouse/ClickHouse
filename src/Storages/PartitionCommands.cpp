@@ -50,6 +50,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.type = ATTACH_PARTITION;
         res.partition = command_ast->partition->clone();
         res.part = command_ast->part;
+        res.from_path = command_ast->from;
         return res;
     }
     if (command_ast->type == ASTAlterCommand::MOVE_PARTITION)
@@ -96,7 +97,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         PartitionCommand res;
         res.type = FETCH_PARTITION;
         res.partition = command_ast->partition->clone();
-        res.from_zookeeper_path = command_ast->from;
+        res.from_path = command_ast->from;
         res.part = command_ast->part;
         return res;
     }

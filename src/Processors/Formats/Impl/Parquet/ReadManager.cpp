@@ -1,17 +1,26 @@
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 
 #include <Common/BitHelpers.h>
+#include <Common/Logger.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Columns/ColumnsCommon.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
+#include <limits>
 #include <mutex>
 #include <shared_mutex>
+#include <string>
+#include <thread>
 #include <unordered_set>
 
 namespace DB::ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -22,6 +31,10 @@ namespace ProfileEvents
     extern const Event ParquetDecodingTaskBatches;
     extern const Event ParquetReadRowGroups;
     extern const Event ParquetPrunedRowGroups;
+    extern const Event ParquetTopKSkippedRowGroups;
+    extern const Event ParquetColumnDataReadAheadRowGroups;
+    extern const Event ParquetBloomFilterPrunedRowGroups;
+    extern const Event ParquetDictionaryFilterPrunedRowGroups;
 }
 
 namespace DB::Parquet
@@ -32,11 +45,27 @@ void AtomicBitSet::resize(size_t bits)
     a = std::vector<std::atomic<UInt64>>((bits + 63) / 64);
 }
 
-std::optional<size_t> AtomicBitSet::findFirst()
+std::optional<size_t> AtomicBitSet::findNext(size_t start) const
 {
-    for (size_t i = 0; i < a.size(); ++i)
+    for (size_t i = start >> 6; i < a.size(); ++i)
     {
         UInt64 x = a[i].load(std::memory_order_relaxed);
+        if (i == start >> 6)
+            x &= ~0ull << (start & 63);
+        if (x)
+            return (i << 6) + getTrailingZeroBitsUnsafe(x);
+    }
+    return std::nullopt;
+}
+
+std::optional<size_t> AtomicBitSet::findNextAndNot(const AtomicBitSet & mask, size_t start) const
+{
+    chassert(mask.a.size() == a.size());
+    for (size_t i = start >> 6; i < a.size(); ++i)
+    {
+        UInt64 x = a[i].load(std::memory_order_relaxed) & ~mask.a[i].load(std::memory_order_relaxed);
+        if (i == start >> 6)
+            x &= ~0ull << (start & 63);
         if (x)
             return (i << 6) + getTrailingZeroBitsUnsafe(x);
     }
@@ -46,7 +75,9 @@ std::optional<size_t> AtomicBitSet::findFirst()
 void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
-    reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
+
+    if (!reader.file_footer)
+        reader.setFileFooter(Reader::readFileFooter(reader.prefetcher, reader.options.format.parquet.footer_read_size));
 
     if (buckets_to_read_)
     {
@@ -58,7 +89,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     reader.preparePrewhere();
 
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
-    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata.row_groups.size() - reader.row_groups.size());
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata().row_groups.size() - reader.row_groups.size());
 
     size_t num_row_groups = reader.row_groups.size();
     for (size_t i = size_t(ReadStage::NotStarted) + 1; i < size_t(ReadStage::Deliver); ++i)
@@ -66,37 +97,137 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         stages[i].schedulable_row_groups.resize(num_row_groups);
         stages[i].row_group_tasks_to_schedule.resize(num_row_groups);
     }
+    /// Read-ahead starts nothing for row groups that are not processed, have an offset-index column or have all columns in
+    /// the columns cache, so it is off if every row group is such or no column is read. It is also off for page cache
+    /// reads: the cells they read are not counted by the read-ahead bound.
+    column_data_read_ahead = reader.options.is_remote_fs && reader.prefetcher.readsInBackground()
+        && !reader.prefetcher.readsThroughPageCache() && !reader.primitive_columns.empty()
+        && std::any_of(reader.row_groups.begin(), reader.row_groups.end(), [](const RowGroup & row_group)
+            {
+                return row_group.need_to_process
+                    && std::none_of(row_group.columns.begin(), row_group.columns.end(),
+                        [](const ColumnChunk & column) { return static_cast<bool>(column.offset_index_prefetch); })
+                    && std::any_of(row_group.columns.begin(), row_group.columns.end(),
+                        [](const ColumnChunk & column) { return !column.served_from_cache; });
+            });
+    column_data_read_ahead_row_groups.resize(num_row_groups);
+    column_data_read_ahead_run_slots.assign(num_row_groups, 0);
 
     /// Distribute memory budget among stages.
     /// The distribution is static to make sure no stage gets starved if others eat all the memory.
     /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
-    /// eat all memory, and MainData would have to execute in one thread to minimize memory usage.
+    /// The distribution is static to make sure no stage gets starved if others eat all the memory.
     double sum = 0;
-    stages[size_t(ReadStage::MainData)].memory_target_fraction *= 10;
-    if (reader.format_filter_info->prewhere_info || reader.format_filter_info->row_level_filter)
-        stages[size_t(ReadStage::PrewhereData)].memory_target_fraction *= 5;
-    else
-    {
-        stages[size_t(ReadStage::PrewhereOffsetIndex)].memory_target_fraction = 0;
-        stages[size_t(ReadStage::PrewhereData)].memory_target_fraction = 0;
-    }
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
+    /// `BloomFilterHeader` and `BloomFilterBlocks` share one stage's worth of budget: reading the
+    /// bloom filter used to be a single stage together with the dictionary page, and both halves hold
+    /// almost nothing (a header of at most a few hundred bytes and one 32-byte block per queried value
+    /// per column chunk). Splitting the budget between them instead of handing each a full share keeps
+    /// the stages that do hold memory - `Dictionary`, the index stages and `ColumnData` - on exactly
+    /// the share they had when there were five of them, so `input_format_parquet_memory_high_watermark`
+    /// means the same thing for the dictionary-pruning path as before.
+    stages[size_t(ReadStage::BloomFilterHeader)].memory_target_fraction = 0.5;
+    stages[size_t(ReadStage::BloomFilterBlocks)].memory_target_fraction = 0.5;
     for (const Stage & stage : stages)
         sum += stage.memory_target_fraction;
     for (Stage & stage : stages)
         stage.memory_target_fraction /= sum;
 
-    /// The NotStarted stage completed for all row groups, transition to next stage.
     MemoryUsageDiff diff(ReadStage::NotStarted);
-    for (size_t i = 0; i < reader.row_groups.size(); ++i)
-        finishRowGroupStage(i, ReadStage::NotStarted, diff);
+    if (reader.row_groups_ordered_by_top_k)
+    {
+        top_k_admission.min_outstanding = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, 1.).parsing_threads;
+        admitTopKRowGroups(diff);
+    }
+    else
+    {
+        /// The NotStarted stage completed for all row groups, transition to next stage.
+        for (size_t i = 0; i < reader.row_groups.size(); ++i)
+            finishRowGroupStage(i, ReadStage::NotStarted, diff);
+    }
     flushMemoryUsageDiff(std::move(diff));
+}
+
+/// The ReadManager whose admitTopKRowGroups is running in this thread, to keep it from recursing.
+static thread_local const ReadManager * top_k_admitting_manager = nullptr;
+
+void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
+{
+    /// Starts row groups in order, each checked against the latest threshold right before it starts.
+    if (top_k_admitting_manager == this)
+        return; /// The loop below, higher up in this thread's stack, picks up the released admission.
+    const ReadManager * outer_admitting_manager = top_k_admitting_manager;
+    top_k_admitting_manager = this;
+    SCOPE_EXIT(top_k_admitting_manager = outer_admitting_manager);
+
+    while (true)
+    {
+        size_t row_group_idx = 0;
+        {
+            std::lock_guard lock(top_k_admission.mutex);
+            size_t allowance = std::max(top_k_admission.min_outstanding, top_k_admission.admitted / 2);
+            if (top_k_admission.next_row_group == reader.row_groups.size() || top_k_admission.outstanding >= allowance)
+                return;
+            row_group_idx = top_k_admission.next_row_group++;
+            ++top_k_admission.outstanding;
+        }
+
+        RowGroup & row_group = reader.row_groups[row_group_idx];
+        const bool skipped_by_threshold = row_group.need_to_process && reader.topKShouldSkipRowGroup(row_group);
+        if (!row_group.need_to_process || skipped_by_threshold)
+        {
+            if (skipped_by_threshold)
+                ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+            {
+                std::lock_guard lock(top_k_admission.mutex);
+                --top_k_admission.outstanding;
+            }
+            finishRowGroupStage(row_group_idx, ReadStage::Deliver, diff);
+            continue;
+        }
+
+        {
+            std::lock_guard lock(top_k_admission.mutex);
+            ++top_k_admission.admitted;
+        }
+        row_group.holds_top_k_admission.store(true);
+        finishRowGroupStage(row_group_idx, ReadStage::NotStarted, diff);
+    }
+}
+
+void ReadManager::releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & diff)
+{
+    if (!reader.row_groups[row_group_idx].holds_top_k_admission.exchange(false))
+        return;
+    {
+        std::lock_guard lock(top_k_admission.mutex);
+        chassert(top_k_admission.outstanding > 0);
+        --top_k_admission.outstanding;
+    }
+    admitTopKRowGroups(diff);
+}
+
+void ReadManager::shutdownTasks()
+{
+    shutdown->shutdown();
+    reader.prefetcher.shutdownTasks();
 }
 
 ReadManager::~ReadManager()
 {
-    shutdown->shutdown();
+    shutdownTasks();
+
+    /// No task runs any more, so the row groups can be touched. A row group not read to the end has written
+    /// only some chunks of its columns to the columns cache, which are of no use without the rest.
+    try
+    {
+        reader.withdrawColumnsCacheWrites();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("ParquetReadManager");
+    }
 }
 
 void ReadManager::cancel() noexcept
@@ -113,12 +244,11 @@ void ReadManager::cancel() noexcept
 void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
+    bool release_top_k_admission = false;
 
     /// Finish the stage.
-    if (stage == ReadStage::BloomFilterBlocksOrDictionary)
+    auto release_bloom_filters = [&]
     {
-        if (!reader.applyBloomAndDictionaryFilters(row_group))
-            stage = ReadStage::Deliver; // skip the row group
         for (auto & c : row_group.columns)
         {
             c.bloom_filter_header_prefetch.reset(&diff);
@@ -127,6 +257,48 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 b.prefetch.reset(&diff);
             c.bloom_filter_blocks.clear();
         }
+    };
+
+    if (stage == ReadStage::BloomFilterBlocks)
+    {
+        /// Bloom filters are checked before the dictionary pages because they are much cheaper to
+        /// read - a 32-byte block per queried value against a dictionary page of up to
+        /// `input_format_parquet_dictionary_filter_push_down` bytes - and never report a false
+        /// negative. So when they rule the row group out, the exact dictionary filter can only agree,
+        /// and reading its pages would be pure loss. When they don't, the `Dictionary` stage below
+        /// still reads them: the row group is then going to be read anyway (in which case the
+        /// dictionary page has to be read to decode it, and the filter costs nothing extra), unless
+        /// the dictionary rules it out exactly, which is the bloom filter's false positive.
+        /// `applyBloomFilters` also drops the dictionary filter of every column whose own bloom filter
+        /// already proved its atoms false, so the `Dictionary` stage reads only the pages that can
+        /// still change the outcome.
+        bool any_dictionary_filter = false;
+        if (reader.applyBloomFilters(row_group))
+        {
+            any_dictionary_filter = std::any_of(
+                row_group.columns.begin(), row_group.columns.end(),
+                [](const ColumnChunk & c) { return c.use_dictionary_filter; });
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetBloomFilterPrunedRowGroups);
+            stage = ReadStage::Deliver; // skip the row group
+        }
+
+        /// Keep the blocks alive for `applyBloomAndDictionaryFilters`, which uses them as the
+        /// fallback for a column whose dictionary does not fit the pruning memory budget.
+        if (!any_dictionary_filter)
+            release_bloom_filters();
+    }
+    else if (stage == ReadStage::Dictionary)
+    {
+        /// Without a condition, the stage only decoded the dictionaries for `ColumnChunk::decode_dictionary_early`.
+        if (reader.bloom_filter_condition && !reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
+            stage = ReadStage::Deliver; // skip the row group
+        }
+        release_bloom_filters();
     }
 
     /// Determine what stage to transition to and which columns are involved.
@@ -140,9 +312,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         switch (stage)
         {
             case ReadStage::NotStarted:
-            case ReadStage::PrewhereData:
-            case ReadStage::MainOffsetIndex:
-            case ReadStage::MainData:
+            case ReadStage::ColumnData:
             case ReadStage::Deliver:
                 chassert(false);
                 break;
@@ -154,15 +324,19 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                             .stage = ReadStage::BloomFilterHeader,
                             .row_group_idx = row_group_idx, .column_idx = i});
                 break;
-            case ReadStage::BloomFilterBlocksOrDictionary:
+            case ReadStage::BloomFilterBlocks:
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
-                {
-                    const auto & c = row_group.columns[i];
-                    if (!c.bloom_filter_blocks.empty() || c.use_dictionary_filter)
+                    if (!row_group.columns[i].bloom_filter_blocks.empty())
                         add_tasks.push_back(Task {
-                            .stage = ReadStage::BloomFilterBlocksOrDictionary,
+                            .stage = ReadStage::BloomFilterBlocks,
                             .row_group_idx = row_group_idx, .column_idx = i});
-                }
+                break;
+            case ReadStage::Dictionary:
+                for (size_t i = 0; i < row_group.columns.size(); ++i)
+                    if (row_group.columns[i].use_dictionary_filter || row_group.columns[i].decode_dictionary_early)
+                        add_tasks.push_back(Task {
+                            .stage = ReadStage::Dictionary,
+                            .row_group_idx = row_group_idx, .column_idx = i});
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
@@ -171,14 +345,25 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                             .stage = ReadStage::ColumnIndexAndOffsetIndex,
                             .row_group_idx = row_group_idx, .column_idx = i});
                 break;
-            case ReadStage::PrewhereOffsetIndex: // (first of the per-row-subgroup stages)
+            case ReadStage::OffsetIndex: // (first of the per-row-subgroup stages)
+                /// TopN dynamic filtering: this is the last point before column data is read, and
+                /// the latest threshold published by the sorting transforms so far applies. Skipped
+                /// this way, the row group follows the same path as one whose rows were all
+                /// filtered out (empty subgroups below).
+                if (reader.topKShouldSkipRowGroup(row_group))
+                {
+                    if (row_group.need_to_process)
+                        ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+                    stage = ReadStage::Deliver;
+                    break;
+                }
                 reader.intersectColumnIndexResultsAndInitSubgroups(row_group);
                 if (!row_group.subgroups.empty())
                 {
-                    row_group.stage.store(ReadStage::MainData);
+                    row_group.stage.store(ReadStage::ColumnData);
                     row_group.stage_tasks_remaining.store(row_group.subgroups.size(), std::memory_order_relaxed);
                     /// Start the first subgroup.
-                    finishRowSubgroupStage(row_group_idx, /*row_subgroup_idx=*/ 0, ReadStage::NotStarted, diff);
+                    finishRowSubgroupStage(row_group_idx, /*row_subgroup_idx=*/ 0, ReadStage::NotStarted, /*step_idx=*/ 0, diff);
                     return;
                 }
                 /// The whole row group was filtered out.
@@ -195,7 +380,11 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 {
                     for (auto & c : row_group.columns)
                         clearColumnChunk(c, diff);
+                    release_top_k_admission = true;
                 }
+                /// All subgroups are delivered (or there are none), so nothing forms columns from
+                /// the cached ones any more. Don't keep the columns alive after the cache evicts them.
+                row_group.cached_columns.clear();
                 break;
         }
 
@@ -236,21 +425,34 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
 
     if (!add_tasks.empty())
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
+
+    if (release_top_k_admission)
+        releaseTopKAdmission(row_group_idx, diff);
 }
 
 void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff)
 {
+    LOG_TEST(getLogger("ParquetReadManager"), "setTasksToSchedule: row_group_idx={}, stage={}, add_tasks={}", row_group_idx, static_cast<Int32>(stage), add_tasks.size());
+    for (const auto & task : add_tasks)
+    {
+        LOG_TEST(getLogger("ParquetReadManager"), "setTasksToSchedule: {} {} {} {} {}", task.column_idx, task.row_group_idx, task.cost_estimate_bytes, static_cast<Int32>(task.stage), task.step_idx);
+    }
     chassert(!add_tasks.empty());
     Stage & stage_state = stages.at(size_t(stage));
     auto & tasks = stage_state.row_group_tasks_to_schedule.at(row_group_idx);
     chassert(tasks.empty());
     tasks = std::move(add_tasks);
     bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    auto first_row_group = stage_state.schedulable_row_groups.findFirst();
+    if (first_row_group)
+        LOG_TEST(getLogger("ParquetReadManager"), "setTasksToSchedule: check row group is set: {}", *first_row_group);
+    else
+        LOG_TEST(getLogger("ParquetReadManager"), "setTasksToSchedule: no row groups to set");
     chassert(changed);
     diff.scheduleStage(stage);
 }
 
-void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff)
+void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
     RowSubgroup & row_subgroup = row_group.subgroups[row_subgroup_idx];
@@ -258,31 +460,55 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
 
     while (true) // offset index, then data
     {
-        bool is_prewhere = stage == ReadStage::PrewhereOffsetIndex || stage == ReadStage::PrewhereData;
-        bool is_offset_index = stage == ReadStage::PrewhereOffsetIndex || stage == ReadStage::MainOffsetIndex;
+        bool is_offset_index = stage == ReadStage::OffsetIndex;
 
         for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
         {
-            if (reader.primitive_columns[i].use_prewhere != is_prewhere)
+            if (reader.primitive_columns[i].first_step_to_calculate != step_idx)
                 continue;
+
             ColumnChunk & c = row_group.columns.at(i);
+            /// Formed from the columns cache instead, see `Reader::getOrFormOutputColumn`.
+            if (c.served_from_cache)
+                continue;
             if (is_offset_index)
             {
                 if (c.offset_index_prefetch && c.offset_index.page_locations.empty())
                 {
+                    LOG_TEST(getLogger("ParquetReadManager"), "addTasksToReadColumns: added OffsetIndex: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
+
                     /// If offset index for this column wasn't read by previous stages, make a task
                     /// to read it before reading data.
                     add_tasks.push_back(Task {
-                        .stage = is_prewhere ? ReadStage::PrewhereOffsetIndex : ReadStage::MainOffsetIndex,
+                        .stage = ReadStage::OffsetIndex,
+                        .step_idx = step_idx,
                         .row_group_idx = row_group_idx,
                         .row_subgroup_idx = row_subgroup_idx,
                         .column_idx = i});
                 }
+                else
+                {
+                    LOG_TEST(getLogger("ParquetReadManager"), "addTasksToReadColumns: not added due locations empty i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
+                }
             }
             else
             {
+                /// Only columns whose data is read are checked.
+                const auto & column_meta = c.meta->meta_data;
+                const auto & size_statistics = column_meta.size_statistics;
+                if (row_subgroup.filter.rows_pass > 0
+                    && (column_meta.num_values < 0 || column_meta.total_uncompressed_size < 0
+                        || (column_meta.__isset.size_statistics && size_statistics.__isset.unencoded_byte_array_data_bytes
+                            && size_statistics.unencoded_byte_array_data_bytes < 0)))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Column '{}' in row group {} has a negative value count or size: num_values {}, total_uncompressed_size {}, unencoded_byte_array_data_bytes {}",
+                        reader.primitive_columns[i].name, row_group.row_group_idx, column_meta.num_values, column_meta.total_uncompressed_size,
+                        size_statistics.unencoded_byte_array_data_bytes);
+
+                LOG_TEST(getLogger("ParquetReadManager"), "addTasksToReadColumns: added ColumnData: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
                 add_tasks.push_back(Task {
-                    .stage = is_prewhere ? ReadStage::PrewhereData : ReadStage::MainData,
+                    .stage = ReadStage::ColumnData,
+                    .step_idx = step_idx,
                     .row_group_idx = row_group_idx,
                     .row_subgroup_idx = row_subgroup_idx,
                     .column_idx = i});
@@ -291,8 +517,8 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
 
         if (add_tasks.empty() && is_offset_index)
         {
-            /// Don't need to read offset index, move on to next stage (PrewhereData or MainData).
-            stage = ReadStage(size_t(stage) + 1);
+            /// Don't need to read offset index, move on to next stage (ColumnData).
+            stage = ReadStage::ColumnData;
             continue;
         }
 
@@ -303,13 +529,13 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
             ///  (RowSubgroup.filter.memory) work correctly when PREWHERE expression doesn't use any
             ///  columns (note: the expression may still be nontrivial, e.g. `rand()%2=0`).)
             add_tasks.push_back(Task {
-                .stage = is_prewhere ? ReadStage::PrewhereData : ReadStage::MainData,
+                .stage = ReadStage::ColumnData,
+                .step_idx = step_idx,
                 .row_group_idx = row_group_idx,
                 .row_subgroup_idx = row_subgroup_idx,
                 .column_idx = UINT64_MAX});
 
-        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-        chassert(prev_stage <= stage);
+        row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         row_subgroup.stage_tasks_remaining.store(add_tasks.size(), std::memory_order_relaxed);
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
 
@@ -317,70 +543,80 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
     }
 }
 
-void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff)
+void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
     RowSubgroup & row_subgroup = row_group.subgroups[row_subgroup_idx];
-    std::optional<size_t> advanced_read_ptr;
+    std::optional<size_t> advanced_ptr;
 
-    if (stage == ReadStage::PrewhereOffsetIndex || stage == ReadStage::MainOffsetIndex)
-    {
-        addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage(size_t(stage) + 1), diff);
-        return;
-    }
+    LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} stage={} step={} rows_pass={} rows_total={}",
+              row_group_idx, row_subgroup_idx, magic_enum::enum_name(stage), step_idx,
+              row_subgroup.filter.rows_pass, row_subgroup.filter.rows_total);
 
     switch (stage)
     {
         case ReadStage::NotStarted:
-            if (!reader.prewhere_steps.empty())
+        {
+            /// 1 if there are prewhere steps, 0 otherwise
+            size_t first_step = reader.steps.empty() ? 0 : 1;
+            if (first_step < reader.steps.size() + 1)
             {
-                /// Start prewhere.
-                addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::PrewhereOffsetIndex, diff);
+                addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, first_step, diff);
                 return;
             }
-
-            /// No prewhere.
-            chassert(row_subgroup_idx == 0);
-            row_group.prewhere_ptr.store(row_group.subgroups.size(), std::memory_order_relaxed);
-            break; // proceed to advancing read_ptr (because we moved prewhere_ptr)
-        case ReadStage::PrewhereData:
+            /// No steps, go directly to step 0
+            addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, 0, diff);
+            return;
+        }
+        case ReadStage::ColumnData:
         {
-            chassert(!reader.prewhere_steps.empty());
-            reader.applyPrewhere(row_subgroup, row_group);
-            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-            chassert(prev == row_subgroup_idx);
-            if (row_subgroup_idx + 1 < row_group.subgroups.size())
+            if (row_subgroup.filter.rows_pass == 0)
+                break;
+            if (step_idx > 0 && step_idx <= reader.steps.size())
             {
-                /// Can start prewhere in next subgroup.
-                addTasksToReadColumns(row_group_idx, row_subgroup_idx + 1, ReadStage::PrewhereOffsetIndex, diff);
+                reader.applyPrewhere(row_subgroup, row_group, step_idx);
+
+                size_t next_step = (step_idx < reader.steps.size()) ? step_idx + 1 : 0;
+                if (next_step > 0)
+                {
+                    /// More prewhere steps to process.
+                    addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, next_step, diff);
+                    return;
+                }
+                else
+                {
+                    /// All prewhere steps done, move to step 0
+                    addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, 0, diff);
+                    return;
+                }
+            }
+            else if (step_idx == 0)
+            {
+                /// Main step finished. Move to Deliver.
+                LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} main step finished, moving to Deliver, advancing read_ptr",
+                          row_group_idx, row_subgroup_idx);
+                row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
+
+                /// Must add to delivery_queue before advancing read_ptr to deliver subgroups in order.
+                {
+                    std::lock_guard lock(delivery_mutex);
+                    delivery_queue.push(Task {.stage = ReadStage::Deliver, .row_group_idx = row_group_idx, .row_subgroup_idx = row_subgroup_idx});
+                    LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} added to delivery_queue, size={}",
+                              row_group_idx, row_subgroup_idx, delivery_queue.size());
+                }
+
+                row_group.read_ptr.store(row_subgroup_idx + 1);
+                advanced_ptr = row_subgroup_idx + 1;
+                LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} advanced read_ptr -> {}",
+                          row_group_idx, row_subgroup_idx, row_subgroup_idx + 1);
+                delivery_cv.notify_one();
+                break;
             }
             else
             {
-                /// Finished prewhere in all subgroups.
-                for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
-                    if (reader.primitive_columns[i].use_prewhere)
-                        clearColumnChunk(row_group.columns.at(i), diff);
+                chassert(false);
+                break;
             }
-            break; // proceed to advancing read_ptr (because we moved prewhere_ptr)
-        }
-        case ReadStage::MainData:
-        {
-            row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
-
-            /// Must add to delivery_queue before advancing read_ptr to deliver subgroups in order.
-            /// (If we advanced read_ptr first, another thread could start and finish reading the
-            ///  next subgroup before we add this one to delivery_queue, and ReadManager::read could
-            ///  pick up the later subgroup before we add this one.)
-            {
-                std::lock_guard lock(delivery_mutex);
-                delivery_queue.push(Task {.stage = ReadStage::Deliver, .row_group_idx = row_group_idx, .row_subgroup_idx = row_subgroup_idx});
-            }
-
-            size_t prev = row_group.read_ptr.exchange(row_subgroup_idx + 1);
-            chassert(prev == row_subgroup_idx);
-            advanced_read_ptr = prev + 1;
-            delivery_cv.notify_one();
-            break; // proceed to advancing read_ptr
         }
         case ReadStage::Deliver:
         {
@@ -390,10 +626,14 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             return;
         }
         case ReadStage::BloomFilterHeader:
-        case ReadStage::BloomFilterBlocksOrDictionary:
+        case ReadStage::BloomFilterBlocks:
+        case ReadStage::Dictionary:
         case ReadStage::ColumnIndexAndOffsetIndex:
-        case ReadStage::PrewhereOffsetIndex:
-        case ReadStage::MainOffsetIndex:
+        case ReadStage::OffsetIndex:
+        {
+            addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::ColumnData, step_idx, diff);
+            return;
+        }
         case ReadStage::Deallocated:
             chassert(false);
             break;
@@ -401,56 +641,50 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
     /// Start reading the next row subgroup if ready.
     /// Skip subgroups that were fully filtered out by prewhere.
-    size_t read_ptr = row_group.read_ptr.load();
-    size_t prewhere_ptr = row_group.prewhere_ptr.load();
-    while (read_ptr < row_group.subgroups.size() && read_ptr < prewhere_ptr)
-    {
-        RowSubgroup & next_subgroup = row_group.subgroups[read_ptr];
-        ReadStage next_subgroup_stage = next_subgroup.stage.load();
-        if (next_subgroup_stage >= ReadStage::MainOffsetIndex)
-            break; // already reading
+    size_t main_ptr = row_group.read_ptr.load();
+    LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} starting next subgroup, read_ptr={} subgroups={} delivery_ptr={}",
+              row_group_idx, main_ptr, row_group.subgroups.size(), row_group.delivery_ptr.load());
 
+    /// Start next subgroup to read (sequential: one subgroup at a time).
+    while (main_ptr < row_group.subgroups.size())
+    {
+        RowSubgroup & next_subgroup = row_group.subgroups[main_ptr];
+        ReadStage next_subgroup_stage = next_subgroup.stage.load();
         if (!next_subgroup.stage.compare_exchange_strong(
-                next_subgroup_stage, ReadStage::MainOffsetIndex))
-            break; // another thread got here first
+                next_subgroup_stage, ReadStage::OffsetIndex))
+            break;
 
         if (next_subgroup.filter.rows_pass > 0)
         {
-            addTasksToReadColumns(row_group_idx, read_ptr, ReadStage::MainOffsetIndex, diff);
+            size_t first_step = reader.steps.empty() ? 0 : 1;
+            addTasksToReadColumns(row_group_idx, main_ptr, ReadStage::OffsetIndex, first_step, diff);
             break;
         }
-
-        /// Skip subgroup that was filtered out by prewhere.
-
-        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-        chassert(prev == read_ptr);
-        read_ptr += 1;
-        advanced_read_ptr = read_ptr;
-
-        next_subgroup.stage.store(ReadStage::Deallocated);
-        clearRowSubgroup(next_subgroup, diff);
+        else
+        {
+            row_group.read_ptr.store(main_ptr + 1);
+            main_ptr += 1;
+            advanced_ptr = main_ptr;
+            next_subgroup.stage.store(ReadStage::Deallocated);
+            clearRowSubgroup(next_subgroup, diff);
+        }
     }
 
-    if (advanced_read_ptr.has_value())
+    if (advanced_ptr.has_value())
     {
         advanceDeliveryPtrIfNeeded(row_group_idx, diff);
 
-        if (*advanced_read_ptr == row_group.subgroups.size())
+        if (*advanced_ptr == row_group.subgroups.size())
         {
             /// If we've read (not necessarily delivered) all subgroups, we can deallocate things
-            /// like dictionary page and offset index.
-            /// Only do it in the thread that has advanced row_group.read_ptr to the final value -
-            /// there can only be one such thread.
-            /// (I.e. avoid this race condition: one thread increments read_ptr, another thread sees the
-            ///  new value, both threads call clearColumnChunk in parallel, the computer explodes.)
-            /// Don't touch columns with use_prewhere == true, they're cleared by
-            /// ReadStage::PrewhereData instead, which might be happening in parallel with us
-            /// (but doesn't prewhere happen before MainData read? yes, but the clearColumnChunk call
-            ///  happens after advancing prewhere_ptr, so another thread may do MainData+clearColumnChunk
-            ///  before the thread that did prewhere is still clearing the corresponding columns).
+            /// like dictionary page and offset index. Clear all columns (including PREWHERE-only),
+            /// since we scheduled ColumnData prefetches for all of them and must release the memory.
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
-                if (!reader.primitive_columns[i].use_prewhere)
-                    clearColumnChunk(row_group.columns.at(i), diff);
+                clearColumnChunk(row_group.columns.at(i), diff);
+
+            reader.flushColumnsCacheWrites(row_group);
+
+            releaseTopKAdmission(row_group_idx, diff);
         }
     }
 }
@@ -459,16 +693,32 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
     size_t delivery_ptr = row_group.delivery_ptr.load();
+    size_t initial_delivery_ptr = delivery_ptr;
+
+    LOG_TEST(getLogger("ParquetReadManager"), "advanceDeliveryPtrIfNeeded: rg={} initial_delivery_ptr={} subgroups={} read_ptr={}",
+              row_group_idx, delivery_ptr, row_group.subgroups.size(), row_group.read_ptr.load());
+
     while (delivery_ptr < row_group.subgroups.size() &&
            row_group.subgroups[delivery_ptr].stage.load() == ReadStage::Deallocated)
     {
         if (!row_group.delivery_ptr.compare_exchange_weak(delivery_ptr, delivery_ptr + 1))
             continue;
+        size_t old_delivery_ptr = delivery_ptr;
         delivery_ptr += 1;
+
         if (delivery_ptr == row_group.subgroups.size()) // only if *this thread* incremented it
             finishRowGroupStage(row_group_idx, ReadStage::Deliver, diff);
         else if (first_incomplete_row_group.load() == row_group_idx)
-            diff.scheduleAllStages();
+             diff.scheduleAllStages();
+
+        LOG_TEST(getLogger("ParquetReadManager"), "advanceDeliveryPtrIfNeeded: rg={} advanced delivery_ptr {} -> {}",
+                  row_group_idx, old_delivery_ptr, delivery_ptr);
+    }
+
+    if (delivery_ptr > initial_delivery_ptr)
+    {
+        LOG_TEST(getLogger("ParquetReadManager"), "advanceDeliveryPtrIfNeeded: rg={} final delivery_ptr={} read_ptr={}",
+                  row_group_idx, row_group.delivery_ptr.load(), row_group.read_ptr.load());
     }
 }
 
@@ -501,7 +751,9 @@ void ReadManager::flushMemoryUsageDiff(MemoryUsageDiff && diff)
             continue;
         }
         if (d != 0)
+        {
             stages[i].memory_usage.fetch_add(d, std::memory_order_relaxed);
+        }
 
         bool should_schedule = (diff.stages_to_schedule & (1ul << i)) != 0;
         if (!should_schedule && d < 0)
@@ -524,10 +776,20 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     Stage & stage = stages.at(size_t(stage_idx));
     MemoryUsageDiff diff(stage_idx);
     std::vector<Task> tasks;
+    size_t released_read_ahead_slots = 0;
+
+    /// Admission rounds run concurrently; readAheadColumnData waits until their charges and batches are published.
+    std::shared_lock<SharedMutex> prefetch_lock;
+    if (stage_idx == ReadStage::ColumnData && column_data_read_ahead)
+        prefetch_lock = std::shared_lock(column_data_prefetch_mutex);
 
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
     size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
     size_t batches_in_progress = stage.batches_in_progress.load(std::memory_order_relaxed);
+
+    LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} memory_usage={} batches_in_progress={} limits: mem_low={} mem_high={} threads={}",
+              magic_enum::enum_name(stage_idx), memory_usage, batches_in_progress,
+              limits.memory_low_watermark, limits.memory_high_watermark, limits.parsing_threads);
     /// Need to be careful to avoid getting deadlocked in a situation where tasks can't be scheduled
     /// because memory usage is high, while memory usage can't decrease because tasks can't be scheduled.
     /// The way we prevent it is by always allowing scheduling tasks for the lowest-numbered
@@ -538,6 +800,10 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         if (row_group_idx != i)
             return false;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
+        /// Must check stage first so that read_ptr is meaningful (we start advancing it in finishRowSubgroupStage).
+        /// Using acquire ordering to synchronize with the release (seq_cst) store in `finishRowGroupStage`.
+        if (row_group.stage.load(std::memory_order_acquire) < ReadStage::ColumnData)
+            return false;
         return row_group.read_ptr.load() == row_group.delivery_ptr.load();
     };
 
@@ -545,20 +811,35 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     {
         auto row_group_maybe = stage.schedulable_row_groups.findFirst();
         if (!row_group_maybe.has_value())
+        {
+            LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} no schedulable row groups",
+                      magic_enum::enum_name(stage_idx));
             break;
+        }
         size_t row_group_idx = *row_group_maybe;
-
-        if (!checkTaskSchedulingLimits(
+        bool can_schedule = checkTaskSchedulingLimits(
                 memory_usage, size_t(diff.by_stage[size_t(stage_idx)]),
-                batches_in_progress, tasks.size(), limits) &&
-            !is_privileged_task(row_group_idx))
+                batches_in_progress, tasks.size(), limits);
+        bool is_privileged = is_privileged_task(row_group_idx);
+        LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} rg={} can_schedule={} is_privileged={}",
+                  magic_enum::enum_name(stage_idx), row_group_idx, can_schedule, is_privileged);
+
+        if (!can_schedule && !is_privileged)
             break;
 
         if (!stage.schedulable_row_groups.unset(row_group_idx, std::memory_order_acquire))
+        {
+            LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: another thread got row group {}", row_group_idx);
             continue; // another thread picked up this row group while we were checking limits
+        }
+
+        if (stage_idx == ReadStage::ColumnData && column_data_read_ahead
+            && column_data_read_ahead_row_groups.unset(row_group_idx, std::memory_order_relaxed))
+            released_read_ahead_slots += std::exchange(column_data_read_ahead_run_slots[row_group_idx], 0);
 
         /// Kicks off prefetches and adds their (and other) memory usage estimate to `diff`.
         auto & stage_tasks = stage.row_group_tasks_to_schedule[row_group_idx];
+        LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: want to schedule tasks rg={}, stage_tasks.size()={}", row_group_idx, stage_tasks.size());
         chassert(!stage_tasks.empty());
         for (size_t i = 0; i < stage_tasks.size(); ++i)
             scheduleTask(stage_tasks[i], i == 0, diff, tasks);
@@ -579,6 +860,9 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
     if (!tasks.empty())
     {
+        LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} scheduling {} tasks in {} batches",
+                  magic_enum::enum_name(stage_idx), tasks.size(), std::min(tasks.size(), limits.parsing_threads) + 1);
+
         /// Group tiny tasks into batches to reduce scheduling overhead.
         /// TODO [parquet]: Try removing this (along with cost_estimate_bytes field).
         std::vector<std::function<void()>> funcs;
@@ -602,19 +886,234 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
             {
                 std::shared_lock shutdown_lock(*_shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
+                    /// ReadManager may already be destroyed at this point — the destructor
+                    /// calls shutdown->shutdown() which only waits for in-flight tasks (shared
+                    /// lock holders), not for queued tasks. Accessing `this` here would be a
+                    /// use-after-free. The batches_in_progress decrement is unnecessary because:
+                    /// - In normal completion (read() calls shutdown), no tasks are queued
+                    ///   (all row groups reached Deallocated before shutdown was called).
+                    /// - In abnormal destruction (~ReadManager), nobody checks the counter.
                     return;
                 runBatchOfTasks(_batch);
             });
         }
         stage.batches_in_progress.fetch_add(funcs.size(), std::memory_order_relaxed);
+        if (prefetch_lock)
+            prefetch_lock.unlock();
         ProfileEvents::increment(ProfileEvents::ParquetDecodingTasks, tasks.size());
         ProfileEvents::increment(ProfileEvents::ParquetDecodingTaskBatches, funcs.size());
         parser_shared_resources->parsing_runner.bulkSchedule(std::move(funcs));
     }
+    else
+    {
+        LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} no tasks to schedule",
+                  magic_enum::enum_name(stage_idx));
+    }
+    if (prefetch_lock)
+        prefetch_lock.unlock();
+
+    /// After batches_in_progress counts the admitted row groups, so a read-ahead pass never sees their slots as free.
+    if (released_read_ahead_slots)
+        column_data_read_ahead_count.fetch_sub(released_read_ahead_slots, std::memory_order_release);
+
+    if (stage_idx == ReadStage::ColumnData && column_data_read_ahead)
+        readAheadColumnData();
+}
+
+void ReadManager::readAheadColumnData()
+{
+    size_t depth = parser_shared_resources->getIOThreadsPerReader();
+    Stage & stage = stages[size_t(ReadStage::ColumnData)];
+    auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
+    if (depth <= limits.parsing_threads)
+        return;
+
+    size_t budget = limits.memory_high_watermark;
+    if (auto available = getCurrentQueryAvailableMemory())
+        budget = std::min(budget, size_t(static_cast<double>(*available) * SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, stage.memory_target_fraction)));
+
+    MemoryUsageDiff diff(ReadStage::ColumnData);
+    /// Row groups this pass cannot read ahead. It stops after `depth` of them, so passes do not rescan long runs of them.
+    size_t skipped = 0;
+    auto used_memory = [&]
+    {
+        return stage.memory_usage.load(std::memory_order_relaxed) + size_t(diff.by_stage[size_t(ReadStage::ColumnData)]);
+    };
+    auto depth_is_full = [&]
+    {
+        size_t read_ahead_slots = column_data_read_ahead_count.load(std::memory_order_acquire);
+        return stage.batches_in_progress.load(std::memory_order_relaxed) + read_ahead_slots >= depth;
+    };
+
+    const size_t small_row_group_bytes = reader.options.min_bytes_for_seek / 16;
+
+    /// Consecutive row groups below small_row_group_bytes with adjacent requests are started by one call, up to bytes_per_read_task.
+    /// A run of one holds one depth slot; a longer run one per read task it created, owned by the first row group reading from it.
+    std::vector<size_t> run;
+    std::vector<PrefetchHandle *> run_prefetches;
+    std::vector<size_t> run_prefetch_row_groups;
+    std::optional<Prefetcher::AdjacentRanges> run_ranges;
+    size_t run_begin = 0;
+    size_t run_limit = 0;
+    std::vector<size_t> created_tasks;
+
+    /// Returns false if the pass must stop.
+    auto try_start_run = [&]
+    {
+        size_t memory_usage = used_memory();
+        if (memory_usage >= budget)
+            return false;
+
+        auto charged = reader.prefetcher.startPrefetchWithinLimit(run_prefetches, &diff, budget - memory_usage, &created_tasks);
+        if (!charged)
+            return false;
+        if (*charged == 0)
+            return ++skipped != depth;
+
+        for (size_t i : run)
+        {
+            chassert(column_data_read_ahead_run_slots[i] == 0);
+            column_data_read_ahead_row_groups.set(i, std::memory_order_relaxed);
+        }
+        size_t slots = 1;
+        if (run.size() == 1)
+        {
+            column_data_read_ahead_run_slots[run[0]] = 1;
+        }
+        else
+        {
+            for (size_t pos : created_tasks)
+                ++column_data_read_ahead_run_slots[run_prefetch_row_groups[pos]];
+            slots = created_tasks.size();
+        }
+        column_data_read_ahead_count.fetch_add(slots, std::memory_order_relaxed);
+        ProfileEvents::increment(ProfileEvents::ParquetColumnDataReadAheadRowGroups, run.size());
+        return true;
+    };
+    auto start_run = [&]
+    {
+        bool keep_going = run.empty() || try_start_run();
+        run.clear();
+        run_prefetches.clear();
+        run_prefetch_row_groups.clear();
+        return keep_going;
+    };
+
+    std::lock_guard lock(column_data_prefetch_mutex);
+    for (auto row_group_idx = stage.schedulable_row_groups.findNextAndNot(column_data_read_ahead_row_groups, 0); row_group_idx.has_value();
+         row_group_idx = stage.schedulable_row_groups.findNextAndNot(column_data_read_ahead_row_groups, *row_group_idx + 1))
+    {
+        if (run.empty() && depth_is_full())
+            break;
+
+        /// Admission unsets the schedulable bit and takes the tasks under the same mutex, so a schedulable row group keeps its tasks.
+        size_t i = *row_group_idx;
+        if (!stage.schedulable_row_groups.test(i, std::memory_order_acquire))
+            continue;
+
+        const auto & tasks = stage.row_group_tasks_to_schedule[i];
+        if (std::any_of(tasks.begin(), tasks.end(), [&](const Task & task)
+            {
+                return task.column_idx != UINT64_MAX && !reader.row_groups[i].columns.at(task.column_idx).offset_index.page_locations.empty();
+            }))
+        {
+            if (!start_run() || ++skipped == depth)
+                break;
+            continue;
+        }
+
+        std::vector<PrefetchHandle *> prefetches;
+        for (const Task & task : tasks)
+            addColumnDataPrefetches(task, prefetches);
+        if (prefetches.empty())
+        {
+            if (!start_run() || ++skipped == depth)
+                break;
+            continue;
+        }
+
+        auto ranges = reader.prefetcher.getAdjacentRanges(prefetches);
+        if (ranges && ranges->end - ranges->begin >= small_row_group_bytes)
+            ranges.reset();
+        if (!run.empty() && !(ranges && run_ranges && reader.prefetcher.extendsAdjacentRanges(*run_ranges, *ranges) && ranges->end - run_begin <= run_limit)
+            && !start_run())
+            break;
+
+        if (run.empty())
+        {
+            if (depth_is_full())
+                break;
+            size_t memory_usage = used_memory();
+            run_begin = ranges ? ranges->begin : 0;
+            run_limit = memory_usage < budget ? std::min(reader.options.bytes_per_read_task, budget - memory_usage) : 0;
+            run_ranges = ranges;
+        }
+        else
+        {
+            run_ranges->last_range_idx = ranges->last_range_idx;
+            run_ranges->end = std::max(run_ranges->end, ranges->end);
+        }
+
+        run.push_back(i);
+        run_prefetches.insert(run_prefetches.end(), prefetches.begin(), prefetches.end());
+        run_prefetch_row_groups.insert(run_prefetch_row_groups.end(), prefetches.size(), i);
+
+        if (!ranges && !start_run())
+            break;
+    }
+    start_run();
+
+    diff.finalized = true;
+    for (size_t i = 0; i < diff.by_stage.size(); ++i)
+    {
+        chassert(diff.by_stage[i] >= 0);
+        if (diff.by_stage[i] != 0)
+            stages[i].memory_usage.fetch_add(diff.by_stage[i], std::memory_order_relaxed);
+    }
+}
+
+void ReadManager::addColumnDataPrefetches(const Task & task, std::vector<PrefetchHandle *> & out)
+{
+    if (task.column_idx == UINT64_MAX)
+        return;
+    RowGroup & row_group = reader.row_groups[task.row_group_idx];
+    RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+    if (row_subgroup.filter.rows_pass == 0)
+        return;
+    ColumnChunk & column = row_group.columns.at(task.column_idx);
+    reader.determinePagesToPrefetch(column, row_subgroup, row_group, out);
+
+    /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
+    /// pages were filtered out (e.g. if it's a 100 MB column chunk with unique long strings,
+    /// typically only the first ~1 MB would be dictionary-encoded; if we only need a few
+    /// rows, we likely won't hit that 1 MB). But AFAICT parquet metadata doesn't have
+    /// enough information for that (there's no page encoding in offset/column indexes).
+    if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
+    {
+        out.push_back(&column.dictionary_page_prefetch);
+    }
+
+    if (column.data_pages.empty())
+    {
+        out.push_back(&column.data_pages_prefetch);
+    }
+}
+
+MemoryUsageToken ReadManager::reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
+{
+    double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(row_group.columns.at(column_idx), row_group, reader.primitive_columns.at(column_idx));
+    double estimate = bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass);
+    /// Keeps this batch's signed sum representable whatever the estimate.
+    ssize_t headroom = std::max<ssize_t>(0, std::numeric_limits<ssize_t>::max() / 2 - diff.by_stage.at(size_t(diff.cur_stage)));
+    size_t max_charge = std::min(reader.memoryEstimateLimit(), size_t(headroom));
+    size_t column_memory = estimate < static_cast<double>(max_charge) ? static_cast<size_t>(estimate) : max_charge;
+    return MemoryUsageToken(column_memory, &diff);
 }
 
 void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks)
 {
+    LOG_TEST(getLogger("ParquetReadManager"), "scheduleTask: schedule task.row_group_idx={}, task.row_subgroup_idx={}, task.stage={}, task.column_idx={}, task.step_idx={}", task.row_group_idx, task.row_subgroup_idx, static_cast<Int32>(task.stage), task.column_idx, task.step_idx);
+
     /// Kick off prefetches and count estimated memory usage.
     std::vector<PrefetchHandle *> prefetches;
     RowGroup & row_group = reader.row_groups[task.row_group_idx];
@@ -627,42 +1126,31 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
             case ReadStage::BloomFilterHeader:
                 prefetches.push_back(&column.bloom_filter_header_prefetch);
                 break;
-            case ReadStage::BloomFilterBlocksOrDictionary:
-                if (column.use_dictionary_filter)
-                    prefetches.push_back(&column.dictionary_page_prefetch);
+            case ReadStage::BloomFilterBlocks:
                 for (auto & b : column.bloom_filter_blocks)
                     prefetches.push_back(&b.prefetch);
                 break;
+            case ReadStage::Dictionary:
+                prefetches.push_back(&column.dictionary_page_prefetch);
+                break;
             case ReadStage::ColumnIndexAndOffsetIndex:
+            {
                 prefetches.push_back(&column.column_index_prefetch);
                 prefetches.push_back(&column.offset_index_prefetch);
                 break;
-            case ReadStage::PrewhereOffsetIndex:
-            case ReadStage::MainOffsetIndex:
+            }
+            case ReadStage::OffsetIndex:
                 prefetches.push_back(&column.offset_index_prefetch);
                 break;
-            case ReadStage::PrewhereData:
-            case ReadStage::MainData:
+            case ReadStage::ColumnData:
             {
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
+                if (row_subgroup.filter.rows_pass == 0)
+                    break;
+                addColumnDataPrefetches(task, prefetches);
 
-                reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
-
-                /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
-                /// pages were filtered out (e.g. if it's a 100 MB column chunk with unique long strings,
-                /// typically only the first ~1 MB would be dictionary-encoded; if we only need a few
-                /// rows, we likely won't hit that 1 MB). But AFAICT parquet metadata doesn't have
-                /// enough information for that (there's no page encoding in offset/column indexes).
-                if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
-                    prefetches.push_back(&column.dictionary_page_prefetch);
-
-                if (column.data_pages.empty())
-                    prefetches.push_back(&column.data_pages_prefetch);
-
-                double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
-                size_t column_memory = size_t(bytes_per_row * row_subgroup.filter.rows_pass);
-                subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
+                subchunk.column_and_offsets_memory = reserveOutputColumnMemory(task.column_idx, row_group, row_subgroup, diff);
                 break;
             }
             case ReadStage::NotStarted:
@@ -673,10 +1161,29 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
         }
     }
 
-    if (task.stage == ReadStage::PrewhereData && is_first_in_group)
+    if (task.stage == ReadStage::ColumnData && is_first_in_group)
     {
         RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
-        row_subgroup.filter.memory = MemoryUsageToken(row_subgroup.filter.rows_total, &diff);
+        /// If we're reusing filter.memory for a new step (multistage prewhere), free the old memory first.
+        if (!row_subgroup.filter.memory)
+            row_subgroup.filter.memory = MemoryUsageToken(row_subgroup.filter.rows_total, &diff);
+
+        /// The columns of this step served from the columns cache have no task, but forming them
+        /// can copy their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
+        /// the subgroup is delivered. Account for them as for the columns that are decoded.
+        if (!row_group.cached_columns.empty() && row_subgroup.filter.rows_pass > 0)
+        {
+            for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
+            {
+                const ColumnChunk & column = row_group.columns.at(i);
+                if (!column.served_from_cache || reader.primitive_columns[i].first_step_to_calculate != task.step_idx)
+                    continue;
+                ColumnSubchunk & subchunk = row_subgroup.columns.at(i);
+                if (subchunk.column_and_offsets_memory)
+                    continue;
+                subchunk.column_and_offsets_memory = reserveOutputColumnMemory(i, row_group, row_subgroup, diff);
+            }
+        }
     }
 
     reader.prefetcher.startPrefetch(prefetches, &diff);
@@ -731,6 +1238,38 @@ void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
     }
 }
 
+PruningMemoryReservation ReadManager::pruningMemoryReservation(const MemoryUsageDiff & diff)
+{
+    if (reader.options.format.parquet.memory_high_watermark == 0)
+        return {}; /// Unbounded.
+
+    size_t idx = size_t(ReadStage::Dictionary);
+    /// Budget the reservation with the same per-stage / per-reader limit the scheduler enforces in
+    /// `scheduleTasksIfNeeded` (`getLimitsPerReader(..., stage.memory_target_fraction)`): the query-global
+    /// `input_format_parquet_memory_high_watermark` scaled by this stage's fraction and split across the
+    /// `num_streams` files read in parallel. Reserving against the full watermark instead would let a single
+    /// `Dictionary` stage - and every concurrently-read file, since `stage_memory` is per-reader - each
+    /// reserve the entire watermark, breaking its documented "total across those files" contract and
+    /// overshooting the cap before scheduler throttling has a chance to help.
+    size_t watermark = SharedResourcesExt::getLimitsPerReader(
+        *parser_shared_resources, stages[idx].memory_target_fraction).memory_high_watermark;
+    /// Never let a tiny per-reader budget round down to 0, which `PruningMemoryReservation` reads as
+    /// "unbounded"; a near-zero budget must instead mean "reserve nothing", i.e. skip pruning (full scan).
+    watermark = std::max(watermark, size_t(1));
+
+    /// Reserve against the live stage counter (what previous batches flushed, plus the decoded
+    /// dictionaries and value sets other row groups are holding right now), accounting for this batch's
+    /// own not-yet-flushed pruning memory (e.g. bloom-filter prefetches charged in this batch) via
+    /// `in_flight`. The decoded dictionaries of this batch are charged live to the stage counter (in
+    /// `decodeDictionaryPage`), not to `diff`, so they are already reflected in the counter, not here.
+    ssize_t in_flight = diff.by_stage[idx];
+    return PruningMemoryReservation{
+        .stage_memory = &stages[idx].memory_usage,
+        .watermark = watermark,
+        .in_flight = in_flight > 0 ? size_t(in_flight) : 0,
+    };
+}
+
 void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
@@ -745,42 +1284,66 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 reader.processBloomFilterHeader(column, column_info);
                 column.bloom_filter_header_prefetch.reset(&diff);
                 break;
-            case ReadStage::BloomFilterBlocksOrDictionary:
-                if (column.use_dictionary_filter)
+            case ReadStage::BloomFilterBlocks:
+                /// Nothing to do: the blocks are read through the prefetcher while
+                /// `Reader::applyBloomFilters` evaluates the condition.
+                break;
+            case ReadStage::Dictionary:
+                /// The dictionary is decoded here for the dictionary filter, or to estimate the size of the decoded
+                /// strings, see `ColumnChunk::decode_dictionary_early`. The same budget is used for both: if the
+                /// dictionary does not fit, the size of the strings stays unknown.
+                if (column.use_dictionary_filter || column.decode_dictionary_early)
                 {
-                    bool ok = reader.decodeDictionaryPage(column, column_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-                    chassert(ok);
+                    /// Reserve the decoded dictionary's footprint live against the shared pruning-stage
+                    /// budget so it is visible to every row group pruning in parallel the moment it is
+                    /// taken - not only after this batch flushes - and the default-on pruning stays
+                    /// within the reader's memory budget (see `decodeDictionaryPage`,
+                    /// `pruningMemoryReservation`, `PruningMemoryReservation`, `hashDictionaryValues`).
+                    /// The reservation (reduced to the actual footprint on success) is held until the
+                    /// chunk is cleared, throttling how many row groups can prune in parallel. If the
+                    /// dictionary is too large to reserve, skip pruning for this column:
+                    /// `applyBloomAndDictionaryFilters` then treats it as a full scan, and the dictionary
+                    /// is decoded later (throttled) on the data-read path if needed.
+                    column.dictionary_reservation = pruningMemoryReservation(diff);
+                    if (!reader.decodeDictionaryPage(
+                            column, column_info, column.dictionary_reservation, &column.dictionary_reserved_bytes))
+                        column.use_dictionary_filter = false;
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
-                reader.applyColumnIndex(column, column_info, row_group);
+                if (column.use_column_index)
+                    reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
-            case ReadStage::PrewhereOffsetIndex:
-            case ReadStage::MainOffsetIndex:
+            case ReadStage::OffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 break;
-            case ReadStage::PrewhereData:
-            case ReadStage::MainData:
+            case ReadStage::ColumnData:
             {
+                RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+                if (row_subgroup.filter.rows_pass == 0)
+                    break;
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
                 {
                     if (!reader.decodeDictionaryPage(column, column_info))
+                    {
                         column.dictionary_page_prefetch.reset(&diff);
+                    }
                 }
                 size_t prev_page_idx = column.data_pages_idx;
 
                 chassert(task.row_subgroup_idx != UINT64_MAX);
-                RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 reader.decodePrimitiveColumn(
                     column, column_info, row_subgroup.columns.at(task.column_idx),
                     row_group, row_subgroup);
 
                 for (size_t i = prev_page_idx; i < column.data_pages_idx; ++i)
+                {
                     column.data_pages.at(i).prefetch.reset(&diff);
+                }
                 break;
             }
             case ReadStage::NotStarted:
@@ -804,7 +1367,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
         size_t remaining = row_group.subgroups.at(task.row_subgroup_idx).stage_tasks_remaining.fetch_sub(1);
         chassert(remaining > 0);
         if (remaining == 1)
-            finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, task.stage, diff);
+            finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, task.stage, task.step_idx, diff);
     }
     else
     {
@@ -821,7 +1384,15 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     /// because stages can be skipped e.g. if the row group was filtered out by bloom filter.
 
     column.data_pages_prefetch.reset(&diff);
+    /// Release the live pruning reservation for the decoded dictionary (see `runTask` /
+    /// `PruningMemoryReservation`). Must happen before `column = {}` below drops the handle.
+    /// Free the dictionary buffers first, then release the reservation that covers them, so a
+    /// concurrent pruning task never observes this budget as free while the dictionary is still
+    /// allocated (which would let the stage transiently oversubscribe the watermark).
     column.dictionary.reset();
+    column.dictionary_values.reset();
+    column.dictionary_reservation.release(column.dictionary_reserved_bytes);
+    column.dictionary_reserved_bytes = 0;
     for (auto & page : column.data_pages)
         page.prefetch.reset(&diff);
     column.bloom_filter_header_prefetch.reset(&diff);
@@ -844,6 +1415,72 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
         col.column_and_offsets_memory.reset(&diff);
 }
 
+std::string ReadManager::collectDeadlockDiagnostics()
+{
+    std::string result;
+
+    result += " first_inc_rg: " + std::to_string(first_incomplete_row_group.load(std::memory_order_relaxed)) + " ";
+    {
+        std::lock_guard lock(delivery_mutex);
+        result += " delivery_queue.size(): " + std::to_string(delivery_queue.size());
+    }
+    result += " tot_rgs: " + std::to_string(reader.row_groups.size());
+
+    result += " stages: ";
+    for (size_t i = 0; i < size_t(ReadStage::Deallocated); ++i)
+    {
+        const auto & stage = stages[i];
+        size_t schedulable_count = 0;
+        for (const auto & atomic_bits : stage.schedulable_row_groups.a)
+        {
+            UInt64 bits = atomic_bits.load(std::memory_order_relaxed);
+            schedulable_count += __builtin_popcountll(bits);
+        }
+        result += " st " + std::to_string(i) + " (" + std::string(magic_enum::enum_name(ReadStage(i))) + "):";
+        result += " mem_u: " + std::to_string(stage.memory_usage.load(std::memory_order_relaxed));
+        result += " btch: " + std::to_string(stage.batches_in_progress.load(std::memory_order_relaxed));
+        result += " rgs_sch: " + std::to_string(schedulable_count) + "\t";
+        size_t tasks_to_schedule = 0;
+        for (const auto & tasks : stage.row_group_tasks_to_schedule)
+            tasks_to_schedule += tasks.size();
+        result += " tasks_to_sch: " + std::to_string(tasks_to_schedule) + "\t";
+    }
+
+    result += " RGs: ";
+    for (size_t rg_idx = 0; rg_idx < reader.row_groups.size(); ++rg_idx)
+    {
+        const auto & row_group = reader.row_groups[rg_idx];
+        result += " rg[" + std::to_string(rg_idx) + "]: ";
+        result += " st: " + std::string(magic_enum::enum_name(row_group.stage.load(std::memory_order_relaxed)));
+        result += " del_ptr: " + std::to_string(row_group.delivery_ptr.load(std::memory_order_relaxed)) + "/" + std::to_string(row_group.subgroups.size());
+        result += " read_ptr: " + std::to_string(row_group.read_ptr.load(std::memory_order_relaxed));
+        result += " ";
+
+        size_t subgroups_in_progress = 0;
+        size_t subgroups_delivered = 0;
+        size_t subgroups_deallocated = 0;
+        size_t subgroups_not_started = 0;
+        for (const auto & subgroup : row_group.subgroups)
+        {
+            ReadStage sg_stage = subgroup.stage.load(std::memory_order_relaxed);
+            if (sg_stage == ReadStage::Deliver)
+                subgroups_delivered++;
+            else if (sg_stage == ReadStage::Deallocated)
+                subgroups_deallocated++;
+            else if (sg_stage >= ReadStage::OffsetIndex)
+                subgroups_in_progress++;
+            else
+                subgroups_not_started++;
+        }
+        result += " subrgs: ns=" + std::to_string(subgroups_not_started) +
+                  ", in_pr=" + std::to_string(subgroups_in_progress) +
+                  ", deliv=" + std::to_string(subgroups_delivered) +
+                  ", deal=" + std::to_string(subgroups_deallocated) + " ";
+    }
+
+    return result;
+}
+
 ReadManager::ReadResult ReadManager::read()
 {
     Task task;
@@ -860,13 +1497,20 @@ ReadManager::ReadResult ReadManager::read()
             /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
             /// This ensures that row groups are delivered in order. Within a row group, row
             /// subgroups are read and added to `delivery_queue` in order.
-            if (!delivery_queue.empty() &&
+            size_t first_inc = first_incomplete_row_group.load(std::memory_order_relaxed);
+            bool can_deliver = !delivery_queue.empty() &&
                 (!reader.options.format.parquet.preserve_order ||
-                 delivery_queue.top().row_group_idx ==
-                    first_incomplete_row_group.load(std::memory_order_relaxed)))
+                 delivery_queue.top().row_group_idx == first_inc);
+
+            LOG_TEST(getLogger("ParquetReadManager"), "read: delivery_queue.size()={} first_incomplete={} thread_pool_idle={} can_deliver={}",
+                      delivery_queue.size(), first_inc, thread_pool_was_idle, can_deliver);
+
+            if (can_deliver)
             {
                 task = delivery_queue.top();
                 delivery_queue.pop();
+                LOG_TEST(getLogger("ParquetReadManager"), "read: delivering task rg={} sg={}",
+                          task.row_group_idx, task.row_subgroup_idx);
                 break;
             }
 
@@ -881,22 +1525,22 @@ ReadManager::ReadResult ReadManager::read()
                 for (const RowGroup & row_group : reader.row_groups)
                 {
                     chassert(row_group.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
-                    chassert(row_group.prewhere_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
-                    chassert(row_group.read_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
                     chassert(row_group.delivery_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
                     for (const RowSubgroup & subgroup : row_group.subgroups)
                         chassert(subgroup.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
+                    for (size_t i = 0; i < stages.size(); ++i)
+                    {
+                        size_t mem = stages[i].memory_usage.load(std::memory_order_relaxed);
+                        size_t batches = stages[i].batches_in_progress.load(std::memory_order_relaxed);
+                        size_t unsched = 0;
+                        for (const auto & tasks : stages[i].row_group_tasks_to_schedule)
+                            unsched += tasks.size();
+                        if (mem != 0 || batches != 0 || unsched != 0)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
+                    }
                 }
-                for (size_t i = 0; i < stages.size(); ++i)
-                {
-                    size_t mem = stages[i].memory_usage.load(std::memory_order_relaxed);
-                    size_t batches = stages[i].batches_in_progress.load(std::memory_order_relaxed);
-                    size_t unsched = 0;
-                    for (const auto & tasks : stages[i].row_group_tasks_to_schedule)
-                        unsched += tasks.size();
-                    if (mem != 0 || batches != 0 || unsched != 0)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
-                }
+                if (size_t n = column_data_read_ahead_count.load(std::memory_order_relaxed))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in parquet reader: {} column data read-ahead slots are held", n);
                 return {};
             }
 
@@ -908,7 +1552,10 @@ ReadManager::ReadResult ReadManager::read()
                 /// else's task, and someone else may execute our task.
                 /// Hence the thread_pool_was_idle check.
                 if (!parser_shared_resources->parsing_runner.runTaskInline() && thread_pool_was_idle)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded)");
+                {
+                    std::string diagnostics = collectDeadlockDiagnostics();
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded). {}", diagnostics);
+                }
                 lock.lock();
             }
             else if (thread_pool_was_idle)
@@ -916,7 +1563,11 @@ ReadManager::ReadResult ReadManager::read()
                 /// Task scheduling code is complicated and error-prone. In particular it's easy to
                 /// have a bug where tasks stop getting scheduled under some conditions
                 /// (see is_privileged_task). So we specifically check for getting stuck.
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool)");
+                LOG_DEBUG(getLogger("ParquetReadManager"), "read: DEADLOCK DETECTED - thread pool idle, collecting diagnostics");
+                lock.unlock();
+                std::string diagnostics = collectDeadlockDiagnostics();
+                LOG_DEBUG(getLogger("ParquetReadManager"), "read: DEADLOCK diagnostics: {}", diagnostics);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool).");
             }
             else
             {
@@ -929,22 +1580,15 @@ ReadManager::ReadResult ReadManager::read()
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
     RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
     chassert(row_subgroup.stage == ReadStage::Deliver);
-    size_t num_final_columns = reader.sample_block->columns();
-    for (size_t i = 0; i < reader.output_columns.size(); ++i)
+    Columns output_columns(reader.sample_block->columns());
+    for (size_t i = 0; i < output_columns.size(); ++i)
     {
-        const auto & idx_in_output_block = reader.output_columns[i].idx_in_output_block;
-        if (!idx_in_output_block.has_value() || idx_in_output_block.value() >= num_final_columns)
-            continue;
-        bool already_formed = row_subgroup.output.at(*idx_in_output_block) != nullptr;
-        chassert(already_formed == reader.output_columns[i].use_prewhere);
-        if (already_formed)
-            continue;
-        row_subgroup.output.at(*idx_in_output_block) =
-            reader.formOutputColumn(row_subgroup, i, row_subgroup.filter.rows_pass);
+        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_group, row_subgroup, i));
+        output_columns[i] = output_columns[i]->convertToFullColumnIfReplicated();
     }
-    row_subgroup.output.resize(num_final_columns); // remove prewhere-only columns
-    chassert(row_subgroup.filter.rows_pass > 0);
-    Chunk chunk(std::move(row_subgroup.output), row_subgroup.filter.rows_pass);
+    Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
+    if (reader.top_k_best_value_column_pos)
+        reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);
     BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
     auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(
@@ -953,7 +1597,7 @@ ReadManager::ReadResult ReadManager::read()
     {
         chassert(row_subgroup.filter.rows_pass > 0);
         chassert(!row_subgroup.filter.filter.empty());
-        chassert(std::accumulate(row_subgroup.filter.filter.begin(), row_subgroup.filter.filter.end(), size_t(0)) == chunk.getNumRows());
+        chassert(countBytesInFilter(row_subgroup.filter.filter) == chunk.getNumRows());
 
         row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
     }
@@ -977,11 +1621,18 @@ ReadManager::ReadResult ReadManager::read()
     ///       ISource::progress()/addTotalRowsApprox instead.
     ///       For (4) and (5), either add things to struct Progress or make progress bar use
     ///       ProfileEvents instead of Progress.
-    size_t virtual_bytes_read = size_t(row_group.meta->total_compressed_size) * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
+    /// Sum compressed sizes of the column chunks that the query reads. Using
+    /// `row_group.meta->total_compressed_size` here would inflate `read_bytes` by
+    /// `total_columns / selected_columns`.
+    size_t selected_columns_compressed_bytes = 0;
+    for (const auto & primitive_column : reader.primitive_columns)
+        selected_columns_compressed_bytes += size_t(
+            reader.getColumnChunk(row_group.row_group_idx, primitive_column.column_idx).meta_data.total_compressed_size);
+    size_t virtual_bytes_read = selected_columns_compressed_bytes * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);
-    finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, diff);
+    finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, /*step_idx=*/ 0, diff);
     flushMemoryUsageDiff(std::move(diff));
 
     return {std::move(chunk), std::move(block_missing_values), virtual_bytes_read};

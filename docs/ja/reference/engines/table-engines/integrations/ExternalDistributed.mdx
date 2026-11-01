@@ -1,0 +1,58 @@
+---
+description: '`ExternalDistributed` エンジンを使用すると、リモートサーバー上の MySQL または PostgreSQL に格納されているデータに対して `SELECT` クエリを実行できます。引数として MySQL または PostgreSQL エンジンを指定できるため、シャーディングが可能です。'
+sidebarTitle: 'ExternalDistributed'
+slug: /engines/table-engines/integrations/ExternalDistributed
+title: '`ExternalDistributed` テーブルエンジン'
+doc_type: 'reference'
+---
+
+`ExternalDistributed` エンジンを使用すると、リモートサーバー上の MySQL または PostgreSQL に格納されているデータに対して `SELECT` クエリを実行できます。引数として [MySQL](/ja/reference/engines/table-engines/integrations/mysql) または [PostgreSQL](/ja/reference/engines/table-engines/integrations/postgresql) エンジンを指定できるため、シャーディングが可能です。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
+```
+
+[CREATE TABLE](/ja/reference/statements/create/table)クエリの詳細な説明を参照してください。
+
+テーブル構造は、元のテーブル構造と異なる場合があります。
+
+* カラム名は元のテーブルと同じである必要がありますが、それらのうち一部のカラムだけを任意の順序で使用できます。
+* カラムの型は元のテーブルのものと異なる場合があります。ClickHouse は値を ClickHouse のデータ型に[CAST](/ja/reference/functions/regular-functions/type-conversion-functions#CAST)しようとします。
+
+**エンジンパラメータ**
+
+* `engine` — テーブルエンジン `MySQL` または `PostgreSQL`。
+* `host:port` — MySQL または PostgreSQL サーバーのアドレス。
+* `database` — リモートデータベース名。
+* `table` — リモートテーブル名。
+* `user` — ユーザー名。
+* `password` — ユーザーのパスワード。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+複数のレプリカに対応しており、レプリカは `|`、分片は `,` で列挙する必要があります。例:
+
+```sql
+CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+レプリカを指定すると、読み取り時には各分片について、利用可能なレプリカの中から 1 つが選択されます。接続に失敗した場合は次のレプリカが選択され、この処理はすべてのレプリカに対して順に行われます。すべてのレプリカへの接続試行が失敗した場合は、同じ方法で数回再試行されます。
+
+分片の数は任意に指定でき、各分片に対するレプリカの数も任意に指定できます。
+
+**関連項目**
+
+* [MySQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/mysql)
+* [PostgreSQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/postgresql)
+* [Distributed テーブルエンジン](/ja/reference/engines/table-engines/special/distributed)

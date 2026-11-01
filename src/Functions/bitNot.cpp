@@ -18,10 +18,16 @@ struct BitNotImpl
 {
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
     static constexpr bool allow_string_or_fixed_string = true;
+    /// `NativeNumber` does not cover the 128- and 256-bit integers, but `bitNot` supports them
+    /// (`~` over the whole value), so they are listed explicitly.
+    static constexpr auto signature =
+        "(A : NativeNumber | UInt128 | Int128 | UInt256 | Int256) -> nativeNumber(maxBits(A), anySigned(A), 0)"
+        " OR (F : FixedString) -> F"
+        " OR (String) -> String";
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
-        return ~static_cast<ResultType>(a);
+        return static_cast<ResultType>(~static_cast<ResultType>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -73,7 +79,7 @@ SELECT
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitNot>(documentation);
 }

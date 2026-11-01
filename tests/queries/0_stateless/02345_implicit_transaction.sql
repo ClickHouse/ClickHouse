@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-fasttest, no-encrypted-storage
+-- Tags: no-ordinary-database, no-fasttest
 DROP TABLE IF EXISTS landing_to_target;
 DROP TABLE IF EXISTS target;
 DROP TABLE IF EXISTS landing;
@@ -78,11 +78,11 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     'implicit_True',
     count() as all,
-    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000') as is_empty
+    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000',0) as is_empty
 FROM system.query_log
 WHERE
     current_database = currentDatabase() AND
-    event_date >= yesterday() AND
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     query LIKE '-- Verify that the transaction_id column is populated correctly%'
 GROUP BY transaction_id
 FORMAT JSONEachRow;
@@ -90,11 +90,11 @@ FORMAT JSONEachRow;
 SELECT
     'implicit_False',
     count() as all,
-    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000') as is_empty
+    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000',0) as is_empty
 FROM system.query_log
 WHERE
     current_database = currentDatabase() AND
-    event_date >= yesterday() AND
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     query LIKE '-- Verify that the transaction_id column is NOT populated without transaction%'
 GROUP BY transaction_id
 FORMAT JSONEachRow;

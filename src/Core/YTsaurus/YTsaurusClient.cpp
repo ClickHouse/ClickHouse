@@ -4,11 +4,11 @@
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Formats/formatBlock.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Core/Settings.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/JSON/Parser.h>
@@ -17,10 +17,17 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/ProfileEvents.h>
 
 
 #include <memory>
+#include <utility>
 
+
+namespace ProfileEvents
+{
+    extern const Event YTsaurusLookupThrottled;
+}
 
 namespace DB
 {
@@ -36,21 +43,77 @@ namespace Setting
     extern const SettingsUInt64 max_http_get_redirects;
 }
 
+static String authorizationHeaderValue(const String & oauth_token)
+{
+    return fmt::format("OAuth {}", oauth_token);
+}
+
 YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_)
     : context(context_), connection_info(connection_info_), log(getLogger("YTsaurusClient"))
 {
+    checkHeaders(context, connection_info.oauth_token);
 }
 
-
-ReadBufferPtr YTsaurusClient::readTable(const String & cypress_path)
+void YTsaurusClient::checkHeaders(const ContextPtr & context, const String & oauth_token)
 {
-    YTsaurusQueryPtr read_table_query(new YTsaurusReadTableQuery(cypress_path));
+    HTTPHeaderEntries headers{{"Authorization", authorizationHeaderValue(oauth_token)}};
+    context->getHTTPHeaderFilter().checkHeaders(headers);
+}
+
+YTsaurusClient::YTsaurusClient(const YTsaurusClient & other)
+    : context(other.context)
+    , connection_info(other.connection_info)
+    , log(getLogger("YTsaurusClient"))
+{
+}
+
+ReadBufferPtr YTsaurusClient::readTable(const String & cypress_path, const std::pair<size_t, size_t> & rows_range)
+{
+    YTsaurusQueryPtr read_table_query(new YTsaurusReadTableQuery(cypress_path, rows_range));
     return executeQuery(read_table_query);
+}
+
+String YTsaurusClient::startTx(size_t timeout_ms)
+{
+    YTsaurusQueryPtr start_tx_query(new YTsaurusStartTxQuery(timeout_ms));
+    auto read_buff = executeQuery(start_tx_query);
+    String res;
+    // Generally the result of each YTsaurus query should be json.
+    // But... for start_tx query the result always double quoted string.
+    readDoubleQuotedString(res, *read_buff);
+    return res;
+}
+
+void YTsaurusClient::commitTx(const String & transaction_id)
+{
+    YTsaurusQueryPtr commit_tx_query(new YTsaurusCommitTxQuery(transaction_id));
+    executeQuery(commit_tx_query);
+}
+
+String YTsaurusClient::lock(const String & cypress_path, const String & transaction_id)
+{
+    YTsaurusQueryPtr lock_query(new YTsaurusLockQuery(cypress_path, transaction_id));
+    auto read_buff = executeQuery(lock_query);
+    String res;
+    // Generally the result of each YTsaurus query should be json.
+    // But... for start_tx query the result always double quoted string.
+    readDoubleQuotedString(res, *read_buff);
+    return res;
+}
+
+String YTsaurusClient::getNodeIdFromLock(const String & lock_id)
+{
+    String lock_metadata_path = fmt::format("{}/{}/@node_id", LOCKS_STORAGE_CYPRESS_PATH, lock_id);
+    YTsaurusQueryPtr get_query(new YTsaurusGetQuery(lock_metadata_path));
+    auto read_buff = executeQuery(get_query);
+    String res;
+    readDoubleQuotedString(res, *read_buff);
+    return res;
 }
 
 YTsaurusNodeType YTsaurusClient::getNodeType(const String & cypress_path)
 {
-    auto json_ptr = getTableInfo(cypress_path);
+    auto json_ptr = getNodeMetadata(cypress_path);
     return getNodeTypeFromAttributes(json_ptr);
 }
 
@@ -73,38 +136,51 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path)
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String & column_names_str = "*")
 {
-    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path));
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, column_names_str));
     return executeQuery(select_rows_query);
 }
 
-ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const ColumnsWithTypeAndName & columns)
+{
+    String columns_names_str;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        columns_names_str += columns[i].name;
+        if (i + 1 != columns.size())
+            columns_names_str += ", ";
+    }
+    return selectRows(cypress_path, columns_names_str);
+}
+
+
+ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler)
 {
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
-    auto out_callback = [lookup_block_input, this](std::ostream & ostr)
+    auto out_callback = [lookup_block_input, this](WriteBuffer & out)
     {
         FormatSettings format_settings;
         format_settings.json.quote_64bit_integers = false;
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormat("JSONEachRow", out_buffer, lookup_block_input.cloneEmpty(), format_settings);
+        auto output_format = context->getOutputFormat("JSONEachRow", out, lookup_block_input.cloneEmpty(), format_settings);
         formatBlock(output_format, lookup_block_input);
-        out_buffer.finalize();
     };
-    return executeQuery(lookup_rows_query, std::move(out_callback));
+    /// The throttler is passed down to `executeQuery` so that every real `lookup_rows` HTTP attempt, including retries
+    /// against other http proxies, consumes its own token; otherwise one logical lookup could exceed the limit on failover.
+    return executeQuery(lookup_rows_query, std::move(out_callback), lookup_throttler);
 }
 
-ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback)
+ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback, const ThrottlerPtr & request_throttler)
 {
     for (size_t num_try = 0; num_try < connection_info.http_proxy_urls.size(); ++num_try)
     {
-        size_t url_index = (recently_used_url_index + num_try) % connection_info.http_proxy_urls.size();
+        size_t url_index = (recently_used_url_index.load(std::memory_order_relaxed) + num_try) % connection_info.http_proxy_urls.size();
         URI host_for_request(connection_info.http_proxy_urls[url_index].c_str());
-        if (connection_info.enable_heavy_proxy_redirection && query->isHeavyQuery())
-            host_for_request = getHeavyProxyURI(host_for_request);
-
         try
         {
+            if (connection_info.enable_heavy_proxy_redirection && query->isHeavyQuery())
+                host_for_request = getHeavyProxyURI(host_for_request);
+
             host_for_request.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));
 
             for (const auto & query_param : query->getQueryParameters())
@@ -113,8 +189,13 @@ ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const R
             }
             LOG_TRACE(log, "URI {} , query type {}", host_for_request.toString(), query->getQueryName());
 
+            /// `throttle` returns true only when the request was actually blocked (slept) to conform to the rate limit,
+            /// so `YTsaurusLookupThrottled` counts requests that were really throttled rather than every request that passed through.
+            if (request_throttler && request_throttler->throttle(1))
+                ProfileEvents::increment(ProfileEvents::YTsaurusLookupThrottled);
+
             auto buf = createQueryRWBuffer(host_for_request, out_callback, query->getHTTPMethod());
-            recently_used_url_index = url_index;
+            recently_used_url_index.store(url_index, std::memory_order_relaxed);
             return buf;
         }
         catch (Exception & e)
@@ -150,14 +231,14 @@ YTsaurusClient::URI YTsaurusClient::getHeavyProxyURI(const URI& uri)
 }
 
 
-ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const URI& uri, const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method)
+ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const URI & uri, const ReadWriteBufferFromHTTP::OutStreamCallback & out_callback, const std::string & http_method)
 {
     std::string output_params = fmt::format("<uuid_mode=text_yql;complex_type_mode=positional;encode_utf8={}>", connection_info.encode_utf8  ?  "true" : "false");
     HTTPHeaderEntries http_headers{
         /// Always use json format for input and output.
         {"Accept", "application/json"},
         {"Content-Type", "application/json"},
-        {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
+        {"Authorization", authorizationHeaderValue(connection_info.oauth_token)},
         {"X-YT-Header-Format", "<format=text>yson"},
         {"X-YT-Output-Format", fmt::format("{}json", output_params)},
     };
@@ -184,21 +265,21 @@ Poco::Dynamic::Var YTsaurusClient::getMetadata(const String & path)
     auto buf = executeQuery(get_query);
 
     String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
 
+    readStringUntilEOF(json_str, *buf);
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
     return json;
 }
 
-Poco::JSON::Object::Ptr YTsaurusClient::getTableInfo(const String & cypress_path)
+Poco::JSON::Object::Ptr YTsaurusClient::getNodeMetadata(const String & cypress_path)
 {
     String attributes_path = cypress_path + "/@";
     auto json = getMetadata(attributes_path);
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
-Poco::Dynamic::Var YTsaurusClient::getTableAttribute(const String & cypress_path, const String & attribute_name)
+Poco::Dynamic::Var YTsaurusClient::getNodeAttribute(const String & cypress_path, const String & attribute_name)
 {
     String attribute_path = cypress_path + "/@" + attribute_name;
     auto json = getMetadata(attribute_path);
@@ -207,7 +288,7 @@ Poco::Dynamic::Var YTsaurusClient::getTableAttribute(const String & cypress_path
 
 YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & cypress_path)
 {
-    auto schema = getTableAttribute(cypress_path, "schema");
+    auto schema = getNodeAttribute(cypress_path, "schema");
     const auto & schema_json = schema.extract<Poco::JSON::Object::Ptr>();
 
     if (!schema_json->has("$attributes"))
@@ -229,7 +310,7 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
     }
 
     auto columns_array = schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
-    std::unordered_map<String, DataTypePtr> yt_columns;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> yt_columns;
 
     for (const auto& yt_column : *columns_array) {
         const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
@@ -267,6 +348,40 @@ bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const S
         }
     }
     return true;
+}
+
+size_t YTsaurusClient::getTableNumberOfRows(const String & table_path)
+{
+    String lock_metadata_path = fmt::format("{}/@row_count", table_path);
+    YTsaurusQueryPtr get_query(new YTsaurusGetQuery(lock_metadata_path));
+    auto read_buff = executeQuery(get_query);
+    size_t row_count = 0;
+    DB::readIntText(row_count, *read_buff);
+    return row_count;
+}
+
+YTsaurusTableLock::YTsaurusTableLock(YTsaurusClientPtr client_, const String & cypress_path_, size_t transaction_timeout_ms)
+    : client(client_)
+{
+    transaction_id = client->startTx(transaction_timeout_ms);
+    lock_id = client->lock(cypress_path_, transaction_id);
+    auto node_id = client->getNodeIdFromLock(lock_id);
+    node_cypress_path = fmt::format("#{}",node_id);
+}
+
+YTsaurusTableLock::~YTsaurusTableLock()
+{
+    if (!transaction_id.empty())
+    {
+        try {
+            client->commitTx(transaction_id);
+        }
+        catch (Exception & e)
+        {
+            LOG_WARNING(getLogger("YTsaurusTableLock"), "Can't commit transaction {}. Leave it. Exception: {}",
+                transaction_id, e.displayText());
+        }
+    }
 }
 
 }

@@ -3,11 +3,14 @@
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
+#include <optional>
 
 #include <boost/noncopyable.hpp>
+#include <fmt/format.h>
 
 class SipHash;
 
@@ -19,36 +22,22 @@ using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
 class IDataTypeCustomName;
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-
 class ReadBuffer;
 class WriteBuffer;
 
-class IDataType;
 struct FormatSettings;
 
 class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
+class ColumnConst;
+using ColumnConstPtr = COW<IColumn>::immutable_ptr<ColumnConst>;
+using MutableColumnConstPtr = COW<IColumn>::mutable_ptr<ColumnConst>;
+
 class Field;
 
-using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
-
 struct NameAndTypePair;
-
-struct DataTypeWithConstInfo
-{
-    DataTypePtr type;
-    bool is_const;
-};
-
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -106,18 +95,35 @@ public:
     void updateHash(SipHash & hash) const;
     virtual void updateHashImpl(SipHash & hash) const = 0;
 
-    bool hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    bool hasSubcolumn(std::string_view subcolumn_name) const;
 
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
-    DataTypePtr getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
+    /// The same, resolved against the given serialization of this type instead of the default one.
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
+
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubstreamData = ISerialization::SubstreamData;
     using SubstreamPath = ISerialization::SubstreamPath;
+
+    /// A resolved subcolumn: everything needed to read it, plus the path saying which substream it is.
+    /// The name alone does not, because subcolumn names are flat and several substreams can claim one -
+    /// ``Tuple(`a.size` UInt64, `a` String)`` exposes `a.size` twice. Subcolumns resolved from the data
+    /// rather than from the static enumeration get a synthesized path that identifies them the same way.
+    struct SubcolumnInfo
+    {
+        SubstreamData data;
+        SubstreamPath substreams_path;
+    };
+
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name) const;
+    /// Resolved against the given serialization of this type.
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubcolumnCallback = std::function<void(
         const SubstreamPath &,
@@ -128,30 +134,53 @@ public:
         const SubcolumnCallback & callback,
         const SubstreamData & data);
 
-    /// Call callback for each nested type recursively.
-    using ChildCallback = std::function<void(const IDataType &)>;
-    virtual void forEachChild(const ChildCallback &) const {}
+    /// The number of types nested directly in this one. Zero for a type that has none.
+    virtual size_t getNumberOfChildren() const { return 0; }
+
+    /// The `index`-th type nested directly in this one, `index < getNumberOfChildren()`, in a canonical
+    /// order that `cloneWithChildren` accepts back.
+    /// The order is part of the contract - a walker may zip the children of two types of the same kind
+    /// positionally - so an implementation must never derive it from the iteration order of a hash
+    /// table. It returns a reference to a member the type already holds, so enumerating the children
+    /// allocates nothing and touches no reference count: the walks in `DataTypes/TypeTree.h` run once
+    /// per block header and per query-analysis check, and are written on top of these two methods.
+    virtual const DataTypePtr & getChild(size_t index) const;
+
+    /// All the children in one container, for a caller that needs them as a whole. This allocates, so
+    /// a walk over the tree should enumerate them with `getNumberOfChildren` and `getChild` instead.
+    DataTypes getChildren() const;
+
+    /// Rebuild this type with `new_children`, given in the same order and number as `getChild`,
+    /// in place of its current children. Everything about the type that is not a child is kept:
+    /// `Tuple` element names and explicit-name mode, `Variant` discriminator order, `Object` path names
+    /// and limits.
+    /// The result carries no customization even when this type has one, because a custom name is not
+    /// generally still correct for different children; re-deriving it is the caller's decision, see
+    /// `IDataTypeCustomName::rederiveFor` and `CustomizationPolicy` in `DataTypes/TypeTree.h`.
+    DataTypePtr cloneWithChildren(const DataTypes & new_children) const;
 
     Names getSubcolumnNames() const;
 
     virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
-    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
+    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const;
+    /// Convenience overload that enables all supported serializations. Callers that do not care about
+    /// the serialization versions (most of them) use this one; only the Native writer/reader pass
+    /// explicit settings to pick the protocol-version-dependent variants.
+    SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
 
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
-    SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
-
-    /// Chooses serialization according to serialization kind stack.
-    SerializationPtr getSerialization(
-        ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default = {}) const;
+    SerializationPtr getDefaultSerialization() const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
+
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
@@ -163,7 +192,8 @@ public:
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
-    virtual SerializationPtr doGetDefaultSerialization() const = 0;
+    virtual DataTypePtr doCloneWithChildren(const DataTypes & new_children) const;
+    virtual SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const = 0;
 
     virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }
 
@@ -180,12 +210,12 @@ public:
 
     /** Create empty column for corresponding type and serialization.
      */
-    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
-    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
+    virtual MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const;
+    MutableColumnConstPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
@@ -207,6 +237,10 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     void insertManyDefaultsInto(IColumn & column, size_t n) const;
+
+    /// Returns true if insertDefaultInto simply calls column.insertDefault()
+    /// without any type-specific logic (e.g., Enum inserts first enum value instead of zero).
+    virtual bool isDefaultInsertTrivial() const { return true; }
 
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
@@ -341,8 +375,11 @@ public:
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicSubcolumns() const;
-    /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
+    /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnInfo can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
+
+    /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
+    virtual bool hasDynamicStructure() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
@@ -364,20 +401,26 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
 protected:
-    static std::unique_ptr<SubstreamData> getSubcolumnData(
+    static std::unique_ptr<SubcolumnInfo> getSubcolumnInfo(
         std::string_view subcolumn_name,
         const SubstreamData & data,
+        size_t initial_array_level,
         bool throw_if_null);
 
-    virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
-        std::string_view /*subcolumn_name*/,
-        const SubstreamData & /*data*/,
-        bool throw_if_null) const
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
-        return nullptr;
-    }
+    /// "sizeN" counts `Array` wrappers from the root of the column, so the array sizes get a
+    /// different number once the name is resolved against the type of a dynamically typed value
+    /// alone, which is what a serialization keeping the name does later: the inner sizes of an
+    /// element of type `Array(Array(Int64))` are "size2" below one wrapper and "size1" there. No
+    /// other name depends on the level, hence `resolved_path` rather than the name alone.
+    static String getSubcolumnNameForZeroArrayLevel(
+        std::string_view subcolumn_name,
+        const SubstreamPath & resolved_path);
+
+    virtual std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(
+        std::string_view subcolumn_name,
+        const SubstreamData & data,
+        size_t initial_array_level,
+        bool throw_if_null) const;
 };
 
 
@@ -504,8 +547,10 @@ bool isInteger(TYPE data_type); \
 bool isNativeInteger(TYPE data_type); \
 \
 bool isDecimal(TYPE data_type); \
+bool isDecimal64(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
+bool isNativeFloat(TYPE data_type); \
 \
 bool isIntegerOrDecimal(TYPE data_type); \
 bool isNativeNumber(TYPE data_type); \
@@ -573,6 +618,13 @@ inline bool isBool(const DataTypePtr & data_type)
 inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 {
     return data_type->isNullable() || data_type->isLowCardinalityNullable();
+}
+
+/// A type that holds no value other than NULL. onlyNull() alone is not enough:
+/// it is true for Nullable(Nothing) but false for bare Nothing.
+inline bool isNothingOrNullableNothing(const DataTypePtr & data_type)
+{
+    return isNothing(data_type) || data_type->onlyNull();
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

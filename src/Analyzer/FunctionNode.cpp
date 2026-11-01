@@ -20,6 +20,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 
 namespace DB
 {
@@ -143,7 +144,11 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", nulls_action : IGNORE_NULLS";
 
     if (function)
+    {
         buffer << ", result_type: " + getResultType()->getName();
+        if (!isAggregateFunction() && !isWindowFunction() && getFunction()->isSpatialPredicate())
+            buffer << ", is_spatial_predicate: true";
+    }
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -166,7 +171,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
@@ -174,10 +179,11 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
         || nulls_action != rhs_typed.nulls_action)
         return false;
 
-    /// is_operator is ignored here because it affects only AST formatting
-
-    if (!compare_options.compare_types)
-        return true;
+    /// is_operator is ignored here because it affects only AST formatting, except for the function
+    /// composition operator `f | g`: the operator and an ordinary call to a function of the same
+    /// name are different expressions.
+    if (function_name == function_composition_name && is_operator != rhs_typed.is_operator)
+        return false;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -197,7 +203,7 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
     return true;
 }
 
-void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
@@ -206,10 +212,10 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
-    /// is_operator is ignored here because it affects only AST formatting
-
-    if (!compare_options.compare_types)
-        return;
+    /// is_operator is ignored here because it affects only AST formatting, except for the function
+    /// composition operator, see `isEqualImpl`.
+    if (function_name == function_composition_name)
+        hash_state.update(is_operator);
 
     if (!isResolved())
         return;
@@ -236,16 +242,16 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
 
 ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto function_ast = std::make_shared<ASTFunction>();
+    auto function_ast = make_intrusive<ASTFunction>();
 
     function_ast->name = function_name;
-    function_ast->nulls_action = nulls_action;
-    function_ast->is_operator = is_operator;
+    function_ast->setNullsAction(nulls_action);
+    function_ast->setIsOperator(is_operator);
 
     if (isWindowFunction())
     {
-        function_ast->is_window_function = true;
-        function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+        function_ast->setIsWindowFunction(true);
+        function_ast->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
     }
 
     const auto & arguments = getArguments();
@@ -266,9 +272,10 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// tuple, and adding a type may significantly increase query size.
     /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
     if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
-        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
+        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression()
+        && !isArray(argument_nodes[1]->getResultType()))
     {
-        auto expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto expression_list_ast = make_intrusive<ASTExpressionList>();
 
         expression_list_ast->children.push_back(argument_nodes[0]->toAST(new_options));
 
@@ -289,7 +296,10 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         if (auto * identifier_node = window_node->as<IdentifierNode>())
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
-            function_ast->window_definition = window_node->toAST(new_options);
+        {
+            function_ast->children.push_back(window_node->toAST(new_options));
+            function_ast->window_definition = function_ast->children.back();
+        }
     }
 
     return function_ast;

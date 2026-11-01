@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTCreateResourceQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateResourceQuery>(*this);
+    auto res = make_intrusive<ASTCreateResourceQuery>(*this);
     res->children.clear();
 
     res->resource_name = resource_name->clone();
@@ -57,6 +57,10 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         else if (operation.mode == ResourceAccessMode::Query)
         {
             ostr << "QUERY";
+        }
+        else if (operation.mode == ResourceAccessMode::MemoryReservation)
+        {
+            ostr << "MEMORY RESERVATION";
         }
         else
         {

@@ -1,0 +1,28 @@
+<test>
+    <!-- Performance test for minmax skip index evaluation with type casts.
+         When the index expression type differs from the query condition type
+         (e.g., UInt64 index vs UInt16 alias), a CAST ends up in the monotonic
+         function chain. This test verifies that the per-granule evaluation
+         of such conditions is efficient.
+         See https://github.com/ClickHouse/ClickHouse/issues/55653 -->
+
+    <create_query>
+        CREATE TABLE index_test_cast
+        (
+            z UInt32,
+            x UInt16 ALIAS mortonDecode(2, z).1,
+            y UInt16 ALIAS mortonDecode(2, z).2,
+            INDEX i_x (mortonDecode(2, z).1) TYPE minmax,
+            INDEX i_y (mortonDecode(2, z).2) TYPE minmax
+        ) ENGINE = MergeTree ORDER BY z
+    </create_query>
+
+    <fill_query>INSERT INTO index_test_cast SELECT number * 5 FROM numbers_mt(toUInt64(0x100000000 / 5)) SETTINGS max_insert_threads=8</fill_query>
+    <fill_query>OPTIMIZE TABLE index_test_cast FINAL</fill_query>
+
+    <query><![CDATA[
+    SELECT count() FROM index_test_cast WHERE x >= 20000 AND x <= 20100 AND y >= 10000 AND y <= 10100
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS index_test_cast</drop_query>
+</test>

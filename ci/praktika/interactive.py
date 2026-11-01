@@ -8,6 +8,8 @@ import sys
 class UserPrompt:
     """Provides interactive prompts for user input in terminal."""
 
+    AUTO_CONFIRM = False
+
     @staticmethod
     def _safe_input(prompt):
         try:
@@ -17,13 +19,14 @@ class UserPrompt:
             sys.exit(0)
 
     @staticmethod
-    def select_from_menu(menuitems, question="Enter your choice"):
+    def select_from_menu(menuitems, question="Enter your choice", validator=None):
         """
         Display a numbered menu and get user's selection.
 
         Args:
             menuitems: List of items to display. Can be plain values or tuples (display_value, return_value).
             question: The prompt question to display.
+            validator: If specified allow return arbitrary input satisfying the validator function.`
 
         Returns:
             The selected item (or tuple if items are tuples), or None if cancelled.
@@ -37,6 +40,8 @@ class UserPrompt:
         while True:
             try:
                 choice = UserPrompt._safe_input(f"\n{question} (1-{len(menuitems)}): ")
+                if validator is not None and validator(choice):
+                    return choice
                 choice_num = int(choice)
 
                 if 1 <= choice_num <= len(menuitems):
@@ -86,6 +91,9 @@ class UserPrompt:
         Returns:
             True for yes, False for no, None if cancelled.
         """
+        if UserPrompt.AUTO_CONFIRM:
+            print(f"\n{question} (y/n): y")
+            return True
         while True:
             choice = UserPrompt._safe_input(f"\n{question} (y/n): ")
             if choice.lower() in ("y", "yes"):

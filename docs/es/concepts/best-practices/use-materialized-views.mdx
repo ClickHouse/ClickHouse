@@ -1,0 +1,87 @@
+---
+slug: /best-practices/use-materialized-views
+sidebarTitle: 'Usar vistas materializadas'
+title: 'Usar vistas materializadas'
+description: 'Página sobre vistas materializadas'
+keywords: ['vistas materializadas', 'arquitectura de medallón']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickHouse admite dos tipos de vistas materializadas: [**incrementales**](/es/concepts/features/materialized-views/incremental-materialized-view) y [**actualizables**](/es/concepts/features/materialized-views/refreshable-materialized-view). Aunque ambas están diseñadas para acelerar las consultas mediante el precálculo y almacenamiento de resultados, difieren significativamente en cómo y cuándo se ejecutan las consultas subyacentes, para qué cargas de trabajo son adecuadas y cómo se gestiona la actualización de los datos.
+
+**Debería considerar las vistas materializadas para patrones de consulta específicos que necesiten acelerarse, siempre que ya se hayan aplicado las buenas prácticas previas [sobre tipos de datos](/es/concepts/best-practices/select-data-type) y [optimización de la clave primaria](/es/concepts/best-practices/choosing-a-primary-key).**
+
+**Las vistas materializadas incrementales** se actualizan en tiempo real. A medida que se insertan nuevos datos en la tabla de origen, ClickHouse aplica automáticamente la consulta de la vista materializada al nuevo bloque de datos y escribe los resultados en una tabla de destino independiente. Con el tiempo, ClickHouse fusiona estos resultados parciales para producir una vista completa y actualizada. Este enfoque es muy eficiente porque desplaza el coste computacional al momento de la inserción y solo procesa los datos nuevos. Como resultado, las consultas `SELECT` sobre la tabla de destino son rápidas y ligeras. Las vistas incrementales admiten todas las funciones de agregación y escalan bien, incluso hasta petabytes de datos, porque cada consulta opera sobre un subconjunto pequeño y reciente del conjunto de datos que se está insertando.
+
+<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="Vistas materializadas" />
+
+**Las vistas materializadas actualizables**, en cambio, se actualizan según una programación. Estas vistas vuelven a ejecutar periódicamente su consulta completa y sobrescriben el resultado en la tabla de destino. Esto es similar a las vistas materializadas de bases de datos OLTP tradicionales como Postgres.
+
+<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Diagrama de vista materializada actualizable" />
+
+La elección entre vistas materializadas incrementales y actualizables depende en gran medida de la naturaleza de la consulta, de la frecuencia con la que cambian los datos y de si las actualizaciones de la vista deben reflejar cada fila a medida que se inserta o si una actualización periódica es aceptable. Comprender estas diferencias es clave para diseñar vistas materializadas escalables y de alto rendimiento en ClickHouse.
+
+<div id="when-to-use-incremental-materialized-views">
+  ## Cuándo usar vistas materializadas incrementales
+</div>
+
+Las vistas materializadas incrementales suelen ser la opción preferida, ya que se actualizan automáticamente en tiempo real cada vez que las tablas de origen reciben datos nuevos. Admiten todas las funciones de agregación y son especialmente eficaces para agregaciones sobre una sola tabla. Al calcular los resultados de forma incremental en el momento de la inserción, las consultas se ejecutan sobre subconjuntos de datos mucho más pequeños, lo que permite que estas vistas escalen sin esfuerzo incluso hasta petabytes de datos. En la mayoría de los casos, no tendrán un impacto apreciable en el rendimiento general del clúster.
+
+Utilice vistas materializadas incrementales cuando:
+
+* Necesite resultados de consulta en tiempo real que se actualicen con cada inserción.
+* Agregue o filtre grandes volúmenes de datos con frecuencia.
+* Sus consultas impliquen transformaciones o agregaciones sencillas sobre una sola tabla.
+
+Para ver ejemplos de vistas materializadas incrementales, consulte [aquí](/es/concepts/features/materialized-views/incremental-materialized-view).
+
+<div id="when-to-use-refreshable-materialized-views">
+  ## Cuándo usar vistas materializadas actualizables
+</div>
+
+Las vistas materializadas actualizables ejecutan sus consultas de forma periódica en lugar de incremental y almacenan el conjunto de resultados de la consulta para recuperarlo rápidamente.
+
+Son más útiles cuando el rendimiento de las consultas es crítico (p. ej., una latencia inferior al milisegundo) y se aceptan resultados ligeramente desactualizados. Dado que la consulta se vuelve a ejecutar por completo, las vistas actualizables son más adecuadas para consultas relativamente rápidas de procesar o que pueden calcularse a intervalos espaciados (p. ej., cada hora), como el almacenamiento en caché de resultados “top N” o tablas de búsqueda.
+
+La frecuencia de ejecución debe ajustarse cuidadosamente para evitar una carga excesiva en el sistema. Las consultas extremadamente complejas que consumen muchos recursos deben programarse con cautela, ya que pueden degradar el rendimiento general del clúster al afectar a las cachés y consumir CPU y memoria. La consulta debe ejecutarse con relativa rapidez en comparación con el intervalo de actualización para evitar sobrecargar el clúster. Por ejemplo, no programes una vista para que se actualice cada 10 segundos si la propia consulta tarda al menos 10 segundos en procesarse.
+
+<div id="summary">
+  ## Resumen
+</div>
+
+En resumen, use vistas materializadas actualizables cuando:
+
+* Necesite resultados de consultas en caché disponibles al instante y pueda tolerar pequeños retrasos en la actualización.
+* Necesite el top N de un conjunto de resultados de una consulta.
+* El tamaño del conjunto de resultados no crezca sin límite con el tiempo. De lo contrario, el rendimiento de la vista de destino se degradará.
+* Esté realizando JOIN complejos o desnormalización con varias tablas, lo que requiera actualizaciones cada vez que cambie cualquier tabla de origen.
+* Esté creando flujos de trabajo por lotes, tareas de desnormalización o dependencias entre vistas similares a los DAG de DBT.
+
+Para ver ejemplos de vistas materializadas actualizables, consulte [aquí](/es/concepts/features/materialized-views/refreshable-materialized-view).
+
+<div id="append-vs-replace-mode">
+  ### Modo APPEND vs REPLACE
+</div>
+
+Las vistas materializadas actualizables admiten dos modos para escribir datos en la tabla de destino: `APPEND` y `REPLACE`. Estos modos definen cómo se escribe el resultado de la consulta de la vista cuando esta se actualiza.
+
+`REPLACE` es el comportamiento predeterminado. Cada vez que se actualiza la vista, el contenido anterior de la tabla de destino se sobrescribe por completo con el resultado más reciente de la consulta. Esto resulta adecuado para casos de uso en los que la vista debe reflejar siempre el estado más reciente, como el almacenamiento en caché de un conjunto de resultados.
+
+`APPEND`, en cambio, permite añadir nuevas filas al final de la tabla de destino en lugar de reemplazar su contenido. Esto abre casos de uso adicionales, como la captura de instantáneas periódicas. `APPEND` es especialmente útil cuando cada actualización representa un momento concreto en el tiempo o cuando se desea acumular resultados históricos.
+
+Elija el modo `APPEND` cuando:
+
+* Quiera conservar un historial de actualizaciones anteriores.
+* Esté generando instantáneas o informes periódicos.
+* Necesite recopilar de forma incremental resultados actualizados a lo largo del tiempo.
+
+Elija el modo `REPLACE` cuando:
+
+* Solo necesite el resultado más reciente.
+* Los datos obsoletos deban descartarse por completo.
+* La vista represente un estado actual o una referencia.
+
+Puede encontrar una aplicación de la funcionalidad `APPEND` al crear una [arquitectura de medallón](https://clickhouse.com/blog/building-a-medallion-architecture-for-bluesky-json-data-with-clickhouse).

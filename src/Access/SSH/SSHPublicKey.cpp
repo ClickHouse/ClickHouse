@@ -61,7 +61,7 @@ bool SSHPublicKey::isEqual(const SSHPublicKey & other) const
 
 SSHPublicKey SSHPublicKey::createFromBase64(const String & base64, const String & key_type)
 {
-    KeyPtr key;
+    KeyPtr key = nullptr;
     int rc = ssh_pki_import_pubkey_base64(base64.c_str(), ssh_key_type_from_name(key_type.c_str()), &key);
     if (rc != SSH_OK)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION,
@@ -72,7 +72,7 @@ SSHPublicKey SSHPublicKey::createFromBase64(const String & base64, const String 
 
 SSHPublicKey SSHPublicKey::createFromFile(const std::string & filename)
 {
-    KeyPtr key;
+    KeyPtr key = nullptr;
     int rc = ssh_pki_import_pubkey_file(filename.c_str(), &key);
     if (rc != SSH_OK)
     {

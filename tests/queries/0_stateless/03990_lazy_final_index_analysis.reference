@@ -1,0 +1,18 @@
+=== Single-column PK ===
+-- correctness
+100	10000
+100	10000
+-- index analysis
+Selected 2/2 parts by partition key, 2 parts by primary key, 4/32 marks by primary key, 4 marks to read from 2 ranges
+=== Tuple PK ===
+-- correctness
+50	5000
+50	5000
+-- index analysis
+Selected 2/2 parts by partition key, 2 parts by primary key, 2/16 marks by primary key, 2 marks to read from 2 ranges
+=== PK prefix of ORDER BY ===
+-- correctness
+50	5000
+50	5000
+-- index analysis (PK is only category, so set has fewer columns)
+Selected 2/2 parts by partition key, 2 parts by primary key, 16/78 marks by primary key, 16 marks to read from 2 ranges

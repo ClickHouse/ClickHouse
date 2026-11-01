@@ -1,0 +1,47 @@
+---
+slug: /use-cases/observability/oss-monitoring
+title: '自管理监控'
+sidebarTitle: '自管理监控'
+description: '自管理监控指南'
+doc_type: 'guide'
+keywords: ['可观测性', '监控', '自管理', '指标', '系统健康']
+---
+
+import ObservabilityIntegrations from '/snippets/zh/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/zh/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/zh/_community_monitoring.mdx';
+
+本指南面向正在评估 ClickHouse 开源版的企业团队，全面介绍生产部署中的监控与可观测性能力。企业客户经常会询问开箱即用的监控功能、与现有可观测性技术栈 (包括 Datadog 和 AWS CloudWatch 等工具) 的集成方式，以及 ClickHouse 的监控能力与自托管部署相比如何。
+
+<div id="prometheus">
+  ### 基于 Prometheus 的集成架构
+</div>
+
+ClickHouse 会根据你的部署模式，通过不同的端点暴露兼容 Prometheus 的指标；每种方式都有各自的运行特性：
+
+**自管理/OSS ClickHouse**
+
+可通过 ClickHouse server 上标准的 /metrics 端点，直接访问 Prometheus 端点。该方式提供：
+
+* 完整的指标暴露：可获取 ClickHouse 提供的全部指标，且没有内置过滤
+* 实时指标：在抓取时直接从系统表生成
+
+**直接访问系统**
+
+查询生产系统表，这会增加监控负载，并阻止系统进入可节省成本的空闲状态
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### ClickStack 部署选项
+</div>
+
+* [Helm](/zh/clickstack/deployment/helm)：推荐用于基于 Kubernetes 的调试环境。可通过 `values.yaml` 进行环境特定的配置，并设置资源限制和扩缩容。
+* [Docker Compose](/zh/clickstack/deployment/docker-compose)：分别部署各个组件 (ClickHouse、HyperDX、OTel collector、MongoDB) 。
+* [仅 HyperDX](/zh/clickstack/deployment/hyperdx-only)：独立部署的 HyperDX 容器。
+
+有关完整的部署选项和架构详情，请参阅 [ClickStack 文档](/zh/clickstack/overview) 和[数据摄取指南](/zh/clickstack/ingesting-data/overview)。
+
+<DirectIntegrations />
+
+<CommunityMonitoring />

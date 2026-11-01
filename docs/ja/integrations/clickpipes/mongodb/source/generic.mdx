@@ -1,0 +1,63 @@
+---
+sidebarTitle: '汎用 MongoDB'
+description: '任意の MongoDB インスタンスを ClickPipes のソースとして設定する'
+slug: /integrations/clickpipes/mongodb/source/generic
+title: '汎用 MongoDB ソース設定ガイド'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Info>
+  MongoDB Atlas を使用している場合は、[こちら](/ja/integrations/clickpipes/mongodb/source/atlas)の専用ガイドを参照してください。
+</Info>
+
+<div id="enable-oplog-retention">
+  ## oplog retention を有効化する
+</div>
+
+レプリケーションには、最低でも 24 時間の oplog retention が必要です。初回スナップショットの完了前に oplog が切り捨てられないよう、oplog retention は 72 時間以上に設定することを推奨します。
+
+現在の oplog retention は、MongoDB shell で次のコマンドを実行して確認できます (このコマンドの実行には `clusterMonitor` ロールが必要です) :
+
+```javascript
+db.getSiblingDB("admin").serverStatus().oplogTruncation.oplogMinRetentionHours
+```
+
+oplog retention を 72 時間に設定するには、レプリカセット内の各ノードで、管理者ユーザーとして次のコマンドを実行します:
+
+```javascript
+db.adminCommand({
+    "replSetResizeOplog" : 1,
+    "minRetentionHours": 72
+})
+```
+
+`replSetResizeOplog` コマンドと oplog retention の詳細については、[MongoDB のドキュメント](https://www.mongodb.com/docs/manual/reference/command/replSetResizeOplog/)を参照してください。
+
+<div id="configure-database-user">
+  ## データベースユーザーを設定する
+</div>
+
+管理者ユーザーとして MongoDB インスタンスに接続し、MongoDB CDC ClickPipes 用のユーザーを作成するには、次のコマンドを実行します。
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  `clickpipes_user` と `some_secure_password` は、使用するユーザー名とパスワードに必ず置き換えてください。
+</Note>
+
+<div id="whats-next">
+  ## 次に進む
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/mongodb/index)し、MongoDB インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。
+ClickPipe の作成時に必要になるため、MongoDB インスタンスの設定時に使用した接続情報は必ず控えておいてください。

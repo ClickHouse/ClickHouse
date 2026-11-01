@@ -1,0 +1,159 @@
+nullable uint64: m.key_a
+1
+\N
+\N
+\N
+5
+1
+\N
+0
+\N
+99
+nullable uint64: m.key_b
+2
+20
+\N
+\N
+\N
+\N
+42
+\N
+\N
+\N
+nullable uint64: m.key_d
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+0
+\N
+96
+nullable uint64: m.key_nonexistent
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+nullable uint64: m.key_a, m.key_b, m.key_c
+1	2	3
+\N	20	\N
+\N	\N	\N
+\N	\N	\N
+5	\N	\N
+1	\N	3
+\N	42	\N
+0	\N	\N
+\N	\N	\N
+99	\N	97
+nullable string: m.key_a
+hello
+\N
+\N
+
+\N
+nullable string: m.key_b
+world
+test
+\N
+\N
+\N
+nullable string: m.key_x
+\N
+\N
+\N
+\N
+\N
+nullable string: m.key_missing
+\N
+\N
+\N
+\N
+\N
+array values: m.key_a
+[1,2,3]
+[]
+[]
+[]
+[42]
+array values: m.key_b
+[10,20]
+[]
+[]
+[7,8,9]
+[]
+array values: m.key_missing
+[]
+[]
+[]
+[]
+[]
+tuple values: m.key_a
+(1,'x')
+(0,'')
+(0,'')
+(0,'')
+tuple values: m.key_b
+(2,'y')
+(0,'')
+(0,'')
+(99,'end')
+tuple values: m.key_c
+(0,'')
+(10,'hello')
+(0,'')
+(0,'')
+tuple values: m.key_missing
+(0,'')
+(0,'')
+(0,'')
+(0,'')
+nullable float64: m.key_a
+1.5
+\N
+\N
+nan
+\N
+nullable float64: m.key_b
+2.7
+inf
+\N
+\N
+\N
+nullable float64: m.key_missing
+\N
+\N
+\N
+\N
+\N
+uint64 key nullable string: m.key_1
+a
+\N
+\N
+\N
+
+uint64 key nullable string: m.key_2
+b
+x
+\N
+\N
+hello
+uint64 key nullable string: m.key_3
+c
+\N
+\N
+\N
+\N
+uint64 key nullable string: m.key_999
+\N
+\N
+\N
+\N
+\N

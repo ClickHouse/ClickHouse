@@ -14,7 +14,7 @@ String ASTCheckGrantQuery::getID(char) const
 
 ASTPtr ASTCheckGrantQuery::clone() const
 {
-    auto res = std::make_shared<ASTCheckGrantQuery>(*this);
+    auto res = make_intrusive<ASTCheckGrantQuery>(*this);
 
     return res;
 }

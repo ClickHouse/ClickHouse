@@ -1,0 +1,9 @@
+-- cluster() table function
+6
+6
+-- StorageDistributed
+100
+100
+-- parallel replicas
+50
+50

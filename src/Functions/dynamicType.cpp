@@ -19,14 +19,13 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
 /// Return String with type name for each row in Dynamic column.
-class FunctionDynamicType : public IFunction
+class FunctionDynamicType final : public IFunction
 {
 public:
     static constexpr auto name = "dynamicType";
@@ -40,22 +39,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.empty() || arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), arguments.empty());
-
-        if (!isDynamic(arguments[0].type.get()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Dynamic, got {} instead",
-                getName(), arguments[0].type->getName());
-
-        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    }
+    String getSignatureString() const override { return "(Dynamic) -> LowCardinality(String)"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -94,7 +78,7 @@ public:
     }
 };
 
-class FunctionIsDynamicElementInSharedData : public IFunction
+class FunctionIsDynamicElementInSharedData final : public IFunction
 {
 public:
     static constexpr auto name = "isDynamicElementInSharedData";
@@ -107,22 +91,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.empty() || arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), arguments.empty());
-
-        if (!isDynamic(arguments[0].type.get()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Dynamic, got {} instead",
-                getName(), arguments[0].type->getName());
-
-        return DataTypeFactory::instance().get("Bool");
-    }
+    String getSignatureString() const override { return "(Dynamic) -> Bool"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -186,7 +155,7 @@ SELECT d, dynamicType(d) FROM test;
     };
     FunctionDocumentation::IntroducedIn dynamicType_introduced_in = {24, 1};
     FunctionDocumentation::Category dynamicType_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation dynamicType_documentation = {dynamicType_description, dynamicType_syntax, dynamicType_arguments, dynamicType_returned_value, dynamicType_examples, dynamicType_introduced_in, dynamicType_category};
+    FunctionDocumentation dynamicType_documentation = {dynamicType_description, dynamicType_syntax, dynamicType_arguments, {}, dynamicType_returned_value, dynamicType_examples, dynamicType_introduced_in, dynamicType_category};
 
     factory.registerFunction<FunctionDynamicType>(dynamicType_documentation);
 
@@ -219,7 +188,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 ┌─d─────────────┬─isDynamicElementInSharedData(d)─┐
 │ ᴺᵁᴸᴸ          │ false                           │
 │ 42            │ false                           │
-│ Hello, World! │ true                            │
+│ Hello, World! │ false                           │
 │ [1,2,3]       │ true                            │
 └───────────────┴─────────────────────────────────┘
         )"
@@ -227,7 +196,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
     };
     FunctionDocumentation::IntroducedIn isDynamicElementInSharedData_introduced_in = {24, 1};
     FunctionDocumentation::Category isDynamicElementInSharedData_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation isDynamicElementInSharedData_documentation = {isDynamicElementInSharedData_description, isDynamicElementInSharedData_syntax, isDynamicElementInSharedData_arguments, isDynamicElementInSharedData_returned_value, isDynamicElementInSharedData_examples, isDynamicElementInSharedData_introduced_in, isDynamicElementInSharedData_category};
+    FunctionDocumentation isDynamicElementInSharedData_documentation = {isDynamicElementInSharedData_description, isDynamicElementInSharedData_syntax, isDynamicElementInSharedData_arguments, {}, isDynamicElementInSharedData_returned_value, isDynamicElementInSharedData_examples, isDynamicElementInSharedData_introduced_in, isDynamicElementInSharedData_category};
 
     factory.registerFunction<FunctionIsDynamicElementInSharedData>(isDynamicElementInSharedData_documentation);
 }

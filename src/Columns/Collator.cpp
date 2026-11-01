@@ -16,6 +16,14 @@
 #include <Poco/String.h>
 #include <base/sort.h>
 
+#include <limits>
+
+/// ICU wraps every entry point in a `U_ICU_ENTRY_POINT_RENAME(name)` macro that
+/// re-uses the original name during expansion (`#define ucol_open
+/// U_ICU_ENTRY_POINT_RENAME(ucol_open)`), so every ICU call below triggers
+/// `-Wdisabled-macro-expansion`. Keep the suppression at file scope.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -24,6 +32,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_COLLATION_LOCALE;
     extern const int COLLATION_COMPARISON_FAILED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 }
 
@@ -32,8 +41,8 @@ AvailableCollationLocales::AvailableCollationLocales()
 {
 #if USE_ICU
     static const size_t MAX_LANG_LENGTH = 128;
-    size_t available_locales_count = ucol_countAvailable();
-    for (size_t i = 0; i < available_locales_count; ++i)
+    int32_t available_locales_count = ucol_countAvailable();
+    for (int32_t i = 0; i < available_locales_count; ++i)
     {
         std::string locale_name = ucol_getAvailable(i);
         UChar lang_buffer[MAX_LANG_LENGTH];
@@ -41,7 +50,7 @@ AvailableCollationLocales::AvailableCollationLocales()
         UErrorCode status = U_ZERO_ERROR;
 
         /// All names will be in English language
-        size_t lang_length = uloc_getDisplayLanguage(
+        int32_t lang_length = uloc_getDisplayLanguage(
             locale_name.c_str(), "en", lang_buffer, MAX_LANG_LENGTH, &status);
         std::optional<std::string> lang;
 
@@ -92,7 +101,7 @@ Collator::Collator(const std::string & locale_)
 #if USE_ICU
     /// ICU locales can have settings and keywords, e.g. 'tr-u-kn-true-ka-shifted' is 'Turkish' with keywords.
     /// See https://peter.eisentraut.org/blog/2023/05/16/overview-of-icu-collation-settings for details.
-    /// Remove these as AvailableCollationLocales only knows the the base names.
+    /// Remove these as AvailableCollationLocales only knows the base names.
     static const size_t MAX_BASE_NAME_LENGTH = 128;
     char base_name_buf[MAX_BASE_NAME_LENGTH];
     UErrorCode status = U_ZERO_ERROR;
@@ -129,13 +138,16 @@ Collator::~Collator() // NOLINT
 int Collator::compare(const char * str1, size_t length1, const char * str2, size_t length2) const
 {
 #if USE_ICU
-    UCharIterator iter1;
-    UCharIterator iter2;
-    uiter_setUTF8(&iter1, str1, length1);
-    uiter_setUTF8(&iter2, str2, length2);
+    /// ICU takes `int32_t` lengths and reads a negative one as a NUL-terminated string.
+    static constexpr size_t max_length = std::numeric_limits<int32_t>::max();
+    if (length1 > max_length || length2 > max_length)
+        throw DB::Exception(DB::ErrorCodes::TOO_LARGE_STRING_SIZE,
+                            "Cannot compare a string of {} bytes with collation '{}', the maximum is {} bytes",
+                            std::max(length1, length2), locale, max_length);
 
     UErrorCode status = U_ZERO_ERROR;
-    UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);
+    UCollationResult compare_result = ucol_strcollUTF8(
+        collator, str1, static_cast<int32_t>(length1), str2, static_cast<int32_t>(length2), &status);
 
     if (U_FAILURE(status))
         throw DB::Exception(DB::ErrorCodes::COLLATION_COMPARISON_FAILED, "ICU collation comparison failed with error code: {}",
@@ -160,3 +172,5 @@ const std::string & Collator::getLocale() const
 {
     return locale;
 }
+
+#pragma clang diagnostic pop

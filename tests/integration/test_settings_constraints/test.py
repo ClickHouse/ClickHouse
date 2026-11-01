@@ -3,7 +3,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", user_configs=["configs/users.xml"])
+instance = cluster.add_instance(
+    "instance",
+    main_configs=["configs/no_default_constraints.xml"],
+    user_configs=["configs/users.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -223,6 +227,161 @@ def test_disallowed_constraint_merge_tree(started_cluster):
         "ALTER TABLE test MODIFY SETTING max_parts_in_total=5000")
     # Clean up
     instance.query("DROP TABLE IF EXISTS test")
+
+
+def test_merge_tree_setting_constraint_via_alias(started_cluster):
+    """The MergeTreeSettings overload of checkImpl must resolve aliases before
+    looking up the constraint, in both directions: the constraint may be declared
+    on the canonical name or on the alias, and the query may name either side.
+    All four combinations must hit the same constraint.
+
+    enable_block_number_column has the alias allow_experimental_block_number_column.
+    The default profile declares the constraint on the canonical name; the
+    alias_constraint_profile declares it on the alias name.
+    Without the upfront resolveName, querying via an alias against a constraint
+    declared on the canonical name silently bypasses the constraint."""
+
+    instance.query("DROP TABLE IF EXISTS test_alias_constraint")
+    instance.query(
+        "CREATE TABLE test_alias_constraint (x Int) ENGINE=MergeTree ORDER BY x"
+    )
+
+    # default user: constraint declared on canonical name.
+    for setting in ("enable_block_number_column", "allow_experimental_block_number_column"):
+        assert "should not be changed" in instance.query_and_get_error(
+            f"ALTER TABLE test_alias_constraint MODIFY SETTING {setting}=1"
+        )
+        assert "should not be changed" in instance.query_and_get_error(
+            "CREATE TABLE test_alias_constraint_create (x Int) ENGINE=MergeTree ORDER BY x "
+            f"SETTINGS {setting}=1"
+        )
+
+    # alias_constraint_user: constraint declared on alias name.
+    for setting in ("enable_block_number_column", "allow_experimental_block_number_column"):
+        assert "should not be changed" in instance.query_and_get_error(
+            f"ALTER TABLE test_alias_constraint MODIFY SETTING {setting}=1",
+            user="alias_constraint_user",
+        )
+
+    instance.query("DROP TABLE IF EXISTS test_alias_constraint")
+
+
+def test_merge_tree_setting_constraint_via_granted_role(started_cluster):
+    """A constraint declared on a granted role's settings profile (not the
+    user's own base profile) must still be enforced, including through
+    MergeTreeSettings alias resolution. The system-wide default_profile is
+    overridden to an empty profile (see configs/no_default_constraints.xml),
+    so an SQL-created user without an explicit profile inherits no merge_tree
+    constraints; the constraint reaches the user only via the granted role."""
+
+    instance.query("DROP TABLE IF EXISTS test_role_constraint")
+    instance.query("DROP USER IF EXISTS role_constraint_user")
+    instance.query("DROP ROLE IF EXISTS role_with_block_number_constraint")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS role_block_number_profile")
+
+    instance.query("CREATE USER role_constraint_user")
+    instance.query(
+        "CREATE SETTINGS PROFILE role_block_number_profile "
+        "SETTINGS merge_tree_enable_block_number_column CONST"
+    )
+    instance.query(
+        "CREATE ROLE role_with_block_number_constraint "
+        "SETTINGS PROFILE role_block_number_profile"
+    )
+    instance.query(
+        "GRANT role_with_block_number_constraint TO role_constraint_user"
+    )
+
+    instance.query(
+        "CREATE TABLE test_role_constraint (x Int) ENGINE=MergeTree ORDER BY x"
+    )
+    instance.query(
+        "GRANT ALTER ON test_role_constraint TO role_with_block_number_constraint"
+    )
+
+    try:
+        for setting in (
+            "enable_block_number_column",
+            "allow_experimental_block_number_column",
+        ):
+            assert "should not be changed" in instance.query_and_get_error(
+                f"ALTER TABLE test_role_constraint MODIFY SETTING {setting}=1",
+                user="role_constraint_user",
+            )
+    finally:
+        instance.query("DROP TABLE IF EXISTS test_role_constraint")
+        instance.query("DROP USER IF EXISTS role_constraint_user")
+        instance.query("DROP ROLE IF EXISTS role_with_block_number_constraint")
+        instance.query("DROP SETTINGS PROFILE IF EXISTS role_block_number_profile")
+
+
+def test_disallowed_value_is_clamped_not_thrown(started_cluster):
+    """The disallowed_values check must respect the `reaction` parameter:
+    initial queries throw, but secondary queries (clamp path) must silently
+    drop the change instead of throwing. Otherwise a value that happens to
+    match a disallowed entry can break secondary queries even though the
+    user set a value the initiator already accepted."""
+
+    # Initial query: throws (unchanged behavior).
+    assert " Setting max_memory_usage shouldn't be 6000000000" in instance.query_and_get_error(
+        "SELECT 1", settings={"max_memory_usage": 6000000000}
+    )
+
+    # Secondary query: must not throw. The clamp implementation should leave
+    # the value alone (no clamp target for disallowed entries) and proceed.
+    result = instance.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--query_kind=secondary_query",
+            "--max_memory_usage=6000000000",
+            "--query=SELECT 1",
+        ]
+    )
+    assert result.strip() == "1"
+
+
+def test_disallowed_value_overlapping_clamp_target(started_cluster):
+    """When a clamp target (min/max) coincides with a disallowed entry, the
+    disallowed check must see the post-clamp value rather than the pre-clamp
+    one. Otherwise an out-of-range value gets clamped to a disallowed value
+    and is silently accepted.
+
+    The overlap_constraint_user has min=5000000000 and disallowed=5000000000
+    on max_memory_usage. A secondary query that sends max_memory_usage below
+    the min would clamp up to 5000000000 — which is disallowed — and must
+    therefore be dropped, not applied."""
+
+    result = instance.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--user=overlap_constraint_user",
+            "--query_kind=secondary_query",
+            "--max_memory_usage=4000000000",
+            "--query=SELECT getSetting('max_memory_usage')",
+        ]
+    )
+    # Default max_memory_usage in 0_stateless tests is non-zero; we only need to
+    # verify the clamp-to-disallowed value is NOT what we ended up with.
+    assert result.strip() != "5000000000", (
+        f"Clamped value 5000000000 is on the disallowed list and must not be applied, got: {result!r}"
+    )
+
+
+def test_create_table_query_setting_constraints(started_cluster):
+    """Test that query-level settings passed in CREATE TABLE's engine SETTINGS clause
+    are validated against setting constraints (not bypassing them)."""
+
+    # The settings in CREATE TABLE ... SETTINGS should be rejected:
+    assert "should not be changed" in instance.query_and_get_error(
+        "CREATE TABLE test_constraint (x Int64) ENGINE = MergeTree ORDER BY x SETTINGS force_index_by_date = 1"
+    )
+
+    # Also test with max_memory_usage min constraint via CREATE TABLE SETTINGS
+    assert "shouldn't be less than" in instance.query_and_get_error(
+        "CREATE TABLE test_constraint (x Int64) ENGINE = MergeTree ORDER BY x SETTINGS max_memory_usage = 1"
+    )
 
 
 def assert_query_settings(

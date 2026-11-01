@@ -195,7 +195,7 @@ namespace detail
         IsKeyValidFunc && is_key_valid_func,
         GetParentKeyFunc && get_parent_func)
     {
-        assert(keys.size() == in_keys.size());
+        chassert(keys.size() == in_keys.size());
 
         PaddedPODArray<UInt8> result;
         result.resize_fill(keys.size());
@@ -335,7 +335,7 @@ namespace detail
                     if (depth == key_range_requires_update)
                     {
                         auto * it = already_processed_keys_to_range.find(key);
-                        assert(it);
+                        chassert(it);
 
                         auto & range_to_update = it->getMapped();
                         range_to_update.end_index = descendants.size();

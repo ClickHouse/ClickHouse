@@ -1,0 +1,22 @@
+Test min/max with Decimal32
+0	-10.5678	7.9999
+1	-200.5	-0.0001
+Test min/max with Decimal64
+0	-10.5	7.99999999
+1	-200.5	-0.00000001
+Test min/max with Decimal128
+0	-10	7
+1	-200.5	-0.000000000000000001
+Test sum with Decimal types
+0	15	249.5556
+1	-3	-3
+Test avg with Decimal types
+0	20
+1	5
+Test Nullable(Decimal) min/max
+0	-10	7
+1	\N	\N
+2	-3	-1
+Test Nullable(Decimal) sum/avg
+0	7.25	3.625
+1	\N	\N

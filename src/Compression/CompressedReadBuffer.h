@@ -33,6 +33,13 @@ public:
 
     [[nodiscard]] size_t readBig(char * to, size_t n) override;
 
+    bool poll(size_t timeout_microseconds) override
+    {
+        if (hasPendingData())
+            return true;
+        return compressed_in->poll(timeout_microseconds);
+    }
+
     /// The compressed size of the current block.
     size_t getSizeCompressed() const
     {

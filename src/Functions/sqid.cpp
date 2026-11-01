@@ -22,11 +22,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// sqidEncode(number1, ...)
-class FunctionSqidEncode : public IFunction
+class FunctionSqidEncode final : public IFunction
 {
 public:
     static constexpr auto name = "sqidEncode";
@@ -37,25 +36,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidEncode>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (!checkDataTypes<
-                    DataTypeUInt8,
-                    DataTypeUInt16,
-                    DataTypeUInt32,
-                    DataTypeUInt64>(arguments[i].get()))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} must have datatype UInt*, given type: {}.",
-                    i, getName(), arguments[i]->getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "(NativeUInt, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -69,7 +52,7 @@ public:
         col_res->reserve(input_rows_count);
 
         const size_t num_args = arguments.size();
-        std::vector<UInt64> numbers(num_args);
+        std::vector<UInt64> numbers(num_args); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             for (size_t j = 0; j < num_args; ++j)
@@ -89,7 +72,7 @@ private:
 };
 
 /// sqidDecode(number1, ...)
-class FunctionSqidDecode : public IFunction
+class FunctionSqidDecode final : public IFunction
 {
 public:
     static constexpr auto name = "sqidDecode";
@@ -100,14 +83,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidDecode>(); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"sqid", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(String) -> Array(UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -127,7 +105,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view sqid = col_non_const->getDataAt(i);
-                std::vector<UInt64> integers = sqids.decode(String(sqid));
+                std::vector<UInt64> integers = sqids.decode(sqid); // STYLE_CHECK_ALLOW_STD_CONTAINERS
                 if (!integers.empty())
                     res_nested_data.insert(integers.begin(), integers.end());
                 res_offsets_data.push_back(res_offsets_data.back() + integers.size());
@@ -164,7 +142,7 @@ Transforms numbers into a [sqid](https://sqids.org/), a Youtube-like ID string.
     };
     FunctionDocumentation::IntroducedIn introduced_in_sqidEncode = {24, 1};
     FunctionDocumentation::Category category_sqidEncode = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation_sqidEncode = {description_sqidEncode, syntax_sqidEncode, arguments_sqidEncode, returned_value_sqidEncode, examples_sqidEncode, introduced_in_sqidEncode, category_sqidEncode};
+    FunctionDocumentation documentation_sqidEncode = {description_sqidEncode, syntax_sqidEncode, arguments_sqidEncode, {}, returned_value_sqidEncode, examples_sqidEncode, introduced_in_sqidEncode, category_sqidEncode};
 
     factory.registerFunction<FunctionSqidEncode>(documentation_sqidEncode);
     factory.registerAlias("sqid", FunctionSqidEncode::name);
@@ -180,15 +158,15 @@ Transforms a [sqid](https://sqids.org/) back into an array of numbers.
         "Usage example",
         "SELECT sqidDecode('gXHfJ1C6dN');",
         R"(
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_sqidDecode = {24, 1};
     FunctionDocumentation::Category category_sqidDecode = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation_sqidDecode = {description_sqidDecode, syntax_sqidDecode, arguments_sqidDecode, returned_value_sqidDecode, examples_sqidDecode, introduced_in_sqidDecode, category_sqidDecode};
+    FunctionDocumentation documentation_sqidDecode = {description_sqidDecode, syntax_sqidDecode, arguments_sqidDecode, {}, returned_value_sqidDecode, examples_sqidDecode, introduced_in_sqidDecode, category_sqidDecode};
 
     factory.registerFunction<FunctionSqidDecode>(documentation_sqidDecode);
 }

@@ -16,7 +16,7 @@ namespace MySQLParser
 
 ASTPtr ASTAlterQuery::clone() const
 {
-    auto res = std::make_shared<ASTAlterQuery>(*this);
+    auto res = make_intrusive<ASTAlterQuery>(*this);
     res->children.clear();
 
     if (command_list)
@@ -42,7 +42,7 @@ bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & e
     if (!ParserList(std::make_unique<ParserAlterCommand>(), std::make_unique<ParserToken>(TokenType::Comma)).parse(pos, command_list, expected))
         return false;
 
-    auto alter_query = std::make_shared<ASTAlterQuery>();
+    auto alter_query = make_intrusive<ASTAlterQuery>();
 
     node = alter_query;
     alter_query->command_list = command_list;

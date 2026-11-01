@@ -1,18 +1,15 @@
 #pragma once
 
+#include <Columns/ColumnString.h>
+#include <Interpreters/Context_fwd.h>
+#include <Processors/Chunk.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <rocksdb/db.h>
 #include <rocksdb/status.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
-#include <Common/ThreadPool.h>
-#include <Columns/ColumnString.h>
-#include <Processors/Chunk.h>
 
 
 namespace DB
 {
-namespace fs = std::filesystem;
 
 class StorageEmbeddedRocksDB;
 class EmbeddedRocksDBBulkSink;
@@ -22,13 +19,10 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// Optimized for bulk importing into StorageEmbeddedRocksDB:
 /// 1. No mem-table: an SST file is built from chunk, then import to rocksdb
 /// 2. Squash chunks to reduce the number of SST files
-class EmbeddedRocksDBBulkSink : public SinkToStorage, public WithContext
+class EmbeddedRocksDBBulkSink final : public SinkToStorage, public WithContext
 {
 public:
-    EmbeddedRocksDBBulkSink(
-        ContextPtr context_,
-        StorageEmbeddedRocksDB & storage_,
-        const StorageMetadataPtr & metadata_snapshot_);
+    EmbeddedRocksDBBulkSink(ContextPtr context_, StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_);
 
     ~EmbeddedRocksDBBulkSink() override;
 
@@ -47,12 +41,11 @@ private:
     bool isEnoughSize(const std::vector<Chunk> & input_chunks) const;
     bool isEnoughSize(const Chunk & chunk) const;
     /// Serialize chunks to rocksdb key-value pairs
-    template<bool with_timestamp>
+    template <bool with_timestamp>
     std::pair<ColumnString::Ptr, ColumnString::Ptr> serializeChunks(std::vector<Chunk> && input_chunks) const;
 
     StorageEmbeddedRocksDB & storage;
     StorageMetadataPtr metadata_snapshot;
-    size_t primary_key_pos = 0;
     Serializations serializations;
 
     /// For squashing chunks

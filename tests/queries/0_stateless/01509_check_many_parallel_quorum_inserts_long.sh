@@ -20,7 +20,7 @@ done
 function thread {
     i=0 retries=300
     while [[ $i -lt $retries ]]; do # server can be dead
-        $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $2" && break
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO r$1 SELECT $2 SETTINGS insert_quorum=3, insert_quorum_parallel=1" && break
         ((++i))
         sleep 0.1
     done

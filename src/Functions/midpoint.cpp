@@ -70,7 +70,7 @@ SELECT midpoint(toTime64('12:00:00', 0), toTime64('14:00:00', 0)) AS result, toT
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<MidpointResolver<FunctionMidpointBinary>>(documentation, FunctionFactory::Case::Insensitive);
 }

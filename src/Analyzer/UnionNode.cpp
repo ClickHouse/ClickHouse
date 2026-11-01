@@ -2,6 +2,8 @@
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -15,10 +17,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+
+#include <Common/SettingsChanges.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -45,10 +50,18 @@ namespace Setting
     extern const SettingsBool use_variant_as_common_type;
 }
 
-UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
-    : IQueryTreeNode(children_size)
+UnionNode::UnionNode(
+    ContextMutablePtr context_,
+    SelectUnionMode union_mode_,
+    SettingsChanges settings_changes_,
+    std::vector<String> default_settings_,
+    NameToNameVector query_parameters_)
+    : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
+    , settings_changes(std::move(settings_changes_))
+    , default_settings(std::move(default_settings_))
+    , query_parameters(std::move(query_parameters_))
 {
     if (union_mode == SelectUnionMode::UNION_DEFAULT ||
         union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
@@ -159,8 +172,8 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     if (union_mode > SelectUnionMode::UNION_DISTINCT)
         return;
 
-    auto & query_nodes = getQueries().getNodes();
-    for (auto & query_node : query_nodes)
+    const auto & query_nodes = getQueries().getNodes();
+    for (const auto & query_node : query_nodes)
     {
         if (auto * query_node_typed = query_node->as<QueryNode>())
             query_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
@@ -193,6 +206,9 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_cte)
         buffer << ", is_cte: " << is_cte;
 
+    if (is_materialized)
+        buffer << ", is_materialized: " << is_materialized;
+
     if (is_recursive_cte)
         buffer << ", is_recursive_cte: " << is_recursive_cte;
 
@@ -210,6 +226,17 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasSettingsChanges())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
+        for (const auto & setting_name : default_settings)
+            buffer << fmt::format(" {}=DEFAULT", setting_name);
+        for (const auto & [name, value] : query_parameters)
+            buffer << fmt::format(" param_{}={}", name, quoteString(value));
+    }
+
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
@@ -224,14 +251,22 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
         return false;
 
-    return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && is_recursive_cte == rhs_typed.is_recursive_cte
-        && cte_name == rhs_typed.cte_name && union_mode == rhs_typed.union_mode;
+    return is_subquery == rhs_typed.is_subquery
+        && is_cte == rhs_typed.is_cte
+        && is_materialized == rhs_typed.is_materialized
+        && is_recursive_cte == rhs_typed.is_recursive_cte
+        && cte_name == rhs_typed.cte_name
+        && union_mode == rhs_typed.union_mode
+        && settings_changes == rhs_typed.settings_changes
+        && default_settings == rhs_typed.default_settings
+        && query_parameters == rhs_typed.query_parameters;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_subquery);
     state.update(is_cte);
+    state.update(is_materialized);
     state.update(is_recursive_cte);
 
     if (recursive_cte_table)
@@ -245,14 +280,42 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(cte_name);
 
     state.update(static_cast<size_t>(union_mode));
+
+    state.update(settings_changes.size());
+    for (const auto & change : settings_changes)
+    {
+        state.update(change.name.size());
+        state.update(change.name);
+
+        const auto & setting_change_value_dump = change.value.dump();
+        state.update(setting_change_value_dump.size());
+        state.update(setting_change_value_dump);
+    }
+
+    state.update(default_settings.size());
+    for (const auto & setting_name : default_settings)
+    {
+        state.update(setting_name.size());
+        state.update(setting_name);
+    }
+
+    state.update(query_parameters.size());
+    for (const auto & [name, value] : query_parameters)
+    {
+        state.update(name.size());
+        state.update(name);
+        state.update(value.size());
+        state.update(value);
+    }
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
 {
-    auto result_union_node = std::make_shared<UnionNode>(context, union_mode);
+    auto result_union_node = std::make_shared<UnionNode>(context, union_mode, settings_changes, default_settings, query_parameters);
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
+    result_union_node->is_materialized = is_materialized;
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;
@@ -262,7 +325,15 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
 
 ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+    /// The union's own query-level `SETTINGS` clause is intentionally NOT serialized onto the
+    /// `ASTSelectWithUnionQuery` here. The SQL grammar has no place for it on a *nested* union: the
+    /// parser attaches a trailing `SETTINGS` clause of a union to its LAST arm (only the top-level
+    /// query gets `ASTQueryWithOutput::settings_ast`), and `QueryTreeBuilder` reads it back from
+    /// there. That last arm is a `QueryNode` which carries the very same clause and serializes it
+    /// itself, so the clause survives the query-tree -> AST -> text round trip in the one form that
+    /// can be re-parsed. Writing it to `settings_ast` instead would format a nested union as
+    /// `((SELECT ...) UNION ALL (SELECT ...) SETTINGS ...)`, which no parser accepts.
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
     select_with_union_query->is_normalized = true;
     select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
@@ -273,41 +344,41 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (recursive_cte_table)
     {
-        auto recursive_select_query = std::make_shared<ASTSelectQuery>();
+        auto recursive_select_query = make_intrusive<ASTSelectQuery>();
         recursive_select_query->recursive_with = true;
 
-        auto with_element_ast = std::make_shared<ASTWithElement>();
+        auto with_element_ast = make_intrusive<ASTWithElement>();
         with_element_ast->name = cte_name;
-        with_element_ast->subquery = std::make_shared<ASTSubquery>(std::move(result_query));
+        with_element_ast->subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         with_element_ast->children.push_back(with_element_ast->subquery);
 
-        auto with_expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto with_expression_list_ast = make_intrusive<ASTExpressionList>();
         with_expression_list_ast->children.push_back(std::move(with_element_ast));
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list_ast));
 
-        auto select_expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto select_expression_list_ast = make_intrusive<ASTExpressionList>();
         select_expression_list_ast->children.reserve(recursive_cte_table->columns.size());
         for (const auto & recursive_cte_table_column : recursive_cte_table->columns)
-            select_expression_list_ast->children.push_back(std::make_shared<ASTIdentifier>(recursive_cte_table_column.name));
+            select_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(recursive_cte_table_column.name));
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list_ast));
 
-        auto table_expression_ast = std::make_shared<ASTTableExpression>();
-        table_expression_ast->children.push_back(std::make_shared<ASTTableIdentifier>(cte_name));
+        auto table_expression_ast = make_intrusive<ASTTableExpression>();
+        table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(cte_name));
         table_expression_ast->database_and_table_name = table_expression_ast->children.back();
 
-        auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
         tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
         tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
-        ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+        ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
         tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
-        auto recursive_select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-        auto recursive_select_with_union_query_list_of_selects = std::make_shared<ASTExpressionList>();
+        auto recursive_select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        auto recursive_select_with_union_query_list_of_selects = make_intrusive<ASTExpressionList>();
         recursive_select_with_union_query_list_of_selects->children.push_back(std::move(recursive_select_query));
         recursive_select_with_union_query->children.push_back(std::move(recursive_select_with_union_query_list_of_selects));
         recursive_select_with_union_query->list_of_selects = recursive_select_with_union_query->children.back();
@@ -318,7 +389,7 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (is_subquery)
     {
-        auto subquery = std::make_shared<ASTSubquery>(std::move(result_query));
+        auto subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         if (set_subquery_cte_name)
             subquery->cte_name = cte_name;
 

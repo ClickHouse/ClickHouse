@@ -11,7 +11,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <base/find_symbols.h>
 #include <fmt/ranges.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -70,10 +72,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     if (!log_entry_id.empty())
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_LOG_ENTRY_ID);
 
+    auto block_hashes_string = fmt::format("{}", fmt::join(deduplication_block_ids, ","));
+
     out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << '\n'
-        << "block_id: " << escape << block_id << '\n';
+        << "block_id: " << escape << block_hashes_string << '\n';
 
     if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
         out << "log_entry_id: " << escape << log_entry_id << '\n';
@@ -121,6 +125,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
             if (cleanup)
                 out << "\ncleanup: " << cleanup;
+
+            if (bypass_min_unreserved_space)
+                out << "\nbypass_min_unreserved_space: " << bypass_min_unreserved_space;
 
             if (!patch_parts.empty())
             {
@@ -237,7 +244,11 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
     if (format_version >= FORMAT_WITH_BLOCK_ID)
     {
-        in >> "block_id: " >> escape >> block_id >> "\n";
+        std::string block_hashes_string;
+        in >> "block_id: " >> escape >> block_hashes_string >> "\n";
+
+        if (!block_hashes_string.empty())
+            splitInto<','>(deduplication_block_ids, block_hashes_string, true);
     }
 
     if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
@@ -281,9 +292,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
                 if (checkString("merge_type: ", in))
                 {
-                    UInt32 value;
+                    UInt32 value = 0;
                     in >> value;
-                    merge_type = checkAndGetMergeType(value);
+                    merge_type = checkAndGetMergeType(static_cast<std::underlying_type_t<MergeType>>(value));
                 }
                 else if (checkString("into_uuid: ", in))
                 {
@@ -307,9 +318,13 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                 {
                     in >> cleanup;
                 }
+                else if (checkString("bypass_min_unreserved_space: ", in))
+                {
+                    in >> bypass_min_unreserved_space;
+                }
                 else if (checkString("apply_patches:", in))
                 {
-                    size_t num_patches;
+                    size_t num_patches = 0;
                     in >> " " >> num_patches >> "\n";
 
                     for (size_t i = 0; i < num_patches; ++i)
@@ -384,12 +399,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
         in >> "\nhave_mutation\n";
         in >> have_mutation;
         in >> "\ncolumns_str_size:\n";
-        size_t columns_size;
+        size_t columns_size = 0;
         in >> columns_size >> "\n";
         columns_str.resize(columns_size);
         in.readStrict(columns_str.data(), columns_size);
         in >> "\nmetadata_str_size:\n";
-        size_t metadata_size;
+        size_t metadata_size = 0;
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
         in.readStrict(metadata_str.data(), metadata_size);
@@ -475,7 +490,7 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
 
 bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
 {
-    assert(drop_range_info.getBlocksCount() != 0);
+    chassert(drop_range_info.getBlocksCount() != 0);
     return drop_range_info.getBlocksCount() == 1;
 }
 

@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
+#include <Examples/clickhouse_examples.h>
 
 /** This program tests merge-selecting algorithm.
   * Usage:
@@ -16,16 +17,18 @@
   * clickhouse-client --query="SELECT 100 + round(10 * rand() / 0xFFFFFFFF) FROM system.numbers LIMIT 105" | tr "\n" ' ' | ./merge_selector
   */
 
-int main(int, char **)
+int mainEntryExampleMergeSelector(int, char **)
 {
     using namespace DB;
 
     PartsRanges ranges(1);
     PartsRange & parts = ranges.back();
 
+    // PartitionsStatistics statistics; /// Must be refreshed from `parts` before each select call - see merge_selector2.cpp.
     // SimpleMergeSelector::Settings settings;
     // settings.base = 2;
     // settings.max_parts_to_merge_at_once = 10;
+    // settings.partitions_stats = &statistics;
     // SimpleMergeSelector selector(settings);
 
     TrivialMergeSelector selector;
@@ -54,11 +57,13 @@ int main(int, char **)
 
     size_t sum_size_written = sum_parts_size;
     size_t num_merges = 1;
-    const std::vector<size_t> max_merge_sizes = {100ULL * 1024 * 1024 * 1024};
+    const size_t max_bytes = 100ULL * 1024 * 1024 * 1024;
+    const size_t max_rows = std::numeric_limits<size_t>::max();
+    std::vector<MergeConstraint> constraints{{max_bytes, max_rows}};
 
     while (parts.size() > 1)
     {
-        PartsRanges selected_ranges = selector.select(ranges, max_merge_sizes, nullptr);
+        PartsRanges selected_ranges = selector.select(ranges, constraints, nullptr);
 
         if (selected_ranges.empty())
         {
@@ -129,7 +134,7 @@ int main(int, char **)
 
     std::cout << "\n";
     std::cout << std::fixed << std::setprecision(2)
-        << "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
+        << "Write amplification: " << static_cast<double>(sum_size_written) / static_cast<double>(sum_parts_size) << "\n"
         << "Num merges: " << num_merges << "\n";
 
     for (const auto & part : parts)

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
@@ -18,6 +17,10 @@ NameSet injectRequiredColumns(
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns);
+
+/// Whether the virtual columns of a text index can be read from the index in a part (direct read).
+/// Otherwise they are computed by their default expressions.
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
@@ -49,7 +52,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
+    MergeTreeBlockSizePredictor(const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -75,8 +78,8 @@ struct MergeTreeBlockSizePredictor
 
         double max_size_per_row
             = std::max<double>({max_size_per_row_fixed, static_cast<double>(static_cast<UInt64>(1)), max_size_per_row_dynamic});
-        return (bytes_quota > block_size_rows * max_size_per_row)
-            ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
+        return (static_cast<double>(bytes_quota) > static_cast<double>(block_size_rows) * max_size_per_row)
+            ? static_cast<size_t>(static_cast<double>(bytes_quota) / max_size_per_row) - block_size_rows
             : 0;
     }
 
@@ -91,7 +94,7 @@ struct MergeTreeBlockSizePredictor
     void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
-        double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));
+        double current_ration = static_cast<double>(rows_was_filtered) / std::max(1.0, static_cast<double>(rows_was_read));
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;
@@ -104,7 +107,7 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-    DataPartPtr data_part;
+    MergeTreeDataPartInfoForReaderPtr data_part;
 
     struct ColumnInfo
     {
@@ -112,6 +115,10 @@ protected:
         double bytes_per_row_global = 0;
         double bytes_per_row = 0;
         size_t size_bytes = 0;
+        /// For subcolumns, the output column may be much smaller than the data actually
+        /// read from disk (e.g. a Map subcolumn extracts one key but reads the whole Map).
+        /// When set, `bytes_per_row` will not drop below `bytes_per_row_global`.
+        bool is_subcolumn = false;
     };
 
     std::vector<ColumnInfo> dynamic_columns_infos;
@@ -123,6 +130,7 @@ protected:
     size_t number_of_rows_in_part;
 
     bool is_initialized_in_update = false;
+    bool allow_subcolumns_sizes_calculation = false;
 
     void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
 

@@ -7,8 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
 
 #include <Functions/s2_fwd.h>
 
@@ -17,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
@@ -25,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionS2RectAdd : public IFunction
+class FunctionS2RectAdd final : public IFunction
 {
 public:
     static constexpr auto name = "s2RectAdd";
@@ -46,21 +43,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        for (size_t index = 0; index < getNumberOfArguments(); ++index)
-        {
-            const auto * arg = arguments[index].get();
-            if (!WhichDataType(arg).isUInt64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), index, getName());
-        }
-
-        DataTypePtr element = std::make_shared<DataTypeUInt64>();
-
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        return "(UInt64, UInt64, UInt64) -> Tuple(UInt64, UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -142,7 +127,29 @@ public:
 
 REGISTER_FUNCTION(S2RectAdd)
 {
-    factory.registerFunction<FunctionS2RectAdd>();
+    FunctionDocumentation::Description description = R"(
+Expands an S2 latitude-longitude rectangle to include the given S2 point. The rectangle is represented by a pair of S2 cell identifiers for its low and high corners.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2RectAdd(s2RectLow, s2RectHigh, s2Point)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2RectLow", "S2 cell identifier of the low vertex of the rectangle.", {"UInt64"}},
+        {"s2RectHigh", "S2 cell identifier of the high vertex of the rectangle.", {"UInt64"}},
+        {"s2Point", "S2 cell identifier of the point to add.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (s2RectLow, s2RectHigh) representing the expanded rectangle.", {"Tuple(UInt64, UInt64)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Basic usage",
+         "SELECT s2RectAdd(5765131099823669248, 5765131099823669248, 5765131099956887552)",
+         R"(
+┌─s2RectAdd(5765131099823669248, 5765131099823669248, 5765131099956887552)─┐
+│ (5765131100074425153,5765131099940616725)                                │
+└──────────────────────────────────────────────────────────────────────────┘
+)"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2RectAdd>(documentation);
 }
 
 

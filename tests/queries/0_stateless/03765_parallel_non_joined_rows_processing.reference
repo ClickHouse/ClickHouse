@@ -1,0 +1,10 @@
+--- Correctness: FULL JOIN ---
+75000	50000	50000
+75000	50000	50000
+--- Correctness: RIGHT JOIN ---
+50000	25000	50000
+50000	25000	50000
+--- Parallel: NonJoinedBlocksTransform count ---
+4
+--- Sequential: NonJoinedBlocksTransform count ---
+0

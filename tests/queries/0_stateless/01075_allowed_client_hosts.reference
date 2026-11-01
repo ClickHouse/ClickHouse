@@ -12,6 +12,9 @@ CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.ano
 CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.anothersite\\\\.com\', \'.*\\\\.anothersite\\\\.org\'
 CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.anothersite2\\\\.com\', \'.*\\\\.anothersite2\\\\.org\'
 CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST REGEXP \'.*\\\\.anothersite3\\\\.com\', \'.*\\\\.anothersite3\\\\.org\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST LIKE \'%.likesite.com\', \'%.likesite.org\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST LIKE \'%.likesite2.com\', \'%.likesite2.org\'
+CREATE USER test_user_01075 IDENTIFIED WITH no_password HOST LIKE \'%.likesite3.com\', \'%.likesite3.org\'
 CREATE USER `test_user_01075_x@localhost` IDENTIFIED WITH no_password HOST LOCAL
 CREATE USER test_user_01075_x IDENTIFIED WITH no_password HOST LOCAL
 CREATE USER `test_user_01075_x@192.168.23.15` IDENTIFIED WITH no_password HOST LOCAL

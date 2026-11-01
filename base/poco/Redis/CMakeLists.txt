@@ -11,6 +11,7 @@ target_compile_options (_poco_redis
         -Wno-shorten-64-to-32
         -Wno-sign-compare
         -Wno-zero-as-null-pointer-constant
+        -Wno-implicit-int-conversion
 )
 target_include_directories (_poco_redis SYSTEM PUBLIC "include")
 target_link_libraries (_poco_redis PUBLIC Poco::Net)

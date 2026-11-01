@@ -45,7 +45,7 @@ def change_byte_limit_and_restart(node, byte_limit):
         "<max_requests_append_bytes_size>[0-9]\\+</max_requests_append_bytes_size>",
         f"<max_requests_append_bytes_size>{byte_limit}</max_requests_append_bytes_size>",
     )
-    node.restart_clickhouse(stop_start_wait_sec=10)
+    node.restart_clickhouse()
     ku.wait_until_connected(cluster, node)
 
 
@@ -68,7 +68,7 @@ def create_sequential_nodes_worker(args):
         while time.time() < end_time:
             # Use ZooKeeper's sequential node feature
             try:
-                created_path = zk.create(f"{base_path}/node_", "", sequence=True)
+                zk.create(f"{base_path}/node_", "", sequence=True)
                 counter += 1
             except Exception as e:
                 logging.warning(f"Connection {connection_id} failed to create sequential node: {e}")

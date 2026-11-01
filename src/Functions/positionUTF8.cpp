@@ -34,15 +34,15 @@ Like [`position`](#position) but assumes `haystack` and `needle` are UTF-8 encod
         "UTF-8 character counting",
         "SELECT positionUTF8('Motörhead', 'r')",
         R"(
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPositionUTF8>(documentation);
 }

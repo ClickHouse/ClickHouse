@@ -36,14 +36,14 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
         "SELECT multiSearchFirstPositionUTF8('Здравствуй, мир',['мир', 'вст', 'авст'])",
         R"(
 ┌─multiSearchFirstPositionUTF8('Здравствуй, мир', ['мир', 'вст', 'авст'])─┐
-│                                                                       3 │
+│                                                                       4 │
 └─────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiSearchFirstPositionUTF8>(documentation);
 }

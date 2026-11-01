@@ -957,7 +957,7 @@ def test_many_connections(started_cluster):
         query += "SELECT key FROM {t} UNION ALL "
     query += "SELECT key FROM {t})"
 
-    assert node1.query(query.format(t="test_pg_table")) == "250\n"
+    assert_eq_with_retry(node1, query.format(t="test_pg_table"), "250")
     cursor.execute("DROP TABLE clickhouse.test_pg_table")
 
 
@@ -993,11 +993,11 @@ def test_concurrent_queries(started_cluster):
 
     def node_insert_select(_):
         for i in range(5):
-            result = node1.query(
+            node1.query(
                 "INSERT INTO test_pg_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
-            result = node1.query(
+            node1.query(
                 "SELECT * FROM test_pg_table LIMIT 100", user="default"
             )
 

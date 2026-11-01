@@ -9,9 +9,11 @@
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Common/StringValueFilter.h>
 
 #include <deque>
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -150,22 +152,29 @@ struct Reader
     struct PrimitiveColumnInfo
     {
         /// Primitive column index in parquet file. NOT index in primitive_columns array.
-        size_t column_idx;
+        size_t column_idx{};
         /// Index in parquet `schema` (in FileMetaData).
-        size_t schema_idx;
+        size_t schema_idx{};
+        /// Index of the top-level column that contains this primitive column.
+        size_t idx_in_output_block = UINT64_MAX;
         String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
         PageDecoderInfo decoder;
 
-        DataTypePtr raw_decoded_type; // not Nullable
-        DataTypePtr intermediate_type; // maybe Nullable
-        DataTypePtr final_type; // castColumn to this type
+        DataTypePtr decoded_type; // what decoder outputs, not Nullable
+        DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
+        /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
+        /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
+        /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
+        /// map. We keep that null map (instead of throwing CANNOT_INSERT_NULL) and fill defaults at
+        /// the null rows; the group null map is later used to wrap the assembled ColumnTuple in
+        /// ColumnNullable. See OutputColumnInfo::nullable_group.
+        bool group_nullable = false;
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
         ///       be default. So we'd need to validate uniqueness and add/move default value
         ///       (adjusting indices and dictionary).
-        bool needs_cast = false; // if final_type is different from intermediate_type
 
         /// How to interpret repetition/definition levels.
         std::vector<LevelInfo> levels;
@@ -173,13 +182,47 @@ struct Reader
         UInt8 max_array_def = 0;
 
         bool use_bloom_filter = false;
-        const KeyCondition * column_index_condition = nullptr;
-        bool use_prewhere = false;
+
+        /// A single-column `KeyCondition` used for page-level pruning through the column index.
+        struct ColumnIndexCondition
+        {
+            const KeyCondition * condition = nullptr;
+
+            /// Index into `spatial_key_conditions` when this condition was extracted from a
+            /// GeoParquet `covering.bbox` spatial predicate, `SIZE_MAX` otherwise. A NULL bbox
+            /// means the row's spatial extent is unknown, so such a condition may prune a page
+            /// only under the same four-column zero-nulls guarantee the row-group path requires
+            /// (see `spatialBboxStatsHaveNoNulls`).
+            size_t spatial_key_condition_idx = SIZE_MAX;
+        };
+
+        /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
+        /// on the same geometry, or a regular WHERE condition plus a spatial one on the same bbox
+        /// column) each contribute their own KeyCondition here; a page must pass all of them.
+        std::vector<ColumnIndexCondition> column_index_conditions;
+        size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
+        /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
+        /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
+        bool decode_dictionary_as_replicated = false;
 
-        std::optional<size_t> used_by_key_condition; // index in extended_sample_block
+        /// A filter extracted from a substring search condition on this column in PREWHERE.
+        /// String values that do not match it are decoded as empty strings (they are guaranteed
+        /// to be filtered out by PREWHERE afterwards). See `StringValueFilter`.
+        StringValueFilterPtr string_value_filter;
 
-        /// If use_bloom_filter, these are the values that we need to find in bloom filter.
+        bool used_by_key_condition = false;
+        bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
+
+        /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
+        /// column). Values from an `IN` set larger than `bloom_filter_max_set_size` are deliberately
+        /// left out - such a set is still hashed for the exact dictionary filter (which reads no extra
+        /// data per value), but probing the probabilistic bloom filter for it would read one filter
+        /// block per value for little benefit. So this is empty exactly when the only query constants
+        /// for the column come from such over-cap sets, in which case the bloom filter stays disabled
+        /// for the column (see hash_many and initializePrefetches). It can hold hashes for some atoms
+        /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
+        /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
 
         PrimitiveColumnInfo() = default;
@@ -193,18 +236,27 @@ struct Reader
         /// Range in primitive_columns.
         size_t primitive_start = 0;
         size_t primitive_end = 0;
-        DataTypePtr type;
+        DataTypePtr input_type; // make a column of this type from the nested columns...
+        DataTypePtr output_type; // ... then castColumn it to this type, if `needs_cast`
         std::optional<size_t> idx_in_output_block;
         std::vector<size_t> nested_columns;
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        bool needs_cast = false; // if output_type is different from input_type
+
+        /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
+        /// null map reconstructed from the leaves' definition levels. Used to read a physically
+        /// nullable parquet struct (OPTIONAL group) as Nullable(Tuple(...)). Only set when the group
+        /// has no optional/nullable ancestor and an all-REQUIRED, non-array subtree, so every leaf's
+        /// null map equals the group null map. `needs_cast` (if any) is applied after wrapping.
+        bool nullable_group = false;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;
 
-        bool use_prewhere = false;
+        size_t step_idx = 0;
     };
 
     struct RowSet
@@ -226,7 +278,7 @@ struct Reader
 
     struct BloomFilterBlock
     {
-        size_t block_idx;
+        size_t block_idx{};
         PrefetchHandle prefetch;
     };
 
@@ -261,14 +313,14 @@ struct Reader
         /// PrefetchHandle in ColumnChunk::data_pages or data_pages_prefetch).
         /// Either way the data is padded for simd.
         std::span<const char> data;
-        parq::Encoding::type encoding;
+        parq::Encoding::type encoding{};
 
         std::unique_ptr<PageDecoder> decoder;
         bool is_dictionary_encoded = false;
 
         /// If data_state is still compressed. We always decompress it before calling the decoder.
         /// Decompression is deferred a little to see if we can decompress directly into IColumn.
-        parq::CompressionCodec::type codec;
+        parq::CompressionCodec::type codec{};
         size_t values_uncompressed_size = 0;
 
         /// Empty if the corresponding max rep/def level is 0.
@@ -288,17 +340,29 @@ struct Reader
 
     struct ColumnChunk
     {
-        const parq::ColumnChunk * meta;
+        const parq::ColumnChunk * meta{};
 
         bool use_bloom_filter = false;
         bool use_dictionary_filter = false;
         bool use_column_index = false;
         bool need_null_map = false;
+        /// The output column this primitive column belongs to is served from the columns cache in
+        /// this row group, so its data is neither prefetched nor decoded.
+        bool served_from_cache = false;
+        /// The column is written to the columns cache, which makes the row group read in whole chunks
+        /// unless they would take too much memory, but the length of its strings is not in the metadata.
+        /// So its dictionary is decoded in the `Dictionary` stage, before the row group is split into
+        /// row subgroups, to estimate the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
+        bool decode_dictionary_early = false;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
+        /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
+        /// bitset) the file claims to have. Upper bound if the file didn't say (see
+        /// need_to_find_bloom_filter_lengths_the_hard_way).
+        size_t bloom_filter_data_bytes = 0;
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;
@@ -327,6 +391,16 @@ struct Reader
         /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
         /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
+        /// When the dictionary is decoded on the pruning path (`Dictionary` stage),
+        /// its decoded footprint is reserved live against the shared pruning-stage budget through this
+        /// handle so it is visible to every row group pruning in parallel, not only after the batch
+        /// flushes (see `PruningMemoryReservation`, `ReadManager::runTask` / `pruningMemoryReservation`,
+        /// and `clearColumnChunk`, which releases `dictionary_reserved_bytes`). Both stay default /
+        /// zero when the dictionary is decoded later on the throttled data-read path instead.
+        PruningMemoryReservation dictionary_reservation;
+        size_t dictionary_reserved_bytes = 0;
+        /// All values of `dictionary` as a column of `decoded_type`; built by `getDictionaryValues`.
+        ColumnPtr dictionary_values;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -337,7 +411,7 @@ struct Reader
         /// Index in data_pages up to which we checked which pages need to be read, after applying prewhere.
         size_t data_pages_prefetch_idx = 0;
 
-        ReadStage stage;
+        ReadStage stage{};
     };
 
     struct ColumnSubchunk
@@ -347,16 +421,40 @@ struct Reader
 
         MutableColumnPtr null_map;
 
+        /// For a leaf of a physically-nullable struct read as Nullable(Tuple(...)) (see
+        /// PrimitiveColumnInfo::group_nullable): the group's definition-level null map, moved here
+        /// in decodePrimitiveColumn before any leaf-level Nullable wrapping can consume `null_map`.
+        /// formOutputColumn reads it from the group's first leaf to wrap the assembled ColumnTuple
+        /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
+        /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
+        MutableColumnPtr group_null_map;
+
+        /// If set, `column` is a `ColumnUInt32` of indexes into these values.
+        ColumnPtr dictionary_values;
+
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
         /// Derived from parquet's repetition/definition levels. See comment on LevelInfo.
         /// ("Arrays offsets" is intentionally grammatically incorrect to emphasize that it's a
         ///  list of lists.)
-        std::vector<MutableColumnPtr> arrays_offsets;
+        MutableColumns arrays_offsets;
 
         /// Covers `column`, `arrays_offsets`, and also RowSubgroup::output (data can be moved from
         /// the former to the latter).
         MemoryUsageToken column_and_offsets_memory;
+    };
+
+    struct OutputColumnState
+    {
+        std::atomic<size_t> primitive_columns_remaining {};
+
+        /// Created in one of 3 ways:
+        ///  * If it's a normal column that's read from the file, it's created when
+        ///    primitive_columns_remaining reaches zero.
+        ///  * If is_missing_column, it's created lazily either when delivering the block or when
+        ///    running a prewhere expression that has this column as input.
+        ///  * If the column is a prewhere output, it's assigned when running prewhere.
+        ColumnPtr column;
     };
 
     struct RowSubgroup
@@ -375,7 +473,7 @@ struct Reader
         std::vector<ColumnSubchunk> columns;
         BlockMissingValues block_missing_values;
 
-        Columns output; // parallel to extended_sample_block
+        std::vector<OutputColumnState> output; // parallel to extended_sample_block
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
@@ -383,51 +481,89 @@ struct Reader
 
     struct RowGroup
     {
-        const parq::RowGroup * meta;
+        const parq::RowGroup * meta{};
 
-        size_t row_group_idx; // in parquet file
+        size_t row_group_idx{}; // in parquet file
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
+
+        /// Lazy materialization: set iff FormatFilterInfo::rows_to_read is set.
+        /// Half-open range of indexes in `rows_to_read` that fall into this row group.
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
 
+        /// TopN dynamic filtering: min/max of the sort column in this row group, set only when the
+        /// statistics are complete and prove the chunk has no nulls (see getTopKSortColumnRange).
+        /// Compared against the running top-K threshold right before column data is read, to skip
+        /// the row group when it provably contains no row that can enter the top-K
+        /// (see topKShouldSkipRowGroup).
+        std::optional<Range> top_k_sort_column_range;
+        /// TopN dynamic filtering: a single-row column with the best value of the sort column among
+        /// the rows delivered from this row group so far, in the query's order. Only maintained with
+        /// `FormatTopKFilterInfo::track_row_group_best_values` (see updateTopKBestValue).
+        ColumnPtr top_k_best_value;
+        /// `top_k_best_value` equals the bound of `top_k_sort_column_range` on its side, so no later row can improve it.
+        bool top_k_best_value_is_final = false;
+
         std::deque<RowSubgroup> subgroups;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
 
+        /// Columns cache, see `initColumnsCache`. The row group is cached in chunks of
+        /// `COLUMNS_CACHE_CHUNK_ROWS` rows, and while it uses the cache, its row subgroups are cut at
+        /// the boundaries of the chunks, so that a row subgroup is never more than one chunk.
+        /// Both are parallel to extended_sample_block, or empty when not used.
+        /// The chunks of the output columns found in the cache, all chunks of a column or none.
+        std::vector<std::vector<ColumnPtr>> cached_columns;
+        /// The output columns to write to the cache, with the entries of their chunks written so far.
+        /// A chunk decoded by a row subgroup in full is written to the cache at once, shared with the
+        /// result of the read, see `addToColumnsCacheWrite`. A column whose chunks turn out not to be all
+        /// written is taken back out of the cache, see `withdrawColumnsCacheWrite`.
+        /// A column is written by one row subgroup at a time, so the entries of a column need no lock.
+        struct ColumnsCacheWrite
+        {
+            bool active = false;
+            size_t chunks_written = 0;
+            /// Not owning: an entry the cache evicts is released as soon as the cache lets it go.
+            std::vector<std::weak_ptr<ColumnsCacheEntry>> entries;
+        };
+        std::vector<ColumnsCacheWrite> columns_cache_writes;
 
         /// Fields below are used only by ReadManager.
-
-        /// Indexes of the first subgroup that didn't finish
-        /// {prewhere, reading main columns, delivering final chunk}.
-        /// delivery_ptr <= read_ptr <= prewhere_ptr <= subgroups.size()
-        std::atomic<size_t> prewhere_ptr {0};
         std::atomic<size_t> read_ptr {0};
+
         std::atomic<size_t> delivery_ptr {0};
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
+
+        /// Admitted by ReadManager::admitTopKRowGroups and not fully read yet.
+        std::atomic<bool> holds_top_k_admission {false};
     };
 
-    struct PrewhereStep
+    struct Step
     {
         ExpressionActions actions;
-        String result_column_name;
-        std::vector<size_t> input_column_idxs {}; // indices in output_columns
-        std::optional<size_t> idx_in_output_block = std::nullopt;
-        bool need_filter = true;
+        std::optional<String> filter_column_name {};
+        std::vector<size_t> input_idxs {}; // indices in extended_sample_block
+        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
     ReadOptions options;
-    const Block * sample_block;
+    const Block * sample_block{};
     FormatFilterInfoPtr format_filter_info;
     Prefetcher prefetcher;
 
-    parq::FileMetaData file_metadata;
+    std::shared_ptr<const FileFooter> file_footer;
+    /// `file_footer->metadata`, without column chunks; see getColumnChunk.
+    const parq::FileMetaData & file_metadata() const { return file_footer ? file_footer->metadata : empty_file_metadata; }
+    static const parq::FileMetaData empty_file_metadata;
     std::deque<RowGroup> row_groups;
 
     /// Don't get confused in different column numberings (sorry there are so many):
@@ -455,7 +591,7 @@ struct Reader
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
     /// nullopt if the column is produced by PREWHERE expression:
-    ///     prewhere_steps[?].idx_in_output_block == i
+    ///     prewhere_steps[?].idxs_in_output_block[?].second == i
     std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
@@ -463,25 +599,157 @@ struct Reader
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
-    std::vector<PrewhereStep> prewhere_steps;
+    std::vector<Step> steps;
+
+    /// Per-column KeyConditions for page-level filter push-down (column index).
+    /// Stored here to keep the shared_ptrs alive, since raw pointers from them
+    /// are referenced by PrimitiveColumnInfo::column_index_conditions.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
+
+    /// KeyConditions built from GeoParquet covering.bbox spatial filters.
+    /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
+    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+    /// For each spatial_key_conditions[i], the primitive_columns indices of its four bbox
+    /// columns (xmin, ymin, xmax, ymax). SIZE_MAX means not found. Used to check null_count
+    /// before applying row-group and page pruning: NULL bbox means unknown extent, must not prune.
+    std::vector<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
+
+    /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
+    /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
+    /// alive, since raw pointers from them are referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
+
+    /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
+    /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
+    std::optional<size_t> top_k_primitive_idx;
+    /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
+    /// the reader only produces type defaults for it while the threshold comes from the values the
+    /// pipeline puts in their place, so the filter must not be applied at all.
+    bool top_k_column_is_read = false;
+    /// TopN dynamic filtering: position of the sort column in `sample_block`, when the best value of
+    /// each row group is tracked (see RowGroup::top_k_best_value).
+    std::optional<size_t> top_k_best_value_column_pos;
+    /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
+    bool row_groups_ordered_by_top_k = false;
+
+    /// Columns cache, see `ReadOptions::columns_cache` and `initColumnsCache`.
+    /// The rows of a row group are cached in chunks of this many rows (the target rows of a stripe of the
+    /// cache, `ColumnsCacheStripes::TARGET_ROWS`): each chunk of a column is an entry, the key of which is
+    /// `row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP` plus the number of the chunk in the row group.
+    static constexpr size_t COLUMNS_CACHE_CHUNK_ROWS = 65536;
+    static constexpr size_t COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP = size_t(1) << 24;
+    /// The identity of each output column in the cache, parallel to extended_sample_block;
+    /// zero for a column that does not use the cache. Empty if the cache is not used.
+    std::vector<UInt128> columns_cache_identities;
+    bool columns_cache_writes_possible = false;
+    /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
+    UInt64 columns_cache_generation = 0;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
-    static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
+    /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file and sizes the read to the file otherwise.
+    static std::shared_ptr<const FileFooter> readFileFooter(Prefetcher & prefetcher, size_t footer_read_size);
+    /// Works around writer bugs in column chunk metadata.
+    static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
+    /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
+    void setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_ = {});
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
+    void parseColumnChunks();
+    /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
+    /// Never replaces an entry: ColumnChunk::meta points into them.
+    void ensureColumnChunks(const std::vector<size_t> & column_indices);
+    /// Only for the columns of `primitive_columns`, see parseColumnChunks.
+    const parq::ColumnChunk & getColumnChunk(size_t row_group_idx, size_t column_idx) const;
+    /// By Parquet column index, nullptr for the columns that are not parsed.
+    const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
+    size_t numColumnChunks(size_t row_group_idx) const;
+
+    struct KeyConditionColumnRanges
+    {
+        /// Position in `extended_sample_block`.
+        size_t idx = 0;
+        std::vector<Range> ranges;
+        /// `sizeof(Range)` and the heap bytes of the bounds, for every range.
+        size_t bytes = 0;
+    };
+    /// Statistics ranges of key condition columns for every non-empty row group, as `prefilterAndInitRowGroups` checked
+    /// them. Complete only if every row group was checked by statistics alone.
+    std::vector<KeyConditionColumnRanges> key_condition_column_ranges;
+    bool key_condition_column_ranges_complete = false;
+    /// The key condition columns whose ranges `prefilterAndInitRowGroups` collects. While the ranges of all of them take
+    /// more than `max_key_condition_column_ranges_bytes`, it drops the column whose ranges take the most.
+    std::vector<size_t> collect_key_condition_column_ranges;
+    size_t max_key_condition_column_ranges_bytes = 0;
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
-    bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// On the dictionary-filter pruning path, pass a bounded `reservation` (see
+    /// `ReadManager::pruningMemoryReservation`): the decoded dictionary's full footprint is predicted
+    /// from the page header and reserved live against the shared `Dictionary` stage
+    /// budget *before* anything is decoded, so a dictionary that would push the pruning memory past the
+    /// reader's high watermark - across the several row groups pruning in parallel - is rejected before
+    /// `Dictionary::decode` allocates anything and false is returned so the caller falls back to a full
+    /// scan for that column. On success the reservation is reduced to the dictionary's actual
+    /// `Dictionary::allocatedBytes` and that amount is returned in `*held_reserved_bytes` for the caller
+    /// to release when the chunk is cleared. This bounds a highly compressible dictionary whose decoded
+    /// size the compressed-page limit alone cannot bound; see the memory-budget note in
+    /// `hashDictionaryValues`. Pass a default (unbounded) reservation and `nullptr` on the data-read
+    /// path, where the dictionary must be decoded regardless of size.
+    bool decodeDictionaryPage(
+        ColumnChunk & column, const PrimitiveColumnInfo & column_info,
+        const PruningMemoryReservation & reservation = {}, size_t * held_reserved_bytes = nullptr);
 
-    /// Returns false if the row group was filtered out and should be skipped.
-    bool applyBloomAndDictionaryFilters(RowGroup & row_group);
+    /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
+    /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data
+    /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
+    bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
+
+    /// Returns false if the row group was filtered out and should be skipped, using only the bloom
+    /// filters whose blocks have been read (`BloomFilterBlocks` stage). Columns that have no bloom
+    /// filter, including the ones that will be checked against their dictionary page in the next
+    /// stage, are left out of the filter map and so treated as "may match"; a bloom filter has no
+    /// false negatives, so a `false` here is final and the dictionary pages need not be read at all.
+    /// When the row group is not ruled out, also clears `use_dictionary_filter` on every column whose
+    /// own bloom filter reported a definite miss for each of its atoms (e.g. `a` in `a = 1 OR b = 2`
+    /// where only `b = 2` keeps the row group alive): the dictionary of such a column can only confirm
+    /// the miss, so its page is not read and `applyBloomAndDictionaryFilters` uses the bloom filter
+    /// for it instead.
+    bool applyBloomFilters(RowGroup & row_group);
+
+    /// Returns false if the row group was filtered out and should be skipped. Runs after
+    /// `applyBloomFilters` on the row groups it did not rule out, and re-evaluates the whole
+    /// condition, this time preferring the exact dictionary filter for every column that has a
+    /// decoded dictionary page.
+    /// `reservation` bounds the value sets built for dictionary filtering; it is the memory
+    /// still available for pruning, charged live to the shared `Dictionary` stage
+    /// counter for the lifetime of each value set, so several dictionary-filtered columns in this row
+    /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
+    /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
+    bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
+
+    /// TopN dynamic filtering: min/max of the sort column decoded from row-group statistics, or
+    /// nullopt when the statistics are missing or don't prove the absence of nulls (statistics
+    /// describe only the non-null values, and null rows may belong to the top-K). Statistics that
+    /// are present but cannot be decoded throw, as in the static min/max pruning path.
+    std::optional<Range> getTopKSortColumnRange(size_t row_group_idx) const;
+    /// Two rows (min, max of every output column) from chunk statistics; nullopt if some chunk lacks exact statistics.
+    std::optional<Chunk> readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const;
+    /// If set, no row groups are read and the format returns this chunk instead.
+    std::optional<Chunk> min_max_chunk;
+    /// True if the running top-K threshold proves that no row of this row group can enter the
+    /// top-K heap, so the row group can be skipped without reading its column data. The threshold
+    /// only ever tightens, so a `false` result is safely revisited by the row filter later.
+    bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
+    /// Folds the sort column of a chunk delivered from the row group into RowGroup::top_k_best_value.
+    void updateTopKBestValue(RowGroup & row_group, const IColumn & column) const;
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
@@ -494,8 +762,14 @@ struct Reader
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
+    /// Whether `estimateColumnMemoryBytesPerRow` can only guess: the column is of dictionary-encoded strings, the
+    /// metadata has no length of the strings, and the dictionary is not decoded.
+    bool decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
+    /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
+    /// capped far below overflow.
+    size_t memoryEstimateLimit() const;
 
-    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, const RowSubgroup & row_subgroup);
+    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup);
 
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
@@ -503,8 +777,16 @@ struct Reader
     /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
+    ColumnPtr & getOrFormOutputColumn(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
-    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group);
+    /// Finish the writes of the row group to the columns cache, once all its row subgroups are read:
+    /// take back out the columns that were not written in full.
+    void flushColumnsCacheWrites(RowGroup & row_group);
+    /// Take back out of the columns cache the columns of the row groups that were not read to the end,
+    /// e.g. because of `LIMIT`. Called when the reading is finished or abandoned.
+    void withdrawColumnsCacheWrites();
+
+    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
 private:
     struct BloomFilterLookup : public KeyCondition::BloomFilter
@@ -512,24 +794,59 @@ private:
         Prefetcher & prefetcher;
         ColumnChunk & column;
 
+        /// Whether `findAnyHash` was called at all, and whether any call reported a possible match.
+        /// `probed && !found` means every atom on this column that was evaluated is definitely false
+        /// (a bloom filter has no false negatives), so its exact dictionary filter could only agree.
+        bool probed = false;
+        bool found = false;
+
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+
+    private:
+        bool probe(const std::vector<uint64_t> & hashes);
     };
 
-    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+    /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the
+    /// exact set of values present in the column chunk. Dictionary value hashes are computed lazily
+    /// on the first lookup. If the values can't be hashed, the lookup conservatively reports a match.
+    /// Defined out of line in Reader.cpp so that its `HashSet` member does not pull the hash-table
+    /// headers (and their transitive includes) into every translation unit that includes Reader.h.
+    struct DictionaryLookup;
+
+    void getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
+    /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
+    /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and
+    /// page level) is only allowed then: a NULL in any bbox column means the row's spatial extent is
+    /// unknown, and min/max statistics summarize the non-null values only, so a bbox predicate can
+    /// look false for the row group or page while a NULL-bbox row inside it still matches.
+    bool spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_key_condition_idx) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
+    /// Look up the row groups in the columns cache and decide which columns to write to it.
+    void initColumnsCache();
+    bool canWriteToColumnsCache() const;
+    void addToColumnsCacheWrite(
+        RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults);
+    void withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write) const;
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
+    void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
     bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup = nullptr);
+    const ColumnPtr & getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+
+    /// By Parquet column index, nullptr if not parsed. Immutable, ColumnChunk::meta points into them.
+    std::vector<FileColumnChunksPtr> column_chunks;
+    /// See setFileFooter, released by prefilterAndInitRowGroups.
+    std::vector<FileColumnChunksPtr> cached_column_chunks;
 };
 
 }

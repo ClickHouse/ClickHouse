@@ -1,0 +1,9 @@
+left join, empty buffer: graceful refusal
+left join, non-empty buffer: graceful refusal
+inner join, non-empty buffer: graceful refusal
+--- hash join over the same shape
+1	A	1	B
+--- direct join, MergeTree right side
+1	A	1	C
+--- direct join, empty MergeTree right side
+1	A	0	

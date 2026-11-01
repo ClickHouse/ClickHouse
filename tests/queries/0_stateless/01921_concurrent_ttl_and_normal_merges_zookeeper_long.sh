@@ -71,7 +71,7 @@ done
 check_replication_consistency "ttl_table" "count(), sum(toUInt64(key))"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}' and type='MERGE_PARTS' and last_exception != '' FORMAT Vertical"
-$CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}'"
+$CLICKHOUSE_CLIENT --query "SELECT COUNT() > 0 FROM system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}'"
 
 
 for i in $(seq 1 $NUM_REPLICAS); do

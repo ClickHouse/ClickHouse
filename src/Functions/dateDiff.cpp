@@ -33,13 +33,12 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool is_diff>
 class DateDiffImpl
 {
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    explicit DateDiffImpl(const String & name_) : name(name_) {}
+    DateDiffImpl(const String & name_, bool is_diff_) : name(name_), is_diff(is_diff_) {}
 
     template <typename Transform>
     void dispatchForColumns(
@@ -165,9 +164,11 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        auto res =  static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        auto res = static_cast<Int64>(
+            static_cast<UInt64>(transform_y.execute(y, timezone_y))
+            - static_cast<UInt64>(transform_x.execute(x, timezone_x)));
 
-        if constexpr (is_diff)
+        if (is_diff)
         {
             return res;
         }
@@ -176,7 +177,7 @@ public:
             /// Adjust res:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
-            Int64 adjust_value;
+            Int64 adjust_value = 0;
             auto x_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
             auto y_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
 
@@ -232,15 +233,17 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
-                if ((x_day_of_week > y_day_of_week)
-                    || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
+                auto a_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
+                auto b_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
+                if (x_nanoseconds > y_nanoseconds)
+                    std::swap(a_day_of_week, b_day_of_week);
+                if ((a_day_of_week > b_day_of_week)
+                    || ((a_day_of_week == b_day_of_week) && ((a_comp.time.hour > b_comp.time.hour)
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
                     || ((a_comp.time.minute == b_comp.time.minute) && ((a_comp.time.second > b_comp.time.second)
                     || ((a_comp.time.second == b_comp.time.second) && ((a_comp.millisecond > b_comp.millisecond)
                     || ((a_comp.millisecond == b_comp.millisecond) && ((a_comp.microsecond > b_comp.microsecond)
-                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))
+                    || ((a_comp.microsecond == b_comp.microsecond) && (a_comp.nanosecond > b_comp.nanosecond)))))))))))))
                     res += adjust_value;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
@@ -312,6 +315,7 @@ public:
     }
 private:
     String name;
+    bool is_diff;
 };
 
 
@@ -325,14 +329,18 @@ private:
   *
   * The timezone matters because days can have different lengths.
   */
-template <bool is_relative>
-class FunctionDateDiff : public IFunction
+class FunctionDateDiff final : public IFunction
 {
 public:
-    static constexpr auto name = is_relative ? "dateDiff" : "age";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
+    FunctionDateDiff(const char * name_, bool is_relative_)
+        : function_name(name_), impl{function_name, is_relative_} {}
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, bool is_relative)
+    {
+        return std::make_shared<FunctionDateDiff>(name, is_relative);
+    }
+
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -340,21 +348,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            {"startdate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-            {"enddate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeInt64>();
+        return "(const String, DateOrDateTime, DateOrDateTime, [const String]) -> Int64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -406,14 +402,15 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl<is_relative> impl{name};
+    const char * function_name;
+    DateDiffImpl impl;
 };
 
 
 /** timeDiff(t1, t2)
   * t1 and t2 can be Date or DateTime
   */
-class FunctionTimeDiff : public IFunction
+class FunctionTimeDiff final : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
@@ -427,16 +424,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"first_datetime", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-            {"second_datetime", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date[32] or DateTime[64]"},
-        };
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeInt64>();
+        return "(DateOrDateTime, DateOrDateTime) -> Int64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -456,7 +446,7 @@ public:
         return col_res;
     }
 private:
-    DateDiffImpl<true> impl{name};
+    DateDiffImpl impl{name, true};
 };
 
 }
@@ -526,14 +516,16 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateDiff<true>>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
+    factory.registerFunction("dateDiff",
+        [](ContextPtr){ return FunctionDateDiff::create("dateDiff", true); },
+        documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("date_diff", "dateDiff");
+    factory.registerAlias("DATE_DIFF", "dateDiff");
+    factory.registerAlias("timestampDiff", "dateDiff");
+    factory.registerAlias("timestamp_diff", "dateDiff");
+    factory.registerAlias("TIMESTAMP_DIFF", "dateDiff");
 }
 
 REGISTER_FUNCTION(TimeDiff)
@@ -586,7 +578,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeDiff>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -654,9 +646,11 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateDiff<false>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("age",
+        [](ContextPtr){ return FunctionDateDiff::create("age", false); },
+        documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

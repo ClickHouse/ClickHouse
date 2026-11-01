@@ -1,4 +1,4 @@
--- Tags: shard, no-parallel
+-- Tags: shard, no-parallel, no-flaky-check
 
 set allow_nondeterministic_optimize_skip_unused_shards=1;
 set optimize_skip_unused_shards=1;

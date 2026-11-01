@@ -1,11 +1,15 @@
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/SortDescription.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/sortBlock.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -18,6 +22,8 @@ namespace ProfileEvents
 {
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
+extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 }
 
 namespace DB
@@ -30,6 +36,18 @@ std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCa
     return std::nullopt;
 }
 
+std::optional<RuntimeDataflowStatisticsCache::Boundary> RuntimeDataflowStatisticsCache::getBoundary(UInt64 root_key) const
+{
+    if (const auto boundary = boundary_cache->get(root_key))
+        return *boundary;
+    return std::nullopt;
+}
+
+void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, Boundary boundary)
+{
+    boundary_cache->set(root_key, std::make_shared<Boundary>(boundary));
+}
+
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
@@ -37,11 +55,8 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
-RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
+RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 {
-    if (!cache_key)
-        return;
-
     if (unsupported_case)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
@@ -57,19 +72,29 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
-            static_cast<double>(stats.sample_bytes) / stats.compressed_bytes,
+            static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes),
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res;
+    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
-            res.input_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
+        }
+    }
+    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
+    {
+        const auto & stats = duplicated_bytes_statistics[i];
+        if (stats.compressed_bytes)
+        {
+            log_stats(stats, fmt::format("Duplicated{}", toString(static_cast<InputStatisticsType>(i))));
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.duplicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
@@ -78,15 +103,16 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<OutputStatisticsType>(i)));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
-            res.output_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.output_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, duplicated bytes={}, output bytes={}",
         res.input_bytes,
+        res.duplicated_bytes,
         res.output_bytes);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
@@ -96,15 +122,40 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     }
 
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
-    dataflow_cache.update(*cache_key, res);
+    dataflow_cache.update(cache_key, res);
+}
+
+bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type)
+{
+    size_t num_streams = 0;
+    bool stream_is_column_itself = false;
+    serialization.enumerateStreams(
+        [&](const auto & substream_path)
+        {
+            ++num_streams;
+            const auto & substream_type = substream_path.back().data.type;
+            stream_is_column_itself
+                = ISerialization::isSpecialCompressionAllowed(substream_path) && substream_type && substream_type->equals(*type);
+        },
+        type);
+    return num_streams == 1 && stream_is_column_itself;
 }
 
 /// Tries to estimate compressed size of a column by serializing a sample of it.
-static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column)
+static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const ColumnCodecs & codecs)
 {
-    NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf);
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
+    /// What the sample buffer holds is only known here: the serialization is picked from the column at
+    /// hand, so a column stored `Sparse` (or `Replicated`) arrives as several substreams funnelled into
+    /// the one buffer below, and the column read from the part keeps the pre-`ALTER` type until the
+    /// mutation that rewrites it has run. A type-specific codec then measures a stream it was never
+    /// resolved for. Some codecs merely mismeasure it, but one that validates its input rejects it
+    /// outright - `ALP` throws `CANNOT_COMPRESS` on a byte count that is not a whole number of floats.
+    const bool sample_matches_type_specific_codec = codecs.type_specific && codecs.type_specific_for->equals(*column.type)
+        && isSerializedAsSingleStreamOfColumnType(*serialization, column.type);
+    const auto & codec = sample_matches_type_specific_codec ? codecs.type_specific : codecs.generic;
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf, codec);
     // To avoid spending too much time on serialization, we limit the number of rows to serialize.
     const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
     NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
@@ -113,102 +164,88 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
+/// The replicas merge their aggregation output with memory-bound merging, which sorts it by the group
+/// by keys; the single-node merge this sample is taken from leaves it in hash-table order. So what a
+/// replica puts on the wire is a sorted block, and pricing an unsorted sample of the very same rows
+/// misses by the whole difference between the two - a monotonic `UInt64` key column compresses 7.8x
+/// sorted and 3.0-3.9x in hash order.
+///
+/// The description is rebuilt ascending here instead of carrying the replica's own
+/// `group_by_sort_description` down: what the ratio responds to is equal and neighbouring keys
+/// ending up adjacent, which every direction and null placement gives equally.
+static IColumn::Permutation keyOrderPermutation(
+    const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types)
 {
-    if (!cache_key)
-        return;
+    ColumnsWithTypeAndName key_columns;
+    SortDescription description;
+    key_columns.reserve(keys_positions.size());
+    description.reserve(keys_positions.size());
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+    {
+        auto name = "__key_" + toString(i);
+        key_columns.emplace_back(columns[keys_positions[i]], key_types[i], name);
+        description.emplace_back(std::move(name), 1);
+    }
 
+    IColumn::Permutation permutation;
+    stableGetPermutation(Block(key_columns), description, permutation);
+    return permutation;
+}
+
+bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
+{
+    // Empty blocks produced during planning, when we calculate output headers. Skip them.
+    if (!block_rows)
+        return false;
+    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
+    return counter % 5 == 0 && counter < 25;
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
+    Statistics & statistics,
+    size_t num_rows,
+    const ColumnsWithTypeAndName & cols,
+    std::optional<size_t> full_bytes,
+    const KeyOrderProvider & key_order)
+{
     Stopwatch watch;
+
+    size_t block_bytes = 0;
+    if (full_bytes)
+    {
+        block_bytes = *full_bytes;
+    }
+    else
+    {
+        for (const auto & col : cols)
+            block_bytes += col.column->byteSize();
+    }
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::OutputChunk];
-    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    if (chunk.hasRows() && counter % 50 == 0 && counter < 150)
+    if (shouldSampleBlock(statistics, num_rows))
     {
-        chassert(chunk.getNumColumns() == header.columns());
-        for (size_t i = 0; i < chunk.getNumColumns(); ++i)
+        /// Only output columns get here, and they model what a replica sends to the initiator rather than
+        /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
+        /// The transfer codec is `network_compression_method`, whose default the default codec matches.
+        /// It is generic, so it applies to any serialization layout.
+        const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
+        /// Built only for a block that is actually sampled - one in five, and at most five per query.
+        ColumnsWithTypeAndName sorted;
+        if (key_order)
         {
-            auto [sample, compressed] = estimateCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+            const auto permutation = key_order();
+            sorted = cols;
+            for (auto & col : sorted)
+                col.column = col.column->permute(permutation, 0);
+        }
+        for (const auto & col : (key_order ? sorted : cols))
+        {
+            auto [sample, compressed] = estimateCompressedColumnSize(col, codecs);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
     }
-
-    std::lock_guard lock(statistics.mutex);
-    statistics.bytes += chunk.bytes();
-    if (compressed_bytes)
-    {
-        statistics.sample_bytes += sample_bytes;
-        statistics.compressed_bytes += compressed_bytes;
-    }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
-}
-
-void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
-{
-    if (!cache_key)
-        return;
-
-    Stopwatch watch;
-
-    /// We want to avoid situations when there is a single very large state (think of `SELECT uniqExact(col) FROM t`).
-    /// Then we will spend a lot of time serializing it, and the overhead will be too high.
-    if (variant.type == AggregatedDataVariants::Type::without_key
-        && std::ranges::any_of(
-            variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
-    {
-        unsupported_case.store(true, std::memory_order_relaxed);
-        return;
-    }
-
-    size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
-
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationState];
-    std::lock_guard lock(statistics.mutex);
-    statistics.bytes += res;
-    statistics.sample_bytes += res;
-    statistics.compressed_bytes += res;
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
-}
-
-void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
-{
-    if (!cache_key)
-        return;
-
-    Stopwatch watch;
-
-    auto get_key_column_sizes = [&](bool compress)
-    {
-        size_t sample_bytes = 0;
-        size_t compressed_bytes = 0;
-        for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
-        {
-            const auto & key_column_name = aggregator.getParams().keys[i];
-            const auto & column = block.getByName(key_column_name);
-            if (compress)
-            {
-                auto [sample, compressed] = estimateCompressedColumnSize(column);
-                sample_bytes += sample;
-                compressed_bytes += compressed;
-            }
-            else
-            {
-                sample_bytes += column.column->byteSize();
-                compressed_bytes += column.column->byteSize();
-            }
-        }
-        return std::make_pair(sample_bytes, compressed_bytes);
-    };
-
-    const auto block_bytes = get_key_column_sizes(/*compressed=*/false).first;
-    size_t sample_bytes = 0;
-    size_t compressed_bytes = 0;
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
-    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    if (block.rows() && counter % 50 == 0 && counter < 150)
-        std::tie(sample_bytes, compressed_bytes) = get_key_column_sizes(/*compressed=*/true);
 
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += block_bytes;
@@ -217,41 +254,240 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    /// Reported in nanoseconds: a call often takes well under a microsecond, and rounding each one down would add up to nothing.
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    /// Only output columns get here, see above.
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
+}
+
+static DataTypes getKeyTypesFrom(const Block & header, const ColumnNumbers & keys_positions)
+{
+    DataTypes types;
+    types.reserve(keys_positions.size());
+    for (auto pos : keys_positions)
+        types.push_back(header.getByPosition(pos).type);
+    return types;
+}
+
+RuntimeDataflowStatisticsCacheUpdater::KeyOrderProvider RuntimeDataflowStatisticsCacheUpdater::keyOrderProviderFor(
+    const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const
+{
+    if (!replicas_send_output_in_key_order || keys_positions.empty())
+        return {};
+    return [&columns, &keys_positions, key_types] { return keyOrderPermutation(columns, keys_positions, key_types); };
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
+{
+    chassert(chunk.getNumColumns() == header.columns());
+    const auto & columns = chunk.getColumns();
+    ColumnsWithTypeAndName cols;
+    cols.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+        cols.emplace_back(columns[i], header.getByPosition(i).type, "");
+    recordColumns(block->output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
+{
+    Stopwatch watch;
+
+    /// We want to avoid situations when there is a single very large state (think of `SELECT uniqExact(col) FROM t`).
+    /// Then we will spend a lot of time serializing it, and the overhead will be too high.
+    if (variant.type == AggregatedDataVariants::Type::without_key
+        && std::ranges::any_of(
+            variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
+    {
+        markUnsupportedCase();
+        return;
+    }
+
+    size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
+
+    auto & statistics = block->output_bytes_statistics[OutputStatisticsType::AggregationState];
+    std::lock_guard lock(statistics.mutex);
+    statistics.bytes += res;
+    statistics.sample_bytes += res;
+    statistics.compressed_bytes += res;
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputNanoseconds, elapsed_nanoseconds);
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types)
+{
+    const auto & columns = chunk.getColumns();
+    ColumnsWithTypeAndName cols;
+    cols.reserve(keys_positions.size());
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+        cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+    recordColumns(
+        block->output_bytes_statistics[OutputStatisticsType::AggregationKeys],
+        chunk.getNumRows(),
+        cols,
+        /*full_bytes=*/{},
+        keyOrderProviderFor(columns, keys_positions, key_types));
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
+    const Chunk & chunk,
+    const ColumnNumbers & keys_positions,
+    const DataTypes & key_types,
+    size_t full_key_bytes,
+    const Columns & untruncated_sample_columns)
+{
+    ColumnsWithTypeAndName cols;
+    cols.reserve(keys_positions.size());
+    size_t num_rows = chunk.getNumRows();
+    /// Which columns carry the keys below, and where: the sample holds the key columns alone, the chunk
+    /// holds them at their own positions. The key order the replicas send in is taken from whichever of
+    /// the two is priced.
+    KeyOrderProvider key_order;
+    ColumnNumbers sample_positions;
+    if (!untruncated_sample_columns.empty())
+    {
+        /// The byte count describes the untruncated keys, so the ratio it is divided by has to come from
+        /// them as well - the chunk holds the kept groups only, and their keys compress differently.
+        /// When every group was rejected the chunk holds nothing at all, and without a ratio the byte
+        /// count is dropped rather than estimated. The conversion kept a bounded sample for both cases.
+        chassert(untruncated_sample_columns.size() == keys_positions.size());
+        for (size_t i = 0; i < untruncated_sample_columns.size(); ++i)
+            cols.emplace_back(untruncated_sample_columns[i], key_types[i], "");
+        num_rows = untruncated_sample_columns.front()->size();
+
+        sample_positions.resize(untruncated_sample_columns.size());
+        for (size_t i = 0; i < sample_positions.size(); ++i)
+            sample_positions[i] = i;
+        key_order = keyOrderProviderFor(untruncated_sample_columns, sample_positions, key_types);
+    }
+    else
+    {
+        const auto & columns = chunk.getColumns();
+        for (size_t i = 0; i < keys_positions.size(); ++i)
+            cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+        key_order = keyOrderProviderFor(columns, keys_positions, key_types);
+    }
+
+    recordColumns(
+        block->output_bytes_statistics[OutputStatisticsType::AggregationKeys], num_rows, cols, full_key_bytes, key_order);
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header)
+{
+    const auto & columns = chunk.getColumns();
+
+    /// Mark key columns so we can skip them — only non-key columns are aggregate states.
+    std::vector<bool> is_key(columns.size(), false);
+    for (auto pos : keys_positions)
+        is_key[pos] = true;
+
+    ColumnsWithTypeAndName cols;
+    cols.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (is_key[i])
+            continue;
+        cols.emplace_back(columns[i], header.getByPosition(i).type, "");
+    }
+    recordColumns(
+        block->output_bytes_statistics[OutputStatisticsType::AggregationState],
+        chunk.getNumRows(),
+        cols,
+        /*full_bytes=*/{},
+        keyOrderProviderFor(columns, keys_positions, getKeyTypesFrom(header, keys_positions)));
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
-    const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes)
+    const ColumnsWithTypeAndName & input_columns,
+    const NameSet & partially_read_columns,
+    const NamesAndTypesList & part_columns,
+    const ColumnSizeByName & column_sizes,
+    const ColumnCodecByName & column_codecs,
+    const CompressionCodecPtr & default_codec,
+    size_t read_bytes,
+    std::optional<bool> & should_continue_sampling)
 {
-    if (!cache_key)
-        return;
-
     Stopwatch watch;
 
     const auto type = read_bytes ? InputStatisticsType::WithByteHint : InputStatisticsType::WithoutByteHint;
     if (type == InputStatisticsType::WithoutByteHint)
     {
-        for (const auto & column : columns)
+        for (const auto & column : input_columns)
             read_bytes += column.column->byteSize();
     }
 
-    auto & statistics = input_bytes_statistics[type];
-    std::lock_guard lock(statistics.mutex);
-    statistics.bytes += read_bytes;
-    if (read_bytes)
+    size_t sample_bytes = 0;
+    size_t compressed_bytes = 0;
+    auto & statistics = duplicated ? block->duplicated_bytes_statistics[type] : block->input_bytes_statistics[type];
+    if (read_bytes && !input_columns.empty())
     {
-        for (const auto & column : columns)
+        if (!column_sizes.empty())
         {
-            if (!column_sizes.contains(column.name))
-                continue;
-            const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
-                ? (column_sizes.at(column.name).data_compressed / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
-                : 1.0;
-            statistics.sample_bytes += column.column->byteSize();
-            statistics.compressed_bytes += static_cast<size_t>(column.column->byteSize() * compressed_ratio);
+            for (const auto & column : input_columns)
+            {
+                if (column_sizes.contains(column.name))
+                {
+                    const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
+                        ? (static_cast<double>(column_sizes.at(column.name).data_compressed)
+                           / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
+                        : 1.0;
+                    sample_bytes += column.column->byteSize();
+                    compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
+                }
+            }
+        }
+        else if (std::ranges::any_of(
+                     input_columns, [&](const auto & column) { return partially_read_columns.contains(column.name); }))
+        {
+            /// Partially read columns (e.g. only the offsets of an array whose data is missing from the part)
+            /// are internally inconsistent until `fillMissingColumns` completes them, so they cannot be
+            /// serialized for the sample below. Excluding just those columns would poison the statistics:
+            /// the compression ratio would be derived from the surviving columns only, but applied to
+            /// `read_bytes` of the whole block, which includes the bytes of the skipped column. There is no
+            /// per-column byte split to subtract here (unlike the `column_sizes` branch above, which never
+            /// serializes and handles such columns fine), so give up on the statistics for this query.
+            markUnsupportedCase();
+        }
+        else
+        {
+            if (!should_continue_sampling.has_value())
+                should_continue_sampling = shouldSampleBlock(statistics, input_columns[0].column->size());
+
+            // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
+            if (*should_continue_sampling)
+            {
+                for (const auto & column : input_columns)
+                {
+                    // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
+                    if (part_columns.contains(column.name))
+                    {
+                        const auto codec_it = column_codecs.find(column.name);
+                        /// A column with no `CODEC` of its own is written with the part's default codec,
+                        /// which is generic, so it applies to any serialization layout.
+                        const auto [sample, compressed] = estimateCompressedColumnSize(
+                            column,
+                            codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
+                        sample_bytes += sample;
+                        compressed_bytes += compressed;
+                    }
+                }
+            }
         }
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+
+    std::lock_guard lock(statistics.mutex);
+    statistics.bytes += read_bytes;
+    if (compressed_bytes)
+    {
+        statistics.sample_bytes += sample_bytes;
+        statistics.compressed_bytes += compressed_bytes;
+    }
+    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
