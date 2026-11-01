@@ -21,6 +21,7 @@ INCLUDED = [
     "at_modifier.test",
     "collision.test",
     "functions.test",
+    "histograms.test",
     "limit.test",
     "literals.test",
     "name_label_dropping.test",
@@ -33,7 +34,6 @@ INCLUDED = [
     "trig_functions.test",
 ]
 EXCLUDED = [
-    "histograms.test",
     "native_histograms.test",
     "info.test",
     "type_and_unit.test",
