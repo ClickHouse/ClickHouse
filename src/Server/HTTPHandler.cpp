@@ -960,7 +960,8 @@ void HTTPHandler::processQuery(
     /// Multipart form parsing consumes the HTTP request; a queryless filename upload instead
     /// supplies the staged file as the query's input body. Explicit multipart queries still
     /// use the original external-table path.
-    if (has_external_data && request.getExpectContinue() && shouldDeferHTTP100Continue(request))
+    const bool sent_multipart_continue = has_external_data && request.getExpectContinue() && shouldDeferHTTP100Continue(request);
+    if (sent_multipart_continue)
         response.sendContinue();
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
@@ -1484,7 +1485,7 @@ void HTTPHandler::processQuery(
 
     /// Create callback to defer HTTP 100 Continue response to after quota checks
     HTTPContinueCallback http_continue_callback = {};
-    if (shouldDeferHTTP100Continue(request) && !requestDeclaresFormBody(request))
+    if (shouldDeferHTTP100Continue(request) && !sent_multipart_continue)
     {
         http_continue_callback = [&request, &response, path_upload_body]()
         {
