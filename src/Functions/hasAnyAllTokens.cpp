@@ -974,8 +974,8 @@ SELECT hasTokenStartingWith('a|fab@example.com', 'fab@', 'splitByString([''|''])
         )",
         R"(
 ┌─hasTokenStartingWith('a|fab@example.com', 'fab@', 'splitByString([\'|\'])')─┐
-│                                                                            1 │
-└──────────────────────────────────────────────────────────────────────────────┘
+│                                                                           1 │
+└─────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
