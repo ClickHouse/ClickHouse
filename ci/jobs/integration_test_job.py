@@ -2168,8 +2168,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # selection only delays the queue. pytest (and xdist) stops scheduling tests once
     # `--maxfail` is reached; the sequential phase gets what remains of the limit.
     maxfail_option = ""
+    # `--dist=loadfile` schedules the modules by descending test count by default, which
+    # would undo the priority order of the merge-queue targeted check (see the sort of
+    # the modules above): keep the order of the command line there.
+    order_option = ""
     if is_merge_queue_targeted_check:
         maxfail_option = f"--maxfail={MERGE_QUEUE_MAX_FAILURES}"
+        order_option = "--no-loadscope-reorder"
 
     failed_test_cases = []
 
@@ -2220,7 +2225,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             parallel_timed_out,
             parallel_hard_killed,
         ) = run_pytest_and_collect_results(
-            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} {maxfail_option} --session-timeout={session_timeout_parallel}",
+            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} {maxfail_option} {order_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
@@ -2276,7 +2281,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 sequential_timed_out,
                 sequential_hard_killed,
             ) = run_pytest_and_collect_results(
-                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} {maxfail_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
+                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} {maxfail_option} {order_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
