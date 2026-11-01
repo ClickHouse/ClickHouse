@@ -75,15 +75,13 @@ def test_kafka_consumer_reschedule_logging(kafka_cluster, create_query_generator
         },
     )
 
-    instance.query(
-        f"""
+    instance.query(f"""
         {create_query};
 
         CREATE MATERIALIZED VIEW test.{kafka_table}_destination
         ENGINE=MergeTree ORDER BY tuple() AS
         SELECT key, value FROM test.{kafka_table};
-    """
-    )
+    """)
 
     messages = [json.dumps({"key": j, "value": j}) for j in range(50)]
     k.kafka_produce(kafka_cluster, topic_name, messages)
@@ -109,10 +107,7 @@ def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator)
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers=f"localhost:{kafka_cluster.kafka_port}"
-    )
-
+    admin_client = k.get_admin_client(kafka_cluster)
     topic_name = "system_kafka_consumers_timestamp" + k.get_topic_postfix(
         create_query_generator
     )
@@ -125,8 +120,7 @@ def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator)
             ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
         )
 
-        instance.query(
-            f"""
+        instance.query(f"""
             DROP TABLE IF EXISTS test.{kafka_table} SYNC;
             DROP TABLE IF EXISTS test.{kafka_table}_view SYNC;
 
@@ -138,19 +132,22 @@ def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator)
                 format="CSV",
                 settings={
                     "format_csv_delimiter":"|",
-                    "kafka_commit_on_select": 1
+                    "kafka_commit_on_select": 1,
+                    "kafka_flush_interval_ms": 200,
+                    "kafka_poll_timeout_ms": 100,
                 }
             )};
 
             CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
-            """
-        )
+            """)
         instance.query_with_retry(
             f"SELECT count() FROM test.{kafka_table}_view",
-            check_callback=lambda res: int(res) == 4,
+            check_callback=lambda res: int(res) == 6,
+            # retry_count=120
         )
 
-        time.sleep(5)
+        res = instance.query(f"SELECT count() FROM test.{kafka_table}_view")
+        assert int(res) == 6
 
         latency_array = instance.query(
             f"""
@@ -163,8 +160,8 @@ def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator)
         now = int(list(latency_array.values())[0])
         timestamps = pd.eval(list(latency_array.values())[1])
         offsets = pd.eval(list(latency_array.values())[2])
-        logging.info(f"offsets {offsets}")
-        logging.info(f"timestamps {timestamps}")
+        # logging.info(f"offsets {offsets}")
+        # logging.info(f"timestamps {timestamps}")
 
         total_offset = 0
         for i in range(len(offsets)):
