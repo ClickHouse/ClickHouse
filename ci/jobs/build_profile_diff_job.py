@@ -211,6 +211,7 @@ class Section:
     body: str = ""  # markdown, empty = nothing to show
     significant: bool = False
     summary: str = ""  # one line for the job result info
+    improvement: str = ""  # one line for a notable win, empty = none
 
 
 class Db:
@@ -869,6 +870,10 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
     profile producer lost it, and is flagged as an incomplete comparison
     instead of an all-green omission. A row the master baseline lacks is
     called out as a missing baseline.
+
+    A binary that became smaller by a significant margin is celebrated rather
+    than flagged. The margin is judged on the delta with the offset taken out,
+    so that the offset never counts towards a win the pull request did not make.
     """
     section = Section(title="Binary sizes")
     rows = db.query(
@@ -902,6 +907,7 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         "|---|---:|---:|---:|",
     ]
     within_offset = []
+    wins = []
     for file in HEADLINE_BINARIES:
         pr_size, base_size = sizes.get(file, (0, 0))
         if not pr_size or not base_size:
@@ -909,7 +915,19 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         delta = pr_size - base_size
         offset = base_size * XRAY_DEBUG_OFFSET_RATIO
         name = strip_build_dir(file)
-        if abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
+        # The part of a decrease that the offset does not explain.
+        own_delta = delta + offset
+        if -own_delta >= BINARY_SIG_BYTES and -own_delta >= base_size * BINARY_SIG_RATIO:
+            wins.append(f"{md_code(name)} {format_bytes_delta(own_delta, base_size)}")
+            summaries.append(f"{name}: {format_bytes_delta(own_delta, base_size)}")
+            lines.append(
+                f"🎉 {md_code(name)} is smaller than the master baseline by "
+                f"{format_bytes(-delta)}; {format_bytes(offset)} of that is the known "
+                "offset between the two builds, so this pull request makes it smaller by "
+                f"about {format_bytes(-own_delta)} ({-own_delta / base_size:.2%})."
+            )
+            lines.append("")
+        elif abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
             section.significant = True
             summaries.append(f"{name}: {format_bytes_delta(delta, base_size)}")
         elif (
@@ -944,6 +962,8 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         lines += ["", XRAY_DEBUG_OFFSET_NOTE]
     section.body = "\n".join(lines).rstrip()
     section.summary = "; ".join(summaries)
+    if wins:
+        section.improvement = "Smaller binary: " + ", ".join(wins)
     return section
 
 
@@ -1571,15 +1591,20 @@ def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section], war
         "compile times per translation unit against the most recent warmup build that recompiled it).",
         "",
     ]
+    improvements = [s.improvement for s in sections if s.improvement]
     if significant:
         titles = ", ".join(s.title.lower() for s in significant)
         lines.append(f"⚠️ **Significant changes: {titles}.**")
-    else:
+    elif not improvements:
         lines.append("✅ No significant changes.")
+    for improvement in improvements:
+        if lines[-1]:
+            lines.append("")
+        lines.append(f"🎉 **{improvement}.**")
     for section in sections:
         if not section.body:
             continue
-        marker = " ⚠️" if section.significant else ""
+        marker = " ⚠️" if section.significant else " 🎉" if section.improvement else ""
         lines += [
             "",
             f"<details><summary><b>{section.title}</b>{marker}</summary>",
@@ -1771,6 +1796,9 @@ def main():
 
     summaries = [s.summary or s.title for s in significant]
     result_info = "Significant changes: " + "; ".join(summaries) if significant else f"No significant changes vs master {base_sha[:9]}"
+    improvements = [s.summary for s in sections if s.improvement and not s.significant]
+    if improvements:
+        result_info += "; improvements: " + "; ".join(improvements)
     # Each comparison aspect is reported as its own sub-result: they land as
     # separate rows in cidb and read as separate lines in the CI report.
     sub_results = [
