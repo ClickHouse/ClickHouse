@@ -309,6 +309,18 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// Two call shapes:
+    ///   `<Kernel>DistanceTransposed(qbit, ref_vec, precision)`             — 3 args
+    ///   `<Kernel>DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec)` — 2 + p args
+    /// The second shape is an internal compiler-generated optimisation and
+    /// is not normally written by users; the runtime validates the exact
+    /// shape and the QBit/element types. Result is always `Float64`.
+    String getSignatureString() const override
+    {
+        return "(QBit, Array, const UInt8) -> Float64"
+               " OR (FixedString, ..., UInt, Array) -> Float64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
@@ -1125,7 +1137,7 @@ private:
                 simd_kernel = nullptr;
 #endif
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         const auto untranspose_kernel = SerializationQBit::resolveUntransposeBitPlane<Word>();
 #else
         constexpr auto untranspose_kernel = TargetSpecific::Default::untransposeBitPlaneImpl<Word>;
@@ -1352,7 +1364,7 @@ private:
         simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<Float32>();
 #endif
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         const auto untranspose_kernel = SerializationQBit::resolveUntransposeBitPlane<uint8_t>();
 #else
         constexpr auto untranspose_kernel = TargetSpecific::Default::untransposeBitPlaneImpl<uint8_t>;

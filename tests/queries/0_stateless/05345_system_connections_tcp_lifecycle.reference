@@ -1,0 +1,14 @@
+--- idle after a successful query
+TCP	idle	1	default	1
+--- active when a query runs
+active
+--- idle after KILL QUERY
+TCP	idle	1	default	1
+--- idle after a query fails
+395
+TCP	idle	1	default	1
+0
+--- the connection can run a query
+0
+--- removed after disconnect
+removed

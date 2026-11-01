@@ -20,12 +20,13 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(
 {
     auto registry = object_storages->getRegistry();
     auto local_location = cluster->getLocalLocation();
-    registry[local_location] = std::make_shared<CachedObjectStorage>(registry[local_location], cache, cache_settings, layer_name);
+    const ObjectStoragePtr wrapped_object_storage = registry[local_location];
+    registry[local_location] = std::make_shared<CachedObjectStorage>(wrapped_object_storage, cache, cache_settings, layer_name);
 
     auto cache_disk = std::make_shared<DiskObjectStorage>(
         layer_name,
         std::make_shared<ClusterConfiguration>(layer_name, cluster->getConfiguration()),
-        std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage),
+        std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage, wrapped_object_storage),
         std::make_shared<ObjectStorageRouter>(std::move(registry)),
         std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this()),
         config,

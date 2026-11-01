@@ -200,6 +200,13 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
+    /// True if `rhs` is the same callable for ColumnFunction concatenation.
+    /// `ColumnFunction::insertRangeFrom` keeps the destination FunctionBasePtr for all rows,
+    /// so structureEquals must only succeed when executing either instance is equivalent.
+    /// Default: the same object. Wrappers that mint a fresh IFunctionBase per chunk (e.g.
+    /// FunctionExpression) override this to compare the underlying expression identity.
+    virtual bool isEqual(const IFunctionBase & rhs) const { return this == &rhs; }
+
     /** Contributes whatever decides the values this function produces beyond its name, its
       * parameters and the types it was resolved for: a conversion, for instance, captures the
       * settings that tell it how to parse. Anything that keys an expression by a hash - the query
@@ -254,6 +261,12 @@ public:
       * Used by the `pushDownVolumeReducingFunction` query plan optimization.
       */
     virtual bool isVolumeReducing() const { return false; }
+
+    /** Returns true if the function costs far more than reading its arguments, e.g. one network
+      * request per row. Can be used to postpone the execution of such functions as much as possible
+      * (e.g. PREWHERE vs. WHERE)
+      */
+    virtual bool isExpensive() const { return false; }
 
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
@@ -492,6 +505,9 @@ public:
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
 
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.
@@ -519,6 +535,35 @@ public:
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
+    /** The error code reported when the number of arguments does not fit the function's signature.
+      *
+      * Several functions historically reported a code more specific than
+      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
+      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
+      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
+      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
+      */
+    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
+
+    /** Declarative signature of this function, see DataTypes/FunctionSignature.h.
+      *
+      * When non-empty, the default getReturnTypeImpl uses this signature to validate argument
+      * types/constness and compute the return type, throwing ILLEGAL_TYPE_OF_ARGUMENT on mismatch.
+      *
+      * Example: "f(T : Number) -> T".
+      */
+    virtual String getSignatureString() const { return {}; }
+
+    /** Whether the declarative signature should propagate argument nullability into the result
+      * type instead of matching it literally. When true, the default getReturnTypeImpl applies the
+      * signature to the arguments with the outer Nullable removed and re-wraps the result in
+      * Nullable if any argument was Nullable (and returns Nullable(Nothing) for an only-NULL
+      * argument). This is for functions that do NOT use useDefaultImplementationForNulls (so the
+      * framework does not do it for them) but still want the declarative signature to own the
+      * non-Nullable result type — e.g. the conversion functions.
+      */
+    virtual bool signaturePropagatesNullability() const { return false; }
+
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     const FunctionCreator * getFactoryHandle() const { return factory_handle; }
@@ -531,14 +576,7 @@ protected:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// This function will be called in default implementation. You can overload it or the previous one.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        return getReturnTypeImpl(data_types);
-    }
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
     /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build():
       *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call build() with return_type = Nullable(Nothing),
@@ -717,6 +755,8 @@ public:
     virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
@@ -777,14 +817,23 @@ public:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
-        return getReturnTypeImpl(data_types);
-    }
+    /** The error code reported when the number of arguments does not fit the function's signature.
+      *
+      * Several functions historically reported a code more specific than
+      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
+      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
+      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
+      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
+      */
+    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
+
+    /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
+    virtual String getSignatureString() const { return {}; }
+
+    /// See IFunction::signaturePropagatesNullability.
+    virtual bool signaturePropagatesNullability() const { return false; }
 
     virtual bool isVariadic() const { return false; }
 
