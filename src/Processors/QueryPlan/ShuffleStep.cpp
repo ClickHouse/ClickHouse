@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/ShuffleStep.h>
 
 #include <IO/Operators.h>
-#include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/ShuffleTransform.h>
@@ -56,7 +55,7 @@ void ShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     /// Without a limit, all rows have to be returned, and a merge of the shuffled streams would be done in one thread.
     /// Instead, the rows are scattered into `num_threads` streams at random (by the hash of the random key),
-    /// every stream is shuffled in parallel with its own range of keys, and the streams are concatenated in the order of the ranges.
+    /// and every stream is shuffled in parallel with its own range of keys.
     /// The scatter creates (num_threads * num_streams) connections, which is bounded as for `SortingStep`.
     const size_t max_scatter_connections = 1000000;
     if (!limit && num_threads > 1 && num_threads * pipeline.getNumStreams() <= max_scatter_connections)
@@ -72,22 +71,23 @@ void ShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 return std::make_shared<PartialShuffleTransform>(
                     header, key_position, direction, limit, max_block_size, range_index++, num_threads);
             });
-
-        pipeline.addTransform(std::make_shared<ConcatProcessor>(pipeline.getSharedHeader(), pipeline.getNumStreams()));
-        return;
     }
-
-    pipeline.addSimpleTransform(
-        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
-            return std::make_shared<PartialShuffleTransform>(header, key_position, direction, limit, max_block_size);
-        });
+    else
+    {
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+                return std::make_shared<PartialShuffleTransform>(header, key_position, direction, limit, max_block_size);
+            });
+    }
 
     /// Merging of shuffled streams: every stream is sorted by the key column, and the keys are independent
     /// uniformly distributed random numbers, so the merge is a uniformly random interleaving of the streams.
-    /// With a limit, every stream has at most `limit` rows.
+    /// With a limit, every stream has at most `limit` rows. Without a limit, the streams have disjoint ranges of keys,
+    /// so the merge takes whole blocks (it also reads all streams, while a concatenation would leave them waiting
+    /// and stall the scatter).
     if (pipeline.getNumStreams() > 1)
     {
         auto transform = std::make_shared<MergingSortedTransform>(
