@@ -28,6 +28,11 @@ struct alignas(CH_CACHE_LINE_SIZE) PartitionedRecordBuffer::Block
     /// The size of the block's allocation. Blocks differ in size, since the blocks of a group grow.
     const size_t bytes;
 
+    /// Counts a chunk carved from the block. Only the appending thread changes the count while it appends: consumers
+    /// release chunks after `finishAppending`, and appends resume once they finish. So the count takes no locked
+    /// instruction, which would wait for the stores of the appends to drain at every chunk.
+    void addChunk() { references.store(references.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed); }
+
     void release()
     {
         if (references.fetch_sub(1, std::memory_order_acq_rel) == 1)
@@ -142,7 +147,7 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
         carver.pos += capacity;
         carver.remaining -= capacity;
         block = carver.block;
-        block->references.fetch_add(1, std::memory_order_relaxed);
+        block->addChunk();
     }
 
     auto * chunk = new (data) ChunkHeader{.next = nullptr, .block = block, .used = 0, .capacity = static_cast<UInt32>(capacity)};
