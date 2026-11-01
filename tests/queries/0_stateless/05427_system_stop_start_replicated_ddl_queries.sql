@@ -8,16 +8,30 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/da
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t1 (x UInt64) ENGINE = MergeTree ORDER BY x;
 
+-- A database that is not `Replicated`, for distributed DDL queries.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic;
+
 SYSTEM STOP REPLICATED DDL QUERIES;
 
 -- DDL queries in Replicated databases are prohibited while replicated DDL queries are stopped.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 (x UInt64) ENGINE = MergeTree ORDER BY x; -- { serverError QUERY_IS_PROHIBITED }
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t1 ADD COLUMN y UInt64; -- { serverError QUERY_IS_PROHIBITED }
 
+-- Distributed DDL queries (`ON CLUSTER`) are prohibited as well, also for the databases that are not `Replicated`.
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_on_cluster ON CLUSTER test_shard_localhost (x UInt64) ENGINE = Memory; -- { serverError QUERY_IS_PROHIBITED }
+
+-- But `SYSTEM` queries `ON CLUSTER` are still allowed.
+SYSTEM DROP DNS CACHE ON CLUSTER test_shard_localhost;
+
 -- Non-DDL queries still work.
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t1 VALUES (1);
 
 SYSTEM START REPLICATED DDL QUERIES;
+
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_on_cluster ON CLUSTER test_shard_localhost (x UInt64) ENGINE = Memory;
+SELECT name FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 't_on_cluster';
+DROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_on_cluster ON CLUSTER test_shard_localhost;
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 (x UInt64) ENGINE = MergeTree ORDER BY x;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t1 ADD COLUMN y UInt64;
@@ -29,6 +43,7 @@ SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.t1;
 SYSTEM START REPLICATED DDL QUERIES;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 
 -- These action locks are not used by ReplicatedMergeTree, so the statements are no-ops for it.
 DROP TABLE IF EXISTS rmt SYNC;
