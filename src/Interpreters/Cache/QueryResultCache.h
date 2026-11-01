@@ -2,6 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
@@ -129,6 +130,10 @@ public:
 
         /// Result metadata for constructing the pipe.
         SharedHeader header;
+
+        /// The table columns the result columns come from, see `QueryResultDetails::result_column_origins`. Stored so that a cache hit
+        /// can report them without analyzing the query again, which would evaluate scalar subqueries against the current data.
+        ResultColumnOrigins result_column_origins = {};
 
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
@@ -375,6 +380,7 @@ public:
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
     std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
+    const ResultColumnOrigins & entryResultColumnOrigins() const;
 
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();
@@ -392,6 +398,7 @@ private:
         Source source_,
         SharedHeader header,
         QueryResultCache::Entry && entry,
+        ResultColumnOrigins && result_column_origins_,
         std::chrono::time_point<std::chrono::system_clock> created_at_,
         std::chrono::time_point<std::chrono::system_clock> expires_at_);
 
@@ -405,6 +412,7 @@ private:
 
     std::chrono::time_point<std::chrono::system_clock> created_at;
     std::chrono::time_point<std::chrono::system_clock> expires_at;
+    ResultColumnOrigins result_column_origins;
 
     LoggerPtr logger = getLogger("QueryResultCache");
 
