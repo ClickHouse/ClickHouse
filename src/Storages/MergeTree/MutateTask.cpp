@@ -1283,7 +1283,9 @@ static void splitAndModifyMutationCommands(
                     {
                         if (!part->hasProjection(projection.name) && !part->hasUnloadedProjection(projection.name))
                             continue;
-                        if (!MutationsInterpreter::projectionComputesFromColumn(projection, command.column_name))
+                        if (!MutationsInterpreter::projectionComputesFromColumn(
+                                projection, command.column_name, table_columns,
+                                [&](const String & name) { return !part_columns.has(nameInPart(name)); }))
                             continue;
                         if (projections_to_materialize.emplace(projection.name).second)
                             for_interpreter.push_back({

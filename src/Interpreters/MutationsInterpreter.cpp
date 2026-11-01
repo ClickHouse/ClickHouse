@@ -759,7 +759,48 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
-bool MutationsInterpreter::projectionComputesFromColumn(const ProjectionDescription & projection, const String & column_name)
+/// Whether the identifiers of `ast` use the column `column_name`. They may be qualified, and a subcolumn of the column is
+/// `column.subcolumn`.
+static bool usesColumn(const ASTPtr & ast, const String & column_name)
+{
+    return std::ranges::any_of(
+        IdentifiersCollector::collect(ast),
+        [&](const ASTIdentifier * identifier)
+        {
+            const auto & name = identifier->name();
+            return name == column_name || identifier->shortName() == column_name || name.starts_with(column_name + ".");
+        });
+}
+
+/// Whether the column `name`, computed from its default for the part, is computed from the column `column_name`, also through
+/// the defaults of other such columns.
+static bool isComputedFromColumn(
+    const String & name,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_computed_for_part,
+    NameSet & visited)
+{
+    if (!visited.emplace(name).second || !is_computed_for_part(name))
+        return false;
+
+    const auto column_default = columns.getDefault(name);
+    if (!column_default || !column_default->expression)
+        return false;
+
+    if (usesColumn(column_default->expression, column_name))
+        return true;
+    for (const auto * identifier : IdentifiersCollector::collect(column_default->expression))
+        if (columns.has(identifier->name()) && isComputedFromColumn(identifier->name(), column_name, columns, is_computed_for_part, visited))
+            return true;
+    return false;
+}
+
+bool MutationsInterpreter::projectionComputesFromColumn(
+    const ProjectionDescription & projection,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_computed_for_part)
 {
     const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
     const auto & sorting_key = projection.metadata->getSortingKey();
@@ -769,16 +810,13 @@ bool MutationsInterpreter::projectionComputesFromColumn(const ProjectionDescript
     if (column_in_key)
         return true;
 
-    /// The identifiers may be qualified, and a subcolumn of the column is `column.subcolumn`.
-    const bool column_in_filter = projection.where_clause_ast && std::ranges::any_of(
-        IdentifiersCollector::collect(projection.where_clause_ast),
-        [&](const ASTIdentifier * identifier)
-        {
-            const auto & name = identifier->name();
-            return name == column_name || identifier->shortName() == column_name || name.starts_with(column_name + ".");
-        });
-    if (column_in_filter)
+    if (projection.where_clause_ast && usesColumn(projection.where_clause_ast, column_name))
         return true;
+
+    NameSet visited;
+    for (const auto & required_column : projection.required_columns)
+        if (required_column != column_name && isComputedFromColumn(required_column, column_name, columns, is_computed_for_part, visited))
+            return true;
 
     const bool column_read = std::ranges::find(projection.required_columns, column_name) != projection.required_columns.end();
     /// `_parent_part_offset` is the `_part_offset` of the table renamed, not computed from its columns.
@@ -1597,9 +1635,21 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 {
+                    /// A column that the part does not store is computed from its default when read.
+                    const auto part = source.getMergeTreeDataPart();
+                    const auto & alter_conversions = source.getAlterConversions();
+                    auto is_computed_for_part = [&](const String & name)
+                    {
+                        if (!part)
+                            return false;
+                        const String name_in_part = alter_conversions && alter_conversions->isColumnRenamed(name)
+                            ? alter_conversions->getColumnOldName(name) : name;
+                        return !part->getColumns().contains(name_in_part);
+                    };
+
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
-                        if (projectionComputesFromColumn(projection, command.column_name))
+                        if (projectionComputesFromColumn(projection, command.column_name, columns_desc, is_computed_for_part))
                         {
                             for (const auto & col : projection.required_columns)
                                 dependencies.emplace(col, ColumnDependency::PROJECTION);

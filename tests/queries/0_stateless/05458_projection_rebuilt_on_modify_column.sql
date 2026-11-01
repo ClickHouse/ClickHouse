@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_expression;
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_filter;
 DROP TABLE IF EXISTS t_absent;
+DROP TABLE IF EXISTS t_default;
 
 CREATE TABLE t_aggregate (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT toHour(dt) AS h, count() GROUP BY h))
 ENGINE = MergeTree ORDER BY id;
@@ -47,6 +48,19 @@ SELECT groupArray(h) FROM (SELECT toHour(dt) AS h, count() FROM t_absent GROUP B
 -- The column is still not written to the part (a compact or packed part reads it for its projections, so it writes it).
 SELECT countIf(column = 'dt') FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_absent' AND active;
 
+-- A column that the part does not store, added with a default computed from the column, is computed from the default when
+-- read, so the projection that reads it computed from the column too.
+CREATE TABLE t_default (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_default SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
+ALTER TABLE t_default ADD COLUMN h UInt8 DEFAULT toHour(dt);
+ALTER TABLE t_default ADD PROJECTION p (SELECT h, count() GROUP BY h);
+ALTER TABLE t_default MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_default MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') SETTINGS mutations_sync = 2;
+SELECT groupArray(h) FROM (SELECT h, count() FROM t_default GROUP BY h ORDER BY h)
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(h) FROM (SELECT h, count() FROM t_default GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
+
 -- A projection that stores the column as is answers correctly without being rebuilt.
 CREATE TABLE t_plain (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT * ORDER BY dt)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_plain SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
@@ -59,3 +73,4 @@ DROP TABLE t_expression;
 DROP TABLE t_plain;
 DROP TABLE t_filter;
 DROP TABLE t_absent;
+DROP TABLE t_default;

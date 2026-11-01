@@ -142,8 +142,14 @@ public:
     /// Whether `projection` keeps what it computed from the column `column_name`, so that it has to be rebuilt when the type of
     /// the column changes: its order and primary index for a sorting key such as `toHour(dt)`, its columns such as an aggregate
     /// state, and the rows that its `WHERE` such as `toHour(dt) = 9` selected. A projection that only stores the column as is
-    /// does not need to be rebuilt.
-    static bool projectionComputesFromColumn(const ProjectionDescription & projection, const String & column_name);
+    /// does not need to be rebuilt. A column that the part does not store, `is_computed_for_part`, is computed from its default
+    /// when read, such as `h` of `h UInt8 DEFAULT toHour(dt)` added after the part was written, so a projection that reads it
+    /// keeps what it computed from the columns of the default, even if it stores it as is.
+    static bool projectionComputesFromColumn(
+        const ProjectionDescription & projection,
+        const String & column_name,
+        const ColumnsDescription & columns,
+        const std::function<bool(const String &)> & is_computed_for_part);
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
