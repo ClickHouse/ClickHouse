@@ -10736,6 +10736,7 @@ and `exponentialTimeDecayedCount`,
 and the scalar functions for `ExponentialTimeDecaying` values.
 The window-function forms are not affected by this setting.
 )", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."}, \
         {"26.10", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."}) \
     DECLARE(String, exponential_time_decay_default_mode, "compact", R"(
 Default storage mode used by `exponentialTimeDecaying` and by parameterless
@@ -10743,6 +10744,7 @@ Default storage mode used by `exponentialTimeDecaying` and by parameterless
 
 Allowed values are `compact` and `direct`. Explicit datatype mode parameters override this setting.
 )", EXPERIMENTAL, \
+        {"26.11", "compact", "compact", "New setting selecting the default storage mode for experimental exponential time-decay values."}, \
         {"26.10", "compact", "compact", "New setting selecting the default storage mode for experimental exponential time-decay values."}) \
     DECLARE(Float, exponential_time_decay_significance_cutoff, 0.0, R"(
 Maximum distance, measured in decay lengths, between ordering keys when adding finalized
@@ -10761,6 +10763,7 @@ use the normal merge calculation regardless of this setting.
 Results close to the cutoff can depend on input order. Signed sums that nearly cancel can
 have a larger relative error even when every discarded contribution is individually small.
 )", EXPERIMENTAL, \
+        {"26.11", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."}, \
         {"26.10", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."}) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
