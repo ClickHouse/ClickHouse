@@ -224,7 +224,8 @@ public:
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0,
-            bool treat_local_port_as_remote = false);
+            bool treat_local_port_as_remote = false,
+            bool expand_config_values = true);
 
         Address(
             const DatabaseReplicaInfo & info,

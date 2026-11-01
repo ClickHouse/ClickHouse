@@ -57,6 +57,16 @@ namespace ErrorCodes
 namespace
 {
 
+/// Values of SQL-managed clusters are literals of the `CREATE CLUSTER` statement and are used verbatim,
+/// while values from the server configuration go through Poco's `${...}` property expansion.
+String getClusterConfigString(
+    const Poco::Util::AbstractConfiguration & config, const String & key, const String & default_value, bool expand_config_values)
+{
+    if (expand_config_values)
+        return config.getString(key, default_value);
+    return config.getRawString(key, default_value);
+}
+
 /// Default shard weight.
 constexpr UInt32 default_weight = 1;
 
@@ -109,21 +119,22 @@ Cluster::Address::Address(
         const String & cluster_secret_,
         UInt32 shard_index_,
         UInt32 replica_index_,
-        bool treat_local_port_as_remote)
+        bool treat_local_port_as_remote,
+        bool expand_config_values)
     : cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , shard_index(shard_index_)
     , replica_index(replica_index_)
 {
-    host_name = config.getString(config_prefix + ".host");
+    host_name = expand_config_values ? config.getString(config_prefix + ".host") : config.getRawString(config_prefix + ".host");
     if (config.has(config_prefix + ".user"))
         user_specified = true;
 
-    user = config.getString(config_prefix + ".user", "default");
-    password = config.getString(config_prefix + ".password", "");
-    default_database = config.getString(config_prefix + ".default_database", "");
+    user = getClusterConfigString(config, config_prefix + ".user", "default", expand_config_values);
+    password = getClusterConfigString(config, config_prefix + ".password", "", expand_config_values);
+    default_database = getClusterConfigString(config, config_prefix + ".default_database", "", expand_config_values);
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    bind_host = config.getString(config_prefix + ".bind_host", "");
+    bind_host = getClusterConfigString(config, config_prefix + ".bind_host", "", expand_config_values);
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
     proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
@@ -437,7 +448,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     config_prefix += ".";
 
-    secret = config.getString(config_prefix + "secret", "");
+    /// String literals of SQL-managed clusters are not subject to `${...}` substitution.
+    const bool expand_config_values = source_id != SourceId::SQL;
+
+    secret = getClusterConfigString(config, config_prefix + "secret", "", expand_config_values);
     std::erase(config_keys, "secret");
 
     allow_distributed_ddl_queries = config.getBool(config_prefix + "allow_distributed_ddl_queries", true);
@@ -512,7 +526,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         {
             /// Shard without replicas.
             Addresses addresses;
-            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1, treat_local_port_as_remote);
+            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1, treat_local_port_as_remote, expand_config_values);
             const auto & address = addresses.back();
             shard_keys.push_back(use_shards_names ? shard_name : shard_key_from_addresses(addresses));
 
@@ -577,7 +591,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                         secret,
                         current_shard_num,
                         current_replica_num,
-                        treat_local_port_as_remote);
+                        treat_local_port_as_remote,
+                        expand_config_values);
                     ++current_replica_num;
                 }
                 else
