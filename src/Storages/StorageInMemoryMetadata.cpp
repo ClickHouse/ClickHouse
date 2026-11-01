@@ -481,7 +481,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     for (const auto & index : getSecondaryIndices())
     {
         if (has_dependency(index.name, ColumnDependency::SKIP_INDEX))
-            add_dependent_columns(index.expression->getRequiredColumns(), indices_columns);
+            add_dependent_columns(getColumnsRequiredForIndex(index), indices_columns);
     }
 
     for (const auto & projection : getProjections())
@@ -638,6 +638,22 @@ bool StorageInMemoryMetadata::isSortingKeyDefined() const
 bool StorageInMemoryMetadata::hasSortingKey() const
 {
     return !sorting_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getColumnsRequiredForIndex(const IndexDescription & index) const
+{
+    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+
+    Names result;
+    NameSet present;
+    for (const auto & name : index.getRequiredColumns())
+    {
+        const auto column = columns.tryGetColumn(options, name);
+        const String & stored_name = column ? column->getNameInStorage() : name;
+        if (present.insert(stored_name).second)
+            result.push_back(stored_name);
+    }
+    return result;
 }
 
 Names StorageInMemoryMetadata::getColumnsRequiredForSortingKey() const

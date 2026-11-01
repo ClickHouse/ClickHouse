@@ -133,6 +133,7 @@ namespace Setting
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool allow_experimental_partial_skip_indexes;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
@@ -1380,6 +1381,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
+
+        /// Indices of every origin: an explicit list, and the copy made by `AS src` / `CLONE AS src`.
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_partial_skip_indexes])
+            for (const auto & index : properties.indices)
+                if (index.where_expression)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
+                        index.name);
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
