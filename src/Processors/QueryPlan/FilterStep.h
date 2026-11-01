@@ -34,6 +34,7 @@ public:
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
         , prefiltered_conditions(other.prefiltered_conditions)
+        , optimize_constant_columns_after_filter(other.optimize_constant_columns_after_filter)
     {}
 
     String getName() const override { return "Filter"; }
@@ -54,6 +55,14 @@ public:
     void resetConditionForQueryConditionCache() { condition.reset(); }
     /// Folds a plan-level salt into the already set condition hash (see `updateQueryConditionCache`).
     void saltConditionForQueryConditionCache(UInt64 salt);
+
+    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in.
+    /// It can differ from the value in the query context, e.g. for a subquery with its own `SETTINGS`.
+    /// If not set, `FilterTransform` reads the setting from the query context.
+    void setOptimizeConstantColumnsAfterFilter(std::optional<bool> value) { optimize_constant_columns_after_filter = value; }
+    std::optional<bool> getOptimizeConstantColumnsAfterFilter() const { return optimize_constant_columns_after_filter; }
+    /// The value for a filter combined from two filters: the optimization stays disabled if either disabled it.
+    static std::optional<bool> combineOptimizeConstantColumnsAfterFilter(std::optional<bool> lhs, std::optional<bool> rhs);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -167,6 +176,7 @@ private:
         std::unordered_set<UInt64> condition_hashes;
     };
     std::optional<PrefilteredConditions> prefiltered_conditions;
+    std::optional<bool> optimize_constant_columns_after_filter;
 };
 
 }

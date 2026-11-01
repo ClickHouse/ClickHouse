@@ -571,6 +571,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             filter_step->removesFilterColumn());
         if (prefiltered_conditions)
             new_filter_step->setPrefilteredConditions(prefiltered_conditions->first, std::move(prefiltered_conditions->second));
+        new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
         new_step = std::move(new_filter_step);
     }
     else

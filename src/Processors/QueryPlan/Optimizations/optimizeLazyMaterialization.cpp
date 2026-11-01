@@ -331,9 +331,16 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
     return { std::move(split_result.first), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
+struct MainFilterStep
+{
+    FilterDAGInfo filter_dag_info;
+    /// See `FilterStep::getOptimizeConstantColumnsAfterFilter`.
+    std::optional<bool> optimize_constant_columns_after_filter;
+};
+
 struct SplitFilterResult
 {
-    FilterDAGInfo main_filter_step;
+    MainFilterStep main_filter_step;
     ActionsDAG lazy_expression_step;
 
     /// Those are available input positions for the next step (main branch).
@@ -414,7 +421,8 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
     filter_dag_info.column_name = name;
     filter_dag_info.do_remove_column = filter_step.removesFilterColumn();
 
-    return { std::move(filter_dag_info), std::move(split_result.second), std::move(new_required_inputs) };
+    MainFilterStep main_filter_step{std::move(filter_dag_info), filter_step.getOptimizeConstantColumnsAfterFilter()};
+    return { std::move(main_filter_step), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
 static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
@@ -724,7 +732,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// The filter of the main branch, and the step it is split from.
     struct MainFilter
     {
-        FilterDAGInfo filter;
+        MainFilterStep filter_step;
         const FilterStep * original;
     };
     std::list<std::variant<ActionsDAG, MainFilter>> main_steps;
@@ -786,12 +794,14 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         else
         {
             auto & main_filter = std::get<MainFilter>(step);
-            auto filter_step = std::make_unique<FilterStep>(
+            auto & filter_dag_info = main_filter.filter_step.filter_dag_info;
+            auto new_filter_step = std::make_unique<FilterStep>(
                 main_plan.getCurrentHeader(),
-                std::move(main_filter.filter.actions), main_filter.filter.column_name, main_filter.filter.do_remove_column);
+                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column);
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(main_filter.filter_step.optimize_constant_columns_after_filter);
             /// The main branch evaluates this filter, so it keeps the prefiltered conditions.
-            filter_step->copyPrefilteredConditions(*main_filter.original);
-            main_plan.addStep(std::move(filter_step));
+            new_filter_step->copyPrefilteredConditions(*main_filter.original);
+            main_plan.addStep(std::move(new_filter_step));
         }
     }
 
