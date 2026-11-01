@@ -48,7 +48,7 @@ bool planReadsFromRemote(QueryPlan::Node & root)
             stack.push_back(child);
 
         /// A remote read in a child plan also fixes the distributed split.
-        for (auto * child_plan : step->getChildPlans())
+        for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
             stack.push_back(child_plan->getRootNode());
     }
     return false;
@@ -112,6 +112,7 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
         static_cast<UInt32>(shard_count),
         placeholder.getStorageLimits(),
         placeholder.getClusterName(),
+        cluster->getShardScopeIdentity(),
         std::move(unavailable_shard_tracker));
 
     if (const auto & coordination = placeholder.getDistributedTopKCoordination())
@@ -306,7 +307,7 @@ void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans)
         /// Do not call `getChildPlans` when disabled because it may materialize lazy child plans.
         if (walk_child_plans)
         {
-            for (auto * child_plan : node->step->getChildPlans())
+            for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
                 stack.push_back(child_plan->getRootNode());
         }
     }

@@ -1978,7 +1978,7 @@ void TCPHandler::sendQueryCoordinationRequest(const QueryCoordinationRequest & r
     request.serialize(*out, client_tcp_protocol_version);
 
     out->finishChunk();
-    out->next();
+    out->sync();
 }
 
 

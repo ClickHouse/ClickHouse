@@ -57,7 +57,7 @@ public:
         return distributed_top_k_coordination;
     }
 
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool for_explain) override;
 
     QueryPlanPtr extractInnerPlan();
 

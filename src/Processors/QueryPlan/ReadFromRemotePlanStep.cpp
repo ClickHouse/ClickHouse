@@ -83,7 +83,7 @@ void ReadFromRemotePlanStep::absorbLimitCopy(const LimitStep & limit_step)
     limit_copied = true;
 }
 
-QueryPlanRawPtrs ReadFromRemotePlanStep::getChildPlans()
+QueryPlanRawPtrs ReadFromRemotePlanStep::getChildPlans(bool /*for_explain*/)
 {
     if (!inner_plan)
         return {};

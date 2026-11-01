@@ -756,7 +756,12 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         }
     }
 
-    const auto stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
+    /// The plan-level read sends a serialized per-shard plan and finishes the query on the initiator.
+    /// This path currently bypasses `optimize_distributed_group_by_sharding_key` and returns exact totals.
+    /// TODO: add per-shard-complete aggregation pushdown.
+    const auto stage = nodes > 1 && useDistributedPlanForReading(local_context, cluster, query_info)
+        ? QueryProcessingStage::FetchColumns
+        : chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
 
     /// The query was analyzed against the columns declared here, but a shard resolves the remote
     /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
@@ -819,11 +824,6 @@ QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
         /// That's why we need to return FetchColumns.
         return QueryProcessingStage::FetchColumns;
     }
-
-    /// This path currently bypasses `optimize_distributed_group_by_sharding_key` and returns exact totals.
-    /// TODO: add per-shard-complete aggregation pushdown.
-    if (nodes > 1 && useDistributedPlanForReading(local_context, cluster, query_info))
-        return QueryProcessingStage::FetchColumns;
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
@@ -1294,11 +1294,9 @@ void StorageDistributed::read(
 
     SelectQueryInfo modified_query_info = query_info;
 
-    const auto & settings = local_context->getSettingsRef();
-
     if (ClusterPtr query_cluster = query_info.getCluster();
         processed_stage == QueryProcessingStage::FetchColumns
-        && getClusterQueriedNodes(settings, query_cluster) > 1
+        && getClusterQueriedNodes(local_context, query_cluster) > 1
         && useDistributedPlanForReading(local_context, query_cluster, query_info))
     {
         readWithDistributedPlan(query_plan, column_names, storage_snapshot, query_info, local_context, query_cluster);
