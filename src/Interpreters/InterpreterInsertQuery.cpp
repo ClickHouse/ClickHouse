@@ -903,9 +903,12 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     /// bringing the plan-based implementation or the automatic mode back for the plans built below, and
     /// the automatic mode would make the probe below decline to distribute the insert. `execute` restores
     /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{
-        std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
+    /// `parallel_replicas_plan_based` is removed from subqueries too: this path is query-based, so the
+    /// setting has no effect anywhere in it, and a subquery keeping it would be rejected as plan-based.
+    static constexpr std::array settings_overridden_for_this_path{std::string_view{"automatic_parallel_replicas_mode"}};
     removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
+    static constexpr std::array settings_without_effect_on_this_path{std::string_view{"parallel_replicas_plan_based"}};
+    removeSettingsFromQuery(query.select, settings_without_effect_on_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
     if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))

@@ -1600,6 +1600,17 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(Bool, to_start_of_interval_preserves_argument_type, true, R"(
+Makes the function `toStartOfInterval` (and its aliases `time_bucket` and `date_bin`) return a value of the same type as its first argument:
+`Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime` and `DateTime64` with the same scale for `DateTime64`, regardless of the interval unit.
+The only exception is a subsecond unit finer than the scale of a `DateTime64` argument, for example `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`: the result has the scale of the unit, because the scale of the argument cannot represent the bucket boundaries.
+
+Possible values:
+
+- `1` — The result has the type of the first argument. The setting `enable_extended_results_for_datetime_functions` does not affect the function.
+- `0` — Legacy behavior: the result type depends on the interval unit. The units `WEEK` and longer produce a `Date`, `DAY` down to `SECOND` produce a `DateTime`, and the subsecond units produce a `DateTime64` with the scale of the unit (for `Date32` and `DateTime64` arguments, `Date32` and `DateTime64` instead of `Date` and `DateTime` with `enable_extended_results_for_datetime_functions = 1`). A value that does not fit the range of the narrower result type is wrapped: for example, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` returns `2036-02-07 06:28:16`. This describes the overload without `origin`. The overload with `origin` keeps the type of the argument even in the legacy behavior, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
+)", 0, \
+        {"26.11", false, true, "The function `toStartOfInterval` returns a value of the same type as its argument instead of a type determined by the interval unit, which wrapped values outside the range of the narrower type"}) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
@@ -2257,6 +2268,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"25.12", false, true, "New setting"}) \
+    DECLARE(UInt64, use_skip_indexes_for_disjunctions_max_rpn_elements, 128, R"(
+Maximum number of elements in the internal representation (RPN) of a WHERE filter for which `use_skip_indexes_for_disjunctions` is applied.
+Roughly, every condition and every `AND`, `OR` and `NOT` counts as one element: for example, `A = 5 OR B = 5 OR C = 5` has 5 elements.
+The elements are counted after the filter is rewritten for index analysis: for example, `A = 1 OR A = 2 OR A = 3` becomes `A IN (1, 2, 3)`, which is one element (see `optimize_min_equality_disjunction_chain_length`), and `coalesce(A, B) = 5` is expanded into several conditions (see `allow_key_condition_coalesce_rewrite`).
+For filters with more elements, each skip index is evaluated on its own and cannot skip granules for conditions on different columns connected by `OR`.
+During index analysis, the partial results take one bit per element per granule of each data part, and combining them takes time proportional to the number of elements for every granule. Keep this in mind when setting 0 (no limit).
+
+Possible values:
+
+- 0 — No limit.
+- Positive integer — Maximum number of elements.
+)", 0, \
+        {"26.11", 32, 128, "New setting, previously the limit was hard-coded to 32"}) \
     DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 
@@ -2343,6 +2367,8 @@ Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable
 For such types, the per-row threshold comparison performed by the dynamic filter can outweigh its savings when the column's lexicographic minimum dominates (e.g. mostly empty strings) and few granules can be skipped. In that case the dynamic filter degrades query latency rather than improving it.
 
 When this setting is `0`, dynamic filtering is restricted to columns whose values have a fixed maximum size in memory (numbers, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` of such types, `Tuple` of such types). When set to `1`, dynamic filtering applies to variable-length types as well.
+
+Reads of Parquet files still skip whole row groups by the statistics of a `String` sort column when this setting is `0`; the setting only controls the per-row filter.
 
 Possible values:
 
@@ -5347,6 +5373,13 @@ This setting applies to JSON passed as a string. Extraction from a column of the
 Disabled by default.
 )", 0, \
         {"26.10", false, false, "New setting to make the `JSONExtract` family fill named tuples from JSON objects only, instead of the historical positional fill from arrays. Unnamed tuples always fill positionally, and extraction from a column of the `JSON` data type is unaffected."}) \
+    DECLARE(Bool, json_extract_use_cast_string_to_date_time_mode, true, R"(
+Controls which setting the `JSONExtract` family of functions follows when parsing a JSON string value into `DateTime` or `DateTime64`. When enabled, the parsing mode is taken from [cast_string_to_date_time_mode](#cast_string_to_date_time_mode), consistently with `CAST`. When disabled, it is taken from [date_time_input_format](/reference/settings/formats/input-format#date_time_input_format), as before version 26.8.
+
+When the chosen parser cannot read the value, the function returns the default value of the type (`1970-01-01 00:00:00`) without an error, so a mismatch between the two settings silently changes the extracted values.
+)", 0, \
+        {"26.11", true, true, "New setting to choose whether the `JSONExtract` family parses `DateTime` values according to `cast_string_to_date_time_mode` (since 26.8) or `date_time_input_format` (before 26.8)."}, \
+        {"26.8", false, true, "`JSONExtract` parses `DateTime` values according to `cast_string_to_date_time_mode` instead of `date_time_input_format`. `compatibility` with versions before 26.8 restores the previous behavior."}) \
     DECLARE(Bool, allow_introspection_functions, false, R"(
 Enables or disables [introspection functions](/reference/functions/regular-functions/introspection) for query profiling.
 
@@ -7274,7 +7307,7 @@ Possible values:
         {"25.4", false, true, "A new optimization"}, \
         {"25.3", false, false, "New setting."}) \
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
-Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
+Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
 Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
@@ -8669,13 +8702,6 @@ Emit `TEST`-level log messages for every filesystem cache buffer refill (state o
         {"26.8", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
-Skip download from remote filesystem if exceeds query cache size
-)", 0, skip_download_if_exceeds_query_cache, \
-        {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
-    DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
-Max remote filesystem cache size that can be downloaded by a single query
 )", 0) \
     DECLARE(Bool, throw_on_error_from_cache_on_write_operations, false, R"(
 Ignore error from cache when caching on write operations (INSERT, merges)
@@ -10273,6 +10299,10 @@ Choosing finer granularity (like `bucket`) can improve parallelism when working 
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
 )", 0, \
         {"25.11", "file", "file", "New setting."}) \
+    DECLARE(String, cluster_table_function_pushed_down_filter, "", R"(
+This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
+)", 0, \
+        {"26.11", "", "", "New internal setting."}) \
     DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0, \
@@ -10656,7 +10686,7 @@ If true (default), an AI function call that fails permanently after exhausting a
 )", BETA, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+Maximum total input (prompt) tokens across all AI function API calls in a single query including cache reads and writes. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA, \
@@ -11374,6 +11404,10 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
+Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 0, 11000, "New setting to limit the resolution of a range query in the Prometheus HTTP API, as in Prometheus."}) \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
 A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.
@@ -11484,6 +11518,11 @@ Enable experimental table function `eval`.
         {"26.9", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"}) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false, \
         {"25.12", false, false, "New setting"}) \
+    ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, skip_download_if_exceeds_query_cache, \
+        {"26.10", true, true, "Obsolete: the per-query filesystem cache write limit was removed."}, \
+        {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
+    MAKE_OBSOLETE(M, UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), \
+        {"26.10", 137438953472, 137438953472, "Obsolete: the per-query filesystem cache write limit was removed. A query is no longer capped in how much it writes into a filesystem cache; the cache's own `max_size` and eviction policy bound it."}) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
