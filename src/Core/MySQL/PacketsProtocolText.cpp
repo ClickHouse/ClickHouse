@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesDecimal.h>
 
 
@@ -19,6 +20,19 @@ namespace MySQLProtocol
 
 namespace ProtocolText
 {
+
+namespace
+{
+
+/// The display width of a `DECIMAL(P, S)` value: digits, the sign and the decimal point.
+uint32_t getDecimalColumnLength(const IDataType & data_type)
+{
+    UInt32 precision = getDecimalPrecision(data_type);
+    UInt32 scale = getDecimalScale(data_type);
+    return precision + 1 + (scale > 0 ? 1 : 0);
+}
+
+}
 
 ResultSetRow::ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, size_t row_num_)
     : columns(columns_), row_num(row_num_)
@@ -93,12 +107,6 @@ ColumnDefinition::ColumnDefinition(
 {
 }
 
-ColumnDefinition::ColumnDefinition(
-    String name_, uint16_t character_set_, uint32_t column_length_, ColumnType column_type_, uint16_t flags_, uint8_t decimals_)
-    : ColumnDefinition("", "", "", std::move(name_), "", character_set_, column_length_, column_type_, flags_, decimals_)
-{
-}
-
 size_t ColumnDefinition::getPayloadSize() const
 {
     return 12 +
@@ -155,12 +163,14 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
     }
 }
 
-ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type)
+ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type, const ResultColumnOrigin * origin)
 {
     ColumnType column_type = {};
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;
+    /// The maximum display width of a value, as MySQL reports it. Zero if it is unknown (e.g. for `String`).
+    uint32_t column_length = 0;
     DataTypePtr normalized_data_type = removeLowCardinalityAndNullable(data_type);
     TypeIndex type_index = normalized_data_type->getTypeId();
     switch (type_index)
@@ -168,59 +178,77 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
         case TypeIndex::UInt8:
             column_type = ColumnType::MYSQL_TYPE_TINY;
             flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            column_length = 3;
             break;
         case TypeIndex::UInt16:
             column_type = ColumnType::MYSQL_TYPE_SHORT;
             flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            column_length = 5;
             break;
         case TypeIndex::UInt32:
             column_type = ColumnType::MYSQL_TYPE_LONG;
             flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            column_length = 10;
             break;
         case TypeIndex::UInt64:
             column_type = ColumnType::MYSQL_TYPE_LONGLONG;
             flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            column_length = 20;
             break;
         case TypeIndex::Int8:
             column_type = ColumnType::MYSQL_TYPE_TINY;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
+            column_length = 4;
             break;
         case TypeIndex::Int16:
             column_type = ColumnType::MYSQL_TYPE_SHORT;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
+            column_length = 6;
             break;
         case TypeIndex::Int32:
             column_type = ColumnType::MYSQL_TYPE_LONG;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
+            column_length = 11;
             break;
         case TypeIndex::Int64:
             column_type = ColumnType::MYSQL_TYPE_LONGLONG;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
+            column_length = 20;
             break;
         case TypeIndex::Float32:
             column_type = ColumnType::MYSQL_TYPE_FLOAT;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             decimals = 31;
+            column_length = 12;
             break;
         case TypeIndex::Float64:
             column_type = ColumnType::MYSQL_TYPE_DOUBLE;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             decimals = 31;
+            column_length = 22;
             break;
         case TypeIndex::Date:
         case TypeIndex::Date32:
             column_type = ColumnType::MYSQL_TYPE_DATE;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
+            column_length = 10;
             break;
         case TypeIndex::DateTime:
+            column_type = ColumnType::MYSQL_TYPE_DATETIME;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            column_length = 19;
+            break;
         case TypeIndex::DateTime64:
             column_type = ColumnType::MYSQL_TYPE_DATETIME;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
+            /// The values are always sent with 6 fractional digits (see `ResultSetRow`).
+            column_length = 26;
             break;
         case TypeIndex::Decimal32:
         case TypeIndex::Decimal64:
             column_type = ColumnType::MYSQL_TYPE_DECIMAL;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
+            column_length = getDecimalColumnLength(*normalized_data_type);
             break;
         case TypeIndex::Decimal128: {
             // MySQL Decimal has max 65 precision and 30 scale
@@ -238,16 +266,32 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             {
                 column_type = ColumnType::MYSQL_TYPE_DECIMAL;
                 flags = ColumnDefinitionFlags::BINARY_FLAG;
+                column_length = getDecimalColumnLength(type);
             }
             break;
         }
+        case TypeIndex::FixedString:
+            column_type = ColumnType::MYSQL_TYPE_STRING;
+            charset = CharacterSet::utf8mb4_0900_ai_ci;
+            column_length = static_cast<uint32_t>(assert_cast<const DataTypeFixedString &>(*normalized_data_type).getN());
+            break;
         default:
             column_type = ColumnType::MYSQL_TYPE_STRING;
             /// Must match the collation advertised in the handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`).
             charset = CharacterSet::utf8mb4_0900_ai_ci;
             break;
     }
-    return ColumnDefinition(column_name, charset, 0, column_type, static_cast<uint16_t>(flags), decimals);
+
+    /// Like MySQL, report a result column that is not a plain reference to a table column
+    /// with an empty schema and table, and with the original name equal to the name.
+    if (origin && !origin->column.empty())
+        return ColumnDefinition(
+            origin->database, origin->table, origin->org_table, column_name, origin->column,
+            charset, column_length, column_type, static_cast<uint16_t>(flags), decimals);
+
+    return ColumnDefinition(
+        "", "", "", column_name, column_name,
+        charset, column_length, column_type, static_cast<uint16_t>(flags), decimals);
 }
 
 }
