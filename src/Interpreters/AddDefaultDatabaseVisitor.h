@@ -112,6 +112,20 @@ public:
         with_expression_aliases = std::move(enclosing_with_expression_aliases);
     }
 
+    /// Prepare a standalone expression, e.g. a filter, to be interpreted with another current database:
+    /// qualify the table names in it and replace `currentDatabase()` with the database.
+    void visitStandaloneExpression(ASTPtr & ast) const
+    {
+        /// In a select list the aliases defined in the expression are collected, so they are not taken for tables.
+        auto select = make_intrusive<ASTSelectQuery>();
+        select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+        auto & expression_list = *select->select();
+        expression_list.children.push_back(ast);
+        visitTableExpressions(*select);
+        substituteCurrentDatabase(expression_list.children.at(0), expression_list);
+        ast = expression_list.children.at(0);
+    }
+
     void visit(ASTSelectQuery & select) const
     {
         ASTPtr unused;
@@ -608,8 +622,8 @@ private:
             visitTableFunction(*argument);
     }
 
-    /// Whether the function is `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`),
-    /// which are registered in `FunctionFactory` as case-insensitive.
+    /// Whether the function is `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`,
+    /// `current_schema`), which are registered in `FunctionFactory` as case-insensitive.
     static bool isCurrentDatabaseFunction(const ASTFunction & function)
     {
         if (function.arguments && !function.arguments->children.empty())
@@ -619,7 +633,8 @@ private:
             return true;
 
         const String lowered_name = Poco::toLower(function.name);
-        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database";
+        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database"
+            || lowered_name == "current_schema";
     }
 
     /// Replace `currentDatabase()` with a literal everywhere in the subtree.
@@ -630,7 +645,9 @@ private:
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_ast = ast;
-            ast = make_intrusive<ASTLiteral>(database_name);
+            auto literal = make_intrusive<ASTLiteral>(database_name);
+            literal->setAlias(function->alias);
+            ast = std::move(literal);
             parent.updatePointerToChild(old_ast.get(), ast);
             return;
         }

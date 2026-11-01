@@ -33,3 +33,13 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t WHERE n IN (SELECT number
 # The tables in a filter are those of the current database.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ids (id UInt64) ENGINE = Memory AS SELECT arrayJoin([2, 3])"
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n IN (SELECT id FROM ids)'}"
+
+# The aliases defined in a filter are not table names, with either key.
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n IN ([2, 3] AS allowed) AND n IN allowed'}"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'_table_function.urlCluster': 'n IN ([2, 3] AS allowed) AND n IN allowed'}"
+
+# A filter, and the body of a SQL function in it, see the current database of the query.
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND currentDatabase() = \'$CLICKHOUSE_DATABASE\' AND current_schema() = \'$CLICKHOUSE_DATABASE\''}"
+$CLICKHOUSE_CLIENT -q "CREATE FUNCTION ${CLICKHOUSE_DATABASE}_in_ids AS (x) -> x IN (SELECT id FROM ids)"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': '${CLICKHOUSE_DATABASE}_in_ids(n)'}"
+$CLICKHOUSE_CLIENT -q "DROP FUNCTION ${CLICKHOUSE_DATABASE}_in_ids"

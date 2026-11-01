@@ -5,6 +5,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -228,9 +229,10 @@ void IStorageCluster::read(
     {
         if (const auto * table_function = extractTableFunctionFromSelectQuery(query_to_send))
         {
-            /// Replicas resolve unqualified table names against their own current database.
+            /// Replicas interpret the filter, and the bodies of the SQL functions in it, with their own current database.
             ASTPtr filter_ast = query_info.additional_filter_ast->clone();
-            AddDefaultDatabaseVisitor(context, context->getCurrentDatabase()).visitTableExpressions(*filter_ast);
+            UserDefinedSQLFunctionVisitor::visit(filter_ast, context);
+            AddDefaultDatabaseVisitor(context, context->getCurrentDatabase()).visitStandaloneExpression(filter_ast);
 
             /// A replica names the storage after the canonical name of the function, not after its spelling in the query.
             String function_name = table_function->name;
