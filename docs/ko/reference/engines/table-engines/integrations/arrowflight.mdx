@@ -11,9 +11,7 @@ doc_type: 'reference'
 ArrowFlight 테이블 엔진을 사용하면 ClickHouse에서 [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) 프로토콜을 통해 원격 데이터셋을 읽고 쓸 수 있습니다.
 이 통합을 사용하면 ClickHouse에서 외부 Flight 지원 서버와 열 지향 Arrow 형식으로 고성능 상호 작용을 수행할 수 있습니다.
 
-<div id="creating-a-table">
-  ## 테이블 생성
-</div>
+## 테이블 생성 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
@@ -31,9 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 컬럼 목록은 선택 사항입니다. 생략하면 `GetSchema`를 통해 원격 Arrow Flight 서버에서 스키마를 추론합니다.
 
-<div id="named-collections">
-  ## 이름이 지정된 컬렉션
-</div>
+## 이름이 지정된 컬렉션 {#named-collections}
 
 이 엔진은 연결 매개변수를 저장하기 위해 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 지원합니다:
 
@@ -56,15 +52,12 @@ CREATE TABLE remote_flight_data
 | `ssl_ca`                   | 아니요      | `""`    | TLS 검증에 사용할 CA 인증서 파일 경로입니다. |
 | `ssl_override_hostname`    | 아니요      | `""`    | TLS 검증 시 확인할 호스트명을 재정의합니다.   |
 
-<div id="settings">
-  ## 설정
-</div>
+## 설정 {#settings}
 
 * `arrow_flight_request_descriptor_type` — 데이터셋 이름을 Flight 서버로 전송하는 방식을 제어합니다. 가능한 값은 `path`(기본값, PATH 디스크립터로 전송) 또는 `command`(`SELECT * FROM <dataset>`를 포함한 CMD 디스크립터로 전송)입니다. SQL 명령을 기대하는 Flight 서버(예: Dremio)에는 `command`를 사용하십시오.
+* `arrow_flight_request_timeout_sec` — 단일 Arrow Flight 요청의 타임아웃(초)이며, 기본값은 `300`입니다. 이 제한은 요청 전체에 적용됩니다. 즉, `SELECT`의 경우 첫 번째 레코드 배치를 기다리는 시간만이 아니라 전체 결과 스트림을 받는 시간까지 포함됩니다. `0`은 타임아웃을 두지 않음을 의미하며, 이 경우 Flight 서버가 요청을 수락한 뒤 응답하지 않으면 연결이 종료될 때까지 쿼리가 블로킹됩니다.
 
-<div id="usage-example">
-  ## 사용 예시
-</div>
+## 사용 예시 {#usage-example}
 
 원격 Arrow Flight 서버에서 데이터 읽기:
 
@@ -93,18 +86,14 @@ SELECT * FROM remote_flight_data ORDER BY id;
 INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 ```
 
-<div id="notes">
-  ## 참고 사항
-</div>
+## 참고 사항 {#notes}
 
 * `CREATE TABLE` 문에서 컬럼을 지정한 경우, Flight 서버가 반환하는 스키마와 일치해야 합니다.
 * 컬럼을 생략한 경우, 스키마는 원격 server에서 자동으로 추론됩니다.
 * 읽기(`SELECT`)와 쓰기(`INSERT`)를 모두 지원합니다.
 * `arrow_flight_request_descriptor_type` 설정은 데이터셋 이름을 PATH 디스크립터로 보낼지, 또는 `SELECT *` 쿼리를 감싸는 CMD 디스크립터로 보낼지를 제어합니다.
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [arrowFlight 테이블 함수](/ko/reference/functions/table-functions/arrowflight)
 * [Arrow Flight 인터페이스](/ko/concepts/features/interfaces/arrowflight)

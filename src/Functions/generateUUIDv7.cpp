@@ -36,18 +36,13 @@ public:
     /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
     bool useDefaultImplementationForSparseColumns() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
+    bool useDefaultImplementationForNothing() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args;
-        FunctionArgumentDescriptors optional_args{
-            {"expr", nullptr, nullptr, "Arbitrary expression"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeUUID>();
+        return "([Any]) -> UUID";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

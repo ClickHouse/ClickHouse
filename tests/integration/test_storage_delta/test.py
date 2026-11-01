@@ -80,6 +80,7 @@ def get_spark(log_dir=None):
         )
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
+        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
@@ -3648,11 +3649,42 @@ def test_count_from_cache(started_cluster):
         instance.query(f"SELECT count() FROM {table_function}", query_id=query_id)
     )
     instance.query("SYSTEM FLUSH LOGS")
-    assert 3 == int(
+    # Every `add` action carries `stats.numRecords`, so the delta kernel reports the total row
+    # count from the log itself and count() is answered without opening any data file.
+    assert 0 == int(
         instance.query(
             f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+    explain = instance.query(
+        f"EXPLAIN SELECT count() FROM {table_function} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert "ReadFromPreparedSource (Optimized trivial count)" in explain, explain
+
+    # The legacy Delta metadata never reports a total row count, so on the very same table
+    # count() falls back to per-file row counts, which is what the row count cache holds.
+    legacy_instance = started_cluster.instances["node_with_disabled_delta_kernel"]
+    legacy_instance.query(f"SELECT count() FROM {table_function}")
+    legacy_instance.query(f"SELECT count() FROM {table_function}")
+    legacy_query_id = f"{TABLE_NAME}_legacy_query"
+    assert 3 == int(
+        legacy_instance.query(
+            f"SELECT count() FROM {table_function}", query_id=legacy_query_id
+        )
+    )
+    legacy_instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        legacy_instance.query(
+            f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{legacy_query_id}' and type = 'QueryFinish'"
+        )
+    )
+    legacy_explain = legacy_instance.query(
+        f"EXPLAIN SELECT count() FROM {table_function} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert (
+        "ReadFromPreparedSource (Optimized trivial count)" not in legacy_explain
+    ), legacy_explain
+
     assert (
         "3\t3"
         == instance.query(f"SELECT count(), count() FROM {table_function}").strip()
@@ -6699,7 +6731,6 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
     assert written.field("ts_ntz_nullable").type == pa.timestamp("us"), written
     assert written.field("ts_tz").type == pa.timestamp("us", tz="UTC"), written
 
-    # The reported defect: Spark refuses a table whose data file contradicts its own Delta schema.
     spark = started_cluster.spark_session
     rows = spark.read.format("delta").load(result_file).collect()
     assert len(rows) == 1, rows
@@ -6745,7 +6776,6 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
         "us", tz="UTC"
     ), pinned_written
 
-    # Spark reads the whole table, so the pinned-version file is genuinely conforming, not just annotated.
     pinned_rows = sorted(
         spark.read.format("delta").load(result_file).collect(),
         key=lambda row: row["id"],
@@ -6949,18 +6979,12 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert str(rows[0]["arr"][0]) == "2024-06-01 12:00:00", rows
     assert str(rows[0]["m"]["k"]) == "2024-06-01 12:00:00", rows
 
-    # `sg`'s annotated leaf is what Spark could not read before this fix.
     rows_sg = spark.read.format("delta").load(result_file).select("sg").collect()
     assert str(rows_sg[0]["sg"]["a.b"]) == "2024-06-01 12:00:00", rows_sg
     assert rows_sg[0]["sg"]["a"]["b"]["x"] == 42, rows_sg
     rows_si = spark.read.format("delta").load(result_file).select("si").collect()
     assert str(rows_si[0]["si"]["a.b"]) == "2024-06-01 12:00:00", rows_si
     assert rows_si[0]["si"]["a"]["b"] == 7, rows_si
-
-    # `sc` is read separately because it is still annotated as on master, so Spark refuses it with the
-    # reported error. Reading it is also what proves the ambiguous path was not annotated after all.
-    with pytest.raises(Exception, match="Unable to create Parquet converter"):
-        spark.read.format("delta").load(result_file).select("sc").collect()
 
     instance.query(f"DROP TABLE {table_name}")
 

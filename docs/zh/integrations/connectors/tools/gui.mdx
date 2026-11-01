@@ -28,34 +28,51 @@ doc_type: 'reference'
   * 本地数据存储：所有数据均存储在浏览器本地，确保不会将数据发送到其他地方。
 </Accordion>
 
+<Accordion title="CHewie">
+  [CHewie](https://github.com/kolsys/chewie) 是一款快速、轻量且功能丰富的纯浏览器 ClickHouse 客户端。它无需后端：应用直接通过 HTTP 接口与 ClickHouse 通信，其存储的所有内容 (连接、选项卡、查询历史) 都保存在你的浏览器中。
+
+  功能：
+
+  * 支持保存多个连接，可添加 `DEV` / `STAGING` / `PROD` 标签，并配有按颜色区分的环境指示器；还可为每个连接单独配置 ClickHouse 设置 (`max_execution_time=300` 等) ，并应用于每个查询。
+  * SQL 编辑器支持 ClickHouse 语法高亮、自动补全、多选项卡执行和查询历史。
+  * 内置数据可视化：直接在结果网格中点击几下，即可将任意查询结果灵活转换为折线图、面积图或柱状图。
+  * 快速查询表：在表概览页面即可一键打开预填充好的 `SELECT` 选项卡。
+  * 支持以任意 ClickHouse 原生输出格式导出结果，包括 CSV、TabSeparated、JSON 系列、Parquet、Avro、SQLInsert、Markdown 等，并由服务器以流式方式传输。
+  * 可从结果网格复制多行数据，并按列粘贴到 Google Sheets、Excel 或 Docs 中。
+  * 日志查看器支持服务器上的所有 `system.*_log` 表，并为常用表提供精选视图。
+  * 指标仪表盘：查询性能、表统计信息、资源利用率、设置概览。
+  * 数据仅存储在本地：除你的 ClickHouse 服务器外，不会向任何地方发送数据。
+  * 可部署为 Docker 镜像、托管在 S3 或任意静态托管服务上的静态文件，或通过 `http_server_default_response` 直接由 ClickHouse 自身提供服务，无需应用服务器。
+</Accordion>
+
 <Accordion title="ChartDB">
-  [ChartDB](https://chartdb.io) 是一款免费开源工具，只需一次查询即可对数据库 schema (包括 ClickHouse) 进行可视化和设计。它基于 React 构建，提供流畅且易用的使用体验，无需数据库凭据或注册即可开始使用。
+  [ChartDB](https://chartdb.io) 是一款免费开源工具，只需一次查询即可对数据库 schema (包括 ClickHouse) 进行可视化和设计。它基于 React 构建，提供流畅且易用的使用体验，无需数据库凭证或注册即可开始使用。
 
   功能：
 
   * Schema 可视化：可立即导入并可视化你的 ClickHouse schema，包括含有 materialized view 和标准视图的 ER 图，并显示对表的引用关系。
   * AI 驱动的 DDL 导出：轻松生成 DDL 脚本，更好地管理 schema 并编写文档。
   * 支持多种 SQL 方言：兼容多种 SQL 方言，适用于各种数据库环境。
-  * 无需注册或凭据：所有功能都可直接在浏览器中使用，兼顾便捷性与安全性。
+  * 无需注册或凭证：所有功能都可直接在浏览器中使用，兼顾便捷性与安全性。
 
   [ChartDB 源代码](https://github.com/chartdb/chartdb)。
 </Accordion>
 
 <Accordion title="CHOps">
-  [CHOps](https://ch-ops.io) 是一个免费、开源、自托管的 Web 仪表板，用于管理和监控 ClickHouse 集群。它将 ClickHouse 的 HTTP 接口封装为浏览器 UI，可用于运行 SQL、检查慢查询、配置告警、管理备份和控制访问。它适用于可通过 HTTP 访问的 ClickHouse 部署。CHOps 目前支持 ClickHouse 26.3 长期支持版；其他近期版本也可使用，但可能存在少量功能缺失。
+  [CHOps](https://ch-ops.io) 是一款免费、开源、自托管的 Web 仪表盘，用于管理和监控 ClickHouse 集群。它将 ClickHouse 的 HTTP 接口封装为浏览器 UI，可用于运行 SQL、排查慢查询、配置告警、管理备份以及控制访问权限。它适用于可通过 HTTP 访问的 ClickHouse 部署。CHOps 目前支持 ClickHouse 26.3 LTS；其他较新版本也可使用，但可能存在少量功能缺失。
 
   功能：
 
-  * SQL 编辑器支持自动补全、`EXPLAIN` 类型、以 22 种格式导出结果、查询分析器和查询指标时间线。
-  * 集群概览：带终止控件的实时查询监视器、查询分析和日志、表与 parts 检查、合并与变更、分布式 DDL 队列。
-  * 自定义仪表板，提供图表构建器、10 多种图表类型和可配置的网格布局。
-  * 监控功能提供 DVR 风格回放，可逐帧重放历史指标。
+  * SQL 编辑器，支持自动补全、多种 `EXPLAIN` 类型、以 22 种格式导出结果、查询分析器以及查询指标时间线。
+  * 集群概览：可终止查询的实时查询监控、查询分析与日志、表和分片检查、合并与变更 (mutation)、分布式 DDL 队列。
+  * 自定义仪表盘，提供图表构建器、10 余种图表类型以及可配置的网格布局。
+  * 支持 DVR 式回放的监控功能，可逐帧回放历史指标。
   * 基于 SQL 的告警规则，支持阈值评估和电子邮件通知。
-  * 访问控制：ClickHouse 用户和角色管理、授权可视化以及设置 profile 编辑。
-  * 针对 S3 兼容存储的备份和恢复编排，支持备份发现和存储 profile 管理。
-  * 索引工具：数据跳过索引可视化、投影管理和二级索引创建。
-  * 异常、错误和文本日志查看器，提供日历热力图和筛选搜索。
-  * 可部署为单个独立二进制文件、通过 Docker 部署，或从源代码构建。
+  * 访问控制：ClickHouse 用户和角色管理、权限授予可视化，以及 settings profile 编辑。
+  * 备份到兼容 S3 的存储及从中恢复的编排功能，支持备份发现和存储 profile 管理。
+  * 索引工具：数据跳过索引可视化、投影管理以及二级索引创建。
+  * 异常、错误和文本日志查看器，提供日历热力图和过滤搜索。
+  * 可作为单个自包含二进制文件部署，也可通过 Docker 或从源码部署。
 
   [CHOps 源代码](https://github.com/Quantrail-Data/CH-Ops)。
 </Accordion>
@@ -82,7 +99,7 @@ doc_type: 'reference'
   * **AI 智能功能**：使用自然语言探索数据、优化和修复 SQL 查询，并将数据可视化。
   * **官方 ClickHouse Agent 技能集成**：利用[官方最佳实践](https://github.com/ClickHouse/agent-skills)，向 AI 获取数据库优化建议。
   * **智能错误诊断**：通过精确的行列高亮即时定位语法错误，并可一键获取 AI 提供的修复建议。
-  * **系统表检查**：借助强大的可视化仪表板和过滤器，深入查看 `system.query_log`、`system.query_views_log`、`system.zookeeper`、`system.ddl_distributed_queue`、`system.part_log` 和 `system.processes`，快速了解集群状况。
+  * **系统表检查**：借助强大的可视化仪表盘和过滤器，深入查看 `system.query_log`、`system.query_views_log`、`system.zookeeper`、`system.ddl_distributed_queue`、`system.part_log` 和 `system.processes`，快速了解集群状况。
   * **一键 Explain**：通过可视化 AST 和管道视图即时了解查询执行计划。
   * **依赖关系图**：可视化表关系，并跟踪数据在 Materialized Views、Distributed 表和外部系统之间的流动。
   * **集群监控**：监控所有节点的实时指标、合并操作、复制状态、查询性能等。
@@ -92,33 +109,33 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DataPup">
-  [DataPup](https://github.com/DataPupOrg/DataPup) 是一款现代化的 AI 辅助跨平台数据库客户端，原生支持 ClickHouse。
+  [DataPup](https://github.com/DataPupOrg/DataPup) 是一款现代化、AI 辅助的跨平台数据库客户端，原生支持 ClickHouse。
 
   功能：
 
-  * AI 驱动的 SQL 查询辅助和智能建议
-  * 原生支持 ClickHouse 连接，并安全处理凭据
-  * 美观且无障碍的界面，提供多种主题 (浅色、深色和彩色变体)
-  * 高级查询结果筛选和探索
+  * AI 驱动的 SQL 查询辅助，提供智能建议
+  * 原生支持 ClickHouse 连接，并安全处理凭证
+  * 界面美观易用，提供多种主题 (浅色、深色及多种彩色变体)
+  * 高级查询结果筛选与探索
   * 跨平台支持 (macOS、Windows、Linux)
-  * 性能快速、响应灵敏
-  * 开源并采用 MIT 许可证
+  * 性能出色，响应迅速
+  * 开源，采用 MIT 许可证
 </Accordion>
 
 <Accordion title="Dory">
-  [Dory](https://github.com/dorylab/dory) 是一款 AI 原生 SQL 工作区，原生集成 ClickHouse 支持和 AI 功能。
+  [Dory](https://github.com/dorylab/dory) 是一款 AI 原生的 SQL 工作区，内置 AI，并为 ClickHouse 提供一流支持。
 
   功能：
 
-  * 用于 SQL 生成、解释和调试的 AI Copilot
-  * 在统一工作区中管理和查询多个 ClickHouse 集群
-  * 感知 schema 的 SQL 自动补全和多选项卡查询工作区
-  * 支持筛选和可视化的交互式查询结果探索
+  * AI Copilot，可生成、解释和调试 SQL
+  * 在统一的工作区中管理和查询多个 ClickHouse 集群
+  * 感知 schema 的 SQL 自动补全，以及多选项卡查询工作区
+  * 交互式探索查询结果，支持筛选和可视化
   * AI 驱动的表摘要，帮助理解数据集
-  * 可直接连接 ClickHouse，并支持 SSH 隧道
-  * 现代化、开发者友好的界面，支持浅色、深色及其他主题
-  * 跨平台桌面应用 (macOS、Windows、Linux) ，并支持 Docker
-  * 开源并采用 MIT 许可证
+  * 直接连接 ClickHouse，支持 SSH 隧道
+  * 现代化、对开发者友好的界面，支持浅色、深色及多种主题
+  * 跨平台桌面应用 (macOS、Windows、Linux)，并支持 Docker
+  * 开源，采用 MIT 许可证
 </Accordion>
 
 <Accordion title="ClickHouse Schema Flow Visualizer">
@@ -199,9 +216,9 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Grafana">
-  [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) 是一个监控和可视化平台。
+  [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) 是一个监控与可视化平台。
 
-  “无论指标存储在何处，Grafana 都可让您查询、可视化、设置警报并了解这些指标。与团队一起创建、探索和共享仪表板，培养数据驱动的文化。深受社区信赖和喜爱” — grafana.com。
+  “无论您的指标存储在何处，Grafana 都能帮助您对其进行查询、可视化、告警和分析。与团队一起创建、探索和共享仪表盘，培养数据驱动的文化。深受社区信赖与喜爱。”——grafana.com
 
   ClickHouse 数据源插件支持将 ClickHouse 用作后端数据库。
 </Accordion>
@@ -263,19 +280,19 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DBM">
-  [DBM](https://github.com/devlive-community/dbm) DBM 是一款 ClickHouse 可视化管理工具！
+  [DBM](https://github.com/devlive-community/dbm) DBM 是一款适用于 ClickHouse 的可视化管理工具！
 
   功能：
 
-  * 支持查询历史 (分页、全部清除等)
-  * 支持对选定 SQL 子句进行查询
+  * 支持查询历史记录 (分页、全部清除等)
+  * 支持对选中的 SQL 子句执行查询
   * 支持终止查询
   * 支持表管理 (元数据、删除、预览)
   * 支持数据库管理 (删除、创建)
   * 支持自定义查询
   * 支持多数据源管理 (连接测试、监控)
   * 支持监控 (处理器、连接、查询)
-  * 支持迁移数据
+  * 支持数据迁移
 </Accordion>
 
 <Accordion title="Bytebase">
@@ -302,7 +319,7 @@ doc_type: 'reference'
   功能：
 
   * 无需安装即可运行 SQL 代码的在线 SQL 编辑器。
-  * 您可以查看所有进程和 mutation，并可在 UI 中终止尚未完成的进程。
+  * 您可以查看所有进程和变更，并可在 UI 中终止尚未完成的进程。
   * 指标包括集群分析、数据分析和查询分析。
 </Accordion>
 
@@ -351,11 +368,11 @@ doc_type: 'reference'
 
   功能：
 
-  * 查询监控：当前查询、查询历史记录、查询资源 (内存、读取的 parts、file&#95;open 等) 、资源消耗最高的查询、最常使用的表或列等。
+  * 查询监控：当前查询、查询历史记录、查询资源 (内存、读取的分片、file&#95;open 等) 、资源消耗最高的查询、最常使用的表或列等。
   * 集群监控：总内存/CPU 使用情况、分布式队列、全局设置、mergetree 设置、指标等。
-  * 表和 parts 信息：提供列级别的大小、行数、压缩率、part 大小等详细信息。
+  * 表和分片信息：提供列级别的大小、行数、压缩率、分片大小等详细信息。
   * 实用工具：Zookeeper 数据探索、查询 EXPLAIN、终止查询等。
-  * 指标可视化图表：查询和资源使用情况、merge/mutation 数量、merge 性能、查询性能等。
+  * 指标可视化图表：查询和资源使用情况、合并/变更数量、合并性能、查询性能等。
 </Accordion>
 
 <Accordion title="CKibana">
@@ -604,7 +621,7 @@ doc_type: 'reference'
 
   功能：
 
-  * 连接后即可查看服务器概览——版本、运行时间、正在运行的查询、活跃合并、parts 和存储大小、副本状态，以及 clusters 和 nodes，全部一目了然。
+  * 连接后即可查看服务器概览——版本、运行时间、正在运行的查询、活跃合并、parts 和存储大小、副本状态，以及集群和节点，全部一目了然。
   * 提供可视化查询构建器 (列选择器、过滤器、排序、限制) ，以及带语法高亮的 Monaco SQL 编辑器，并为每个连接保留查询历史记录。
   * 提供可视化 `CREATE TABLE` 向导，支持 `MergeTree` 变体、`ORDER BY`、`PARTITION BY`、`SETTINGS` 以及 `Nullable()` 自动封装。
   * 原生支持 ClickHouse 类型处理——`Nullable`、`Array`、`LowCardinality` 和嵌套对象。
@@ -627,4 +644,18 @@ doc_type: 'reference'
   * 可按文本、表、用户、主机、耗时、状态和异常码预设对查询进行过滤。
   * 按耗时、用户和类型展示的查询图表；带异常检测的各主机负载图表。
   * 针对主机资源的阈值告警，可说明问题并推荐修复方案。
+</Accordion>
+
+<Accordion title="VisuaLeaf">
+  [VisuaLeaf](https://visualeaf.com/database/clickhouse/) 是一款跨平台桌面数据库 GUI，除 ClickHouse 外，还支持 MongoDB、PostgreSQL、MySQL 等数据库。
+
+  功能：
+
+  * 浏览 ClickHouse 数据库和列式表。
+  * 运行分析型 SQL 查询。
+  * 将查询结果转化为图表和仪表盘。
+  * 可自动识别 ClickHouse Cloud 连接。
+  * 支持 Windows、macOS 和 Linux 平台。
+
+  提供免费的社区版，付费版本则提供更多功能。
 </Accordion>

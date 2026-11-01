@@ -33,7 +33,6 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     automatic_parallel_replicas_min_bytes_per_replica = 1048576,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 -- Lazy materialization only applies to a `LIMIT` up to this value, and `clickhouse-test` randomizes
 -- it down to 1, which would leave the plans without the step under test. Zero means no limit.

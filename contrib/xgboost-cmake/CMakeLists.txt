@@ -159,7 +159,6 @@ configure_file(
 set(DMLC_CORE_COMPILE_OPTIONS
     -Wall
     -Wno-unknown-pragmas
-    -fPIC
 )
 
 # `-msse2` is only meaningful on x86.
@@ -291,7 +290,7 @@ set(XGBOOST_SOURCES
 
 add_library(_xgboost ${XGBOOST_SOURCES})
 target_include_directories(_xgboost SYSTEM PUBLIC ${XGBOOST_INCLUDE_DIR} ${DMLC_CORE_INCLUDE_DIR})
-target_compile_options(_xgboost PRIVATE -fPIC -std=c++17 -include exception)
+target_compile_options(_xgboost PRIVATE -std=c++17 -include exception)
 target_link_libraries(_xgboost PRIVATE
     _dmlc_core
     Threads::Threads ${CMAKE_THREAD_LIBS_INIT}
