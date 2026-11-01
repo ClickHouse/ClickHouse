@@ -1,5 +1,5 @@
--- The aggregation of lazy `FINAL` must respect `aggregation_in_order_max_block_bytes` when it runs in order:
--- with a limit of zero it finished a block and merged it after every key, which made the query very slow.
+-- The aggregation of lazy `FINAL` must respect `aggregation_in_order_max_block_bytes` when it runs in order: with a limit
+-- of zero it finished a block and merged it after every key, so `ArenaAllocChunks` grew with the number of keys.
 
 DROP TABLE IF EXISTS t_lazy_final_agg_in_order;
 CREATE TABLE t_lazy_final_agg_in_order (key UInt64, v UInt64, ver UInt64)
@@ -13,7 +13,6 @@ SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final =
     aggregation_in_order_max_block_bytes = 50000000, max_block_size = 65536, log_comment = '05480_lazy_final_aggregation_in_order_block_bytes';
 
 SYSTEM FLUSH LOGS query_log;
--- Before the fix, the aggregation merged every one of the 20000 keys on its own, allocating arena chunks for each.
 SELECT ProfileEvents['ArenaAllocChunks'] < 1000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05480_lazy_final_aggregation_in_order_block_bytes' AND type = 'QueryFinish' AND event_date >= yesterday();
 
