@@ -4852,8 +4852,10 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         /// combined on its own and not as a part of its column: `x.null` of a `Nullable` column would be taken
         /// from the last row instead of following the coalesced `x`, an element of a tuple would be summed while
         /// the tuple is not, an element of a `SimpleAggregateFunction` column would lose its function. So read the
-        /// whole column and extract the subcolumn after the merge. A column of the sorting key is equal in the merged
-        /// rows, so its subcolumns are read as they are. A column only used by an expression of the key is not.
+        /// whole column and extract the subcolumn after the merge. Only a subcolumn that is itself a column of the sorting
+        /// key, such as `t.a` of `ORDER BY t.a`, is read as it is: a subcolumn of a key column read alone is not a key
+        /// column for the merge, so `SummingMergeTree` would sum it. A column only used by an expression of the key is not
+        /// equal in the merged rows either.
         Names subcolumns_to_extract;
         if (data.merging_params.mode == MergeTreeData::MergingParams::Summing
             || data.merging_params.mode == MergeTreeData::MergingParams::Aggregating
@@ -4878,8 +4880,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             for (const auto & column_name : column_names_to_read)
             {
                 auto column = storage_snapshot->tryGetColumn(options, column_name);
-                if (column && column->isSubcolumn() && !sorting_key_columns_set.contains(column_name)
-                    && !sorting_key_columns_set.contains(column->getNameInStorage()))
+                if (column && column->isSubcolumn() && !sorting_key_columns_set.contains(column_name))
                 {
                     subcolumns_to_extract.push_back(column_name);
                     if (columns_with_parents_set.emplace(column->getNameInStorage()).second)
@@ -4895,6 +4896,14 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
             if (!subcolumns_to_extract.empty())
             {
+                /// A filter before the merge drops the inputs that only it uses, such as `v` of `PREWHERE v`, so the parents
+                /// that replace the subcolumns are kept, as the sorting key is for the merge.
+                NameSet parents;
+                for (const auto & subcolumn : subcolumns_to_extract)
+                    parents.insert(storage_snapshot->getColumn(options, subcolumn).getNameInStorage());
+                if (query_info.prewhere_info || query_info.row_level_filter)
+                    restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), parents);
+
                 column_names_to_read = std::move(columns_with_parents);
                 names = std::move(columns_with_parents_set);
             }
