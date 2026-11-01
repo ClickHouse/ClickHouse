@@ -1702,7 +1702,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             bool is_stale = std::ranges::any_of(projection.required_columns, [&](const auto & name)
             {
-                return !mutated_part->tryGetColumnForTable(name, table_columns) && mutated_part->tryGetColumn(name);
+                return mutated_part->readsColumnFromShadowedSubcolumn(name, table_columns);
             });
 
             if (is_stale)

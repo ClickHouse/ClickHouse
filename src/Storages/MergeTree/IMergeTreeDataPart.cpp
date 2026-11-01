@@ -1011,6 +1011,21 @@ std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnForTable(const St
     return tryGetColumnOfPartForTable(getColumnsDescription(), column_name, table_columns);
 }
 
+bool IMergeTreeDataPart::readsColumnFromShadowedSubcolumn(const String & column_name, const ColumnsDescription & table_columns) const
+{
+    if (tryGetColumnForTable(column_name, table_columns) || !tryGetColumn(column_name))
+        return false;
+
+    /// The marker is recorded under the name of the column that the part misses, which is the name itself or, for
+    /// a subcolumn (`a.x.y` of a column `a.x` next to a `JSON` column `a`), one of its prefixes.
+    if (serialization_infos.getMissingColumnInfo(column_name))
+        return false;
+
+    return std::ranges::none_of(
+        Nested::getAllColumnAndSubcolumnPairs(column_name),
+        [&](const auto & split) { return serialization_infos.getMissingColumnInfo(String(split.first)) != nullptr; });
+}
+
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
 {
     auto serialization = tryGetSerialization(column_name);

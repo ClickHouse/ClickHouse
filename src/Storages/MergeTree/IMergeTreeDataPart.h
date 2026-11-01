@@ -243,6 +243,13 @@ public:
     /// default there rather than from the sizes of `a`.
     std::optional<NameAndTypePair> tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const;
 
+    /// Whether the part was written before `ALTER TABLE ... ADD COLUMN` added the column `column_name` of the table with
+    /// columns `table_columns` under the name of a subcolumn of another column (`a.size0` next to an `Array` column `a`):
+    /// the part misses the column, but holds the same-named subcolumn of the other column, so the data computed from the
+    /// column when the part was written, such as its projections, was computed from that subcolumn. A part that records
+    /// the column as missing (`skip_empty_columns_on_insert`) was written after the column was added, from its default.
+    bool readsColumnFromShadowedSubcolumn(const String & column_name, const ColumnsDescription & table_columns) const;
+
     /// Get sample column from part. For ordinary columns it just creates column using it's type.
     /// For columns with dynamic structure it reads sample column with 0 rows from the part.
     ColumnPtr getColumnSample(const NameAndTypePair & column) const;

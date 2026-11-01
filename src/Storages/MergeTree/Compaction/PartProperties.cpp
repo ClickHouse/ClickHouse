@@ -123,7 +123,7 @@ std::set<std::string> getProjectionsWithChangedSource(const MergeTreeDataPartPtr
 
         for (const auto & name : projection.required_columns)
         {
-            if (!part->tryGetColumnForTable(name, parent_table_columns) && part->tryGetColumn(name))
+            if (part->readsColumnFromShadowedSubcolumn(name, parent_table_columns))
             {
                 projection_names.insert(projection.name);
                 break;

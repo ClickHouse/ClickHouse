@@ -372,7 +372,7 @@ static bool projectionPartHasRequiredColumns(
     /// subcolumn, while the parent part now reads the column's default. Read the parent part instead.
     for (const auto & name : projection.required_columns)
     {
-        if (!parent_part.tryGetColumnForTable(name, parent_table_columns) && parent_part.tryGetColumn(name))
+        if (parent_part.readsColumnFromShadowedSubcolumn(name, parent_table_columns))
             return false;
     }
 

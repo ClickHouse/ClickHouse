@@ -1647,7 +1647,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                 /// have a different meaning, so it is rebuilt regardless of `deduplicate_merge_projection_mode`.
                 for (const auto & name : projection.required_columns)
                 {
-                    if (!part->tryGetColumnForTable(name, parent_table_columns) && part->tryGetColumn(name))
+                    if (part->readsColumnFromShadowedSubcolumn(name, parent_table_columns))
                     {
                         projection_source_changed = true;
                         break;
