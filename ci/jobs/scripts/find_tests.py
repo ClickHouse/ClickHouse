@@ -8,7 +8,6 @@ from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import time
-from collections import Counter
 
 sys.path.append("./")
 
