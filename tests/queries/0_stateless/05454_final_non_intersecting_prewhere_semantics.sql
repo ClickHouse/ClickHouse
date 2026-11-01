@@ -194,3 +194,17 @@ SETTINGS apply_prewhere_after_final = 0, enable_multiple_prewhere_read_steps = 0
 SELECT sum(key), sum(length(payload)) FROM t_final_prewhere_default FINAL WHERE key != 0 AND b > 0
 SETTINGS apply_prewhere_after_final = 0, enable_multiple_prewhere_read_steps = 0, query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
 DROP TABLE t_final_prewhere_default;
+
+SELECT 'A column with the name of a constant of the conditions';
+DROP TABLE IF EXISTS t_final_prewhere_constant_name;
+CREATE TABLE t_final_prewhere_constant_name (`2_UInt8` UInt64, v UInt64)
+ENGINE = ReplacingMergeTree ORDER BY `2_UInt8` SETTINGS index_granularity = 16;
+INSERT INTO t_final_prewhere_constant_name SELECT number, number % 4 FROM numbers(1000);
+-- All ranges are merged, so the WHERE evaluates the conditions applied early, with the constant 2, not the column `2_UInt8`.
+SELECT sum(`2_UInt8`) FROM t_final_prewhere_constant_name FINAL WHERE v = 2
+SETTINGS split_parts_ranges_into_intersecting_and_non_intersecting_final = 0, query_plan_optimize_lazy_final = 0;
+-- The read combines the condition on the sorting key in PREWHERE with the one applied early.
+SELECT sum(`2_UInt8`) FROM t_final_prewhere_constant_name FINAL WHERE `2_UInt8` % 3 = 0 AND v = 2 SETTINGS query_plan_optimize_lazy_final = 0;
+SELECT sum(`2_UInt8`) FROM t_final_prewhere_constant_name FINAL WHERE `2_UInt8` % 3 = 0 AND v = 2
+SETTINGS query_plan_optimize_lazy_final = 0, optimize_move_to_prewhere_if_final_non_intersecting = 0;
+DROP TABLE t_final_prewhere_constant_name;

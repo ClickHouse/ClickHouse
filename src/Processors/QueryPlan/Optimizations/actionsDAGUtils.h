@@ -197,6 +197,11 @@ bool isInjectiveFunction(const ActionsDAG::Node * node);
 bool isComputedOnlyForConjunction(
     const ActionsDAG & dag, const ActionsDAG::Node * atom, const ActionsDAG::Node * conjunction, bool conjunction_may_be_output);
 
+/// Adds the actions of `other` to `dag`, both over the same block: an input of `other` becomes the input of `dag` with the same name
+/// (added if there is none), and no other node is matched by name, unlike `mergeNodes`, which would take a column named `2_UInt8`
+/// for the constant 2. Returns the nodes of `dag` for the outputs of `other`. The outputs of `dag` do not change.
+ActionsDAG::NodeRawConstPtrs addActionsOverSameBlock(ActionsDAG & dag, ActionsDAG other);
+
 /// Our objective is to replace injective function nodes in `actions` results with its children
 /// until only the irreducible subset of nodes remains. Against these set of nodes we will match partition key expression
 /// to determine if it maps all rows with the same value of group by key to the same partition.

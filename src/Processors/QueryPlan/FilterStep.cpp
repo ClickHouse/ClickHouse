@@ -609,8 +609,7 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
 
     /// The conditions, with all input columns passed through in the order of the header.
     ActionsDAG conditions(input_header.getColumnsWithTypeAndName());
-    ActionsDAG::NodeRawConstPtrs condition_nodes;
-    conditions.mergeNodes(ActionsDAG::cloneSubDAG(prefiltered_atoms, /*remove_aliases=*/ false), &condition_nodes);
+    auto condition_nodes = addActionsOverSameBlock(conditions, ActionsDAG::cloneSubDAG(prefiltered_atoms, /*remove_aliases=*/ false));
     conditions.getOutputs().insert(
         conditions.getOutputs().begin(), &conditions.addAlias(addConjunction(conditions, condition_nodes), conditions_column_name));
     conditions.removeUnusedActions(false, false);

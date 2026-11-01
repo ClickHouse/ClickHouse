@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -2647,8 +2648,7 @@ static FilterDAGInfo combineFilters(FilterDAGInfo first, const FilterDAGInfo & s
     result.actions = std::move(first.actions);
     const auto * first_node = &result.actions.findInOutputs(first.column_name);
 
-    ActionsDAG::NodeRawConstPtrs second_outputs;
-    result.actions.mergeNodes(second.actions.clone(), &second_outputs);
+    const auto second_outputs = addActionsOverSameBlock(result.actions, second.actions.clone());
     const auto second_it = std::ranges::find_if(second_outputs, [&](const auto * node) { return node->result_name == second.column_name; });
     if (second_it == second_outputs.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter column {} is not in the outputs of its actions", second.column_name);

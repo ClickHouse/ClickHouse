@@ -48,3 +48,7 @@ A column with the name of the filter of the conditions applied early
 Not applied to a column that a part lacks, whose default the reader computes before the other filters
 1	1
 1	1
+A column with the name of a constant of the conditions
+125000
+41334
+41334

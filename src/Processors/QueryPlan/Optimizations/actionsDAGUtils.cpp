@@ -984,4 +984,18 @@ bool isComputedOnlyForConjunction(
     return true;
 }
 
+ActionsDAG::NodeRawConstPtrs addActionsOverSameBlock(ActionsDAG & dag, ActionsDAG other)
+{
+    /// `mergeInplace` binds the inputs of `other` to the outputs of `dag` with the same names, so let these be the inputs.
+    auto outputs = std::move(dag.getOutputs());
+    dag.getOutputs() = dag.getInputs();
+    const size_t num_other_outputs = other.getOutputs().size();
+    ActionsDAG::NodeMapping inputs_map;
+    dag.mergeInplace(std::move(other), inputs_map, /*remove_dangling_inputs=*/ true);
+    /// The outputs of `other` come first.
+    ActionsDAG::NodeRawConstPtrs other_outputs(dag.getOutputs().begin(), dag.getOutputs().begin() + num_other_outputs);
+    dag.getOutputs() = std::move(outputs);
+    return other_outputs;
+}
+
 }
