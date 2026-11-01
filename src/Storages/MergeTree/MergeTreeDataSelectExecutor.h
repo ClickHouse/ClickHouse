@@ -117,7 +117,7 @@ public:
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
-        const std::optional<KeyCondition> & key_condition_rpn_template,
+        const KeyCondition * key_condition_rpn_template,
         const MergeTreeDataPartInfoForReaderPtr & part_info,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
@@ -140,13 +140,13 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache);
 
-    /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
-    /// 'use_skip_indexes_for_disjunctions') is enabled.
-    /// One bit per RPN element is consumed to store the partial evaluation results.
+    /// Whether evaluation of OR-connected filter conditions using skip indexes (setting `use_skip_indexes_for_disjunctions`)
+    /// may be used for a filter whose RPN has `rpn_size` elements (setting `use_skip_indexes_for_disjunctions_max_rpn_elements`).
+    /// One bit per RPN element per mark is consumed to store the partial evaluation results.
     /// Example:
     /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
     /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
-    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 32;
+    static bool isRPNSizeAllowedForSkipIndexesForDisjunctions(size_t rpn_size, const Settings & settings);
 
 private:
     const MergeTreeData & data;
