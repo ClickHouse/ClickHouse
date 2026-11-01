@@ -17,6 +17,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -60,6 +61,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/Net/MessageHeader.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
@@ -81,6 +83,7 @@ namespace Setting
     extern const SettingsBool enable_http_compression;
     extern const SettingsUInt64 http_headers_progress_interval_ms;
     extern const SettingsUInt64 http_max_request_param_data_size;
+    extern const SettingsUInt64 http_max_multipart_form_data_size;
     extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
     extern const SettingsUInt64 http_response_buffer_size;
     extern const SettingsBool http_wait_end_of_query;
@@ -954,10 +957,21 @@ void HTTPHandler::processQuery(
         in_post_maybe_compressed = std::move(in_post);
     }
 
+    /// Multipart form parsing consumes the HTTP request; a queryless filename upload instead
+    /// supplies the staged file as the query's input body. Explicit multipart queries still
+    /// use the original external-table path.
+    if (has_external_data && request.getExpectContinue() && shouldDeferHTTP100Continue(request))
+        response.sendContinue();
+
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & raw_query = getQuery(request, params, context, *in_post_maybe_compressed);
+    if (auto multipart_file = takeRequestBody())
+    {
+        has_external_data = false;
+        in_post_maybe_compressed = std::move(multipart_file);
+    }
 
     /// Combine all HTTP filter sources into the `filter` setting. The query-construction settings
     /// (`select`/`filter`/`order`/`sort`/`page`) are applied by the engine in `executeQuery`, on the
@@ -1470,7 +1484,7 @@ void HTTPHandler::processQuery(
 
     /// Create callback to defer HTTP 100 Continue response to after quota checks
     HTTPContinueCallback http_continue_callback = {};
-    if (shouldDeferHTTP100Continue(request))
+    if (shouldDeferHTTP100Continue(request) && !requestDeclaresFormBody(request))
     {
         http_continue_callback = [&request, &response, path_upload_body]()
         {
@@ -1788,6 +1802,66 @@ void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_se
     }
 }
 
+/// Defer the decision between a file upload and external tables until the entire multipart
+/// form has been parsed. A query field can occur after any file field. Staging on the configured
+/// temporary storage avoids keeping the uploaded files in process memory.
+class MultipartFormUpload : public HTMLForm::PartHandler
+{
+public:
+    struct File
+    {
+        Poco::Net::MessageHeader header;
+        std::unique_ptr<TemporaryDataBuffer> data;
+    };
+
+    explicit MultipartFormUpload(ContextMutablePtr context_) : context(std::move(context_)) {}
+
+    void handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream) override
+    {
+        auto data = std::make_unique<TemporaryDataBuffer>(context->getTempDataOnDisk());
+        const size_t max_size = context->getSettingsRef()[Setting::http_max_multipart_form_data_size];
+
+        if (max_size)
+        {
+            LimitReadBuffer limited(
+                stream,
+                LimitReadBuffer::Settings{
+                    .read_no_more = max_size > total_bytes ? max_size - total_bytes : 0,
+                    .expect_eof = true,
+                    .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
+                });
+            copyData(limited, *data);
+            total_bytes += limited.count();
+        }
+        else
+        {
+            copyData(stream, *data);
+        }
+
+        data->finishWriting();
+        files.push_back({header, std::move(data)});
+    }
+
+    void replayExternalTables(const Poco::Net::NameValueCollection & params)
+    {
+        ExternalTablesHandler handler(context, params);
+        for (auto & file : files)
+        {
+            auto input = file.data->read();
+            handler.handlePart(file.header, *input);
+        }
+    }
+
+    const std::vector<File> & getFiles() const { return files; }
+
+    std::unique_ptr<ReadBuffer> readSingleFile() { return files.front().data->read(); }
+
+private:
+    ContextMutablePtr context;
+    size_t total_bytes = 0;
+    std::vector<File> files;
+};
+
 DynamicQueryHandler::DynamicQueryHandler(
     IServer & server_,
     const HTTPHandlerConnectionConfig & connection_config_,
@@ -1802,6 +1876,13 @@ DynamicQueryHandler::DynamicQueryHandler(
     , parse_http_path(parse_http_path_)
     , allow_path_table_uploads(allow_path_table_uploads_)
 {
+}
+
+DynamicQueryHandler::~DynamicQueryHandler() = default;
+
+std::unique_ptr<ReadBuffer> DynamicQueryHandler::takeRequestBody()
+{
+    return std::move(multipart_upload_body);
 }
 
 bool DynamicQueryHandler::allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const
@@ -1847,28 +1928,105 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
         return query_param.empty() ? query_param : query_param + "\n";
     }
 
-    /// Support for "external data for query processing".
-    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
-    ExternalTablesHandler handler(context, params);
-    params.load(request, body, handler);
-
-    std::string full_query;
-    NameToNameMap query_parameters = context->getQueryParameters();
-    /// Params are of both form params POST and uri (GET params)
-    for (const auto & it : params)
+    const auto collect_form_query = [&]()
     {
-        if (it.first == param_name)
+        std::string full_query;
+        NameToNameMap query_parameters = context->getQueryParameters();
+        /// Params include both URL and form fields.
+        for (const auto & [key, value] : params)
         {
-            full_query += it.second;
+            if (key == param_name)
+                full_query += value;
+            else
+                customizeQueryParam(query_parameters, key, value);
         }
-        else
-        {
-            customizeQueryParam(query_parameters, it.first, it.second);
-        }
-    }
-    context->setQueryParameters(query_parameters);
+        context->setQueryParameters(query_parameters);
+        return full_query;
+    };
 
-    return full_query;
+    /// Only queryless POSTs to the built-in root/query endpoint can derive an INSERT from
+    /// the uploaded file's name. A URL query, a custom handler or another HTTP path keeps
+    /// the existing external-table behavior.
+    const auto uri_path = request.getURI().substr(0, request.getURI().find('?'));
+    const bool is_builtin_upload = allow_path_table_uploads
+        && param_name == "query"
+        && request.getMethod() == HTTPRequest::HTTP_POST
+        && (uri_path.empty() || uri_path == "/" || uri_path == "/query")
+        && isMultipartFormData(request)
+        && startsWith(request.getContentType(), "multipart/form-data")
+        && !params.has(param_name);
+
+    if (!is_builtin_upload)
+    {
+        ExternalTablesHandler handler(context, params);
+        params.load(request, body, handler);
+        return collect_form_query();
+    }
+
+    const String explicit_database = params.get("database", "");
+    multipart_form_upload = std::make_unique<MultipartFormUpload>(context);
+    params.load(request, body, *multipart_form_upload);
+
+    /// A query in the multipart body may follow the file. Preserve its original semantics,
+    /// including external tables and their format/structure parameters.
+    if (params.has(param_name))
+    {
+        multipart_form_upload->replayExternalTables(params);
+        multipart_form_upload.reset();
+        return collect_form_query();
+    }
+
+    const auto & files = multipart_form_upload->getFiles();
+    if (files.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP multipart table uploads require exactly one file");
+
+    Poco::Net::NameValueCollection content_disposition;
+    std::string disposition_type;
+    Poco::Net::MessageHeader::splitParameters(
+        files.front().header.get("Content-Disposition", ""), disposition_type, content_disposition);
+    const String filename = content_disposition.get("filename", "");
+
+    /// Filenames are not URL paths. Reject separators and percent escapes rather than
+    /// allowing path traversal or accidental percent-decoding while reusing path format parsing.
+    if (filename.empty() || filename.find_first_of("/\\%") != String::npos
+        || std::any_of(filename.begin(), filename.end(), [](unsigned char ch) { return isControlASCII(ch); }))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP multipart table uploads require a plain filename like hits.CSV");
+
+    const auto file_info = parseHTTPPath("/" + filename, false, true, false);
+    if (file_info.table.empty() || file_info.format.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP multipart table uploads require a known format in the filename");
+
+    /// A single dot before the format is interpreted as database.table. Filenames with
+    /// more dots are ambiguous with dotted table names, so require an unambiguous filename.
+    String table = file_info.table;
+    String database;
+    if (const auto dot = table.find('.'); dot != String::npos)
+    {
+        if (dot == 0 || dot + 1 == table.size() || table.find('.', dot + 1) != String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Ambiguous multipart upload filename. Use table.format and the database URL parameter");
+        database = table.substr(0, dot);
+        table = table.substr(dot + 1);
+    }
+    if (!database.empty() && !explicit_database.empty() && explicit_database != database)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Conflicting database specification: '{}' in filename vs '{}' in database URL parameter.",
+            database, explicit_database);
+
+    multipart_upload_body = wrapReadBufferWithCompressionMethod(
+        multipart_form_upload->readSingleFile(),
+        chooseCompressionMethod({}, file_info.compression),
+        static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]),
+        context->getSettingsRef()[Setting::snappy_mode]);
+
+    /// A compressed file may have a non-empty encoded body but decode to zero bytes.
+    if (multipart_upload_body->eof())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP multipart table uploads require a non-empty file");
+
+    const String qualified_table = database.empty()
+        ? backQuoteIfNeed(table)
+        : backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
+    return "INSERT INTO " + qualified_table + " FORMAT " + file_info.format + "\n";
 }
 
 PredefinedQueryHandler::PredefinedQueryHandler(
