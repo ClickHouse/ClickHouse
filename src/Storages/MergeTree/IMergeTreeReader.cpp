@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -117,7 +118,10 @@ IMergeTreeReader::IMergeTreeReader(
 
     /// The columns read from the part may be written to the columns cache and then served to other
     /// queries, which must not see the substituted empty strings. Read the values in full then.
-    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes;
+    /// The readers of wide and compact parts write to the cache, but only for the parts the cache can hold
+    /// (see `initColumnsCache` and `IMergeTreeDataPart::mayStoreColumnsInColumnsCache`).
+    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes
+        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
 
     if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
     {

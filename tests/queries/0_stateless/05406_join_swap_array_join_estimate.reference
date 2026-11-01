@@ -1,0 +1,13 @@
+arrayJoin, empty input	1	0
+lowered arrayJoin, empty input, LEFT JOIN	1	0
+ARRAY JOIN, empty input	1	0
+lowered arrayJoin, 5 rows	1	0
+arrayJoin, 100 rows	0	1
+ARRAY JOIN, 100 rows	0	1
+0
+10
+2000
+ARRAY JOIN, element filter	1	0	1
+ARRAY JOIN, filter step	1	0	1
+arrayJoin, filter	1	0	1
+ARRAY JOIN, element filter, empty input	1	0
