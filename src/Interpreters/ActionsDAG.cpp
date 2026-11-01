@@ -5730,10 +5730,7 @@ DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::Node
     DataTypesWithConstInfo types;
     types.reserve(nodes.size());
     for (const auto & child : nodes)
-    {
-        bool is_const = child->column != nullptr;
-        types.push_back({child->result_type, is_const});
-    }
+        types.push_back({child->result_type, child->column != nullptr, child->column.get()});
     return types;
 }
 

@@ -1935,7 +1935,23 @@ public:
     /// have to be answered separately.
     std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
-        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+        if (arguments.size() != 2)
+            return true;
+        if (!comparisonCanThrow(arguments[0].type, arguments[1].type))
+            return false;
+        /// A constant string is converted to the type of the other argument once, before any row is compared
+        /// (see `executeWithConstString`), and then the values of that type are compared.
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const ColumnConst * constant = arguments[i].column ? checkAndGetColumnConstStringOrFixedString(arguments[i].column) : nullptr;
+            if (!constant)
+                continue;
+            const DataTypePtr type_to_compare = removeNullable(removeLowCardinality(arguments[1 - i].type));
+            const DataTypePtr type_string = removeNullable(removeLowCardinality(arguments[i].type));
+            return comparisonCanThrow(type_to_compare, type_to_compare)
+                || tryConvertFieldToType(constant->getField(), *type_to_compare, type_string.get(), params.format_settings).isNull();
+        }
+        return true;
     }
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
