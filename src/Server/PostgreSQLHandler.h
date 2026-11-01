@@ -161,7 +161,6 @@ private:
         ContextMutablePtr query_context,
         PostgreSQLProtocol::Messaging::CommandComplete::Command command);
 
-    static bool isEmptyQuery(const String & query);
     /// Transaction-control statements (BEGIN [READ ONLY], START TRANSACTION, COMMIT, ROLLBACK, ...) that
     /// ClickHouse does not implement but that libpq/pqxx clients send around every statement. They are
     /// acknowledged without execution so that such clients (including ClickHouse's own `postgresql` table

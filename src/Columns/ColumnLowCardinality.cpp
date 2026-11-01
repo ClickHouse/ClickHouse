@@ -365,7 +365,8 @@ void batchSerializeLowCardinalityString(
     const ColumnString & strings,
     const ColumnVector<IndexType> & indexes,
     const IColumn::SerializationSettings * settings,
-    std::span<char *> memories)
+    std::span<char *> memories,
+    size_t start_row)
 {
     const auto & offsets = strings.getOffsets();
     const auto & chars = strings.getChars();
@@ -374,7 +375,7 @@ void batchSerializeLowCardinalityString(
 
     for (size_t row = 0, size = memories.size(); row < size; ++row)
     {
-        const size_t index = data[row];
+        const size_t index = data[start_row + row];
         const size_t begin = offsets[static_cast<ssize_t>(index) - 1];
         const size_t value_size = offsets[index] - begin;
         const size_t stored_size = value_size + zero_byte;
@@ -410,9 +411,9 @@ void collectLowCardinalityStringSizes(
 }
 
 void ColumnLowCardinality::batchSerializeValueIntoMemory(
-    std::span<char *> memories, const IColumn::SerializationSettings * settings) const
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
 {
-    chassert(memories.size() == size());
+    chassert(start_row + memories.size() <= size());
     if (memories.empty())
         return;
 
@@ -426,16 +427,16 @@ void ColumnLowCardinality::batchSerializeValueIntoMemory(
             switch (getSizeOfIndexType())
             {
                 case sizeof(UInt8):
-                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt8 &>(indexes), settings, memories);
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt8 &>(indexes), settings, memories, start_row);
                     return;
                 case sizeof(UInt16):
-                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt16 &>(indexes), settings, memories);
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt16 &>(indexes), settings, memories, start_row);
                     return;
                 case sizeof(UInt32):
-                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt32 &>(indexes), settings, memories);
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt32 &>(indexes), settings, memories, start_row);
                     return;
                 case sizeof(UInt64):
-                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt64 &>(indexes), settings, memories);
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt64 &>(indexes), settings, memories, start_row);
                     return;
                 default:
                     break;
@@ -445,7 +446,7 @@ void ColumnLowCardinality::batchSerializeValueIntoMemory(
 
     const IColumn & indexes = getIndexes();
     for (size_t i = 0; i < memories.size(); ++i)
-        memories[i] = getDictionary().serializeValueIntoMemory(indexes.getUInt(i), memories[i], settings);
+        memories[i] = getDictionary().serializeValueIntoMemory(indexes.getUInt(start_row + i), memories[i], settings);
 }
 
 std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const

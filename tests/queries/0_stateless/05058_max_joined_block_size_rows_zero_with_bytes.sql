@@ -4,7 +4,6 @@ SET min_joined_block_size_bytes = 512000;
 SET enable_lazy_columns_replication = 0;
 SET query_plan_join_swap_table = false;
 SET max_threads = 1;
-SET enable_analyzer = 1;
 -- `joined_block_split_single_row` requires a non-zero row limit, so it cannot be on here.
 SET joined_block_split_single_row = 0;
 

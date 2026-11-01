@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -85,9 +87,9 @@ private:
         SortedKeyRuns runs;
         size_t end = 0;
     };
-    std::vector<SourceKeyRuns> source_key_runs;
+    VectorWithMemoryTracking<SourceKeyRuns> source_key_runs;
 
-    std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
+    QueueWithMemoryTracking<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.

@@ -38,7 +38,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
@@ -252,10 +251,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context->canUseTaskBasedParallelReplicas()
-        && !context->isDistributed()
+    const auto can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -1757,7 +1753,8 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
     *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
 3. **Default Search**:
-*If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the Most Recent File {#most-recent-file}
 
@@ -1770,7 +1767,7 @@ After identifying candidate files using the above rules, the system determines w
 * The file with the highest version number is selected
 * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
+**Note**: All mentioned settings except `iceberg_list_only_v_prefixed_metadata_files` are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
@@ -2074,6 +2071,7 @@ The command returns a table with two columns (`metric_name String`, `metric_valu
 | `deleted_manifest_lists_count` | Number of manifest list files deleted |
 | `deleted_statistics_files_count` | Number of statistics files deleted (always 0 currently) |
 | `dry_run` | `1` for dry-run mode, `0` for normal execution |
+| `failed_deletions_count` | Number of files whose deletion returned an error. Such a file may be left in storage, and `remove_orphan_files` can delete it later |
 
 The command performs the following steps:
 
@@ -2082,7 +2080,7 @@ The command performs the following steps:
 3. Expires snapshots that are neither retained by the policy nor protected by the timestamp fuse
 4. Computes which files are exclusively associated with expired snapshots
 5. In normal mode: generates new metadata without the expired snapshots
-6. In normal mode: physically deletes unreachable manifest lists, manifest files, and data files
+6. In normal mode: physically deletes unreachable manifest lists, manifest files, and data files, and counts a file whose deletion returns an error in `failed_deletions_count` instead
 7. In `dry_run = 1` mode: skips steps 5 and 6 and only returns the calculated metrics
 
 #### Snapshot Retention Policy {#iceberg-snapshot-retention-policy}
@@ -2099,7 +2097,7 @@ Each snapshot reference (`refs` in the Iceberg metadata) can override these with
 
 **Retention evaluation:**
 
-- **For each branch** (including `main`): the ancestor chain is walked starting from the branch head. Snapshots are retained while either of these conditions is true:
+- **For each branch** (including `main`): the branch head is always retained. The ancestor chain is walked starting from the branch head, and snapshots are retained while either of these conditions is true:
   - The snapshot is one of the first `min-snapshots-to-keep` in the chain
   - The snapshot's age is within `max-snapshot-age-ms` (i.e., `now - timestamp-ms <= max-snapshot-age-ms`)
 - **For tags**: the tagged snapshot is retained unless the tag has exceeded its `max-ref-age-ms`, in which case the tag reference is removed
@@ -2152,7 +2150,7 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. |
+| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. Must be at least `iceberg_orphan_files_min_retention_seconds` (1 day) before now. |
 | `location` | `String` | Table location | Restrict the scan to a specific subdirectory under the table location (e.g., `'data/'` or `'metadata/'`). |
 | `dry_run` | `UInt64` | `0` | When `1`, identify orphan files and return the result summary without actually deleting anything. |
 
@@ -2200,13 +2198,14 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 |---|---|---|---|
 | `allow_iceberg_remove_orphan_files` | `Bool` | `false` | Gate setting to enable the feature (experimental). |
 | `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | Default `older_than` threshold in seconds when the argument is omitted. |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (1 day) | Minimum distance in seconds between `older_than` and now; a more recent `older_than` is rejected. `0` disables the check. |
 
 <Note>
 - **Requires Iceberg format version 2 (or higher).** Version 1 tables are rejected because they lack `manifest-list` pointers in snapshots, which are needed to safely determine the reachable file set. Running the command on a v1 table returns a `BAD_ARGUMENTS` error.
 - Requires both `allow_insert_into_iceberg` and `allow_iceberg_remove_orphan_files` settings to be enabled
 - It is recommended to run `expire_snapshots` before `remove_orphan_files` so that files uniquely referenced by expired snapshots are cleaned up first
 - Use `dry_run = 1` to preview orphan files before deletion
-- The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
+- An `older_than` closer to now than `iceberg_orphan_files_min_retention_seconds` is rejected, because the files of a write that has not committed yet are not referenced by the table metadata and look like orphans; keep the setting above the longest time a write to the table can take to commit
 </Note>
 
 ## See Also {#see-also}
@@ -2293,6 +2292,12 @@ A table with the specified structure for reading data in the specified Paimon ta
 Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
 snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
 declares `primary-key` therefore throws.
+
+Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
+contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
+deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
+A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
+it can be read again.
 
 ## Defining a named collection {#defining-a-named-collection}
 

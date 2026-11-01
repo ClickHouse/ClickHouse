@@ -49,7 +49,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace Setting
@@ -190,7 +189,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
-    NameSet columns_shadowing_map_subcolumns_,
+    IsShadowingColumn is_column_shadowing_map_subcolumn_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(index_sample_block)
@@ -198,7 +197,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -452,31 +451,17 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
 }
 
-std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
+std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
 {
     if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash);
-
-    if (it == all_search_queries.end())
+    if (!all_search_queries.contains(query_hash))
         return std::nullopt;
 
     auto hash_str = getSipHash128AsHexString(query_hash);
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
-
-    virtual_column_to_search_query[virtual_column_name] = it->second;
-    return virtual_column_name;
-}
-
-TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(const String & column_name) const
-{
-    auto it = virtual_column_to_search_query.find(column_name);
-    if (it == virtual_column_to_search_query.end())
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Virtual column {} not found in MergeTreeIndexConditionText", column_name);
-
-    return it->second;
+    return fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
 }
 
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
@@ -998,10 +983,8 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
-    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
-    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
-    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
-    /// branch below, because every shape is matched the same way.
+    /// The scan compares token bytes ASCII case-insensitively, so it must not answer a needle that ILIKE could
+    /// match through a non-ASCII code point. Checked before the shape-specific branches below.
     if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
         return {};
 
@@ -1267,7 +1250,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
     {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name, columns_shadowing_map_subcolumns))
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name, is_column_shadowing_map_subcolumn))
         {
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
@@ -2040,7 +2023,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     else
     {
         /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name, columns_shadowing_map_subcolumns);
+        auto parsed = tryParseMapSubcolumnName(required_column.name, is_column_shadowing_map_subcolumn);
         if (!parsed)
             return false;
 
@@ -2090,7 +2073,7 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexCo
     }
 
     /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
     if (!parsed)
         return std::nullopt;
 
@@ -2257,7 +2240,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;

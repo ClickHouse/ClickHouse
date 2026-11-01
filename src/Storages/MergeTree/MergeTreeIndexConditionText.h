@@ -99,7 +99,7 @@ public:
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
-        NameSet columns_shadowing_map_subcolumns_,
+        IsShadowingColumn is_column_shadowing_map_subcolumn_,
         JSONIndexArgumentTypes json_argument_types_);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -121,9 +121,9 @@ public:
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
-    /// Returns generated virtual column name for the replacement of related function node.
-    std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
-    TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
+    /// Returns the name of the virtual column that replaces the function node of the query,
+    /// or nothing if the query is not one of this condition or cannot be read directly.
+    std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
 
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
@@ -242,7 +242,7 @@ private:
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
-    NameSet columns_shadowing_map_subcolumns;
+    IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;
@@ -256,8 +256,6 @@ private:
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
     /// Stable hash of the set of search queries containing patterns.
     UInt128 search_patterns_hash{};
-    /// Mapping from virtual column (optimized for direct read from text index) to search query.
-    std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression

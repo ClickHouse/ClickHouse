@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- Tag no-fasttest: Depends on S3
+-- Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas read the files
 
 SET s3_truncate_on_insert = 1,
     s3_list_object_keys_size = 100;

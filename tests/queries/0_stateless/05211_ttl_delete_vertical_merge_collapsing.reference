@@ -11,10 +11,10 @@ test1_rows	10	1	120	220	320
 test1_rows	11	1	111	211	311
 test1_rows	11	0	121	221	321
 test1_control_same_rows	1
-test1_algo	Vertical
-test1_control_algo	Horizontal
+test1_algo	Vertical	RegularMerge
+test1_control_algo	Horizontal	RegularMerge
 test2_rows	1	1	1	101	201	301
 test2_rows	4	1	2	114	214	314
 test2_control_same_rows	1
-test2_algo	Vertical
-test2_control_algo	Horizontal
+test2_algo	Vertical	RegularMerge
+test2_control_algo	Horizontal	RegularMerge
