@@ -32,6 +32,8 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO ${CLICKHOUSE_DATABASE}.t VALUES (1, 'Hello'), (2, 'World');
     GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t TO ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t TO ${READER_USER_NAME};
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.e (x UInt32, scratch UInt32 EPHEMERAL 0) ENGINE = MergeTree ORDER BY x;
+    GRANT SELECT, INSERT(x) ON ${CLICKHOUSE_DATABASE}.e TO ${READER_USER_NAME};
     CREATE TABLE ${CLICKHOUSE_DATABASE}.private (s String) ENGINE = MergeTree ORDER BY s;
     INSERT INTO ${CLICKHOUSE_DATABASE}.private VALUES ('private');
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.private TO ${USER_NAME};
@@ -290,6 +292,10 @@ show("PUT presigned with input_format=Values", send("PUT", csv_path, presigned_p
 show("PUT signed Values with a subquery", signed_request("PUT", values_path, body=f"(13, (SELECT s FROM {database}.private LIMIT 1))".encode()))
 # A signed body is staged before the query starts: the access and the limits of temporary data are checked before that.
 show("PUT without the INSERT grant", signed_request("PUT", csv_path, body=b"14,\"no grant\"\n", access_key=reader_user))
+# The access is checked on the same columns as of the generated `INSERT`, which do not include `EPHEMERAL` ones.
+ephemeral_path = f"/{database}/e.CSV"
+show("PUT with the INSERT grant on the non-EPHEMERAL columns", signed_request("PUT", ephemeral_path, body=b"18\n", access_key=reader_user))
+show("GET after PUT into a table with an EPHEMERAL column", signed_request("GET", ephemeral_path, access_key=reader_user))
 show("PUT over the temporary data limit", signed_request("PUT", csv_path, body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)),
      params=[("max_temporary_data_on_disk_size_for_query", "100")]))
 # A `SETTINGS` clause at the beginning of an unsigned body cannot turn the evaluation of expressions back on.

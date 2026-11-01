@@ -61,6 +61,8 @@ PUT presigned Values with a function: 500 Code: 344
 PUT presigned with input_format=Values: 500 Code: 344
 PUT signed Values with a subquery: 200 
 PUT without the INSERT grant: 403 Code: 497
+PUT with the INSERT grant on the non-EPHEMERAL columns: 200 
+GET after PUT into a table with an EPHEMERAL column: 200 18
 PUT over the temporary data limit: 500 Code: 396
 PUT presigned Values with a SETTINGS clause: 400 Code: 27
 PUT without a table over the temporary data limit: 400 Code: 36

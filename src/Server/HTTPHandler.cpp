@@ -1016,13 +1016,14 @@ void HTTPHandler::processQuery(
                 /// The body is received before the query is started, so the access and the limits of the temporary data,
                 /// which are applied to a query when it starts, are checked here: a user who cannot insert into the
                 /// table cannot fill the temporary disk, and a staged body is not larger than any of the limits.
+                /// The columns are the same as of the generated `INSERT` without a column list (not `EPHEMERAL` ones).
                 {
                     StorageID table_id(path_info.database.empty() ? context->getCurrentDatabase() : path_info.database, path_info.table);
                     auto table = DatabaseCatalog::instance().getTable(table_id, context);
                     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                     context->checkAccess(
                         AccessType::INSERT, table_id.database_name, table_id.table_name,
-                        metadata_snapshot->getSampleBlockInsertable().getNames());
+                        metadata_snapshot->getSampleBlockNonMaterialized().getNames());
                 }
 
                 send_http_continue_before_reading_body();
