@@ -25,6 +25,8 @@ node = cluster.add_instance(
         "AZURE_FEDERATED_TOKEN_FILE": "/tmp/azure_federated_token",
         "AZURE_AUTHORITY_HOST": f"https://127.0.0.1:{TOKEN_PORT}/",
     },
+    # The nodes need different authority hosts; without this, env variables are shared across the cluster.
+    instance_env_variables=True,
 )
 # delta-kernel fetches tokens and blobs through its own object store, which rejects the self-signed certificate of
 # the mock, so this node talks to a plain HTTP mock.
@@ -36,6 +38,7 @@ delta_node = cluster.add_instance(
         "AZURE_FEDERATED_TOKEN_FILE": "/tmp/azure_federated_token",
         "AZURE_AUTHORITY_HOST": f"http://127.0.0.1:{TOKEN_PORT}/",
     },
+    instance_env_variables=True,
 )
 
 
