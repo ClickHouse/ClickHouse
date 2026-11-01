@@ -356,7 +356,8 @@ static bool getResultFromQueryResultCache(
     BlockIO & res,
     const LoggerPtr & logger,
     QueryResultDetails & result_details,
-    QueryResultCacheOnDiskPtr query_result_cache_on_disk)
+    QueryResultCacheOnDiskPtr query_result_cache_on_disk,
+    QueryFlags flags)
 {
     /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
     /// then set a pipeline with a source populated by the query result cache.
@@ -368,7 +369,7 @@ static bool getResultFromQueryResultCache(
         if (!read_from_memory_cache && !read_from_on_disk_cache)
             return false;
 
-        QueryResultCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getClientInfo().current_query_id, context->getUserID(), context->getCurrentRoles(), false);
+        QueryResultCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
         std::optional<QueryResultCacheReader> reader;
         if (read_from_memory_cache)
         {
@@ -391,6 +392,10 @@ static bool getResultFromQueryResultCache(
         {
             result_details.query_cache_entry_created_at = reader->entryCreatedAt();
             result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
+            /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
+            /// subqueries against the current data. Read them before `getSource` moves the source out of the reader.
+            if (flags.collect_result_column_origins)
+                result_details.result_column_origins = reader->entryResultColumnOrigins();
             QueryPipeline pipeline;
             pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
             res.pipeline = std::move(pipeline);
@@ -445,7 +450,8 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
     const VectorQueryPlanCachePtr & vector_query_plan_cache,
     BlockIO & res,
     const LoggerPtr & logger,
-    QueryResultDetails & result_details)
+    QueryResultDetails & result_details,
+    QueryFlags flags)
 {
     // Stopwatch test_watch{CLOCK_MONOTONIC};
     // test_watch.restart();
@@ -525,7 +531,8 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                             result.query_result_cache_usage,
                             res,
                             logger,
-                            result_details, result.query_result_cache_on_disk);
+                            result_details, result.query_result_cache_on_disk,
+                            flags);
                         if (!result.query_result_cache_hit)
                         {
                             if (reader.hasCacheEntryForKey(true))
@@ -1839,7 +1846,8 @@ static std::optional<BlockIO> tryExecuteFromCache(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
     CacheProbeOutput & output,
-    QueryResultDetails & result_details)
+    QueryResultDetails & result_details,
+    QueryFlags flags)
 {
     if (!begin || !end)
         return std::nullopt;
@@ -1852,7 +1860,7 @@ static std::optional<BlockIO> tryExecuteFromCache(
 
     auto cache_result = tryRestoreFromQueryPlanCache(
         begin, end, context, settings, internal,
-        query_result_cache, vector_query_plan_cache, res, logger, result_details);
+        query_result_cache, vector_query_plan_cache, res, logger, result_details, flags);
 
     const char * new_begin = cache_result.new_query.empty() ? begin : cache_result.new_query.data();
     const char * new_end = cache_result.new_query.empty() ? end : cache_result.new_query.data() + cache_result.new_query.size();
@@ -3031,7 +3039,7 @@ static BlockIO executeQueryImpl(
         {
             if (auto cached_result = tryExecuteFromCache(
                 begin, end, context, internal, stage,
-                query_start_time, start_watch, query_span, implicit_tcl_executor, cache_output, result_details))
+                query_start_time, start_watch, query_span, implicit_tcl_executor, cache_output, result_details, flags))
             {
                 return std::move(*cached_result);
             }
@@ -3901,8 +3909,13 @@ static BlockIO executeQueryImpl(
                     query_result_cache_usage,
                     res,
                     logger,
-                    result_details, query_result_cache_on_disk);
+                    result_details, query_result_cache_on_disk,
+                    flags);
             }
+
+            /// Where the result columns come from. Collected for `QueryFlags::collect_result_column_origins` and to be stored with
+            /// the result in the query result cache.
+            ResultColumnOrigins result_column_origins;
 
             if (!query_result_cache_entry_exists)
             {
