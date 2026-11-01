@@ -20,7 +20,8 @@ CREATE VIEW branches AS
     SELECT f.v AS v, d.y AS y, 'b' AS tag, 1000 AS b, 1 AS n FROM fact AS f JOIN dim AS d ON f.k = d.k;
 CREATE VIEW constants AS
     SELECT f.v AS v, d.y AS y, materialize(CAST('b', 'Enum8(''b'' = 1, ''a'' = 2)')) AS e, materialize(toInt8(-1)) AS i,
-        materialize(toDecimal32(1.5, 2)) AS dec, materialize(toDate('2026-01-02')) AS dt, materialize(toFixedString('ab', 2)) AS fs
+        materialize(toDecimal32(1.5, 2)) AS dec, materialize(toDate('2026-01-02')) AS dt, materialize(toFixedString('ab', 2)) AS fs,
+        materialize(toNullable(toInt8(-1))) AS ni, materialize(CAST(NULL, 'Nullable(Int8)')) AS nn
     FROM fact AS f JOIN dim AS d ON f.k = d.k;
 
 SELECT '-- the branch selected by a constant column is estimated as without that filter, the other one as empty';
@@ -42,14 +43,16 @@ WITH
     (SELECT extract(explain, '\\bd\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN actions = 1, compact = 1, pretty = 1
         SELECT sum(f.v) FROM fact AS f JOIN dim AS d ON f.k = d.k WHERE d.y = 1) WHERE explain LIKE '%⋈%') AS alone,
     (SELECT extract(explain, '\\bd\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN actions = 1, compact = 1, pretty = 1
-        SELECT sum(v) FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND e <= CAST('b', 'Enum8(''b'' = 1, ''a'' = 2)')
-            AND i < toUInt64(1) AND NOT (i > toUInt64(1))
-            AND dec >= toDecimal32(1.5, 2) AND dt > toDate('2026-01-01') AND fs != toFixedString('ac', 2)) WHERE explain LIKE '%⋈%') AS all_true
+        SELECT sum(v) FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND i < toUInt64(1) AND i >= toInt8(-2) AND NOT (i > toUInt64(1))
+            AND dec >= toDecimal32(1.5, 2) AND dt > toDate('2026-01-01') AND dt <= toDate('2026-01-02')
+            AND fs != toFixedString('ac', 2) AND fs <= toFixedString('ad', 2) AND NOT (fs = toFixedString('aa', 2))
+            AND NOT (ni IS NULL) AND NOT (nn IS NOT NULL)) WHERE explain LIKE '%⋈%') AS all_true
 SELECT all_true = alone;
 SELECT
-    (SELECT count() FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND e <= CAST('b', 'Enum8(''b'' = 1, ''a'' = 2)')
-        AND i < toUInt64(1) AND NOT (i > toUInt64(1))
-        AND dec >= toDecimal32(1.5, 2) AND dt > toDate('2026-01-01') AND fs != toFixedString('ac', 2))
+    (SELECT count() FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND i < toUInt64(1) AND i >= toInt8(-2) AND NOT (i > toUInt64(1))
+        AND dec >= toDecimal32(1.5, 2) AND dt > toDate('2026-01-01') AND dt <= toDate('2026-01-02')
+        AND fs != toFixedString('ac', 2) AND fs <= toFixedString('ad', 2) AND NOT (fs = toFixedString('aa', 2))
+        AND NOT (ni IS NULL) AND NOT (nn IS NOT NULL))
         = (SELECT count() FROM fact AS f JOIN dim AS d ON f.k = d.k WHERE d.y = 1);
 
 DROP VIEW branches;
