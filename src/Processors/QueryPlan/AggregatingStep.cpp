@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
+#include <Interpreters/AdaptiveAggregation/MultiPassTopK/MultiPassTopK.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -422,6 +423,9 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (!params.enable_adaptive_aggregator)
         return "disabled by the setting";
 
+    if (top_k_candidates)
+        return "the aggregation is the candidate pass of a multi-pass top-K";
+
     if (pipeline.getNumStreams() <= 1 || params.max_threads <= 1)
         return "the aggregation is single-stream";
 
@@ -592,6 +596,22 @@ void AggregatingStep::buildRadixUniqExact(
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    if (!multi_pass_top_k_input)
+    {
+        addAggregation(pipeline, settings);
+        return;
+    }
+
+    /// The passes clone the step as the plan left it, before `addAggregation` adapts the parameters to its own pipeline.
+    auto aggregating_for_passes = cloneWithParams(input_headers.front(), params);
+    addAggregation(pipeline, settings);
+    QueryPipelineProcessorsCollector collector(pipeline, this);
+    addMultiPassTopK(pipeline, std::move(aggregating_for_passes), multi_pass_top_k_input);
+    multi_pass_top_k = collector.detachProcessors();
+}
+
+void AggregatingStep::addAggregation(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+{
     size_t new_merge_threads = merge_threads;
     size_t new_temporary_data_merge_threads = temporary_data_merge_threads;
     updateThreadsValues(new_merge_threads, new_temporary_data_merge_threads, params, settings);
@@ -663,6 +683,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// counts of the final conversion, so a partial aggregation with it would drop groups.
     chassert(final || !params.bucket_top_k);
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+    transform_params->top_k_candidates = top_k_candidates;
 
     if (use_radix_uniq_exact)
     {
@@ -1002,6 +1023,16 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
     if (params.having_prefilter_op != Aggregator::Params::HavingPrefilterOp::Disabled)
         settings.out << prefix << "HAVING pre-filter: count() " << havingPrefilterOpToString(params.having_prefilter_op) << ' '
                      << params.having_prefilter_threshold << '\n';
+
+    if (multi_pass_top_k_input)
+    {
+        const auto & rank = params.aggregates[rankIndexOf(*multi_pass_top_k_input)].column_name;
+        settings.out << prefix << "Multi-pass top-K: by "
+                     << (settings.pretty ? QueryPlanFormat::formatColumnPretty(rank, settings.pretty_names) : rank);
+        if (const auto key = boundingKeyOf(*multi_pass_top_k_input))
+            settings.out << ", bounding key " << (settings.pretty ? QueryPlanFormat::formatColumnPretty(*key, settings.pretty_names) : *key);
+        settings.out << '\n';
+    }
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -1023,11 +1054,21 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
         having_prefilter_map->add("Threshold", params.having_prefilter_threshold);
         map.add("HAVING Pre-filter", std::move(having_prefilter_map));
     }
+    if (multi_pass_top_k_input)
+    {
+        auto multi_pass_top_k_map = std::make_unique<JSONBuilder::JSONMap>();
+        multi_pass_top_k_map->add("Rank", params.aggregates[rankIndexOf(*multi_pass_top_k_input)].column_name);
+        if (const auto key = boundingKeyOf(*multi_pass_top_k_input))
+            multi_pass_top_k_map->add("Bounding Key", *key);
+        map.add("Multi-Pass Top-K", std::move(multi_pass_top_k_map));
+    }
     map.add("Skip merging", skip_merging);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const
 {
+    /// Processors are printed in reverse order.
+    IQueryPlanStep::describePipeline(multi_pass_top_k, settings);
     if (!aggregating.empty())
     {
         IQueryPlanStep::describePipeline(aggregating, settings);
@@ -1634,9 +1675,16 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
 QueryPlanStepPtr AggregatingStep::clone() const
 {
+    auto step = cloneWithParams(input_headers.front(), params);
+    step->multi_pass_top_k_input = multi_pass_top_k_input;
+    return step;
+}
+
+std::unique_ptr<AggregatingStep> AggregatingStep::cloneWithParams(const SharedHeader & new_input_header, Aggregator::Params new_params) const
+{
     return std::make_unique<AggregatingStep>(
-        input_headers.front(),
-        params,
+        new_input_header,
+        std::move(new_params),
         grouping_sets_params,
         final,
         max_block_size,

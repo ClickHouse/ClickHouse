@@ -4,6 +4,7 @@
 #include <optional>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Interpreters/AdaptiveAggregation/MultiPassTopK/MultiPassTopK_fwd.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
@@ -48,6 +49,10 @@ struct AggregatingTransformParams
     Aggregator & aggregator;
     bool final;
     Block header;
+
+    /// Set for the candidate pass of a multi-pass top-K aggregation: every stream aggregates only the rows of
+    /// these keys, and counts the rows of all keys in the cells of `TopKCandidates`.
+    TopKCandidatesPtr top_k_candidates;
 
     AggregatingTransformParams(SharedHeader header_, const Aggregator::Params & params_, bool final_)
         : params(params_)
@@ -208,6 +213,10 @@ private:
     /// available under the cutoff (see `Aggregator::spillAllowedUnderKeptKeysCutoff`).
     void capturePerStreamKeptKeysSeed();
 
+    /// Restricts `variants` to the keys of `params->top_k_candidates` before the first rows of the candidate
+    /// pass.
+    void seedTopKCandidates();
+
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
@@ -265,6 +274,9 @@ private:
 
     /// How many streams `AggregatingStep` spreads this transform's output over; 1 when it doesn't.
     size_t output_streams = 1;
+
+    /// The stream of the candidate pass of a multi-pass top-K aggregation, which keeps the rows of the candidates.
+    std::unique_ptr<TopKCandidateStream> top_k_stream;
 
     void initGenerate();
 };

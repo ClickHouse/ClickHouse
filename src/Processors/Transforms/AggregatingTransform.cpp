@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Interpreters/AdaptiveAggregation/MultiPassTopK/TopKCandidates.h>
 
 #include <Common/Arena.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
@@ -1472,6 +1473,9 @@ AggregatingTransform::AggregatingTransform(
         /// The records of the finished producers go to disk before a running producer gives up its own.
         spillables = {&adaptive_spillable->spillable, &spillable};
     }
+
+    if (params->top_k_candidates)
+        top_k_stream = std::make_unique<TopKCandidateStream>(params->top_k_candidates, params->header, params->params.keys);
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -1615,6 +1619,9 @@ void AggregatingTransform::consume(Chunk chunk)
     if (shared_kept_keys && !no_more_keys && shared_kept_keys->frozen.load(std::memory_order_acquire))
         applySharedKeptKeysCutoff(/*may_freeze=*/false);
 
+    if (params->top_k_candidates && !no_more_keys)
+        seedTopKCandidates();
+
     const bool had_no_more_keys = no_more_keys;
 
     if (params->params.only_merge)
@@ -1625,10 +1632,15 @@ void AggregatingTransform::consume(Chunk chunk)
     }
     else
     {
+        Columns columns = chunk.detachColumns();
+        UInt64 rows_to_aggregate = num_rows;
+        if (top_k_stream && !top_k_stream->keepCandidateRows(columns, rows_to_aggregate))
+            return;
+
         if (!params->aggregator.executeOnBlock(
-                chunk.detachColumns(),
+                std::move(columns),
                 0,
-                num_rows,
+                rows_to_aggregate,
                 variants,
                 key_columns,
                 aggregate_columns,
@@ -1647,6 +1659,19 @@ void AggregatingTransform::consume(Chunk chunk)
         else
             capturePerStreamKeptKeysSeed();
     }
+}
+
+void AggregatingTransform::seedTopKCandidates()
+{
+    const auto & seed = params->top_k_candidates->seed;
+    bool seed_no_more_keys = false;
+    params->aggregator.mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, variants, seed_no_more_keys, is_cancelled);
+
+    /// The table admits no key outside the candidates from here on, so an external aggregation may flush it
+    /// and re-seed it from the same block (see `Aggregator::Params::SharedKeptKeysControl`).
+    variants.restricted_to_kept_keys = true;
+    variants.kept_keys_seed = seed;
+    no_more_keys = true;
 }
 
 void AggregatingTransform::capturePerStreamKeptKeysSeed()
@@ -1803,6 +1828,9 @@ void AggregatingTransform::initGenerate()
     /// last finisher assembles the merge assuming the session holds every producer's contribution.
     if (adaptive_context)
         params->aggregator.finishAdaptiveProducer(variants, *adaptive_context);
+
+    if (top_k_stream)
+        top_k_stream->flush();
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {

@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/AdaptiveAggregation/MultiPassTopK/MultiPassTopK_fwd.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -108,6 +109,11 @@ public:
         params.having_prefilter_count_index = count_index;
     }
 
+    /// Lets the step run the multi-pass top-K aggregation (see `addMultiPassTopK`), which reads `input` again
+    /// for each of its passes. Called by the last plan optimization for a final aggregation that feeds a descending
+    /// top-K by a lone `count`, `uniqExact` or `uniqExactIf` (see `findAggregationTopK`).
+    void enableMultiPassTopK(MultiPassTopKInputPtr input) { multi_pass_top_k_input = std::move(input); }
+
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
     bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
@@ -169,6 +175,13 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// A copy of the step over `new_input_header` that aggregates by `new_params`, without the multi-pass top-K
+    /// aggregation.
+    std::unique_ptr<AggregatingStep> cloneWithParams(const SharedHeader & new_input_header, Aggregator::Params new_params) const;
+
+    /// Makes the step the candidate pass of a multi-pass top-K aggregation (see `TopKCandidates`).
+    void setTopKCandidates(TopKCandidatesPtr top_k_candidates_) { top_k_candidates = std::move(top_k_candidates_); }
+
     void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
 
     /// AggregatingStep does not contain any ActionDAGs.
@@ -196,6 +209,10 @@ public:
 
 private:
     void updateOutputHeader() override;
+
+    /// Adds the transforms of the aggregation itself, which `transformPipeline` surrounds by the passes of the
+    /// multi-pass top-K aggregation when it is enabled.
+    void addAggregation(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings);
 
     /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`), if `canUseRadixUniqExact`.
     void buildRadixUniqExact(
@@ -232,11 +249,15 @@ private:
     size_t limit_hint = 0;
     size_t limit_hint_prefix_columns = 0;
 
+    TopKCandidatesPtr top_k_candidates;
+    MultiPassTopKInputPtr multi_pass_top_k_input;
+
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
 
     Processors aggregating;
+    Processors multi_pass_top_k;
 };
 
 class AggregatingProjectionStep : public IQueryPlanStep
