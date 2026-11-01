@@ -47,7 +47,7 @@ TEST(GroupLimitSortedAlgorithm, SeenOnlyProgressIsBounded)
 {
     /// Consumed seen rows count toward the block size, in the window of `DISTINCT` and in ranked windows.
     /// The ranks `[0, 1)` of `DISTINCT` and `LIMIT 1 BY` use the distinct merge path; any other window ranks
-    /// rows one by one. `LIMIT BY` counts every row before spilling, so its seen counts are 64-bit.
+    /// rows one by one. The seen counts of an unbounded window need 64 bits.
     const auto limit_by_header = makeHeader(std::make_shared<DataTypeUInt64>());
     struct Case
     {
@@ -65,7 +65,8 @@ TEST(GroupLimitSortedAlgorithm, SeenOnlyProgressIsBounded)
         Block output_header = *header;
         output_header.erase("seen_rows");
         GroupLimitSortedAlgorithm algorithm(
-            {header}, std::make_shared<const Block>(output_header), keyDescription(), "seen_rows", offset, end, 2);
+            {header}, std::make_shared<const Block>(output_header), keyDescription(),
+            NameAndTypePair{"seen_rows", header->getByName("seen_rows").type}, offset, end, 2);
         IMergingAlgorithm::Inputs inputs(1);
         inputs[0].chunk = makeChunk(*header, {1u, 1u, 2u, 3u, 4u}, 0, seen_rows);
         algorithm.initialize(std::move(inputs));
@@ -89,7 +90,8 @@ TEST(GroupLimitSortedAlgorithm, WholeChunkOfDistinctKeysForwardsColumns)
     Block output_header = *header;
     output_header.erase("seen_rows");
     GroupLimitSortedAlgorithm algorithm(
-        {header}, std::make_shared<const Block>(output_header), keyDescription(), "seen_rows", /*group_offset_=*/ 0,
+        {header}, std::make_shared<const Block>(output_header), keyDescription(),
+        NameAndTypePair{"seen_rows", header->getByName("seen_rows").type}, /*group_offset_=*/ 0,
         /*group_limit_end_=*/ 1, 64);
     IMergingAlgorithm::Inputs inputs(1);
     inputs[0].chunk = makeChunk(*header, {1u, 2u, 3u}, 100);
@@ -147,6 +149,65 @@ TEST(GroupLimitSortedAlgorithm, WithoutSeenRowsEveryRowIsAnInputRow)
         algorithm.initialize(std::move(inputs));
 
         /// A request for the next chunk of an exhausted input needs no answer: the merge goes on without it.
+        std::vector<std::pair<UInt64, UInt64>> rows;
+        bool finished = false;
+        for (size_t step = 0; step < 16 && !finished; ++step)
+        {
+            auto status = algorithm.merge();
+            const auto & columns = status.chunk.getColumns();
+            for (size_t row = 0; row < status.chunk.getNumRows(); ++row)
+                rows.emplace_back(columns[0]->getUInt(row), columns[1]->getUInt(row));
+            finished = status.is_finished;
+        }
+        EXPECT_TRUE(finished);
+        EXPECT_EQ(rows, expected);
+    }
+}
+
+TEST(GroupLimitSortedAlgorithm, InputRowsWithoutSeenCountsRankAfterSeenRows)
+{
+    /// Input runs store no seen counts. The merge adds zero counts of the seen-count type, so input rows rank
+    /// after the seen rows of their key, in the window of `DISTINCT` and in a ranked window.
+    const auto seen_type = std::make_shared<DataTypeUInt8>();
+    const auto seen_header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key"), ColumnWithTypeAndName(seen_type, "seen_rows")});
+    const auto input_header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "payload")});
+
+    struct Case
+    {
+        UInt64 offset;
+        UInt64 end;
+        std::vector<UInt64> input_keys;
+        std::vector<std::pair<UInt64, UInt64>> expected;
+    };
+    /// Key 1 was seen once before spilling. The input rows hold payloads from 10, at most the window end of
+    /// rows of a key.
+    const std::vector<Case> cases{
+        {0, 1, {1, 2}, {{2, 11}}},
+        {1, 3, {1, 1, 2, 2}, {{1, 10}, {1, 11}, {2, 13}}},
+    };
+    for (const auto & [offset, end, input_keys, expected] : cases)
+    {
+        SCOPED_TRACE(::testing::Message() << "window=[" << offset << ", " << end << ")");
+        GroupLimitSortedAlgorithm algorithm(
+            {seen_header, input_header}, input_header, keyDescription(), NameAndTypePair{"seen_rows", seen_type}, offset, end, 64);
+        IMergingAlgorithm::Inputs inputs(2);
+        auto seen_columns = seen_header->cloneEmptyColumns();
+        seen_columns[0]->insert(1u);
+        seen_columns[1]->insert(1u);
+        inputs[0].chunk = Chunk(std::move(seen_columns), 1);
+        auto input_columns = input_header->cloneEmptyColumns();
+        UInt64 payload = 10;
+        for (const auto key : input_keys)
+        {
+            input_columns[0]->insert(key);
+            input_columns[1]->insert(payload++);
+        }
+        inputs[1].chunk = Chunk(std::move(input_columns), input_keys.size());
+        algorithm.initialize(std::move(inputs));
+
         std::vector<std::pair<UInt64, UInt64>> rows;
         bool finished = false;
         for (size_t step = 0; step < 16 && !finished; ++step)

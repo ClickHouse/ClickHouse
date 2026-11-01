@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Processors/Transforms/ExternalGroupLimitTransform.h>
 #include <Common/ProfileEvents.h>
@@ -24,10 +23,6 @@ struct ExternalDistinctTraits
     static constexpr const char * transform_name = "ExternalDistinctTransform";
     static constexpr const char * merge_transform_name = "DistinctSortedTransform";
     static constexpr const char * operator_name = "DISTINCT";
-
-    /// A set retains each key once, so every seen count is 1.
-    static constexpr size_t seen_rows_bytes = sizeof(UInt8);
-    static DataTypePtr seenRowsType() { return std::make_shared<DataTypeUInt8>(); }
 
     static Filter createFilter(const Block & header, const GroupLimitParams & params, const IProcessor & /*owner*/)
     {

@@ -14,9 +14,9 @@ enum class SpillKeyRepresentation
 };
 
 /// A batch of groups retained by the in-memory state of a group limit: their keys, and the number of input
-/// rows counted for each group. `seen_rows` has one row per group: a constant 1 for `DISTINCT`, the group
-/// counts for `LIMIT BY`. A count is exact below the window end of the group and at least the window end
-/// otherwise, which is all that ranking the later rows needs.
+/// rows counted for each group. `seen_rows` has one row per group: a constant `UInt8` 1 for `DISTINCT`, the
+/// `UInt64` group counts for `LIMIT BY`. A count is exact below the window end of the group and at least the
+/// window end otherwise, which is all that ranking the later rows needs.
 struct SeenGroups
 {
     MutableColumns keys;

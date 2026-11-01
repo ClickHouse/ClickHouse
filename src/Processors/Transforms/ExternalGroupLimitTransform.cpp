@@ -666,7 +666,7 @@ void ExternalGroupLimitTransform<Traits>::startSpilling(Hashing & hashing)
 {
     chassert(!spill_layout);
     spill_layout.emplace(inputs.front().getSharedHeader(), hashing.filter.getKeyColumnsPositions(),
-        hashing.filter.getKeyRepresentation(), preserve_input_order, Traits::seenRowsType());
+        hashing.filter.getKeyRepresentation(), attachesArrivalNumbers(), params.group_limit_end);
 
     if (hashing.filter.getTotalRowCount())
     {
@@ -806,8 +806,8 @@ void ExternalGroupLimitTransform<Traits>::flushSortingUnit(CollectingInput & col
     collecting.sorted_rows += rows;
 
     /// The group limit can increase the average width by removing repeated narrow rows. Allow one byte
-    /// for division rounding and the width of the seen count, which is still constant here.
-    const size_t average_row_bytes = sorted.bytes() / rows + 1 + Traits::seen_rows_bytes;
+    /// for division rounding and the width of the seen count that the final merge adds to input rows.
+    const size_t average_row_bytes = sorted.bytes() / rows + 1 + spill_layout->getSeenRowsBytes();
     max_average_row_bytes = std::max(max_average_row_bytes, average_row_bytes);
     collecting.sorted_chunks.push_back(std::move(sorted));
 }
@@ -832,8 +832,8 @@ void ExternalGroupLimitTransform<Traits>::collectInput(CollectingInput & collect
     const size_t bytes = prepared.allocatedBytes();
 
     /// Reserve the average materialized width before buffering. Allow one byte for division rounding
-    /// and the width of the seen count, which remains constant until the run is merged.
-    const size_t average_row_bytes = prepared.bytes() / rows + 1 + Traits::seen_rows_bytes;
+    /// and the width of the seen count that the final merge adds to input rows.
+    const size_t average_row_bytes = prepared.bytes() / rows + 1 + spill_layout->getSeenRowsBytes();
     max_average_row_bytes = std::max(max_average_row_bytes, average_row_bytes);
 
     auto & pending = collecting.pending;
@@ -946,15 +946,8 @@ void ExternalGroupLimitTransform<Traits>::readRun(RunWriteProgress & progress)
 template <typename Traits>
 size_t ExternalGroupLimitTransform<Traits>::estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const
 {
-    constexpr size_t seen_rows_bytes = Traits::seen_rows_bytes;
-
-    /// The block-size calculation sees materialized seen counts, adding their width to each buffered row.
     const size_t block_rows = MergeSorter::calculateMaxMergedBlockSize(
-        max_block_size_rows, preferred_block_bytes, rows, allocated_bytes + rows * seen_rows_bytes);
-
-    /// `MergeSorter` expands the seen counts while the buffered inputs remain alive. Allow twice their
-    /// logical size for allocation rounding.
-    const size_t seen_rows_columns_memory = 2 * rows * seen_rows_bytes;
+        max_block_size_rows, preferred_block_bytes, rows, allocated_bytes);
 
     /// Output blocks can coexist in the producer and sink. Allow twice each block's logical size for
     /// column capacity growth.
@@ -962,7 +955,7 @@ size_t ExternalGroupLimitTransform<Traits>::estimateRunWriteMemory(size_t rows, 
 
     /// The temporary writer also needs file, compression-input, and compression-output buffers.
     const size_t write_buffers_memory = 3 * tmp_data->getSettings().buffer_size;
-    return seen_rows_columns_memory + output_memory + write_buffers_memory;
+    return output_memory + write_buffers_memory;
 }
 
 template <typename Traits>
@@ -973,16 +966,12 @@ size_t ExternalGroupLimitTransform<Traits>::selectTailSpillPrefix(const Collecti
         return 0;
 
     const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
-    constexpr size_t seen_rows_bytes = Traits::seen_rows_bytes;
 
     /// Input blocks and the tail are already charged. Reserve output columns and copies across
     /// processor ports separately from file readers. Average row sizes are rounded upward, and the
     /// multiplier allows allocation growth; this remains an estimate for uneven and oversized values.
     const size_t output_memory = 4 * max_average_row_bytes * max_block_size_rows;
-
-    /// `MergeSorter` expands the seen counts before merging. Allow capacity rounding for these columns
-    /// while the original tail chunks remain alive.
-    const size_t merge_memory = estimated_file_read_memory + output_memory + 2 * collecting.sorted_rows * seen_rows_bytes;
+    const size_t merge_memory = estimated_file_read_memory + output_memory;
     if (query_memory + merge_memory <= max_bytes_before_external)
         return 0;
 
@@ -999,12 +988,10 @@ size_t ExternalGroupLimitTransform<Traits>::selectTailSpillPrefix(const Collecti
         /// sizing rule and the largest observed average row width, allowing for column capacity
         /// rounding, to budget that replacement.
         const size_t block_rows = MergeSorter::calculateMaxMergedBlockSize(
-            max_block_size_rows, preferred_block_bytes, prefix_rows, prefix_bytes + prefix_rows * seen_rows_bytes);
+            max_block_size_rows, preferred_block_bytes, prefix_rows, prefix_bytes);
         const size_t new_reader_memory = estimateRunReadMemory(
             2 * max_average_row_bytes * block_rows, tmp_data->getSettings().buffer_size);
-        const size_t released_bytes = prefix_bytes + 2 * prefix_rows * seen_rows_bytes;
-        if (query_memory + merge_memory + new_reader_memory
-            <= max_bytes_before_external + released_bytes)
+        if (query_memory + merge_memory + new_reader_memory <= max_bytes_before_external + prefix_bytes)
             return prefix + 1;
     }
 

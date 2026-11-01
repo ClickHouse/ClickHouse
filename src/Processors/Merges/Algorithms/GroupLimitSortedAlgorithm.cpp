@@ -12,14 +12,15 @@ GroupLimitSortedAlgorithm::GroupLimitSortedAlgorithm(
     SharedHeaders input_headers,
     SharedHeader output_header_,
     SortDescription key_description,
-    const std::optional<String> & seen_rows_column,
+    const std::optional<NameAndTypePair> & seen_rows_column,
     UInt64 group_offset_,
     UInt64 group_limit_end_,
     size_t max_block_size_rows_)
     : output_header(std::move(output_header_))
-    , description(inputSortDescription(std::move(key_description), seen_rows_column))
-    , has_seen_rows(seen_rows_column.has_value())
-    , num_key_columns(description.size() - (has_seen_rows ? 1 : 0))
+    , seen_column(seen_rows_column)
+    , description(inputSortDescription(
+          std::move(key_description), seen_column ? std::optional<String>(seen_column->name) : std::nullopt))
+    , num_key_columns(description.size() - (seen_column ? 1 : 0))
     , group_offset(group_offset_)
     , group_limit_end(group_limit_end_)
     , max_block_size_rows(max_block_size_rows_)
@@ -40,9 +41,23 @@ SortDescription GroupLimitSortedAlgorithm::inputSortDescription(
 
 void GroupLimitSortedAlgorithm::addInput(SharedHeader header)
 {
-    sources.push_back({std::move(header), {}, {}});
+    const bool adds_zero_seen_rows = seen_column && !header->has(seen_column->name);
+    if (adds_zero_seen_rows)
+    {
+        Block extended = *header;
+        extended.insert({seen_column->type->createColumn(), seen_column->type, seen_column->name});
+        header = std::make_shared<const Block>(std::move(extended));
+    }
+    sources.push_back({std::move(header), {}, {}, adds_zero_seen_rows});
     current_inputs.emplace_back();
     cursors.emplace_back();
+}
+
+void GroupLimitSortedAlgorithm::addZeroSeenRows(Chunk & chunk) const
+{
+    auto column = seen_column->type->createColumn();
+    column->insertManyDefaults(chunk.getNumRows());
+    chunk.addColumn(std::move(column));
 }
 
 void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
@@ -61,6 +76,9 @@ void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
         auto & source = sources[source_num];
+        /// An input that is already exhausted has a chunk without columns.
+        if (source.adds_zero_seen_rows && current_inputs[source_num].chunk.getNumColumns())
+            addZeroSeenRows(current_inputs[source_num].chunk);
         removeReplicatedFromSortingColumns(source.header, current_inputs[source_num], description);
         removeConstAndSparse(current_inputs[source_num]);
         for (size_t i = 0; i < description.size(); ++i)
@@ -90,6 +108,8 @@ void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
 void GroupLimitSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     auto & source = sources[source_num];
+    if (source.adds_zero_seen_rows)
+        addZeroSeenRows(input.chunk);
     removeReplicatedFromSortingColumns(source.header, input, description);
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
@@ -137,7 +157,7 @@ Chunk GroupLimitSortedAlgorithm::pull()
 
 UInt64 GroupLimitSortedAlgorithm::seenRows(const SortCursorImpl & cursor, size_t row) const
 {
-    return has_seen_rows ? cursor.sort_columns[num_key_columns]->getUInt(row) : 0;
+    return seen_column ? cursor.sort_columns[num_key_columns]->getUInt(row) : 0;
 }
 
 IMergingAlgorithm::Status GroupLimitSortedAlgorithm::merge()

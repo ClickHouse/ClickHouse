@@ -19,7 +19,7 @@ class GroupLimitSortedTransform final : public IMergingTransform<GroupLimitSorte
 public:
     GroupLimitSortedTransform(
         String name_, SharedHeaders input_headers, SharedHeader output_header, SortDescription key_description,
-        const std::optional<String> & seen_rows_column, UInt64 group_offset, UInt64 group_limit_end,
+        const std::optional<NameAndTypePair> & seen_rows_column, UInt64 group_offset, UInt64 group_limit_end,
         size_t max_block_size_rows, bool have_all_inputs = true)
         : IMergingTransform(
             input_headers, output_header, have_all_inputs, /*limit_hint_=*/ 0,

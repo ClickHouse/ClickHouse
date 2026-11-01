@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/ExternalGroupLimitTransform.h>
 #include <Processors/Transforms/LimitByGroupFilter.h>
 #include <Common/ProfileEvents.h>
@@ -24,10 +23,6 @@ struct ExternalLimitByTraits
     static constexpr const char * transform_name = "ExternalLimitByTransform";
     static constexpr const char * merge_transform_name = "LimitBySortedTransform";
     static constexpr const char * operator_name = "LIMIT BY";
-
-    /// Group counts can exceed any narrower type.
-    static constexpr size_t seen_rows_bytes = sizeof(UInt64);
-    static DataTypePtr seenRowsType() { return std::make_shared<DataTypeUInt64>(); }
 
     static Filter createFilter(const Block & header, const GroupLimitParams & params, const IProcessor & owner)
     {

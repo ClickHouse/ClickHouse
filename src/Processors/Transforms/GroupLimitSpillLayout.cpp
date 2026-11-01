@@ -7,8 +7,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Processors/Merges/Algorithms/GroupLimitSortedAlgorithm.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -58,23 +60,34 @@ String uniqueColumnName(const Block & header, String name)
     return name;
 }
 
+template <typename T>
+ColumnPtr clampSeenRows(const ColumnUInt64::Container & counts, UInt64 group_limit_end)
+{
+    auto column = ColumnVector<T>::create(counts.size());
+    auto & data = column->getData();
+    for (size_t row = 0; row < counts.size(); ++row)
+        data[row] = static_cast<T>(std::min(counts[row], group_limit_end));
+    return column;
+}
+
 }
 
 GroupLimitSpillLayout::GroupLimitSpillLayout(
     SharedHeader input_header_, const ColumnNumbers & input_key_columns_pos,
-    SpillKeyRepresentation key_representation_, bool preserve_input_order, DataTypePtr seen_rows_type_)
+    SpillKeyRepresentation key_representation_, bool attach_arrival_numbers, UInt64 group_limit_end_)
     : input_header(std::move(input_header_))
     , key_representation(key_representation_)
-    , seen_rows_type(std::move(seen_rows_type_))
+    , group_limit_end(group_limit_end_)
+    , seen_rows_type(applyVisitor(FieldToDataType(), Field(group_limit_end)))
     , spill_columns_pos(calculateSpillColumnsPositions(*input_header))
     , key_columns_pos(mapKeysToSpillPositions(input_key_columns_pos, spill_columns_pos))
-    , arrival_number_column_pos(preserve_input_order ? std::optional<size_t>{spill_columns_pos.size()} : std::nullopt)
+    , arrival_number_column_pos(attach_arrival_numbers ? std::optional<size_t>{spill_columns_pos.size()} : std::nullopt)
 {
     Block input;
     for (const auto pos : spill_columns_pos)
         input.insert(input_header->getByPosition(pos));
 
-    if (preserve_input_order)
+    if (attach_arrival_numbers)
     {
         auto type = std::make_shared<DataTypeUInt64>();
         const auto name = uniqueColumnName(input, ARRIVAL_NUMBER_COLUMN_NAME);
@@ -101,8 +114,7 @@ GroupLimitSpillLayout::GroupLimitSpillLayout(
         key_sort_description.emplace_back(column.name, 1, 1);
 
     seen_rows_column_name = uniqueColumnName(input, SEEN_ROWS_COLUMN_NAME);
-    input.insert({seen_rows_type->createColumn(), seen_rows_type, seen_rows_column_name});
-    seen.insert(input.getByPosition(input.columns() - 1));
+    seen.insert({seen_rows_type->createColumn(), seen_rows_type, seen_rows_column_name});
 
     /// Seen runs are inputs of the final merge, so they follow its order.
     run_sort_description = GroupLimitSortedAlgorithm::inputSortDescription(key_sort_description, seen_rows_column_name);
@@ -163,8 +175,6 @@ Chunk GroupLimitSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival
         columns.emplace_back(std::move(hashes));
     }
 
-    /// The seen count stays constant while sorting and group limits can reduce the chunk's row count.
-    columns.emplace_back(seen_rows_type->createColumnConst(num_rows, Field(UInt64{0})));
     chunk.setColumns(std::move(columns), num_rows);
     return chunk;
 }
@@ -174,8 +184,24 @@ Chunk GroupLimitSpillLayout::prepareSeenChunk(SeenGroups seen) const
     chassert(seen.keys.size() + 1 == seen_run_header->columns());
     const size_t num_rows = seen.keys.front()->size();
     chassert(seen.seen_rows->size() == num_rows);
+
+    /// Counts that already have the seen-count type stay as they are, such as the constant 1 of `DISTINCT`.
+    /// Other counts arrive as `UInt64` and are clamped and narrowed.
+    ColumnPtr seen_rows = std::move(seen.seen_rows);
+    if (seen_rows->getDataType() != seen_rows_type->getColumnType())
+    {
+        const auto & counts = assert_cast<const ColumnUInt64 &>(*seen_rows).getData();
+        switch (seen_rows_type->getTypeId())
+        {
+            case TypeIndex::UInt8: seen_rows = clampSeenRows<UInt8>(counts, group_limit_end); break;
+            case TypeIndex::UInt16: seen_rows = clampSeenRows<UInt16>(counts, group_limit_end); break;
+            case TypeIndex::UInt32: seen_rows = clampSeenRows<UInt32>(counts, group_limit_end); break;
+            default: UNREACHABLE();
+        }
+    }
+
     Chunk chunk(std::move(seen.keys), num_rows);
-    chunk.addColumn(std::move(seen.seen_rows));
+    chunk.addColumn(std::move(seen_rows));
     return chunk;
 }
 
