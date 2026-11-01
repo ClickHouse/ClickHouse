@@ -1,4 +1,5 @@
 set (CLICKHOUSE_CLIENT_SOURCES
+    BackgroundQuery.cpp
     Client.cpp
     FuzzLoop.cpp
 )

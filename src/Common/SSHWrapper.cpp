@@ -243,11 +243,27 @@ std::optional<String> getAgentSocketPath(ssh_session session, const ExpansionTok
     return expandTokens(*expanded_socket_path, tokens);
 }
 
+struct PassphraseRequest
+{
+    const SSHKeyFactory::PassphraseCallback & callback;
+    std::exception_ptr exception;
+};
+
 /// Passed to libssh, which calls it only if the private key turns out to be encrypted.
 int askPassphrase(const char * /*prompt*/, char * buf, size_t len, int /*echo*/, int /*verify*/, void * userdata)
 {
-    const auto & callback = *static_cast<const SSHKeyFactory::PassphraseCallback *>(userdata);
-    String passphrase = callback();
+    auto & request = *static_cast<PassphraseRequest *>(userdata);
+    String passphrase;
+    try
+    {
+        passphrase = request.callback();
+    }
+    catch (...)
+    {
+        /// An exception must not unwind through libssh: it is C code and would leak what it allocated.
+        request.exception = std::current_exception();
+        return -1;
+    }
     if (passphrase.size() >= len)
         return -1;
     memcpy(buf, passphrase.data(), passphrase.size());
@@ -260,12 +276,15 @@ int askPassphrase(const char * /*prompt*/, char * buf, size_t len, int /*echo*/,
 SSHKey SSHKeyFactory::makePrivateKeyFromFile(const String & filename, const std::optional<String> & passphrase, PassphraseCallback ask_passphrase)
 {
     ssh_key key = nullptr;
+    PassphraseRequest request{ask_passphrase, nullptr};
     int rc = ssh_pki_import_privkey_file(
         filename.c_str(),
         passphrase ? passphrase->c_str() : nullptr,
         ask_passphrase ? askPassphrase : nullptr,
-        &ask_passphrase,
+        &request,
         &key);
+    if (request.exception)
+        std::rethrow_exception(request.exception);
     if (rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH private key from file {}", filename);
     checkKeyIsUsableInFIPSMode(key);

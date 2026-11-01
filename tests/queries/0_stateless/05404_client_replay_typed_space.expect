@@ -1,0 +1,73 @@
+#!/usr/bin/expect -f
+
+# Keys typed during a query are replayed at the next prompt, and the space is also the progress table hotkey.
+# A space inside typed text must stay in the text; a space pressed alone still toggles the table.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+# The progress table is drawn only on a terminal wide enough for it.
+set stty_init "rows 40 cols 120"
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+# Waits for the line break of the Enter, so the next keys are typed into the running query.
+proc run_slow_query {seconds} {
+    submit "SELECT sleep($seconds) FORMAT Null"
+    expect -ex "\r\n"
+    sleep 0.5
+}
+
+# CLICKHOUSE_CLIENT_EXPECT_OPT turns the progress table toggle off: drop that, so the space is a hotkey.
+set history_file $CLICKHOUSE_TMP/$basename.history
+spawn bash -c {
+    source "$1/../shell_config.sh"
+    ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT/--enable-progress-table-toggle 0/} --history_file="$2"
+} bash $basedir $history_file
+expect ":) "
+
+# Pasted text: without its spaces the statement would be `SELECTreplaceAll('xy','','_')...`.
+run_slow_query 2
+send -- "SELECT replaceAll('x y', ' ', '_') FORMAT TabSeparatedRaw;\r"
+expect -ex "x_y\r\n"
+expect ":) "
+
+# Typed text: a space that arrives alone after the first word is text too.
+run_slow_query 4
+send -- "SELECT"
+after 500
+send -- " "
+after 500
+send -- "replaceAll('p q', ' ', '-') FORMAT TabSeparatedRaw;\r"
+expect -ex "p-q\r\n"
+expect ":) "
+
+# A space alone is still the hotkey: it shows the progress table.
+run_slow_query 3
+send -- " "
+expect "Event name"
+expect ":) "
+submit {SELECT 'next-05404' FORMAT TabSeparatedRaw}
+expect -ex "next-05404\r\n"
+expect ":) "
+
+send -- "\4"
+expect eof

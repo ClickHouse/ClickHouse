@@ -9,7 +9,12 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <Poco/Net/Socket.h>
+
+#include <sys/socket.h>
+#include <chrono>
 #include <cstdlib>
+#include <thread>
 
 namespace DB
 {
@@ -115,6 +120,14 @@ void receiveAll(Poco::Net::StreamSocket & socket, char * data, size_t size)
     size_t pos = 0;
     while (pos < size)
     {
+        /// The agent may keep a request pending indefinitely: wait in short steps, so that cancellation and the
+        /// deadline of a thread that has a limit are noticed.
+        if (SSHAgentWaitLimit::isSet())
+        {
+            while (!socket.poll(Poco::Timespan(0, 100 * 1000), Poco::Net::Socket::SELECT_READ))
+                SSHAgentWaitLimit::checkNotExpired();
+        }
+
         int received = socket.receiveBytes(data + pos, static_cast<int>(size - pos));
         if (received <= 0)
             throw Exception(ErrorCodes::SSH_AGENT_ERROR, "Cannot read a response from the ssh-agent: it closed the connection");
@@ -122,10 +135,34 @@ void receiveAll(Poco::Net::StreamSocket & socket, char * data, size_t size)
     }
 }
 
+/// A blocking `connect` waits while the agent's listen queue is full, so a thread with a limit connects without
+/// blocking and retries in short steps. A Unix socket connects at once or reports `EAGAIN`, which `connectNB` accepts.
+Poco::Net::StreamSocket connectToAgent(const String & socket_path)
+{
+    const Poco::Net::SocketAddress address(Poco::Net::SocketAddress::UNIX_LOCAL, socket_path);
+    if (!SSHAgentWaitLimit::isSet())
+        return Poco::Net::StreamSocket(address);
+
+    while (true)
+    {
+        Poco::Net::StreamSocket socket;
+        socket.connectNB(address);
+        sockaddr_storage peer{};
+        socklen_t peer_length = sizeof(peer);
+        if (::getpeername(socket.impl()->sockfd(), reinterpret_cast<sockaddr *>(&peer), &peer_length) == 0)
+        {
+            socket.setBlocking(true);
+            return socket;
+        }
+        SSHAgentWaitLimit::checkNotExpired();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
 /// Sends one message to the agent and returns its response.
 String talkToAgentImpl(std::string_view request, const String & socket_path)
 {
-    Poco::Net::StreamSocket socket(Poco::Net::SocketAddress(Poco::Net::SocketAddress::UNIX_LOCAL, socket_path));
+    Poco::Net::StreamSocket socket = connectToAgent(socket_path);
 
     /// Every message is prefixed with its length.
     String framed_request;
@@ -265,6 +302,42 @@ String SSHAgent::signString(const String & key_blob, std::string_view data, std:
     appendString(signature_blob, signature);
 
     return armor(signature_blob);
+}
+
+
+namespace
+{
+thread_local SSHAgentWaitLimit * current_wait_limit = nullptr;
+}
+
+SSHAgentWaitLimit::SSHAgentWaitLimit(std::function<bool()> cancelled_, std::chrono::milliseconds timeout_)
+    : previous(current_wait_limit)
+    , cancelled(std::move(cancelled_))
+    , deadline(std::chrono::steady_clock::now() + timeout_)
+{
+    current_wait_limit = this;
+}
+
+SSHAgentWaitLimit::~SSHAgentWaitLimit()
+{
+    current_wait_limit = previous;
+}
+
+bool SSHAgentWaitLimit::isSet()
+{
+    return current_wait_limit != nullptr;
+}
+
+void SSHAgentWaitLimit::checkNotExpired()
+{
+    const auto * limit = current_wait_limit;
+    if (!limit)
+        return;
+
+    if (limit->cancelled && limit->cancelled())
+        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "Waiting for the ssh-agent was cancelled");
+    if (std::chrono::steady_clock::now() >= limit->deadline)
+        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "The ssh-agent did not answer in time");
 }
 
 }
