@@ -3004,6 +3004,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             auto & sort_expression = sort_typed.getExpression();
             auto sort_expression_projection_names = resolveExpressionNode(sort_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            /// As in the regular ORDER BY, a matcher (e.g. `*`) or a single-element list
+            /// resolves into a ListNode: unwrap it to the actual sort expression.
+            if (auto * sort_column_list_node = sort_expression->as<ListNode>())
+            {
+                if (sort_column_list_node->getNodes().size() != 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expected a single expression in ORDER BY inside the arguments of aggregate function {}, got {}. In scope {}",
+                        backQuote(function_name),
+                        sort_expression->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
+
+                sort_expression = sort_column_list_node->getNodes().front();
+            }
+
+            validateSortingKeyType(sort_expression->getResultType(), scope);
+
             if (sort_expression_projection_names.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Expected a single expression in ORDER BY inside the arguments of aggregate function {}, got {}. In scope {}",
