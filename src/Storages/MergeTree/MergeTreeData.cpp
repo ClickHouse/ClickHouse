@@ -2755,10 +2755,14 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
     {
         auto varying = parseIdentifiersOrStringLiteralsToSet(varying_columns, query_settings);
 
-        /// A column computed from a varying column (or from the version, sign or `is_deleted` column) varies as well.
+        /// A column computed from a varying column varies as well. So does a column computed from the version, sign or
+        /// `is_deleted` column, or from a float column (equal values like -0.0 and 0.0 can give different results).
         for (const auto * name : {&merging_params.version_column, &merging_params.sign_column, &merging_params.is_deleted_column})
             if (!name->empty())
                 varying.insert(*name);
+        for (const auto & column : columns.getAllPhysical())
+            if (typeContainsFloat(*column.type))
+                varying.insert(column.name);
         const auto defaults = columns.getDefaults();
         for (bool changed = true; changed;)
         {
