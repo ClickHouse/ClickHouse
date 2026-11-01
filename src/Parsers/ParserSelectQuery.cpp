@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
-    extern const int OFFSET_FETCH_WITHOUT_ORDER_BY;
 }
 
 
@@ -779,14 +778,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
+    /// SQL standard FETCH. Only WITH TIES requires ORDER BY.
     if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
         && s_fetch.ignore(pos, expected))
     {
-        /// FETCH clause must exist with "ORDER BY"
-        if (!order_expression_list)
-            throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
-
         if (s_first.ignore(pos, expected))
         {
             if (s_next.ignore(pos, expected))
@@ -3736,6 +3731,8 @@ Example:
 > • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
+`FETCH ... ONLY` works without `ORDER BY`, like `LIMIT`, but the returned rows are not guaranteed to be deterministic.
+`FETCH ... WITH TIES` requires `ORDER BY` to identify rows tied with the last selected row.
 
 The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](/reference/statements/select/limit) clause. For example, the following query
 

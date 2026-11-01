@@ -17,10 +17,10 @@
  *
  * If compiler is not gcc/clang or target isn't x86_64/AArch64 or ENABLE_MULTITARGET_CODE
  * was set to OFF in cmake, all code inside these macros will be removed and both
- * USE_MULTITARGET_CODE and USE_ARM_MULTITARGET_CODE will be set to 0.
+ * USE_X86_64_MULTITARGET_CODE and USE_ARM_MULTITARGET_CODE will be set to 0.
  *
  * There are two independent multitarget guards:
- *   - USE_MULTITARGET_CODE: set to 1 only on x86_64. Use #if USE_MULTITARGET_CODE
+ *   - USE_X86_64_MULTITARGET_CODE: set to 1 only on x86_64. Use #if USE_X86_64_MULTITARGET_CODE
  *     whenever you use anything from the x86_64-specific namespaces (x86_64_v2, x86_64_v3,
  *     x86_64_v4, etc.)
  *   - USE_ARM_MULTITARGET_CODE: set to 1 only on AArch64. Use #if USE_ARM_MULTITARGET_CODE
@@ -29,7 +29,7 @@
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but doesn't specify any additional
  * compile options. Functions and classes inside this macros are available regardless
- * of USE_MULTITARGET_CODE or USE_ARM_MULTITARGET_CODE.
+ * of USE_X86_64_MULTITARGET_CODE or USE_ARM_MULTITARGET_CODE.
  *
  * Example of usage:
  *
@@ -52,7 +52,7 @@
  * ) // DECLARE_ARM_SVE_SPECIFIC_CODE
  *
  * int func() {
- * #if USE_MULTITARGET_CODE
+ * #if USE_X86_64_MULTITARGET_CODE
  *     if (isArchSupported(TargetArch::x86_64_v3))
  *         return TargetSpecific::x86_64_v3::funcImpl();
  * #elif USE_ARM_MULTITARGET_CODE
@@ -141,7 +141,7 @@ String toString(TargetArch arch);
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
 
-#define USE_MULTITARGET_CODE 1
+#define USE_X86_64_MULTITARGET_CODE 1
 #define USE_ARM_MULTITARGET_CODE 0
 
 /// Function-specific attributes using arch= for cleaner specification
@@ -238,7 +238,7 @@ END_TARGET_SPECIFIC_CODE
 
 #elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
 
-#define USE_MULTITARGET_CODE 0
+#define USE_X86_64_MULTITARGET_CODE 0
 #define USE_ARM_MULTITARGET_CODE 1
 
 #define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("+sve")))
@@ -271,7 +271,7 @@ END_TARGET_SPECIFIC_CODE
 
 #else
 
-#define USE_MULTITARGET_CODE 0
+#define USE_X86_64_MULTITARGET_CODE 0
 #define USE_ARM_MULTITARGET_CODE 0
 
 /* Multitarget code is disabled, just delete target-specific code.
@@ -338,7 +338,7 @@ DECLARE_ARM_SVE_SPECIFIC_CODE(
   *     )
   *
   *     void testFunction(int value) {
-  * #if USE_MULTITARGET_CODE
+  * #if USE_X86_64_MULTITARGET_CODE
   *         if (isArchSupported(TargetArch::x86_64_v4))
   *         {
   *             testFunctionImpl_x86_64_v4(value);
