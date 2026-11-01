@@ -3,8 +3,6 @@
 -- including a NULL element that the common subtype dropped because the other side had none there.
 -- https://github.com/ClickHouse/ClickHouse/pull/112951
 
-SET enable_analyzer = 1;
-
 SELECT 'A Tuple element that is Nullable on one side only';
 SELECT count() FROM (SELECT tuple(if(number = 0, NULL, CAST(1, 'Nullable(Int64)'))) AS t FROM numbers(2)) AS a
 INNER JOIN (SELECT tuple(CAST(1, 'UInt64')) AS t) AS b USING (t);

@@ -6,6 +6,7 @@
 #include <Databases/DataLake/AWSV4Signer.h>
 
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -17,6 +18,7 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/URI.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -312,6 +314,8 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
     auto result_headers = extractSigV4AuthHeaders(std::move(all_signed));
     for (const auto & h : headers)
         result_headers.push_back(h);
+    /// The signed headers contain the access key id, region and session token from the database settings.
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(result_headers);
 
     LOG_DEBUG(log, "Requesting (SigV4): {}", url.toString());
 
@@ -343,7 +347,7 @@ String S3TablesCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](std::ostream & os) { os << body_str; };
+        out_stream_callback = [body_str](DB::WriteBuffer & out) { DB::writeString(body_str, out); };
     }
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
@@ -357,6 +361,7 @@ String S3TablesCatalog::sendRequest(
 
     auto headers = extractSigV4AuthHeaders(std::move(all_signed));
     headers.emplace_back("Content-Type", "application/json");
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
 
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)

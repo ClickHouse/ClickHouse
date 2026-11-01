@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/63833
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan=1;
 
 create table Example (id Int32) engine = MergeTree ORDER BY id;

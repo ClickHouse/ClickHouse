@@ -1,16 +1,32 @@
+#include <algorithm>
 #include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/types.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
+#include <Common/Logger.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event MemoryReservationSpilledBytes;
+    extern const Event MemoryReservationSpillingMicroseconds;
+}
 
 namespace DB
 {
@@ -26,8 +42,10 @@ namespace ErrorCodes
 namespace Runtime::V1
 {
 
-ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback, StepProfiler * step_profiler_)
+ExecutionThreadContext::ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_,
+    ReadProgressCallback * callback, StepProfiler * step_profiler_, QueryStatus * process_list_element_)
     : read_progress_callback(callback)
+    , process_list_element(process_list_element_)
     , step_profiler(step_profiler_)
     , thread_number(thread_number_)
     , profile_processors(profile_processors_)
@@ -42,12 +60,27 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
 {
     std::unique_lock lock(mutex);
 
+    /// Avoid excessive CPU lease parking
+    if (finished || wake_flag)
+    {
+        wake_flag = false;
+        return;
+    }
+
+    /// Park the CPU lease while sleeping, without holding the mutex
+    lock.unlock();
+    CPULeaseParkGuard park_guard;
+    lock.lock();
+
     condvar.wait(lock, [&]
     {
         return finished || wake_flag;
     });
 
     wake_flag = false;
+
+    /// Do not hold mutex during unparking
+    lock.unlock();
 }
 
 void ExecutionThreadContext::wakeUp()
@@ -66,14 +99,63 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(IProcessor & processor, ReadProgressCallback * read_progress_callback)
+static void executeJob(IProcessor & processor, ReadProgressCallback * read_progress_callback,
+    QueryStatus * process_list_element, ISpillable * spill_target)
 {
     try
     {
-        if (processor.isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(&processor);
+        auto components = processor.getSpillables();
+        MemoryReservation * reservation = !components.empty() && process_list_element ? process_list_element->getMemoryReservation() : nullptr;
+        for (auto * spillable : components)
+        {
+            if (spill_target && spillable != spill_target)
+                continue;
+            if (reservation)
+            {
+                const auto spillable_bytes = reservation->updateReclaimable(spillable);
+                if (auto spill_request = reservation->takeSpillRequest(spillable, spillable_bytes, spill_target ? &processor : nullptr))
+                {
+                    SCOPE_EXIT({ if (spill_request) reservation->cancelSpill(spillable, spill_request); });
+                    auto * memory_tracker = process_list_element->getMemoryTracker();
+                    const auto & logger = getLogger("Scheduler");
 
-        processor.work();
+                    /// Round up the spill target, but cancel or settle only the original scheduler claim.
+                    const auto spill_bytes = std::max(spill_request, reservation->getMinBytesToSpill());
+                    LOG_TRACE(logger, "Spilling {}, of {} (tracked {}, claimed {})",
+                        formatReadableSizeWithBinarySuffix(spill_bytes),
+                        formatReadableSizeWithBinarySuffix(spillable_bytes),
+                        formatReadableSizeWithBinarySuffix(memory_tracker->get()),
+                        formatReadableSizeWithBinarySuffix(spill_request));
+
+                    Stopwatch watch;
+                    const size_t spilled = spillable->spill(spill_bytes);
+                    reservation->syncWithMemoryTracker(memory_tracker);
+                    const auto new_spillable_memory_bytes = reservation->finishSpill(spillable, std::exchange(spill_request, 0));
+
+                    LOG_TRACE(logger, "Spilled {}, remaining {}, tracked {} (took {} ms)",
+                        formatReadableSizeWithBinarySuffix(spilled),
+                        formatReadableSizeWithBinarySuffix(new_spillable_memory_bytes),
+                        formatReadableSizeWithBinarySuffix(memory_tracker->get()),
+                        watch.elapsedMilliseconds());
+                    ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
+                    ProfileEvents::increment(ProfileEvents::MemoryReservationSpillingMicroseconds, watch.elapsedMicroseconds());
+                }
+            }
+            else if (CurrentThread::getGroup())
+                CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
+        }
+
+        if (!spill_target)
+            processor.work();
+
+        if (reservation)
+        {
+            for (auto * spillable : components)
+                reservation->updateReclaimable(spillable);
+        }
+
+        if (spill_target)
+            return;
 
         /// Update read progress only for source nodes.
         bool is_source = processor.getInputs().empty();
@@ -108,7 +190,7 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
     }
 }
 
-bool ExecutionThreadContext::executeTask()
+bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
 {
     std::unique_ptr<OpenTelemetry::SpanHolder> span;
 
@@ -148,8 +230,9 @@ bool ExecutionThreadContext::executeTask()
     bool success = true;
     try
     {
-        executeJob(*processor, read_progress_callback);
-        ++processor->num_executed_jobs;
+        executeJob(*processor, read_progress_callback, process_list_element, spill_target);
+        if (!spill_target)
+            ++processor->num_executed_jobs;
     }
     catch (...)
     {

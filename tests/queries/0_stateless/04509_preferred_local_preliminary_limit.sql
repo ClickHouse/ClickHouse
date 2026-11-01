@@ -1,6 +1,5 @@
 -- Tags: no-random-merge-tree-settings
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET allow_experimental_parallel_reading_from_replicas = 0;
 SET distributed_push_down_limit = 1;

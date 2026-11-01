@@ -109,7 +109,7 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 
 The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
@@ -352,6 +352,7 @@ When using the `Iceberg` table engine in ClickHouse, the system needs to locate 
 
 3. **Default Search**:
 * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the most recent file {#most-recent-file}
 
@@ -409,6 +410,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 **Note**: Asynchronous metadata prefetching runs at `ICEBERG_SCEDULE_POOL`, which is server-side threadpool for background operations on active `Iceberg` tables. The size of this threadpool is controlled by `iceberg_background_schedule_pool_size` server configuration parameter (default is 10).
 
 **Note**: Current expectation is that metadata cache size is sufficient to hold the latest metadata snapshot in full for all active tables, if asynchronous prefetching is enabled.
+
+## Modifying table settings {#modify-settings}
+
+The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
+
+- the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+
+The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
 
 ## See also {#see-also}
 

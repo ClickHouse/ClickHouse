@@ -75,6 +75,18 @@ An example of a build script that can auto-generate a header file:
     }
 ```
 
+## Generating the header in this repository {#generating-the-header-in-this-repository}
+
+The build script above writes the header into the source tree on every build, which leaves nothing to check: a committed header that no longer matches the Rust side is simply overwritten locally and stays wrong for everyone else. The crates here use one of two arrangements instead:
+
+* generate the header into the build directory and point `target_include_directories` at it, the way `contrib/delta-kernel-rs` does. Nothing is committed, so nothing can go stale;
+* commit the header and have the build script compare it with the freshly generated one, failing the build when they differ, the way `rust/workspace/vortex` does. The two halves of an FFI are separate translation units linked by symbol name, so a signature changed on one side only is silent undefined behaviour rather than a compile error - the comparison is what makes forgetting to regenerate impossible. Keep an environment variable that rewrites the committed file, so that updating it stays one command.
+
+Two things to know before adding `cbindgen` to a crate under `rust/workspace`:
+
+* pin the version exactly. Its output changes between patch releases, so with a loose requirement the check starts reporting the generator's version rather than a real difference. The version also has to be one that `contrib/rust_vendor` carries, otherwise `rust/vendor.sh` has to be re-run and the submodule updated;
+* parse the source file with `Builder::with_src` rather than the crate with `cbindgen::generate`. The crate path makes cbindgen run `cargo metadata` in a nested process, and that process does not inherit the `--config` that points cargo at the vendored sources.
+
 Also, you should use attribute #[no_mangle] and `extern "C"` for every C-compatible attribute. Without it library can compile incorrectly and cbindgen won't launch header autogeneration.
 
 After all these steps you can test your library in a small project to find all problems with compatibility or header generation. If any problems occur during header generation, you can try to configure it with cbindgen.toml file (you can find a template here: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).

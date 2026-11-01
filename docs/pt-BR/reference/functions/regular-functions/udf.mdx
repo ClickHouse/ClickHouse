@@ -18,14 +18,12 @@ O ClickHouse oferece suporte a vários tipos de funções definidas pelo usuári
 * [UDFs WebAssembly experimentais](#webassembly-user-defined-functions) executam código compilado em WebAssembly dentro de um sandbox no processo do servidor. Elas oferecem menor sobrecarga por chamada do que executáveis externos, com melhor isolamento do que extensões nativas, o que as torna adequadas para algoritmos personalizados escritos em linguagens que podem gerar WASM (por exemplo, C/C++/Rust).
 * [UDFs executáveis experimentais baseadas em driver](#driver-based-executable-user-defined-functions) permitem que um &quot;driver&quot; fornecido pelo operador transforme um trecho de código fornecido em `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` em uma UDF executável no momento da criação da função (por exemplo, por meio de compilação). Elas se baseiam em UDFs executáveis e exigem configuração do driver no lado do servidor.
 
-<div id="executable-user-defined-functions">
-  ## Funções executáveis definidas pelo usuário
-</div>
+## Funções executáveis definidas pelo usuário {#executable-user-defined-functions}
 
 <BetaBadge />
 
 <Note>
-  No ClickHouse Cloud, as UDFs executáveis estão em beta público e são criadas pela UI do console do Cloud. Consulte [Funções definidas pelo usuário no Cloud](/pt-BR/products/cloud/features/sql-console-features/user-defined-functions) para ver o fluxo de trabalho específico do Cloud.
+  No ClickHouse Cloud, as UDFs executáveis estão geralmente disponíveis e são criadas pelo console do Cloud, pela Cloud API ou pelo Terraform. Consulte [Funções definidas pelo usuário no Cloud](/pt-BR/products/cloud/features/sql-console-features/user-defined-functions) para ver o fluxo de trabalho específico do Cloud, incluindo o tempo de execução Native para binários compilados.
 </Note>
 
 O ClickHouse pode chamar qualquer programa executável externo ou script para processar dados.
@@ -58,17 +56,11 @@ A configuração de uma função contém as seguintes definições:
 
 O comando deve ler os argumentos de `STDIN` e enviar o resultado para `STDOUT`. O comando deve processar os argumentos iterativamente. Ou seja, após processar um fragmento de argumentos, ele deve aguardar o próximo fragmento.
 
-<div id="executable-user-defined-functions">
-  ## Funções executáveis definidas pelo usuário
-</div>
+## Funções executáveis definidas pelo usuário {#executable-user-defined-functions}
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
-<div id="udf-inline">
-  ### UDF de script embutido
-</div>
+### UDF de script embutido {#udf-inline}
 
 Crie `test_function_sum` manualmente, definindo `execute_direct` como `0`, usando configuração XML ou YAML.
 
@@ -132,9 +124,7 @@ SELECT test_function_sum(2, 2);
 └─────────────────────────┘
 ```
 
-<div id="udf-python">
-  ### UDF a partir de script Python
-</div>
+### UDF a partir de script Python {#udf-python}
 
 Neste exemplo, criamos uma UDF que lê um valor de `STDIN` e o retorna como uma string.
 
@@ -203,9 +193,7 @@ SELECT test_function_python(toUInt64(2));
 └─────────────────────────┘
 ```
 
-<div id="udf-stdin">
-  ### Leia dois valores de `STDIN` e retorne a soma deles como um objeto JSON
-</div>
+### Leia dois valores de `STDIN` e retorne a soma deles como um objeto JSON {#udf-stdin}
 
 Crie `test_function_sum_json` com argumentos nomeados e o formato [JSONEachRow](/pt-BR/reference/formats/JSON/JSONEachRow) usando configuração XML ou YAML.
 
@@ -285,9 +273,7 @@ SELECT test_function_sum_json(2, 2);
 └──────────────────────────────┘
 ```
 
-<div id="udf-parameters-in-command">
-  ### Use parâmetros na configuração `command`
-</div>
+### Use parâmetros na configuração `command` {#udf-parameters-in-command}
 
 Funções executáveis definidas pelo usuário podem receber parâmetros constantes configurados na configuração `command` (isso funciona apenas para funções definidas pelo usuário do tipo `executable`).
 Isso também exige a opção `execute_direct` para evitar vulnerabilidades de expansão de argumentos do shell.
@@ -355,9 +341,7 @@ SELECT test_function_parameter_python(1)(2);
 └──────────────────────────────────────┘
 ```
 
-<div id="udf-shell-script">
-  ### UDF com script de shell
-</div>
+### UDF com script de shell {#udf-shell-script}
 
 Neste exemplo, criamos um script de shell que multiplica cada valor por 2.
 
@@ -430,26 +414,20 @@ SELECT test_shell(number) FROM numbers(10);
     └────────────────────┘
 ```
 
-<div id="error-handling">
-  ## Tratamento de erros
-</div>
+## Tratamento de erros {#error-handling}
 
 Algumas funções podem gerar uma exceção se os dados forem inválidos.
 Nesse caso, a consulta é cancelada e uma mensagem de erro é retornada ao cliente.
 No processamento distribuído, quando ocorre uma exceção em um dos servidores, os demais servidores também tentam interromper a consulta.
 
-<div id="evaluation-of-argument-expressions">
-  ## Avaliação de expressões de argumentos
-</div>
+## Avaliação de expressões de argumentos {#evaluation-of-argument-expressions}
 
 Em quase todas as linguagens de programação, para determinados operadores, um dos argumentos pode não ser avaliado.
 Normalmente, esses operadores são `&&`, `||` e `?:`.
 No ClickHouse, os argumentos de funções (operadores) são sempre avaliados.
 Isso acontece porque partes inteiras de colunas são avaliadas de uma só vez, em vez de cada linha ser calculada separadamente.
 
-<div id="performing-functions-for-distributed-query-processing">
-  ## Execução de funções no processamento distribuído de consultas
-</div>
+## Execução de funções no processamento distribuído de consultas {#performing-functions-for-distributed-query-processing}
 
 No processamento distribuído de consultas, o máximo possível de etapas do processamento da consulta é executado em servidores remotos, e as etapas restantes (a mesclagem dos resultados intermediários e tudo o que vem depois) são executadas no servidor solicitante.
 
@@ -465,15 +443,11 @@ Outro exemplo é a função `hostName`, que retorna o nome do servidor em que es
 
 Se uma função em uma consulta for executada no servidor solicitante, mas você precisar executá-la em servidores remotos, poderá encapsulá-la em uma função agregada &#39;any&#39; ou adicioná-la a uma chave no `GROUP BY`.
 
-<div id="sql-user-defined-functions">
-  ## Funções definidas pelo usuário em SQL
-</div>
+## Funções definidas pelo usuário em SQL {#sql-user-defined-functions}
 
 Funções personalizadas com base em expressões lambda podem ser criadas usando a instrução [CREATE FUNCTION](/pt-BR/reference/statements/create/function). Para excluir essas funções, use a instrução [DROP FUNCTION](/pt-BR/reference/statements/drop#drop-function).
 
-<div id="webassembly-user-defined-functions">
-  ## Funções definidas pelo usuário em WebAssembly
-</div>
+## Funções definidas pelo usuário em WebAssembly {#webassembly-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -481,9 +455,7 @@ Funções personalizadas com base em expressões lambda podem ser criadas usando
 
 As funções definidas pelo usuário em WebAssembly (WASM UDFs) permitem executar código personalizado compilado em WebAssembly dentro do processo do servidor ClickHouse.
 
-<div id="quick-start">
-  ### Início rápido
-</div>
+### Início rápido {#quick-start}
 
 Ative o suporte experimental a WebAssembly na configuração do ClickHouse:
 
@@ -517,15 +489,11 @@ Use a função nas suas consultas:
 SELECT my_function(10, 20);
 ```
 
-<div id="more-information">
-  ### Mais informações
-</div>
+### Mais informações {#more-information}
 
 Consulte a documentação de [Funções definidas pelo usuário em WebAssembly](/pt-BR/reference/functions/regular-functions/wasm_udf) para mais detalhes.
 
-<div id="driver-based-executable-user-defined-functions">
-  ## Funções executáveis definidas pelo usuário baseadas em driver
-</div>
+## Funções executáveis definidas pelo usuário baseadas em driver {#driver-based-executable-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -539,9 +507,7 @@ Um *driver* é um adaptador fornecido pelo operador que transforma um trecho de 
 
 Isso permite que os administradores ofereçam aos usuários uma forma segura e restrita de definir funções em uma linguagem arbitrária (por exemplo, C compilado dentro de um contêiner em sandbox) sem dar a eles acesso aos arquivos de configuração ou ao sistema de arquivos do servidor. O conjunto de drivers disponíveis é controlado inteiramente pelo operador.
 
-<div id="enabling-drivers">
-  ### Habilitando drivers
-</div>
+### Habilitando drivers {#enabling-drivers}
 
 UDFs executáveis baseadas em driver ficam desabilitadas por padrão. Para habilitá-las:
 
@@ -564,9 +530,7 @@ UDFs executáveis baseadas em driver ficam desabilitadas por padrão. Para habil
 
 O registro de drivers é carregado na inicialização do servidor e atualizado em `SYSTEM RELOAD CONFIG`, portanto os drivers podem ser adicionados, alterados ou removidos sem reiniciar o servidor.
 
-<div id="driver-configuration">
-  ### Configuração do driver
-</div>
+### Configuração do driver {#driver-configuration}
 
 Um driver é descrito por um arquivo XML (ou YAML) com um elemento `<driver>` no nível superior. Os campos a seguir são compatíveis:
 
@@ -597,9 +561,7 @@ Exemplo de configuração do driver:
 </clickhouse>
 ```
 
-<div id="driver-invocation-contract">
-  #### Contrato de invocação do driver
-</div>
+#### Contrato de invocação do driver {#driver-invocation-contract}
 
 Quando `CREATE FUNCTION` é executado, `create_command` é invocado com as variáveis `env` configuradas e os seguintes argumentos:
 
@@ -612,9 +574,7 @@ O corpo do código do usuário (o texto após `AS`) é enviado para a entrada pa
 
 `drop_command`, quando presente, é invocado da mesma forma (sem um corpo de código no stdin) quando a função é removida.
 
-<div id="creating-a-function-with-a-driver">
-  ### Criando uma FUNCTION
-</div>
+### Criando uma FUNCTION {#creating-a-function-with-a-driver}
 
 ```sql
 CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
@@ -625,9 +585,7 @@ CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 
 O ClickHouse executa o `create_command` do driver, grava a configuração gerada em [`dynamic_user_defined_executable_functions_path`](/pt-BR/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) e o carregador existente de UDF executáveis a carrega. A função pode então ser chamada como qualquer outra função.
 
-<div id="dropping-a-function-with-a-driver">
-  ### Removendo uma função
-</div>
+### Removendo uma função {#dropping-a-function-with-a-driver}
 
 ```sql
 DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
@@ -635,23 +593,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 `DROP FUNCTION` invoca o `drop_command` do driver (se houver), remove a configuração dinâmica gerada e o diretório de trabalho de cada função, recarrega o carregador de UDF executável e remove a consulta persistida.
 
-<div id="driver-persistence-and-restart">
-  ### Persistência e reinicialização
-</div>
+### Persistência e reinicialização {#driver-persistence-and-restart}
 
 A consulta que deu origem é persistida como uma instrução `ATTACH FUNCTION ...` no diretório de objetos SQL definidos pelo usuário, para que a função sobreviva à reinicialização do servidor. Na inicialização, as configurações geradas em [`dynamic_user_defined_executable_functions_path`](/pt-BR/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) são carregadas diretamente, sem executar novamente o driver. Se uma instrução `ATTACH FUNCTION` persistida não tiver uma configuração gerada correspondente (por exemplo, se o diretório dinâmico tiver sido perdido), o driver será executado novamente para recriá-la.
 
-<div id="driver-limitations">
-  ### Limitações
-</div>
+### Limitações {#driver-limitations}
 
 * A funcionalidade é experimental e fica condicionada a `allow_experimental_executable_udf_drivers`.
 * Funções baseadas em driver não têm suporte com armazenamento replicado de funções definidas pelo usuário (`ON CLUSTER` e `<user_defined_zookeeper_path>`), porque apenas a consulta que deu origem é replicada, não os artefatos gerados.
 * O `RESTORE` de uma função baseada em driver a partir de backup preserva a consulta, mas não executa novamente o driver; a configuração gerada é materializada posteriormente pela recuperação na reinicialização.
 
-<div id="example-c-drivers">
-  ### Exemplo de drivers em C
-</div>
+### Exemplo de drivers em C {#example-c-drivers}
 
 A árvore de código-fonte inclui drivers de prova de conceito em `programs/server/user_defined_executable_function_drivers_config.d/` que compilam e executam um corpo de função em C. Eles são exemplos e **não são instalados pelos pacotes**:
 
@@ -661,8 +613,6 @@ A árvore de código-fonte inclui drivers de prova de conceito em `programs/serv
 
 Esses drivers de exemplo servem como ponto de partida; revise e reforce o sandboxing para o seu ambiente antes de expô-los a usuários não confiáveis.
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * [Funções definidas pelo usuário no ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
