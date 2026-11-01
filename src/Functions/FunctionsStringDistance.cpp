@@ -20,7 +20,7 @@
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
 #endif
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 #    include <immintrin.h>
 #endif
 
@@ -930,7 +930,7 @@ struct ByteDamerauLevenshteinDistanceImpl
 /// selected at runtime via `isArchSupported(TargetArch::x86_64_v3)`. The
 /// `apply_to=function` pragma ensures the lambda inside `jaroScan` also
 /// inherits the attribute.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 DECLARE_X86_64_V3_SPECIFIC_CODE(
 
 /// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo <= hi <= 64.
@@ -1179,7 +1179,7 @@ struct ByteJaroSimilarityImpl
         /// Window size to search for matches in the other string
         const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v3))
         {
             const auto * s1 = reinterpret_cast<const unsigned char *>(haystack);
