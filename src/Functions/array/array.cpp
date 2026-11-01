@@ -374,7 +374,6 @@ private:
         }
         else
         {
-            out_nested.reserve(current_offset);
             for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
             {
                 for (size_t col_i = 0; col_i < num_columns; ++col_i)

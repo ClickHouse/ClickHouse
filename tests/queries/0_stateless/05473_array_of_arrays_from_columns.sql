@@ -29,3 +29,8 @@ FROM (SELECT arrayMap(x -> range(x % 3)::Array(UInt8), range(number % 4)) AS a, 
 
 SELECT 'Const', countIf(toString([[1, 2, 3], a, []]) != concat('[[1,2,3],', toString(a), ',[]]'))
 FROM (SELECT range(number % 4) AS a FROM numbers(100000));
+
+-- Nothing is reserved for the elements of empty inner arrays, also through `Tuple` and `Map`.
+SELECT 'Empty Array', count() FROM (WITH arrayMap(x -> []::Array(FixedString(256)), range(number + 100000)) AS a SELECT [a, a] AS r FROM numbers(1)) WHERE NOT ignore(r) SETTINGS max_threads = 1, max_memory_usage = 20000000;
+SELECT 'Empty Tuple', count() FROM (WITH arrayMap(x -> tuple([]::Array(FixedString(256))), range(number + 100000)) AS a SELECT [a, a] AS r FROM numbers(1)) WHERE NOT ignore(r) SETTINGS max_threads = 1, max_memory_usage = 20000000;
+SELECT 'Empty Map', count() FROM (WITH arrayMap(x -> map()::Map(String, FixedString(256)), range(number + 100000)) AS a SELECT [a, a] AS r FROM numbers(1)) WHERE NOT ignore(r) SETTINGS max_threads = 1, max_memory_usage = 20000000;
