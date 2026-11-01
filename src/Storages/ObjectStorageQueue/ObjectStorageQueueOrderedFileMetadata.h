@@ -70,12 +70,24 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static Bucket getBucketForPartition(const std::string & partition_key, size_t buckets_num);
+    static Bucket getBucketForPartition(
+        const std::string & path,
+        const std::string & partition_key,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode);
 
     static std::string getProcessedPathForPartition(
         const std::filesystem::path & zk_path,
+        const std::string & path,
+        const std::string & partition_key,
         size_t buckets_num,
-        const std::string & partition_key);
+        ObjectStorageQueueBucketingMode bucketing_mode);
+
+    static std::vector<std::string> getProcessedPathsForPartition(
+        const std::filesystem::path & zk_path,
+        const std::string & partition_key,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode);
 
     static std::vector<std::string> getLastProcessedPaths(
         const std::filesystem::path & zk_path,
@@ -108,6 +120,7 @@ public:
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
+        const std::vector<std::string> & partition_keys,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
         const std::string & zookeeper_name_,

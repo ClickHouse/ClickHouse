@@ -148,16 +148,14 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     {
         object_storage_iterator = std::make_shared<ObjectStorageIteratorFromList>(RelativePathsWithMetadata{});
         partition_key_by_prefix = metadata->getExplicitPartitions(prefix);
-        if (use_buckets_for_processing)
-        {
-            for (const auto & [partition_prefix, partition_key] : partition_key_by_prefix)
-                partitions_per_bucket[ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(partition_key, buckets_num)].emplace(partition_prefix, partition_key);
-        }
-        else
-        {
-            std::lock_guard lock(next_mutex);
-            listPartitions(partition_key_by_prefix);
-        }
+        Strings partition_keys;
+        for (const auto & [_, partition_key] : partition_key_by_prefix)
+            partition_keys.push_back(partition_key);
+
+        const auto start_after_per_partition = metadata->getStartAfterForPartitions(partition_keys);
+        auto start_after = start_after_per_partition.begin();
+        for (const auto & [partition_prefix, _] : partition_key_by_prefix)
+            partitions_to_list.emplace_back(partition_prefix, *start_after++);
     }
     else
     {
@@ -244,14 +242,13 @@ ObjectStorageQueueSource::FileIterator::next()
             {
                 if (!partitions_to_list.empty())
                 {
-                    std::string partition_prefix;
-                    std::tie(partition_prefix, partition_last_processed_path) = std::move(partitions_to_list.front());
-                    partitions_to_list.pop_front();
+                    const auto & [partition_prefix, start_after] = partitions_to_list.front();
                     object_storage_iterator = object_storage->iterate(
                         partition_prefix,
                         list_objects_batch_size,
                         /*with_tags=*/ false,
-                        partition_last_processed_path);
+                        start_after);
+                    partitions_to_list.pop_front();
                     continue;
                 }
                 is_finished = true;
@@ -541,16 +538,22 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
         metadata->filterOutForProcessor(paths, storage_id);
 
+    Strings partition_keys;
+    if (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT)
+    {
+        for (const auto & path : paths)
+            partition_keys.push_back(ObjectStorageQueueMetadata::getPartitionKeyForPath(partition_key_by_prefix, path));
+    }
+
     const auto & zookeeper_name = metadata->getZooKeeperName();
     if (mode == ObjectStorageQueueMode::UNORDERED)
         ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
     else if (mode == ObjectStorageQueueMode::EXCLUSIVE)
         ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
-    else if (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT)
-        std::erase_if(paths, [&](const auto & path) { return path <= partition_last_processed_path; });
     else
         ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             paths,
+            partition_keys,
             metadata->getPath(),
             metadata->getBucketsNum(),
             zookeeper_name,
@@ -794,19 +797,6 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::listPartitions(const std::map<std::string, std::string> & partitions)
-{
-    Strings partition_keys;
-    for (const auto & [_, partition_key] : partitions)
-        partition_keys.push_back(partition_key);
-
-    const auto last_processed_paths = metadata->getLastProcessedPathsOfPartitions(partition_keys);
-    auto last_processed_path = last_processed_paths.begin();
-    for (const auto & [partition_prefix, _] : partitions)
-        partitions_to_list.emplace_back(partition_prefix, *last_processed_path++);
-    is_finished = false;
-}
-
 ObjectStorageQueueSource::BucketHolderPtr ObjectStorageQueueSource::FileIterator::tryAcquireBucket(
     size_t bucket,
     BucketInfo & bucket_info,
@@ -939,8 +929,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 }
             }
 
-            if (iterator_finished
-                || (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT && listing_bucket != bucket))
+            if (iterator_finished)
             {
                 /// Bucket is fully processed, but we will release it later
                 /// - once we write and commit files via commit() method.
@@ -1004,18 +993,6 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             return {};
         }
 
-        while (!current_bucket_holder && !listing_bucket && !partitions_per_bucket.empty())
-        {
-            auto partitions = partitions_per_bucket.extract(partitions_per_bucket.begin());
-            current_bucket_holder = tryAcquireBucket(partitions.key(), *keys_cache_per_bucket.at(partitions.key()), *acquired_buckets, processor);
-            if (current_bucket_holder)
-            {
-                listing_bucket = partitions.key();
-                std::lock_guard next_lock(next_mutex);
-                listPartitions(partitions.mapped());
-            }
-        }
-
         while (true)
         {
             auto [object_info, file_metadata] = next();
@@ -1024,12 +1001,18 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
             chassert(!file_metadata);
 
-            const auto bucket = listing_bucket ? *listing_bucket : ObjectStorageQueueMetadata::getBucketForPath(
-                object_info->getPath(),
-                buckets_num,
-                metadata->getBucketingMode(),
-                metadata->getPartitioningMode(),
-                metadata->getFilenameParser());
+            const auto bucket = metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
+                ? ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(
+                    object_info->getPath(),
+                    ObjectStorageQueueMetadata::getPartitionKeyForPath(partition_key_by_prefix, object_info->getPath()),
+                    buckets_num,
+                    metadata->getBucketingMode())
+                : ObjectStorageQueueMetadata::getBucketForPath(
+                    object_info->getPath(),
+                    buckets_num,
+                    metadata->getBucketingMode(),
+                    metadata->getPartitioningMode(),
+                    metadata->getFilenameParser());
             auto bucket_it = keys_cache_per_bucket.find(bucket);
             if (bucket_it == keys_cache_per_bucket.end())
             {
@@ -1093,12 +1076,6 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         }
 
         LOG_TEST(log, "Reached the end of file iterator");
-        if (listing_bucket || !partitions_per_bucket.empty())
-        {
-            listing_bucket.reset();
-            continue;
-        }
-
         iterator_finished = true;
 
         if (keys_cache_per_bucket.end() == std::find_if(

@@ -199,7 +199,7 @@ public:
 
     std::map<std::string, std::string> getExplicitPartitions(const std::string & prefix) const;
     static std::string getPartitionKeyForPath(const std::map<std::string, std::string> & partition_key_by_prefix, const std::string & path);
-    Strings getLastProcessedPathsOfPartitions(const Strings & partition_keys) const;
+    Strings getStartAfterForPartitions(const Strings & partition_keys) const;
     void addPartition(const std::string & partition);
     void forgetPartition(const std::string & partition);
 

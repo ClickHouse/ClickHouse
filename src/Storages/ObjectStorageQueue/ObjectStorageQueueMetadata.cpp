@@ -389,11 +389,13 @@ std::string ObjectStorageQueueMetadata::getPartitionKeyForPath(
     return std::prev(it)->second;
 }
 
-Strings ObjectStorageQueueMetadata::getLastProcessedPathsOfPartitions(const Strings & partition_keys) const
+Strings ObjectStorageQueueMetadata::getStartAfterForPartitions(const Strings & partition_keys) const
 {
     Strings processed_paths;
     for (const auto & partition_key : partition_keys)
-        processed_paths.push_back(ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(zookeeper_path, buckets_num, partition_key));
+        std::ranges::move(
+            ObjectStorageQueueOrderedFileMetadata::getProcessedPathsForPartition(zookeeper_path, partition_key, buckets_num, bucketing_mode),
+            std::back_inserter(processed_paths));
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;
     getKeeperRetriesControl(log).retryLoop([&]
@@ -401,14 +403,26 @@ Strings ObjectStorageQueueMetadata::getLastProcessedPathsOfPartitions(const Stri
         responses = getZooKeeper()->tryGet(processed_paths);
     });
 
-    Strings last_processed_paths;
-    for (size_t i = 0; i < processed_paths.size(); ++i)
+    const size_t shards_num = partition_keys.empty() ? 0 : processed_paths.size() / partition_keys.size();
+    Strings start_after_per_partition;
+    for (size_t first = 0; first < processed_paths.size(); first += shards_num)
     {
-        if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
-            throw zkutil::KeeperException::fromPath(responses[i].error, processed_paths[i]);
-        last_processed_paths.push_back(responses[i].data);
+        std::string start_after;
+        for (size_t i = first; i < first + shards_num; ++i)
+        {
+            if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(responses[i].error, processed_paths[i]);
+            if (responses[i].error == Coordination::Error::ZNONODE)
+            {
+                start_after.clear();
+                break;
+            }
+            if (i == first || responses[i].data < start_after)
+                start_after = responses[i].data;
+        }
+        start_after_per_partition.push_back(std::move(start_after));
     }
-    return last_processed_paths;
+    return start_after_per_partition;
 }
 
 void ObjectStorageQueueMetadata::addPartition(const std::string & partition)
@@ -454,7 +468,8 @@ void ObjectStorageQueueMetadata::forgetPartition(const std::string & partition)
     {
         auto zk_client = getZooKeeper();
         zk_client->tryRemove(zookeeper_path / "partitions" / partition_key);
-        zk_client->tryRemove(ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(zookeeper_path, buckets_num, partition_key));
+        for (const auto & processed_path : ObjectStorageQueueOrderedFileMetadata::getProcessedPathsForPartition(zookeeper_path, partition_key, buckets_num, bucketing_mode))
+            zk_client->tryRemove(processed_path);
     });
 }
 

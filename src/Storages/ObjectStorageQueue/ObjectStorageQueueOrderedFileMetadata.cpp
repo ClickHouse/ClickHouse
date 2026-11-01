@@ -156,21 +156,40 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
 }
 
 ObjectStorageQueueOrderedFileMetadata::Bucket ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(
+    const std::string & path_,
     const std::string & partition_key_,
-    size_t buckets_num_)
+    size_t buckets_num_,
+    ObjectStorageQueueBucketingMode bucketing_mode_)
 {
-    return sipHash64(partition_key_) % buckets_num_;
+    return sipHash64(bucketing_mode_ == ObjectStorageQueueBucketingMode::PARTITION ? partition_key_ : path_) % buckets_num_;
 }
 
 std::string ObjectStorageQueueOrderedFileMetadata::getProcessedPathForPartition(
     const std::filesystem::path & zk_path_,
+    const std::string & path_,
+    const std::string & partition_key_,
     size_t buckets_num_,
-    const std::string & partition_key_)
+    ObjectStorageQueueBucketingMode bucketing_mode_)
 {
     const std::filesystem::path bucket_path = DB::useBucketsForProcessing(buckets_num_)
-        ? getProcessedPathWithBucket(zk_path_, getBucketForPartition(partition_key_, buckets_num_))
+        ? getProcessedPathWithBucket(zk_path_, getBucketForPartition(path_, partition_key_, buckets_num_, bucketing_mode_))
         : getProcessedPathWithoutBucket(zk_path_);
     return bucket_path / partition_key_;
+}
+
+std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getProcessedPathsForPartition(
+    const std::filesystem::path & zk_path_,
+    const std::string & partition_key_,
+    size_t buckets_num_,
+    ObjectStorageQueueBucketingMode bucketing_mode_)
+{
+    if (!DB::useBucketsForProcessing(buckets_num_) || bucketing_mode_ == ObjectStorageQueueBucketingMode::PARTITION)
+        return {getProcessedPathForPartition(zk_path_, /* path */ "", partition_key_, buckets_num_, bucketing_mode_)};
+
+    std::vector<std::string> paths;
+    for (size_t bucket = 0; bucket < buckets_num_; ++bucket)
+        paths.push_back(std::filesystem::path(getProcessedPathWithBucket(zk_path_, bucket)) / partition_key_);
+    return paths;
 }
 
 std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
@@ -445,7 +464,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         zookeeper_name_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
         /* processed_node_path */partitioning_mode_ == ObjectStorageQueuePartitioningMode::EXPLICIT
-            ? getProcessedPathForPartition(zk_path_, buckets_num_, partition_key_)
+            ? getProcessedPathForPartition(zk_path_, path_, partition_key_, buckets_num_, bucketing_mode_)
             : getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
@@ -1113,6 +1132,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
 
 void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     std::vector<std::string> & paths,
+    const std::vector<std::string> & partition_keys,
     const std::filesystem::path & zk_path_,
     size_t buckets_num,
     const std::string & zookeeper_name_,
@@ -1160,13 +1180,15 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     {
         const auto & path = paths[i];
         const auto bucket = use_buckets_for_processing
-            ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
+            ? (partition_keys.empty()
+                ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
+                : getBucketForPartition(path, partition_keys[i], buckets_num, bucketing_mode))
             : 0;
         if (!last_processed_file_map.empty())
         {
             if (hasPartitioningMode(partitioning_mode))
             {
-                auto partition_key = getPartitionKey(path, partitioning_mode, parser);
+                auto partition_key = partition_keys.empty() ? getPartitionKey(path, partitioning_mode, parser) : partition_keys[i];
                 auto max_processed_file = last_processed_file_map[bucket].find(partition_key);
                 if (max_processed_file != last_processed_file_map[bucket].end()
                     && path <= max_processed_file->second)

@@ -49,10 +49,24 @@ $CLICKHOUSE_CLIENT -q "
     ALTER TABLE queue FORGET PARTITION 'a_';
     SELECT 'registered', name FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions' ORDER BY name;
     SELECT 'processed', name FROM system.zookeeper WHERE path IN ('${KEEPER_PATH}/buckets/0/processed', '${KEEPER_PATH}/buckets/1/processed') ORDER BY name;
+    CREATE TABLE queue_path (s String)
+    ENGINE = S3Queue('${S3_URL}/*.csv', 'CSV')
+    SETTINGS
+        keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05473_queue_path',
+        mode = 'ordered',
+        partitioning_mode = 'explicit',
+        bucketing_mode = 'path',
+        buckets = 2,
+        after_processing = 'keep',
+        commit_on_select = 1;
+    ALTER TABLE queue_path ADD PARTITION 'a_', ADD PARTITION 'b_';
+    SELECT 'path', * FROM queue_path ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1;
+    SELECT 'path', * FROM queue_path ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1;
     CREATE TABLE queue_plain (s String)
     ENGINE = S3Queue('${S3_URL}/*.csv', 'CSV')
     SETTINGS keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05473_queue_plain', mode = 'ordered';
     ALTER TABLE queue_plain ADD PARTITION 'a_'; -- { serverError BAD_ARGUMENTS }
     DROP TABLE queue;
+    DROP TABLE queue_path;
     DROP TABLE queue_plain;
 "
