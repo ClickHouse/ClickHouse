@@ -26,7 +26,7 @@
 #    include <openssl/evp.h>
 #endif
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 #    include <immintrin.h>
 #endif
 
@@ -786,7 +786,7 @@ public:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #    endif
 
-#    if USE_MULTITARGET_CODE
+#    if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
