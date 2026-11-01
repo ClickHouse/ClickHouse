@@ -1,0 +1,9 @@
+<clickhouse>
+    <query_masking_rules>
+        <rule_prometheus_log_comment>
+            <name>Hide the test secret</name>
+            <regexp>prometheus_masking_secret</regexp>
+            <replace>******</replace>
+        </rule_prometheus_log_comment>
+    </query_masking_rules>
+</clickhouse>
