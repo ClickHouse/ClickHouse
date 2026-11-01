@@ -283,17 +283,24 @@ void ASTColumnsTransformerList::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     children = r.readChildren();
 
-    /// `applyColumnsTransformer` only dispatches `ColumnsApplyTransformer`,
-    /// `ColumnsExceptTransformer`, and `ColumnsReplaceTransformer`, silently ignoring any
-    /// other child type. Reject foreign children from malformed `clickhouse_json` here so
-    /// they cannot be formatted in the AST while being skipped during semantic transformation.
+    /// Only accept parser-produced transformer lists, including the terminal position of `RENAME`.
+    bool seen_rename = false;
     for (const auto & child : children)
+    {
+        if (seen_rename)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "RENAME must be the last column transformer during AST JSON deserialization");
+
         if (!child
             || !(child->as<ASTColumnsApplyTransformer>()
                  || child->as<ASTColumnsExceptTransformer>()
-                 || child->as<ASTColumnsReplaceTransformer>()))
+                 || child->as<ASTColumnsReplaceTransformer>()
+                 || child->as<ASTColumnsRenameTransformer>()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected child node type in ColumnsTransformerList during AST JSON deserialization");
+
+        seen_rename = child->as<ASTColumnsRenameTransformer>() != nullptr;
+    }
 }
 
 void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
@@ -421,6 +428,156 @@ void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
     /// reads `replacement.children[0]`, so a foreign child type from malformed `clickhouse_json`
     /// must be rejected here instead of reaching that downcast during execution.
     children = r.readChildrenOfType<ASTColumnsReplaceTransformer::Replacement>("ColumnsReplaceTransformer");
+}
+
+void ASTColumnsRenameTransformer::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsRenameTransformer");
+    if (lambda)
+    {
+        w.writeChild("lambda", lambda);
+        w.writeString("lambda_arg", lambda_arg);
+    }
+    else
+    {
+        auto write_names = [&](const char * key, const Names & names)
+        {
+            w.writeKey(key);
+            out << '[';
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                if (i != 0)
+                    out << ',';
+                writeJSONString(names[i], out, w.getFormatSettings());
+            }
+            out << ']';
+        };
+        write_names("source_names", source_names);
+        write_names("target_names", target_names);
+    }
+}
+
+void ASTColumnsRenameTransformer::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    source_names = r.readStringArray("source_names");
+    target_names = r.readStringArray("target_names");
+    lambda = r.readFunctionChildWithExpressionArguments("lambda");
+    lambda_arg = r.getString("lambda_arg");
+
+    if (lambda)
+    {
+        if (r.has("source_names") || r.has("target_names"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsRenameTransformer must specify either column names or a lambda during AST JSON deserialization");
+
+        const auto & function = lambda->as<ASTFunction &>();
+        if (!function.isLambdaFunction() || !isASTLambdaFunction(function))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsRenameTransformer requires a lambda with an argument tuple and a body during AST JSON deserialization");
+
+        const auto & arguments = function.arguments->children[0]->as<ASTFunction &>().arguments->children;
+        if (arguments.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsRenameTransformer lambda must have exactly one argument during AST JSON deserialization");
+
+        auto argument_name = tryGetIdentifierName(arguments[0]);
+        if (lambda_arg.empty() || !argument_name || *argument_name != lambda_arg)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsRenameTransformer lambda argument must match its identifier during AST JSON deserialization");
+    }
+    else
+    {
+        /// `formatImpl`, `updateTreeHashImpl` and the query tree builder index both arrays together.
+        if (source_names.empty() || source_names.size() != target_names.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsRenameTransformer requires non-empty source and target arrays of equal size during AST JSON deserialization");
+
+        for (size_t i = 0; i < source_names.size(); ++i)
+            if (source_names[i].empty() || target_names[i].empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ColumnsRenameTransformer column names must not be empty during AST JSON deserialization");
+
+        if (r.has("lambda_arg"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ColumnsRenameTransformer with a lambda argument requires a lambda during AST JSON deserialization");
+    }
+}
+
+void ASTColumnsRenameTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    ostr << "RENAME ";
+
+    if (lambda)
+    {
+        ostr << "(";
+        lambda->format(ostr, settings, state, frame);
+        ostr << ")";
+        return;
+    }
+
+    if (source_names.size() > 1)
+        ostr << "(";
+
+    for (size_t i = 0; i < source_names.size(); ++i)
+    {
+        if (i != 0)
+            ostr << ", ";
+
+        ostr << backQuoteIfNeed(source_names[i]) << " AS " << backQuoteIfNeed(target_names[i]);
+    }
+
+    if (source_names.size() > 1)
+        ostr << ")";
+}
+
+void ASTColumnsRenameTransformer::appendColumnName(WriteBuffer & ostr) const
+{
+    writeCString("RENAME ", ostr);
+
+    if (lambda)
+    {
+        writeChar('(', ostr);
+        lambda->appendColumnName(ostr);
+        writeChar(')', ostr);
+        return;
+    }
+
+    if (source_names.size() > 1)
+        writeChar('(', ostr);
+
+    for (size_t i = 0; i < source_names.size(); ++i)
+    {
+        if (i != 0)
+            writeCString(", ", ostr);
+
+        writeProbablyBackQuotedString(source_names[i], ostr);
+        writeCString(" AS ", ostr);
+        writeProbablyBackQuotedString(target_names[i], ostr);
+    }
+
+    if (source_names.size() > 1)
+        writeChar(')', ostr);
+}
+
+void ASTColumnsRenameTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(source_names.size());
+    for (size_t i = 0; i < source_names.size(); ++i)
+    {
+        hash_state.update(source_names[i].size());
+        hash_state.update(source_names[i]);
+        hash_state.update(target_names[i].size());
+        hash_state.update(target_names[i]);
+    }
+
+    if (lambda)
+        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
+
+    hash_state.update(lambda_arg.size());
+    hash_state.update(lambda_arg);
+
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }
