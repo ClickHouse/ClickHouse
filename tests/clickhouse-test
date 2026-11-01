@@ -1794,7 +1794,7 @@ class FailureReason(enum.Enum):
     NO_REFERENCE = "no reference file"
     INTERNAL_ERROR = "Test internal error: "
     NOT_FAILED = (
-        "The test succeeded, but it is listed in parallel_replicas_blacklist.txt or async_insert_blacklist.txt. "
+        "The test succeeded, but it is listed in parallel_replicas_blacklist.txt, parallel_replicas_plan_based_blacklist.txt or async_insert_blacklist.txt. "
         "Please remove it from the list"
     )
 
@@ -7560,9 +7560,14 @@ ORDER BY (test_name, callee_offset)
 
     blacklist_check.extend(try_get_skip_list(base_dir, "../analyzer_tech_debt.txt"))
 
-    # The list records the failures of query-based parallel replicas.
-    if args.no_parallel_replicas is True and not args.parallel_replicas_plan_based:
-        blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
+    # Each implementation of parallel replicas fails its own tests, so it has its own list.
+    if args.no_parallel_replicas is True:
+        blacklist = try_get_skip_list(
+            base_dir,
+            "../parallel_replicas_plan_based_blacklist.txt"
+            if args.parallel_replicas_plan_based
+            else "../parallel_replicas_blacklist.txt",
+        )
         blacklist_check.extend(blacklist)
 
     if args.no_async_insert is True:
@@ -8363,7 +8368,7 @@ def parse_args():
         "--parallel-replicas-plan-based",
         action="store_true",
         default=False,
-        help="The server runs plan-based parallel replicas: do not apply parallel_replicas_blacklist.txt, which lists query-based failures",
+        help="The server runs plan-based parallel replicas: apply parallel_replicas_plan_based_blacklist.txt instead of parallel_replicas_blacklist.txt",
     )
     parser.add_argument(
         "--no-async-insert",

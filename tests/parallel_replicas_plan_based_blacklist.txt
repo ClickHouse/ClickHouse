@@ -1,0 +1,151 @@
+    A read from a UNIQUE KEY table is shipped, but cannot be serialized (SUPPORT_IS_DISABLED)
+03313_unique_key_mutation_guard
+04046_unique_key_ddl
+04105_unique_key_insert
+04107_unique_key_insert_concurrency
+04168_unique_key_conflict_action
+04174_unique_key_insert_dedup
+04196_unique_key_read_skips_an_uncommitted_part
+04198_unique_key_read_sees_a_lost_reply_commit
+
+    A read from a projection is shipped and loses the projection on the replica (_parent_part_offset not found)
+03401_normal_projection_with_part_offset
+03401_normal_projection_with_part_offset_no_sorting
+03785_rebuild_projection_with_part_offset
+
+    A read from a temporary table is shipped, and the replica cannot access it (DATABASE_ACCESS_DENIED)
+00542_access_to_temporary_table_in_readonly_mode
+03045_unknown_identifier_alias_substitution
+03143_cte_scope
+
+    A ParallelReplicasSplit marker is left in the plan when the split is not applied
+02377_optimize_sorting_by_input_stream_properties_2
+02404_memory_bound_merging
+03305_mergine_aggregated_filter_push_down
+03355_join_to_in_optimization
+04093_lazy_final_combined_filtering
+04095_lazy_final_with_lazy_materialization
+
+    An optimization is skipped whenever parallel replicas are enabled (fuseFilterIntoArrayJoin, lazy materialization over joins)
+01655_plan_optimizations
+05399_additional_result_filter_extremes
+05405_lazy_materialization_for_join_object_storage_default_dependency
+
+    The read is shipped without its filter, so `force_primary_key` throws `INDEX_NOT_USED` on a replica
+05350_comparison_tuple_elimination_shared_alias
+
+    A replica throws `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` on `hasToken(CAST(s, 'String'), ...)`: the text index does not skip the NULL granule there
+05340_text_index_preprocessor_cast_drop_nullable
+
+    Plan-based also ships the subquery of a plain `IN`, so `system.query_log` lists one more query
+03622_explain_indexes_distributed_index_analysis_in
+
+    The `Dynamic` and `JSON` storage layout (shared variant, dynamic and shared data paths) differs after reading through replicas; the values are the same
+03151_dynamic_type_scale_max_types
+05020_json_max_dynamic_subcolumns_in_parsing_squashing
+
+    The CI profile enables the experimental `parallel_replicas_plan_based`, and the test lists experimental settings enabled by default
+03413_experimental_settings_cannot_be_enabled_by_default
+
+    `blockSize()` depends on how the replicas split the ranges
+00443_preferred_block_size_bytes
+
+    `groupArray` without `ORDER BY` depends on the order in which the replicas read
+01201_read_single_thread_in_order
+
+    The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
+01710_projection_pk_trivial_count
+02998_projection_after_attach_partition
+03460_projection_part_filtering_and_introspection
+03560_parallel_replicas_projection
+04823_block_nested_loop_join_optimizer_passes
+05141_hypothetical_projection_verdict_rules
+05175_hypothetical_projection_part_offset
+05182_join_order_conflict_detector_cast_null_propagation
+
+    The test checks EXPLAIN output, which parallel replicas wrap differently; the optimization itself still applies
+01576_alias_column_rewrite
+01582_move_to_prewhere_compact_parts
+01625_constraints_index_append
+01655_plan_optimizations_optimize_read_in_window_order
+01824_move_to_prewhere_many_columns
+02149_read_in_order_fixed_prefix
+02354_vector_search_queries
+02354_vector_search_subquery
+02451_order_by_monotonic
+02481_aggregation_in_order_plan
+02675_predicate_push_down_filled_join_fix
+02676_distinct_reading_in_order_analyzer
+02713_array_low_cardinality_string
+02725_agg_projection_respect_PK
+02809_prewhere_and_in
+02842_move_pk_to_end_of_prewhere
+02862_sorted_distinct_sparse_fix
+02864_statistics_delayed_materialization_in_merge
+02864_statistics_usage
+02882_primary_key_index_in_function_different_types
+02911_analyzer_order_by_read_in_order_query_plan
+02911_support_alias_column_in_indices
+02943_tokenbf_and_ngrambf_indexes_support_match_function
+03036_join_filter_push_down_equivalent_sets
+03130_convert_outer_join_to_inner_join
+03152_join_filter_push_down_equivalent_columns
+03164_materialize_skip_index
+03166_skip_indexes_vertical_merge_1
+03257_reverse_sorting_key
+03272_partition_pruning_monotonic_func_bug
+03460_basic_projection_index
+03460_normal_projection_index
+03464_projections_with_subcolumns
+03722_normal_projection_key_columns
+03788_statistics_part_pruning
+03788_statistics_part_pruning_nan
+03788_statistics_part_pruning_partial
+03788_statistics_part_pruning_precision
+03892_grouping_sets_force_aggregation_in_order
+04076_pr_nested_view_union_subquery
+04303_key_condition_ifnull_coalesce_boolean
+04304_prewhere_statistics_column_grouping
+04327_stid_1499_6033_statistics_lc_cast
+04499_key_condition_bare_key_column_multi_atom
+04507_view_orderby_expression_no_pushdown
+04549_virtual_row_distinct_in_order_boundary
+04612_reverse_key_index_analysis
+04649_distinct_in_order_final_float_equality
+05076_hypothetical_projection_estimate
+05176_hypothetical_projection_estimate_part_layout
+05217_aggregation_in_order_fixed_keys
+05238_key_condition_multi_atom_tuple_nan_exactness
+05401_aggregation_nullable_fixed_keys_batch_pack
+
+    The test asserts read counters, ProfileEvents or query_log, which differ when the work is split differently
+01045_order_by_pk_special_storages
+01508_partition_pruning_long_1
+01508_partition_pruning_long_2
+02151_hash_table_sizes_stats
+02784_parallel_replicas_automatic_decision_join
+02877_optimize_read_in_order_from_view
+03143_prewhere_profile_events
+04305_autopr_output_bytes_estimation_join
+04341_autopr_mode1_apply_join
+04836_merge_table_parallel_replicas_duplicate_announcement
+05292_autopr_stats_key_constants
+05399_autopr_plan_without_parallel_replicas
+
+    The test describes query-based behaviour (setting semantics, statistics, step names)
+01513_optimize_aggregation_in_order_memory_long
+01655_plan_optimizations_optimize_read_in_window_order_long
+02910_prefetch_unexpceted_exception
+03850_nested_cluster_table_function_task_iterator
+04207_pr_additional_filters
+04669_fuse_filter_into_array_join
+04908_group_by_top_k_max_k_cap
+05019_group_by_top_k_compatibility
+05042_fuse_filter_array_join_left_distributed
+05044_lower_array_join_function
+05137_fuse_row_conditions_into_array_join
+05138_pr_plan_based_array_join_filter_not_fused
+05175_autopr_keep_cluster_engines
+05243_array_join_element_filter_block_boundary
+05385_fuse_filter_array_join_lift_row_actions
+05397_fuse_filter_into_left_array_join
