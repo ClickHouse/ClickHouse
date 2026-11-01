@@ -106,7 +106,7 @@ private:
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -235,7 +235,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -709,7 +709,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
-    result.etag = properties.ETag.ToString();
+    result.etag = AzureBlobStorage::getETag(properties.ETag, path);
     if (!properties.Metadata.empty())
     {
         result.attributes.emplace();
