@@ -60,7 +60,7 @@
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/EnumReflection.h>
 
 #include <TableFunctions/TableFunctionURL.h>
@@ -208,9 +208,9 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
 
     auto trim = [](std::string_view s) -> std::string_view
     {
-        while (!s.empty() && (s.front() == ' ' || s.front() == '	'))
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
             s.remove_prefix(1);
-        while (!s.empty() && (s.back() == ' ' || s.back() == '	'))
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t'))
             s.remove_suffix(1);
         return s;
     };
