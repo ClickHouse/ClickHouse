@@ -1,0 +1,7 @@
+<clickhouse>
+    <cluster_metadata>
+        <type>local_encrypted</type>
+        <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+        <path>/var/lib/clickhouse/sql_clusters_metadata_local_encrypted</path>
+    </cluster_metadata>
+</clickhouse>

@@ -1892,6 +1892,8 @@ public:
 
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
+    /// Removes the cluster only if it is SQL-managed. Returns whether it was removed.
+    bool removeSQLCluster(const String & cluster_name);
     void reloadClusterConfig() const;
 
     bool isDistributedCacheServer() const;
@@ -2334,6 +2336,8 @@ private:
 
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
+
+    void notifyDDLWorkerAfterClustersChange() const;
 
     WasmModuleManager * initWasmModuleManager();
 

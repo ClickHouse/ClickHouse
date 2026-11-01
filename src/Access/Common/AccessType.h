@@ -151,7 +151,7 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
-enum class AccessType : uint8_t
+enum class AccessType : uint16_t
 {
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
@@ -319,6 +319,10 @@ enum class AccessType : uint8_t
     M(SHOW_NAMED_COLLECTIONS_SECRETS, "SHOW NAMED COLLECTIONS SECRETS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
+    M(CREATE_CLUSTER, "", GLOBAL, SQL_CLUSTER_ADMIN) /* allows to execute CREATE CLUSTER for SQL-managed clusters */ \
+    M(ALTER_CLUSTER, "", GLOBAL, SQL_CLUSTER_ADMIN) /* allows to execute ALTER CLUSTER for SQL-managed clusters */ \
+    M(DROP_CLUSTER, "", GLOBAL, SQL_CLUSTER_ADMIN) /* allows to execute DROP CLUSTER for SQL-managed clusters */ \
+    M(SQL_CLUSTER_ADMIN, "", GROUP, ALL) /* not a part of CREATE/ALTER/DROP: the `secret` of a SQL-managed cluster establishes inbound interserver trust */ \
     M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, ALL) /* allows to see SQL-defined HTTP handlers in system.handlers */\
     M(SHOW_CONNECTIONS, "SHOW CONNECTION", GLOBAL, ALL) /* lets a user see the connections of all users in system.connections */\
     M(SET_DEFINER, "", DEFINER, ALL) \
