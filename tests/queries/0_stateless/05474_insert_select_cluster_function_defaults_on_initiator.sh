@@ -45,3 +45,16 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE dist_05474;
     DROP TABLE dst_05474;
 "
+
+# The nodes validate every `DEFAULT` of the structure they receive, so a `DEFAULT` reading a column that is not in the
+# structure, here a `MATERIALIZED` one, is not sent. A file with all the fields must still be inserted.
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${S3_DIR}/full.jsonl', 'JSONEachRow', 'id UInt32, d UInt32') VALUES (1, 99)"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE materialized_05474 (id UInt32, m UInt32 MATERIALIZED id * 10, d UInt32 DEFAULT m + 1) ENGINE = MergeTree ORDER BY id;
+    INSERT INTO materialized_05474
+    SELECT * FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '${S3_DIR}/full.jsonl', 'JSONEachRow')
+    SETTINGS parallel_distributed_insert_select = 0;
+    SELECT '--- DEFAULT reading a MATERIALIZED column, all fields in the file ---';
+    SELECT id, d FROM materialized_05474;
+    DROP TABLE materialized_05474;
+"

@@ -12,6 +12,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/AlterCommands.h>
@@ -55,8 +56,22 @@ namespace FailPoints
     extern const char storage_cluster_read_sleep[];
 }
 
+/// Whether `expression` reads only columns of `columns`. The nodes validate every `DEFAULT` of the structure they receive,
+/// so one that reads anything else, e.g. a `MATERIALIZED` column of the insertion table, would make them reject the query
+/// even when the files have all the fields.
+static bool readsOnlyColumnsOf(const ASTPtr & expression, const ColumnsDescription & columns)
+{
+    RequiredSourceColumnsVisitor::Data data;
+    auto expression_copy = expression->clone();
+    RequiredSourceColumnsVisitor(data).visit(expression_copy);
+    return std::ranges::all_of(data.requiredColumns(), [&](const String & name)
+    {
+        return columns.hasColumnOrSubcolumn(GetColumnsOptions::All, name);
+    });
+}
+
 /// Names and types of `columns` with their `DEFAULT` expressions, except those with secret arguments, which would reach
-/// the query logs of the nodes.
+/// the query logs of the nodes, and those that read other columns.
 static String getStructureWithDefaults(const ColumnsDescription & columns)
 {
     WriteBufferFromOwnString buf;
@@ -69,7 +84,8 @@ static String getStructureWithDefaults(const ColumnsDescription & columns)
         writeChar(' ', buf);
         writeString(column.type->getName(), buf);
         const auto & default_expression = column.default_desc.expression;
-        if (column.default_desc.kind == ColumnDefaultKind::Default && default_expression && !default_expression->hasSecretParts())
+        if (column.default_desc.kind == ColumnDefaultKind::Default && default_expression && !default_expression->hasSecretParts()
+            && readsOnlyColumnsOf(default_expression, columns))
         {
             writeCString(" DEFAULT ", buf);
             writeString(default_expression->formatWithSecretsOneLine(), buf);
