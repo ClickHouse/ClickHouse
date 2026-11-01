@@ -192,7 +192,7 @@ def test_async_insert_counts_dropped_exemplars():
     assert (
         node.query(
             "SELECT sum(ProfileEvents['PrometheusRemoteWriteDroppedExemplars']) FROM system.query_log "
-            "WHERE type = 'QueryFinish' AND query_kind = 'AsyncInsertFlush'"
+            "WHERE type = 'QueryFinish'"
         )
         == "1\n"
     )
