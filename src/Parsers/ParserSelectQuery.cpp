@@ -3133,7 +3133,7 @@ This is an experimental feature. Enable it with the setting [`allow_experimental
 
 ## Implementation details {#implementation-details}
 
-Every stream of the query pipeline is shuffled independently with the Fisher-Yates algorithm, and every row is assigned a random key in such a way that the keys are independent uniformly distributed random numbers and the output of every stream is sorted by them. The shuffled streams are merged by these keys, which takes O(1) memory. The same applies to distributed queries: the remote servers shuffle their data, and the initiator merges the shuffled streams.
+Every row is assigned a random key, in such a way that the keys are independent uniformly distributed random numbers and the shuffled rows are sorted by them. Without `LIMIT`, the rows are scattered into `max_threads` streams at random, every stream gets its own range of keys and is shuffled in parallel with the Fisher-Yates algorithm, and the streams are concatenated. With `LIMIT n`, every stream keeps the `n` rows with the smallest keys, and the streams are merged by the keys. Shuffled streams can be merged by the keys with O(1) memory, which is used for distributed queries: the remote servers shuffle their data, and the initiator merges the shuffled streams.
 
 Without `LIMIT`, `SHUFFLE` keeps all rows in memory. Unlike `ORDER BY`, it does not spill data to disk.
 
