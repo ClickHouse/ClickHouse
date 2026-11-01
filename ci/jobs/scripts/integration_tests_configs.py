@@ -78,6 +78,12 @@ TEST_CONFIGS = [
     ),
     TC("test_storage_iceberg_no_spark/", False, "minio/azurite per cluster; fully isolated"),
     TC("test_storage_iceberg_with_spark_cache/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
+    TC(
+        "test_storage_paimon_with_spark/",
+        False,
+        "package-scoped Spark session; each xdist worker gets its own instance",
+        dist_each_sequential=True,
+    ),
     TC("test_storage_iceberg_concurrent/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
     TC(
         "test_storage_delta/test_azure_cluster.py",
@@ -97,6 +103,12 @@ TEST_CONFIGS = [
     ),
     TC(
         "test_storage_delta/test_cdf.py",
+        False,
+        "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
+        dist_each_sequential=True,
+    ),
+    TC(
+        "test_storage_delta/test_writes_interop.py",
         False,
         "starts a Spark JVM + multi-node ClickHouse cluster per module fixture",
         dist_each_sequential=True,
@@ -900,7 +912,6 @@ test_cache_bypass_on_disk_failure/test.py	30560
 test_backward_compatibility/test_functions.py	30553
 test_broken_detached_part_quarantine/test.py	30524
 test_distributed_plan_worker_exchange_port/test.py	30506
-test_analyzer_compatibility/test.py	30493
 test_disabled_access_control_improvements/test_select_from_system_tables.py	30484
 test_access_cache_recompute_coalescing/test.py	30416
 test_incremental_refreshable_mv/test.py	30396

@@ -1,0 +1,43 @@
+--- fixture: files and rows per Iceberg table and content
+b	DATA	4	1000	[229,238,262,271]
+d	DATA	1	100	[100]
+d	POSITION_DELETE	1	20	[20]
+p	DATA	5	40	[5,5,10,10,10]
+unp	DATA	1	10000	[10000]
+--- T1: partition pruning by the manifest list, WHERE p.r = 'us'
+Join: m[1000] ⋈ p[no_stats~15]
+ResultRows: ~~15
+--- T1: setting off
+Join: m[1000] ⋈ p
+ResultRows: unknown
+--- T1: rows of the join
+15
+--- T1: PREWHERE p.r = 'us'
+Join: m[1000] ⋈ p[no_stats~15]
+ResultRows: ~~15
+--- T2: min/max pruning, WHERE p.k >= 100
+Join: m[1000] ⋈ p[no_stats~10]
+ResultRows: ~~10
+--- T2: rows of the join
+10
+--- T3: partition pruning per data file, WHERE b.k = 500
+Join: m[1000] ⋈ b[no_stats~229]
+ResultRows: ~~229
+--- T3: rows of the join
+1
+--- T4: every file pruned, WHERE p.k >= 1000000
+Join: m[1000] ⋈ p[0]
+ResultRows: 1
+--- T5: a filter that prunes nothing, WHERE t.x = 5
+Join: m[1000] ⋈ t[no_stats~?]
+ResultRows: unknown
+--- T6: position deletes, 100 rows, 20 deleted
+Join: m[1000] ⋈ d[no_stats~100]
+ResultRows: ~~100
+--- T6: rows of the join
+80
+--- T7: files pruned by min/max when T2 runs
+3
+--- T8: GLOBAL IN with throwIf, EXPLAIN only
+Join: m[1000] ⋈ t[no_stats~?]
+ResultRows: unknown

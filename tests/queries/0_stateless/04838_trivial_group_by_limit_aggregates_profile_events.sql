@@ -12,10 +12,6 @@
 -- `enable_parallel_replicas = 0` is pinned because with parallel replicas the aggregation
 -- is split between the replicas and the initiator (`isSecondStage` is false on the
 -- replicas), so the cutoff intentionally stays off there.
---
--- `enable_analyzer = 1` is pinned because the aggregate cutoff is armed by the planner of
--- the analyzer; with the old analyzer the events never fire.
-SET enable_analyzer = 1;
 -- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.
 SET enable_group_by_top_k_optimization = 0;
 
