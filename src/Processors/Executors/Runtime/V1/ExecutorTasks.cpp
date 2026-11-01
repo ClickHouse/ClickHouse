@@ -125,7 +125,7 @@ void ExecutorTasks::tryWakeUpOtherThreadsWithTasks(ExecutionThreadContext & self
     if (threads_queue.empty() || finished || (fast_task_queue.empty() && task_queue.empty()))
         return;
 
-    std::array<size_t, max_threads_woken_at_once> threads_to_wake;
+    std::array<size_t, max_threads_woken_at_once> threads_to_wake{};
     const size_t num_threads_to_wake = std::min({count, threads_queue.size(), threads_to_wake.size()});
     for (size_t i = 0; i < num_threads_to_wake; ++i)
         threads_to_wake[i] = threads_queue.popAny();
