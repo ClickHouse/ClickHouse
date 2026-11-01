@@ -34,12 +34,10 @@ GRANT CREATE TEMPORARY TABLE ON *.* TO $definer;
 CREATE VIEW $db.definer_view DEFINER = $definer SQL SECURITY DEFINER AS
     SELECT n.number FROM numbers(1) AS n
     INNER JOIN (SELECT 'JOIN_SIDE_KEY' AS k) AS s ON HMAC('sha256', toString(n.number), s.k) = ''
-    WHERE toString(n.number) = (SELECT s FROM $db.private_table)
-    SETTINGS enable_analyzer = 1;
+    WHERE toString(n.number) = (SELECT s FROM $db.private_table);
 
 CREATE VIEW $db.none_view SQL SECURITY NONE AS
-    SELECT number FROM numbers(1) WHERE toString(number) = (SELECT s FROM $db.private_table)
-    SETTINGS enable_analyzer = 1;
+    SELECT number FROM numbers(1) WHERE toString(number) = (SELECT s FROM $db.private_table);
 
 GRANT SELECT ON $db.definer_view TO $definer, $reader;
 GRANT SELECT ON $db.none_view TO $definer, $reader;
@@ -112,8 +110,13 @@ echo "-- nor does a user with ALLOW SQL SECURITY NONE"
 ${CLICKHOUSE_CLIENT} --query "GRANT ALLOW SQL SECURITY NONE ON *.* TO $reader"
 echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 
-echo "-- with the privileges to read everything, the same user sees both plans"
+echo "-- with the privileges to read everything, but without CREATE VIEW, the same user still does not see the plans"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, dictGet, READ, CREATE TEMPORARY TABLE, NAMED COLLECTION ON *.* TO $reader"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
+echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
+
+echo "-- with CREATE VIEW as well, the same user sees both plans"
+${CLICKHOUSE_CLIENT} --query "GRANT CREATE VIEW ON $db.* TO $reader"
 echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.definer_view")"
 echo "$(explain_flags "$reader" "" "EXPLAIN PLAN actions = 1 SELECT * FROM $db.none_view")"
 

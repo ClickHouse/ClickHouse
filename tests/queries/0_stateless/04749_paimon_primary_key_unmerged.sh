@@ -36,7 +36,7 @@ echo "$out" | grep -q 'merge-on-read is not implemented' \
 # The table stays inspectable so a user can see what they have.
 ${CLICKHOUSE_CLIENT} -q "DESCRIBE paimonLocal('${PK_TABLE}');"
 
-# Append-only tables have no superseded row versions and must keep reading by default.
+# Append-only tables without deletion vectors have no superseded row versions and must keep reading.
 ${CLICKHOUSE_CLIENT} -q "SELECT count(1) FROM paimonLocal('${DATA_DIR}/paimon_no_partition');"
 
 rm -rf "${DATA_DIR}"

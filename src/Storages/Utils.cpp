@@ -25,6 +25,7 @@ namespace DB
         {
             return {CurrentMetrics::AttachedDictionary};
         }
+        /// NOLINT(storage-cast): runs under the database lock, and attach and detach must count a proxy alike.
         if (typeid_cast<StorageReplicatedMergeTree *>(storage.get()) != nullptr)
         {
             return {CurrentMetrics::AttachedTable, CurrentMetrics::AttachedReplicatedTable};

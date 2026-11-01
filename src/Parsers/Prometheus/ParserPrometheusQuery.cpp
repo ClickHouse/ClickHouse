@@ -30,6 +30,8 @@ namespace
 /// The raw text is scanned with the PromQL lexical rules (see `PromQLLexer.g4`), because the SQL lexer
 /// does not know that `#` starts a comment unless a space follows it, so a `;` in `up #keep ; x`
 /// would read as the statement end. A `;` inside a string literal doesn't end the statement either.
+/// As in `PromQLLexer.g4`, a comment ends at `\r` or `\n`, and a string in quotes or double quotes
+/// cannot contain `\n`, so it ends there too.
 class PromQLStatementEndFinder
 {
 public:
@@ -42,21 +44,23 @@ public:
         {
             if (open == '#')
             {
-                pos = find_first_symbols<'\n'>(pos, end);
+                pos = find_first_symbols<'\r', '\n'>(pos, end);
                 if (pos < end)
                     open = 0;
             }
             else if (open)
             {
-                /// Backquoted strings are raw, the others have backslash escapes.
+                /// Backquoted strings are raw, the others have backslash escapes and cannot contain a line feed.
                 if (*pos == '\\' && open != '`')
                 {
                     /// The escaped char is past `end`, so it is read on the next call.
                     if (pos + 1 == end)
                         return end;
-                    ++pos;
+                    /// A backslash before a line feed is not an escape, so the line feed ends the string.
+                    if (pos[1] != '\n')
+                        ++pos;
                 }
-                else if (*pos == open)
+                else if (*pos == open || (*pos == '\n' && open != '`'))
                     open = 0;
                 ++pos;
             }

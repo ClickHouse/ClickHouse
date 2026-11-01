@@ -11,7 +11,7 @@ template <typename T>
 void addProgramOptionAsMultitoken(T &cmd_settings, boost::program_options::options_description & options, std::string_view name, const typename T::SettingFieldRef & field)
 {
     auto on_program_option = boost::function1<void, const Strings &>([&cmd_settings, name](const Strings & values) { cmd_settings.set(name, values.back()); });
-    if (field.getTypeName() == "Bool")
+    if (std::string_view type = field.getTypeName(); type.starts_with("Bool"))
     {
         options.add(
             boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
@@ -54,7 +54,7 @@ template <typename T>
 void addProgramOption(T & cmd_settings, boost::program_options::options_description & options, std::string_view name, const typename T::SettingFieldRef & field)
 {
     auto on_program_option = boost::function1<void, const std::string &>([&cmd_settings, name](const std::string & value) { cmd_settings.set(name, value); });
-    if (field.getTypeName() == "Bool")
+    if (std::string_view type = field.getTypeName(); type.starts_with("Bool"))
     {
         options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
                 name.data(), boost::program_options::value<std::string>()->composing()->implicit_value("1")->notifier(on_program_option), field.getDescription().data()))); // NOLINT

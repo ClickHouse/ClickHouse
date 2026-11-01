@@ -230,6 +230,7 @@ void registerStorageFuzzQuery(StorageFactory & factory)
 
             return std::make_shared<StorageFuzzQuery>(args.table_id, args.columns, args.comment, configuration);
         },
+        SecretArgumentsSpec{},
         {},
         Documentation{
             .description = "Generates random SQL query strings by mutating a supplied query template. Useful for producing fuzzed queries for testing. The table must consist solely of columns of type `String`.",

@@ -31,21 +31,17 @@ GRANT SELECT ON $db.pv_none TO $invoker;
 EOF
 
 # The invoker has SELECT on the views only, not on the base table.
-# DEFINER/NONE must return rows; INVOKER must be denied. This must hold for BOTH the
-# default analyzer and the old analyzer (the old-analyzer path was the bug: issue #84188).
-for analyzer in 1; do
-    echo "--- enable_analyzer=$analyzer ---"
-    echo -n "definer: "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0"
-    echo -n "none:    "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_none(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0"
-    echo -n "invoker: "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_invoker(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0" 2>&1 \
-        | grep -m1 -oF "ACCESS_DENIED" || echo "UNEXPECTED"
-done
+# DEFINER/NONE must return rows; INVOKER must be denied (issue #84188).
+echo -n "definer: "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS enable_parallel_replicas = 0"
+echo -n "none:    "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_none(lim = 5000) SETTINGS enable_parallel_replicas = 0"
+echo -n "invoker: "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_invoker(lim = 5000) SETTINGS enable_parallel_replicas = 0" 2>&1 \
+    | grep -m1 -oF "ACCESS_DENIED" || echo "UNEXPECTED"
 
 # Originally reported scenario: parameterized DEFINER view read via parallel replicas by a
 # low-privilege invoker must succeed (no ACCESS_DENIED, no data leak) and must actually use
@@ -54,7 +50,12 @@ echo "--- parallel replicas ---"
 # automatic_parallel_replicas_mode = 0 forces the explicit parallel-replicas path so the
 # ParallelReplicasUsedCount guard below is deterministic (otherwise the coordinator may skip
 # parallel replicas for this small table and the guard would flap).
-pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 1, automatic_parallel_replicas_mode = 0"
+# A DEFINER view is sealed, so its plan is a child plan spliced into the outer pipeline and parallel
+# replicas are switched off for it on purpose (see ReadFromSealedViewStep): the step is not
+# serializable, so plan-based cannot ship a fragment around the read and the guard below would read
+# 0. The access part of this test - DEFINER and NONE return rows, INVOKER is denied - runs above
+# without parallel replicas and so holds for either implementation.
+pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0"
 echo -n "definer pr: "
 ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
     "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS $pr_settings, log_comment = '04545_pr_${CLICKHOUSE_DATABASE}'"

@@ -7,6 +7,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 
+#include <Common/HiddenSecret.h>
 #include <Common/quoteString.h>
 #include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
@@ -72,7 +73,8 @@ void ASTFunction::setNoEmptyArgs(bool value)
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
-    if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3")
+    if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3"
+        || name == "obfuscate")
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function '{}' cannot be used as an expression", name);
 
     /// If function can be converted to literal it will be parsed as literal after formatting.
@@ -292,31 +294,38 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
-    /// A bare select query argument is parser-producible only as `view(SELECT ...)` or
-    /// `viewIfPermitted(SELECT ... ELSE f(...))`, neither of which carries parameters, a window, a
-    /// NULLS action or query output options.
+    /// A bare select query argument is parser-producible only as `view(SELECT ...)`,
+    /// `obfuscate(SELECT ...)` (`ObfuscateLayer`) or `viewIfPermitted(SELECT ... ELSE f(...))`, none of
+    /// which carries parameters, a window, a NULLS action or query output options.
     bool is_view = equalsCaseInsensitive(name, "view");
     bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
+    bool is_obfuscate = equalsCaseInsensitive(name, "obfuscate");
     if (containsBareSelectQuery(arguments.get()) || containsBareSelectQuery(parameters.get()))
     {
         const auto * view_select
             = arguments && !arguments->children.empty() ? arguments->children[0]->as<ASTSelectWithUnionQuery>() : nullptr;
-        bool is_view_shape = is_view && arguments && arguments->children.size() == 1 && view_select;
+        bool is_view_shape = (is_view || is_obfuscate) && arguments && arguments->children.size() == 1 && view_select;
         bool is_view_if_permitted_shape = is_view_if_permitted && arguments && arguments->children.size() == 2 && view_select
             && arguments->children[1]->as<ASTFunction>();
         bool is_table_function_shape = (is_view_shape || is_view_if_permitted_shape) && !parameters && !isWindowFunction()
             && getNullsAction() == NullsAction::EMPTY && !view_select->hasOutputOptions();
         if (!is_table_function_shape)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "A select query argument is only allowed in 'view(SELECT ...)' or "
+                "A select query argument is only allowed in 'view(SELECT ...)', 'obfuscate(SELECT ...)' or "
                 "'viewIfPermitted(SELECT ... ELSE f(...))' during AST JSON deserialization");
 
-        /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
-        /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and
-        /// execution matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery` and
-        /// the table function factory), so a non-canonical spelling that reaches the interpreter
-        /// through `clickhouse_json` would fail. Canonicalize it the way the parser does.
-        name = is_view ? "view" : "viewIfPermitted";
+        /// For the table function form the parser emits only the canonical spelling (`ViewLayer` and
+        /// `ObfuscateLayer` dispatch on the lowercased name but always produce `view`,
+        /// `viewIfPermitted` or `obfuscate`), and execution matches the name case-sensitively (e.g.
+        /// `StorageView::replaceWithSubquery` and the table function factory, where none of these
+        /// three is registered case-insensitively), so a non-canonical spelling that reaches the
+        /// interpreter through `clickhouse_json` would fail. Canonicalize it the way the parser does.
+        if (is_view)
+            name = "view";
+        else if (is_view_if_permitted)
+            name = "viewIfPermitted";
+        else
+            name = "obfuscate";
     }
 
     /// A child of `arguments` or `parameters` is an expression, and an expression list is not one.
@@ -380,6 +389,12 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(getNullsAction());
+
+    /// The function composition operator `f | g` and an ordinary call to a function of the same
+    /// name are different expressions, see the formatting of `__compose` below.
+    if (name == "__compose"sv)
+        hash_state.update(isOperator());
+
     if (isWindowFunction())
     {
         hash_state.update(window_name.size());
@@ -441,11 +456,9 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 
 
 /// Whether a nested secret map child is a `key = value` argument whose value stays visible when the
-/// map is masked (the non-secret identifiers of `extra_credentials`; `headers` values are all hidden).
-static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
+/// map is masked: its key is one of `visible_keys`.
+static bool isNonSecretMapChild(const std::vector<std::string> & visible_keys, const IAST * arg)
 {
-    if (map_name != "extra_credentials")
-        return false;
     const auto * equals_func = arg->as<ASTFunction>();
     if (!equals_func || equals_func->name != "equals" || !equals_func->arguments || equals_func->arguments->children.size() != 2)
         return false;
@@ -458,9 +471,9 @@ static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
     const auto & key_ast = equals_func->arguments->children[0];
     if (const auto * key_literal = key_ast->as<ASTLiteral>())
         return key_literal->value.getType() == Field::Types::String
-            && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_literal->value.safeGet<String>());
+            && std::ranges::contains(visible_keys, key_literal->value.safeGet<String>());
     if (const auto * key_identifier = key_ast->as<ASTIdentifier>())
-        return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->name());
+        return std::ranges::contains(visible_keys, key_identifier->name());
     return false;
 }
 
@@ -478,7 +491,7 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const 
 
     equal_args[0]->format(ostr, settings, state, frame);
     ostr << " = ";
-    ostr << "'[HIDDEN]'";
+    ostr << HIDDEN_SECRET_LITERAL;
 
     return true;
 }
@@ -697,16 +710,18 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        bool is_like_with_escape = false;
+        /// LIKE and SIMILAR TO can carry a 3rd (String) argument that is the ESCAPE character.
+        bool is_operator_with_escape = false;
         if (arguments->children.size() == 3
-            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
+            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"
+                || name == "similarTo" || name == "notSimilarTo"))
         {
             if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
-                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
+                is_operator_with_escape = escape_literal->value.getType() == Field::Types::String;
         }
-        if (!written && (arguments->children.size() == 2 || is_like_with_escape))
+        if (!written && (arguments->children.size() == 2 || is_operator_with_escape))
         {
-            static constexpr std::array<FunctionOperatorMapping, 21> operators =
+            static constexpr std::array<FunctionOperatorMapping, 23> operators =
             {{
                 {"multiply",          " * "},
                 {"divide",            " / "},
@@ -725,6 +740,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"ilike",             " ILIKE "},
                 {"notLike",           " NOT LIKE "},
                 {"notILike",          " NOT ILIKE "},
+                {"similarTo",         " SIMILAR TO "},
+                {"notSimilarTo",      " NOT SIMILAR TO "},
                 {"in",                " IN "},
                 {"notIn",             " NOT IN "},
                 {"globalIn",          " GLOBAL IN "},
@@ -787,8 +804,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 else
                     arguments->children[1]->format(ostr, settings, state, nested_need_parens);
 
-                /// LIKE/ILIKE with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
-                if (is_like_with_escape)
+                /// LIKE/ILIKE/SIMILAR TO with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
+                if (is_operator_with_escape)
                 {
                     ostr << " ESCAPE ";
                     arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
@@ -881,6 +898,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             /// We have just emitted `(` around the child, so suppress the
                             /// child's own `parenthesized` parens (which would otherwise duplicate ours).
                             nested_need_parens.wrapped_in_parens = true;
+                            /// These parens isolate the operand from an enclosing argument list, so a descendant IN needs none.
+                            nested_need_parens.current_function = nullptr;
                             ostr << '(';
                         }
 
@@ -893,7 +912,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             ostr << ')';
 
                         ostr << ".";
-                        arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                        /// An alias on the index has to stay inside its parens: `.(1) AS a` re-parses
+                        /// as the alias of the whole tupleElement. Copy the pristine frame, not
+                        /// `nested_need_parens`, which the left-operand code above has mutated.
+                        FormatStateStacked index_frame = nested_dont_need_parens;
+                        index_frame.need_parens = true;
+                        arguments->children[1]->format(ostr, settings, state, index_frame);
                         written = true;
 
                         if (frame.need_parens)
@@ -961,6 +985,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
                 written = true;
             }
+        }
+
+        /// The function composition operator `f | g`. `__compose` is an ordinary (if unusual)
+        /// function name a user can define a function with, so only a call the parser marked as
+        /// operator syntax is formatted back as the operator. The name must stay in sync with
+        /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
+        if (!written && arguments->children.size() == 2 && name == "__compose"sv && isOperator())
+        {
+            if (frame.need_parens)
+                ostr << '(';
+            arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+            ostr << " | ";
+            arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+            if (frame.need_parens)
+                ostr << ')';
+            written = true;
         }
 
         if (!written && name == "array"sv && isOperator())
@@ -1047,9 +1087,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     if (arguments)
     {
-        FunctionSecretArgumentsFinder::Result secret_arguments;
+        SecretArgumentsResult secret_arguments;
         if (!settings.show_secrets)
-            secret_arguments = FunctionSecretArgumentsFinderAST(*this).getResult();
+            secret_arguments = findSecretArguments(*this);
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
@@ -1066,7 +1106,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// hidden but its keys kept. Checked before the secret-span branch below because such a
                 /// map can itself fall inside a named span, where it must not be formatted as `key = ...`.
                 const ASTFunction * function = argument->as<ASTFunction>();
-                if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
+                const auto nested_map = function && function->arguments ? secret_arguments.nested_maps.find(function->name)
+                                                                        : secret_arguments.nested_maps.end();
+                if (nested_map != secret_arguments.nested_maps.end())
                 {
                     /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
                     ostr << function->name << "(";
@@ -1078,10 +1120,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         /// Known non-secret identifiers keep their values; a child that is not
                         /// `key = value` cannot be split into a visible key and a hidden value and may
                         /// be the secret itself, so it fails closed and is hidden whole.
-                        if (isNonSecretMapChild(function->name, inner_arg.get()))
+                        if (isNonSecretMapChild(nested_map->second, inner_arg.get()))
                             inner_arg->format(ostr, settings, state, nested_dont_need_parens);
                         else if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
-                            ostr << "'[HIDDEN]'";
+                            ostr << HIDDEN_SECRET_LITERAL;
                     }
                     ostr << ")";
                     continue;
@@ -1098,7 +1140,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
                         ostr << " = ";
                     }
-                    ostr << "'[HIDDEN]'";
+                    ostr << HIDDEN_SECRET_LITERAL;
                     continue;
                 }
 
@@ -1130,7 +1172,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     {
                         if (secret_arguments.quote_replacement)
                         {
-                            ostr << "'" << secret_arguments.replacement << "'";
+                            ostr << quoteString(secret_arguments.replacement);
                         }
                         else
                         {
@@ -1139,7 +1181,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                     else
                     {
-                        ostr << "'[HIDDEN]'";
+                        ostr << HIDDEN_SECRET_LITERAL;
                     }
                     if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
                         break; /// All other arguments should also be hidden.
@@ -1173,7 +1215,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
 bool ASTFunction::hasSecretParts() const
 {
-    return (FunctionSecretArgumentsFinderAST(*this).getResult().hasSecrets()) || childrenHaveSecretParts();
+    return findSecretArguments(*this).hasSecrets() || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)

@@ -1,8 +1,6 @@
 -- Since output for EXPLAIN ANALYZE is non-deterministic, we only assert
 -- structural invariants via string matching on the `explain` column.
 
-SET enable_analyzer = 1;
-
 -- With `time = 1` the steps report the step/branch time and concurrency,
 -- and every `Time` line is paired with a `Concurrency` line.
 SELECT

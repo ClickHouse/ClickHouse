@@ -46,6 +46,7 @@ namespace DB
     DECLARE(UInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.", 0) \
     DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, "If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
+    DECLARE(UInt64, min_bytes_before_external_group_by, 0, "The minimum size in bytes of the aggregation state of one thread before external GROUP BY writes it to disk.", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, "Compile aggregate functions to native code.", 0) \
     DECLARE(UInt64, min_count_to_compile_aggregate_expression, 3, "The number of identical aggregate expressions before they are JIT-compiled", 0) \
@@ -61,6 +62,7 @@ namespace DB
     DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys or adaptive_aggregator_freeze_threshold_bytes of memory, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 0, "The number of keys at which the adaptive aggregator freezes a thread's local hash table.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 0, "The memory size at which the adaptive aggregator freezes a thread's local hash table, whichever of this and the key-count threshold is reached first; 0 disables the byte bound.", 0) \
+    DECLARE(Bool, adaptive_aggregator_disable_thaw, false, "Keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
@@ -111,6 +113,7 @@ namespace DB
     DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.", 0) \
     \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, "Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.", 0) \
+    DECLARE(UInt64, join_runtime_filter_exact_bytes_limit, 0, "Max bytes of the exact key set before switching to bloom; 0 means the bloom filter size. Transported filters may raise this above the bloom size from plan-time row estimates.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, "Number of hash functions in a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, "If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.", 0) \
@@ -120,12 +123,13 @@ namespace DB
     DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
     DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, "Treat max_rows_in_join / max_bytes_in_join as a spill trigger instead of a hard cap", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
+    DECLARE(Bool, use_aggregation_memory_tracker, true, "Measure the size of the aggregation state compared with `group_by_two_level_threshold_bytes` with the memory tracker dedicated to the aggregation. When disabled, the size is measured as the growth of the memory usage of the whole query since the aggregation was created.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
-    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
 
 
 // clang-format on

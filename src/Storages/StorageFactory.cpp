@@ -1,11 +1,18 @@
 #include <Storages/StorageFactory.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/IStorage.h>
+#include <Storages/KeyDescription.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -19,6 +26,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool log_queries;
 }
 
@@ -27,6 +35,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
@@ -44,21 +53,11 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
-/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
-/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
-static bool isReplayedTableDefinition(
+bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay
-        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-    return !isFreshTableDefinition(mode, query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay;
+    return !isFreshTableDefinition(mode, query.attach_short_syntax) || isSecondaryDDLReplay(local_context)
+        || local_context->isRecoveryFromStoredMetadata();
 }
 
 
@@ -113,12 +112,13 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 }
 
 
-void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features, Documentation documentation)
+void StorageFactory::registerStorage(
+    const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features, Documentation documentation)
 {
     if (features.supports_settings && !features.has_builtin_setting_fn)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
-    if (!storages.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
+    if (!storages.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation), std::move(secret_arguments)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
@@ -239,6 +239,22 @@ StoragePtr StorageFactory::get(
                     "UNIQUE KEY clause",
                     [](StorageFeatures features) { return features.supports_unique_key; });
 
+            if (!isReplayedTableDefinition(mode, query, local_context))
+            {
+                KeyDescription::checkNoAlias(storage_def->partition_by, "PARTITION BY");
+                KeyDescription::checkNoAlias(storage_def->primary_key, "PRIMARY KEY");
+                KeyDescription::checkNoAlias(storage_def->order_by, "ORDER BY");
+                KeyDescription::checkNoAlias(storage_def->unique_key, "UNIQUE KEY");
+                KeyDescription::checkNoAlias(storage_def->sample_by, "SAMPLE BY");
+                KeyDescription::checkNoAlias(storage_def->ttl_table, "TTL");
+                for (const auto & [_, ttl] : columns.getColumnTTLs())
+                    KeyDescription::checkNoAlias(ttl.get(), "TTL");
+                for (const auto & constraint : constraints.getConstraints())
+                    KeyDescription::checkNoAlias(constraint.get(), "CONSTRAINT");
+                if (query.columns_list)
+                    KeyDescription::checkNoAlias(query.columns_list->indices, "INDEX");
+            }
+
             if (storage_def->ttl_table)
                 check_feature(
                     "TTL clause",
@@ -289,7 +305,20 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    auto res = storages.at(name).creator_fn(arguments);
+    /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
+    /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
+    StoragePtr res;
+    {
+        ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        res = storages.at(name).creator_fn(arguments);
+    }
+
+    /// A replayed definition was checked when the table was created.
+    if (!isReplayedTableDefinition(mode, query, local_context))
+        for (const auto & column : columns)
+            if (!column.subcolumn_codecs.empty() && !res->supportsSubcolumnCodecs())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support codecs for subcolumns", res->getName());
+
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
@@ -329,6 +358,20 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
     if (it == storages.end())
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
     return it->second.features;
+}
+
+void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args)
+{
+    /// The condition matches the one in the interpreter (`!create.attach`), so it also covers `SECONDARY_CREATE`,
+    /// which is used when other replicas of a `Replicated` database replay the query.
+    if (args.query.attach || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
+        return;
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
+    if (database && database->getEngineName() == "Replicated")
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE,
+                        "Only tables with a replicated engine or tables which do not store their own data on disk "
+                        "are allowed in a Replicated database");
 }
 
 }

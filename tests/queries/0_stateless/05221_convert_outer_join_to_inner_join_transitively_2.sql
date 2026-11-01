@@ -2,7 +2,6 @@
 -- Test outer to inner join conversion driven by a null-rejecting constraint that is proven
 -- arbitrarily higher in the plan: by a filter, or by the predicate of an enclosing join.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
@@ -19,6 +18,7 @@ DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS other;
 DROP TABLE IF EXISTS asof;
 DROP TABLE IF EXISTS storage_join;
+DROP DICTIONARY IF EXISTS dict_mid;
 
 CREATE TABLE fact (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT number % 20, number FROM numbers(100);
 CREATE TABLE mid (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT number, number % 5 FROM numbers(10);
@@ -27,6 +27,8 @@ CREATE TABLE small (val UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT 2 
 CREATE TABLE other (id UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT number FROM numbers(20);
 CREATE TABLE asof (val UInt64, t UInt64) ENGINE = MergeTree ORDER BY tuple() AS SELECT 2 * number + 1, number FROM numbers(2);
 CREATE TABLE storage_join (val UInt64, s Nullable(String)) ENGINE = Join(ALL, LEFT, val);
+CREATE DICTIONARY dict_mid (id UInt64, val Nullable(UInt64)) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'mid_nullable')) LAYOUT(HASHED()) LIFETIME(0);
 
 INSERT INTO storage_join VALUES (1, 'a'), (3, 'b');
 
@@ -139,6 +141,16 @@ SELECT trim(explain) FROM (
     SELECT count() FROM (SELECT f.id AS id, j.s AS s FROM fact AS f LEFT JOIN storage_join AS j ON f.id = j.val) AS g INNER JOIN (SELECT 'a' AS str) AS t ON g.s = t.str SETTINGS join_use_nulls = 0
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
+SELECT '-- A dictionary source does not allow converting.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN dict_mid AS d ON f.id = d.id INNER JOIN small AS s ON d.val = s.val
+SETTINGS join_algorithm = 'direct', query_plan_optimize_join_order_limit = 10;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN dict_mid AS d ON f.id = d.id INNER JOIN small AS s ON d.val = s.val
+    SETTINGS join_algorithm = 'direct', query_plan_optimize_join_order_limit = 10
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
+
 SELECT '-- A distributed plan fragment allows converting.';
 SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid_nullable AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
@@ -149,6 +161,7 @@ SELECT trim(explain) FROM (
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
+DROP DICTIONARY dict_mid;
 DROP TABLE fact;
 DROP TABLE mid;
 DROP TABLE mid_nullable;

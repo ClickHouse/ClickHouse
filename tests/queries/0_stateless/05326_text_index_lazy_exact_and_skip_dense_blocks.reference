@@ -1,0 +1,17 @@
+parts	1
+Ground truth (no index)
+all alead bmid clast	133	13137088
+all druns clast	16666	1646659131
+druns	25000	2470087500
+any druns alead	27800	2758151500
+Lazy
+all alead bmid clast	133	13137088
+all alead bmid clast	133	13137088
+all druns clast	16666	1646659131
+druns	25000	2470087500
+any druns alead	27800	2758151500
+05326_q_any_dense_blocks	0	0	0	1
+05326_q_bf_dense_blocks	1	0	0	1
+05326_q_bf_exact_skip	1	0	1	1
+05326_q_leapfrog	0	1	0	0
+05326_q_or_dense_blocks	0	0	0	1

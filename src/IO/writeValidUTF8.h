@@ -22,6 +22,17 @@ inline const char * skipASCIIBlocks(const char * p, const char * end)
     /// plus `umaxv` on NEON.
     auto has_non_ascii = [](Bytes bytes) { return __builtin_reduce_or(__builtin_convertvector(bytes >> 7, Mask)); };
 
+    /// In non-ASCII text the next such byte is usually close, and then a 64-byte block would be checked
+    /// in vain before the 16-byte one. The first block is checked again by the loops, so that they cover
+    /// the same blocks for every length.
+    if (end - p >= 16)
+    {
+        Bytes bytes;
+        memcpy(&bytes, p, sizeof(bytes));
+        if (has_non_ascii(bytes))
+            return p;
+    }
+
     for (Bytes bytes[4]; end - p >= 64; p += 64)
     {
         memcpy(bytes, p, sizeof(bytes));

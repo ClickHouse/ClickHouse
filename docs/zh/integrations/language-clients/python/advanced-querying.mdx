@@ -74,7 +74,11 @@ with client.query_row_block_stream(
 
 请注意，如果不使用 `with` 语句就尝试使用 `StreamContext`，将会引发错误。使用 Python 上下文可以确保 stream (此处指流式 HTTP 响应) 被正确关闭，即使没有消费完所有数据和/或在处理过程中引发了异常也是如此。此外，`StreamContext` 只能用于消费一次 stream。在 `StreamContext` 退出后再次尝试使用它，会产生 `StreamClosedError`。
 
-如果在读取结果时 connection 失败，则会引发 `StreamFailureError`，而不是静默返回截断的结果。其消息遵循 client 的 `show_clickhouse_errors` 设置。
+对于同步的 Native 格式 HTTP stream，退出上下文时会先等待所有活跃的读取完成，然后读取并丢弃剩余的响应。这适用于使用 Python 或 Rust 编解码器的行、列、NumPy 和 Pandas stream。慢查询可能会推迟清理。`send_receive_timeout` 限制的是每次套接字读取的时长，因此并不能为上下文退出设定截止时间。
+
+对于使用 Rust 编解码器的 `AsyncClient` stream，退出 `async with` 时会等待响应清理完成。如果执行消费的任务被取消，清理会先完成，然后再重新引发取消。
+
+如果在读取结果时 connection 失败，则会引发 `StreamFailureError`，而不是静默返回截断的结果。其消息遵循 客户端 的 `show_clickhouse_errors` 设置。
 
 你可以使用 `StreamContext` 的 `source` 属性来访问父结果对象，其中包含列名和类型。对于大多数 stream，该对象是 `QueryResult`；但 `query_np_stream` 和 `query_df_stream` 方法返回的则是 `NumpyResult`。
 

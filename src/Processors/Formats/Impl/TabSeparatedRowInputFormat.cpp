@@ -426,6 +426,18 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             registerWithNamesAndTypes("Raw", register_func);
     }
 
+    /// `TSV` and `TSVRaw` (and `Raw`) are interchangeable spellings of `TabSeparated` and
+    /// `TabSeparatedRaw`, and the `tsv` extension below is registered only for the canonical
+    /// spellings.
+    factory.registerFormatAlias("TSV", "TabSeparated");
+    factory.registerFormatAlias("TSVRaw", "TabSeparatedRaw");
+    factory.registerFormatAlias("Raw", "TabSeparatedRaw");
+
+    /// `TabSeparated` and `TSV` are registered as independent formats, and the `tsv` extension
+    /// infers as `TSV`. Files of the raw flavour of the format carry the `tsv` extension too.
+    factory.registerFileExtension("tsv", "TabSeparated", /*used_for_format_inference=*/ false);
+    factory.registerFileExtension("tsv", "TabSeparatedRaw", /*used_for_format_inference=*/ false);
+
     factory.setDocumentation("Raw", Documentation{
         .description = "An alias for the `TabSeparatedRaw` format. See the `TabSeparatedRaw` entry for the full documentation.",
         .related = {"TabSeparatedRaw"}});
