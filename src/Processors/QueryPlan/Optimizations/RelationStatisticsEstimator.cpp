@@ -373,8 +373,17 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         /// A filter above the array join can read its output, which the statistics of the input do not describe.
         auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
-        if (stats.estimated_rows)
-            stats.estimated_rows = toUInt64Saturating(Float64(*stats.estimated_rows) * array_join_rows_multiplier);
+        if (stats.estimated_rows && *stats.estimated_rows != 0)
+        {
+            /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.
+            if (filter || (array_join_step && array_join_step->hasElementFilter()))
+            {
+                stats.estimated_rows.reset();
+                stats.imprecise_estimate = true;
+            }
+            else
+                stats.estimated_rows = toUInt64Saturating(Float64(*stats.estimated_rows) * array_join_rows_multiplier);
+        }
         if (expression_step)
             remapColumnStats(stats.column_stats, expression_step->getExpression());
         else

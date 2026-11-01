@@ -8,8 +8,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Poco/JSON/JSON.h>
@@ -23,6 +27,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+}
+
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
@@ -33,6 +42,23 @@ namespace ErrorCodes
 
 namespace
 {
+    bool shouldFsyncMetadata()
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            return query_context->getSettingsRef()[Setting::fsync_metadata];
+        if (auto global_context = Context::getGlobalContextInstance())
+            return global_context->getSettingsRef()[Setting::fsync_metadata];
+        return true;
+    }
+
+    /// Opened before the entries of `directory_path` are changed, see `LocalDirectorySyncGuard`.
+    SyncGuardPtr openDirectoryForSync(const String & directory_path, bool fsync)
+    {
+        if (!fsync)
+            return nullptr;
+        return std::make_unique<LocalDirectorySyncGuard>(directory_path);
+    }
+
     /// Reads a file containing ATTACH queries and then parses it to build an access entity.
     AccessEntityPtr readEntityFile(const String & file_path)
     {
@@ -60,7 +86,7 @@ namespace
     }
 
     /// Writes ATTACH queries for building a specified access entity to a file.
-    void writeEntityFile(const String & file_path, const IAccessEntity & entity)
+    void writeEntityFile(const String & file_path, const IAccessEntity & entity, bool fsync)
     {
         String file_contents = serializeAccessEntity(entity);
 
@@ -76,9 +102,13 @@ namespace
         /// Write the file.
         WriteBufferFromFile out{pathToGenericString(tmp_file_path)};
         out.write(file_contents.data(), file_contents.size());
+        if (fsync)
+            out.sync();
         out.close();
 
-        /// Rename.
+        /// Rename. `directory_sync` syncs in its destructor, which only logs a failure:
+        /// after the rename, an exception would tell the callers that nothing has changed.
+        auto directory_sync = openDirectoryForSync(pathToString(pathFromString(file_path).parent_path()), fsync);
         std::filesystem::rename(tmp_file_path, pathFromString(file_path));
         succeeded = true;
     }
@@ -125,7 +155,7 @@ namespace
 
 
     /// Writes a map of name of access entity to UUID for access entities of some type to a file.
-    void writeListFile(const String & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs)
+    void writeListFile(const String & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs, bool fsync)
     {
         WriteBufferFromFile out(file_path);
         writeVarUInt(id_name_pairs.size(), out);
@@ -134,6 +164,8 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
+        if (fsync)
+            out.sync();
         out.close();
     }
 
@@ -155,10 +187,15 @@ namespace
     }
 
 
-    void createNeedRebuildListsMark(const String & directory_path)
+    void createNeedRebuildListsMark(const String & directory_path, bool fsync)
     {
+        auto directory_sync = openDirectoryForSync(directory_path, fsync);
         WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
+        if (fsync)
+            out.sync();
         out.close();
+        if (directory_sync)
+            directory_sync->sync();
     }
 
 
@@ -186,6 +223,9 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
 
     bool should_rebuild_lists = std::filesystem::exists(pathFromString(getNeedRebuildListsMarkFilePath(directory_path)));
     LOG_DEBUG(getLogger(), "File need_rebuild_lists.mark {} in {}", should_rebuild_lists ? "found" : "not found", directory_path);
+
+    /// The lists guarded by a mark which survived a restart still have to be written durably.
+    pending_lists_fsync = should_rebuild_lists;
 
     if (!should_rebuild_lists)
     {
@@ -289,6 +329,8 @@ void DiskAccessStorage::writeLists()
     if (types_of_lists_to_write.empty())
         return;
 
+    const bool fsync = pending_lists_fsync || shouldFsyncMetadata();
+
     for (const auto & type : types_of_lists_to_write)
     {
         auto file_path = getListFilePath(directory_path, type);
@@ -299,13 +341,14 @@ void DiskAccessStorage::writeLists()
             id_name_pairs.reserve(all_entities.size());
             for (const auto & [id, entity] : all_entities)
                 id_name_pairs.emplace_back(id, entity->getName());
-            writeListFile(file_path, id_name_pairs);
+            writeListFile(file_path, id_name_pairs, fsync);
         }
         catch (...)
         {
             tryLogCurrentException(getLogger(), "Could not write " + file_path);
             failed_to_write_lists = true;
             types_of_lists_to_write.clear();
+            /// Keep `pending_lists_fsync`, these lists still have to be written durably.
             return;
         }
     }
@@ -318,6 +361,7 @@ void DiskAccessStorage::writeLists()
     }
 
     types_of_lists_to_write.clear();
+    pending_lists_fsync = false;
 }
 
 
@@ -326,10 +370,13 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
     LOG_TRACE(getLogger(), "Scheduling writing .list file for type {}, failed_to_write_lists={}, lists_writing_thread_is_waiting={}",
         AccessEntityTypeInfo::get(type).plural_raw_name, failed_to_write_lists, lists_writing_thread_is_waiting);
 
+    const bool fsync = shouldFsyncMetadata();
+    pending_lists_fsync = pending_lists_fsync || fsync;
+
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
     /// Created on every call, because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting.
-    createNeedRebuildListsMark(directory_path);
+    createNeedRebuildListsMark(directory_path, fsync);
 
     if (failed_to_write_lists)
         return; /// We don't try to write list files after the first fail.
@@ -506,11 +553,15 @@ void DiskAccessStorage::reload(ReloadMode reload_mode)
 
     std::lock_guard lock{mutex};
 
+    /// The lists guarded by a mark left by earlier changes still have to be written durably.
+    if (std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path)))
+        pending_lists_fsync = true;
+
     /// Stays on disk if `reloadAllAndRebuildLists` fails to write the lists.
     /// Best effort, so that a directory which refuses new files is still reloadable.
     try
     {
-        createNeedRebuildListsMark(directory_path);
+        createNeedRebuildListsMark(directory_path, shouldFsyncMetadata());
     }
     catch (...)
     {
@@ -761,7 +812,8 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     /// Step 2: Modify files first.
     if (write_on_disk)
     {
-        if (name_changed)
+        /// The `.list` files on disk may be unsynced, so a synced `<id>.sql` needs the synced mark too.
+        if (name_changed || shouldFsyncMetadata())
             scheduleWriteLists(new_entity->getType());
         writeAccessEntityToDisk(id, *new_entity);   /// tmp + atomic rename overwrites <id>.sql
     }
@@ -790,7 +842,7 @@ AccessEntityPtr DiskAccessStorage::readAccessEntityFromDisk(const UUID & id) con
 void DiskAccessStorage::writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const
 {
     LOG_TRACE(getLogger(), "Writing file for entity with id {} and name {}", id, entity.getName());
-    writeEntityFile(getEntityFilePath(directory_path, id), entity);
+    writeEntityFile(getEntityFilePath(directory_path, id), entity, shouldFsyncMetadata());
 }
 
 
@@ -798,6 +850,8 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 {
     auto file_path = getEntityFilePath(directory_path, id);
     LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
+    /// Synced by the destructor, see `writeEntityFile`.
+    auto directory_sync = openDirectoryForSync(directory_path, shouldFsyncMetadata());
     if (!std::filesystem::remove(pathFromString(file_path)))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
 }

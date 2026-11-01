@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
@@ -717,7 +718,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        data.getStorageID().getFullTableName()};
+        getParallelReplicasStreamId()};
 
     /// Set total rows in progress only on initiator with local plan, otherwise rows will be counted multiple times.
     /// The coordinator cannot report them in this case: it receives the initiator's announcement
@@ -1098,7 +1099,7 @@ Pipe ReadFromMergeTree::readInOrder(
         /// Each split gets its own stream_id so the coordinator maintains an independent
         /// ImplInterface instance per split. When splitting, suffix every split with `#split_{i}`.
         /// When the whole table is read by a single pool, keep the bare table name.
-        String stream_id = data.getStorageID().getFullTableName();
+        String stream_id = getParallelReplicasStreamId();
         if (split_index)
             stream_id += fmt::format("#split_{}", *split_index);
 
@@ -1960,6 +1961,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
 
     if (num_streams > 1)
     {
+        const size_t initial_num_streams = num_streams;
+
         /// Reduce the number of num_streams if the data is small.
         /// The comparison is done with a division rather than with `num_streams * info.min_marks_for_concurrent_read`,
         /// because `num_streams` is derived from `max_streams_to_max_threads_ratio`, which is a `Float64` setting,
@@ -1989,12 +1992,34 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
                 num_streams = parts_with_ranges.size();
         }
 
+        const bool is_local_unordered_read
+            = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
+
+        /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
+        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
+        /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
+        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
+            && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
+            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
+        {
+            static constexpr size_t tasks_per_stream = 3;
+            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
+            const size_t task_marks = std::min(
+                info.min_marks_for_concurrent_read, std::max(info.sum_marks / tasks_per_stream / initial_num_streams, min_task_marks));
+            size_t tasks = 0;
+            for (const size_t part_marks : info.sum_marks_in_parts)
+                tasks += std::max<size_t>(1, part_marks / task_marks);
+            if (std::min(tasks, initial_num_streams) > num_streams)
+            {
+                num_streams = std::min(tasks, initial_num_streams);
+                info.min_marks_for_concurrent_read = task_marks;
+            }
+        }
+
         /// The per-stream cost the cap trades against was measured for local reads. Remote reads
         /// have their own latency and prefetch tradeoffs, and they already get separate
         /// `..._for_remote_filesystem` concurrency thresholds above, so leave them alone.
-        if (!is_parallel_reading_from_replicas
-            && !isQueryWithFinal()
-            && !checkAnyPartOnRemoteFS(parts_with_ranges)
+        if (is_local_unordered_read
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
             capStreamsByReadBytes(
                 num_streams, parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, log);
@@ -3400,7 +3425,8 @@ void ReadFromMergeTree::buildIndexes(
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
                                                     && !indexes->key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
-                                                    && indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size() <= MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                                    && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
+                                                        indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()
@@ -3876,6 +3902,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
 
+    /// Mirrors the read side in `filterPartsByQueryConditionCache`: while an alter or metadata mutation
+    /// is pending for any of the parts, a read returns values the part name does not describe, so do
+    /// not record them. Finished mutations kept in the snapshot do not count.
+    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(parts, mutations_snapshot))
+        reader_settings.use_query_condition_cache = false;
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -4269,6 +4301,23 @@ void ReadFromMergeTree::updateSortDescription()
         query_info.row_level_filter,
         query_info.prewhere_info,
         enable_vertical_final);
+}
+
+String ReadFromMergeTree::getParallelReplicasStreamId() const
+{
+    /// A read through a table function may read a storage whose name is local to each server: the target of
+    /// a `TimeSeries` table is named after a UUID the server assigned. Replicas that announced it under that
+    /// name would get a coordinator each and read everything, so it goes by the identity of its source.
+    /// A read shipped in a plan fragment names the storage itself, which a replica without it cannot read.
+    const auto * table_function_node
+        = !query_info.parallel_replicas_coordinated_under_storage_name && query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr;
+    if (table_function_node)
+    {
+        if (const auto & read_id = table_function_node->getParallelReplicasReadID())
+            return *read_id;
+    }
+
+    return data.getStorageID().getFullTableName();
 }
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
@@ -5637,6 +5686,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
+    /// See the same gate in `selectRangesToRead`.
+    if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(result.parts_with_ranges, mutations_snapshot))
+        reader_settings.use_query_condition_cache = false;
+
     /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part
     /// in the read, not only on the part being read. The per-part `appliesMutationsBeforePrewhere` guard
     /// of the write paths is therefore not enough: a part without mutations of its own may record its
@@ -6698,7 +6751,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        data.getStorageID().getFullTableName());
+        getParallelReplicasStreamId());
 }
 
 bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
@@ -6713,7 +6766,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        data.getStorageID().getFullTableName()};
+        getParallelReplicasStreamId()};
 
     auto get_coordination_mode = [&]
     {
