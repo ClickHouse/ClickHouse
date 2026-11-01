@@ -1,0 +1,19 @@
+Current snapshot without schema-id
+1
+2
+Current snapshot with legacy history
+1	\N
+2	\N
+3	\N
+Historical snapshot without schema-id
+1	\N
+Current snapshot with explicit null schema-id
+1
+2
+Historical snapshot with explicit null schema-id
+1
+Current snapshot from raw legacy v3 metadata
+1
+2
+Historical snapshot from raw legacy v3 metadata
+1
