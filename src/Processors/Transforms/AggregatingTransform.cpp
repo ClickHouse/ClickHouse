@@ -465,8 +465,18 @@ protected:
             params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, full_group_count);
             shared_data->is_bucket_processed[bucket_num] = true;
 
+            /// Every chunk passes the downstream transform on its own, so the empty chunks of the units that the pruning
+            /// or the HAVING pre-filter emptied are dropped, and the small chunks of a bucket go out as one.
             for (auto & agg_chunk : agg_chunks)
-                chunks.push_back(convertToChunk(std::move(agg_chunk)));
+            {
+                Chunk chunk = convertToChunk(std::move(agg_chunk));
+                if (!chunk.hasRows())
+                    continue;
+                if (!chunks.empty() && chunks.back().getNumRows() + chunk.getNumRows() <= params->params.max_block_size)
+                    chunks.back().append(chunk);
+                else
+                    chunks.push_back(std::move(chunk));
+            }
         }
 
         Chunk chunk = std::move(chunks.front());
