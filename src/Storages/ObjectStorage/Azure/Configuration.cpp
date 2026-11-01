@@ -19,12 +19,15 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/identity/client_secret_credential.hpp>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -38,6 +41,11 @@ namespace Setting
     extern const SettingsBool azure_truncate_on_insert;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_azure;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -92,6 +100,20 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 {
     assertInitialized();
     check(context);
+
+    connection_params.anonymous_fallback_for_server_credentials = connection_params.forbid_implicit_credentials
+        && is_loading_from_existing_metadata
+        && (context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted]
+            || force_anonymous_load_fallback);
+
+    if (connection_params.anonymous_fallback_for_server_credentials && connection_params.checkOrDropServerManagedCredentials())
+        LOG_WARNING(
+            getLogger("StorageAzureConfiguration"),
+            "Loading this table with an Azure client that has no credentials: its definition uses the server's "
+            "own identity, which is restricted for user queries "
+            "(s3_allow_server_credentials_in_user_queries = 0). It stays inaccessible until its credentials "
+            "resolve to a permitted source; set s3_load_table_anonymously_if_credentials_restricted = 0 to "
+            "fail loading instead.");
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
@@ -153,6 +175,11 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     }
 
     connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, local_context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
+
+    /// Captured here because the client is built later, sometimes from the global context.
+    connection_params.forbid_implicit_credentials = local_context->shouldRestrictUserQueryS3Credentials();
+    connection_params.follows_session_restriction = true;
+
     return connection_params;
 }
 
@@ -371,6 +398,11 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
 void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(engine_args);
+    /// engine_args is the persisted engine definition; keep the credentials in it.
+    SCOPE_EXIT({
+        if (extra_credentials)
+            engine_args.push_back(extra_credentials);
+    });
 
     if (engine_args.empty() || engine_args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments(with_structure))
     {
@@ -699,6 +731,9 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     }
     else
     {
+        /// extra_credentials is not a constant expression; take it out while rewriting.
+        auto extra_credentials = extractExtraCredentials(args);
+
         if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -842,6 +877,9 @@ static void addStructureAndFormatToArgsIfNeededAzure(
             if (with_structure && checkAndGetLiteralArgument<String>(args[7], "structure") == "auto")
                 args[7] = structure_literal;
         }
+
+        if (extra_credentials)
+            args.push_back(extra_credentials);
     }
 }
 

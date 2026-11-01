@@ -1607,6 +1607,13 @@ This query changes the `name` column properties:
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](/reference/statements/create/table/codec).
 
+With the experimental setting `enable_subcolumn_codecs`, `name` can also be a subcolumn, such as `payload.ts`. Then only `CODEC` can be modified or removed, see [Codecs for subcolumns](/reference/statements/create/table#subcolumn-codecs):
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
+
 For examples of columns TTL modifying, see [Column TTL](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
 For examples of column-level settings modifying, see [Column-level Settings](/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).

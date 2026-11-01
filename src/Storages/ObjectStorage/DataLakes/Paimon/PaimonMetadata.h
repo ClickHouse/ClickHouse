@@ -127,13 +127,15 @@ private:
     /// (used by incremental read to avoid re-processing compacted data).
     /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
     /// (including skipped compact / missing ones), so the caller can advance the watermark
-    /// past gaps that produced no data files.
+    /// past gaps that produced no data files. last_scanned_state is its state, or nullptr
+    /// when that id was expired.
     std::vector<PaimonTableStatePtr> getSnapshotsBetween(
         Int64 from_snapshot_id,
         Int64 to_snapshot_id,
         UInt64 max_snapshots_to_load,
         bool skip_compact,
-        std::optional<Int64> & last_scanned_snapshot_id) const;
+        std::optional<Int64> & last_scanned_snapshot_id,
+        PaimonTableStatePtr & last_scanned_state) const;
 
     /// Extract table state from storage_metadata
     static PaimonTableStatePtr extractTableState(StorageMetadataPtr storage_metadata);
@@ -151,13 +153,17 @@ private:
     void checkSupportedConfiguration() const;
 
     /// Collect data files for incremental read (from committed snapshot to current).
-    /// `committed_snapshot_id` is the watermark observed under the processing lock.
+    /// `committed` is the watermark observed under the processing lock.
     Strings collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         UInt64 max_consume_snapshots,
-        std::optional<Int64> committed_snapshot_id,
-        std::optional<Int64> & last_consumed_snapshot_id) const;
+        const PaimonCommittedSnapshot & committed,
+        std::optional<Int64> & last_consumed_snapshot_id,
+        std::optional<PaimonSnapshotIdentity> & last_consumed_identity) const;
+
+    /// Throws INVALID_STATE if the warehouse's snapshot `snapshot_id` is not the one the cursor consumed.
+    void checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)
     Strings collectDeltaFilesForSnapshot(
