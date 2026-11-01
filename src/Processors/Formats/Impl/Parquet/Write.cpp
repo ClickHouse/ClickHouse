@@ -2111,7 +2111,7 @@ void writeFileFooter(FileWriteState & file,
                 }
                 geo_columns_metadata.push_back({column_name, geom_meta});
             }
-            else if (options.write_geometry_logical_type && type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+            else if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
             {
                 /// An empty list of geometry types means that any type can be present. Without the
                 /// metadata, readers (including older versions of ClickHouse) that rely only on the
