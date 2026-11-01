@@ -3227,7 +3227,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const DiskPtr & part_disk_ptr,
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex,
-    bool is_last_attempt)
+    bool is_last_attempt,
+    const std::optional<String> * expected_shared_storage_incarnation)
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataPart");
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
@@ -3304,6 +3305,17 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     /// Recorded before the metadata is read, so that the identity is never newer than the data.
     if ((*getSettings())[MergeTreeSetting::leader_election])
         res.part->setSharedStorageIncarnation(getPartSharedStorageIncarnation(*res.part));
+
+    /// The request described another directory with the same name, which was replaced since then (the block
+    /// numbers are reused after the table becomes empty and restarts). The replacement is not this request's to
+    /// install or retire: the follower refresh or the takeover scan loads it as a newly appeared part.
+    if (expected_shared_storage_incarnation && res.part->shared_storage_incarnation != *expected_shared_storage_incarnation)
+    {
+        LOG_INFO(log, "Part {} in directory {} was replaced by another directory with the same name after it was queued "
+            "for loading, skipping it", part_name, res.part->getDataPartStorage().getFullPath());
+        res.is_replaced_directory = true;
+        return res;
+    }
 
     try
     {
@@ -3414,7 +3426,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     DB::SharedMutex & part_loading_mutex,
     size_t initial_backoff_ms,
     size_t max_backoff_ms,
-    size_t max_tries)
+    size_t max_tries,
+    const std::optional<String> * expected_shared_storage_incarnation)
 {
     auto handle_exception = [&, this](std::exception_ptr exception_ptr, size_t try_no)
     {
@@ -3433,7 +3446,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     {
         try
         {
-            return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, /*is_last_attempt=*/ try_no + 1 == max_tries);
+            return loadDataPart(
+                part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, /*is_last_attempt=*/ try_no + 1 == max_tries,
+                expected_shared_storage_incarnation);
         }
         catch (...)
         {
@@ -3897,10 +3912,20 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             });
     }
 
+    const bool record_shared_storage_incarnation = (*getSettings())[MergeTreeSetting::leader_election];
     loading_tree.traverse(/*recursive=*/ true, [&](const auto & node)
     {
         if (!node->is_loaded)
+        {
+            /// See `PartLoadingTree::Node::queued_shared_storage_incarnation`.
+            if (record_shared_storage_incarnation)
+            {
+                node->queued_shared_storage_incarnation
+                    = getPartDirectorySharedStorageIncarnation(node->disk->getName(), fs::path(relative_data_path) / node->name);
+                node->has_queued_shared_storage_incarnation = true;
+            }
             unloaded_parts.push_back(node);
+        }
     });
 
     /// Retain outdated parts for a read-only table: its loading task starts when it becomes writable.
@@ -4082,18 +4107,22 @@ std::optional<String> MergeTreeData::getPartSharedStorageIncarnation(const IMerg
     if (!part_storage.isStoredOnRemoteDisk())
         return std::nullopt;
 
-    auto disk = getStoragePolicy()->tryGetDiskByName(part_storage.getDiskName());
-    if (!disk)
+    return getPartDirectorySharedStorageIncarnation(part_storage.getDiskName(), part_storage.getRelativePath());
+}
+
+std::optional<String> MergeTreeData::getPartDirectorySharedStorageIncarnation(const String & disk_name, const String & directory) const
+{
+    auto disk = getStoragePolicy()->tryGetDiskByName(disk_name);
+    if (!disk || !disk->isRemote())
         return std::nullopt;
 
     /// A `Packed` part keeps `checksums.txt` inside its archive, so the archive itself identifies the directory.
-    /// Both names are probed regardless of the storage format of `part`: the directory may have been replaced by
+    /// Both names are probed regardless of the storage format of the part: the directory may have been replaced by
     /// a part of the other format (e.g. a one-row `Packed` part by a two-row `Full` part with the same name),
     /// and probing only the file of the cached format would find nothing and keep the stale part.
-    const fs::path directory = part_storage.getRelativePath();
     for (const auto & identity_file : {String("checksums.txt"), DataPartStorageOnDiskPacked::DATA_FILE_NAME})
     {
-        auto objects = disk->getStorageObjectsIfExist(directory / identity_file);
+        auto objects = disk->getStorageObjectsIfExist(fs::path(directory) / identity_file);
         if (objects && !objects->empty())
             return objects->front().remote_path;
     }
@@ -4840,7 +4869,8 @@ try
                 res = loadDataPartWithRetries(
                     my_part->info, my_part->name, my_part->disk,
                     DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                    loading_parts_max_backoff_ms, loading_parts_max_tries);
+                    loading_parts_max_backoff_ms, loading_parts_max_tries,
+                    my_part->has_queued_shared_storage_incarnation ? &my_part->queued_shared_storage_incarnation : nullptr);
             }
             catch (...)
             {
@@ -4855,6 +4885,11 @@ try
                 has_retryable_exception = true;
                 return;
             }
+
+            /// The directory was replaced by another one with the same name after the part was queued: the request is
+            /// stale, and the replacement is left to the follower refresh or the takeover scan.
+            if (res.is_replaced_directory)
+                return;
 
             ++num_loaded_parts;
             /// Under `leader_election`, detaching/removing parts mutates shared object storage,

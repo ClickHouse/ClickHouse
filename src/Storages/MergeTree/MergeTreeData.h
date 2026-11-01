@@ -1000,6 +1000,10 @@ public:
     /// the directory has now. Empty when it cannot be determined (not a remote disk, or neither file exists).
     std::optional<String> getPartSharedStorageIncarnation(const IMergeTreeDataPart & part) const;
 
+    /// The same for the directory `directory` (relative to the disk) on the disk named `disk_name` of the
+    /// storage policy.
+    std::optional<String> getPartDirectorySharedStorageIncarnation(const String & disk_name, const String & directory) const;
+
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
 
@@ -2549,6 +2553,13 @@ protected:
 
             bool is_loaded = false;
             std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
+
+            /// Under `leader_election`, the identity of the directory (see `getPartSharedStorageIncarnation`)
+            /// when the part was queued for the asynchronous loading of outdated parts. The request keeps only
+            /// the name and the disk, so the directory can be replaced by another one with the same name before
+            /// the load runs; the load compares the identity of what it read with this one.
+            bool has_queued_shared_storage_incarnation = false;
+            std::optional<String> queued_shared_storage_incarnation;
         };
 
         struct PartLoadingInfo
@@ -2594,6 +2605,9 @@ protected:
         /// Set together with `part->is_duplicate` when the already indexed part with the same part info is stored in
         /// the same directory, i.e. it is not another copy, and removing the duplicate would remove the indexed part.
         bool is_duplicate_of_own_directory = false;
+        /// The directory is not the one the request described (`expected_shared_storage_incarnation` of
+        /// `loadDataPart`): the part was neither indexed nor checked, and must not be removed.
+        bool is_replaced_directory = false;
         std::optional<size_t> size_of_part;
         MutableDataPartPtr part;
     };
@@ -2817,13 +2831,17 @@ private:
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
     /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
+    /// @param expected_shared_storage_incarnation - if not null, the identity of the directory the request described
+    ///   (see `getPartSharedStorageIncarnation`). A directory with another identity is not loaded, and the result
+    ///   has `is_replaced_directory` set.
     LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
         DB::SharedMutex & part_loading_mutex,
-        bool is_last_attempt);
+        bool is_last_attempt,
+        const std::optional<String> * expected_shared_storage_incarnation = nullptr);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
@@ -2833,7 +2851,8 @@ private:
         DB::SharedMutex & part_loading_mutex,
         size_t backoff_ms,
         size_t max_backoff_ms,
-        size_t max_tries);
+        size_t max_tries,
+        const std::optional<String> * expected_shared_storage_incarnation = nullptr);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
