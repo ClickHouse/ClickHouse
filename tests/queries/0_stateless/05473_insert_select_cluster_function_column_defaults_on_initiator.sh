@@ -202,7 +202,7 @@ $CLICKHOUSE_CLIENT -q "
 function check_col()
 {
     echo "--- $1 ---"
-    $CLICKHOUSE_CLIENT -q "SELECT x, z != y, w = z + 10 FROM $2 ORDER BY x"
+    $CLICKHOUSE_CLIENT -q "SELECT x, y, z, w FROM $2 ORDER BY x"
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $2"
 }
 
