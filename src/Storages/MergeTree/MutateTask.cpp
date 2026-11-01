@@ -1235,7 +1235,7 @@ static void splitAndModifyMutationCommands(
                         if (part->hasSecondaryIndex(index.name, metadata_snapshot))
                             break;
 
-                        for (const auto & column : index.expression->getRequiredColumns())
+                        for (const auto & column : index.getRequiredColumns())
                         {
                             auto column_in_storage = getColumnNameInStorage(column);
                             if (column_in_storage && !part_columns.has(*column_in_storage))
