@@ -28,6 +28,7 @@ def cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/clusters.xml",
+                "configs/config.d/async_load_databases.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -1389,7 +1390,7 @@ def test_drop_collection_recreated_under_table_failed_to_load(cluster):
         settings={"check_named_collection_dependencies": 0},
     )
 
-    # With `async_load_databases` (the default), the server starts, but the table fails to load, and the
+    # With `async_load_databases` (enabled in the config of `node`), the server starts, but the table fails to load, and the
     # load job of `holder` is cancelled.
     node.restart_clickhouse()
 
