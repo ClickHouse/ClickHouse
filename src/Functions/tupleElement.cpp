@@ -502,7 +502,7 @@ SELECT tupleElement(values, 'name') FROM example;
     },
     {
         "Variant alternative",
-        "SELECT tupleElement(CAST(42, 'Variant(String, UInt64)'), 'UInt64')",
+        "SELECT tupleElement(CAST(toUInt64(42), 'Variant(String, UInt64)'), 'UInt64')",
         "42"
     },
     {
