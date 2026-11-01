@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -109,8 +110,7 @@ NO_INLINE void validateArgMinMaxValueType(const DataTypePtr & type_val, const St
                 function_name,
                 getNumericVariantSupertypeHint(type.getPtr()));
     };
-    check_not_dynamic_or_variant(*type_val);
-    type_val->forEachChild(check_not_dynamic_or_variant);
+    forEachInTypeTree(*type_val, check_not_dynamic_or_variant);
 }
 
 [[noreturn]] NO_INLINE void throwArgMinMaxInvalidDeserializedState(const String & function_name, bool has_value, bool has_result)

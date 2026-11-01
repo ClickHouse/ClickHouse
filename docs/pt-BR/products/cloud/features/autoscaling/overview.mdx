@@ -17,9 +17,21 @@ O escalonamento é a capacidade de ajustar os recursos disponíveis para atender
   Os tiers Scale e Enterprise oferecem suporte a serviços com réplica única e com múltiplas réplicas. Os serviços Scale com réplica única e os serviços Enterprise com perfis padrão `1:4` oferecem suporte ao escalonamento vertical automático por autoatendimento. Os serviços Enterprise com perfis personalizados exigem redimensionamento vertical com assistência do suporte. Os serviços Scale e Enterprise podem ser escalados horizontalmente para múltiplas réplicas. Os serviços do tier Basic têm uma única réplica, tamanho fixo e não permitem escalonamento vertical nem horizontal. Para mais informações, consulte [Serviços grandes de réplica única](/pt-BR/products/cloud/features/large-single-replica-services).
 </Note>
 
-<div id="how-scaling-works-in-clickhouse-cloud">
-  ## Como o escalonamento funciona no ClickHouse Cloud
-</div>
+## Escolhendo uma opção de compute {#choosing-a-compute-option}
+
+Escolha uma opção conforme o seu objetivo: alterar a capacidade do service existente, isolar uma carga de trabalho em compute dedicado ou adicionar compute temporariamente a uma consulta elegível.
+
+| Opção                                                                          | O que faz                                                                                                                                         | Use quando                                                                                            |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Escalonamento do seu service existente                                        | O escalonamento vertical altera CPU e memória. O escalonamento horizontal altera o número de réplicas, manualmente ou automaticamente, quando houver suporte. | Você quer que o service existente aumente ou reduza a capacidade conforme a demanda da carga de trabalho muda. |
+| [Warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses)               | Cria services separados, com compute e endpoints dedicados, que compartilham os mesmos dados.                                                     | Você precisa de isolamento de compute de longa duração para cargas de trabalho distintas.                      |
+| [On-Demand Compute](/pt-BR/products/cloud/features/infrastructure/on-demand-compute) | Atribui temporariamente workers de um pool gerenciado por meio do service e do endpoint já existentes.                                            | Uma consulta `SELECT` elegível precisa de compute adicional sem redimensionar o service.              |
+
+<Note>
+  O suporte a escalonamento varia conforme o tier e o profile do service. O [escalonamento automático horizontal](/pt-BR/products/cloud/features/autoscaling/horizontal-autoscaling) está em prévia privada. O On-Demand Compute também está em prévia privada e oferece suporte apenas a consultas `SELECT` elegíveis.
+</Note>
+
+## Como o escalonamento funciona no ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
 O ClickHouse Cloud oferece suporte a escalonamento horizontal manual para serviços dos tiers Scale e Enterprise. Os serviços do tier Scale também oferecem suporte a escalonamento vertical automático; o suporte a escalonamento vertical automático no tier Enterprise depende do perfil, conforme descrito abaixo. O [escalonamento automático horizontal](/pt-BR/products/cloud/features/autoscaling/horizontal-autoscaling) está disponível em prévia privada para serviços dos tiers Scale e Enterprise.
 
@@ -39,9 +51,7 @@ Para serviços do tier Enterprise, o escalonamento funciona da seguinte forma:
   Isso equilibra a necessidade de concluir as consultas existentes com a garantia de que as réplicas antigas não permaneçam ativas por tempo demais.
 </Note>
 
-<div id="learn-more">
-  ## Saiba mais
-</div>
+## Saiba mais {#learn-more}
 
 * [Escalonamento vertical automático](/pt-BR/products/cloud/features/autoscaling/vertical) — Escalonamento automático de CPU e memória com base no uso
 * [Escalonamento automático horizontal](/pt-BR/products/cloud/features/autoscaling/horizontal-autoscaling) — Escalonamento automático de réplicas com base na demanda da carga de trabalho

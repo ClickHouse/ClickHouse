@@ -140,8 +140,8 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     checkNoEval(query);
 
     /// The generated query cannot disable the analyzer in a SETTINGS clause, the same way a usual
-    /// query cannot.
-    validateAnalyzerSettings(query);
+    /// query cannot: such a change is rewritten to `1`.
+    normalizeAnalyzerSettings(query);
 
     /// The generated query does not go through `executeQuery`, so materialize the construction
     /// settings a NON-last `UNION` arm carries in its own `SETTINGS` clause here, same as
@@ -217,7 +217,7 @@ void registerTableFunctionEval(TableFunctionFactory & factory)
         {
             .description = R"(Evaluates a constant expression to a query string and executes the resulting `SELECT` query.)",
             .category = FunctionDocumentation::Category::TableFunction,
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

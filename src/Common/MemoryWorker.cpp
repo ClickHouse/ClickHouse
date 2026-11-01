@@ -495,6 +495,18 @@ MemoryWorker::MemoryWorker(
 #endif
 }
 
+void MemoryWorker::setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache)
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    releasable_cache = std::move(cache);
+}
+
+std::shared_ptr<IMemoryReleasableCache> MemoryWorker::getReleasableCache()
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    return releasable_cache;
+}
+
 MemoryWorker::MemoryUsageSource MemoryWorker::getSource()
 {
     return source;
@@ -549,6 +561,7 @@ MemoryWorker::~MemoryWorker()
 MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 {
     MemoryUsage usage;
+    [[maybe_unused]] bool jemalloc_stats_refreshed = false;
 
     switch (source)
     {
@@ -564,6 +577,7 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
             epoch_mib.setValue(0);
+            jemalloc_stats_refreshed = true;
             usage.resident = resident_mib.getValue();
             break;
 #else
@@ -582,6 +596,17 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     /// sanitizer overhead (redzones, quarantine), but RSS does, so use sanitizer allocator bytes.
     /// RSS is still checked against the hard limit via `MemoryTracker::updateRSS`.
     usage.allocated = __sanitizer_get_current_allocated_bytes();
+#elif USE_JEMALLOC
+    /// Every allocation of `Allocator` goes through jemalloc, and `stats.allocated` counts the bytes
+    /// handed out to the application even if their pages are not touched yet, while the resident
+    /// memory does not include such pages. Correcting the tracker down to the resident memory alone
+    /// would forget memory that is allocated but not yet used and admit allocations past
+    /// `max_server_memory_usage` until the process is killed by the OOM killer. Correcting it down to
+    /// `stats.allocated` still removes the drift: bytes counted in the tracker without any allocation
+    /// behind them.
+    if (!jemalloc_stats_refreshed)
+        epoch_mib.setValue(0);
+    usage.allocated = std::max<Int64>(usage.resident, allocated_mib.getValue());
 #else
     usage.allocated = usage.resident;
 #endif
@@ -939,6 +964,9 @@ void MemoryWorker::updateResidentMemoryThread()
             if (page_cache)
                 page_cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
+            if (auto cache = getReleasableCache())
+                cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
+
 #if USE_JEMALLOC
             const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
             const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
@@ -1002,15 +1030,21 @@ void MemoryWorker::updateResidentMemoryThread()
             }
 #endif
 
-            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise resident,
-            /// which may be much larger than what was actually allocated) when:
+            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise the maximum of
+            /// resident and jemalloc `stats.allocated`, see `getMemoryUsage`) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true
+            ///
+            /// When the tracker is not corrected on this tick, refresh `MemoryTrackingUncorrected`
+            /// anyway, so that the metric stays a snapshot of the plain counter that is at most
+            /// one tick old in both modes.
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
             else if (correct_tracker)
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
+            else
+                MemoryTracker::updateUncorrected();
 
             /// Capture the settings generation before reading ratio/ceiling. We re-read
             /// it just before `setHardLimit` and skip the write if a reload happened

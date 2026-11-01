@@ -75,6 +75,11 @@ public:
     /// If used, optimization for LC may execute function only for dictionary, which gives wrong result.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    String getSignatureString() const override
+    {
+        return "(T, Integer) -> T OR (T, Integer, D) -> leastSupertype(T, D)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t number_of_arguments = arguments.size();

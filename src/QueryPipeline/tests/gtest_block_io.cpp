@@ -19,7 +19,7 @@ TEST(BlockIO, FinishCallbackExceptionRunsExceptionCallbacksOnce)
     };
 
     size_t exception_callback_calls = 0;
-    io.exception_callbacks.emplace_back([&](bool) { ++exception_callback_calls; });
+    io.exception_callbacks.emplace_back([&](bool, const QueryPipeline &) { ++exception_callback_calls; });
     io.finish_callbacks.emplace_back(
         [](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
         {

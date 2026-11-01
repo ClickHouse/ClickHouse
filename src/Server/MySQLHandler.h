@@ -1,10 +1,12 @@
 #pragma once
 
 #include <optional>
+#include <Core/Block.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/ResultColumnOrigin.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
@@ -77,6 +79,15 @@ protected:
 
     void comStmtClose(ReadBuffer & payload);
 
+    void comStmtReset(ReadBuffer & payload);
+
+    /// Returns the query to execute instead of `query`, if `query` is a MySQL-specific statement that ClickHouse emulates.
+    std::optional<String> getReplacementQuery(const String & query) const;
+
+    /// Analyzes the prepared statement without executing it and returns the header of its result
+    /// (empty if the statement does not return a result set) and the origins of the result columns.
+    Block describePreparedStatement(const String & statement, ResultColumnOrigins & result_column_origins);
+
     /// Contains statement_id if the statement was emplaced successfully
     std::optional<UInt32> emplacePreparedStatement(String statement);
     /// Contains statement as a buffer if we could find previously stored statement using provided statement_id
@@ -85,6 +96,7 @@ protected:
 
     virtual void authPluginSSL();
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
+
 
     IServer & server;
     TCPServer & tcp_server;

@@ -131,7 +131,7 @@ void BlockIO::onException(bool log_as_error)
     try
     {
         for (const auto & callback : callbacks)
-            callback(log_as_error);
+            callback(log_as_error, pipeline);
     }
     catch (...)
     {

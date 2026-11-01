@@ -9,9 +9,7 @@ keywords: ['clickpipes', 'terraform', 'infrastructure as code', 'iac', 'programm
 
 すべての ClickPipes の種類は、[ClickHouse Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe) の `clickhouse_clickpipe` リソースを使用して作成および管理できます。このページでは、プロバイダーのセットアップと、サポートされている各 ClickPipeタイプ の設定例を紹介します。
 
-<div id="provider-setup">
-  ## プロバイダーの設定
-</div>
+## プロバイダーの設定 {#provider-setup}
 
 <Note>
   ClickPipes のサポートは、プロバイダーバージョン **v3.14.0** から一般提供されています。
@@ -41,9 +39,7 @@ provider "clickhouse" {
 
 プロバイダーで使用する API キーの作成手順については、[API キーの管理](/ja/products/cloud/features/admin-features/api/openapi)を参照してください。
 
-<div id="resource-overview">
-  ## リソースの概要
-</div>
+## リソースの概要 {#resource-overview}
 
 `clickhouse_clickpipe` リソースには、次のトップレベルの引数があります。
 
@@ -60,9 +56,7 @@ provider "clickhouse" {
 
 `id` 属性と `state` 属性は読み取り専用で、作成後に ClickHouse Cloud によって設定されます。
 
-<div id="destination">
-  ## 宛先
-</div>
+## 宛先 {#destination}
 
 `destination` ブロックは、すべてのソースタイプで共通です：
 
@@ -94,13 +88,9 @@ destination {
 
 CDC (変更データキャプチャ) ソース (Postgres、MySQL、MongoDB、BigQuery) の場合、宛先テーブルはソースのスキーマに基づいて自動的に作成されるため、通常必要なのは `database` のみです。
 
-<div id="examples">
-  ## ClickPipeタイプ別の例
-</div>
+## ClickPipeタイプ別の例 {#examples}
 
-<div id="kafka">
-  ### Kafka
-</div>
+### Kafka {#kafka}
 
 サポートされる`type`の値: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
 
@@ -163,9 +153,7 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
 }
 ```
 
-<div id="kafka-schema-registry">
-  #### スキーマレジストリ対応のKafka
-</div>
+#### スキーマレジストリ対応のKafka {#kafka-schema-registry}
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
@@ -219,9 +207,7 @@ resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
 }
 ```
 
-<div id="kinesis">
-  ### Amazon Kinesis
-</div>
+### Amazon Kinesis {#kinesis}
 
 ```hcl
 resource "clickhouse_clickpipe" "kinesis_clickpipe" {
@@ -230,11 +216,17 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "JSONEachRow"
+      format         = "AvroConfluent"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
+
+      schema_registry {
+        type               = "glue"
+        glue_region        = "us-east-1"
+        glue_registry_name = "my-registry"
+      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -266,9 +258,50 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 }
 ```
 
-<div id="kinesis-iam-role">
-  #### IAM role を使用した Kinesis
-</div>
+#### アップロードした Protobuf スキーマを使用する Kinesis {#kinesis-protobuf-schema}
+
+`format` を `Protobuf` に設定し、`protobuf_schema` には base64 エンコードした `.proto` ファイル、またはシリアル化した `FileDescriptorSet` を指定します。スキーマをアップロードする場合は、`schema_registry` を設定しないでください。
+
+```hcl
+resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
+  name       = "My Kinesis Protobuf ClickPipe"
+  service_id = var.service_id
+
+  source {
+    kinesis {
+      format          = "Protobuf"
+      stream_name     = "my-stream"
+      region          = "us-east-1"
+      iterator_type   = "TRIM_HORIZON"
+      authentication  = "IAM_USER"
+      protobuf_schema = filebase64("${path.module}/event.proto")
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+  }
+}
+```
+
+#### IAM role を使用した Kinesis {#kinesis-iam-role}
 
 IAM role 認証を使用するには、AWS 上で稼働する ClickHouse サービスが必要です。
 
@@ -311,9 +344,7 @@ resource "clickhouse_clickpipe" "kinesis_iam_role_clickpipe" {
 }
 ```
 
-<div id="s3">
-  ### Amazon S3
-</div>
+### Amazon S3 {#s3}
 
 ```hcl
 resource "clickhouse_clickpipe" "s3_clickpipe" {
@@ -357,9 +388,7 @@ resource "clickhouse_clickpipe" "s3_clickpipe" {
 }
 ```
 
-<div id="s3-continuous">
-  #### SQS を使用した S3 の継続的インジェスト
-</div>
+#### SQS を使用した S3 の継続的インジェスト {#s3-continuous}
 
 SQS キューを使用して継続的インジェストを行う場合 (順不同モード) です。セットアップ手順については、[順不同モードの設定](/ja/integrations/clickpipes/object-storage/amazon-s3/unordered-mode)を参照してください。
 
@@ -407,9 +436,7 @@ resource "clickhouse_clickpipe" "s3_continuous_clickpipe" {
 }
 ```
 
-<div id="gcs">
-  ### Google Cloud Storage
-</div>
+### Google Cloud Storage {#gcs}
 
 `service_account_key` には、GCP サービスアカウントの JSON キーファイルの内容を base64 でエンコードしたものを指定する必要があります。
 
@@ -451,9 +478,7 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
-<div id="abs">
-  ### Azure Blob Storage
-</div>
+### Azure Blob Storage {#abs}
 
 ```hcl
 resource "clickhouse_clickpipe" "abs_clickpipe" {
@@ -494,9 +519,7 @@ resource "clickhouse_clickpipe" "abs_clickpipe" {
 }
 ```
 
-<div id="postgres">
-  ### Postgres CDC (変更データキャプチャ)
-</div>
+### Postgres CDC (変更データキャプチャ) {#postgres}
 
 ```hcl
 resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
@@ -552,9 +575,7 @@ resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
 }
 ```
 
-<div id="postgres-iam-role">
-  #### IAM role を使用する Postgres
-</div>
+#### IAM role を使用する Postgres {#postgres-iam-role}
 
 IAM role認証には、AWS 上で稼働している ClickHouseサービスが必要です。
 
@@ -594,9 +615,7 @@ resource "clickhouse_clickpipe" "postgres_iam_role_clickpipe" {
 }
 ```
 
-<div id="mysql">
-  ### MySQL CDC (変更データキャプチャ)
-</div>
+### MySQL CDC (変更データキャプチャ) {#mysql}
 
 ```hcl
 resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
@@ -652,9 +671,7 @@ resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
 }
 ```
 
-<div id="mongodb">
-  ### MongoDB CDC (変更データキャプチャ)
-</div>
+### MongoDB CDC (変更データキャプチャ) {#mongodb} 
 
 ```hcl
 resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
@@ -702,9 +719,7 @@ resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
 }
 ```
 
-<div id="bigquery">
-  ### BigQuery
-</div>
+### BigQuery {#bigquery}
 
 `service_account_file` には、GCP サービスアカウントの JSON キーファイルの内容を base64 エンコードしたものを指定する必要があります。
 
@@ -755,9 +770,7 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 }
 ```
 
-<div id="scaling">
-  ## スケーリング
-</div>
+## スケーリング {#scaling}
 
 すべての ClickPipe タイプで、レプリカ数と各レプリカへのリソース割り当てを設定するための `scaling` ブロックをサポートしています。
 
@@ -769,9 +782,7 @@ scaling {
 }
 ```
 
-<div id="import">
-  ## 既存の ClickPipes のインポート
-</div>
+## 既存の ClickPipes のインポート {#import}
 
 既存の ClickPipes は、service ID と ClickPipe ID の両方を使用して Terraform state にインポートできます。
 
