@@ -28,7 +28,7 @@ insert into metric_ratio_{{ v }} select * from generateRandom() limit 1 settings
 optimize table metric_ratio_{{ v }} final;
 truncate table metric_ratio_{{ v }};
 alter table metric_ratio_{{ v }} modify setting min_bytes_for_wide_part=0;
-insert into metric_ratio_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '{{ 50 if v == 1 else 1500 }}Mi' /* w/o adaptive buffers uses ~3 (for regular) and ~600MiB-1GiB (for encrypted disks), w/ 100MiB for regular and ~200-400MiB for encrypted disks */;
+insert into metric_ratio_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '{{ 100 if v == 1 else 1500 }}Mi' /* w/o adaptive buffers uses ~600MiB-1GiB, w/ adaptive buffers a few tens of MiB, close to 50MiB on encrypted disks over S3 with the streams of the implicit min-max indices */;
 optimize table metric_ratio_{{ v }} final;
 drop table metric_ratio_{{ v }};
 {% endfor %}
