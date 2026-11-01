@@ -462,6 +462,8 @@ TEST(LanceScanCoordinator, NoLimitConsumesCompleteBatch)
     EXPECT_FALSE(state->cancelled);
 }
 
+/// Sanitizer builds do not intercept allocations, so the memory tracker does not see them.
+#if !defined(SANITIZER)
 TEST(LanceScanCoordinator, ReleasingProducerBatchDoesNotCreditConsumerMemory)
 {
     constexpr size_t rows = 1 << 20;
@@ -500,6 +502,7 @@ TEST(LanceScanCoordinator, ReleasingProducerBatchDoesNotCreditConsumerMemory)
     consumer.join();
     EXPECT_EQ(state->released_batches, 1);
 }
+#endif
 
 TEST(LanceScanCoordinator, EmptyProviderEndsCleanly)
 {
