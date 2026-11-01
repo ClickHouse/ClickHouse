@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
@@ -964,6 +965,10 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
             if (min_unprocessed_insert_time_changed)
                 ops.emplace_back(zkutil::makeSetRequest(
                     fs::path(replica_path) / "min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
+
+            /// The caller can be a query thread under a memory limit (`system.mutations`). Once Keeper is updated, the RAM update below
+            /// must not fail, and `std::terminate` on a memory limit exception would kill the server, so the limit is not enforced here.
+            LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
             auto responses = zookeeper->multi(ops, /* check_session_valid */ true);
 
