@@ -9,24 +9,29 @@ SET optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, apply
 
 DROP TABLE IF EXISTS t_identical;
 
-CREATE TABLE t_identical (id UInt64, b UInt64, version UInt64)
+CREATE TABLE t_identical (id UInt64, b UInt64, s UInt64, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY id
 SETTINGS columns_identical_across_versions = 'b', add_minmax_index_for_numeric_columns = 0,
     index_granularity = 8192, index_granularity_bytes = 10485760;
 
 SYSTEM STOP MERGES t_identical;
 
-INSERT INTO t_identical SELECT number, intDiv(number, 3), 1 FROM numbers(1000000);
-INSERT INTO t_identical SELECT number, intDiv(number, 3), 2 FROM numbers(500000);
+INSERT INTO t_identical SELECT number, intDiv(number, 3), number, 1 FROM numbers(1000000);
+INSERT INTO t_identical SELECT number, intDiv(number, 3), number + 1000000, 2 FROM numbers(500000);
 
 SELECT sum(id) FROM t_identical FINAL WHERE b = 10000 SETTINGS use_query_condition_cache = 1, log_comment = '05482_first';
 SELECT sum(id) FROM t_identical FINAL WHERE b = 10000 SETTINGS use_query_condition_cache = 1, log_comment = '05482_second';
+
+-- The entry for the varying column `s` written without FINAL says that the new versions do not match `s = 10000`,
+-- but with FINAL they replace the matching old version, so the query must not use it.
+SELECT count() FROM t_identical WHERE s = 10000 SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM t_identical FINAL WHERE s = 10000 SETTINGS use_query_condition_cache = 1, log_comment = '05482_varying';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
-    AND log_comment IN ('05482_first', '05482_second')
+    AND log_comment IN ('05482_first', '05482_second', '05482_varying')
 ORDER BY log_comment;
 
 DROP TABLE t_identical;

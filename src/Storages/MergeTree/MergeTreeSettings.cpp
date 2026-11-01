@@ -2822,6 +2822,7 @@ Comma-separated list of columns whose values can differ between rows with the sa
 All other physical columns, except the version, sign and `is_deleted` columns and columns of floating-point types,
 are considered identical in all versions of a row, as if they were listed in `columns_identical_across_versions`.
 Columns added later by `ALTER TABLE ... ADD COLUMN` are considered identical as well, unless added to this list.
+A column with a `DEFAULT`, `MATERIALIZED` or `ALIAS` expression that uses a varying column is varying as well.
 
 An empty value means the setting is not used. Cannot be set together with `columns_identical_across_versions`.
 A listed column cannot be dropped or renamed.

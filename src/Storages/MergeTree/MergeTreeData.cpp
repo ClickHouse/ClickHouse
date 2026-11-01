@@ -2754,6 +2754,29 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
     else
     {
         auto varying = parseIdentifiersOrStringLiteralsToSet(varying_columns, query_settings);
+
+        /// A column computed from a varying column (or from the version, sign or `is_deleted` column) varies as well.
+        for (const auto * name : {&merging_params.version_column, &merging_params.sign_column, &merging_params.is_deleted_column})
+            if (!name->empty())
+                varying.insert(*name);
+        const auto defaults = columns.getDefaults();
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (const auto & [name, column_default] : defaults)
+            {
+                if (!column_default.expression || varying.contains(name))
+                    continue;
+                IdentifierNameSet used_names;
+                column_default.expression->collectIdentifierNames(used_names);
+                if (std::ranges::any_of(used_names, [&](const String & used_name) { return varying.contains(used_name); }))
+                {
+                    varying.insert(name);
+                    changed = true;
+                }
+            }
+        }
+
         for (const auto & column : columns.getAllPhysical())
             if (!varying.contains(column.name))
                 add_column(column);

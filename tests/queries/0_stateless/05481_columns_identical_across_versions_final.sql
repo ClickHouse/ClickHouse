@@ -21,6 +21,7 @@ CREATE TABLE t_plain
     month UInt8,
     mode LowCardinality(String),
     score UInt32,
+    score_bucket UInt32 MATERIALIZED intDiv(score, 100),
     version UInt64,
     deleted UInt8,
     INDEX idx_mode mode TYPE set(10) GRANULARITY 1,
@@ -49,7 +50,16 @@ SELECT 'equal results',
     (SELECT groupArraySorted(1000)((id, score)) FROM t_plain FINAL WHERE mode = 'b' AND month = 3)
     = (SELECT groupArraySorted(1000)((id, score)) FROM t_identical FINAL WHERE mode = 'b' AND month = 3);
 
+-- `score < 950` matches the replaced versions of the even rows: the index on `score` must not hide their replacements.
+SELECT 'equal results with varying column',
+    (SELECT groupArraySorted(1000)((id, score)) FROM t_plain FINAL WHERE mode = 'b' AND score < 950)
+    = (SELECT groupArraySorted(1000)((id, score)) FROM t_identical FINAL WHERE mode = 'b' AND score < 950),
+    (SELECT count() FROM t_identical FINAL WHERE mode = 'b' AND score < 950);
+
 SELECT 'prewhere', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_identical FINAL WHERE mode = 'b');
+
+-- A column computed from a varying column varies as well.
+SELECT 'no prewhere for column computed from varying', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_identical FINAL WHERE score_bucket = 9);
 
 SELECT 'no range extension', countIf(explain LIKE '%PrimaryKeyExpand%') FROM (EXPLAIN indexes = 1 SELECT id FROM t_identical FINAL WHERE mode = 'b');
 
