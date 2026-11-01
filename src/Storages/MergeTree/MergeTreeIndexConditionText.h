@@ -99,7 +99,7 @@ public:
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
-        NameSet columns_shadowing_map_subcolumns_,
+        IsShadowingColumn is_column_shadowing_map_subcolumn_,
         NamesAndTypesList index_required_columns_,
         JSONIndexArgumentTypes json_argument_types_);
 
@@ -250,7 +250,7 @@ private:
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
-    NameSet columns_shadowing_map_subcolumns;
+    IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// Columns the index expression reads, to find the type of a Map whose subcolumn is looked up.
     NamesAndTypesList index_required_columns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not

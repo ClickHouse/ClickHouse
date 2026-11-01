@@ -70,7 +70,13 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
             break;
         }
 
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        {
+            /// The single argument: the `samples` column, an array of tuples (timestamp, value).
+            return {make_intrusive<ASTIdentifier>(ColumnNames::Samples)};
+        }
+
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         {
             /// timestamps: the `timestamp` column
             /// values:     the `value` column
