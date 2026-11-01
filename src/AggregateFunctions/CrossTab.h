@@ -26,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int CORRUPTED_DATA;
 }
 
@@ -885,7 +886,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs));
+        mergeChecked(this->data(place), this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -921,7 +922,7 @@ public:
 
         if constexpr (Data::state_representation == AggregateFunctionStateVariant::Window)
         {
-            dst.merge(*reinterpret_cast<const CrossTabAggregateData *>(rhs_place));
+            mergeChecked(dst, *reinterpret_cast<const CrossTabAggregateData *>(rhs_place));
         }
         else
         {
@@ -937,11 +938,11 @@ public:
                     "CrossTab custom window state must keep CrossTabCountsState prefix (derive from CrossTabCountsState).");
                 static_assert(requires(Data & data, const WindowData & other) { data.merge(other); });
 
-                dst.merge(*reinterpret_cast<const WindowData *>(rhs_place));
+                mergeChecked(dst, *reinterpret_cast<const WindowData *>(rhs_place));
             }
             else
             {
-                dst.merge(*reinterpret_cast<const CrossTabPhiSquaredWindowData *>(rhs_place));
+                mergeChecked(dst, *reinterpret_cast<const CrossTabPhiSquaredWindowData *>(rhs_place));
             }
         }
     }
@@ -958,6 +959,22 @@ public:
         Float64 result = this->data(place).getResult();
         auto & column = static_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(result);
+    }
+
+private:
+    /// Every count of a state is at most its total `count`, so no count overflows if the merged total fits.
+    template <typename Src>
+    void mergeChecked(Data & dst, const Src & src) const
+    {
+        UInt64 merged_count = 0;
+        if (common::addOverflow(dst.count, src.count, merged_count))
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Cannot merge states of aggregate function {}: the total number of rows ({} + {}) does not fit into UInt64",
+                getName(),
+                dst.count,
+                src.count);
+        dst.merge(src);
     }
 };
 

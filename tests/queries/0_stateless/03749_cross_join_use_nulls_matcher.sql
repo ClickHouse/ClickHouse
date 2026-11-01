@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT concat(*) x
 FROM numbers(2) AS n1, numbers(3) AS n2

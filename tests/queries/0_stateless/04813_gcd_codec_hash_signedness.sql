@@ -22,7 +22,10 @@ CREATE TABLE t_gcd_hash_combined
 ENGINE = MergeTree
 ORDER BY tuple()
 /* Force a Compact part so both columns can share a compressed stream. */
-SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+/* Pin `index_granularity_bytes`: with a small randomized value the adaptive granularity gives the
+   combined table (16 bytes per row) granules with half as many rows as the single-column tables,
+   so its compressed blocks are smaller and compress worse, breaking the size comparison below. */
+SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000, index_granularity_bytes = '10Mi';
 
 CREATE TABLE t_gcd_hash_int64_only
 (
@@ -30,7 +33,7 @@ CREATE TABLE t_gcd_hash_int64_only
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000, index_granularity_bytes = '10Mi';
 
 CREATE TABLE t_gcd_hash_uint64_only
 (
@@ -38,7 +41,7 @@ CREATE TABLE t_gcd_hash_uint64_only
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000, index_granularity_bytes = '10Mi';
 
 /* Both columns are populated by a single INSERT so they land in the same part and can share
    a compressed stream.
