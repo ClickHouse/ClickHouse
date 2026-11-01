@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -64,6 +65,37 @@ public:
 private:
     bool nextImpl() override { return false; }
     std::string storage;
+};
+
+/// Some sources replace their backing storage when an EOF probe is repeated.
+class EOFReallocatingReadBuffer : public ReadBuffer
+{
+public:
+    explicit EOFReallocatingReadBuffer(std::string input, size_t reallocate_on_probe_)
+        : ReadBuffer(nullptr, 0)
+        , data(std::move(input))
+        , reallocate_on_probe(reallocate_on_probe_)
+    {
+        BufferBase::set(data.data(), data.size(), 0);
+    }
+
+    size_t eof_probes = 0;
+
+private:
+    bool nextImpl() override
+    {
+        ++eof_probes;
+        if (eof_probes >= reallocate_on_probe)
+        {
+            std::string replacement(data.size() + 64, '#');
+            data.swap(replacement);
+            BufferBase::set(data.data(), data.size(), data.size());
+        }
+        return false;
+    }
+
+    std::string data;
+    const size_t reallocate_on_probe;
 };
 
 }
@@ -208,4 +240,55 @@ TEST(RowInputFormatDiagnostics, InvalidLastRowWithoutTrailingNewline)
             }
         }
     }
+}
+
+/// Replay-time EOF checks must never reach the exhausted source: it may free
+/// the storage holding the saved post-EOF position and buffer snapshots.
+TEST(RowInputFormatDiagnostics, ReplayDoesNotReprobeSourceEOF)
+{
+    EOFReallocatingReadBuffer source(std::string(128, 'x'), 2);
+    PeekableReadBuffer buf(source);
+
+    auto * const original_begin = buf.buffer().begin();
+    const size_t original_size = buf.buffer().size();
+    buf.position() = buf.buffer().end();
+    ASSERT_TRUE(buf.eof());
+    ASSERT_EQ(source.eof_probes, 1U);
+
+    ASSERT_TRUE(buf.beginDiagnosticReplay(original_begin, original_size));
+    auto * const replay_begin = buf.internalBuffer().begin();
+    buf.buffer() = ReadBuffer::Buffer(replay_begin, replay_begin + original_size);
+    buf.position() = buf.buffer().end();
+
+    EXPECT_TRUE(buf.eof());
+    buf.endDiagnosticReplay();
+
+    EXPECT_EQ(source.eof_probes, 1U);
+    EXPECT_EQ(buf.count(), original_size);
+
+    /// Normal reads after replay may probe EOF and update the source buffer.
+    EXPECT_TRUE(buf.eof());
+    EXPECT_EQ(source.eof_probes, 2U);
+}
+
+/// Error skipping must remain safe if EOF invalidates the underlying window.
+TEST(RowInputFormatDiagnostics, AllowErrorsWithEOFBackingStorageChange)
+{
+    Block header;
+    header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "id"});
+    header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "name"});
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    EOFReallocatingReadBuffer source("1\tAlice\nbad\tBob", 1);
+    RowInputFormatParams params;
+    params.max_block_size_rows = 100;
+    params.allow_errors_num = 10;
+    params.allow_errors_ratio = 1.0;
+
+    FormatSettings format_settings;
+    TabSeparatedRowInputFormat format(shared_header, source, params, false, false, false, format_settings);
+    const auto result = format.read();
+
+    EXPECT_EQ(result.getNumRows(), 1U);
+    EXPECT_GE(source.eof_probes, 1U);
 }

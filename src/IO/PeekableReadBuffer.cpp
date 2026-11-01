@@ -96,17 +96,27 @@ bool PeekableReadBuffer::peekNext()
 
 bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
 {
-    if (peeked_size)
-        return currentlyReadFromOwnMemory();
+    if (checkpoint || !size || diagnostic_replay_active)
+        return false;
 
-    if (checkpoint || !size || diagnostic_saved_working_buffer
-        || sub_buf->internalBuffer().begin() != begin
+    if (peeked_size)
+    {
+        if (!currentlyReadFromOwnMemory())
+            return false;
+
+        /// The bytes already live in our own buffer, so just fence off EOF probes.
+        diagnostic_saved_bytes = bytes;
+        diagnostic_replay_active = true;
+        return true;
+    }
+
+    if (sub_buf->internalBuffer().begin() != begin
         || sub_buf->internalBuffer().size() < size)
         return false;
 
     const Buffer saved_working_buffer = working_buffer;
     const Buffer saved_internal_buffer = internal_buffer;
-    const Position saved_position = pos;
+    const auto saved_position = pos;
 
     /// After a failed EOF probe the source window is empty, but its old storage
     /// can still be retained. Copy it before replay so checkpoints remain valid.
@@ -131,11 +141,19 @@ bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
     diagnostic_saved_internal_buffer.emplace(saved_internal_buffer);
     diagnostic_saved_position = saved_position;
     diagnostic_saved_bytes = bytes;
+    diagnostic_replay_active = true;
     return true;
 }
 
 void PeekableReadBuffer::endDiagnosticReplay()
 {
+    if (!diagnostic_replay_active)
+        return;
+
+    diagnostic_replay_active = false;
+    bytes = diagnostic_saved_bytes;
+
+    /// When already reading from owned memory we did not need another copy.
     if (!diagnostic_saved_working_buffer)
         return;
 
@@ -145,7 +163,6 @@ void PeekableReadBuffer::endDiagnosticReplay()
     working_buffer = *diagnostic_saved_working_buffer;
     internal_buffer = *diagnostic_saved_internal_buffer;
     pos = diagnostic_saved_position;
-    bytes = diagnostic_saved_bytes;
     diagnostic_saved_working_buffer.reset();
     diagnostic_saved_internal_buffer.reset();
 }
@@ -220,6 +237,12 @@ bool PeekableReadBuffer::nextImpl()
     ///        if some pointers were invalidated.
 
     checkStateCorrect();
+
+    /// Diagnostic parsing must not probe a source that was already at EOF:
+    /// doing so can replace the backing storage of the saved buffer snapshots.
+    if (diagnostic_replay_active)
+        return false;
+
     const bool reading_from_own_memory = !useSubbufferOnly();
     const Buffer sub_internal_before = sub_buf->internalBuffer();
     bool res = false;
