@@ -1180,7 +1180,7 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet extra_columns_for_indices;
-
+        NameSet projections_to_materialize;
 
         for (const auto & command : commands)
         {
@@ -1273,6 +1273,25 @@ static void splitAndModifyMutationCommands(
                 {
                     for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
+                }
+                else if (command.data_type)
+                {
+                    /// The part does not store the column, e.g. it predates `ADD COLUMN ... DEFAULT`, so its values are computed
+                    /// from the default when read, now with the new type. A projection of the part computed from them keeps the
+                    /// values of the old type, so it is rebuilt, as `MATERIALIZE PROJECTION` builds it, without writing the column.
+                    for (const auto & projection : metadata_snapshot->getProjections())
+                    {
+                        if (!part->hasProjection(projection.name) && !part->hasUnloadedProjection(projection.name))
+                            continue;
+                        if (!MutationsInterpreter::projectionComputesFromColumn(projection, command.column_name))
+                            continue;
+                        if (projections_to_materialize.emplace(projection.name).second)
+                            for_interpreter.push_back({
+                                .type = MutationCommand::Type::MATERIALIZE_PROJECTION,
+                                .projection_name = projection.name,
+                                .rebuild_existing_projection = true,
+                            });
+                    }
                 }
             }
             /// If we don't have this column in source part, we don't need to materialize it.

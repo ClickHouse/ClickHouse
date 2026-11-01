@@ -139,6 +139,12 @@ public:
         const MutationCommands & commands,
         ContextPtr context);
 
+    /// Whether `projection` keeps what it computed from the column `column_name`, so that it has to be rebuilt when the type of
+    /// the column changes: its order and primary index for a sorting key such as `toHour(dt)`, its columns such as an aggregate
+    /// state, and the rows that its `WHERE` such as `toHour(dt) = 9` selected. A projection that only stores the column as is
+    /// does not need to be rebuilt.
+    static bool projectionComputesFromColumn(const ProjectionDescription & projection, const String & column_name);
+
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
 

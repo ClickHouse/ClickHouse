@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS t_aggregate;
 DROP TABLE IF EXISTS t_expression;
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_filter;
+DROP TABLE IF EXISTS t_absent;
 
 CREATE TABLE t_aggregate (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT toHour(dt) AS h, count() GROUP BY h))
 ENGINE = MergeTree ORDER BY id;
@@ -32,6 +33,20 @@ SELECT groupArray(id) FROM t_filter WHERE toHour(dt) = 9
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, optimize_read_in_order = 0;
 SELECT groupArray(id) FROM t_filter WHERE toHour(dt) = 9 SETTINGS optimize_use_projections = 0;
 
+-- A part that does not store the column, as it predates `ADD COLUMN ... DEFAULT`, computed the projection from the default.
+CREATE TABLE t_absent (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_absent SELECT number FROM numbers(5);
+ALTER TABLE t_absent ADD COLUMN dt DateTime('UTC') DEFAULT toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL id HOUR;
+ALTER TABLE t_absent ADD PROJECTION agg (SELECT toHour(dt) AS h, count() GROUP BY h);
+ALTER TABLE t_absent MATERIALIZE PROJECTION agg SETTINGS mutations_sync = 2;
+ALTER TABLE t_absent MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') SETTINGS mutations_sync = 2;
+SELECT groupArray(h) FROM (SELECT toHour(dt) AS h, count() FROM t_absent GROUP BY h ORDER BY h)
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(h) FROM (SELECT toHour(dt) AS h, count() FROM t_absent GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
+-- The column is still not written to the part (a compact or packed part reads it for its projections, so it writes it).
+SELECT countIf(column = 'dt') FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_absent' AND active;
+
 -- A projection that stores the column as is answers correctly without being rebuilt.
 CREATE TABLE t_plain (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT * ORDER BY dt)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_plain SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
@@ -43,3 +58,4 @@ DROP TABLE t_aggregate;
 DROP TABLE t_expression;
 DROP TABLE t_plain;
 DROP TABLE t_filter;
+DROP TABLE t_absent;

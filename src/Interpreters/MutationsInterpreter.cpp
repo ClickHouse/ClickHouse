@@ -759,6 +759,39 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
+bool MutationsInterpreter::projectionComputesFromColumn(const ProjectionDescription & projection, const String & column_name)
+{
+    const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+    const auto & sorting_key = projection.metadata->getSortingKey();
+    const Names sorting_key_columns = sorting_key.expression ? sorting_key.expression->getRequiredColumns() : Names{};
+    const bool column_in_key = std::ranges::find(pk_columns, column_name) != pk_columns.end()
+        || std::ranges::find(sorting_key_columns, column_name) != sorting_key_columns.end();
+    if (column_in_key)
+        return true;
+
+    /// The identifiers may be qualified, and a subcolumn of the column is `column.subcolumn`.
+    const bool column_in_filter = projection.where_clause_ast && std::ranges::any_of(
+        IdentifiersCollector::collect(projection.where_clause_ast),
+        [&](const ASTIdentifier * identifier)
+        {
+            const auto & name = identifier->name();
+            return name == column_name || identifier->shortName() == column_name || name.starts_with(column_name + ".");
+        });
+    if (column_in_filter)
+        return true;
+
+    const bool column_read = std::ranges::find(projection.required_columns, column_name) != projection.required_columns.end();
+    /// `_parent_part_offset` is the `_part_offset` of the table renamed, not computed from its columns.
+    const bool computes_columns = std::ranges::any_of(
+        projection.sample_block,
+        [&](const auto & column)
+        {
+            return column.name != "_parent_part_offset"
+                && std::ranges::find(projection.required_columns, column.name) == projection.required_columns.end();
+        });
+    return column_read && computes_columns;
+}
+
 void MutationsInterpreter::prepare(bool dry_run)
 {
     auto component_guard = Coordination::setCurrentComponent("MutationsInterpreter");
@@ -1396,7 +1429,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 continue;
             }
             const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
+            if (command.rebuild_existing_projection || !source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
                 for (const auto & column : projection.required_columns)
                     dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -1566,36 +1599,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
-                        /// A projection keeps what it computed from the column: its order and primary index for a sorting key
-                        /// such as `toHour(dt)`, its columns such as an aggregate state, and the rows that its `WHERE` such as
-                        /// `toHour(dt) = 9` selected. So it is rebuilt not only when the column is in its key, but also when its
-                        /// sorting key is an expression of the column, when its `WHERE` uses the column, and when it reads the
-                        /// column and computes any of its columns. A projection that only stores the column as is keeps its parts.
-                        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-                        const auto & sorting_key = projection.metadata->getSortingKey();
-                        const Names sorting_key_columns = sorting_key.expression ? sorting_key.expression->getRequiredColumns() : Names{};
-                        const bool column_in_key = std::ranges::find(pk_columns, command.column_name) != pk_columns.end()
-                            || std::ranges::find(sorting_key_columns, command.column_name) != sorting_key_columns.end();
-                        const bool column_read = std::ranges::find(projection.required_columns, command.column_name)
-                            != projection.required_columns.end();
-                        /// `_parent_part_offset` is the `_part_offset` of the table renamed, not computed from its columns.
-                        const bool computes_columns = std::ranges::any_of(
-                            projection.sample_block,
-                            [&](const auto & column)
-                            {
-                                return column.name != "_parent_part_offset"
-                                    && std::ranges::find(projection.required_columns, column.name) == projection.required_columns.end();
-                            });
-                        /// The identifiers may be qualified, and a subcolumn of the column is `column.subcolumn`.
-                        const bool column_in_filter = projection.where_clause_ast && std::ranges::any_of(
-                            IdentifiersCollector::collect(projection.where_clause_ast),
-                            [&](const ASTIdentifier * identifier)
-                            {
-                                const auto & name = identifier->name();
-                                return name == command.column_name || identifier->shortName() == command.column_name
-                                    || name.starts_with(command.column_name + ".");
-                            });
-                        if (column_in_key || column_in_filter || (column_read && computes_columns))
+                        if (projectionComputesFromColumn(projection, command.column_name))
                         {
                             for (const auto & col : projection.required_columns)
                                 dependencies.emplace(col, ColumnDependency::PROJECTION);
