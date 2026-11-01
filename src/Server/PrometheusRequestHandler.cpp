@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
@@ -67,6 +68,21 @@ namespace ErrorCodes
     extern const int ZSTD_DECODER_FAILED;
 }
 
+namespace
+{
+
+/// Writes an error of the Prometheus HTTP API in its JSON format.
+void writePrometheusError(WriteBuffer & out, std::string_view error_type, std::string_view message)
+{
+    writeString(R"({"status":"error","errorType":")", out);
+    writeString(error_type, out);
+    writeString(R"(","error":)", out);
+    writeJSONString(message, out, FormatSettings{});
+    writeChar('}', out);
+}
+
+}
+
 /// Base implementation of a prometheus protocol.
 class PrometheusRequestHandler::Impl
 {
@@ -77,6 +93,7 @@ public:
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
+    virtual bool sendsJSONErrors() const { return false; }
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -460,6 +477,8 @@ public:
 
     bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
+    bool sendsJSONErrors() const override { return true; }
+
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
@@ -509,6 +528,12 @@ public:
 
         response.setContentType("application/json");
 
+        /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
+        /// A request answered with a fixed empty result doesn't need the table.
+        StoragePtr table;
+        if (!empty_result && !Poco::URI(uri).getPath().ends_with("/format_query"))
+            table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+
         try
         {
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
@@ -538,7 +563,6 @@ public:
                 return;
             }
 
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()
@@ -659,10 +683,7 @@ public:
                 server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
-                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
-            writeJSONString(e.message(), error_buf, FormatSettings{});
-            writeString("}", error_buf);
+            writePrometheusError(error_buf, server_side_error ? "internal" : "bad_data", e.message());
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
 
@@ -945,6 +966,8 @@ public:
             current_impl->onException();
     }
 
+    bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
+
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,
     /// so the same endpoint works both bare ("/api/v1/write") and behind a configured prefix
@@ -1049,7 +1072,26 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
-        getOutputStream(response).cancelWithException(request, status.code, status.message, nullptr);
+        String message = status.message;
+
+        /// Prometheus clients can parse an error of the query API only in its JSON format.
+        if (impl->sendsJSONErrors() && !response.sent())
+        {
+            response.setContentType("application/json");
+            auto http_status = exceptionCodeToHTTPStatus(status.code);
+            std::string_view error_type = "bad_data";
+            if (http_status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+                error_type = "not_found";
+            else if (http_status == Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE)
+                error_type = "unavailable";
+            else if (http_status >= Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR)
+                error_type = "internal";
+            WriteBufferFromOwnString json;
+            writePrometheusError(json, error_type, status.message);
+            message = json.str();
+        }
+
+        getOutputStream(response).cancelWithException(request, status.code, message, nullptr);
 
         tryCallOnException();
     }
