@@ -281,6 +281,7 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -15504,6 +15505,13 @@ static bool mayReadThroughRemoteParallelReplicas(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::allow_experimental_parallel_reading_from_replicas])
+        return false;
+
+    /// `automatic_parallel_replicas_mode = 2` only collects statistics: a task-based read is never switched to parallel
+    /// replicas then (see `Context::canUseTaskBasedParallelReplicas`). It does not apply when parallel replicas are
+    /// forced (`Context::getAutomaticParallelReplicasMode` returns 0) or with a custom-key mode, which still distribute.
+    if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+        && Context::getAutomaticParallelReplicasMode(settings) == 2)
         return false;
 
     const String & cluster_name = settings[Setting::cluster_for_parallel_replicas].value;
