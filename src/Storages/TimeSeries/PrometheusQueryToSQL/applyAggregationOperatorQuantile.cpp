@@ -1,5 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorQuantile.h>
 
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,6 +14,11 @@
 #include <cmath>
 #include <limits>
 
+
+namespace DB::ServerSetting
+{
+    extern const ServerSettingsUInt64 aggregate_function_group_array_max_element_size;
+}
 
 namespace DB::ErrorCodes
 {
@@ -88,6 +95,76 @@ namespace
                 throwUnexpectedStoreMethod(phi_arg, context);
             }
         }
+    }
+
+    /// Calculates the quantile at each step like Prometheus: NaN sorts before every other value,
+    /// and between two samples the result is `lower * (1 - weight) + upper * weight`.
+    ASTPtr makeQuantileForEach(const ASTPtr & phi, SelectQueryBuilder & builder, ASTPtr phi_in_range = nullptr)
+    {
+        auto id = [](const String & name) -> ASTPtr { return make_intrusive<ASTIdentifier>(name); };
+
+        /// The limit of series per group and step is the size limit of groupArray.
+        const auto & server_settings = Context::getGlobalContextInstance()->getServerSettings();
+        UInt64 max_series = server_settings[ServerSetting::aggregate_function_group_array_max_element_size];
+        UInt64 max_kept = (max_series == std::numeric_limits<UInt64>::max()) ? max_series : max_series + 1;
+
+        /// groupArrayForEach(max_series + 1)(table.values): one value more than the limit shows a step over it.
+        /// The column is qualified so that HAVING does not bind `values` to the result alias.
+        auto step_values = [&]
+        {
+            return addParametersToAggregateFunction(
+                makeASTFunction("groupArrayForEach", make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values})),
+                make_intrusive<ASTLiteral>(max_kept));
+        };
+
+        /// Throws if a group has too many series at one step:
+        /// HAVING throwIf(arrayExists(s -> length(s) > max_series, step_values), 'message') = 0
+        String message = fmt::format(
+            "PromQL aggregation operator 'quantile' got more than {} series in one group at one step, "
+            "see the server setting aggregate_function_group_array_max_element_size", max_series);
+        ASTPtr too_many_series = makeASTFunction("arrayExists",
+            makeASTLambda({"s"},
+                makeASTFunction("greater", makeASTFunction("length", id("s")), make_intrusive<ASTLiteral>(max_series))),
+            step_values());
+        /// A runtime phi outside [0, 1] gives a constant like a literal one, so the limit does not apply to it.
+        if (phi_in_range)
+            too_many_series = makeASTFunction("and", std::move(phi_in_range), std::move(too_many_series));
+        builder.having = makeASTFunction("equals",
+            makeASTFunction("throwIf", std::move(too_many_series), make_intrusive<ASTLiteral>(message)),
+            make_intrusive<ASTLiteral>(0u));
+
+        /// arrayMap(s -> arrayRotateRight(arraySort(s), arrayCount(x -> isNaN(x), s)), step_values)
+        ASTPtr sorted_values = makeASTFunction("arrayMap",
+            makeASTLambda({"s"},
+                makeASTFunction("arrayRotateRight",
+                    makeASTFunction("arraySort", id("s")),
+                    makeASTFunction("arrayCount", makeASTLambda({"x"}, makeASTFunction("isNaN", id("x"))), id("s")))),
+            step_values());
+
+        /// rank = phi * (length(t) - 1), lower = floor(rank), weight = rank - lower
+        auto rank = [&]
+        {
+            return makeASTFunction("multiply",
+                phi->clone(),
+                makeASTFunction("minus", makeASTFunction("length", id("t")), make_intrusive<ASTLiteral>(1u)));
+        };
+        auto lower = [&] { return makeASTFunction("floor", rank()); };
+        auto weight = [&] { return makeASTFunction("minus", rank(), lower()); };
+        auto element = [&](UInt64 offset)
+        {
+            ASTPtr index = makeASTFunction("plus", makeASTFunction("toUInt64", lower()), make_intrusive<ASTLiteral>(offset));
+            return makeASTFunction("arrayElement", id("t"), makeASTFunction("least", std::move(index), makeASTFunction("length", id("t"))));
+        };
+
+        /// arrayMap(t -> if(empty(t), NULL, t[lower + 1] * (1 - weight) + t[least(lower + 2, length(t))] * weight), sorted_values)
+        ASTPtr value = makeASTFunction("plus",
+            makeASTFunction("multiply", element(1), makeASTFunction("minus", make_intrusive<ASTLiteral>(1.), weight())),
+            makeASTFunction("multiply", element(2), weight()));
+
+        return makeASTFunction("arrayMap",
+            makeASTLambda({"t"},
+                makeASTFunction("if", makeASTFunction("empty", id("t")), make_intrusive<ASTLiteral>(Field{} /* NULL */), std::move(value))),
+            std::move(sorted_values));
     }
 }
 
@@ -175,7 +252,7 @@ SQLQueryPiece applyAggregationOperatorQuantile(
             /// arrayMap(x -> if(isNotNull(x),
             ///                  multiIf(isNaN(phi), nan, phi < 0, -inf, phi > 1, inf, x),
             ///                  NULL),
-            ///          quantileExactInclusiveForEach(least(greatest(phi, 0.), 1.))(values))
+            ///          makeQuantileForEach(least(greatest(phi, 0.), 1.)))
             ///
             /// least() and greatest() clamp a NaN phi to a valid value too, which one doesn't
             /// matter because the result is replaced with NaN anyway.
@@ -184,6 +261,11 @@ SQLQueryPiece applyAggregationOperatorQuantile(
             ASTPtr clamped_phi = makeASTFunction("least",
                 makeASTFunction("greatest", phi->clone(), make_intrusive<ASTLiteral>(0.)),
                 make_intrusive<ASTLiteral>(1.));
+
+            /// phi >= 0 AND phi <= 1, which is false for a NaN phi.
+            ASTPtr phi_in_range = makeASTFunction("and",
+                makeASTFunction("greaterOrEquals", phi->clone(), make_intrusive<ASTLiteral>(0.)),
+                makeASTFunction("lessOrEquals", phi->clone(), make_intrusive<ASTLiteral>(1.)));
 
             ASTPtr substituted_element = makeASTFunction("multiIf",
                 makeASTFunction("isNaN", phi->clone()),
@@ -203,16 +285,11 @@ SQLQueryPiece applyAggregationOperatorQuantile(
                         makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
                         std::move(substituted_element),
                         make_intrusive<ASTLiteral>(Field{} /* NULL */))),
-                addParametersToAggregateFunction(
-                    makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                    std::move(clamped_phi)));
+                makeQuantileForEach(clamped_phi, builder, std::move(phi_in_range)));
         }
         else
         {
-            /// quantileExactInclusiveForEach(phi)(values)
-            quantile_expr = addParametersToAggregateFunction(
-                makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                getPhi(std::move(phi_arg), context));
+            quantile_expr = makeQuantileForEach(getPhi(std::move(phi_arg), context), builder);
         }
         builder.select_list.push_back(std::move(quantile_expr));
         builder.select_list.back()->setAlias(ColumnNames::Values);
