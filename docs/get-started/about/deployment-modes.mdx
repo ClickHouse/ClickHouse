@@ -55,17 +55,17 @@ The managed nature of the service means you don't need to worry about updates, b
 
 ## ClickHouse CLI {#clickhouse-cli}
 
-The ClickHouse CLI (`clickhousectl`) is a command-line tool for local ClickHouse development and ClickHouse Cloud management. It simplifies the workflow of installing ClickHouse versions, launching and managing local server instances, and running queries.
+The [ClickHouse CLI](/concepts/features/interfaces/cli) (`clickhousectl`, alias `chctl`) is a command-line tool for local ClickHouse and Postgres development and for ClickHouse Cloud management. It installs ClickHouse versions, launches and manages local servers, and runs queries.
 
-For local development, `clickhousectl` helps to install ClickHouse versions and run servers. You can install any ClickHouse version, spin up named servers, and connect via the built-in client. Each server gets its own data directory, so you can run multiple isolated environments side by side.
+For local development, `clickhousectl` installs any ClickHouse version and runs named servers. Connect with `clickhousectl local client`, which runs that version's `clickhouse-client`. Each server keeps its data in the project's `.clickhouse/` directory, so you can run multiple isolated environments side by side. With Docker running, `clickhousectl local postgres` starts local Postgres servers the same way.
 
-`clickhousectl` also provides full management of ClickHouse Cloud resources, including creating and scaling services, managing API keys, and administering organizations, making it a unified tool for both local and cloud workflows.
+`clickhousectl` also manages ClickHouse Cloud resources: services, scaling, backups, Managed Postgres, ClickPipes, Managed ClickStack, API keys, and organizations. Browser login (`clickhousectl cloud auth login`) is read-only; creating or changing resources needs an API key.
 
 ```bash
-# Install the CLI
-curl https://clickhouse.com/cli | sh
+# Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
+curl -fsSL https://clickhouse.com/cli | sh
 
-# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client

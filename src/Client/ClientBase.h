@@ -288,7 +288,7 @@ private:
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQueryForInsert();
+    bool receiveEndOfQueryForInsert(ASTPtr parsed_query);
     void cancelQuery();
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
