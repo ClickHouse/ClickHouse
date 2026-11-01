@@ -11,7 +11,7 @@ INSERT INTO t_rf_nse_left SELECT number, 0 FROM numbers(100000);
 -- Many distinct pairs, but only 50000 distinct values of `a`.
 INSERT INTO t_rf_nse_right SELECT number % 50000, intDiv(number, 50000) FROM numbers(2000000);
 
-SET enable_analyzer = 1, enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash', collect_hash_table_stats_during_joins = 1,
     join_runtime_filter_size_from_hash_table_stats = 1, join_runtime_bloom_filter_max_ratio_of_set_bits = 0.05,
     query_plan_join_swap_table = 0;

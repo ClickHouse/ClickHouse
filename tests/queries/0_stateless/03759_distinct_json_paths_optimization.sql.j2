@@ -2,8 +2,6 @@
 -- no-azure-blob-storage: too slow
 -- Random settings limits: index_granularity=(1000, None); index_granularity_bytes=(1000000, None)
 
-SET enable_analyzer=1;
-
 {% for (min_bytes, shared_data_serialization) in [(0, 'map'), (1000000000, 'map'), (0, 'map_with_buckets'), (1000000000, 'map_with_buckets'), (0, 'advanced'), (1000000000, 'advanced')] -%}
 
     DROP TABLE IF EXISTS test;

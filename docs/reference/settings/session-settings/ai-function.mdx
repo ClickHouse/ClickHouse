@@ -58,7 +58,7 @@ Maximum number of HTTP requests that AI functions may dispatch per query. 0 (def
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "New setting"}]}]}/>
 
 Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
 
@@ -101,9 +101,9 @@ This limit is only enforced for providers that report a `usage` object in their 
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "3"},{"label": "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}]}]}/>
 
-Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
+Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`. At most 5.
 
 ## ai_function_request_timeout_sec {#ai_function_request_timeout_sec}
 
@@ -123,7 +123,7 @@ Timeout in seconds for individual HTTP requests made by AI functions (AI chat co
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "New setting"}]}]}/>
 
-Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms. At most 10000.
 
 ## ai_function_text_default_credentials {#ai_function_text_default_credentials}
 

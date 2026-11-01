@@ -29,6 +29,7 @@ To declare a column of `JSON` type, you can use the following syntax:
     max_dynamic_paths=N,
     max_dynamic_types=M,
     some.path TypeName,
+    SHARED some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
 )
@@ -40,6 +41,7 @@ Where the parameters in the syntax above are defined as:
 | `max_dynamic_paths`         | An optional parameter indicating how many paths can be stored separately as sub-columns across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all other paths will be stored together in a single structure called [shared data](#shared-data-structure).<br/><br/>There are also [ways](#controlling-the-number-of-dynamic-paths) how to change the limit on dynamic paths without changing this parameter. | `1024`        |
 | `max_dynamic_types`         | An optional parameter between `1` and `255` indicating how many different data types can be stored separately inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all new types will be stored together in a single structure called `shared variant`.                                                                                    | `32`          |
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
+| `SHARED some.path TypeName` | A type hint whose path is stored in a MergeTree part together with the other `SHARED` paths of the column, in a constant number of files, instead of files of its own. See [`SHARED` typed paths](#shared-typed-paths). |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
 
@@ -913,6 +915,28 @@ The chunk size is controlled by the MergeTree setting [object_shared_data_target
 This is not a hard limit: if the last chunk would be smaller than half the target, it is merged with the previous chunk,
 so actual chunk sizes range from `target/2` to `1.5 * target`.
 
+## `SHARED` typed paths {#shared-typed-paths}
+
+In a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) part every typed path is stored like a column of its own, with a file per substream of its type. A column with hundreds of typed paths produces hundreds of files per part, and on object storage every file read is a separate request. Marking a typed path `SHARED` stores it in the typed shared data of the part instead: all `SHARED` paths of a column are written together into three files, however many they are. The data is laid out granule by granule, path by path, with the position of every path's data recorded, so reading one path still decodes only that path.
+
+```sql
+CREATE TABLE test (json JSON(SHARED a UInt32, SHARED b.c Array(String), d String)) ENGINE = MergeTree ORDER BY tuple();
+```
+
+Here `a` and `b.c` are stored in the typed shared data and `d` as a column of its own. Apart from the storage, a `SHARED` path is a typed path like any other: values are parsed and cast to the declared type, the path and its sub-columns are read with the same syntax (`json.a`, `json.b.c`, `json.b.c.size0`), and it takes part in sub-object and combined sub-column reads. Outside MergeTree parts, for example in the `Memory` engine or in the `Native` format, the modifier changes nothing.
+
+Choose `SHARED` for columns with many typed paths, especially on object storage, where the number of files per part matters more than the bytes read for one path. A read of one `SHARED` path reads the compressed blocks holding its data, which it may share with neighbouring paths, so it can read somewhat more than a path with files of its own; blocks are cut once they reach `min_compress_block_size`, which bounds the excess.
+
+The modifier is added or removed with `ALTER TABLE ... MODIFY COLUMN`:
+
+```sql
+ALTER TABLE test MODIFY COLUMN json JSON(SHARED a UInt32, SHARED b.c Array(String), SHARED d String);
+```
+
+With [Lazy Type Hints](#lazy-type-hints) enabled this is a metadata-only change, and existing parts keep their layout until they are merged; otherwise the parts are rewritten. Parts of both layouts are read together.
+
+The on-disk format of the typed shared data is versioned by the MergeTree setting `object_typed_shared_data_serialization_version`; `v1` is the only version so far.
+
 ## Controlling the number of dynamic paths inside JSON in MergeTree parts {#controlling-the-number-of-dynamic-paths}
 
 The main way to set a limit on dynamic paths in JSON is to use `max_dynamic_paths` parameter inside the JSON type declaration.
@@ -1372,6 +1396,7 @@ See [Value-based indexes with JSONAllValues](/reference/engines/table-engines/me
 Before creating `JSON` column and loading data into it, consider the following tips:
 
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
+- With many typed paths in a `MergeTree` table, especially on object storage, declare them `SHARED` to keep the number of files per part constant. See [`SHARED` typed paths](#shared-typed-paths).
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
   While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.

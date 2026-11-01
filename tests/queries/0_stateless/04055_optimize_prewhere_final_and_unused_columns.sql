@@ -26,7 +26,6 @@ WHERE (42 >= id)
   AND equals(and(8, 8), 1);
 
 -- Test also with settings that caused the initial bug
-SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 

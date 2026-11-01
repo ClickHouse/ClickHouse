@@ -269,7 +269,7 @@ void deleteFilesFromS3(
                 /// or b) all the objects didn't exist; or c) some failure occurred.
                 const auto & err = outcome.GetError();
                 if ((err.GetExceptionName() == "InvalidRequest") || (err.GetExceptionName() == "InvalidArgument")
-                    || (err.GetExceptionName() == "NotImplemented"))
+                    || (err.GetExceptionName() == "NotImplemented") || (err.GetExceptionName() == "MissingContentMD5"))
                 {
                     LOG_TRACE(log, "DeleteObjects is not supported: {} (Code: {}). Retrying with plain DeleteObject.",
                               err.GetMessage(), static_cast<size_t>(err.GetErrorType()));

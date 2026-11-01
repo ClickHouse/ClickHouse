@@ -29,6 +29,7 @@ CREATE TABLE writer (key Int32, value String) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = 1, disk = disk(
     name = '05234_writer_${CLICKHOUSE_DATABASE}',
     type = object_storage, object_storage_type = local, metadata_type = plain_rewritable,
+    metadata_snapshot_write_delay_ms = 0, -- the reader sees the snapshot of the state right after every commit
     enable_hard_links = 0,
     path = '${disk_path}');
 
