@@ -242,6 +242,8 @@ private:
     }
 
     UInt64 getMetadataHash(const String & table_name) const;
+    /// Digest of the metadata of all tables, including the ones that failed to load.
+    UInt64 calculateMetadataDigest() const TSA_REQUIRES(mutex);
     bool checkDigestValid(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
     void assertDigestWithProbability(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
 
@@ -301,6 +303,10 @@ private:
     /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
     /// It allows to detect if metadata is broken and recover replica.
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
+
+    /// Tables that failed to load at startup. They are not in `tables`, but their metadata is still a part of the
+    /// database, on disk and in Keeper.
+    NameSet tables_failed_to_load TSA_GUARDED_BY(mutex);
 
     /// Counter for tables currently being restarted by SYSTEM RESTART REPLICA.
     /// During restart, the table is temporarily removed from the in-memory tables map,
