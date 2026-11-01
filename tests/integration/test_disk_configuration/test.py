@@ -3,7 +3,6 @@ import os
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.blobs import wait_blobs_count_synchronization
@@ -191,14 +190,13 @@ def test_object_storage_namespace_in_storage_policy(start_cluster):
         os.path.join(SCRIPT_DIR, "configs/duplicate_object_storage_policy.xml"),
         invalid_policy_path,
     )
-    # A policy whose disks resolve to one storage namespace is rejected while the policy is built, the
-    # same way a policy naming an unknown disk is. `ConfigReloader` reports that as a failure to load the
-    # configuration, so the reload does not apply and the previous configuration stays in effect.
+    # `Context::updateStorageConfiguration` catches the exception that building the policy
+    # raises, logs it, and keeps the previous storage policies, so the reload itself reports
+    # success and the rejected policy never appears. At server startup there is no such catch
+    # and the exception is fatal.
     try:
-        with pytest.raises(
-            QueryRuntimeException, match="resolve to the same storage namespace"
-        ):
-            node.query("SYSTEM RELOAD CONFIG")
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.wait_for_log_line("resolve to the same storage namespace")
         assert (
             node.query(
                 "SELECT count() FROM system.storage_policies "
@@ -228,12 +226,10 @@ def test_symlinked_metadata_path_in_storage_policy(start_cluster):
         os.path.join(SCRIPT_DIR, "configs/duplicate_local_metadata_policy.xml"),
         invalid_policy_path,
     )
-    # As above: the reload fails and leaves the previous configuration in place.
+    # As above: the reload succeeds, the error is logged and the policy is not applied.
     try:
-        with pytest.raises(
-            QueryRuntimeException, match="resolve to the same storage namespace"
-        ):
-            node.query("SYSTEM RELOAD CONFIG")
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.wait_for_log_line("resolve to the same storage namespace")
         assert (
             node.query(
                 "SELECT count() FROM system.storage_policies "
