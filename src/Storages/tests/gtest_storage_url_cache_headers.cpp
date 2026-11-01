@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include <Storages/StorageURL.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/StorageURL.h>
 
 using namespace DB;
 
@@ -66,4 +66,3 @@ TEST(StorageURLCacheHeaders, SchemaCacheKeyComparison)
     EXPECT_NE(hasher(key1), hasher(key2));
     EXPECT_NE(hasher(key1), hasher(key_empty));
 }
-
