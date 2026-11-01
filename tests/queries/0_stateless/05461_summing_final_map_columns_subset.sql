@@ -18,6 +18,10 @@ SELECT count() FROM t_summing_map FINAL WHERE has(statMap.v, 15);
 SELECT statMap.v FROM t_summing_map FINAL
 SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, enable_parallel_replicas = 0;
 
+-- A `PREWHERE` before the merge neither drops a column of the structure that it uses nor changes the order of the columns for the merge.
+SELECT statMap.v, statMap.w FROM t_summing_map FINAL PREWHERE has(statMap.k, 1) SETTINGS apply_prewhere_after_final = 0;
+SELECT statMap.v, statMap.k, statMap.w FROM t_summing_map FINAL PREWHERE notEmpty(statMap.v) SETTINGS apply_prewhere_after_final = 0;
+
 -- The merge does not sum a structure with a value column that cannot be summed.
 CREATE TABLE t_summing_map_not_summable (id UInt32, sMap Nested(k UInt8, v UInt64, s String)) ENGINE = SummingMergeTree ORDER BY id;
 SYSTEM STOP MERGES t_summing_map_not_summable;

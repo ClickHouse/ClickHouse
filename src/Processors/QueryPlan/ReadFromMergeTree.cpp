@@ -11,8 +11,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -87,7 +85,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -2665,6 +2662,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             columns_to_restore.insert(column.name);
         for (const auto & column : getMergingParamsColumns(data.merging_params))
             columns_to_restore.insert(column);
+        /// The merge of `SummingMergeTree` needs all the columns of a `...Map` structure that the read includes, see `spreadMarkRanges`.
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
+        {
+            const auto & columns = storage_snapshot->metadata->getColumns();
+            for (const auto & column_name : column_names)
+                if (auto column = columns.tryGetPhysical(column_name);
+                    column && !getSummingMapName(*column, data.merging_params.allow_tuple_element_aggregation).empty())
+                    columns_to_restore.insert(column_name);
+        }
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
@@ -4785,21 +4791,6 @@ bool ReadFromMergeTree::isQueryWithSampling() const
         return true;
 
     return query_info.getSampleSizeRatio().has_value();
-}
-
-/// The name of the `...Map` structure that the merge of `SummingMergeTree` sums the column `column` in, as `defineColumns`
-/// in `SummingSortedAlgorithm.cpp` names it, or an empty string.
-static String getSummingMapName(const NameAndTypePair & column, bool allow_tuple_element_aggregation)
-{
-    if (!typeid_cast<const DataTypeArray *>(column.type.get())
-        || dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
-        return {};
-
-    String map_name = allow_tuple_element_aggregation ? Nested::splitName(column.name, /*reverse=*/true).first
-                                                      : Nested::extractTableName(column.name);
-    if (map_name == column.name || !endsWith(map_name, "Map"))
-        return {};
-    return map_name;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(
