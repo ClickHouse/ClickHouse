@@ -267,7 +267,10 @@ SQLQueryPiece applyLabelManipulationFunction(
         case StoreMethod::VECTOR_GRID:
         {
             /// An order fixed by an inner sort*() call is kept through the series each row comes from.
-            String source_rank_subquery = res.sort_rank_subquery;
+            /// Without one, an outer sort_by_label() starts from the order of the series before the tags are changed.
+            if (first_argument.sort_rank_subquery.empty() && isUnderSortByLabel(function_node, context))
+                setImplicitSortRank(first_argument, context);
+            String source_rank_subquery = first_argument.sort_rank_subquery;
 
             /// Step 1:
             /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values

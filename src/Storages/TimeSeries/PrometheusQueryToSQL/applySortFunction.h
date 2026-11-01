@@ -25,6 +25,10 @@ bool isUnderSortByLabel(const PrometheusQueryTree::Node * node, const ConverterC
 /// `bucket_key` is the tags of the aggregation group, or nullptr without `by` / `without`.
 void setLimitAggregationRank(SQLQueryPiece & query_piece, ASTPtr && bucket_key, bool descending, ConverterContext & context);
 
+/// Records the current order of a vector without a rank map (the storage order, by tags) as its rank map, so that
+/// a transformation changing the tags keeps it for an outer sort_by_label() call.
+void setImplicitSortRank(SQLQueryPiece & query_piece, ConverterContext & context);
+
 /// Returns `anyIf(group, isNotNull(values[1]))`: the source series of a row merged by GROUP BY.
 /// It's the one with a value at the step, because an ordered result has only one step.
 ASTPtr makeSortSourceOfMergedRow(ASTPtr group, ASTPtr values);

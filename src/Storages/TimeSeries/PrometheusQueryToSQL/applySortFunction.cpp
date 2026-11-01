@@ -314,6 +314,12 @@ void setLimitAggregationRank(SQLQueryPiece & query_piece, ASTPtr && bucket_key, 
     materializeSortRank(query_piece, makeSortedGroupsByKey(std::move(sort_key), descending), context);
 }
 
+void setImplicitSortRank(SQLQueryPiece & query_piece, ConverterContext & context)
+{
+    /// Prometheus's sort_by_label() starts from the storage order of a selector, which is the order by tags.
+    materializeSortRank(query_piece, makeSortedGroupsByKey(makeTagsExpression(), false), context);
+}
+
 ASTPtr makeSortSourceOfMergedRow(ASTPtr group, ASTPtr values)
 {
     return makeASTFunction("anyIf",
