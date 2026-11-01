@@ -149,6 +149,10 @@ void RedisHandler::serveConnection()
         }
         catch (const Poco::Exception & exc)
         {
+            /// Sending (a part of) the reply has failed, so the connection is unusable: let `run` close it.
+            if (out->isCanceled())
+                throw;
+
             /// The whole command has been read, so the connection stays usable.
             log->log(exc);
             RedisProtocol::ErrorResponse resp(exc.message());
@@ -161,8 +165,6 @@ void RedisHandler::serveConnection()
         if (!keep_connection)
             break;
     }
-
-    out->finalize();
 }
 
 void RedisHandler::authenticate(const String & user_name, const String & password)
