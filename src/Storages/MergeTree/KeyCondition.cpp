@@ -869,8 +869,8 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
         /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
         /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
-        /// position layout; the mismatch causes an out-of-bounds write into `partial_disjunction_result`
-        /// when the index RPN exceeds `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT`.
+        /// position layout; the mismatch puts partial results at the wrong positions of `partial_disjunction_result`,
+        /// which can skip granules that match the filter.
         if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
@@ -7309,6 +7309,11 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 {
     if (functions.empty())
         return key_range;
+
+    /// A bound where `isNull()` holds stands in for NULL or for an infinity, and is left untransformed below,
+    /// so no transformed value would remain to compare against an atom in the function's result domain.
+    if (single_point && (key_range.left.isNull() || key_range.right.isNull()))
+        return {};
 
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
