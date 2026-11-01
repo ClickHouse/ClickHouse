@@ -1989,7 +1989,8 @@ class JobConfigs:
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
             for table_engine in ("iceberg_local", "iceberg_s3")
-            for total_batches in (2,)
+            # 270 tests: 2 batches of 135 took 103-121 min of the 2 h timeout.
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
     )
