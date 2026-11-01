@@ -17,22 +17,25 @@ GroupLimitSortedAlgorithm::GroupLimitSortedAlgorithm(
     UInt64 group_limit_end_,
     size_t max_block_size_rows_)
     : output_header(std::move(output_header_))
-    , description(std::move(key_description))
+    , description(inputSortDescription(std::move(key_description), seen_rows_column))
     , has_seen_rows(seen_rows_column.has_value())
-    , num_key_columns(description.size())
+    , num_key_columns(description.size() - (has_seen_rows ? 1 : 0))
     , group_offset(group_offset_)
     , group_limit_end(group_limit_end_)
     , max_block_size_rows(max_block_size_rows_)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
     chassert(num_key_columns > 0);
-
-    /// Sorting the seen counts descending after the keys places seen rows, whose counts are positive, before input
-    /// rows with equal keys, independently of input registration.
-    if (has_seen_rows)
-        description.emplace_back(*seen_rows_column, -1, 1);
     for (auto & header : input_headers)
         addInput(std::move(header));
+}
+
+SortDescription GroupLimitSortedAlgorithm::inputSortDescription(
+    SortDescription key_description, const std::optional<String> & seen_rows_column)
+{
+    if (seen_rows_column)
+        key_description.emplace_back(*seen_rows_column, -1, 1);
+    return key_description;
 }
 
 void GroupLimitSortedAlgorithm::addInput(SharedHeader header)

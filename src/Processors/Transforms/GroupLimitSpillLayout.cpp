@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Processors/Merges/Algorithms/GroupLimitSortedAlgorithm.h>
 #include <Common/ColumnsHashing.h>
 
 namespace DB
@@ -103,10 +104,8 @@ GroupLimitSpillLayout::GroupLimitSpillLayout(
     input.insert({seen_rows_type->createColumn(), seen_rows_type, seen_rows_column_name});
     seen.insert(input.getByPosition(input.columns() - 1));
 
-    /// Order seen rows, whose counts are positive, before input rows with equal keys, independently of run
-    /// registration.
-    run_sort_description = key_sort_description;
-    run_sort_description.emplace_back(seen_rows_column_name, -1, 1);
+    /// Seen runs are inputs of the final merge, so they follow its order.
+    run_sort_description = GroupLimitSortedAlgorithm::inputSortDescription(key_sort_description, seen_rows_column_name);
     input_run_header = std::make_shared<const Block>(std::move(input));
     seen_run_header = std::make_shared<const Block>(std::move(seen));
 }

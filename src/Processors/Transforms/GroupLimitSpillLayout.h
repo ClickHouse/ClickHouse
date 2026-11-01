@@ -61,7 +61,8 @@ private:
     SharedHeader seen_run_header;
     SharedHeader merged_header;
     SortDescription key_sort_description;
-    /// Run ordering puts seen rows before input rows with equal keys; key comparisons ignore the seen counts.
+    /// The order of the seen runs, the order of the final merge's inputs (see
+    /// `GroupLimitSortedAlgorithm::inputSortDescription`); key comparisons ignore the seen counts.
     SortDescription run_sort_description;
     /// The number of input rows seen per group before spilling, the last column of `run_sort_description`.
     String seen_rows_column_name;

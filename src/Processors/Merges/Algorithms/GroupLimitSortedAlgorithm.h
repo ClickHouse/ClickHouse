@@ -32,6 +32,10 @@ public:
         UInt64 group_limit_end_,
         size_t max_block_size_rows_);
 
+    /// The order of the inputs: the keys, followed by `seen_rows_column` descending if set, which places the seen rows
+    /// of a group, whose counts are positive, before its input rows independently of input registration.
+    static SortDescription inputSortDescription(SortDescription key_description, const std::optional<String> & seen_rows_column);
+
     const char * getName() const override { return "GroupLimitSortedAlgorithm"; }
     void addInput(SharedHeader header);
     void initialize(Inputs inputs) override;
@@ -64,7 +68,7 @@ private:
     };
 
     const SharedHeader output_header;
-    /// The keys, followed by the seen-rows column descending if there is one.
+    /// The order of the inputs (see `inputSortDescription`).
     SortDescription description;
     const bool has_seen_rows;
     const size_t num_key_columns;
