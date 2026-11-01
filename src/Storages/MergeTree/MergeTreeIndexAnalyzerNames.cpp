@@ -345,6 +345,19 @@ private:
     std::unordered_map<UInt128, AlternativeKeyExpressionPtr> entries;
 };
 
+/// The storage column of the key a subcolumn input of the alternative form is read from: the longest
+/// prefix that is a source column of the key, see `getRequiredStorageColumns`. Empty if there is none.
+String getSourceColumnOfSubcolumn(const String & subcolumn_name, const NameSet & key_source_columns)
+{
+    for (size_t pos = subcolumn_name.rfind('.'); pos != String::npos && pos != 0; pos = subcolumn_name.rfind('.', pos - 1))
+    {
+        String prefix = subcolumn_name.substr(0, pos);
+        if (key_source_columns.contains(prefix))
+            return prefix;
+    }
+    return {};
+}
+
 /// The alternative form is computed against a storage with only the source columns of the key, so the
 /// rewrite passes do not see the other columns of the table, and the names of the alternative form can
 /// refer to other columns in the real table:
@@ -383,18 +396,7 @@ bool collidesWithOtherTableColumn(
         if (key_source_columns.contains(node.result_name))
             continue;
 
-        /// The storage column the subcolumn is read from in the dummy table: the longest prefix that is a
-        /// source column of the key, see `getRequiredStorageColumns`.
-        String source_column;
-        for (size_t pos = node.result_name.rfind('.'); pos != String::npos && pos != 0; pos = node.result_name.rfind('.', pos - 1))
-        {
-            String prefix = node.result_name.substr(0, pos);
-            if (key_source_columns.contains(prefix))
-            {
-                source_column = std::move(prefix);
-                break;
-            }
-        }
+        const String source_column = getSourceColumnOfSubcolumn(node.result_name, key_source_columns);
 
         if (table_columns.has(node.result_name))
             return true;
@@ -431,11 +433,18 @@ NameSet getPredicateInputNames(const ActionsDAG::Node * predicate)
     return result;
 }
 
-/// The source columns of the key whose subcolumns (e.g. `m.key_k` after `FunctionToSubcolumnsPass`)
-/// the alternative form reads but the filter does not read: the query did not apply those rewrites.
+/// The source columns of the key whose rewrites to subcolumn reads (e.g. `m.key_k` after
+/// `FunctionToSubcolumnsPass`) the query did not apply, so the alternative form must be computed
+/// without them:
+/// - the subcolumn's name, or a prefix of it other than the source column, is a column of the table:
+///   `FunctionToSubcolumnsPass` does not rewrite to it then, see `collidesWithOtherTableColumn`;
+/// - the filter does not read the subcolumn (only checked if `predicate_inputs` is given).
 /// Returns nullopt if such a subcolumn cannot be attributed to a source column of the key.
-std::optional<NameSet> getSourceColumnsOfSubcolumnsMissingInPredicate(
-    const AlternativeKeyExpression & alternative_key, const ExpressionActionsPtr & expression, const NameSet & predicate_inputs)
+std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
+    const AlternativeKeyExpression & alternative_key,
+    const ExpressionActionsPtr & expression,
+    const ColumnsDescription & table_columns,
+    const NameSet * predicate_inputs)
 {
     NameSet key_source_columns;
     for (const auto & column : expression->getRequiredColumns())
@@ -444,22 +453,21 @@ std::optional<NameSet> getSourceColumnsOfSubcolumnsMissingInPredicate(
     NameSet result;
     for (const auto & node : alternative_key.expression->getActionsDAG().getNodes())
     {
-        if (node.type != ActionsDAG::ActionType::INPUT || key_source_columns.contains(node.result_name)
-            || predicate_inputs.contains(node.result_name))
+        if (node.type != ActionsDAG::ActionType::INPUT || key_source_columns.contains(node.result_name))
             continue;
 
-        /// The storage column the subcolumn is read from: the longest prefix that is a source column
-        /// of the key, see `getRequiredStorageColumns`.
-        String source_column;
-        for (size_t pos = node.result_name.rfind('.'); pos != String::npos && pos != 0; pos = node.result_name.rfind('.', pos - 1))
+        String source_column = getSourceColumnOfSubcolumn(node.result_name, key_source_columns);
+
+        bool shadowed = table_columns.has(node.result_name);
+        for (size_t pos = node.result_name.find('.'); !shadowed && pos != String::npos; pos = node.result_name.find('.', pos + 1))
         {
             String prefix = node.result_name.substr(0, pos);
-            if (key_source_columns.contains(prefix))
-            {
-                source_column = std::move(prefix);
-                break;
-            }
+            shadowed = prefix != source_column && table_columns.has(prefix);
         }
+
+        if (!shadowed && (!predicate_inputs || predicate_inputs->contains(node.result_name)))
+            continue;
+
         if (source_column.empty())
             return std::nullopt;
         result.insert(std::move(source_column));
@@ -473,7 +481,6 @@ AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
     const ExpressionActionsPtr & expression,
     const Names & column_names,
     const Names & columns_without_subcolumns,
-    const ColumnsDescription & table_columns,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const String & key_kind,
     const String & description_for_log,
@@ -512,8 +519,6 @@ AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
                 return computeAlternativeExpression(
                     expression_list_ast, expression, column_names, columns_without_subcolumns, register_key, context);
             });
-        if (alternative_key && collidesWithOtherTableColumn(*alternative_key, expression, table_columns))
-            return nullptr;
         return alternative_key;
     }
     catch (...)
@@ -528,11 +533,13 @@ AlternativeKeyExpressionPtr getAlternativeExpressionImpl(
 
 /// `FunctionToSubcolumnsPass` decides for every column of the query whether to rewrite its functions
 /// to subcolumn reads: it does not when the query uses the column in another way (e.g. `mapKeys(m)` in
-/// the projection) or reads the table with `FINAL`. The replay against the dummy table does not see
-/// that, so it can rewrite `m['k']` to `m.key_k` while the query does not. If the alternative form reads
-/// subcolumns that the filter does not read, compute it again without the rewrites of their source
-/// columns, keeping the other ones (e.g. `multiIf` to `if`, or `n['k']` to `n.key_k` when the filter
-/// reads `n.key_k`).
+/// the projection), reads the table with `FINAL`, or when the table has a column with the name of the
+/// subcolumn. The replay against the dummy table does not see that, so it can rewrite `m['k']` to
+/// `m.key_k` while the query does not. If the alternative form reads subcolumns that are shadowed by
+/// other columns of the table or that the filter does not read, compute it again without the rewrites
+/// of their source columns, keeping the other ones (e.g. `multiIf` to `if`, or `n['k']` to `n.key_k`
+/// when the filter reads `n.key_k`). The final candidate is still checked for collisions with the
+/// other columns of the table.
 AlternativeKeyExpressionPtr getAlternativeExpression(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
@@ -546,24 +553,24 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
 {
     NameSet columns_without_subcolumns;
     auto alternative_key = getAlternativeExpressionImpl(
-        expression_list_ast, expression, column_names, {}, table_columns, register_key, key_kind, description_for_log, context);
+        expression_list_ast, expression, column_names, {}, register_key, key_kind, description_for_log, context);
 
-    if (!alternative_key || !predicate || !context->getSettingsRef()[Setting::optimize_functions_to_subcolumns])
-        return alternative_key;
-
-    const NameSet predicate_inputs = getPredicateInputNames(predicate);
+    std::optional<NameSet> predicate_inputs;
+    if (predicate && context->getSettingsRef()[Setting::optimize_functions_to_subcolumns])
+        predicate_inputs = getPredicateInputNames(predicate);
 
     /// Every iteration adds at least one source column, so this terminates.
     while (alternative_key)
     {
-        auto missing = getSourceColumnsOfSubcolumnsMissingInPredicate(*alternative_key, expression, predicate_inputs);
-        if (!missing)
+        auto excluded = getSourceColumnsOfSubcolumnsNotInQuery(
+            *alternative_key, expression, table_columns, predicate_inputs ? &*predicate_inputs : nullptr);
+        if (!excluded)
             return nullptr;
-        if (missing->empty())
-            return alternative_key;
+        if (excluded->empty())
+            break;
 
         size_t previous_size = columns_without_subcolumns.size();
-        columns_without_subcolumns.insert(missing->begin(), missing->end());
+        columns_without_subcolumns.insert(excluded->begin(), excluded->end());
         /// The rewrite of a column that is already excluded cannot be suppressed further.
         if (columns_without_subcolumns.size() == previous_size)
             return nullptr;
@@ -571,9 +578,11 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
         Names sorted_columns(columns_without_subcolumns.begin(), columns_without_subcolumns.end());
         std::sort(sorted_columns.begin(), sorted_columns.end());
         alternative_key = getAlternativeExpressionImpl(
-            expression_list_ast, expression, column_names, sorted_columns, table_columns, register_key, key_kind, description_for_log, context);
+            expression_list_ast, expression, column_names, sorted_columns, register_key, key_kind, description_for_log, context);
     }
 
+    if (alternative_key && collidesWithOtherTableColumn(*alternative_key, expression, table_columns))
+        return nullptr;
     return alternative_key;
 }
 
