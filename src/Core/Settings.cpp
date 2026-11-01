@@ -1600,6 +1600,17 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(Bool, to_start_of_interval_preserves_argument_type, true, R"(
+Makes the function `toStartOfInterval` (and its aliases `time_bucket` and `date_bin`) return a value of the same type as its first argument:
+`Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime` and `DateTime64` with the same scale for `DateTime64`, regardless of the interval unit.
+The only exception is a subsecond unit finer than the scale of a `DateTime64` argument, for example `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`: the result has the scale of the unit, because the scale of the argument cannot represent the bucket boundaries.
+
+Possible values:
+
+- `1` — The result has the type of the first argument. The setting `enable_extended_results_for_datetime_functions` does not affect the function.
+- `0` — Legacy behavior: the result type depends on the interval unit. The units `WEEK` and longer produce a `Date`, `DAY` down to `SECOND` produce a `DateTime`, and the subsecond units produce a `DateTime64` with the scale of the unit (for `Date32` and `DateTime64` arguments, `Date32` and `DateTime64` instead of `Date` and `DateTime` with `enable_extended_results_for_datetime_functions = 1`). A value that does not fit the range of the narrower result type is wrapped: for example, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` returns `2036-02-07 06:28:16`. This describes the overload without `origin`. The overload with `origin` keeps the type of the argument even in the legacy behavior, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
+)", 0, \
+        {"26.11", false, true, "The function `toStartOfInterval` returns a value of the same type as its argument instead of a type determined by the interval unit, which wrapped values outside the range of the narrower type"}) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
@@ -7867,6 +7878,16 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
+    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
 Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 
@@ -8637,13 +8658,6 @@ Emit `TEST`-level log messages for every filesystem cache buffer refill (state o
         {"26.8", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
-Skip download from remote filesystem if exceeds query cache size
-)", 0, skip_download_if_exceeds_query_cache, \
-        {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
-    DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
-Max remote filesystem cache size that can be downloaded by a single query
 )", 0) \
     DECLARE(Bool, throw_on_error_from_cache_on_write_operations, false, R"(
 Ignore error from cache when caching on write operations (INSERT, merges)
@@ -11130,11 +11144,20 @@ Default number of buckets for distributed shuffle-hash-join.
 Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL, \
         {"25.5", 8, 8, "New experimental setting."}) \
-    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
-Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 0, R"(
+Number of tasks for parallel reading in distributed query. Tasks are spread across workers.
+
+`0` chooses the number automatically: one task per `distributed_plan_min_rows_per_reader` rows selected by the read, at least one, and at most the number of workers.
+
 Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL, \
+        {"26.11", 8, 0, "Choose the number of read tasks from the rows to read and the number of workers by default."}, \
         {"25.5", 8, 8, "New experimental setting."}) \
+    DECLARE(NonZeroUInt64, distributed_plan_min_rows_per_reader, 1000000, R"(
+Minimum number of rows for each read task when `distributed_plan_default_reader_bucket_count` is `0`.
+Used by the rule-based distributed planner.
+)", EXPERIMENTAL, \
+        {"26.11", 1000000, 1000000, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0, \
@@ -11443,6 +11466,11 @@ Enable experimental table function `eval`.
         {"26.9", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"}) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false, \
         {"25.12", false, false, "New setting"}) \
+    ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, skip_download_if_exceeds_query_cache, \
+        {"26.10", true, true, "Obsolete: the per-query filesystem cache write limit was removed."}, \
+        {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
+    MAKE_OBSOLETE(M, UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), \
+        {"26.10", 137438953472, 137438953472, "Obsolete: the per-query filesystem cache write limit was removed. A query is no longer capped in how much it writes into a filesystem cache; the cache's own `max_size` and eviction policy bound it."}) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
