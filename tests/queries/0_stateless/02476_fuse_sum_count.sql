@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET optimize_syntax_fuse_functions = 1;
 SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 
@@ -35,5 +34,8 @@ SELECT sum(x), count(x), avg(x), toTypeName(sum(x)), toTypeName(count(x)), toTyp
 
 -- TODO: uncomment after https://github.com/ClickHouse/ClickHouse/pull/43372
 -- SELECT avg(b), x - 2 AS b FROM (SELECT number as x FROM numbers(1)) GROUP BY x;
+
+SELECT sum(b + 1), sum(b + 2), avg(b), avg(b), (avg(b)) FROM fuse_tbl;
+EXPLAIN QUERY TREE run_passes = 1 SELECT sum(b + 1), sum(b + 2), avg(b), avg(b), (avg(b)) FROM fuse_tbl;
 
 DROP TABLE fuse_tbl;

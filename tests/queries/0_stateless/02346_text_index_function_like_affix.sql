@@ -1,10 +1,9 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-msan
 -- Tests that affix LIKE/ILIKE patterns, i.e. prefix ('value%') and suffix ('%value'), use the text index as a hint.
 -- By default the analyzer rewrites such patterns into startsWith/endsWith (optimize_rewrite_like_perfect_affix),
 -- so both spellings are covered here.
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
