@@ -1770,6 +1770,55 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkersWithFreeThreads
     testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(/* local_pool_max_free_threads = */ 1);
 }
 
+// An idle worker of a local pool that keeps free threads holds a slot of the global pool. When a permanent
+// thread takes the last slot after that, a mandatory spawn of a loader worker must take the slot of the idle
+// worker back instead of being rejected: the idle worker leaves its pool and frees a thread for the loader.
+TEST(AsyncLoader, MandatorySpawnTakesBackSlotOfIdleLocalPoolWorker)
+{
+    GlobalThreadPoolLimits limits;
+    static constexpr size_t capacity = 2;
+    limits.pool.setMaxThreads(capacity);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t(16);
+    t.loader.unpause(); // Idle: the pool has no worker, so the next enqueue requires a spawn
+
+    // Its worker stays idle after the callback returns and takes one of the two slots.
+    ThreadPool local_pool(
+        CurrentMetrics::TablesLoaderBackgroundThreads,
+        CurrentMetrics::TablesLoaderBackgroundThreadsActive,
+        CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
+        /* max_threads = */ 1,
+        /* max_free_threads = */ 1,
+        /* queue_size = */ 0);
+    local_pool.scheduleOrThrowOnError([] {});
+    local_pool.wait();
+
+    // Takes the other thread of the global pool and the last slot.
+    std::atomic<bool> started{false};
+    std::atomic<bool> release{false};
+    ThreadFromGlobalPool permanent_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+    {
+        started = true;
+        while (!release.load())
+            std::this_thread::yield();
+    });
+    while (!started)
+        std::this_thread::yield();
+
+    std::atomic<size_t> jobs_done{0};
+    auto task = t.schedule({makeLoadJob({}, "job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    waitLoad(task);
+
+    release = true;
+    permanent_thread.join();
+    t.loader.wait();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done, 1);
+}
+
 // Finite threads that are started directly and need a worker right away, such as the thread of a gRPC
 // call or of a dictionary load, must not use up the slots that a mandatory spawn of a loader worker needs.
 TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteDirectThreads)

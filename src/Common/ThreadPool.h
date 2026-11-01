@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <thread>
+#include <type_traits>
 #include <mutex>
 #include <condition_variable>
 #include <functional>
@@ -36,6 +37,34 @@ class JobWithPriority;
   *
   * Thread: std::thread or something with identical interface.
   */
+/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
+/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
+/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
+/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
+#if defined(OS_DARWIN)
+using GlobalThreadType = DB::ThreadWithStackSize;
+#else
+using GlobalThreadType = std::thread;
+#endif
+
+/// An idle worker of a local pool that holds a slot of the global pool while it is idle (see
+/// `ThreadFromThreadPool::global_slots_for_idle`). While it waits, it is linked into a process-wide list,
+/// so that the global pool can take the slot back when a thread needs it: the worker is woken, gives the
+/// slot back (or hands it over to the new thread, see `slot_taken_over`), and leaves its pool, which frees
+/// its thread of the global pool. All the fields are protected by the mutex of that list.
+struct IdleGlobalSlotHolder
+{
+    IdleGlobalSlotHolder * prev = nullptr;
+    IdleGlobalSlotHolder * next = nullptr;
+    std::condition_variable_any * cv = nullptr;
+    bool linked = false;
+    /// Set when the slot is taken back. The worker leaves its pool when it sees it.
+    bool evicted = false;
+    /// Set together with `evicted` when the slot was handed over to a thread that takes a slot. Then the
+    /// worker must not give it back to the counter.
+    bool slot_taken_over = false;
+};
+
 template <typename Thread>
 class ThreadPoolImpl
 {
@@ -113,7 +142,13 @@ public:
         /// Each idle thread waits on its own CV, so the scheduler can wake the
         /// LIFO-selected thread directly without disturbing other idle threads.
         /// This avoids the thundering herd that a shared CV with `notify_all` creates.
-        std::condition_variable cv;
+        /// A worker of a local pool also waits for `IdleGlobalSlotHolder::evicted` (see `idle_slot_holder`), which
+        /// is protected by another mutex, so it needs `std::condition_variable_any`.
+        std::conditional_t<std::is_same_v<Thread, GlobalThreadType>, std::condition_variable, std::condition_variable_any> cv;
+
+        /// Linked into the process-wide list while this worker waits in the idle stack holding a slot of the
+        /// global pool (only for a worker with `global_slots_for_idle`).
+        IdleGlobalSlotHolder idle_slot_holder;
 
         /// LIFO idle thread scheduling flag.
         /// When a new job is scheduled, the most recently idle thread is popped
@@ -379,16 +414,6 @@ private:
     void finalize();
     void onDestroy();
 };
-
-/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
-/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
-/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
-/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
-#if defined(OS_DARWIN)
-using GlobalThreadType = DB::ThreadWithStackSize;
-#else
-using GlobalThreadType = std::thread;
-#endif
 
 /// ThreadPool with OS threads.
 using FreeThreadPool = ThreadPoolImpl<GlobalThreadType>;

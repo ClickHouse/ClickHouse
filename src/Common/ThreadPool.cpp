@@ -66,6 +66,93 @@ namespace
     /// Cleared temporarily by `CurrentThreadDoesNotWaitForScheduledThreads`.
     thread_local bool current_global_worker_holds_no_slot = false;
 
+    /// The idle workers of local pools that hold a slot of the global pool, see `IdleGlobalSlotHolder`.
+    /// The mutex is a leaf: nothing else is locked while it is held, except the internal mutex of the
+    /// `std::condition_variable_any` of a worker when it is notified. A worker locks it while it holds the
+    /// mutex of its own pool, and the global pool locks it while it holds its own mutex.
+    struct IdleGlobalSlotHolders
+    {
+        std::mutex mutex;
+        IdleGlobalSlotHolder * head = nullptr; /// The oldest one.
+        IdleGlobalSlotHolder * tail = nullptr;
+    };
+
+    IdleGlobalSlotHolders & getIdleGlobalSlotHolders()
+    {
+        /// Leaked for the same reason as `getLocalThreadPoolRegistry`.
+        static IdleGlobalSlotHolders & holders = *new IdleGlobalSlotHolders();
+        return holders;
+    }
+
+    void linkIdleGlobalSlotHolderNoLock(IdleGlobalSlotHolders & holders, IdleGlobalSlotHolder & holder)
+    {
+        holder.prev = holders.tail;
+        holder.next = nullptr;
+        if (holders.tail)
+            holders.tail->next = &holder;
+        else
+            holders.head = &holder;
+        holders.tail = &holder;
+        holder.linked = true;
+    }
+
+    void unlinkIdleGlobalSlotHolderNoLock(IdleGlobalSlotHolders & holders, IdleGlobalSlotHolder & holder)
+    {
+        if (!holder.linked)
+            return;
+        if (holder.prev)
+            holder.prev->next = holder.next;
+        else
+            holders.head = holder.next;
+        if (holder.next)
+            holder.next->prev = holder.prev;
+        else
+            holders.tail = holder.prev;
+        holder.prev = nullptr;
+        holder.next = nullptr;
+        holder.linked = false;
+    }
+
+    /// Takes back the slot of the global pool held by an idle worker of a local pool, if there is one. The
+    /// worker leaves its pool, which frees its thread of the global pool. If `take_over_slot` is set, the
+    /// slot is handed over to the caller: the worker does not give it back to the counter. Otherwise the
+    /// worker gives it back when it wakes up.
+    bool evictIdleGlobalSlotHolder(bool take_over_slot)
+    {
+        auto & holders = getIdleGlobalSlotHolders();
+        std::lock_guard lock(holders.mutex);
+        IdleGlobalSlotHolder * holder = holders.head;
+        if (!holder)
+            return false;
+        unlinkIdleGlobalSlotHolderNoLock(holders, *holder);
+        holder->evicted = true;
+        holder->slot_taken_over = take_over_slot;
+        /// Notified under the mutex of the list: the worker checks `evicted` and starts waiting while it holds
+        /// that mutex, so the notification cannot be lost, and the worker cannot be destroyed before it is woken.
+        holder->cv->notify_one();
+        return true;
+    }
+
+    /// Locks the mutex of a local pool and then the mutex of `IdleGlobalSlotHolders`, so that an idle worker
+    /// can wait for both its pool and the eviction of its slot with one `std::condition_variable_any`.
+    struct PoolAndIdleGlobalSlotHoldersLock
+    {
+        std::unique_lock<std::mutex> & pool_lock;
+        std::mutex & holders_mutex;
+
+        void lock()
+        {
+            pool_lock.lock();
+            holders_mutex.lock();
+        }
+
+        void unlock()
+        {
+            holders_mutex.unlock();
+            pool_lock.unlock();
+        }
+    };
+
     /// Diagnostic registry of `ThreadPoolImpl<ThreadFromGlobalPool*>` instances that
     /// currently own at least one worker thread. Used by `GlobalThreadPool::shutdown` to
     /// identify the subsystem responsible for a "Hung check failed, possible deadlock
@@ -504,8 +591,22 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         thread_job_slot.emplace(remaining_thread_job_capacity);
         if (thread_job_slot->valueAfterDecrement() < 0)
         {
-            std::lock_guard lock(mutex); // needed to read and reset first_exception.
-            return on_no_slot_left();
+            /// The slots left may be held by idle workers of local pools (see `IdleGlobalSlotHolder`). Take one
+            /// over: its worker leaves its pool and frees its thread. The unit we took from the counter above
+            /// did not exist, so give it back; the slot taken over is ours now and is released by `thread_job_slot`.
+            bool took_over_idle_slot = false;
+            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                took_over_idle_slot = evictIdleGlobalSlotHolder(/* take_over_slot= */ true);
+
+            if (took_over_idle_slot)
+            {
+                remaining_thread_job_capacity.fetch_add(1, std::memory_order_relaxed);
+            }
+            else
+            {
+                std::lock_guard lock(mutex); // needed to read and reset first_exception.
+                return on_no_slot_left();
+            }
         }
     }
 
@@ -587,7 +688,20 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         /// long-lived thread and waited for the workers that load the parts of the table, queued behind it.
         if (job_occupies_thread && !thread_job_takes_slot)
         {
-            const int64_t remaining_capacity = remaining_thread_job_capacity.load(std::memory_order_relaxed);
+            int64_t remaining_capacity = remaining_thread_job_capacity.load(std::memory_order_relaxed);
+
+            /// The slots may be held by idle workers of local pools (see `IdleGlobalSlotHolder`), which keep their
+            /// threads of the global pool. Take their slots back, so that they leave their pools and free their
+            /// threads for this job. They give the slots back when they wake up. The workers are woken under
+            /// `mutex`, and a worker of the global pool takes the next job under `mutex` too, so this job is
+            /// already queued when a freed thread looks for one.
+            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+            {
+                const int64_t needed_capacity = (thread_job_may_queue && current_global_worker_holds_no_slot) ? 2 : 1;
+                while (remaining_capacity < needed_capacity && evictIdleGlobalSlotHolder(/* take_over_slot= */ false))
+                    ++remaining_capacity;
+            }
+
             if (remaining_capacity <= 0)
                 return on_no_slot_left();
 
@@ -1439,19 +1553,52 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
                 parent_pool.notifyWorkerSettledNoLock();
-                cv.wait(lock, [this]
+
+                auto has_reason_to_wake = [this]
                 {
                     return idle_wakeup_flag
                         || initial_job
                         || !parent_pool.jobs.empty()
                         || parent_pool.finished
                         || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
-                });
+                };
+
+                /// While it holds a slot of the global pool, the worker is linked into the list of such workers,
+                /// so that the global pool can take the slot back when a thread needs it (see `IdleGlobalSlotHolder`).
+                bool slot_evicted = false;
+                bool slot_taken_over = false;
+                if constexpr (!std::is_same_v<Thread, GlobalThreadType>)
+                {
+                    if (global_slots_for_idle)
+                    {
+                        auto & holders = getIdleGlobalSlotHolders();
+                        PoolAndIdleGlobalSlotHoldersLock both_locks{lock, holders.mutex};
+                        holders.mutex.lock();
+                        idle_slot_holder.cv = &cv;
+                        idle_slot_holder.evicted = false;
+                        idle_slot_holder.slot_taken_over = false;
+                        linkIdleGlobalSlotHolderNoLock(holders, idle_slot_holder);
+                        cv.wait(both_locks, [&] { return idle_slot_holder.evicted || has_reason_to_wake(); });
+                        unlinkIdleGlobalSlotHolderNoLock(holders, idle_slot_holder);
+                        slot_evicted = idle_slot_holder.evicted;
+                        slot_taken_over = idle_slot_holder.slot_taken_over;
+                        holders.mutex.unlock();
+                    }
+                    else
+                        cv.wait(lock, has_reason_to_wake);
+                }
+                else
+                    cv.wait(lock, has_reason_to_wake);
 
                 parent_pool.removeIdleThreadNoLock(this);
 
-                if (global_slots_for_idle)
+                if (global_slots_for_idle && !slot_taken_over)
                     global_slots_for_idle->fetch_add(1, std::memory_order_relaxed);
+
+                /// The slot was taken back: leave the pool to free the thread of the global pool, unless there is
+                /// a job to run right now (then the thread is freed when the job is done).
+                if (slot_evicted)
+                    break;
             }
             }
 

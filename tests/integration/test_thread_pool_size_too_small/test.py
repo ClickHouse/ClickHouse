@@ -21,12 +21,11 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_sufficient_thread_pool_size_starts(start_cluster):
+def test_too_small_thread_pool_size_fails_startup(start_cluster):
+    # A sufficient `max_thread_pool_size` starts.
     assert node.get_process_pid("clickhouse") is not None
     assert node.query("SELECT 1") == "1\n"
 
-
-def test_too_small_thread_pool_size_fails_startup(start_cluster):
     # The server permanently occupies a few hundred threads of the global thread pool for the workers of
     # the background pools, the background schedule pools and the flush threads of the system logs. A
     # `max_thread_pool_size` that cannot hold them has to be reported, and the server has to terminate.

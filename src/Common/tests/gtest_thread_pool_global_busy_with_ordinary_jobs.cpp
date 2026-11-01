@@ -1,4 +1,6 @@
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <memory>
 #include <vector>
 
@@ -299,6 +301,113 @@ TEST(ThreadPool, IdleLocalWorkerDoesNotHoldLastFreeThread)
 
     EXPECT_TRUE(finished_in_time) << "an idle worker of a local pool must not hold the last free thread of the global pool";
     EXPECT_TRUE(job_ran);
+}
+
+/// The other ordering: the worker of a local pool goes idle and takes a slot of the global pool first, and
+/// then a long-lived thread takes the last slot. A worker of another local pool that takes no slot must not
+/// be rejected then: the slot of the idle worker is taken back, the idle worker leaves its pool, and the new
+/// worker runs on the thread it frees. A rejection here is fatal for the mandatory spawn of an `AsyncLoader`
+/// worker. Then a long-lived thread that finds no slot left takes over the slot of an idle worker as well.
+TEST(ThreadPool, IdleLocalWorkerGivesBackItsSlot)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 2;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    /// Its worker runs a finite job, then stays idle and takes one of the two slots.
+    ThreadPool pool_with_free_threads(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+    pool_with_free_threads.scheduleOrThrowOnError([] {});
+    pool_with_free_threads.wait();
+
+    /// Takes the other thread of the global pool and the last slot.
+    std::atomic<bool> long_lived_started = false;
+    std::atomic<bool> release_long_lived = false;
+    ThreadFromGlobalPool long_lived_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+    {
+        long_lived_started = true;
+        while (!release_long_lived.load())
+        {
+        }
+    });
+    while (!long_lived_started)
+        ;
+
+    /// Its worker takes no slot. It must be accepted and run on the thread freed by the idle worker.
+    std::atomic<bool> job_ran = false;
+    ThreadPool other_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+    bool threw = false;
+    try
+    {
+        other_pool.scheduleOrThrowOnError([&] { job_ran = true; });
+    }
+    catch (const DB::Exception &)
+    {
+        threw = true;
+    }
+    EXPECT_FALSE(threw) << "a worker that takes no slot must not be rejected while an idle worker holds a slot";
+    const bool finished_in_time = threw || other_pool.waitUntil(std::chrono::steady_clock::now() + std::chrono::seconds(60));
+
+    /// The worker of `pool_with_free_threads` goes idle again and takes the free slot (it is not the last one
+    /// once `long_lived_thread` is gone, so release it first and start a new long-lived worker afterwards).
+    release_long_lived = true;
+    long_lived_thread.join();
+    other_pool.wait();
+    EXPECT_TRUE(finished_in_time) << "the idle worker must leave and free its thread of the global pool";
+    EXPECT_TRUE(job_ran);
+
+    pool_with_free_threads.scheduleOrThrowOnError([] {});
+    pool_with_free_threads.wait();
+
+    /// One slot is held by the idle worker, so the first long-lived worker takes the free one, and the second
+    /// one takes over the slot of the idle worker and runs on the thread that the idle worker frees.
+    std::atomic<size_t> long_lived_workers_started = 0;
+    std::atomic<bool> release_long_lived_workers = false;
+    ThreadPool long_lived_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ capacity, /* max_free_threads = */ 0, /* queue_size = */ 0);
+    long_lived_pool.setJobsAreLongLived();
+    bool long_lived_threw = false;
+    try
+    {
+        for (size_t i = 0; i < capacity; ++i)
+        {
+            long_lived_pool.scheduleOrThrowOnError([&]
+            {
+                ++long_lived_workers_started;
+                while (!release_long_lived_workers.load())
+                {
+                }
+            });
+        }
+    }
+    catch (const DB::Exception &)
+    {
+        long_lived_threw = true;
+    }
+    EXPECT_FALSE(long_lived_threw) << "a long-lived worker must take over the slot of an idle worker";
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!long_lived_threw && long_lived_workers_started != capacity && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(long_lived_workers_started, long_lived_threw ? long_lived_workers_started.load() : capacity);
+
+    release_long_lived_workers = true;
+    long_lived_pool.wait();
 }
 
 TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)

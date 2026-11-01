@@ -38,6 +38,8 @@ private:
     std::condition_variable wake_cv;
     std::condition_variable done_cv;
     size_t running_threads = 0;
+    /// Whether the failure to start a worker was already logged (it is retried with every batch).
+    bool logged_thread_start_failure = false;
 
     /// State of the current batch execution.
     /// Threads are woken up once at the start of the batch, then they can pick up requests
