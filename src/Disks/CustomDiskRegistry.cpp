@@ -137,7 +137,17 @@ void CustomDiskRegistry::scheduleShutdown(const String & name, DiskPtr disk)
             }
             catch (...)
             {
-                /// Do not leave the name pending forever, `waitForShutdown` would never return.
+                /// The thread could not be started (only the first release starts it). Something else may still
+                /// reference the disk, so it must not be dropped untracked: a new disk with this name would then
+                /// work with the same metadata and data while the old one is still running. Keep it as a lingering
+                /// disk instead. It is used again by a table or database with this name, like any other lingering
+                /// disk, and shut down by the thread started on the next release, or when the server shuts down.
+                /// The name is not left pending forever, otherwise `waitForShutdown` would never return.
+                if (disk_to_shutdown.disk)
+                {
+                    chassert(!lingering_disks.contains(name));
+                    lingering_disks[name] = std::move(disk_to_shutdown.disk);
+                }
                 removePendingName(name);
                 shutdown_finished_cv.notify_all();
                 throw;
