@@ -7,6 +7,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -484,6 +485,9 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
         const auto & type = pipeline.getHeader().getByName(key).type;
         if (type->lowCardinality())
             return "a key is LowCardinality";
+        /// Staged keys contain only ordering bytes, not the source metadata retained by direct-mode keys.
+        if (tryGetExponentialTimeDecayingMode(removeNullable(type)) == ExponentialTimeDecayingMode::Direct)
+            return "a direct time-decay key needs source metadata";
         has_nullable_key |= type->isNullable();
     }
 
