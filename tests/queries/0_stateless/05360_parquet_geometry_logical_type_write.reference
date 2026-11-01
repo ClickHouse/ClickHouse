@@ -55,7 +55,9 @@ pg	Polygon
 mls	MultiLineString					
 mpg	MultiPolygon					
 mpt	MultiPoint					
-geom	Nullable(String)					
+geom	Geometry					
+--- default: mixed Geometry round trip
+0
 id	true	1	false
 pt	true	1	false
 ls	true	1	false
@@ -65,13 +67,14 @@ mpg	true	1	false
 mpt	true	1	false
 geom	true	1	false
 id	Int(bitWidth=64, isSigned=false)
-pt	String
-ls	String
-pg	String
-mls	String
-mpg	String
-mpt	String
-geom	String
+pt	None
+ls	None
+pg	None
+mls	None
+mpg	None
+mpt	None
+geom	None
+geom None
 ls EPSG:4326
 mls EPSG:4326
 mpg EPSG:4326
