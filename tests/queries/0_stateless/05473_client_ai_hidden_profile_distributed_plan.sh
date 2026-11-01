@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT -q "
         countIf(query LIKE '%''own'' || ''result''%') > 0 AS agent_query_logged,
         countIf(Settings['make_distributed_plan'] != '0') AS with_distributed_plan
     FROM system.query_log
-    WHERE event_date >= yesterday() AND user = '${user}' AND type != 'QueryStart'"
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND user = '${user}' AND type != 'QueryStart'"
 
 $CLICKHOUSE_CLIENT -q "DROP USER ${user}"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE ${profile}"
