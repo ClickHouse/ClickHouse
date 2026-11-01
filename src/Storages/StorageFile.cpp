@@ -3043,7 +3043,7 @@ void ReadFromFile::orderFilesByTopKBound(
     if (query_condition_cache_table_id != UUIDHelpers::Nil)
     {
         state->table_id = query_condition_cache_table_id;
-        if (ctx->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+        if (!format_filter_info->top_k_filter->filter_rows || ctx->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
             state->plain_condition_hash = format_filter_info->condition_hash;
         state->top_k_key = makeTopKQueryConditionCacheKey();
         if (state->plain_condition_hash || state->top_k_key)

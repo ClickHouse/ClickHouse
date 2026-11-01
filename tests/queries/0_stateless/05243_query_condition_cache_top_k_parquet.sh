@@ -157,8 +157,8 @@ echo "--- the order of the files"
 # both reads without the pass reuse the entries.
 inserts=""
 for j in 1 2 3 4; do
-    inserts+="INSERT INTO FUNCTION file('${DATA_DIR}_order/f_$j.parquet') SELECT number + $(((4 - j) * 10000)) AS k
-        FROM numbers(5000) SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1;"
+    inserts+="INSERT INTO FUNCTION file('${DATA_DIR}_order/f_$j.parquet') SELECT number + $(((4 - j) * 10000)) AS k,
+        leftPad(toString(k), 5, '0') AS s FROM numbers(5000) SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1;"
 done
 ${CLICKHOUSE_CLIENT} --query "$inserts"
 touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}_order"/*.parquet
@@ -176,6 +176,14 @@ run order_asc_pass_rerun "SELECT k FROM t_05243_order ORDER BY k LIMIT 3" "${ORD
 FILE_ORDER="file('${DATA_DIR}_order/*.parquet', Parquet, 'k UInt64')"
 run file_asc_pass "SELECT k FROM ${FILE_ORDER} ORDER BY k LIMIT 3" "${ORDER_SETTINGS} = 1"
 run file_asc_pass_rerun "SELECT k FROM ${FILE_ORDER} ORDER BY k LIMIT 3" "${ORDER_SETTINGS} = 1"
+# A `String` sort uses the threshold only to skip row groups by their statistics, so its readers use the entries of
+# the predicate whatever `use_query_condition_cache_for_top_k` says. They exclude f_1 to f_3, so the pass skips them too.
+STRING_ORDER="SELECT k FROM file('${DATA_DIR}_order/*.parquet', Parquet, 'k UInt64, s String')
+    WHERE cityHash64(k) = cityHash64(toUInt64(0)) ORDER BY s LIMIT 3"
+STRING_SETTINGS="${ORDER_SETTINGS} = 1, use_query_condition_cache_for_top_k = 0,
+    use_top_k_dynamic_filtering_for_variable_length_types = 0, query_plan_optimize_lazy_materialization = 0"
+run string_asc_pass "${STRING_ORDER}" "${STRING_SETTINGS}"
+run string_asc_pass_rerun "${STRING_ORDER}" "${STRING_SETTINGS}"
 events order_asc_pass order_asc_no_pass order_desc_pass order_desc_no_pass
 ${CLICKHOUSE_CLIENT} --query "
     SELECT replaceOne(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_', ''), read_rows <= 1000 FROM system.query_log
@@ -190,6 +198,10 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT 'file_asc_pass_rerun', ProfileEvents['QueryConditionCacheHits'], ProfileEvents['ParquetMetadataCacheHits']
     FROM system.query_log
     WHERE query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_file_asc_pass_rerun' AND current_database = currentDatabase() AND type = 'QueryFinish'"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT 'string_asc_pass_rerun', ProfileEvents['QueryConditionCacheHits'], ProfileEvents['ParquetMetadataCacheHits']
+    FROM system.query_log
+    WHERE query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_string_asc_pass_rerun' AND current_database = currentDatabase() AND type = 'QueryFinish'"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243_order"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}_order"
 
