@@ -1049,14 +1049,12 @@ std::unique_ptr<ORC::SearchArgument> buildORCSearchArgument(
 namespace
 {
 
-/// A key column whose ORC statistics bound the values the reader returns.
 struct ORCRowGroupFilterColumn
 {
     size_t key_column;
     UInt64 orc_column_id;
     /// What the reader returns for NULL when it is not NULL (`input_format_null_as_default`).
     std::optional<Field> null_value;
-    /// The columns between the root and this one, all STRUCT for a tuple element.
     std::vector<UInt64> ancestors;
 };
 
@@ -1108,8 +1106,7 @@ static Range getRangeFromORCStatistics(const ORC::Proto::ColumnStatistics & stat
     return range;
 }
 
-/// Prunes the row groups by the predicates a `SearchArgument` cannot express: with a monotonic
-/// function chain over a column, evaluated forward from the statistics. Empty if there are none.
+/// Prunes row groups by the predicates with a monotonic function chain, which a `SearchArgument` cannot express. Empty if none.
 static ORC::RowGroupFilter buildORCRowGroupFilter(
     const FormatFilterInfo & format_filter_info, const Block & header, const ORC::Type & schema, const FormatSettings & format_settings)
 {
