@@ -200,17 +200,9 @@ A value of `0` means unlimited.
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing input.
 )", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(
-Maximum total number of threads to use for decoding Iceberg data manifest files.
-
-The pool is separate from the IO pool on purpose: a decode task can block until the query consumes the entries it has produced, while the delete manifest decode waits for its tasks on the IO pool before any entry is consumed - sharing one pool could deadlock.
-)", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(
-Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files.
-)", 0) \
-    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
-The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
-)", 0) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(Maximum total number of threads to use for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
     DECLARE(NonZeroUInt64, ai_function_max_thread_pool_size, 1000, R"(
 Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of it.
 )", 0) \
@@ -3946,12 +3938,6 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"format_parsing_thread_pool_queue_size",
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_free_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"iceberg_manifest_decode_thread_pool_queue_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
             {"ai_function_max_thread_pool_size",
              {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"ai_function_max_thread_pool_free_size",

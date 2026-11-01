@@ -51,6 +51,7 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
@@ -103,6 +104,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -1130,6 +1132,27 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
 }
 
 /// `initial_query_id` is shared by every fragment of a plan, and is empty when the client itself sent a secondary query.
+/// The settings a task runs with on a worker. `max_threads` describes the initiator's machine when it is `auto` or
+/// comes from the user's settings profile, so then the worker uses its own; only a value the user set over the
+/// profile caps the worker.
+static SettingsChanges getTaskSettingsChanges(const ContextPtr & context)
+{
+    SettingsChanges changes = context->getSettingsRef().changes();
+    const auto & max_threads = context->getSettingsRef()[Setting::max_threads];
+
+    bool user_capped_max_threads = !max_threads.is_auto;
+    if (user_capped_max_threads)
+    {
+        for (const auto & change : context->getAccess()->getDefaultSettings())
+            if (change.name == "max_threads")
+                user_capped_max_threads = SettingFieldMaxThreads(change.value).value != max_threads.value;
+    }
+
+    if (!user_capped_max_threads)
+        std::erase_if(changes, [](const SettingChange & change) { return change.name == "max_threads"; });
+    return changes;
+}
+
 static String logicalQueryId(const ClientInfo & client_info)
 {
     return client_info.initial_query_id.empty() ? client_info.current_query_id : client_info.initial_query_id;
@@ -2027,7 +2050,7 @@ protected:
         task_description.initial_query_id = logicalQueryId(context->getClientInfo());
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
-        task_description.settings_changes = context->getSettingsRef().changes();
+        task_description.settings_changes = getTaskSettingsChanges(context);
 
         /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
         /// HTTP without a framing format); the worker attaches its log collector accordingly.
