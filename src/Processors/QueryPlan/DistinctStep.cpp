@@ -14,8 +14,6 @@
 #include <QueryPipeline/scatterByPartition.h>
 #include <IO/Operators.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -49,7 +47,6 @@ namespace Setting
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
 }
 
 namespace QueryPlanSerializationSetting
@@ -200,12 +197,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         settings.max_bytes_before_external_distinct,
         settings.max_bytes_ratio_before_external_distinct,
         "max_bytes_ratio_before_external_distinct");
-    const auto & query_status = build_settings.process_list_element;
-    const bool scheduler_spilling = query_status && build_settings.temp_data_on_disk
-        && (query_status->getMemoryReservation()
-            || query_status->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
     /// Constant keys produce at most one row and need no external storage.
-    const bool external = !pre_distinct && (external_threshold || scheduler_spilling)
+    const bool external = !pre_distinct && (external_threshold || build_settings.isSchedulerSpillingEnabled())
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
 
     if (!pre_distinct && !skip_stream_merging)

@@ -48,6 +48,10 @@ struct BuildQueryPipelineSettings
     double max_streams_for_union_step_to_max_threads_ratio;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
+
+    /// Whether a memory scheduler can ask the processors of the query to spill: the query runs under a workload
+    /// memory reservation or with `enable_adaptive_memory_spill_scheduler`, and it has temporary storage.
+    bool isSchedulerSpillingEnabled() const;
 };
 
 }
