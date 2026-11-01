@@ -166,6 +166,26 @@ INNER JOIN (SELECT k, count() AS c, sum(v) AS s, groupBitmap(v) AS b FROM t_key_
 SETTINGS enable_group_by_top_k_optimization = 0, max_threads = 4, max_block_size = 65536, optimize_trivial_group_by_limit_query = 1, exact_rows_before_limit = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 1;
 DROP TABLE t_key_runs_kept;
 
+-- Four runs of 1024 rows in one block; each run of the sparse `v` ends with its only non-default values, 1 and 2, so a
+-- function that sees the rows out of order returns other values.
+SELECT 'sparse argument of order-dependent functions';
+DROP TABLE IF EXISTS t_key_runs_sparse;
+CREATE TABLE t_key_runs_sparse (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, v)
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1, index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO t_key_runs_sparse SELECT 1 + intDiv(number, 1024), if(number % 1024 < 1022, 0, number % 1024 - 1021) FROM numbers(4096) SETTINGS max_insert_block_size = 10000000, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0;
+SELECT serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_key_runs_sparse' AND column = 'v' AND active;
+SELECT count() FROM
+(
+    (SELECT * FROM (SELECT k, deltaSum(v), groupArray(v), anyLast(v) FROM t_key_runs_sparse GROUP BY k SETTINGS max_block_size = 4096, enable_adaptive_aggregator = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 1)
+     EXCEPT ALL
+     SELECT * FROM (SELECT k, deltaSum(v), groupArray(v), anyLast(v) FROM t_key_runs_sparse GROUP BY k SETTINGS max_block_size = 4096, enable_adaptive_aggregator = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 0))
+    UNION ALL
+    (SELECT * FROM (SELECT k, deltaSum(v), groupArray(v), anyLast(v) FROM t_key_runs_sparse GROUP BY k SETTINGS max_block_size = 4096, enable_adaptive_aggregator = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 0)
+     EXCEPT ALL
+     SELECT * FROM (SELECT k, deltaSum(v), groupArray(v), anyLast(v) FROM t_key_runs_sparse GROUP BY k SETTINGS max_block_size = 4096, enable_adaptive_aggregator = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 1))
+);
+DROP TABLE t_key_runs_sparse;
+
 -- Blocks of one value or of several keys, also of more than eight runs, with keys of 2, 4 and 8 bytes and `FixedString(1)`,
 -- are aggregated in batches of one place per run only with the setting on; with it off they take one place per row. The
 -- one-value blocks have `FixedString(1)` and `UInt16` keys: their per-row paths have no consecutive-keys cache, which takes

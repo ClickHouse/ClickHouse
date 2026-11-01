@@ -2602,11 +2602,11 @@ bool Aggregator::executeOnBlock(Columns columns,
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
 
     /// Not once new keys are refused, where the constant-key path behaves differently, not while the top-K heap ranks
-    /// rows, which the constant-key path neither checks nor feeds, and not for `key8`, which indexes a 256-entry table:
-    /// there is little lookup to save, and its lookup-table batches beat one-place batches for some aggregates.
+    /// rows, which the constant-key path neither checks nor feeds, not for sparse arguments, whose one-place batches add
+    /// the default rows last, and not for `key8`, whose lookup-table batches beat one-place batches for some aggregates.
     KeyRuns key_runs;
     if (aggregate_key_runs_as_constant && !all_keys_are_const && !no_more_keys && !top_k_active
-        && result.type != AggregatedDataVariants::Type::key8)
+        && result.type != AggregatedDataVariants::Type::key8 && !hasSparseArguments(aggregate_functions_instructions.data()))
     {
         key_runs = findKeyRuns(*key_columns[0], row_begin, row_end);
         size_t run_begin = row_begin;
