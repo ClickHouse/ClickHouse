@@ -33,14 +33,19 @@ ASTPtr ICompressionCodec::makeCodecDescription(const String & name, const ASTs &
 {
     if (arguments.empty())
         return make_intrusive<ASTIdentifier>(name);
-    return makeASTFunction(name, arguments);
+    auto function = makeASTFunction(name, arguments);
+    /// A codec takes no secrets, so formatting its description needs no secret arguments finder.
+    function->setKind(ASTFunction::Kind::CODEC);
+    return function;
 }
 
 ASTPtr ICompressionCodec::getFullCodecDescription() const
 {
     if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(this))
         return multiple->getFullCodecDescription();
-    return makeASTFunction("CODEC", getCodecDescription());
+    auto codec = makeASTFunction("CODEC", getCodecDescription());
+    codec->setKind(ASTFunction::Kind::CODEC);
+    return codec;
 }
 
 UInt64 ICompressionCodec::getHash() const

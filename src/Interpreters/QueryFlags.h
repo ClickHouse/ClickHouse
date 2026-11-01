@@ -52,6 +52,9 @@ struct QueryFlags
     bool rewritten_query_must_return_rows = false;
     /// Set for the `background` run of a query rewritten by a rule at dispatch, see `RewrittenQueryOrigin`.
     std::shared_ptr<const RewrittenQueryOrigin> rewritten_query_origin = nullptr;
+    /// If true, `QueryResultDetails::result_column_origins` is filled for `SELECT` queries, so that a protocol
+    /// can report which table column each result column comes from (e.g. the MySQL protocol does).
+    bool collect_result_column_origins = false;
 };
 
 }
