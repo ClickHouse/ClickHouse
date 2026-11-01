@@ -179,6 +179,8 @@ node .claude/tools/fetch_ci_report.js "<a praktika.html?REF=gh-readonly-queue/..
 
 The per-job JSON is also directly at `https://s3.amazonaws.com/clickhouse-test-reports/REFs/gh-readonly-queue/<base>/pr-<N>-<base-sha>/$MQ_SHA/mergequeueci/result_<job>.json` (gzip-compressed). Do not construct artifact URLs such as log paths by hand: Praktika stores attached files under normalized sub-result directories (e.g. `.../mergequeueci/build_amd_binary/build_clickhouse/build_clickhouse.log`), so guessed paths return `AccessDenied`. Follow the `links` of the failed results in that JSON instead, as printed by `fetch_ci_report.js` (also with `--links`), or use `--download-logs`. To fix the rejection, merge the latest base branch (step 3) even if the PR is otherwise current, reproduce the failure on the merged tree, and fix it in the PR - adapt the code to the changed API, or update a newly added test when the PR intentionally changes the behaviour it pins (say so in the commit message and the PR comment). Do not re-add the PR to the merge queue yourself, and do not dismiss a merge-queue failure as flaky without the same evidence as for any other failure.
 
+If the PR comes from a fork and its workflow runs wait for a maintainer's approval, go through step 4a first: without approval there are no CI results to analyze.
+
 Then fetch the PR's own CI reports:
 
 ```bash
@@ -208,6 +210,46 @@ For each CI failure:
    🕵 @<reviewer>, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
+
+### 4a. Re-approve workflows for fork PRs
+
+Workflow runs of a PR from a fork wait in the `action_required` state until a maintainer clicks "Approve and run workflows". If a maintainer already approved CI for an earlier commit of this PR, and every commit added since then is from the current user (for example, made by this skill), approve the waiting runs instead of leaving the PR without CI. Do this both here, before analyzing CI, and after every push in step 7 — a push to a fork PR creates new runs that wait for approval again.
+
+Skip this step for PRs from branches of `$REPO` itself (`headRepositoryOwner` is the owner of `$REPO`): their workflows never wait for approval.
+
+1. Find the runs waiting for approval on the current head commit:
+   ```bash
+   mkdir -p tmp
+   ME=$(gh api user --jq .login)
+   HEAD_REPO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRepositoryOwner,headRepository --jq '"\(.headRepositoryOwner.login)/\(.headRepository.name)"')
+   HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
+   gh api "repos/$REPO/actions/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=100" \
+       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .conclusion == \"action_required\") | .id" > tmp/continue-pr-$PR_NUMBER-waiting-runs
+   ```
+   If the list is empty, there is nothing to approve.
+
+2. Find the newest earlier commit of this PR whose CI was approved — a run of the same fork and head branch that actually ran (its conclusion is anything but `action_required`):
+   ```bash
+   gh api "repos/$REPO/actions/runs?event=pull_request&branch=$HEAD_BRANCH&per_page=100" --paginate \
+       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .head_sha != \"$HEAD_SHA\" and .conclusion != \"action_required\" and .status != \"waiting\") | \"\(.created_at) \(.head_sha)\"" \
+       | sort -r | awk '{print $2}' | uniq
+   ```
+   Take the first SHA in this list that is an ancestor of the current head (the compare API reports `"status": "ahead"` for it). If there is none, CI was never approved for this PR — do not approve; report that a maintainer has to review and approve it.
+
+3. Verify that every commit added since the approved commit is from the current user:
+   ```bash
+   gh api "repos/$REPO/compare/$APPROVED_SHA...$HEAD_SHA" --paginate \
+       --jq '.status, (.commits[] | "\(.sha) \(.author.login // "-") \(.committer.login // "-")")'
+   ```
+   The `status` must be `ahead`. Ignore commits that are already in the base branch (`git merge-base --is-ancestor <sha> "origin/$BASE_BRANCH"` succeeds) — they arrive with merges of the base branch and are trusted. Every remaining commit must have `author.login` equal to `$ME`, and `committer.login` equal to `$ME` or `web-flow` (commits made through the GitHub UI, e.g. the "Update branch" button). If any commit is from someone else, or its author cannot be mapped to a GitHub login, do not approve: the PR author or another person added code that no maintainer has seen. Report the offending commits and leave the approval to a human.
+
+4. Approve every waiting run:
+   ```bash
+   while read -r RUN_ID; do
+       gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/approve"
+   done < tmp/continue-pr-$PR_NUMBER-waiting-runs
+   ```
+   Report which runs were approved, the approved base commit, and the commits that were checked.
 
 ### 5. Address reviewer feedback
 
@@ -365,6 +407,8 @@ After the gate succeeds, push with:
 ```bash
 git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
 ```
+
+If the PR comes from a fork, the push creates workflow runs that wait for approval: go through step 4a again for the new head commit.
 
 Report the result and provide the PR URL.
 
