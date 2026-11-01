@@ -324,23 +324,28 @@ void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
     query_parameters.clear();
 }
 
+void AsynchronousInsertQueue::InsertData::Entry::runOnSuccess()
+{
+    if (!on_success)
+        return;
+
+    try
+    {
+        on_success();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("AsynchronousInsertQueue", "Failed to run the callback of a successful asynchronous insert");
+    }
+    on_success = {};
+}
+
 void AsynchronousInsertQueue::InsertData::Entry::finish(ResultProgress result)
 {
     if (finished.exchange(true))
         return;
 
     resetChunk();
-    if (on_success)
-    {
-        try
-        {
-            on_success();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("AsynchronousInsertQueue", "Failed to run the callback of a successful asynchronous insert");
-        }
-    }
     promise.set_value(result);
 }
 
@@ -1520,6 +1525,14 @@ try
 
         LOG_DEBUG(log, "Flushed {} rows, {} bytes", num_rows, num_bytes);
         queue_shard_flush_time_history.updateWithCurrentTime();
+
+        /// Run the success callbacks before the profile counters are snapshotted by `logQueryFinish`,
+        /// so that the events they increment are attributed to this flush in `system.query_log`.
+        for (const auto & entry : data->entries)
+        {
+            if (!entry->isFinished())
+                entry->runOnSuccess();
+        }
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
         logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);

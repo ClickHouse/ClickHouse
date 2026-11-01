@@ -208,7 +208,7 @@ private:
             const std::unique_ptr<MemoryTracker> queued_data_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
-            /// Called once when the flush stores the entry's data.
+            /// Called once by the flush after the entry's data is stored, before the flush is logged.
             std::function<void()> on_success;
 
             Entry(
@@ -219,6 +219,7 @@ private:
                 std::unique_ptr<MemoryTracker> queued_data_tracker_);
 
             void resetChunk();
+            void runOnSuccess();
             void finish(ResultProgress result = {});
             void finish(std::exception_ptr exception_);
 

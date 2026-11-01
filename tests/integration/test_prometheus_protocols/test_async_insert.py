@@ -187,6 +187,16 @@ def test_async_insert_counts_dropped_exemplars():
     # The flush counts the exemplar before the write is acknowledged.
     assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 1
 
+    # The event is attributed to the flush in the query log.
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT sum(ProfileEvents['PrometheusRemoteWriteDroppedExemplars']) FROM system.query_log "
+            "WHERE type = 'QueryFinish' AND query_kind = 'AsyncInsertFlush'"
+        )
+        == "1\n"
+    )
+
 
 @pytest.mark.parametrize("async_insert", [0, 1])
 def test_async_insert_failure_counts_no_dropped_exemplars(async_insert):
@@ -257,7 +267,12 @@ def test_async_insert_flush_timeout_counts_dropped_exemplars():
     assert_eq_with_retry(
         node, "SELECT count() FROM timeSeriesSamples(prometheus)", "1", retry_count=60
     )
-    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 1
+    assert_eq_with_retry(
+        node,
+        "SELECT sum(value) FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedExemplars'",
+        str(before + 1),
+        retry_count=60,
+    )
 
 
 def test_async_insert_failed_late_flush_counts_no_dropped_exemplars():
