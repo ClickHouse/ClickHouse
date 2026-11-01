@@ -1,14 +1,10 @@
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -21,22 +17,8 @@ namespace Setting
     extern const SettingsBool inject_random_order_for_select_without_order_by;
 }
 
-/// Append ORDER BY rand() to an order-by list
-static void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
-{
-    /// Build rand() node
-    auto & function_factory = FunctionFactory::instance();
-    auto resolver = function_factory.get("rand", context);
-    auto rand_function_node = std::make_shared<FunctionNode>("rand");
-    rand_function_node->resolveAsFunction(resolver);
-
-    /// Create and add ORDER BY rand() node
-    auto sort_node = std::make_shared<SortNode>(rand_function_node);
-    order_by_list_node.getNodes().push_back(std::move(sort_node));
-}
-
-/// Wrap query_root in new QueryNode that includes a random order by
-static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
+/// Wrap query_root in new QueryNode with SHUFFLE
+static void wrapWithSelectShuffle(QueryTreeNodePtr & query_root, ContextPtr context)
 {
     auto * query_node = query_root->as<QueryNode>();
 
@@ -58,7 +40,7 @@ static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr cont
     query_node->resolveProjectionColumns(subquery_projection_columns);
     query_node->setIsSubquery(true);
 
-    /// Wrapper: SELECT <inner columns referenced by UUID alias> FROM (inner) ORDER BY rand().
+    /// Wrapper: SELECT <inner columns referenced by UUID alias> FROM (inner) SHUFFLE.
     /// The wrapper's projection columns keep the ORIGINAL names so CTAS/VIEW and named
     /// output formats produce user-expected column names.
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
@@ -73,14 +55,14 @@ static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr cont
         outer_projection_columns.emplace_back(subquery_projection_columns[i].name, subquery_projection_columns[i].type);
     }
     new_root->resolveProjectionColumns(std::move(outer_projection_columns));
-    addRandomOrderBy(new_root->getOrderBy(), context);
+    new_root->setIsShuffle(true);
 
     /// Replace old root with new wrapping query node
     query_root = new_root;
 }
 
 /// If inject_random_order_for_select_without_order_by = 1, wrap the query node into
-/// SELECT * FROM <query_node> ORDER BY rand().
+/// SELECT * FROM <query_node> SHUFFLE.
 
 void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr context)
 {
@@ -91,8 +73,8 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
     /// Case 1: Top-level SELECT
     if (auto * query_node = root->as<QueryNode>())
     {
-        if (!query_node->hasOrderBy())
-            wrapWithSelectOrderBy(root, context);
+        if (!query_node->hasOrderBy() && !query_node->isShuffle())
+            wrapWithSelectShuffle(root, context);
         return;
     }
 
@@ -103,8 +85,8 @@ void InjectRandomOrderIfNoOrderByPass::run(QueryTreeNodePtr & root, ContextPtr c
         for (auto & union_subquery_node : union_subqueries.getNodes())
         {
             if (auto * node = union_subquery_node->as<QueryNode>())
-                if (!node->hasOrderBy())
-                    wrapWithSelectOrderBy(union_subquery_node, context);
+                if (!node->hasOrderBy() && !node->isShuffle())
+                    wrapWithSelectShuffle(union_subquery_node, context);
         }
         return;
     }

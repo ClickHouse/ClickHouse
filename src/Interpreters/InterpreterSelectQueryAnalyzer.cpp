@@ -160,9 +160,9 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             || settings[Setting::parallel_replicas_mode] != ParallelReplicasMode::READ_TASKS))
         result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
 
-    /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
+    /// Injecting `SHUFFLE` (the setting `inject_random_order_for_select_without_order_by`) is only valid
     /// for a query processed up to the stage `Complete`: the injection wraps the query into
-    /// `SELECT * FROM (...) ORDER BY rand()`, and if the query is planned only up to an intermediate stage
+    /// `SELECT * FROM (...) SHUFFLE`, and if the query is planned only up to an intermediate stage
     /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
     /// `Distributed`), the plan would be cut at the level of the wrapper. Then such a child would return
     /// fully aggregated blocks without `AggregatedChunkInfo` where partially aggregated blocks are expected,

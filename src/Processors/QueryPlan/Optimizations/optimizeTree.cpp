@@ -1002,6 +1002,11 @@ void optimizeTreeSecondPass(
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
+    /// Run after every optimization that works with `SortingStep`, so that it only changes how the sorting is executed.
+    /// `ShuffleStep` is not serializable, so it is not used in a distributed plan.
+    if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
+
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
     /// admission check: no later optimization needs to retract the heap or its synthetic sort.
