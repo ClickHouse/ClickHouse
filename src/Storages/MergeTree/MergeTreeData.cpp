@@ -10721,7 +10721,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         {
             String subdir = filename.substr(0, separator_pos);
             if (subdirs.emplace(subdir).second)
-                disk->createDirectories(pathToGenericString(temp_part_dir / subdir));
+                disk->createDirectories(pathToGenericString(temp_part_dir / pathFromString(subdir)));
         }
 
         /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
@@ -10736,7 +10736,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
             continue;
         }
 
-        size_t file_size = backup->copyFileToDisk(joinBackupPath(part_path_in_backup, filename), disk, pathToGenericString(temp_part_dir / filename), WriteMode::Rewrite, fsync_files);
+        size_t file_size = backup->copyFileToDisk(joinBackupPath(part_path_in_backup, filename), disk, pathToGenericString(temp_part_dir / pathFromString(filename)), WriteMode::Rewrite, fsync_files);
         reservation->update(reservation->getSize() - file_size);
     }
 
