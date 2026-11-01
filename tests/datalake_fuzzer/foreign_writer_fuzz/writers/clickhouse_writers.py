@@ -39,17 +39,24 @@ def _ch_partition(p):
 
 
 def _iceberg_kinds(gates):
-    kinds = ["int", "long", "float", "double", "decimal", "date", "timestamp", "string"]
-    if not gates.active("clickhouse_iceberg_bool"):
-        kinds.append("boolean")
+    kinds = [
+        "int",
+        "long",
+        "float",
+        "double",
+        "decimal",
+        "date",
+        "timestamp",
+        "string",
+        "boolean",
+    ]
     if not gates.active("clickhouse_iceberg_timestamp_ntz"):
         kinds.append("timestamp_ntz")
     return tuple(kinds)
 
 
 def _iceberg_options(rng, gates):
-    versions = [2] if gates.active("clickhouse_iceberg_v1_metadata") else [1, 2, 2]
-    return {"format_version": rng.choice(versions)}
+    return {"format_version": rng.choice([1, 2, 2])}
 
 
 def _latest_metadata(metadata_dir):

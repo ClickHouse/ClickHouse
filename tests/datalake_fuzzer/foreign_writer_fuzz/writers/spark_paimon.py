@@ -93,15 +93,6 @@ class SparkPaimonWriter(Writer):
             caps = dataclasses.replace(
                 caps, nested_kinds=tuple(k for k in caps.nested_kinds if k != "struct")
             )
-        if gates.active("paimon_columns_by_name"):
-            caps = dataclasses.replace(
-                caps,
-                op_weights={
-                    k: v
-                    for k, v in caps.op_weights.items()
-                    if k not in ("rename_column", "drop_column")
-                },
-            )
         return caps
 
     @property
@@ -111,22 +102,6 @@ class SparkPaimonWriter(Writer):
     @property
     def ident(self):
         return paimon_utils.spark_table(self.table_name)
-
-    SCHEMA_OPS = (
-        "add_column",
-        "drop_column",
-        "rename_column",
-        "move_column",
-        "promote_column",
-    )
-
-    def _snapshot_count(self):
-        return self.spark.sql(
-            f"SELECT count(*) FROM {CATALOG}.default.`{self.table_name}$snapshots`"
-        ).collect()[0][0]
-
-    def checkable(self):
-        return not getattr(self, "schema_pending", False)
 
     def _upload(self):
         paimon_utils.upload_paimon_table(self.ctx.cluster, "s3", self.table_name)
@@ -157,16 +132,6 @@ class SparkPaimonWriter(Writer):
         )
 
     def execute(self, op, payload):
-        snapshots_before = self._snapshot_count()
-        self._execute(op, payload)
-        if op["kind"] in self.SCHEMA_OPS and self.ctx.gates.active(
-            "paimon_schema_change_without_snapshot"
-        ):
-            self.schema_pending = True
-        elif self._snapshot_count() > snapshots_before:
-            self.schema_pending = False
-
-    def _execute(self, op, payload):
         kind = op["kind"]
         cols = self.model.columns
         sql = self.spark.sql
