@@ -2,7 +2,6 @@
 -- Trivial count from a text index with compressed multi-segment posting lists: the count is computed
 -- with posting-list cursors and must match the count of the normal read path.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET optimize_trivial_count_query = 1;

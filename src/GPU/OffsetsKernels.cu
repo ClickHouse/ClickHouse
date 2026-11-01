@@ -32,7 +32,7 @@ struct AddStart
 
 }
 
-__host__ void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, rmm::cuda_stream_view stream)
+__host__ void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t minus, uint64_t * to, cuda::stream_ref stream)
 {
     if (count == 0 || (minus == 0 && from == to))
         return;
@@ -43,7 +43,7 @@ __host__ void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t 
     });
 }
 
-__host__ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_end, rmm::cuda_stream_view stream)
+__host__ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_end, cuda::stream_ref stream)
 {
     if (count == 0)
         return;
@@ -56,7 +56,7 @@ __host__ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * 
     });
 }
 
-__host__ CoveredRows rowsCoveredBy(const uint64_t * offsets, size_t num_rows, uint64_t chars_bytes, rmm::cuda_stream_view stream)
+__host__ CoveredRows rowsCoveredBy(const uint64_t * offsets, size_t num_rows, uint64_t chars_bytes, cuda::stream_ref stream)
 {
     return guarded("counting the strings within " + std::to_string(chars_bytes) + " bytes", [&]
     {
@@ -65,9 +65,9 @@ __host__ CoveredRows rowsCoveredBy(const uint64_t * offsets, size_t num_rows, ui
 
         CoveredRows covered{.rows = static_cast<size_t>(past - ends)};
         checkCuda(
-            cudaMemcpyAsync(&covered.bytes, offsets + covered.rows, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream.value()),
+            cudaMemcpyAsync(&covered.bytes, offsets + covered.rows, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream.get()),
             "Cannot copy an offset back");
-        checkCuda(cudaStreamSynchronize(stream.value()), "Cannot wait for an offset to come back");
+        checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for an offset to come back");
         return covered;
     });
 }
