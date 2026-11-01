@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -96,6 +97,10 @@ public:
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
+    /// The origins of the result columns, collected before the query tree optimizations.
+    /// Empty if the interpreter is constructed from an already built query tree.
+    const ResultColumnOrigins & getResultColumnOrigins() const { return result_column_origins; }
+
     const QueryPlanWithParallelReplicasBuilder & getQueryPlanWithParallelReplicasBuilder() const
     {
         return query_plan_with_parallel_replicas_builder;
@@ -105,6 +110,8 @@ private:
     ASTPtr query;
     ContextMutablePtr context;
     SelectQueryOptions select_query_options;
+    /// Must be declared before `query_tree`: it is filled while building the query tree.
+    ResultColumnOrigins result_column_origins;
     QueryTreeNodePtr query_tree;
     Planner planner;
 

@@ -130,6 +130,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         "./ci/jobs/scripts/log_cluster.py",
         "./utils/prepare-time-trace/prepare-time-trace.sh",
+        "./utils/CMakeLists.txt",
+        "./utils/compact-symbols",
         # The build job also assembles the deb, rpm and tgz packages, so changes to
         # their definitions and to the packaging script have to schedule a rebuild.
         "./packages",
@@ -284,6 +286,9 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
+            # Runs the tests over the protocols other than native, see `clickhouse-test --protocols`.
+            "./tests/protocol_client.py",
+            "./utils/grpc-client/pb2",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
@@ -2072,6 +2077,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
+                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -2089,6 +2095,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
+                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],

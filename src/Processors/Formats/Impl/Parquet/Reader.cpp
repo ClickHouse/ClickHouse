@@ -1213,10 +1213,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 /// query's collation order, so a row group could be skipped while still holding
                 /// values that sort before the threshold under the collator. The per-row
                 /// `__topKFilter` (which does compare with the collator) stays.
+                /// Same for a `FIXED_LEN_BYTE_ARRAY` read as `String`: its statistics keep the trailing zero bytes the cast strips.
                 if (top_k_column_is_read
                     && !format_filter_info->top_k_filter->threshold_tracker->getCollator()
                     && output_info.is_primitive
-                    && primitive_columns[output_info.primitive_start].decoder.allow_stats)
+                    && primitive_columns[output_info.primitive_start].decoder.allow_stats
+                    && !(isFixedString(primitive_columns[output_info.primitive_start].decoded_type)
+                         && isString(removeNullable(removeLowCardinality(output_info.output_type)))))
                     top_k_primitive_idx = output_info.primitive_start;
 
                 if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
@@ -1357,15 +1360,35 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         && !options.format.parquet.preserve_order && candidates.size() > 1 && some_top_k_range_to_read)
     {
         const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
-        std::stable_sort(candidates.begin(), candidates.end(), [ascending](const RowGroupCandidate & a, const RowGroupCandidate & b)
+
+        /// Statistics only: row groups that share the bound on the threshold side gain nothing from reordering.
+        bool can_skip = format_filter_info->top_k_filter->filter_rows;
+        const auto & first_range = candidates.front().top_k_sort_column_range;
+        for (size_t i = 1; !can_skip && i < candidates.size(); ++i)
         {
-            const auto & a_range = a.top_k_sort_column_range;
-            const auto & b_range = b.top_k_sort_column_range;
-            if (!a_range.has_value() || !b_range.has_value())
-                return a_range.has_value() && !b_range.has_value();
-            return ascending ? accurateLess(a_range->left, b_range->left) : accurateLess(b_range->right, a_range->right);
-        });
-        row_groups_ordered_by_top_k = true;
+            const auto & range = candidates[i].top_k_sort_column_range;
+            if (!first_range.has_value() || !range.has_value())
+            {
+                can_skip = true;
+                break;
+            }
+            const Field & a = ascending ? first_range->left : first_range->right;
+            const Field & b = ascending ? range->left : range->right;
+            can_skip = accurateLess(a, b) || accurateLess(b, a);
+        }
+
+        if (can_skip)
+        {
+            std::stable_sort(candidates.begin(), candidates.end(), [ascending](const RowGroupCandidate & a, const RowGroupCandidate & b)
+            {
+                const auto & a_range = a.top_k_sort_column_range;
+                const auto & b_range = b.top_k_sort_column_range;
+                if (!a_range.has_value() || !b_range.has_value())
+                    return a_range.has_value() && !b_range.has_value();
+                return ascending ? accurateLess(a_range->left, b_range->left) : accurateLess(b_range->right, a_range->right);
+            });
+            row_groups_ordered_by_top_k = true;
+        }
     }
 
     for (RowGroupCandidate & candidate : candidates)
@@ -1598,7 +1621,8 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
-        || format_filter_info->rows_to_read || (format_filter_info->top_k_filter && top_k_column_is_read)
+        || format_filter_info->rows_to_read
+        || (format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows && top_k_column_is_read)
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -1948,7 +1972,7 @@ void Reader::preparePrewhere()
     /// the first step: the comparison is cheap, and once the threshold is set it is usually the
     /// most selective of the filters, so the later steps' columns are then read only for the few
     /// surviving rows (with whole pages skipped where possible).
-    if (format_filter_info->top_k_filter)
+    if (format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows)
     {
         const auto & top_k = *format_filter_info->top_k_filter;
         /// The sort column is one of the requested output columns (the sorting above consumes it)
@@ -2000,6 +2024,18 @@ void Reader::preparePrewhere()
                 prewhere_info->prewhere_column_name,
                 row_level_filter ? &row_level_filter->actions : nullptr))
         {
+            /// The columns written to the columns cache in at least one row group, see `initColumnsCache`.
+            /// The writes are planned before this point; later they can only be cancelled.
+            std::vector<bool> columns_written_to_cache;
+            if (columns_cache_writes_possible)
+            {
+                columns_written_to_cache.assign(extended_sample_block.columns(), false);
+                for (const RowGroup & row_group : row_groups)
+                    for (size_t idx = 0; idx < row_group.columns_cache_writes.size(); ++idx)
+                        if (row_group.columns_cache_writes[idx].active)
+                            columns_written_to_cache[idx] = true;
+            }
+
             for (auto & pc : primitive_columns)
             {
                 if (pc.first_step_to_calculate == 0 || pc.first_step_to_calculate == SIZE_MAX)
@@ -2010,8 +2046,9 @@ void Reader::preparePrewhere()
                 if (pc.max_array_def != 0 || !pc.decoder.string_converter || !pc.decoder.string_converter->isTrivial())
                     continue;
                 /// A column decoded with the filter has empty strings in place of the values that
-                /// don't match, so it could not be written to the columns cache.
-                if (columns_cache_writes_possible && columns_cache_identities.at(pc.idx_in_output_block) != 0)
+                /// don't match, so it must not be written to the columns cache. It is still filtered
+                /// by PREWHERE: the row groups served from the cache are not decoded at all.
+                if (!columns_written_to_cache.empty() && columns_written_to_cache[pc.idx_in_output_block])
                     continue;
 
                 auto it = filters->find(extended_sample_block.getByPosition(pc.idx_in_output_block).name);
@@ -3845,6 +3882,17 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             "offset index declares rows [{}, {}). For a query without filters, use "
             "input_format_parquet_use_offset_index=0 to read the file without the offset index",
             fmt::join(column.meta->meta_data.path_in_schema, "."), rows_in_page, next_row_idx, *end_row_idx);
+
+    /// The row count in a V2 data page header can agree with the offset index while the page still
+    /// begins in the middle of a row (arrow-go splits rows across data pages V2 this way). The readers
+    /// that rely on the offset index (`skipToRowOrNextPage` and `decodePrimitiveColumn`) assume that
+    /// the page starts on a row boundary, so reject such a page instead of misreading it.
+    if (end_row_idx.has_value() && max_rep > 0 && !page.rep.empty() && page.rep[0] != 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Page of column {} at row {} begins in the middle of a row, but the offset index requires pages to begin on "
+            "row boundaries. Use input_format_parquet_use_offset_index=0 to read the file without the offset index",
+            fmt::join(column.meta->meta_data.path_in_schema, "."), next_row_idx);
 
     /// Don't decode def levels in the common case of non-array column that's declared nullable but
     /// contains no nulls.
