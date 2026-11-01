@@ -14,6 +14,7 @@ node1 = cluster.add_instance(
     main_configs=[
         "configs/clusters.xml",
         "configs/union_merge_and_cluster.xml",
+        "configs/opentelemetry_span_log.xml",
     ],
 )
 
@@ -23,6 +24,7 @@ node2 = cluster.add_instance(
     main_configs=[
         "configs/clusters.xml",
         "configs/union_cluster.xml",
+        "configs/opentelemetry_span_log.xml",
     ],
     stay_alive=True,
 )
@@ -32,7 +34,11 @@ node2 = cluster.add_instance(
 # to be dropped (see `test_recreated_on_rotation`).
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/union_merge.xml", "configs/bucketed_metric_log.xml"],
+    main_configs=[
+        "configs/union_merge.xml",
+        "configs/bucketed_metric_log.xml",
+        "configs/opentelemetry_span_log.xml",
+    ],
     user_configs=["configs/drop_sync.xml"],
     stay_alive=True,
 )
@@ -413,3 +419,44 @@ def test_metric_log_keys_are_read_by_name(start_cluster):
         == "{'CurrentMetric_Query':5,'ProfileEvent_Query':7}\n"
     )
     node3.query("DROP TABLE system.metric_log_1000")
+
+
+def test_opentelemetry_span_log_rotated_before_rename(start_cluster):
+    # A span log rotated from a version before `finish_date` was renamed to `event_date` has only `finish_date`.
+    # `node3` reads it through `merge`, `node1` through `clusterAllReplicas` over `merge`.
+    for node in [node1, node2, node3]:
+        node.query("SELECT 1 SETTINGS opentelemetry_start_trace_probability = 1")
+        node.query("SYSTEM FLUSH LOGS opentelemetry_span_log")
+
+    marker = "test_rotated_before_rename"
+    for node in [node1, node3]:
+        node.query(
+            "CREATE TABLE system.opentelemetry_span_log_1000 (operation_name LowCardinality(String), finish_date Date) "
+            "ENGINE = MergeTree ORDER BY finish_date"
+        )
+        try:
+            node.query(
+                f"INSERT INTO system.opentelemetry_span_log_1000 VALUES ('{marker}', '2020-01-02')"
+            )
+            assert (
+                node.query(
+                    f"SELECT event_date, finish_date FROM system.all_opentelemetry_span_log WHERE operation_name = '{marker}'"
+                )
+                == "2020-01-02\t2020-01-02\n"
+            )
+            assert (
+                node.query(
+                    "SELECT count() FROM system.all_opentelemetry_span_log WHERE event_date = '2020-01-02'"
+                )
+                == "1\n"
+            )
+            # The spans of the log tables themselves are read as before.
+            assert (
+                node.query(
+                    "SELECT count() > 0, countIf(event_date = finish_date AND event_date >= today() - 1) = count() "
+                    f"FROM system.all_opentelemetry_span_log WHERE operation_name != '{marker}'"
+                )
+                == "1\t1\n"
+            )
+        finally:
+            node.query("DROP TABLE system.opentelemetry_span_log_1000 SYNC")
