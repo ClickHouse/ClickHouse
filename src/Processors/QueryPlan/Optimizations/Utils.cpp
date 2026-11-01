@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
@@ -8,8 +9,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <utility>
@@ -110,6 +114,98 @@ bool canHoistGatherThroughStep(const IQueryPlanStep & step)
     /// Per-block functions (rowNumberInAllBlocks, blockNumber, nowInBlock, ...) depend on the whole block
     /// stream; below a gather they would run per shard and produce different values.
     return !(dag && dagContainsNonDeterministicFunction(*dag));
+}
+
+namespace
+{
+
+/// Traces an output column of a pass-through expression to the input column it forwards:
+/// aliases are unwrapped, anything computed disqualifies.
+const String * traceThroughExpression(const ExpressionStep & expression, const String & name)
+{
+    const auto * node = expression.getExpression().tryFindInOutputs(name);
+    if (!node)
+        return nullptr;
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+    return &node->result_name;
+}
+
+}
+
+std::optional<AggregationTopK> findAggregationTopK(QueryPlan::Node & limit_node)
+{
+    /// An optimization that drops the other groups cannot serve `LIMIT WITH TIES`, whose output size is not known in
+    /// advance, or an exact `rows_before_limit_at_least` (`alwaysReadTillEnd`), whose counter runs downstream of the
+    /// aggregation and would report the kept groups instead of all of them.
+    const auto * limit = typeid_cast<LimitStep *>(limit_node.step.get());
+    if (!limit || limit_node.children.size() != 1 || limit->withTies() || limit->alwaysReadTillEnd())
+        return {};
+
+    QueryPlan::Node * sorting_node = limit_node.children.front();
+    const auto * sorting = typeid_cast<SortingStep *>(sorting_node->step.get());
+    if (!sorting || sorting_node->children.size() != 1 || sorting->getLimit() == 0)
+        return {};
+
+    const auto & description = sorting->getSortDescription();
+    if (description.size() != 1 || description.front().with_fill)
+        return {};
+
+    String column = description.front().column_name;
+    QueryPlan::Node * node = sorting_node->children.front();
+    while (const auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
+    {
+        /// An `arrayJoin` between the aggregation and the sort changes the rows of a group, and over an empty array
+        /// produces none, so the best n groups are no longer the rows the limit needs: the groups that an optimization
+        /// drops can be precisely the ones that would have survived. The gates of `optimizeGroupByTopK` and of the
+        /// planner reject the same shape.
+        if (expression->getExpression().hasArrayJoin())
+            return {};
+
+        const String * traced = traceThroughExpression(*expression, column);
+        if (!traced || node->children.size() != 1)
+            return {};
+        column = *traced;
+        node = node->children.front();
+    }
+
+    auto * aggregating = typeid_cast<AggregatingStep *>(node->step.get());
+    if (!aggregating)
+        return {};
+    const auto & params = aggregating->getParams();
+    if (!aggregating->isFinal() || aggregating->inOrder() || aggregating->isGroupingSets() || params.overflow_row
+        || params.keys_size == 0)
+        return {};
+
+    for (size_t i = 0; i < params.aggregates.size(); ++i)
+    {
+        if (params.aggregates[i].column_name == column)
+            return AggregationTopK{
+                .aggregating_node = node,
+                .aggregating = aggregating,
+                .limit = sorting->getLimit(),
+                .rank_index = i,
+                .ascending = description.front().direction > 0,
+                .has_collator = description.front().collator != nullptr};
+    }
+    return {};
+}
+
+bool isRowBoundedCount(const AggregateDescription & aggregate)
+{
+    /// Any lone `count`: `count()`, and `count(x)` in both of its forms (the plain one for a non-nullable argument,
+    /// `AggregateFunctionCountNotNullUnary` for a nullable one), or the exact distinct count `uniqExact`, also as
+    /// `uniqExactIf` over the rows its condition admits (the analyzer makes it of `uniqExact(if(...))`). No parameters:
+    /// a parametric `count` is another function. An approximate `uniq` estimate could exceed the rows, and so could a
+    /// combinator that takes several values from a row, like `-Array`.
+    const auto & function = *aggregate.function;
+    const String name = function.getName();
+    if (name == "count")
+        return aggregate.parameters.empty();
+    return (name == "uniqExact" || name == "uniqExactIf") && aggregate.parameters.empty()
+        && WhichDataType(function.getResultType()).isUInt64();
 }
 
 bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
