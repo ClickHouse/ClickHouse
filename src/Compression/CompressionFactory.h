@@ -39,6 +39,11 @@ struct CompressionCodecFamilyProperties
     /// given as a string (a table-level, network or temporary files setting, a server config), because there is
     /// no column there, and cannot be applied directly to bytes, e.g. by `estimateCompressionRatio`.
     bool is_declarative = false;
+
+    /// Whether the codec can be applied to a column of the given data type. Empty for a codec that does not
+    /// interpret the values and so applies to any type (e.g. `ZSTD`). Used by `FirstApplicable` to choose among
+    /// alternatives: the choice must not depend on catching the exception the creator throws for a wrong type.
+    std::function<bool(const IDataType & type)> is_applicable_to_type = {};
 };
 
 struct CodecValidationSettings
@@ -182,6 +187,37 @@ private:
 
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
+
+    /// `FirstApplicable(c1, c2, ...)` is a codec combinator: an element of a codec chain that stands for the first of
+    /// its alternatives applicable to the data type. An alternative is a codec, `Default`, a nested `FirstApplicable`,
+    /// or `Multiple(c1, c2, ...)`, which is a chain of codecs, applicable if every codec of it is.
+    /// Without a data type (nullptr), only the codecs that apply to any data type are applicable.
+
+    /// True if the alternative `element` is applicable to `type`. Throws if it is malformed.
+    bool isApplicable(const ASTPtr & element, const IDataType * type) const;
+
+    /// Appends the codecs that the chain element `element` stands for with the data type `type` to `out`:
+    /// the codec itself, the codecs of a `Multiple`, or the ones of the alternative selected by a `FirstApplicable`.
+    void appendResolvedChainElement(const ASTPtr & element, const IDataType * type, ASTs & out) const;
+
+    /// The codec chain `ast` (a `CODEC(...)` function) with every `FirstApplicable` replaced by the codecs of the
+    /// alternative selected for `type`. Returns `ast` itself if it has no `FirstApplicable`.
+    ASTPtr resolveFirstApplicable(const ASTPtr & ast, const IDataType * type) const;
+
+    /// `FirstApplicable` without a data type: a codec that compresses with the selection for no type, but keeps the
+    /// description of the whole combinator (with `Default` replaced by `current_default`) to be resolved again later.
+    CompressionCodecPtr getFirstApplicableWithoutType(const ASTPtr & element, const CompressionCodecPtr & current_default) const;
+
+    /// Validates `FirstApplicable` in the codec chain `ast`: every alternative must be a valid codec by itself, and
+    /// the chain resolved for every substream of `column_type` (or for no type) must pass the usual validation.
+    void validateCodecWithFirstApplicable(
+        const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
+
+    /// Validates an alternative of `FirstApplicable` by itself, without a data type.
+    void validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings) const;
+
+    /// Throws if the codec family is gated by a setting that is disabled in `settings` (nullptr: accepts every codec).
+    static void checkCodecIsEnabled(const String & family_name, const Settings * settings);
 
     /// Name of the gate setting: `enable_<lowercase family>_codec`.
     static String getGateSettingName(const String & family_name);
