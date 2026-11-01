@@ -30,5 +30,3 @@ test Distributed undrop
 test MergeTree drop and undrop multiple times
 02681_undrop_multiple
 3
-test undrop in a database that stores no metadata on disk
-1

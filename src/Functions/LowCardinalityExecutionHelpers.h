@@ -128,37 +128,6 @@ struct LowCardinalityArrayView
         return result;
     }
 
-    /// Given a per-dictionary-entry match number in [1, matches_count] (0 for no match), compute whether each
-    /// array row holds an element of every match number. [matches_count] is in [1, 64].
-    inline ColumnUInt8::MutablePtr allByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches, size_t matches_count) const
-    {
-        UInt64 all_matched = matches_count == 64 ? ~UInt64(0) : (UInt64(1) << matches_count) - 1;
-
-        auto result = ColumnUInt8::create();
-        auto & result_data = result->getData();
-        result_data.resize_fill(rows);
-
-        forEachRange([&](size_t row, size_t begin, size_t end)
-        {
-            UInt64 matched = 0;
-            for (size_t i = begin; i != end; ++i)
-            {
-                UInt8 match = dictionary_matches[elements.getIndexAt(i)];
-                if (!match)
-                    continue;
-
-                matched |= UInt64(1) << (match - 1);
-                if (matched == all_matched)
-                {
-                    result_data[row] = 1;
-                    break;
-                }
-            }
-        });
-
-        return result;
-    }
-
     /// Given a per-dictionary-entry predicate result, build a filter and offsets for matching array elements.
     inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {
@@ -270,8 +239,9 @@ inline bool targetTypeRepresentsValue(
     }
 }
 
-/// Returns false if the constant value is not present in the dictionary. A NULL constant is present
-/// only in a dictionary that can hold one, and then it sits in slot 0, the LC null index.
+/// Returns false if the constant value is not present in the dictionary. If the constant is NULL,
+/// returns true and sets [dictionary_index] to the default LC null index, matching the existing
+/// Array(LowCardinality) index-function behavior.
 /// Keep this inlined: the Array(LowCardinality) index functions are sensitive to this setup codegen.
 inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
     const ColumnLowCardinality & low_cardinality_data,
@@ -284,12 +254,7 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     auto value = recursiveRemoveLowCardinality(value_column);
     if (value->isNullAt(0))
-    {
-        /// Slot 0 is the NULL value only in a nullable dictionary. In a non-nullable one it holds the
-        /// nested type's default value, which a NULL needle does not equal, so answering from it would
-        /// report every default element as a NULL.
-        return low_cardinality_data.nestedIsNullable();
-    }
+        return true;
 
     auto value_type_without_low_cardinality = recursiveRemoveLowCardinality(value_type);
     auto original_value = value;
@@ -304,19 +269,20 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     const auto & dictionary = low_cardinality_data.getDictionary();
 
-    /// The cast narrows without reporting loss, so Int8(-1) reaches the dictionary as UInt8(255) and a
-    /// DateTime reaches a Date dictionary with its time of day dropped, and either would be answered
-    /// from an element that the comparison this function stands for tells apart. A constant that did
-    /// not survive the cast equals no element, whichever slot its image happens to hit -- the default
-    /// one, which holds its value whether or not any row references it, as much as any other -- so
-    /// decline before looking it up.
-    /// Padding a String to a FixedString is not such a loss, and is not treated as one: the two meet
-    /// as String, where the padding the cast added is trimmed back off.
-    if (!target_type->equals(*value_type_without_low_cardinality)
-        && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
-        return false;
+    auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
+    {
+        /// The default slot holds its value whether or not any row references it, and the cast above
+        /// narrows without reporting loss, so UInt64(256) reaches it as UInt8(0). Answering from that
+        /// slot requires the constant to have survived the cast; one that did not equals no element.
+        if (elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex())
+            && !target_type->equals(*value_type_without_low_cardinality)
+            && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
+            return {};
 
-    if (auto maybe_index = dictionary.getOrFindValueIndex(value->getDataAt(0)))
+        return dictionary.getOrFindValueIndex(elem);
+    };
+
+    if (auto maybe_index = find_in_dictionary(value->getDataAt(0)))
     {
         dictionary_index = *maybe_index;
         return true;

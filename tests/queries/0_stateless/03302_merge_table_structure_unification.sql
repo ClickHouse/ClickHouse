@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_a;
 DROP TABLE IF EXISTS test_b;

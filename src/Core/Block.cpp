@@ -14,7 +14,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/sort.h>
@@ -218,7 +217,16 @@ static bool haveCompatibleConstantValues(const Field & actual, const Field & exp
 /// the type of every value it holds is still fixed by the declared `Map(K, V)`.
 static bool typeCanHideTheValueType(const IDataType & type)
 {
-    return anyInTypeTree(type, [](const IDataType & node) { return isVariant(node) || isDynamic(node) || isObject(node); });
+    if (isVariant(type) || isDynamic(type) || isObject(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        result = result || typeCanHideTheValueType(child);
+    });
+
+    return result;
 }
 
 template <typename ReturnType>
