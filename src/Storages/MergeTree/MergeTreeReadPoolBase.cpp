@@ -308,6 +308,21 @@ static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, cons
         return part.getBytesUncompressedOnDisk();
 
     size_t data_uncompressed_size = 0;
+
+    /// The reader of `Parquet` parts reads (and caches) the whole column for a subcolumn, see
+    /// `MergeTreeReaderParquet::fillColumns`, so it is charged for each parent column once.
+    if (part.getType() == MergeTreeDataPartType::Parquet)
+    {
+        NameSet columns_in_storage;
+        for (const auto & col_name : columns_to_read)
+        {
+            auto column = part.tryGetColumn(col_name);
+            if (column && columns_in_storage.insert(column->getNameInStorage()).second)
+                data_uncompressed_size += part.getColumnSize(column->getNameInStorage()).data_uncompressed;
+        }
+        return data_uncompressed_size;
+    }
+
     for (const auto & col_name : columns_to_read)
     {
         auto column = part.tryGetColumn(col_name);
