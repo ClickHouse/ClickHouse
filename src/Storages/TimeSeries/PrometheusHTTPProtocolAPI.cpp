@@ -101,6 +101,7 @@ namespace Setting
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsDouble offset;
     extern const SettingsString order;
+    extern const SettingsUInt64 promql_max_points_per_series;
     extern const SettingsBool promql_push_down_label_matchers;
     extern const SettingsSeconds promql_range_query_cache_min_age;
     extern const SettingsSeconds promql_range_query_split_interval;
@@ -359,6 +360,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, time_scale);
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
+        evaluation_settings.max_points_per_series = getContext()->getSettingsRef()[Setting::promql_max_points_per_series];
 
         /// A query shorter than the split interval isn't split, nor is a query with too many steps, which fails as without splitting.
         /// Settings that apply to the whole result, like result limits or `order`, don't let the query be split either.
