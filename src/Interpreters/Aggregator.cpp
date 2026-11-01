@@ -5622,11 +5622,12 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         /// hundreds of milliseconds on machines with many cores, dominating short aggregation
         /// queries whose states crossed `group_by_two_level_threshold_bytes` mid-scan
         /// (https://github.com/ClickHouse/ClickHouse/issues/114640).
-        /// `convertToTwoLevel` keeps both hash tables alive while copying. Restrict the parallel
-        /// path to small hash tables and use a small fixed worker limit. This bounds the
-        /// additional copy memory independently of the number of query threads.
+        /// `convertToTwoLevel` keeps both hash tables alive while copying, so the parallel path is
+        /// restricted to small hash tables: the additional copy memory is at most a small table per
+        /// worker. The cost of a conversion is mostly the allocation of its 256 bucket tables, so it
+        /// takes as many workers as the query has threads: on many cores, the variants of the threads
+        /// that never grew past a small table are many.
         constexpr size_t max_rows_for_parallel_two_level_conversion = 1 << 14;
-        constexpr size_t max_parallel_two_level_conversions = 4;
         const bool are_all_variants_small = std::ranges::all_of(
             variants_to_convert,
             [](const auto * variant) { return variant->sizeWithoutOverflowRow() <= max_rows_for_parallel_two_level_conversion; });
@@ -5650,7 +5651,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             {
                 /// Passing converter as a reference is fine: `runner` waits for all tasks before
                 /// this scope (and the captured state) is destroyed.
-                const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
+                const size_t threads = std::min(params.max_threads, variants_to_convert.size());
                 for (size_t i = 0; i < threads; ++i)
                     runner.enqueueAndKeepTrack([&converter]() { converter(); }, Priority{});
             }
