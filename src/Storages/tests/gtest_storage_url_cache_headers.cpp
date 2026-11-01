@@ -176,3 +176,21 @@ TEST(StorageURLCacheHeaders, KeyHashBoundaryCollisionResistance)
     SchemaCache::KeyHash hasher;
     EXPECT_NE(hasher(key_gzip), hasher(key_gz));
 }
+
+TEST(StorageURLCacheHeaders, OpenTelemetryHeadersIgnored)
+{
+    HTTPHeaderEntries entries1{{"Accept-Encoding", "gzip"}};
+    HTTPHeaderEntries entries2{
+        {"Accept-Encoding", "gzip"},
+        {"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"},
+        {"tracestate", "congo=t61rcWkgMzE"}
+    };
+
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), canonicalizeHTTPHeadersForSchemaCache(entries2));
+
+    HTTPHeaderEntries telemetry_only{
+        {"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"},
+        {"tracestate", "rojo=1"}
+    };
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(telemetry_only), "");
+}

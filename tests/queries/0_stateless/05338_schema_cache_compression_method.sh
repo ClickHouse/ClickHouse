@@ -201,5 +201,5 @@ assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "SELECT
 # Case P: Duplicate header order sensitivity in schema inference
 echo "Case P: Duplicate header order sensitivity schema inference"
 url_dup_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_dup_schema"
-$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_dup_schema', 'CSV', 'auto', 'gzip', headers('Accept-Encoding' = 'identity', 'Accept-Encoding' = 'gzip'))"
+$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_dup_schema', 'CSV', 'auto', 'gzip', headers('Accept-Encoding' = 'identity', 'Accept-Encoding' = 'gzip')) FORMAT TSV" | cut -f1,2
 assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_dup_schema', 'CSV', 'auto', 'gzip', headers('Accept-Encoding' = 'gzip', 'Accept-Encoding' = 'identity'))"

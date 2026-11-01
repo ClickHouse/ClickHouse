@@ -218,6 +218,12 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
         for (char c : trimmed_name)
             lower_name.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
 
+        /// OpenTelemetry traceparent and tracestate are auto-injected by ClickHouse
+        /// when OpenTelemetry tracing is enabled. Ignore them so trace propagation
+        /// does not fragment schema cache entries.
+        if (lower_name == "traceparent" || lower_name == "tracestate")
+            continue;
+
         auto trimmed_val = trim(entry.value);
 
         /// Never expose raw user-supplied header values in memory or system tables.
