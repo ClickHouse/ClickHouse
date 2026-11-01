@@ -593,6 +593,17 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         stage = query_plan_fallback_stage;
     }
 
+    if (query_plan && query_plan->getMinSerializationVersion()
+        && !connections->supportsQueryPlanSerializationVersion(query_plan->getMinSerializationVersion()))
+    {
+        LOG_DEBUG(
+            log,
+            "Sending query as SQL because a replica does not support query-plan serialization version {} required by the plan",
+            query_plan->getMinSerializationVersion());
+        query_plan.reset();
+        stage = query_plan_fallback_stage;
+    }
+
     /// Only now is the stage final (the branch above may have downgraded it), so this is the
     /// earliest point where the span attribute cannot lie about what is sent to the shard.
     if (OpenTelemetry::CurrentContext().isTraceEnabled())

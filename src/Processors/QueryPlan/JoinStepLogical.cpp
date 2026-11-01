@@ -2934,7 +2934,8 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
     writeVarUInt(1, ctx.out);
     auto actions_dag = expression_actions.getActionsDAG();
-    actions_dag->serialize(ctx.out, ctx.registry);
+    const auto index_hint_actions = ctx.step_version >= 1 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
+    actions_dag->serialize(ctx.out, ctx.registry, index_hint_actions);
 
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
@@ -3106,7 +3107,10 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registry.registerStep(
+        "Join",
+        JoinStepLogical::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 

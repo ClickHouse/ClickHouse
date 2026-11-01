@@ -43,7 +43,7 @@ void ObjectFilterStep::serialize(Serialization & ctx) const
     else
         writeStringBinary(filter_column_name, ctx.out);
 
-    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
+    actions_dag.serialize(ctx.out, ctx.registry, ActionsDAG::IndexHintActions::Refuse, ctx.input_header);
 }
 
 std::unique_ptr<IQueryPlanStep> ObjectFilterStep::deserialize(Deserialization & ctx)

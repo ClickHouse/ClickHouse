@@ -64,7 +64,7 @@ struct PrewhereInfo
 
     PrewhereInfo clone() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
+    void serialize(IQueryPlanStep::Serialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const;
     static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 
@@ -77,7 +77,7 @@ struct FilterDAGInfo
 
     std::string dump() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
+    void serialize(IQueryPlanStep::Serialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const;
     static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 

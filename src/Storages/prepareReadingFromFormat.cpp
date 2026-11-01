@@ -448,7 +448,7 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     hive_partition_columns_to_read_from_file_path.writeTextWithNamesInStorage(ctx.out);
     writeBinary(prewhere_info != nullptr, ctx.out);
     if (prewhere_info != nullptr)
-        prewhere_info->serialize(ctx);
+        prewhere_info->serialize(ctx, ActionsDAG::IndexHintActions::Refuse);
 
     ctx.out << "\n";
 }

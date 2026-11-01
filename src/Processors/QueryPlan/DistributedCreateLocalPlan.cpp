@@ -1,15 +1,24 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
 #include <Common/checkStackSize.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 
 namespace DB
 {
 namespace Setting
 {
+}
+
+static bool containsIndexHint(const IAST & ast)
+{
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "indexHint")
+        return true;
+    return std::ranges::any_of(ast.children, [](const ASTPtr & child) { return containsIndexHint(*child); });
 }
 
 std::unique_ptr<QueryPlan> createLocalPlan(
@@ -54,6 +63,9 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     select_query_options.positional_arguments_already_resolved = true;
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+
+    if (build_logical_plan && containsIndexHint(*query_ast))
+        query_plan->setMinSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS);
 
     addConvertingActions(*query_plan, header, new_context);
     return query_plan;

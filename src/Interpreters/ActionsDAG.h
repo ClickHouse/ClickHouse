@@ -185,11 +185,18 @@ public:
     std::vector<const Node *> getIdToNode() const;
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
-    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header = nullptr) const;
+    /// Whether the stream can carry the predicate of `indexHint`; `Refuse` throws for a hint that has one.
+    enum class IndexHintActions : uint8_t
+    {
+        Refuse,
+        Write,
+    };
+
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry, IndexHintActions index_hint_actions, const Block * input_header = nullptr) const;
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    /// `nesting_depth` is the depth of lambda captures and `indexHint` predicates, it is used internally to limit the recursion.
     static ActionsDAG deserialize(
         ReadBuffer & in,
         DeserializedSetsRegistry & registry,
