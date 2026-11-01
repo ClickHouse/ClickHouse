@@ -27,7 +27,8 @@ touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/t.parquet"
 FILE="file('${DATA_DIR}/t.parquet', Parquet, 'k UInt64, v UInt64, p UInt8')"
 FORMAT_SETTINGS="input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
     input_format_parquet_preserve_order = 0, input_format_parquet_memory_low_watermark = 0"
-COMMON="query_plan_max_limit_for_top_k_optimization = 1000, ${FORMAT_SETTINGS}"
+# The columns cache reads each row group in one row subgroup, so no row group would wait behind the row subgroups of another.
+COMMON="query_plan_max_limit_for_top_k_optimization = 1000, use_columns_cache = 0, ${FORMAT_SETTINGS}"
 EVENTS="${CLICKHOUSE_TMP}/05346_events"
 
 # Runs the query $1, prints its result on one line and keeps its profile events in ${EVENTS}.
@@ -88,10 +89,10 @@ echo "-- the query condition cache after a read that skipped row groups late"
 # A File table takes the format settings from its definition, not from the query.
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_05346;
-    CREATE TABLE t_05346 (k UInt64, v UInt64, p UInt8, s String) ENGINE = File(Parquet, '${DATA_DIR}/t.parquet')
+    CREATE TABLE t_05346 (k UInt64, v UInt64, p UInt8) ENGINE = File(Parquet, '${DATA_DIR}/t.parquet')
     SETTINGS input_format_parquet_max_block_size = 100, ${FORMAT_SETTINGS}"
 CACHE="max_threads = 1, max_parsing_threads = 2, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
-    use_query_condition_cache_for_top_k = 1, query_plan_max_limit_for_top_k_optimization = 1000"
+    use_query_condition_cache_for_top_k = 1, query_plan_max_limit_for_top_k_optimization = 1000, use_columns_cache = 0"
 # Each attempt has its own predicate, so its own cache entry: the second read must use the entry the first one wrote.
 cached=""
 for a in $(seq 1 20); do
@@ -108,9 +109,20 @@ echo "${cached:-no read skipped 38 row groups}"
 echo "-- a String key at the default settings: the query condition cache after the reads"
 # A read that skips row groups must not leave a cache entry that hides rows from a later read with the same predicate.
 # Such reads exist only where the row groups of a String key are skipped by their statistics without the per-row filter.
-STRING_KEY="SELECT s FROM t_05346 WHERE p = 1 ORDER BY s LIMIT 3
+# 10 row groups like those of t.parquet, so that the read that uses the cache entry is short.
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA_DIR}/d.parquet', Parquet)
+    SELECT toUInt8(pos >= 1000) AS p, leftPad(toString(((intDiv(number, 2000) * 7 + 3) % 10) * 2000 + pos), 6, '0') AS s
+    FROM (SELECT number, number % 2000 AS pos FROM numbers(20000))
+    SETTINGS output_format_parquet_row_group_size = 2000, max_block_size = 2000, engine_file_truncate_on_insert = 1"
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/d.parquet"
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE IF EXISTS d_05346;
+    CREATE TABLE d_05346 (p UInt8, s String) ENGINE = File(Parquet, '${DATA_DIR}/d.parquet')
+    SETTINGS input_format_parquet_max_block_size = 100, ${FORMAT_SETTINGS}"
+STRING_KEY="SELECT s FROM d_05346 WHERE p = 1 ORDER BY s LIMIT 3
     SETTINGS max_threads = 1, max_parsing_threads = 2, use_top_k_dynamic_filtering = 1,
-        use_top_k_dynamic_filtering_for_variable_length_types = 0, use_query_condition_cache = 1,
+        use_top_k_dynamic_filtering_for_variable_length_types = 0, use_query_condition_cache = 1, use_columns_cache = 0,
         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, query_plan_max_limit_for_top_k_optimization = 1000"
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION file('${DATA_DIR}/s.parquet', Parquet) SELECT toString(number) AS s FROM numbers(4)
@@ -119,12 +131,10 @@ run_query "SELECT s FROM file('${DATA_DIR}/s.parquet', Parquet, 's String') ORDE
     SETTINGS max_threads = 1, max_parsing_threads = 1, use_top_k_dynamic_filtering = 1,
         use_top_k_dynamic_filtering_for_variable_length_types = 0, ${COMMON}" > /dev/null
 echo "skipped by statistics: $(($(event ParquetTopKSkippedRowGroups) > 0))"
-if [ "$(event ParquetTopKSkippedRowGroups)" -gt 0 ]; then
-    for _ in $(seq 1 5); do
-        ${CLICKHOUSE_CLIENT} --query "${STRING_KEY}" > /dev/null
-    done
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_05346 WHERE p = 1 SETTINGS use_query_condition_cache = 1"
-fi
+for _ in $(seq 1 5); do
+    ${CLICKHOUSE_CLIENT} --query "${STRING_KEY}" > /dev/null
+done
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM d_05346 WHERE p = 1 SETTINGS use_query_condition_cache = 1"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346; DROP TABLE d_05346"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}"

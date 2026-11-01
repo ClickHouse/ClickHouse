@@ -206,6 +206,7 @@ void ReadManager::skipIfExcludedByTopK(const Task & task)
     if (row_subgroup.filter.rows_pass == 0 || !reader.topKShouldSkipRowGroup(row_group))
         return;
     row_subgroup.filter.rows_pass = 0;
+    row_group.skipped_by_top_k.store(true);
     const size_t first_step = reader.steps.empty() ? 0 : 1;
     if (task.row_subgroup_idx == 0 && task.step_idx == first_step)
         ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);

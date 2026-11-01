@@ -8,4 +8,5 @@
 -- the query condition cache after a read that skipped row groups late
 1000 23000 1001 23001 1002 23002; 1000 23000 1001 23001 1002 23002, cache hit: 1
 -- a String key at the default settings: the query condition cache after the reads
-skipped by statistics: 0
+skipped by statistics: 1
+10000
