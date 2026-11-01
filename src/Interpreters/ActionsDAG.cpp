@@ -5725,4 +5725,16 @@ ActionsDAG ActionsDAG::deserialize(
     return dag;
 }
 
+DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    DataTypesWithConstInfo types;
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
+    {
+        bool is_const = child->column != nullptr;
+        types.push_back({child->result_type, is_const});
+    }
+    return types;
+}
+
 }

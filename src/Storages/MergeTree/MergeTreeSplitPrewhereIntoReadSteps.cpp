@@ -41,18 +41,6 @@ struct NodeInfo
     }
 };
 
-/// Returns the argument types of a function node, as expected by
-/// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
-/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
-DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
-{
-    DataTypesWithConstInfo types;
-    types.reserve(nodes.size());
-    for (const auto & child : nodes)
-        types.push_back({child->result_type, child->column != nullptr});
-    return types;
-}
-
 /// Fills the info of an input column.
 /// A virtual column of an index is resolved to the name of the index whose reader fills it.
 /// A subcolumn like `map.key_k0` is resolved to its storage (physical) column `map`, a regular column to itself.
@@ -120,7 +108,7 @@ void fillRequiredColumns(
     /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
     /// see the TODO on canThrow in IFunctionAdaptors.h.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-        && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
+        && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(node->children))
             || node->function_base->isExpensive()))
         node_info.may_throw = true;
 }

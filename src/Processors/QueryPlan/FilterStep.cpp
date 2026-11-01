@@ -326,12 +326,7 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
         {
-            DataTypesWithConstInfo arguments;
-            arguments.reserve(node->children.size());
-            for (const auto * child : node->children)
-                arguments.push_back({child->result_type, child->column != nullptr});
-
-            if (node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments))
+            if (node->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(node->children)))
                 return true;
         }
 

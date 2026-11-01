@@ -933,10 +933,7 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
         {
-            DataTypesWithConstInfo arguments;
-            arguments.reserve(node->children.size());
-            for (const auto * child : node->children)
-                arguments.push_back({child->result_type, child->column != nullptr});
+            const auto arguments = getDataTypesWithConstInfoFromNodes(node->children);
 
             const auto & function = *node->function_base;
             if (function.isStateful()

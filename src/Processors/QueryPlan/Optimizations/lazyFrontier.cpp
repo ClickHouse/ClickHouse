@@ -81,10 +81,7 @@ std::optional<size_t> findSourceOfInput(const MergedPlanDAG & merged, const Acti
 /// different scales is not worth evaluating lazily, but rescaling can overflow.
 bool canEvaluateOnPaddedRows(const ActionsDAG::Node * node)
 {
-    DataTypesWithConstInfo arguments;
-    arguments.reserve(node->children.size());
-    for (const auto * child : node->children)
-        arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
+    const auto arguments = getDataTypesWithConstInfoFromNodes(node->children);
 
     /// `IFunctionBase::canThrow` is conservative: a function that does not say whether it can throw is assumed to. The one
     /// of `IFunction` falls back to whether the function is worth evaluating lazily, which `toBool` is not although it
