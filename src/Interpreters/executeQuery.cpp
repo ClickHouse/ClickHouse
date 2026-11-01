@@ -3961,7 +3961,10 @@ static BlockIO executeQueryImpl(
                         interpreter = InterpreterFactory::instance().get(
                             out_ast,
                             context,
-                            SelectQueryOptions(stage).setInternal(internal).positionalArgumentsAlreadyResolved(!internal && is_secondary_query));
+                            SelectQueryOptions(stage)
+                                .setInternal(internal)
+                                .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
+                                .secondaryQueryRoot(!internal && is_secondary_query));
 
                     const auto & query_settings = context->getSettingsRef();
                     if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -3976,7 +3979,13 @@ static BlockIO executeQueryImpl(
                     // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                     // We need to force to build it here to check if we need to ignore quota.
                     if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                    {
                         interpreter_with_analyzer->getQueryPlan();
+
+                        result_column_origins = interpreter_with_analyzer->getResultColumnOrigins();
+                        if (flags.collect_result_column_origins)
+                            result_details.result_column_origins = result_column_origins;
+                    }
 
                     if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
                     {
@@ -4689,7 +4698,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    QueryResultDetails * result_details)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -4703,8 +4713,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
-    QueryResultDetails result_details;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
+    QueryResultDetails local_result_details;
+    if (!result_details)
+        result_details = &local_result_details;
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, *result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = resolveOutputFormatName(context, ast_query_with_output);
