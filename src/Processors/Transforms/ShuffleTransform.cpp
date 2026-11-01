@@ -1,6 +1,7 @@
 #include <Processors/Transforms/ShuffleTransform.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
@@ -69,7 +70,7 @@ PartialShuffleTransform::PartialShuffleTransform(
     {
         const auto & column = header->getByPosition(i).column;
         if (i != key_position && !isColumnConst(*column))
-            accumulated_columns[i] = column->cloneEmpty();
+            accumulated_columns[i] = removeSpecialRepresentations(column)->cloneEmpty();
     }
 }
 
@@ -79,7 +80,7 @@ void PartialShuffleTransform::consume(Chunk chunk)
     if (num_rows == 0)
         return;
 
-    convertToFullIfSparse(chunk);
+    removeSpecialColumnRepresentations(chunk);
     Columns columns = chunk.detachColumns();
 
     for (size_t i = 0; i < columns.size(); ++i)

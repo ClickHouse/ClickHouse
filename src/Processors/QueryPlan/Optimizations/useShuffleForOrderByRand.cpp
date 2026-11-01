@@ -7,6 +7,8 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <DataTypes/IDataType.h>
 
+#include <unordered_map>
+
 
 namespace DB::QueryPlanOptimizations
 {
@@ -57,17 +59,31 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
     const auto & dag = expression->getExpression();
     const auto & key_column_name = description.front().column_name;
 
-    const ActionsDAG::Node * key_node = dag.tryFindInOutputs(key_column_name);
-    if (!key_node)
+    const ActionsDAG::Node * key_output = dag.tryFindInOutputs(key_column_name);
+    if (!key_output)
         return;
 
-    /// The same values must not be returned in another column.
-    size_t num_outputs_with_key = 0;
+    std::unordered_map<const ActionsDAG::Node *, size_t> num_parents;
+    for (const auto & dag_node : dag.getNodes())
+        for (const auto * child : dag_node.children)
+            ++num_parents[child];
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> num_outputs;
     for (const auto * output : dag.getOutputs())
-        num_outputs_with_key += (output == key_node || output->result_name == key_column_name);
+        ++num_outputs[output];
 
-    if (num_outputs_with_key != 1)
+    /// The values must not be returned in another column or used to calculate other columns.
+    /// The key may be an alias of `rand()` (e.g. `SELECT rand() AS r ... ORDER BY r`).
+    const ActionsDAG::Node * key_node = key_output;
+    if (num_outputs[key_node] != 1 || num_parents[key_node] != 0)
         return;
+
+    while (key_node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        key_node = key_node->children.front();
+        if (num_parents[key_node] != 1 || num_outputs.contains(key_node))
+            return;
+    }
 
     if (key_node->type != ActionsDAG::ActionType::FUNCTION || !key_node->function_base)
         return;
@@ -79,11 +95,6 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
     WhichDataType which(key_node->result_type);
     if (!which.isUInt32() && !which.isUInt64())
         return;
-
-    for (const auto & dag_node : dag.getNodes())
-        for (const auto * child : dag_node.children)
-            if (child == key_node)
-                return;
 
     auto shuffle = std::make_unique<ShuffleStep>(
         sorting->getInputHeaders().front(),
