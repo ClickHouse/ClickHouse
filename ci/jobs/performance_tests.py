@@ -729,7 +729,7 @@ def write_iceberg_profile_override():
         target = Path(config_dir) / "users.d" / ICEBERG_PROFILE_OVERRIDE_FILE
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
-            "<!-- Written by ci/jobs/performance_tests.py for the Iceberg configuration (perf.py --table-engine). -->\n"
+            "<!-- Written by ci/jobs/performance_tests.py for the Iceberg configuration of the performance tests. -->\n"
             "<clickhouse>\n    <profiles>\n        <default>\n"
             "            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>\n"
             "            <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>\n"
@@ -2799,6 +2799,9 @@ def main():
     nightly = "nightly" in test_options
     global TABLE_ENGINE
     TABLE_ENGINE = next((option for option in test_options if option in TABLE_ENGINES), None)
+    if TABLE_ENGINE:
+        # compare.sh reruns flagged queries to confirm them: with the same tables.
+        os.environ["CHPC_TABLE_ENGINE"] = TABLE_ENGINE
     batch_num -= 1
     assert 0 <= batch_num < total_batches and total_batches >= 1
 

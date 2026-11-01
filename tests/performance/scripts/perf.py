@@ -535,7 +535,9 @@ def execute_query_group(connection, q_list, query_id, settings, results=None):
         try:
             rows = connection.execute(q, query_id=query_id, settings=settings)
             if results is not None:
-                results.append(rows)
+                # A result too large to digest is not kept: it would stay in memory during the measured runs.
+                results.append(rows if not isinstance(rows, list) or len(rows) <= RESULT_DIGEST_MAX_ROWS else None)
+            del rows
         except Exception as e:
             # For the censored time of a query that timed out.
             e.elapsed_before = total
@@ -560,7 +562,9 @@ NONDETERMINISTIC_QUERY = re.compile(
     NONDETERMINISTIC_DATA.pattern
     + r"|\b(uptime|queryID|initialQueryID|blockNumber|rowNumberIn\w+|runningDifference\w*"
     r"|runningAccumulate|neighbor|any|anyLast|anyHeavy|groupArray\w*|groupUniqArray\w*|topK\w*"
-    r"|first_value|last_value|sleep\w*|_part\w*|_block_number|_row_number|_path|_file)\s*\("
+    r"|first_value|last_value|sleep\w*|_part\w*|_block_number|_row_number|_path|_file"
+    # Sampling and approximate aggregate functions, with their combinators.
+    r"|quantile\w*|median\w*|groupArraySample\w*|reservoirSample\w*|stochastic\w*|approx\w*)\s*\("
     r"|\bsystem\.\w+|\bLIMIT\b",
     re.IGNORECASE,
 )
@@ -580,7 +584,8 @@ def _normalize_value(value):
     if isinstance(value, (list, tuple)):
         return tuple(map(_normalize_value, value))
     if isinstance(value, dict):
-        return tuple(sorted((_normalize_value(k), _normalize_value(v)) for k, v in value.items()))
+        # Sorted by the representation: normalized keys can be of different types (an integral and a fractional `Decimal`).
+        return tuple(sorted(((_normalize_value(k), _normalize_value(v)) for k, v in value.items()), key=repr))
     return value
 
 
@@ -590,10 +595,10 @@ def result_digest(statement_results):
     rows = 0
     digest = 0
     for i, result in enumerate(statement_results):
+        if result is None:
+            return None
         if not isinstance(result, list):
             continue
-        if len(result) > RESULT_DIGEST_MAX_ROWS:
-            return None
         rows += len(result)
         for row in result:
             h = hashlib.blake2b(repr((i, _normalize_value(row))).encode(), digest_size=8)
@@ -604,13 +609,41 @@ def result_digest(statement_results):
 FORMAT_NULL = re.compile(r"\bFORMAT\s+Null\b", re.IGNORECASE)
 
 
-def digest_statement(statement):
+FLOAT_TYPE = re.compile(r"^(Nullable\()?(Float32|Float64|BFloat16)\)?$")
+
+
+def digest_statement(connection, statement, settings):
     """For a `SELECT ... FORMAT Null`, whose rows the server does not send, a
-    statement that digests the rows on the server instead; else None."""
+    statement that digests the rows on the server instead; else None. A float
+    column is rounded to 6 significant digits first, as `_normalize_value` does
+    on the client; floats nested in other types are not."""
     if first_keyword(statement) not in ("SELECT", "WITH") or not FORMAT_NULL.search(statement):
         return None
     query = FORMAT_NULL.sub("", statement).strip().rstrip(";")
-    return f"SELECT count(), sum(cityHash64(toString(tuple(*)))) FROM ({query})"
+    columns = connection.execute(f"DESCRIBE ({query})", settings=settings)
+    values = []
+    for name, column_type, *_ in columns:
+        column = "`" + name.replace("\\", "\\\\").replace("`", "\\`") + "`"
+        if FLOAT_TYPE.match(column_type):
+            column = f"if(isFinite({column}) AND {column} != 0, round({column}, 5 - toInt32(floor(log10(abs({column}))))), {column})"
+        values.append(column)
+    return f"SELECT count(), sum(cityHash64(toString(tuple({', '.join(values)})))) FROM ({query})"
+
+
+def query_digest(connection, q_item, query_id, settings, statement_results=None):
+    """(rows, digest) of the result of a query on one server, or None when it is
+    too large. The rows of a statement whose result the server sends are taken
+    from `statement_results` when given, else the statement is run again."""
+    results = []
+    for i, statement in enumerate(q_item["statements"]):
+        digest_query = digest_statement(connection, statement, settings)
+        if digest_query is not None:
+            results.append(connection.execute(digest_query, query_id=f"{query_id}.digest{i}", settings=settings))
+        elif statement_results is not None:
+            results.append(statement_results[i])
+        else:
+            execute_query_group(connection, [statement], f"{query_id}.digest{i}", settings, results)
+    return result_digest(results)
 
 
 def censored_elapsed(e, budget):
@@ -1425,22 +1458,16 @@ for query_index in queries_to_run:
             )
             if q_item["kind"] == "sql":
                 # Outside of the prewarm time and before the measured runs.
-                for i, statement in enumerate(q_item["statements"]):
-                    digest_query = digest_statement(statement)
-                    if digest_query is None:
-                        continue
-                    try:
-                        prewarm_results[i] = c.execute(
-                            digest_query,
-                            query_id=f"{query_prefix}.digest{i}",
-                            settings={"max_execution_time": args.prewarm_max_query_seconds},
-                        )
-                    except clickhouse_driver.errors.ServerException as e:
-                        # The query cannot be a subquery (e.g. two columns of the same name): it is not compared.
-                        print(f"result-digest-skipped\t{query_index}\t{conn_index}\t{tsv_escape(str(e).splitlines()[0])}")
-                        prewarm_results = None
-                        break
-                digest = result_digest(prewarm_results) if prewarm_results is not None else None
+                digest_settings = {"max_execution_time": args.prewarm_max_query_seconds}
+                try:
+                    digest = query_digest(c, q_item, query_prefix, digest_settings, prewarm_results)
+                except Exception as e:
+                    # E.g. the query cannot be a subquery (two columns of the same name): it is not
+                    # compared, but it is measured. The reason is in the raw output.
+                    print(f"result-digest-skipped\t{query_index}\t{conn_index}\t{tsv_escape(str(e).splitlines()[0] if str(e) else type(e).__name__)}")
+                    digest = None
+                # Only the digest survives into the measured runs.
+                prewarm_results = None
                 if digest is not None:
                     prewarm_digests[conn_index] = digest
                     print(f"result-digest\t{query_index}\t{conn_index}\t{digest[0]}\t{digest[1]}")
@@ -1452,6 +1479,8 @@ for query_index in queries_to_run:
             query_error_on_connection[conn_index] = traceback.format_exc()
             prewarm_exceptions[conn_index] = e
             continue
+
+    prewarm_results = None
 
     # Report all errors that occurred during prewarm and decide what to do next.
     # A failure on a tested server fails the query; a failure on the reference
@@ -1513,10 +1542,22 @@ for query_index in queries_to_run:
         and len(set(prewarm_digests.values())) > 1
         and not any(NONDETERMINISTIC_QUERY.search(s) for s in q_item["statements"])
     ):
-        # The servers returned different results. Reported, not an error: a
-        # change of a result is legitimate in a pull request that fixes one.
-        rows = "\t".join(str(prewarm_digests[i][0]) for i in range(len(all_connections)))
-        print(f"result-mismatch\t{query_index}\t{rows}")
+        # The servers returned different results. A difference is reported only
+        # when the old server repeats its own result: a query can be
+        # nondeterministic in a way the expression above does not recognize.
+        # Reported, not an error: a pull request that fixes a result changes it.
+        try:
+            repeated = query_digest(
+                all_connections[0], q_item, f"{query_prefix}.repeat", {"max_execution_time": args.prewarm_max_query_seconds}
+            )
+        except Exception as e:
+            repeated = None
+            print(f"result-digest-skipped\t{query_index}\t0\t{tsv_escape(str(e).splitlines()[0] if str(e) else type(e).__name__)}")
+        if repeated is not None and repeated != prewarm_digests[0]:
+            print(f"result-nondeterministic\t{query_index}")
+        elif repeated is not None:
+            rows = "\t".join(str(prewarm_digests[i][0]) for i in range(len(all_connections)))
+            print(f"result-mismatch\t{query_index}\t{rows}")
 
     this_query_connections = [all_connections[index] for index in no_errors]
 
