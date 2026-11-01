@@ -293,8 +293,7 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
     return isTotallyOrderedScalar(WhichDataType(removeLowCardinality(node.children[0]->result_type)));
 }
 
-/// `materialize` stops constant folding: filter push-down gives a branch of UNION ALL `materialize(<constant>)` for a
-/// column the branch defines as a constant.
+/// `materialize` stops constant folding; filter push-down gives a UNION ALL branch `materialize(<constant>)`.
 static const ActionsDAG::Node * tryGetConstantBehindMaterialize(const ActionsDAG::Node * node, bool & through_materialize)
 {
     node = node->getWithoutAlias();
@@ -311,9 +310,7 @@ static const ActionsDAG::Node * tryGetConstantBehindMaterialize(const ActionsDAG
     return node;
 }
 
-/// The value of a comparison, `isNull` or `isNotNull` of constants, at least one of them behind `materialize`.
-/// Comparisons are decided only for values of one type or two integers, for which comparing `Field`s agrees with
-/// the comparison function.
+/// Comparisons are decided only for one type or two integers: there comparing `Field`s agrees with the comparison function.
 static std::optional<bool> tryDecideMaterializedConstantPredicate(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
