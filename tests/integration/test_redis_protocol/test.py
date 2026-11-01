@@ -1,5 +1,6 @@
 import logging
 import socket
+import struct
 import time
 
 import pytest
@@ -535,3 +536,76 @@ def test_connection_stops_working_after_credentials_expire(started_cluster):
     finally:
         client.close()
         node.query("DROP USER IF EXISTS expiring_user")
+
+
+def test_client_reset_with_pending_reply(started_cluster):
+    # A reply that cannot be sent because the client has reset the connection must only close that
+    # connection: the server has to keep serving the other clients.
+    node.query("INSERT INTO name_surname_map (name, surname) VALUES ('ResetValue', repeat('x', 1000000))")
+
+    sock = socket.create_connection((started_cluster.get_instance_ip("node"), server_port), timeout=30)
+    try:
+        # The reply (64 MB) is much larger than the socket buffers, so the server is still sending it
+        # when the connection is reset.
+        request = b"*65\r\n$4\r\nMGET\r\n" + b"$10\r\nResetValue\r\n" * 64
+        sock.sendall(b"*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n" + request)
+        assert sock.recv(4096)
+        # Close with a reset instead of an orderly shutdown.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+    finally:
+        sock.close()
+
+    node.wait_for_log_line("Redis connection failed")
+    assert redis_client_get(started_cluster, 1, "Alice") == b"Smith"
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_quota_applies_to_commands(started_cluster):
+    # The data commands are accounted against the quota of the user, as SQL queries are.
+    node.query("DROP USER IF EXISTS quota_user")
+    node.query("CREATE USER quota_user IDENTIFIED WITH plaintext_password BY 'secret'")
+    node.query("GRANT SELECT ON default.name_surname_map TO quota_user")
+    try:
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX queries = 3 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(1)
+            assert client.get("Alice") == b"Smith"
+            assert client.get("Bob") == b"Johnson"
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.get("Alice")
+        finally:
+            client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        # The rows of the results are accounted too.
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX result_rows = 3 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(1)
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.mget("Alice", "Bob", "Charlie", "Diana")
+        finally:
+            client.close()
+    finally:
+        node.query("DROP QUOTA IF EXISTS redis_quota")
+        node.query("DROP USER IF EXISTS quota_user")
+
+
+def test_time_limit_applies_to_commands(started_cluster):
+    # A lookup has no pipeline executor, so it checks the cancellation and the time limit of its
+    # query itself (the same check that makes `KILL QUERY` stop it).
+    node.query("DROP USER IF EXISTS slow_user")
+    node.query("CREATE USER slow_user IDENTIFIED WITH plaintext_password BY 'secret' SETTINGS max_execution_time = 0.000001")
+    node.query("GRANT SELECT ON default.name_surname_map TO slow_user")
+    try:
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="slow_user", password="secret")
+        try:
+            with pytest.raises(exceptions.ResponseError, match="Timeout exceeded"):
+                client.select(1)
+            # The connection stays usable.
+            assert client.ping()
+        finally:
+            client.close()
+    finally:
+        node.query("DROP USER IF EXISTS slow_user")

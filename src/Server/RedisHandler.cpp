@@ -5,10 +5,13 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/QuotaDefs.h>
 #include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledQuota.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Core/Defines.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -51,6 +54,7 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -90,6 +94,24 @@ void RedisHandler::run()
     /// below, so this timeout only applies to a command that has been started but not sent completely.
     socket().setReceiveTimeout(server.context()->getSettingsRef()[Setting::receive_timeout]);
 
+    try
+    {
+        serveConnection();
+        out->finalize();
+    }
+    catch (...)
+    {
+        /// Typically the client has reset the connection or has not read a reply within the send
+        /// timeout. The socket is unusable then, so drop what is still buffered and close it.
+        tryLogCurrentException(log, "Redis connection failed");
+        out->cancel();
+    }
+
+    LOG_DEBUG(log, "Redis connection closed");
+}
+
+void RedisHandler::serveConnection()
+{
     while (tcp_server.isOpen())
     {
         /// Wait for the next request in short slices, so that an idle connection notices that the
@@ -120,10 +142,10 @@ void RedisHandler::run()
             break;
         }
 
+        bool keep_connection = true;
         try
         {
-            if (!processRequest(req))
-                break;
+            keep_connection = processRequest(req);
         }
         catch (const Poco::Exception & exc)
         {
@@ -131,12 +153,16 @@ void RedisHandler::run()
             log->log(exc);
             RedisProtocol::ErrorResponse resp(exc.message());
             resp.serialize(*out);
-            out->next();
         }
+
+        /// Send the reply in the normal control flow (not from a destructor), so that a failure to
+        /// write it propagates to `run`, which closes the connection.
+        out->next();
+        if (!keep_connection)
+            break;
     }
 
     out->finalize();
-    LOG_DEBUG(log, "Redis connection closed");
 }
 
 void RedisHandler::authenticate(const String & user_name, const String & password)
@@ -197,12 +223,37 @@ RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & comm
         "Redis " + command_name, /*normalized_query_hash=*/ 0, /*ast=*/ nullptr, query_context,
         clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ false);
     query_context->setProcessListElement(scope.process_list_entry->getQueryStatus());
+
+    /// Account the command against the quota of the user, as `executeQuery` does for a `SELECT`.
+    if (auto quota = query_context->getQuota())
+    {
+        quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERY_SELECTS, 1);
+        quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERIES, 1);
+        quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::ERRORS, 0, /*check_exceeded=*/ true);
+    }
+
     return scope;
+}
+
+void RedisHandler::checkCancelled() const
+{
+    /// A lookup has no pipeline executor that `KILL QUERY` or the `max_execution_time` limit could
+    /// cancel, so the command has to check its status itself.
+    auto status = query_context->getProcessListElement();
+    if (status && !status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Redis command exceeded the time limit");
+}
+
+void RedisHandler::accountResult(const Block & result_block) const
+{
+    if (auto quota = query_context->getQuota())
+        quota->usedForQuery(
+            /*normalized_query_hash=*/ 0,
+            {{QuotaType::RESULT_ROWS, result_block.rows()}, {QuotaType::RESULT_BYTES, result_block.bytes()}});
 }
 
 bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
 {
-    SCOPE_EXIT(out->next());
     req.parse();
     switch (req.getCommand())
     {
@@ -315,6 +366,8 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             auto [table, table_lock] = resolveTable(db, mapping);
             auto keys = makeKeyColumns(mapping.key_column, 1, [&](size_t) -> const String & { return get_request.getKey(); });
             auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
+            accountResult(result_block);
+            checkCancelled();
 
             RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0), 0));
             resp.serialize(*out);
@@ -342,12 +395,17 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
 
             auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
             keys.clear();
+            accountResult(result_block);
             const auto & value_column = result_block.getByPosition(0);
 
             std::vector<std::optional<String>> result;
             result.reserve(num_keys);
             for (size_t row = 0; row < num_keys; ++row)
+            {
+                if (row % DEFAULT_BLOCK_SIZE == 0)
+                    checkCancelled();
                 result.push_back(serializeValue(value_column, row));
+            }
 
             RedisProtocol::ArrayResponse resp(result);
             resp.serialize(*out);
@@ -370,6 +428,8 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, hget_request.getField()});
             auto keys = makeKeyColumns(mapping.key_column, 1, [&](size_t) -> const String & { return hget_request.getKey(); });
             auto result_block = table->getBlockByKeys(keys, {hget_request.getField()}, query_context);
+            accountResult(result_block);
+            checkCancelled();
 
             RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0), 0));
             resp.serialize(*out);
@@ -406,6 +466,8 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
 
             auto keys = makeKeyColumns(mapping.key_column, 1, [&](size_t) -> const String & { return hmget_request.getKey(); });
             auto result_block = table->getBlockByKeys(keys, fields, query_context);
+            accountResult(result_block);
+            checkCancelled();
 
             std::vector<std::optional<String>> result;
             result.reserve(result_block.columns());
@@ -457,6 +519,9 @@ RedisHandler::ResolvedTable RedisHandler::resolveTable(UInt32 db_, const RedisPr
     /// Hold a share lock for the duration of the command, as a regular read does, so that a concurrent
     /// `DROP TABLE` or `DETACH TABLE` cannot commit while the command is reading the table.
     auto lock = table->lockForShare(query_context->getInitialQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// The command may have been cancelled while it was waiting for the lock.
+    checkCancelled();
 
     validateTable(db_, mapping, table);
     return {std::move(table), std::move(lock)};

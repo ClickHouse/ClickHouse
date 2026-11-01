@@ -13,6 +13,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -64,6 +65,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
@@ -1141,6 +1143,20 @@ private:
     }
 };
 
+namespace
+{
+
+/// A lookup has no pipeline executor that `KILL QUERY` or the `max_execution_time` limit could cancel,
+/// so it checks the status of its query itself.
+void checkLookupCancelled(const ContextPtr & context)
+{
+    auto status = context->getProcessListElement();
+    if (status && !status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lookup exceeded the time limit");
+}
+
+}
+
 Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Names & column_names, ContextPtr context)
 {
     /// For a composite key, check that all necessary data has been provided.
@@ -1160,6 +1176,9 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
     /// mutation replaces under the write lock. This also applies to a request without keys, which only
     /// validates the return types.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+
+    /// The query may have been cancelled while it was waiting for the lock.
+    checkLookupCancelled(context);
 
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto cur_sample_block = metadata_snapshot->getSampleBlock();
@@ -1223,6 +1242,9 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
         /// `joinGet` returns at most `max_joined_block_rows` rows at once, so look the keys up in batches.
         for (size_t begin = 0; begin < num_keys; begin += DEFAULT_BLOCK_SIZE)
         {
+            if (begin != 0)
+                checkLookupCancelled(context);
+
             const size_t end = std::min(begin + DEFAULT_BLOCK_SIZE, num_keys);
 
             Block key_block;

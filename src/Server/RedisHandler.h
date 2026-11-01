@@ -6,6 +6,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/TCPServerConnection.h>
 
+#include <Core/Block_fwd.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -38,6 +39,9 @@ private:
     /// Returns false when the client has asked to close the connection.
     bool processRequest(RedisProtocol::RedisRequest & req);
 
+    /// Reads and executes the commands of the connection until it is closed. Throws if a reply cannot be sent.
+    void serveConnection();
+
     /// Authenticates the session with the given credentials. Throws on failure.
     void authenticate(const String & user_name, const String & password);
 
@@ -57,6 +61,12 @@ private:
     [[nodiscard]] CommandScope prepareQueryContext(const String & command_name);
 
     void checkDBSet() const;
+
+    /// Throws if the current command has been cancelled (`KILL QUERY`) or has exceeded `max_execution_time`.
+    void checkCancelled() const;
+
+    /// Accounts the result of a lookup against the `result_rows` and `result_bytes` quotas of the user.
+    void accountResult(const Block & result_block) const;
 
     /// Reads the binding of the selected Redis database from the live server configuration. It is read
     /// for every request, so that `SYSTEM RELOAD CONFIG` is visible to already connected clients.
