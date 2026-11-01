@@ -83,6 +83,9 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
         finder.maskEveryArgument(/*keep_identifier_keys=*/ kind == ASTFunction::Kind::TABLE_FUNCTION);
     else
         finder.apply(*spec, generic_rules);
+    /// No table function, engine, backup locator or function with secrets reads a parameter list `f(...)(...)`, so its
+    /// values cannot be classified.
+    finder.result.hide_parameters = true;
     return finder.result;
 }
 

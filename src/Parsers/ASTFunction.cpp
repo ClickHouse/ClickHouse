@@ -1068,10 +1068,20 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     if (!name.empty())
         ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
+    SecretArgumentsResult secret_arguments;
+    if (arguments && !settings.show_secrets)
+        secret_arguments = findSecretArguments(*this);
+
     if (parameters)
     {
         ostr << '(';
-        parameters->format(ostr, settings, state, nested_dont_need_parens);
+        if (secret_arguments.hide_parameters)
+        {
+            for (size_t i = 0; i < parameters->children.size(); ++i)
+                ostr << (i == 0 ? "" : ", ") << HIDDEN_SECRET_LITERAL;
+        }
+        else
+            parameters->format(ostr, settings, state, nested_dont_need_parens);
         ostr << ')';
     }
 
@@ -1089,10 +1099,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     if (arguments)
     {
-        SecretArgumentsResult secret_arguments;
-        if (!settings.show_secrets)
-            secret_arguments = findSecretArguments(*this);
-
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
             if (i != 0)
@@ -1217,7 +1223,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
 bool ASTFunction::hasSecretParts() const
 {
-    return findSecretArguments(*this).hasSecrets() || childrenHaveSecretParts();
+    const auto secret_arguments = findSecretArguments(*this);
+    return secret_arguments.hasSecrets() || (secret_arguments.hide_parameters && parameters && !parameters->children.empty())
+        || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)
