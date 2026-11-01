@@ -86,7 +86,6 @@
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 8.00, current rows: 16.38 thousand
 01414_push_predicate_when_contains_with_clause
-    max rows: 1.00, current rows: 10.00
     max rows: 4.00, current rows: 10.00
 01585_use_index_for_global_in
     max rows: 2.00, current rows: 11.00
