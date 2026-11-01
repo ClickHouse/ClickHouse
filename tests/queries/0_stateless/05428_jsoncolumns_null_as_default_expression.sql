@@ -68,3 +68,9 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05428_present_dependency.json',
     SELECT * FROM values('a String, c UInt32, b Nullable(UInt32)', ('oops', 7, NULL)) SETTINGS engine_file_truncate_on_insert = 1;
 
 SELECT b FROM file(currentDatabase() || '_05428_present_dependency.json', JSONColumns, 'a String, d UInt32 DEFAULT toUInt32(a), c UInt32 DEFAULT d, b UInt32 DEFAULT c * 2');
+
+-- A cycle which exists only through a subcolumn is ordered as before: "b" from "a" as read, then "a" from "b".
+INSERT INTO FUNCTION file(currentDatabase() || '_05428_cycle.jsonl', LineAsString, 'line String')
+    SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"a":{"x":4}}'), ('{"b":3}');
+
+SELECT * FROM file(currentDatabase() || '_05428_cycle.jsonl', JSONEachRow, 'a Tuple(x UInt32) DEFAULT tuple(b), b UInt32 DEFAULT a.x');
