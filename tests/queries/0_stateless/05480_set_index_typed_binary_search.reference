@@ -1,0 +1,24 @@
+--- UInt64
+5	5
+5
+144	144
+0
+999
+--- Int32
+7	7
+7
+40	40
+3	3
+--- Float64
+9	9
+1003	1003
+--- Date
+3	3
+3
+62	62
+--- DateTime with a function that rounds
+40	40
+1	1
+--- Compound key and tuple set keep the generic search
+3	3
+30	30

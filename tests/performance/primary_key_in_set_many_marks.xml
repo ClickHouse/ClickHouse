@@ -1,0 +1,21 @@
+<test>
+    <!-- Primary key analysis of `IN` over many marks: the set is binary searched for every checked mark range. -->
+    <create_query>CREATE TABLE pk_in_u64 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64</create_query>
+    <create_query>CREATE TABLE pk_in_i32 (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64</create_query>
+    <create_query>CREATE TABLE pk_in_date (k Date) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1</create_query>
+    <fill_query>INSERT INTO pk_in_u64 SELECT number FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO pk_in_i32 SELECT toInt32(number) - 2500000 FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO pk_in_date SELECT toDate('1970-01-01') + intDiv(number, 4) FROM numbers(200000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pk_in_u64 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pk_in_i32 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pk_in_date FINAL</fill_query>
+
+    <query>SELECT count() FROM pk_in_u64 WHERE k IN (SELECT number * 10 FROM numbers(200000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM pk_in_u64 WHERE k IN (SELECT number * 4999 FROM numbers(1000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM pk_in_i32 WHERE k IN (SELECT toInt32(number * 10) - 1000000 FROM numbers(200000)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM pk_in_date WHERE k IN (SELECT toDate('1970-01-01') + number * 2 FROM numbers(20000)) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS pk_in_u64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pk_in_i32</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pk_in_date</drop_query>
+</test>

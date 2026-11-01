@@ -1105,6 +1105,138 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     /// thread-local storage could pin arbitrarily large buffers after the query ends.
     cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
         [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
+
+    if (tuple_size == 1)
+    {
+        const IColumn & column = *ordered_set[0];
+        auto try_type = [&]<typename T>()
+        {
+            if (!find_set_range_in_column && typeid_cast<const ColumnVector<T> *>(&column))
+                find_set_range_in_column = &findSetRangeInColumnVector<T>;
+        };
+        try_type.template operator()<UInt8>();
+        try_type.template operator()<UInt16>();
+        try_type.template operator()<UInt32>();
+        try_type.template operator()<UInt64>();
+        try_type.template operator()<Int8>();
+        try_type.template operator()<Int16>();
+        try_type.template operator()<Int32>();
+        try_type.template operator()<Int64>();
+        try_type.template operator()<Float32>();
+        try_type.template operator()<Float64>();
+    }
+}
+
+std::pair<size_t, size_t> MergeTreeSetIndex::findSetRange(const FieldValueRanges & ranges) const
+{
+    if (find_set_range_in_column)
+        return find_set_range_in_column(*ordered_set[0], ranges[0]);
+
+    /// lhs < rhs return -1
+    /// lhs == rhs return 0
+    /// lhs > rhs return 1
+    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
+    {
+        if (rhs.isNegativeInfinity())
+            return +1;
+        if (rhs.isPositiveInfinity())
+            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
+        return lhs.compareAt(row, 0, *rhs.column, 1);
+    };
+
+    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
+    /// consecutive. Use binary search to find the range of indices.
+
+    /// The part about left_included/right_included is a little tricky. It was initially implemented
+    /// incorrectly:
+    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
+    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
+    ///       begin += 1;
+    /// This breaks on the following example:
+    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
+    ///   ordered_set = [[0], [0]].
+    /// The incorrect implementation would output begin == 0 and conclude that the set element is
+    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
+
+    size_t tuple_size = indexes_mapping.size();
+
+    auto indices = collections::range(0, size());
+    size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+        {
+            /// Return true if set[row] is below the key range.
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                int cmp = compare(*ordered_set[i], ranges[i].left, row);
+
+                if (cmp > 0)
+                    return false;
+                /// Note: if some range has left_included == false then the left ends of all
+                /// subsequent ranges' don't matter. (Symmetrically for right.)
+                /// It's the only way to make sense of the notion of a range of tuples where the
+                /// included/excluded flags are given per element.
+                if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
+                    return true;
+            }
+            return false;
+        }) - indices.begin();
+    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+        {
+            /// Return false if set[row] is above the key range.
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                int cmp = compare(*ordered_set[i], ranges[i].right, row);
+
+                if (cmp > 0 || (cmp == 0 && !ranges[i].right_included))
+                    return false;
+                if (cmp < 0)
+                    return true;
+            }
+            return true;
+        }) - indices.begin();
+
+    return {begin, end};
+}
+
+template <typename T>
+std::pair<size_t, size_t> MergeTreeSetIndex::findSetRangeInColumnVector(const IColumn & column, const FieldValueRange & range)
+{
+    /// The same comparisons as in the generic search, but `ColumnVector<T>::compareAt` is inlined.
+    const auto & data = assert_cast<const ColumnVector<T> &>(column).getData();
+    const auto value_of = [](const FieldValue & bound) { return assert_cast<const ColumnVector<T> &>(*bound.column).getData()[0]; };
+    const auto compare = [](T lhs, T rhs) { return CompareHelper<T>::compare(lhs, rhs, 1); };
+
+    /// A set element is above -Inf and below +Inf (the column is not `Nullable`).
+    size_t begin = 0;
+    if (range.left.isPositiveInfinity())
+        begin = data.size();
+    else if (range.left.isNormal())
+    {
+        const T left = value_of(range.left);
+        const bool left_included = range.left_included;
+        /// True if the element is below the key range.
+        begin = std::partition_point(data.begin(), data.end(), [&](T x)
+            {
+                int cmp = compare(x, left);
+                return cmp < 0 || (cmp == 0 && !left_included);
+            }) - data.begin();
+    }
+
+    size_t end = 0;
+    if (range.right.isPositiveInfinity())
+        end = data.size();
+    else if (range.right.isNormal())
+    {
+        const T right = value_of(range.right);
+        const bool right_included = range.right_included;
+        /// False if the element is above the key range.
+        end = std::partition_point(data.begin(), data.end(), [&](T x)
+            {
+                int cmp = compare(x, right);
+                return cmp < 0 || (cmp == 0 && right_included);
+            }) - data.begin();
+    }
+
+    return {begin, end};
 }
 
 MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
@@ -1214,65 +1346,7 @@ BoolMask MergeTreeSetIndex::checkInRange(
         range.right_included = new_range->right_included;
     }
 
-    /// lhs < rhs return -1
-    /// lhs == rhs return 0
-    /// lhs > rhs return 1
-    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
-    {
-        if (rhs.isNegativeInfinity())
-            return +1;
-        if (rhs.isPositiveInfinity())
-            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
-        return lhs.compareAt(row, 0, *rhs.column, 1);
-    };
-
-    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecutive. Use binary search to find the range of indices.
-
-    /// The part about left_included/right_included is a little tricky. It was initially implemented
-    /// incorrectly:
-    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
-    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
-    ///       begin += 1;
-    /// This breaks on the following example:
-    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
-    ///   ordered_set = [[0], [0]].
-    /// The incorrect implementation would output begin == 0 and conclude that the set element is
-    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
-
-    auto indices = collections::range(0, size());
-    size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return true if set[row] is below the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].left, row);
-
-                if (cmp > 0)
-                    return false;
-                /// Note: if some range has left_included == false then the left ends of all
-                /// subsequent ranges' don't matter. (Symmetrically for right.)
-                /// It's the only way to make sense of the notion of a range of tuples where the
-                /// included/excluded flags are given per element.
-                if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
-                    return true;
-            }
-            return false;
-        }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return false if set[row] is above the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].right, row);
-
-                if (cmp > 0 || (cmp == 0 && !ranges[i].right_included))
-                    return false;
-                if (cmp < 0)
-                    return true;
-            }
-            return true;
-        }) - indices.begin();
+    auto [begin, end] = findSetRange(ranges);
 
     if (begin > end)
     {
@@ -1363,65 +1437,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         range.right_included = new_range->right_included;
     }
 
-    /// lhs < rhs return -1
-    /// lhs == rhs return 0
-    /// lhs > rhs return 1
-    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
-    {
-        if (rhs.isNegativeInfinity())
-            return +1;
-        if (rhs.isPositiveInfinity())
-            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
-        return lhs.compareAt(row, 0, *rhs.column, 1);
-    };
-
-    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecutive. Use binary search to find the range of indices.
-
-    /// The part about left_included/right_included is a little tricky. It was initially implemented
-    /// incorrectly:
-    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
-    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
-    ///       begin += 1;
-    /// This breaks on the following example:
-    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
-    ///   ordered_set = [[0], [0]].
-    /// The incorrect implementation would output begin == 0 and conclude that the set element is
-    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
-
-    auto indices = collections::range(0, size());
-    size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return true if set[row] is below the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].left, row);
-
-                if (cmp > 0)
-                    return false;
-                /// Note: if some range has left_included == false then the left ends of all
-                /// subsequent ranges' don't matter. (Symmetrically for right.)
-                /// It's the only way to make sense of the notion of a range of tuples where the
-                /// included/excluded flags are given per element.
-                if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
-                    return true;
-            }
-            return false;
-        }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return false if set[row] is above the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].right, row);
-
-                if (cmp > 0 || (cmp == 0 && !ranges[i].right_included))
-                    return false;
-                if (cmp < 0)
-                    return true;
-            }
-            return true;
-        }) - indices.begin();
+    auto [begin, end] = findSetRange(ranges);
 
     if (begin > end)
     {

@@ -437,6 +437,19 @@ private:
     /// buffer is filled and returned instead.
     FieldValueRanges & getFieldValueRangesBuffer(FieldValueRanges & scratch) const;
 
+    /// Returns the half-open range [begin, end) of rows of `ordered_set` that lie in `ranges`.
+    /// `begin > end` means that the key ranges are inverted.
+    std::pair<size_t, size_t> findSetRange(const FieldValueRanges & ranges) const;
+
+    /// The same for a single-column set of `ColumnVector<T>`: a binary search over the raw data
+    /// instead of a virtual `IColumn::compareAt` call per comparison.
+    template <typename T>
+    static std::pair<size_t, size_t> findSetRangeInColumnVector(const IColumn & column, const FieldValueRange & range);
+
+    using FindSetRangeInColumnFunction = std::pair<size_t, size_t> (*)(const IColumn &, const FieldValueRange &);
+    /// Set in the constructor when the set has one column of a supported `ColumnVector` type.
+    FindSetRangeInColumnFunction find_set_range_in_column = nullptr;
+
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
