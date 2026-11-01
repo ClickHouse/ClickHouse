@@ -1256,6 +1256,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
     M(KeeperReadSnapshotDeferred, "Number of snapshot reads deferred because the requested snapshot is no longer available locally; NuRaft will retry the latest snapshot.", ValueType::Number) \
     M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
+    M(KeeperReadSnapshotStreamingSeeks, "Number of times a streaming snapshot transfer repositioned its reader because NuRaft requested an object other than the next one", ValueType::Number) \
     M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
     M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
     M(KeeperSaveSnapshot, "Number of snapshot save", ValueType::Number) \
@@ -1797,6 +1798,14 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrefetcherReadEntireFile, "The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetRowsFilterExpression, "The total number of rows that were passed through filter", ValueType::Number) \
     M(ParquetColumnsFilterExpression, "The total number of columns that were passed through filter", ValueType::Number) \
+    M(VortexFilterPushdownConjunctsPushed, "Number of top-level WHERE conjuncts translated and pushed into a Vortex scan", ValueType::Number) \
+    M(VortexFilterPushdownConjunctsDropped, "Number of top-level WHERE conjuncts that could not be translated for a Vortex scan and are only applied by ClickHouse afterwards", ValueType::Number) \
+    M(VortexScanSplits, "Number of splits delivered by Vortex scans", ValueType::Number) \
+    M(VortexScanEmptySplits, "Number of Vortex scan splits whose rows were all dropped by the pushed-down filter. Such a split is delivered, and so counted, only when the scan preserves the file order (`input_format_vortex_preserve_order`) - that is the only reader that has anything to do with it", ValueType::Number) \
+    M(VortexReadRequests, "Number of read requests a Vortex scan issued through the ClickHouse read buffer", ValueType::Number) \
+    M(VortexReadBytes, "Number of bytes a Vortex scan read through the ClickHouse read buffer", ValueType::Bytes) \
+    M(VortexConvertMicroseconds, "Time spent turning the Arrow arrays a Vortex scan delivers into ClickHouse columns", ValueType::Microseconds) \
+    M(VortexReadWaitMicroseconds, "Time the pipeline spent waiting for a Vortex scan to deliver the next split", ValueType::Microseconds) \
     M(ParquetRowsDecodedAsDictionaryIndexes, "Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so that the functions applied to such a column are evaluated once per dictionary value", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
@@ -1889,12 +1898,16 @@ The server successfully detected this situation and will download merged part fr
     \
     M(JoinBuildRowStoreMicroseconds, "Elapsed time transforming the right JOIN side payload into row-major format.", ValueType::Microseconds) \
     \
-    M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query, including cache reads and writes.", ValueType::Number) \
     M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AICacheReadTokens, "Prompt tokens read from the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
+    M(AICacheWriteTokens, "Prompt tokens written to the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
     M(AIAPICallsRetried, "Number of AI provider requests retried after a transient failure.", ValueType::Number) \
     M(AIAPICallsFailed, "Number of AI provider requests that failed after all retries.", ValueType::Number) \
     M(AIAPICallsThrottled, "Number of AI provider requests rejected with HTTP 429 (Too Many Requests).", ValueType::Number) \
+    M(AIRequestMicroseconds, "Total time spent in AI provider requests, including failed attempts and response parsing, excluding retry backoff. Summed across threads.", ValueType::Microseconds) \
+    M(AIRetryBackoffMicroseconds, "Total time spent waiting before retries of failed AI provider requests. Summed across threads.", ValueType::Microseconds) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
