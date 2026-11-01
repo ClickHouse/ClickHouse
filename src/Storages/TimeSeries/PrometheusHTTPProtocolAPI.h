@@ -41,6 +41,7 @@ public:
         String end_param;
         String step_param;
         String lookback_delta_param;
+        String query_cache_handling_param;
     };
 
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)
