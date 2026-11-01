@@ -11107,9 +11107,13 @@ Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL, \
         {"25.8", 0, 0, "New setting"}) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
-Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
+Minimum number of manifest files required to trigger manifest-only compaction via `OPTIMIZE TABLE ... MANIFEST`.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
-Requires allow_experimental_iceberg_compaction to be enabled.
+`OPTIMIZE TABLE ... MANIFEST` requires `allow_experimental_iceberg_compaction` to be enabled.
+
+`INSERT` into an Iceberg table merges the small data manifest files of the current snapshot within the same commit when
+their number in the new snapshot would exceed this threshold. The Iceberg table property `commit.manifest.min-count-to-merge`
+takes precedence over this setting for `INSERT`.
 
 The default mirrors the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100),
 see https://iceberg.apache.org/docs/1.5.2/configuration/.

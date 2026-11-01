@@ -67,6 +67,9 @@ struct DataFileEntryLineage
 
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
 
+/// Whether `generateManifestFile` can write the partition value. Manifests written by other engines can hold values it cannot.
+bool canWritePartitionValue(const Field & value);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -101,7 +104,30 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
     /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
     /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
-    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr,
+    /// Optional per-file partition tuples parallel to `data_file_names`, for a manifest that spans several partitions;
+    /// when empty every entry gets `partition_values`.
+    const std::vector<Row> & per_file_partition_values = {});
+
+/// The manifest-list `partitions` summary of one partition field over all data files of a manifest.
+struct ManifestPartitionFieldSummary
+{
+    explicit ManifestPartitionFieldSummary(DataTypePtr type_) : type(std::move(type_)) {}
+    ManifestPartitionFieldSummary(const Field & value, DataTypePtr type_) : type(std::move(type_)) { add(value); }
+
+    /// Accounts for the partition value of one more data file.
+    void add(const Field & value);
+
+    DataTypePtr type;
+    bool contains_null = false;
+    bool contains_nan = false;
+    /// The bounds over the non-null, non-NaN values; both are null when there is no such value.
+    Field lower_bound;
+    Field upper_bound;
+};
+
+/// One summary per partition field of the manifest's partition spec.
+using ManifestPartitionSummary = std::vector<ManifestPartitionFieldSummary>;
 
 /// Per manifest-list entry file/row counts and lineage for rewritten manifests.
 struct ManifestListEntryCounts
@@ -137,7 +163,7 @@ void generateManifestList(
     const std::vector<ManifestListEntryCounts> & entry_counts = {},
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {},
+    const std::vector<ManifestPartitionSummary> & entry_partition_summaries = {},
     const std::vector<Int64> & entry_row_counts = {},
     const std::vector<Int64> & entry_file_counts = {});
 
@@ -203,7 +229,7 @@ private:
     std::vector<Int64> manifest_entry_sizes;
     std::vector<Int64> manifest_entry_row_counts;
     std::vector<Int64> manifest_entry_file_counts;
-    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
+    std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
