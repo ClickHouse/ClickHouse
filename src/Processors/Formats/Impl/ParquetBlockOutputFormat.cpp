@@ -16,7 +16,6 @@
 #include <Processors/Port.h>
 
 
-
 namespace CurrentMetrics
 {
     extern const Metric ParquetEncoderThreads;
