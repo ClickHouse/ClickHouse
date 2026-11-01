@@ -5,6 +5,7 @@
 #include <list>
 #include <mutex>
 #include <optional>
+#include <boost/container_hash/hash.hpp>
 
 namespace DB
 {
@@ -50,7 +51,14 @@ public:
     {
         size_t operator()(const Key & key) const
         {
-            return std::hash<String>()(key.source + key.format + key.additional_format_info + key.schema_inference_mode + key.compression_method + key.headers);
+            size_t seed = 0;
+            boost::hash_combine(seed, key.source);
+            boost::hash_combine(seed, key.format);
+            boost::hash_combine(seed, key.additional_format_info);
+            boost::hash_combine(seed, key.schema_inference_mode);
+            boost::hash_combine(seed, key.compression_method);
+            boost::hash_combine(seed, key.headers);
+            return seed;
         }
     };
 

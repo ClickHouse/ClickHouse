@@ -194,6 +194,17 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
     if (headers.empty())
         return "";
 
+    auto is_ignorable = [](std::string_view name) -> bool
+    {
+        if (name == "traceparent" || name == "tracestate"
+            || name == "x-request-id" || name == "request-id"
+            || name == "x-correlation-id" || name == "x-amzn-trace-id")
+            return true;
+        if (name.starts_with("x-b3-"))
+            return true;
+        return false;
+    };
+
     auto is_sensitive = [](std::string_view name) -> bool
     {
         if (name == "authorization" || name == "proxy-authorization"
@@ -228,6 +239,9 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
         lower_name.reserve(trimmed_name.size());
         for (char c : trimmed_name)
             lower_name.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+
+        if (is_ignorable(lower_name))
+            continue;
 
         auto trimmed_val = trim(entry.value);
 

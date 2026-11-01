@@ -66,3 +66,29 @@ TEST(StorageURLCacheHeaders, SchemaCacheKeyComparison)
     EXPECT_NE(hasher(key1), hasher(key2));
     EXPECT_NE(hasher(key1), hasher(key_empty));
 }
+
+TEST(StorageURLCacheHeaders, TelemetryHeadersIgnored)
+{
+    HTTPHeaderEntries entries1{{"Accept-Encoding", "gzip"}, {"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}};
+    HTTPHeaderEntries entries2{{"Accept-Encoding", "gzip"}, {"tracestate", "rojo=1"}};
+    HTTPHeaderEntries entries3{{"Accept-Encoding", "gzip"}, {"X-Request-ID", "req-12345"}};
+    HTTPHeaderEntries entries_clean{{"Accept-Encoding", "gzip"}};
+
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), "accept-encoding:gzip");
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries2), "accept-encoding:gzip");
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries3), "accept-encoding:gzip");
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), canonicalizeHTTPHeadersForSchemaCache(entries_clean));
+}
+
+TEST(StorageURLCacheHeaders, KeyHashBoundaryCollisionResistance)
+{
+    /// Adjacent fields with shared boundary:
+    /// compression_method="gzip", headers="foo" vs compression_method="gz", headers="ipfoo"
+    SchemaCache::Key key_gzip{"http://example.com/data.csv", "CSV", "", "DEFAULT", "gzip", "foo"};
+    SchemaCache::Key key_gz{"http://example.com/data.csv", "CSV", "", "DEFAULT", "gz", "ipfoo"};
+
+    EXPECT_NE(key_gzip, key_gz);
+
+    SchemaCache::KeyHash hasher;
+    EXPECT_NE(hasher(key_gzip), hasher(key_gz));
+}
