@@ -2159,9 +2159,8 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
 }
 
 /// Build get columns options for matcher
-GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context)
+GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(const MatcherNode & matcher_node_typed, const ContextPtr & context)
 {
-    auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     UInt8 get_columns_options_kind = GetColumnsOptions::AllPhysicalAndAliases;
     VirtualsKind virtuals_kind = VirtualsKind::None;
 
@@ -2655,7 +2654,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     {
         const auto & storage_snapshot = table_expression_table_node ? table_expression_table_node->getStorageSnapshot()
                                                                     : table_expression_table_function_node->getStorageSnapshot();
-        auto get_columns_options = buildGetColumnsOptions(matcher_node, scope.context);
+        auto get_columns_options = buildGetColumnsOptions(matcher_node->as<MatcherNode &>(), scope.context);
         auto storage_columns_list = storage_snapshot->getColumns(get_columns_options);
         matched_columns = NamesAndTypes(storage_columns_list.begin(), storage_columns_list.end());
     }
@@ -2946,7 +2945,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         {
             const auto & storage_snapshot
                 = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            auto get_columns_options = buildGetColumnsOptions(matcher_node, scope.context);
+            auto get_columns_options = buildGetColumnsOptions(matcher_node->as<MatcherNode &>(), scope.context);
             auto storage_columns_list = storage_snapshot->getColumns(get_columns_options);
             table_expression_columns = NamesAndTypes(storage_columns_list.begin(), storage_columns_list.end());
         }
@@ -8436,15 +8435,28 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
               * nor to an alias.
               * A matcher inside a lambda can be qualified by a lambda argument, so it is not checked.
               */
-            std::unordered_set<std::string> source_column_names;
             const bool has_array_join = std::ranges::any_of(
                 buildTableExpressionsStack(query_node_typed.getJoinTreeNode()),
                 [](const QueryTreeNodePtr & table_expression) { return table_expression->as<ArrayJoinNode>() != nullptr; });
-            for (const auto & [_, table_expression_data] : scope.table_expression_node_to_data)
+
+            /// As in `resolveQualifiedMatcher` and `resolveUnqualifiedMatcher`: for a table, only the kinds of columns
+            /// the matcher selects (`*` skips `MATERIALIZED` and `ALIAS` columns by default).
+            auto table_expression_may_produce_column = [&](const QueryTreeNodePtr & table_expression,
+                const AnalysisTableExpressionData & table_expression_data,
+                const MatcherNode & matcher_node,
+                const std::string & column_name)
             {
-                for (const auto & column : table_expression_data.column_names_and_types)
-                    source_column_names.insert(column.name);
-            }
+                const auto * table_node = table_expression->as<TableNode>();
+                const auto * table_function_node = table_expression->as<TableFunctionNode>();
+                if (table_node || table_function_node)
+                {
+                    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+                    return storage_snapshot->tryGetColumn(buildGetColumnsOptions(matcher_node, scope.context), column_name).has_value();
+                }
+
+                return std::ranges::any_of(table_expression_data.column_names_and_types,
+                    [&](const auto & column) { return column.name == column_name; });
+            };
 
             auto matcher_may_produce_column = [&](const MatcherNode & matcher_node, bool is_inside_lambda, const std::string & column_name)
             {
@@ -8452,7 +8464,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     return true;
 
                 if (matcher_node.isUnqualified())
-                    return source_column_names.contains(column_name);
+                    return std::ranges::any_of(scope.table_expression_node_to_data, [&](const auto & table_expression_with_data)
+                        { return table_expression_may_produce_column(
+                            table_expression_with_data.first, table_expression_with_data.second, matcher_node, column_name); });
 
                 if (is_inside_lambda)
                     return true;
@@ -8463,7 +8477,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     return true;
 
                 bool qualifier_names_table_expression = false;
-                for (const auto & [_, table_expression_data] : scope.table_expression_node_to_data)
+                for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
                 {
                     if (table_expression_data.canBindIdentifier(IdentifierView(qualifier)))
                         return true;
@@ -8472,8 +8486,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                         || table_expression_data.table_name == qualifier.getFullName())
                     {
                         /// Only the columns of the table expression the qualifier names are produced.
-                        if (std::ranges::any_of(table_expression_data.column_names_and_types,
-                                [&](const auto & column) { return column.name == column_name; }))
+                        if (table_expression_may_produce_column(table_expression, table_expression_data, matcher_node, column_name))
                             return true;
                         qualifier_names_table_expression = true;
                     }

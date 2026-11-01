@@ -28,6 +28,7 @@ class QueryNode;
 class JoinNode;
 class ColumnNode;
 class FunctionNode;
+class MatcherNode;
 
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
@@ -233,7 +234,7 @@ private:
         const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
-    static GetColumnsOptions buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context);
+    static GetColumnsOptions buildGetColumnsOptions(const MatcherNode & matcher_node, const ContextPtr & context);
 
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
