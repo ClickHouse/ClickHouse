@@ -1764,6 +1764,31 @@ def test_drop_table_purge(started_cluster):
         node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
 
 
+def test_drop_table_purge_query_setting(started_cluster):
+    # node1 has `iceberg_delete_data_on_drop` disabled in its profile.
+    node = started_cluster.instances["node1"]
+
+    for purge in (False, True):
+        test_ref = f"test_drop_table_purge_query_setting_{uuid.uuid4()}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+        files = list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
+        assert files
+
+        node.query(
+            f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+            settings={"iceberg_delete_data_on_drop": int(purge)},
+        )
+        assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/") == ([] if purge else files)
+
+
 def test_create_table_order_by(started_cluster):
     # `ORDER BY` must reach the catalog as the table's write order.
     node = started_cluster.instances["node1"]
@@ -2314,6 +2339,38 @@ def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_clust
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
         node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
 
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_merge_reads_the_snapshot_it_inferred_from(started_cluster):
+    """`merge()` looks its tables up again for the read, and each catalog lookup builds a new storage
+    object. The read, including the row policy, must still use the snapshot the structure was inferred from."""
+    node = started_cluster.instances["node1"]
+    namespace = f"merge_snapshot_{uuid.uuid4().hex}"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    schema = Schema(NestedField(field_id=1, name="k", field_type=LongType(), required=False))
+    table = create_table(catalog, namespace, "t", schema, PartitionSpec(), SortOrder())
+    table.append(pa.Table.from_pylist([{"k": 7}, {"k": -1}]))
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    policy = f"merge_snapshot_policy ON {CATALOG_NAME}.`{namespace}.t`"
+    node.query(f"CREATE ROW POLICY {policy} USING k > 0 TO ALL")
+
+    # The failpoint sleeps 10 seconds before each catalog fetch, and the line is logged before each one,
+    # so the second line means the fetch of the structure inference is done and the next one is pending.
+    node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    try:
+        request = node.get_query_request(
+            f"SELECT sum(k) FROM merge('{CATALOG_NAME}', '^{namespace}[.]t$')", timeout=300
+        )
+        node.wait_for_log_line(f"Get table information for table {namespace}.t", timeout=60, repetitions=2)
+        with catalog.load_table(f"{namespace}.t").update_schema() as update:
+            update.rename_column("k", "v")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT lightweight_show_tables")
+
+    assert request.get_answer().strip() == "7"
+    node.query(f"DROP ROW POLICY {policy}")
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 
@@ -2977,6 +3034,34 @@ def test_incremental_refreshable_mv_rest_catalog(started_cluster):
 
     node.query(f"DROP TABLE {mv}")
     node.query(f"DROP TABLE {src}")
+
+
+def test_drop_mv_with_unreachable_target(started_cluster):
+    # DROP of a view must not depend on its `TO` table in a catalog that cannot be reached.
+    node = started_cluster.instances["node1"]
+
+    uid = uuid.uuid4().hex[:12]
+    namespace = f"mv_unreachable_ns_{uid}"
+    tgt_table = f"mv_unreachable_tgt_{uid}"
+    mv = f"mv_unreachable_mv_{uid}"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, tgt_table, "(k Int64)")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv}
+            REFRESH EVERY 10 YEAR APPEND
+            TO {CATALOG_NAME}.`{namespace}.{tgt_table}` EMPTY
+            AS SELECT toInt64(1) AS k
+        """
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        # SYNC waits for the background part of the drop, which calls `drop` of the view.
+        node.query(f"DROP TABLE {mv} SYNC")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 
 
 def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):

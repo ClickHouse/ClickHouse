@@ -7,6 +7,9 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraph.h>
+#include <Processors/QueryPlan/GatherReceiveStep.h>
+#include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
@@ -229,6 +232,11 @@ Strings mergeStageNames(const DistributedQueryPlan & plan)
     return names;
 }
 
+bool dependsOn(const StageDependencies & dependencies, const String & stage)
+{
+    return std::ranges::any_of(dependencies, [&](const StageDependency & dependency) { return dependency.stage == stage; });
+}
+
 void expectConsumerDescriptors(const DistributedQueryPlan & plan, const String & stage_name, const BuildRuntimeFilterStep & build)
 {
     for (const auto & task : plan.stages.at(stage_name).tasks)
@@ -351,10 +359,10 @@ TEST_F(RuntimeFilterExchangeWiring, MultiLevelTree)
         String previous = "build";
         for (const auto & name : merge_stages)
         {
-            EXPECT_TRUE(plan.stage_depends_on.at(name).contains(previous)) << name;
+            EXPECT_TRUE(dependsOn(plan.stage_depends_on.at(name), previous)) << name;
             previous = name;
         }
-        EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(previous));
+        EXPECT_TRUE(dependsOn(plan.stage_depends_on.at("probe"), previous));
 
         expectWiredBuild(plan, "build");
         auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
@@ -430,7 +438,7 @@ TEST_F(RuntimeFilterExchangeWiring, MixedLocalAndRemoteSkipsProducerStageExchang
     expectConsumerDescriptors(plan, "probe", *build);
     for (const auto & task : plan.stages.at("both").tasks)
         EXPECT_TRUE(task.runtime_filter_descriptors.empty());
-    EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(merge_stages.front()));
+    EXPECT_TRUE(dependsOn(plan.stage_depends_on.at("probe"), merge_stages.front()));
 }
 
 TEST_F(RuntimeFilterExchangeWiring, SameStageAdmission)
@@ -491,7 +499,7 @@ DistributedQueryPlan wireProducerDependingOnConsumer(size_t num_build_tasks, siz
     data_exchange.source_bucket_count = num_receive_tasks;
     data_exchange.destination_bucket_count = num_build_tasks;
     plan.exchange_descriptions[data_exchange.name] = data_exchange;
-    plan.stage_depends_on["build"]["probe"] = data_exchange.name;
+    plan.stage_depends_on["build"].push_back({"probe", data_exchange.name});
 
     size_t next_exchange_id = 100;
     wireRuntimeFilterExchangeTopology(plan, next_exchange_id, kind);
@@ -518,10 +526,10 @@ TEST_F(RuntimeFilterExchangeWiring, NoCompletionEdgeWhenItWouldCycle)
 
     /// The merge stage depends on the build stage as usual, but the probe stage gets NO
     /// dependency entry on the merge stage: it would close a cycle with the data edge.
-    EXPECT_TRUE(plan.stage_depends_on.at(merge_stages.front()).contains("build"));
+    EXPECT_TRUE(dependsOn(plan.stage_depends_on.at(merge_stages.front()), "build"));
     auto probe_dependencies = plan.stage_depends_on.find("probe");
     EXPECT_TRUE(probe_dependencies == plan.stage_depends_on.end()
-        || !probe_dependencies->second.contains(merge_stages.front()));
+        || !dependsOn(probe_dependencies->second, merge_stages.front()));
 
     expectWiredBuild(plan, "build");
     auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
@@ -540,4 +548,61 @@ TEST_F(RuntimeFilterExchangeWiring, PersistedDeliveryRequiresCompletionEdge)
     EXPECT_EQ(countStreams(plan), 0u);
     for (const auto & task : plan.stages.at("probe").tasks)
         EXPECT_TRUE(task.runtime_filter_descriptors.empty());
+}
+
+/// The merge stages of a filter are not part of the data flow, so the fragment graph leaves them out. `makeDistributedPlan`
+/// wires the filters after the cut, with exchange ids continuing from the id of `main`, and the merge stages keep the
+/// default stage id, so a builder which took them in would throw on duplicate ids.
+TEST_F(RuntimeFilterExchangeWiring, FragmentGraphLeavesOutMergeStages)
+{
+    /// stage_0 builds the filter and gathers its rows into main, which applies the filter.
+    DistributedQueryPlan plan;
+    addBuildStage(plan, "stage_0", 40, "key");
+    auto & build_stage = plan.stages.at("stage_0");
+    build_stage.id = 0;
+    build_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(dataHeader(), "exchange_0"));
+
+    DistributedQueryStage main;
+    main.id = 1;
+    main.query_plan_fragment.addStep(std::make_unique<GatherReceiveStep>(dataHeader(), "exchange_0", 40));
+    auto dag = makeApplyFilterDAG("key", "f");
+    const String filter_column_name = applyFilterResultName(dag);
+    main.query_plan_fragment.addStep(
+        std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
+    main.tasks.push_back(makeTask("main", 0));
+    plan.stages["main"] = std::move(main);
+
+    plan.stage_depends_on["stage_0"] = {};
+    plan.stage_depends_on["main"] = {{"stage_0", "exchange_0"}};
+    plan.exchange_descriptions["exchange_0"] = ExchangeDescription{
+        .name = "exchange_0",
+        .id = 0,
+        .kind = ExchangeDescription::Kind::Streaming,
+        .source_bucket_count = 40,
+        .destination_bucket_count = 1,
+        .exchange_step_name = "GatherExchange"};
+
+    size_t next_exchange_id = 1;
+    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
+
+    /// 40 build tasks: a level of 3 merge tasks, then the root, which `main` depends on.
+    auto merge_stages = mergeStageNames(plan);
+    ASSERT_EQ(merge_stages.size(), 2u);
+    EXPECT_TRUE(dependsOn(plan.stage_depends_on.at("main"), merge_stages.back()));
+
+    auto graph = buildFragmentGraph(plan);
+    ASSERT_EQ(graph.fragments.size(), 2u);
+    EXPECT_EQ(graph.getFragment(0).stage_name, "stage_0");
+    EXPECT_EQ(graph.getFragment(0).tasks, 40u);
+    EXPECT_EQ(graph.getFragment(1).stage_name, "main");
+    ASSERT_EQ(graph.exchanges.size(), 1u);
+    const auto & exchange = graph.getExchange(0);
+    EXPECT_EQ(exchange.from, 0u);
+    EXPECT_EQ(exchange.to, 1u);
+    EXPECT_EQ(exchange.kind, FragmentExchange::Kind::Gather);
+
+    /// The steps that build and apply the filter stay in the plans of the data fragments.
+    EXPECT_NE(findBuildStep(plan.stages.at("stage_0").query_plan_fragment), nullptr);
+    EXPECT_EQ(graph.getFragment(0).plan, &plan.stages.at("stage_0").query_plan_fragment);
+    EXPECT_EQ(graph.getFragment(1).plan, &plan.stages.at("main").query_plan_fragment);
 }

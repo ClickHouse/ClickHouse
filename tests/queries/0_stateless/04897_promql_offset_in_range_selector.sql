@@ -37,32 +37,10 @@ SELECT tags, samples FROM prometheusQueryRange(ts, 'm offset 5m', 1000300, 10004
 DROP TABLE ts;
 
 -- Nanosecond timestamps exercise the toIntervalNanosecond branch, including a sub-second offset.
-DROP TABLE IF EXISTS ts_data;
-DROP TABLE IF EXISTS ts_tags;
-DROP TABLE IF EXISTS ts_metrics;
 DROP TABLE IF EXISTS ts_ns;
 
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(9, 'UTC'), value Float64)
-ENGINE = MergeTree ORDER BY (id, timestamp);
-
-CREATE TABLE ts_tags (
-    id UUID,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
-    min_time SimpleAggregateFunction(min, Nullable(DateTime64(9, 'UTC'))),
-    max_time SimpleAggregateFunction(max, Nullable(DateTime64(9, 'UTC'))))
--- `tags` is functionally dependent on `id`, so it is kept outside the sorting key on purpose.
-ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
-
-CREATE TABLE ts_metrics (
-    metric_family String,
-    type String,
-    unit String,
-    help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family;
-
-CREATE TABLE ts_ns ENGINE = TimeSeries
-DATA ts_data TAGS ts_tags METRICS ts_metrics;
+-- The samples are stored with nanosecond timestamps.
+CREATE TABLE ts_ns (samples Array(Tuple(DateTime64(9, 'UTC'), Float64))) ENGINE = TimeSeries;
 
 INSERT INTO ts_ns (metric_name, tags, samples) VALUES
     ('n', map(), [(toDateTime64('1970-01-12 13:46:40.000000001', 9, 'UTC'), 10.0), (toDateTime64('1970-01-12 13:47:40.000000001', 9, 'UTC'), 20.0)]);
@@ -71,6 +49,3 @@ SELECT 'nanosecond timestamps, sub-second offset:';
 SELECT tags, timestamp, value FROM prometheusQuery(ts_ns, 'last_over_time(n[2m] offset 500ms)', 1000160.5) ORDER BY ALL;
 
 DROP TABLE ts_ns;
-DROP TABLE ts_metrics;
-DROP TABLE ts_tags;
-DROP TABLE ts_data;

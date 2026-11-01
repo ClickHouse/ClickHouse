@@ -174,6 +174,19 @@ public:
         cache_policy->set(key, mapped);
     }
 
+    /// `set`, and whether `mapped` is in the cache right after it: the policy can refuse it or evict it at once.
+    /// If it is, calls `on_resident` under the same lock, so nothing else can replace it before the call returns.
+    template <typename OnResident>
+    bool setAndContains(const Key & key, const MappedPtr & mapped, OnResident && on_resident)
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->set(key, mapped);
+        if (!cache_policy->contains(key))
+            return false;
+        on_resident();
+        return true;
+    }
+
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrSet() will call load_func(),
@@ -286,6 +299,31 @@ public:
         if (!value || !predicate(value))
             return false;
         cache_policy->remove(key);
+        return true;
+    }
+
+    /// "Compare and set" by key: replaces the resident under `key` with `mapped` only when the
+    /// resident is `expected` (the same object). Returns whether it was replaced. Atomic like
+    /// removeIfMatches, and like it bumps the LRU position of the resident.
+    bool replaceIfMatches(const Key & key, const MappedPtr & expected, const MappedPtr & mapped)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || value != expected)
+            return false;
+        cache_policy->set(key, mapped);
+        return true;
+    }
+
+    /// Like `removeIfMatches`, but if `update(resident)` returns true, sets the resident again to recompute its weight.
+    /// `update` runs under the cache lock, so no eviction sees a changed resident with its old weight.
+    bool updateIfMatches(const Key & key, std::function<bool(const MappedPtr &)> update)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || !update(value))
+            return false;
+        cache_policy->set(key, value);
         return true;
     }
 

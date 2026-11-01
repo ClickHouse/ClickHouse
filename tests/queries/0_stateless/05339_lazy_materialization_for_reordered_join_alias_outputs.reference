@@ -1,0 +1,24 @@
+-- all columns
+0	0	0	0
+6	6	6	-2
+12	12	12	-4
+18	18	18	-6
+24	24	24	-8
+-- the value of each side
+0	0
+6	-2
+12	-4
+18	-6
+24	-8
+-- the key of the subquery only
+0
+6
+12
+18
+24
+-- with an offset, as in 02967_parallel_replicas_join_algo_and_analyzer_2
+2100	2100	2100	-700
+2142	2142	2142	-714
+2184	2184	2184	-728
+2226	2226	2226	-742
+2268	2268	2268	-756
