@@ -107,13 +107,18 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
+    std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings)
 {
+    /// A pattern scan delivers known tokens again, so embedded postings are added only with a new token.
     if (is_failed || tokens.contains(token))
         return;
 
     tokens[token] = token_info;
     addRowsRange(token_rows_range);
+
+    if (embedded_postings)
+        addPostings(*embedded_postings);
 }
 
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
@@ -239,16 +244,33 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         token_rows_range = *clipped_range;
     }
 
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addTokenInfo(token, token_info, token_rows_range);
-    });
-
+    /// Clip the embedded postings to the readable rows once.
+    std::optional<PostingList> embedded_postings;
     if (!token_info->embedded_postings.empty())
     {
-        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
-        addPostings(token, embedded);
+        tokens_with_postings.emplace(token);
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+
+        embedded_postings.emplace(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        if (readable_rows)
+            embedded_postings = readable_rows->clipPostings(*embedded_postings);
+    }
+
+    const bool no_readable_postings = embedded_postings && embedded_postings->isEmpty();
+    processTokenOperation(token, [&](QueryBuilder & query_builder)
+    {
+        query_builder.addTokenInfo(token, token_info, token_rows_range, embedded_postings && !no_readable_postings ? &*embedded_postings : nullptr);
+    });
+
+    /// Same as in `addPostings`: a token without readable postings is missing.
+    if (no_readable_postings)
+    {
+        processTokenOperation(token, [&](QueryBuilder & query_builder)
+        {
+            query_builder.addMissingToken(token);
+        });
+
+        queries_by_token.erase(token);
     }
 }
 
