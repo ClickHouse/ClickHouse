@@ -574,13 +574,20 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
         || std::ranges::count_if(outputs, [&](const auto * node) { return node->result_name == filter_column_name; }) != 1)
         return std::nullopt;
 
+    /// A filter column that is a result too must be an `and`: the rest replaces it with the conjunction of the other atoms,
+    /// which is 1 in the rows that pass. A filter that is a column itself (`WHERE flag`) has nothing to skip.
     const auto * filter_node = &dag.findInOutputs(filter_column_name);
+    const bool is_conjunction = filter_node->type == ActionsDAG::ActionType::FUNCTION && filter_node->function_base->getName() == "and";
+    if (filter_node->type == ActionsDAG::ActionType::INPUT || (!remove_filter_column && !is_conjunction))
+        return std::nullopt;
+
     ActionsDAG::NodeRawConstPtrs atoms;
     collectConjunctionAtoms(filter_node, atoms);
 
+    /// The hashes are of the atoms of this AND chain that the read applied, of any type: an atom may be a column itself,
+    /// like `flag` in `WHERE flag AND f(x)`, and the rest still reads the column unchanged.
     size_t num_prefiltered = 0;
-    while (num_prefiltered < atoms.size() && atoms[num_prefiltered]->type == ActionsDAG::ActionType::FUNCTION
-           && condition_hashes.contains(atoms[num_prefiltered]->getHash()))
+    while (num_prefiltered < atoms.size() && condition_hashes.contains(atoms[num_prefiltered]->getHash()))
         ++num_prefiltered;
     if (num_prefiltered == 0)
         return std::nullopt;
@@ -617,7 +624,7 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
     const ActionsDAG::Node * rest_filter = &addConjunction(rest, std::move(rest_atoms));
     if (!remove_filter_column)
     {
-        /// The filter column is a result too: an `and` (see `isComputedOnlyForConjunction` above), so it is 1 in the rows that
+        /// The filter column is a result too: an `and` (checked above), so it is 1 in the rows that
         /// pass, like the conjunction of the other atoms. It keeps its type and constness.
         if (rest_filter->column && !filter_node->column)
             rest_filter = &rest.addFunction(
