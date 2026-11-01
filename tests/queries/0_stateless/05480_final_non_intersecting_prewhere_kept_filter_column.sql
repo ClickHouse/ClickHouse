@@ -4,8 +4,8 @@
 DROP TABLE IF EXISTS t_final_prewhere_kept;
 CREATE TABLE t_final_prewhere_kept (k UInt64, v UInt64, n Nullable(UInt64))
 ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 128;
-INSERT INTO t_final_prewhere_kept SELECT number, number, number FROM numbers(20000);
-OPTIMIZE TABLE t_final_prewhere_kept FINAL;
+-- With `optimize_on_insert`, the insert already creates a merged part (level 1).
+INSERT INTO t_final_prewhere_kept SELECT number, number, number FROM numbers(20000) SETTINGS optimize_on_insert = 1;
 
 SET optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, query_plan_optimize_lazy_final = 0,
     query_plan_optimize_lazy_materialization = 0, use_query_condition_cache = 0, max_threads = 1, max_block_size = 128;
@@ -53,8 +53,7 @@ DROP TABLE t_final_prewhere_kept;
 DROP TABLE IF EXISTS t_final_prewhere_kept_const;
 CREATE TABLE t_final_prewhere_kept_const (k UInt64, v UInt64)
 ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 32;
-INSERT INTO t_final_prewhere_kept_const SELECT number, number % 4 FROM numbers(256);
-OPTIMIZE TABLE t_final_prewhere_kept_const FINAL;
+INSERT INTO t_final_prewhere_kept_const SELECT number, number % 4 FROM numbers(256) SETTINGS optimize_on_insert = 1;
 SYSTEM STOP MERGES t_final_prewhere_kept_const;
 INSERT INTO t_final_prewhere_kept_const SELECT number, number % 5 FROM numbers(80, 60);
 

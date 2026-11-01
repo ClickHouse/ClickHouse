@@ -6,10 +6,9 @@ CREATE TABLE t_final_prewhere_bytes (key UInt64, v UInt64, payload String, ver U
 ENGINE = ReplacingMergeTree(ver) ORDER BY key
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_final_prewhere_bytes;
-INSERT INTO t_final_prewhere_bytes SELECT number, number % 1000, repeat(toString(number), 20), 1 FROM numbers(100000);
-SYSTEM START MERGES t_final_prewhere_bytes;
-OPTIMIZE TABLE t_final_prewhere_bytes FINAL;
-SYSTEM STOP MERGES t_final_prewhere_bytes;
+-- With `optimize_on_insert`, the insert already creates a merged part (level 1).
+INSERT INTO t_final_prewhere_bytes SELECT number, number % 1000, repeat(toString(number), 20), 1 FROM numbers(100000)
+SETTINGS optimize_on_insert = 1;
 INSERT INTO t_final_prewhere_bytes SELECT number, number % 1000, 'new', 2 FROM numbers(50000, 1000);
 
 SET optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, use_query_condition_cache = 0;
