@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <functional>
 #include <vector>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -163,6 +164,10 @@ struct QueryGraph
     /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
+
+    /// Whether an output column of a relation holds one value in every row.
+    /// An equality with such a column links no two relations, so it gives no column equivalence.
+    std::function<bool(size_t relation, const String & column_name)> is_constant_column;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

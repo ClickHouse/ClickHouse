@@ -5,23 +5,35 @@
 
 #include <fmt/ranges.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -440,6 +452,207 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
     return {};
+}
+
+namespace
+{
+
+/// The `ColumnConst` holding a column's value in every row (nullptr when unknown), or std::nullopt when not constant.
+using ConstantValue = std::optional<ColumnPtr>;
+
+/// Classifies each plan column and DAG node once: an output can depend on several columns that share inputs.
+class ConstantColumnFinder
+{
+public:
+    ConstantValue findConstantValue(const QueryPlan::Node & node, const String & column_name);
+
+private:
+    ConstantValue findStepConstant(const QueryPlan::Node & node, const String & column_name);
+    ConstantValue findInputConstant(const QueryPlan::Node & node, const String & input_name);
+    ConstantValue findPassedThroughConstant(const QueryPlan::Node & child, const ColumnWithTypeAndName & column);
+    ConstantValue findExpressionConstant(const QueryPlan::Node & node, const ActionsDAG & actions, const String & column_name);
+    ConstantValue findUnionConstant(const QueryPlan::Node & node, const Block & header, const String & column_name);
+    bool isConstantNode(const QueryPlan::Node & node, const ActionsDAG::Node & dag_node);
+
+    std::unordered_map<const QueryPlan::Node *, std::unordered_map<String, ConstantValue>> column_values;
+    std::unordered_map<const ActionsDAG::Node *, bool> constant_dag_nodes;
+};
+
+ConstantValue ConstantColumnFinder::findConstantValue(const QueryPlan::Node & node, const String & column_name)
+{
+    if (auto it = column_values.find(&node); it != column_values.end())
+    {
+        if (auto value_it = it->second.find(column_name); value_it != it->second.end())
+            return value_it->second;
+    }
+    auto value = findStepConstant(node, column_name);
+    column_values[&node].emplace(column_name, value);
+    return value;
+}
+
+ConstantValue ConstantColumnFinder::findInputConstant(const QueryPlan::Node & node, const String & input_name)
+{
+    if (node.children.size() != 1)
+        return std::nullopt;
+    return findConstantValue(*node.children.front(), input_name);
+}
+
+ConstantValue ConstantColumnFinder::findPassedThroughConstant(const QueryPlan::Node & child, const ColumnWithTypeAndName & column)
+{
+    const auto * child_column = child.step->getOutputHeader()->findByName(column.name);
+    if (!child_column || !child_column->type->equals(*column.type))
+        return std::nullopt;
+    return findConstantValue(child, column.name);
+}
+
+/// A deterministic, stateless function of constants holds one value in every row.
+bool ConstantColumnFinder::isConstantNode(const QueryPlan::Node & node, const ActionsDAG::Node & dag_node)
+{
+    if (auto it = constant_dag_nodes.find(&dag_node); it != constant_dag_nodes.end())
+        return it->second;
+    bool constant = false;
+    if (dag_node.type == ActionsDAG::ActionType::COLUMN)
+        constant = dag_node.column != nullptr;
+    else if (dag_node.type == ActionsDAG::ActionType::INPUT)
+        constant = findInputConstant(node, dag_node.result_name).has_value();
+    else if (dag_node.type == ActionsDAG::ActionType::ALIAS)
+        constant = isConstantNode(node, *dag_node.children.front());
+    else if (dag_node.type == ActionsDAG::ActionType::FUNCTION)
+        constant = dag_node.function_base && dag_node.function_base->isDeterministic() && !dag_node.function_base->isStateful()
+            && !dag_node.children.empty()
+            && std::ranges::all_of(dag_node.children, [&](const auto * child) { return isConstantNode(node, *child); });
+    constant_dag_nodes.emplace(&dag_node, constant);
+    return constant;
+}
+
+ConstantValue ConstantColumnFinder::findExpressionConstant(const QueryPlan::Node & node, const ActionsDAG & actions, const String & column_name)
+{
+    for (const auto * output : actions.getOutputs())
+    {
+        if (output->result_name != column_name)
+            continue;
+
+        const auto * source = output;
+        while (true)
+        {
+            auto hop = describeActionsDAGLineageHop(*source);
+            if (!hop || (hop->kind != ActionsDAGLineageKind::Identity && hop->kind != ActionsDAGLineageKind::ValuePreserving))
+                break;
+            source = source->children.front();
+        }
+
+        if (source->type == ActionsDAG::ActionType::COLUMN && source->column)
+            return source->column;
+        if (source->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (auto value = findInputConstant(node, source->result_name))
+                return value;
+        }
+        if (isConstantNode(node, *output))
+            return ColumnPtr{};
+    }
+    return std::nullopt;
+}
+
+/// A column of a union is constant when it holds one value in every branch.
+ConstantValue ConstantColumnFinder::findUnionConstant(const QueryPlan::Node & node, const Block & header, const String & column_name)
+{
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        const auto & column = header.getByPosition(position);
+        if (column.name != column_name || !column.type->isComparable())
+            continue;
+
+        ColumnPtr value;
+        bool is_constant = !node.children.empty();
+        for (size_t i = 0; i < node.children.size() && is_constant; ++i)
+        {
+            const auto & child = *node.children[i];
+            const auto & child_header = *child.step->getOutputHeader();
+            ConstantValue child_value;
+            if (position < child_header.columns())
+                child_value = findConstantValue(child, child_header.getByPosition(position).name);
+            is_constant = child_value && *child_value
+                && (!value || (value->structureEquals(**child_value) && value->compareAt(0, 0, **child_value, 1) == 0));
+            if (is_constant)
+                value = *child_value;
+        }
+        if (is_constant)
+            return value;
+    }
+    return std::nullopt;
+}
+
+/// Steps that only reorder or select the rows of their single input.
+bool keepsInputValues(const IQueryPlanStep & step)
+{
+    return typeid_cast<const SortingStep *>(&step) || typeid_cast<const DistinctStep *>(&step)
+        || typeid_cast<const LimitStep *>(&step) || typeid_cast<const LimitByStep *>(&step)
+        || typeid_cast<const LimitRangeStep *>(&step) || typeid_cast<const OffsetStep *>(&step)
+        || typeid_cast<const FractionalLimitStep *>(&step) || typeid_cast<const FractionalOffsetStep *>(&step)
+        || typeid_cast<const NegativeLimitStep *>(&step) || typeid_cast<const NegativeLimitByStep *>(&step)
+        || typeid_cast<const NegativeOffsetStep *>(&step);
+}
+
+ConstantValue ConstantColumnFinder::findStepConstant(const QueryPlan::Node & node, const String & column_name)
+{
+    const IQueryPlanStep * step = node.step.get();
+    const auto & header = *step->getOutputHeader();
+
+    const auto * column = header.findByName(column_name);
+    if (!column)
+        return std::nullopt;
+    if (column->column && isColumnConst(*column->column))
+        return column->column;
+
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+        return findExpressionConstant(node, expression_step->getExpression(), column_name);
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+        return findExpressionConstant(node, filter_step->getExpression(), column_name);
+    if (typeid_cast<const UnionStep *>(step))
+        return findUnionConstant(node, header, column_name);
+    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
+    {
+        const auto & keys = aggregating_step->getParams().keys;
+        if (!aggregating_step->isGroupingSets() && node.children.size() == 1 && std::ranges::find(keys, column_name) != keys.end())
+            return findConstantValue(*node.children.front(), column_name);
+        return std::nullopt;
+    }
+    if (keepsInputValues(*step))
+    {
+        if (node.children.size() == 1)
+            return findPassedThroughConstant(*node.children.front(), *column);
+        return std::nullopt;
+    }
+    if (const auto * reference_step = typeid_cast<const CommonSubplanReferenceStep *>(step))
+    {
+        if (const auto * subplan_root = reference_step->getSubplanReferenceRoot())
+            return findPassedThroughConstant(*subplan_root, *column);
+        return std::nullopt;
+    }
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
+    {
+        /// The rows of a null-supplying side can hold NULL or default values.
+        const auto kind = join_step->getJoinOperator().kind;
+        const bool keeps_both_sides = kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
+        if (node.children.size() != 2)
+            return std::nullopt;
+        if (keeps_both_sides || kind == JoinKind::Left)
+        {
+            if (auto value = findPassedThroughConstant(*node.children[0], *column))
+                return value;
+        }
+        if (keeps_both_sides || kind == JoinKind::Right)
+            return findPassedThroughConstant(*node.children[1], *column);
+    }
+    return std::nullopt;
+}
+
+}
+
+bool isConstantColumn(const QueryPlan::Node & node, const String & column_name)
+{
+    return ConstantColumnFinder().findConstantValue(node, column_name).has_value();
 }
 
 }
