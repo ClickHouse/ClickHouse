@@ -1118,25 +1118,27 @@ void prepareColumnForWrite(
 
     ColumnChunkWriteStates states;
     SchemaElements schemas;
-    bool is_geometry = false;
+    bool is_geo = false;
     if (options.write_geometadata)
-        is_geometry = prepareGeoColumn(column, type) && options.write_geometry_logical_type;
+        is_geo = prepareGeoColumn(column, type);
     prepareColumnRecursive(column, type, name, options, states, schemas, column_field_ids, name, iceberg_optionality);
 
-    if (is_geometry)
+    if (is_geo)
     {
-        /// The WKB column is a single `BYTE_ARRAY` leaf (`String` or `Nullable(String)`). Replace the
-        /// `STRING` annotation that `output_format_parquet_string_as_string` may have put on it by
-        /// `GEOMETRY` with the default CRS (`OGC:CRS84`, i.e. longitude/latitude), which has no
-        /// `ConvertedType` counterpart.
+        /// WKB is binary, not UTF-8. Clear any STRING annotation, even when the GEOMETRY logical
+        /// type is disabled.
         if (schemas.size() != 1 || schemas[0].type != parq::Type::BYTE_ARRAY)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Parquet schema for geo column '{}'", name);
-        parq::LogicalType logical_type;
-        logical_type.__set_GEOMETRY({});
-        schemas[0].__set_logicalType(logical_type);
+        schemas[0].__isset.logicalType = false;
         schemas[0].__isset.converted_type = false;
-        for (auto & s : states)
-            s.is_geometry = true;
+        if (options.write_geometry_logical_type)
+        {
+            parq::LogicalType logical_type;
+            logical_type.__set_GEOMETRY({});
+            schemas[0].__set_logicalType(logical_type);
+            for (auto & s : states)
+                s.is_geometry = true;
+        }
     }
 
     if (out_columns_to_write)
