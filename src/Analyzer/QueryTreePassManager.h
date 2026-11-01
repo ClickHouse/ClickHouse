@@ -27,8 +27,14 @@ public:
     /// Run query tree passes on query tree
     void run(QueryTreeNodePtr & query_tree_node);
 
+    /// The number of the first passes that are responsible for name resolution and don't affect the output header.
+    static constexpr size_t resolve_passes_count = 4;
+
     /// Run only query tree passes responsible to name resolution.
     void runOnlyResolve(QueryTreeNodePtr & query_tree_node);
+
+    /// Run query tree passes on query tree starting from from_pass_index.
+    void runFrom(QueryTreeNodePtr & query_tree_node, size_t from_pass_index);
 
     /** Run query tree passes on query tree up to up_to_pass_index.
       * Throws exception if up_to_pass_index is greater than passes size.

@@ -146,6 +146,9 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
+    static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
+    static void deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context);
+
     /// Serializes the query plan and store the result
     void ensureSerialized(size_t max_supported_version) const;
 

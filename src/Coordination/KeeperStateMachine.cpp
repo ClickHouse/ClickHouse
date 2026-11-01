@@ -94,6 +94,8 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
+static constexpr uint64_t nuraft_snapshot_sync_req_framing_size = 89;
+
 /// nuraft::snapshot holds only Raft metadata (last_log_idx, last_log_term, size, cluster_config).
 static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
 {
@@ -2358,6 +2360,14 @@ int KeeperStateMachine::read_logical_snp_obj(
         const uint64_t file_size = loader->fileSize();
         /// `chunk_size == 0` sends the whole file in one object.
         const uint64_t effective_chunk_size = configured_chunk_size == 0 ? file_size : configured_chunk_size;
+        if (configured_chunk_size == 0
+            && file_size + s.serialize()->size() + nuraft_snapshot_sync_req_framing_size > static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
+        {
+            LOG_ERROR(log, "Snapshot {} of size {} does not fit into a single NuRaft message and cannot be sent with "
+                "`snapshot_transfer_chunk_size` = 0. Set `snapshot_transfer_chunk_size` after all Keeper nodes are upgraded to 26.5 or newer",
+                s.get_last_log_idx(), file_size);
+            return -1;
+        }
         LOG_DEBUG(log, "Serving snapshot {} from {}: {} bytes in objects of {} bytes", s.get_last_log_idx(),
                   is_local_disk ? "local disk" : (streaming ? "remote disk, streaming" : "remote disk through the shared in-memory copy"),
                   file_size, effective_chunk_size);

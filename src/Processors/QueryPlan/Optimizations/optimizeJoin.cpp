@@ -63,8 +63,6 @@ namespace Setting
 namespace QueryPlanOptimizations
 {
 
-static String dumpStatsForLogs(const RelationStats & stats);
-
 struct RuntimeHashStatisticsContext
 {
     /// `HashTablesStatistics` keys identify a specific hash table BUILT from a subtree AND
@@ -427,19 +425,6 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
 
-static String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format("{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(stats.column_stats | std::views::transform(
-            [](const auto & p)
-            {
-                return fmt::format("{}: {}", p.first, p.second.num_distinct_values);
-            }), ", "));
-}
-
-
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 constexpr bool isInnerOrCross(JoinKind kind)
@@ -667,7 +652,7 @@ static size_t addChildQueryGraph(
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
-        node->step->getName(), dumpStatsForLogs(stats));
+        node->step->getName(), dumpRelationStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
 }
@@ -1106,7 +1091,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
-        else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate)
+        else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate && rel.column_stats.empty())
             relations_estimated_from_data_lake_metadata.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
 
