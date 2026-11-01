@@ -236,7 +236,7 @@ Specifying a column level TTL requires users to specify their own schema. This c
 
 ## Recompressing data {#recompressing-data}
 
-While we typically recommend `ZSTD(1)` for observability datasets, you can experiment with different compression algorithms or higher levels of compression e.g. `ZSTD(3)`. As well as being able to specify this on schema creation, the compression can be configured to change after a set period. This may be appropriate if a codec or compression algorithm improves compression but causes poorer query performance. This tradeoff might be acceptable on older data, which is queried less frequently, but not for recent data, which is subject to more frequent use in investigations.
+While the default codec works well for observability datasets, you can experiment with different compression algorithms or higher levels of compression e.g. `ZSTD(6)`. As well as being able to specify this on schema creation, the compression can be configured to change after a set period. This may be appropriate if a codec or compression algorithm improves compression but causes poorer query performance. This tradeoff might be acceptable on older data, which is queried less frequently, but not for recent data, which is subject to more frequent use in investigations.
 
 An example of this is shown below, where we compress the data using `ZSTD(3)` after 4 days instead of deleting it.
 

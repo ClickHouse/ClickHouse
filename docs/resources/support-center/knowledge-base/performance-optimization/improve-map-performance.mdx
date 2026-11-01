@@ -15,12 +15,12 @@ A lookup using Map can be 10x slower than a String column. The experiment below 
 -- create table with SpanNAme as String and ResourceAttributes as Map
 DROP TABLE IF EXISTS tbl;
 CREATE TABLE tbl (
-    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
-    `TraceId` String CODEC (ZSTD(1)),
-    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
-    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
-    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
-    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
+    `Timestamp` DateTime64(9) CODEC (Delta(8), Default),
+    `TraceId` String,
+    `ServiceName` LowCardinality(String),
+    `Duration` UInt8, -- Int64
+    `SpanName` LowCardinality(String),
+    `ResourceAttributes` Map(LowCardinality(String), String)
 )
 ENGINE = MergeTree
 PARTITION BY toDate(Timestamp)
