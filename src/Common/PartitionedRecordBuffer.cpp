@@ -1,6 +1,7 @@
 #include <Common/PartitionedRecordBuffer.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <limits>
@@ -176,16 +177,33 @@ void PartitionedRecordBuffer::finishAppending()
 
 void PartitionedRecordBuffer::releasePartition(size_t partition)
 {
-    ChunkHeader * chunk = chains[partition].first;
-    while (chunk)
+    /// Other threads wrote the counters of the blocks last, and a locked decrement waits for its cache line and holds
+    /// back the loads after it. The walk along the chain prefetches the counters of a batch of chunks and decrements
+    /// them after the batch, so their cache lines arrive together. The blocks outlive the decrements of the batch
+    /// that they need: a chunk further along the chain holds a reference to its block, and a block that the batch
+    /// names twice holds a reference for each.
+    std::array<Block *, release_batch_chunks> batch{};
+    size_t batched = 0;
+    for (ChunkHeader * chunk = chains[partition].first; chunk;)
     {
-        ChunkHeader * next = chunk->next;
-        if (chunk->block)
-            chunk->block->release();
+        ChunkHeader * const next = chunk->next;
+        if (Block * const block = chunk->block)
+        {
+            __builtin_prefetch(block, /*rw=*/1);
+            batch[batched++] = block;
+            if (batched == batch.size())
+            {
+                for (Block * const batched_block : batch)
+                    batched_block->release();
+                batched = 0;
+            }
+        }
         else
             Allocator<false, false>().free(chunk, chunk->capacity);
         chunk = next;
     }
+    for (size_t i = 0; i < batched; ++i)
+        batch[i]->release();
     chains[partition] = {};
     cursors[partition] = {};
 }

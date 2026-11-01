@@ -100,6 +100,8 @@ public:
 
 private:
     static constexpr size_t max_block_bytes = 256 << 10;
+    /// The chunks whose block counters `releasePartition` prefetches before it decrements them.
+    static constexpr size_t release_batch_chunks = 16;
 
     struct Block;
     struct ChunkHeader;
