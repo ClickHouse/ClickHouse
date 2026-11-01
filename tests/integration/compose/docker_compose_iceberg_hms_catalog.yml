@@ -2,8 +2,8 @@ services:
   hive:
     image: clickhouse/integration-test-with-hms
     restart: unless-stopped
-    expose:
-      - 9083
+    ports:
+      - "${HMS_CATALOG_PORT}:9083"
     environment:
       SERVICE_NAME: "metastore"
       SERVICE_OPTS: "-Dmetastore.warehouse.dir=s3a://warehouse-hms/data/"

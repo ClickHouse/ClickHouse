@@ -20,7 +20,6 @@ namespace ErrorCodes
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(DatabaseDataLakeCatalogType, catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, catalog_credential, "", "", 0) \
-    DECLARE(Bool, use_unity_catalog_v2, false, "Use the new Unity catalog implementation, which serves both Delta Lake and Iceberg tables. Only for catalog_type = 'unity'", 0) \
     DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0) \
     DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0) \
     DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0) \
@@ -112,28 +111,13 @@ SettingsChanges DatabaseDataLakeSettings::allChanged() const
     return changes;
 }
 
-bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
-{
-    return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
-}
-
-static const String & getSettingNameByOffset(size_t offset)
+const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
 {
     const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
-    const size_t index = accessor.findByOffset(offset);
+    const size_t index = accessor.findByOffset(setting.offset);
     if (index == static_cast<size_t>(-1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown database DataLake setting");
     return accessor.getName(index);
-}
-
-const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
-{
-    return getSettingNameByOffset(setting.offset);
-}
-
-const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsBool setting)
-{
-    return getSettingNameByOffset(setting.offset);
 }
 
 }

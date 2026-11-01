@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 DROP TABLE IF EXISTS test_multiple_array_join;
 
 CREATE TABLE test_multiple_array_join (

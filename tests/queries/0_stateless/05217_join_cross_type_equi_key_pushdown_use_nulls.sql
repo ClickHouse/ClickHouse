@@ -3,6 +3,7 @@
 -- name has to denote a single type at that point in the plan: `join_use_nulls` republishes the JOIN's own
 -- input names at the widened output type, and the pushed predicate binds its inputs by name.
 
+SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS t_pushdown_u8;
@@ -49,8 +50,7 @@ SELECT 'push-down is live';
 
 -- A cross-type substitution reaches both joined tables as a cast predicate, and nothing is pushed when
 -- the optimization is off. The runtime filter and the outer-to-inner rewrite are pinned because they add
--- their own filters to the plan, and the move to PREWHERE because `Memory` tables support it, and it
--- would report the pushed-down filters as `Prewhere filter column` of the reading step instead.
+-- their own filters to the plan.
 SELECT count() FROM (
     EXPLAIN actions = 1
     SELECT id, u16.id, u16.value
@@ -58,8 +58,7 @@ SELECT count() FROM (
                              RIGHT JOIN t_pushdown_u64 AS u64 USING (id)
     WHERE id > 1
     SETTINGS query_plan_filter_push_down = 1, enable_join_runtime_filters = 0,
-             query_plan_convert_outer_join_to_inner_join = 1,
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             query_plan_convert_outer_join_to_inner_join = 1
 ) WHERE explain ILIKE '%Filter column: CAST(%';
 
 SELECT count() FROM (
@@ -69,8 +68,7 @@ SELECT count() FROM (
                              RIGHT JOIN t_pushdown_u64 AS u64 USING (id)
     WHERE id > 1
     SETTINGS query_plan_filter_push_down = 0, enable_join_runtime_filters = 0,
-             query_plan_convert_outer_join_to_inner_join = 1,
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             query_plan_convert_outer_join_to_inner_join = 1
 ) WHERE explain ILIKE '%Filter column: CAST(%';
 
 SELECT 'renamed replacement converts nothing';
@@ -84,8 +82,7 @@ SELECT count() FROM (
                              RIGHT JOIN t_pushdown_u64 AS u64 USING (id)
     WHERE id > 1
     SETTINGS query_plan_filter_push_down = 1, enable_join_runtime_filters = 0,
-             query_plan_convert_outer_join_to_inner_join = 1,
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             query_plan_convert_outer_join_to_inner_join = 1
 ) WHERE explain ILIKE '%Filter column: CAST(id AS UInt64) > 1%';
 
 DROP TABLE IF EXISTS t_pushdown_lc;

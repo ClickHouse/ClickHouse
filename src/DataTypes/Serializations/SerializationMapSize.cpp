@@ -44,12 +44,12 @@ struct DeserializeBinaryBulkStateMapSizeWithBuckets : public ISerialization::Des
     /// Per-bucket deserialization state for the array offsets sub-stream.
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_size_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapSizeWithBuckets>(*this);
-        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone(context) : nullptr;
+        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone() : nullptr;
         for (size_t bucket = 0; bucket != bucket_size_states.size(); ++bucket)
-            new_state->bucket_size_states[bucket] = bucket_size_states[bucket] ? bucket_size_states[bucket]->clone(context) : nullptr;
+            new_state->bucket_size_states[bucket] = bucket_size_states[bucket] ? bucket_size_states[bucket]->clone() : nullptr;
         return new_state;
     }
 };

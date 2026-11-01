@@ -1,4 +1,4 @@
--- Tags: no-shared-merge-tree, no-parallel, no-fasttest
+-- Tags: no-shared-merge-tree, no-parallel
 -- no-shared-merge-tree: SharedMergeTree doesn't load inactive parts to memory after restart
 -- no-parallel: SYSTEM ENABLE FAILPOINT is process-wide, and another copy of this test
 -- toggling the failpoint would change the number of parts loaded in this one.

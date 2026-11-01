@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 SELECT dictGet(t.nest.a, concat(currentDatabase(), '.dict.dict'), 's', number) FROM numbers(5); -- { serverError INVALID_IDENTIFIER }
 

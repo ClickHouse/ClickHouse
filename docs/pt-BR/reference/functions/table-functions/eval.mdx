@@ -14,14 +14,20 @@ Esta função de tabela é experimental e fica desativada por padrão. Habilite-
 SET allow_experimental_eval_table_function = 1;
 ```
 
-## Sintaxe {#syntax}
+Também requer o analisador ([`enable_analyzer`](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer), ativado por padrão).
+
+<div id="syntax">
+  ## Sintaxe
+</div>
 
 ```sql
 eval(expression)
 eval(SELECT ...)
 ```
 
-## Argumentos {#arguments}
+<div id="arguments">
+  ## Argumentos
+</div>
 
 * `expression` — Uma expressão constante que retorna uma string de consulta. Parâmetros de consulta e subconsultas escalares são permitidos.
 * `SELECT ...` — Uma consulta `SELECT` que retorna uma string de consulta. Essa forma é um açúcar sintático para uma subconsulta escalar: `eval(SELECT ...)` é equivalente a `eval((SELECT ...))`, portanto a consulta deve retornar exatamente uma linha e uma coluna.
@@ -35,13 +41,17 @@ O valor da expressão deve ter um dos seguintes tipos:
 
 Se o valor for `NULL`, `eval` lança uma exceção.
 
-## Valor retornado {#returned-value}
+<div id="returned-value">
+  ## Valor retornado
+</div>
 
 Retorna o resultado da consulta `SELECT` gerada na forma de uma tabela.
 
 O esquema de saída é determinado quando a função de tabela `eval` é analisada, portanto consultas externas podem se referir aos nomes e tipos reais das colunas da consulta gerada.
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
 Avalie uma expressão constante:
 
@@ -100,8 +110,11 @@ Resultado:
 └────────────┘
 ```
 
-## Restrições {#restrictions}
+<div id="restrictions">
+  ## Restrições
+</div>
 
+* `eval` funciona apenas com o analisador de consultas (`enable_analyzer = 1`).
 * A consulta gerada deve ser uma única consulta `SELECT`, sem opções de saída como `INTO OUTFILE` ou `FORMAT`. `eval` não executa várias instruções.
 * A consulta gerada deve ser autocontida: ela é resolvida em seu próprio escopo e não pode referenciar aliases de `WITH` nem colunas da consulta externa.
 * A consulta gerada não pode usar a função de tabela `eval` novamente.
@@ -109,7 +122,9 @@ Resultado:
 * O argumento é avaliado uma vez durante a análise da consulta, não uma vez por linha ou bloco.
 * O log da consulta externa registra a consulta original que contém `eval`; a consulta `SELECT` gerada não é registrada como uma consulta de usuário separada.
 
-## Veja também {#related}
+<div id="related">
+  ## Veja também
+</div>
 
 * [função de tabela `view`](/pt-BR/reference/functions/table-functions/view)
 * configuração `allow_experimental_eval_table_function`
