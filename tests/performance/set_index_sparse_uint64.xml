@@ -1,0 +1,21 @@
+<test>
+    <create_query>CREATE TABLE test_sparse_in (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 256</create_query>
+    <fill_query>INSERT INTO test_sparse_in SELECT cityHash64(number) FROM numbers(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_sparse_in FINAL</fill_query>
+    <create_query>CREATE TABLE test_dense_in (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 64</create_query>
+    <fill_query>INSERT INTO test_dense_in SELECT number FROM numbers(5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_dense_in FINAL</fill_query>
+
+    <!-- Hashed ids that are not in the table: the time is the set build plus the mark checks. -->
+    <query>SELECT count() FROM test_sparse_in WHERE id IN (SELECT cityHash64(number + 1000000000) FROM numbers(1024))</query>
+    <query>SELECT count() FROM test_sparse_in WHERE id IN (SELECT cityHash64(number + 1000000000) FROM numbers(16384))</query>
+    <query>SELECT count() FROM test_sparse_in WHERE id IN (SELECT cityHash64(number + 1000000000) FROM numbers(65536))</query>
+    <query>SELECT count() FROM test_sparse_in WHERE id IN (SELECT cityHash64(number + 1000000000) FROM numbers(262144))</query>
+    <!-- Dense control. -->
+    <query>SELECT count() FROM test_sparse_in WHERE id IN (SELECT number FROM numbers(65536))</query>
+    <!-- A dense set over 78125 marks: the bitmap is built after 3125 checks and used for the rest. -->
+    <query>SELECT count() FROM test_dense_in WHERE id IN (SELECT number * 10 FROM numbers(200000)) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_sparse_in</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_dense_in</drop_query>
+</test>
