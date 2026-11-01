@@ -11,7 +11,8 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Merges the spill runs of a group limit, returning input-row payload and discarding seen groups.
+/// Merges sorted inputs into the input rows of each group's window, discarding seen rows (see
+/// `GroupLimitSortedAlgorithm`): the spill runs of a group limit, or the runs of a sort that keeps one row per key.
 /// `name_` is the processor name shown to users, which tells the operators apart.
 class GroupLimitSortedTransform final : public IMergingTransform<GroupLimitSortedAlgorithm>
 {

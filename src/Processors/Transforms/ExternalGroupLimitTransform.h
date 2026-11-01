@@ -43,8 +43,9 @@ struct GroupLimitParams
 /// the operator's profile events.
 ///
 /// The transform streams the rows of each group's window until tracked query memory exceeds its spill
-/// threshold or projected growth and spill workspace exceed the remaining threshold budget. Its filter
-/// retains typed keys, or 128-bit fingerprints of generic keys, which the spill runs compare instead of the keys.
+/// threshold, projected growth and spill workspace exceed the remaining threshold budget, or the memory scheduler
+/// requests a spill (see `spill`). Its filter retains typed keys, or 128-bit fingerprints of generic keys, which the
+/// spill runs compare instead of the keys.
 ///
 /// At the first spill, the filter's groups become sorted seen runs carrying the number of input rows seen per
 /// group. Extraction prepares one run at a time with a soft byte target and waits for its file to finish.
@@ -71,9 +72,10 @@ class ExternalGroupLimitTransform final : public IProcessor
     using Filter = typename Traits::Filter;
 
 public:
-    /// A non-null `shared_filter_bytes_` reports memory snapshots to `DistinctLimitsCheckingTransform`, which
-    /// enforces the limits across all streams of a parallel `DISTINCT`. In that mode, `params_.size_limits` must be
-    /// unlimited.
+    /// `max_bytes_before_external_` is the spill threshold of query memory; zero leaves spilling to the memory
+    /// scheduler's requests. A non-null `shared_filter_bytes_` reports memory snapshots to
+    /// `DistinctLimitsCheckingTransform`, which enforces the limits across all streams of a parallel `DISTINCT`.
+    /// In that mode, `params_.size_limits` must be unlimited.
     ExternalGroupLimitTransform(
         SharedHeader header_,
         const GroupLimitParams & params_,
