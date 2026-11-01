@@ -5,6 +5,8 @@
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/114854:
 # Iceberg metadata declared `timestamp` while Parquet data files were written with
 # isAdjustedToUTC=true. Spec-following readers reject that mismatch.
+# The columns carry an explicit `UTC` time zone because `timestamptz` is read back as
+# `DateTime64(6, 'UTC')`, so the output must not depend on the server time zone.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +18,7 @@ TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TABLE} (k Int64, ts DateTime, ts64 DateTime64(6))
+    CREATE TABLE ${TABLE} (k Int64, ts DateTime('UTC'), ts64 DateTime64(6, 'UTC'))
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
 "
 
@@ -24,8 +26,8 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     INSERT INTO ${TABLE}
     SELECT
         number,
-        toDateTime('2026-01-01 00:00:00') + number * 3600,
-        toDateTime64('2026-01-01 00:00:00', 6) + number * 3600
+        toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600,
+        toDateTime64('2026-01-01 00:00:00', 6, 'UTC') + number * 3600
     FROM numbers(5)
 "
 

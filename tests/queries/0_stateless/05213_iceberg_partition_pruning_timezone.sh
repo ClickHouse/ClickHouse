@@ -10,6 +10,11 @@
 # skips the file that holds the matching row: no error, no log line. `use_iceberg_partition_pruning`
 # is on by default.
 #
+# ClickHouse now writes `DateTime` and `DateTime64` columns as Iceberg `timestamptz`, which is read
+# back as `DateTime64(6, 'UTC')`, so a string literal is parsed in UTC whatever the session zone is.
+# The non-UTC arms therefore name the instant with a constant in that zone, which still makes the
+# pruner and execution agree on one instant expressed in a zone other than the column's.
+#
 # Each arm that can lose a row is paired with the same query at `use_iceberg_partition_pruning = 0`.
 # That control returns 1, so the row is present in the file and only pruning removes it; without the
 # control an arm cannot tell a pruning bug from a predicate that names the wrong instant.
@@ -30,9 +35,8 @@ trap 'rm -rf "${DAY_PATH}" "${HOUR_PATH}" 2>/dev/null' EXIT
 # Both rows fall in UTC day 19724 (2024-01-02), and in two different UTC hours. Background Iceberg
 # compaction would rewrite the manifests these arms read, so it is pinned off per table.
 #
-# The `timestamp` column maps to a `DateTime64(6)` with no time zone in its name, and such a type
-# carries the zone that was current where it was built, so the creating session pins one: a `SETTINGS`
-# clause on `CREATE ... ENGINE = IcebergLocal(...)` is read as storage settings, hence the client flag.
+# The creating session pins the zone: a `SETTINGS` clause on `CREATE ... ENGINE = IcebergLocal(...)`
+# is read as storage settings, hence the client flag.
 ${CLICKHOUSE_CLIENT} --session_timezone UTC --query "
     CREATE TABLE ${DAY_TABLE} (ts DateTime64(6), id Int32)
     ENGINE = IcebergLocal('${DAY_PATH}', 'Parquet') PARTITION BY (toRelativeDayNum(ts))
@@ -51,9 +55,9 @@ echo "--- rows as stored ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT ts, id FROM ${DAY_TABLE} ORDER BY id SETTINGS session_timezone = 'UTC' FORMAT TSV"
 
-# The arms below are only meaningful while the column's zone stays the one pinned above instead of
-# following the session: if that ever changes, this prints the session zone and the test fails here
-# rather than turning every arm into a tautology.
+# The arms below are only meaningful while the column's zone stays UTC instead of following the
+# session: if that ever changes, this prints the session zone and the test fails here rather than
+# turning every arm into a tautology.
 echo "--- zone the timestamp column carries, read under a non-UTC session ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT DISTINCT timeZoneOf(ts) FROM ${DAY_TABLE} SETTINGS session_timezone = 'Asia/Tokyo'"
@@ -62,16 +66,18 @@ ${CLICKHOUSE_CLIENT} --query "
 # agree with execution: both counts are 1.
 echo "--- day transform, non-UTC session, equality, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = toDateTime64('2024-01-03 05:00:00', 6, 'Asia/Tokyo')
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
-    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
+    SELECT count() FROM ${DAY_TABLE} WHERE ts = toDateTime64('2024-01-03 05:00:00', 6, 'Asia/Tokyo')
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 0;"
 
 echo "--- day transform, non-UTC session, range, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-03 00:00:00' AND ts < '2024-01-03 09:00:00'
+    SELECT count() FROM ${DAY_TABLE}
+        WHERE ts >= toDateTime64('2024-01-03 00:00:00', 6, 'Asia/Tokyo') AND ts < toDateTime64('2024-01-03 09:00:00', 6, 'Asia/Tokyo')
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
-    SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-03 00:00:00' AND ts < '2024-01-03 09:00:00'
+    SELECT count() FROM ${DAY_TABLE}
+        WHERE ts >= toDateTime64('2024-01-03 00:00:00', 6, 'Asia/Tokyo') AND ts < toDateTime64('2024-01-03 09:00:00', 6, 'Asia/Tokyo')
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 0;"
 
 echo "--- day transform, UTC session ---"
@@ -84,9 +90,9 @@ ${CLICKHOUSE_CLIENT} --query "
 # 2024-01-03 01:30:00 is the same instant as 2024-01-02 20:00:00Z.
 echo "--- hour transform, fractional-offset session, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-03 01:30:00'
+    SELECT count() FROM ${HOUR_TABLE} WHERE ts = toDateTime64('2024-01-03 01:30:00', 6, 'Asia/Kolkata')
         SETTINGS session_timezone = 'Asia/Kolkata', use_iceberg_partition_pruning = 1;
-    SELECT count() FROM ${HOUR_TABLE} WHERE ts = '2024-01-03 01:30:00'
+    SELECT count() FROM ${HOUR_TABLE} WHERE ts = toDateTime64('2024-01-03 01:30:00', 6, 'Asia/Kolkata')
         SETTINGS session_timezone = 'Asia/Kolkata', use_iceberg_partition_pruning = 0;"
 
 echo "--- partition spec transform names ---"
