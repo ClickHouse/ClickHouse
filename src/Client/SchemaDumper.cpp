@@ -2478,7 +2478,7 @@ std::vector<TableInfo> resolveTables(
         else if (row.engine != "View" && row.engine != "MaterializedView")
         {
             /// CREATE analyzes the column expressions, and a `predictXGBoost` there needs its dictionary.
-            if (row.create_query.find("predictXGBoost") == String::npos || database_info.at(row.database).is_external)
+            if (!row.create_query.contains("predictXGBoost") || database_info.at(row.database).is_external)
                 continue;
             ParserCreateQuery create_parser;
             ASTPtr create_ast = parseQuery(
