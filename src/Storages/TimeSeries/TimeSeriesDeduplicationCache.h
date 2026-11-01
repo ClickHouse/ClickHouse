@@ -25,10 +25,10 @@ class Block;
 /// A row with a changed value is written and replaces the remembered one, so the target table gets the changes in their order.
 /// Collapsing the duplicates is the job of the target table's engine (`ReplacingMergeTree` or `AggregatingMergeTree`).
 ///
-/// An entry expires when the expiration period has passed since the row was written, hits don't prolong it. Each entry expires
-/// up to a fifth of the period early by a random offset, so the rows written together aren't all written again at the same moment.
-/// So every row is written again at least once per expiration period, and any difference between the cache and the table
-/// disappears within that period.
+/// An entry expires when its lifetime has passed since the row was written, hits don't prolong it. The actual lifetime of an entry
+/// is uniformly random in the range `[0.8 * expiration_seconds, expiration_seconds]`, so the rows written together aren't all
+/// written again at the same moment. So every row is written again at least once per expiration period, and any difference
+/// between the cache and the table disappears within that period.
 /// When the cache is full, the entries used only once are evicted first, then the least recently used ones (the `SLRU` policy).
 /// The size of the cache is estimated from the number of entries.
 ///
