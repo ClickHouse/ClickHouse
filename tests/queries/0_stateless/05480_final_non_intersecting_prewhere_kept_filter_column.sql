@@ -47,3 +47,20 @@ FROM
 ) AS removed;
 
 DROP TABLE t_final_prewhere_kept;
+
+-- A kept condition of the sorting key that is a constant, read from merged and non-intersecting ranges:
+-- the non-intersecting ranges must return it as a full column, like PREWHERE on the merged ones.
+DROP TABLE IF EXISTS t_final_prewhere_kept_const;
+CREATE TABLE t_final_prewhere_kept_const (k UInt64, v UInt64)
+ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 32;
+INSERT INTO t_final_prewhere_kept_const SELECT number, number % 4 FROM numbers(256);
+OPTIMIZE TABLE t_final_prewhere_kept_const FINAL;
+SYSTEM STOP MERGES t_final_prewhere_kept_const;
+INSERT INTO t_final_prewhere_kept_const SELECT number, number % 5 FROM numbers(80, 60);
+
+SELECT count(), sum(k) FROM t_final_prewhere_kept_const FINAL WHERE v = 2 AND ignore(k) = 0
+SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0, max_threads = 2;
+SELECT count(), sum(k) FROM t_final_prewhere_kept_const FINAL WHERE v = 2 AND ignore(k) = 0
+SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 1, max_threads = 2;
+
+DROP TABLE t_final_prewhere_kept_const;

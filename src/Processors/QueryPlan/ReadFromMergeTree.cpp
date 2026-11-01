@@ -2673,7 +2673,7 @@ static FilterDAGInfo combineFilters(FilterDAGInfo first, const FilterDAGInfo & s
     return result;
 }
 
-/// Whether the blocks have the same columns, possibly in a different order.
+/// Whether the blocks have the same columns, possibly in a different order, with the same types and constness.
 static bool haveSameColumns(const Block & lhs, const Block & rhs)
 {
     if (lhs.columns() != rhs.columns())
@@ -2683,6 +2683,8 @@ static bool haveSameColumns(const Block & lhs, const Block & rhs)
     {
         const auto * other = rhs.findByName(column.name);
         if (!other || !other->type->equals(*column.type))
+            return false;
+        if (isColumnConst(*column.column) != isColumnConst(*other->column))
             return false;
     }
     return true;
@@ -2726,6 +2728,15 @@ std::optional<ReadFromMergeTree::NonIntersectingFinalFilters> ReadFromMergeTree:
         key_filter.column_name = query_info.prewhere_info->prewhere_column_name;
         key_filter.do_remove_column = query_info.prewhere_info->remove_prewhere_column;
         prewhere_filter = combineFilters(std::move(key_filter), *non_intersecting_final_filter);
+
+        /// PREWHERE returns the filter column that it keeps as a full column (see `SourceStepWithFilter::applyPrewhereActions`),
+        /// but in the conjunction it is not the filter column, so it would stay as computed, e.g. a constant.
+        if (!query_info.prewhere_info->remove_prewhere_column)
+        {
+            for (auto & output : prewhere_filter.actions.getOutputs())
+                if (output->result_name == query_info.prewhere_info->prewhere_column_name)
+                    output = &prewhere_filter.actions.materializeNode(*output);
+        }
     }
     else
     {
