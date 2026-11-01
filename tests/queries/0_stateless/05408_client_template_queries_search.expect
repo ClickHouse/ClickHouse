@@ -2,8 +2,7 @@
 
 # Ctrl-O with --enable-template-queries-search opens the template queries picker (skim, or a short
 # message when the build has no skim). Aborting it must leave the prompt usable and the line unchanged.
-# The picker itself cannot be driven by expect (skim dups the fd), so only the abort path is checked.
-# The same flow is valid without skim: the message is printed and the line is kept.
+# Without skim or TERM (as in Fast test and the other CI jobs) the client prints why, and the line must be kept too.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -34,17 +33,15 @@ send -- "SELECT 'kept' || '_line'"
 
 # Ctrl-O (octal code of O is 017, see ascii(7))
 send -- "\017"
-# we cannot use "expect" for skim, since it dups the fd, and expect will not catch it.
-# Without skim the message is printed and there is no picker, so Escape must not be sent:
-# followed by Enter it would be read as Alt-Enter and insert a newline instead of submitting the line.
 expect {
-    "requires a build with skim support" {}
-    -timeout 3 timeout {
-        # Escape aborts the picker
-        send -- "\033"
-        sleep 1
-    }
+    # No picker was opened, so there is nothing to abort.
+    -re "requires a build with skim support|skim failed" {}
+    # skim turns on mouse reporting when the picker opens, and Escape aborts it.
+    -ex "\033\[?1000h" { send -- "\033" }
 }
+
+# Wait until the line is repainted, so that Enter goes to the prompt and not to the picker.
+expect "SELECT 'kept' || '_line'"
 
 # the line survived: executing it prints the result, which is not present in the echo
 send -- "\r"
