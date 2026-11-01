@@ -349,12 +349,10 @@ public:
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
 
-    /// Waits for the tables matching the filter to be loaded and started up, as `getTablesIterator` does with
-    /// `skip_not_loaded = false`. With `no_throw`, a table that failed to load or start up does not throw.
+    /// Waits for the tables matching the filter to be started up. With `no_throw`, a load or startup failure is not rethrown.
     virtual void waitTablesStarted(const FilterByNameFunction & /*filter_by_table_name*/, bool /*no_throw*/) const {}
 
-    /// Same as `getTablesIterator`, but a table that failed to load is skipped instead of failing the enumeration.
-    /// For enumerations that only report on the tables, like system tables.
+    /// Like `getTablesIterator`, but skips a table that failed to load instead of throwing. For reporting, e.g. system tables.
     DatabaseTablesIteratorPtr getTablesIteratorSkippingFailed(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const
     {
         waitTablesStarted(filter_by_table_name, /* no_throw */ true);
