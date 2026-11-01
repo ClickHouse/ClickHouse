@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
@@ -457,6 +458,7 @@ bool tryBuildPrewhereSteps(
     /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
     /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
     std::unordered_set<const ActionsDAG::Node *> all_outputs;
+    ActionsDAG::NodeRawConstPtrs outputs_computed_in_last_step;
     for (const auto * output : original_outputs)
     {
         all_outputs.insert(output);
@@ -484,14 +486,24 @@ bool tryBuildPrewhereSteps(
         {
             const auto & node_in_new_dag = addClonedDAGToDAG(steps.size() - 1, output, steps.back().actions, node_remap, node_to_step);
             steps.back().actions->getOutputs().push_back(&node_in_new_dag);
+            outputs_computed_in_last_step.push_back(output);
         }
     }
 
     /// 9. Build PrewhereExprInfo
     {
+        /// With `force_short_circuit_execution` every step filters its block, so that nothing later sees the rows it rejects.
+        /// Not needed before a step that can be evaluated on more rows, if the reader neither converts nor fills a PREWHERE
+        /// column (`read_ahead_columns`) and the last step filters before the columns read after PREWHERE.
+        const bool can_skip_forced_filters = force_short_circuit_execution && read_ahead_columns && prewhere_info->need_filter;
+
         for (size_t step_index = 0; step_index < steps.size(); ++step_index)
         {
             auto & step = steps[step_index];
+            const size_t next = step_index + 1;
+            const bool next_step_can_see_rejected_rows = can_skip_forced_filters && next < steps.size()
+                && std::ranges::all_of(condition_groups[next], canBeMovedToTheFrontOfAndChain)
+                && (next + 1 < steps.size() || std::ranges::all_of(outputs_computed_in_last_step, canBeMovedToTheFrontOfAndChain));
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
@@ -505,7 +517,7 @@ bool tryBuildPrewhereSteps(
                         && node_to_step[step.original_node] <= step_index),
                 /// A step that precedes a may_throw condition must materialize its filter, so that
                 /// the throwing condition is not evaluated on the rows this step rejects.
-                .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),
+                .need_filter = groups_requiring_filtered_input.contains(step_index + 1) || (force_short_circuit_execution && !next_step_can_see_rejected_rows),
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
