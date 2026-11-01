@@ -22,12 +22,15 @@
 #include <fmt/ranges.h>
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <unordered_set>
+#include <vector>
 
 #include "config.h"
 
 #if defined(OS_LINUX)
+#    include <mntent.h>
 #    include <glibc-rseq/rseq.h>
 #endif
 
@@ -603,25 +606,17 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
         size_t longest_mount_point_match = 0;
         std::unordered_set<String> seen_devices;
 
-        ReadBufferFromFile mounts_file("/proc/self/mounts");
-        while (!mounts_file.eof())
-        {
-            String line;
-            readStringUntilNewlineInto(line, mounts_file);
-            if (!mounts_file.eof())
-                mounts_file.ignore();
+        std::unique_ptr<FILE, int (*)(FILE *)> mounts_file(setmntent("/proc/self/mounts", "r"), endmntent);
 
-            /// Fields: device, mount point, filesystem type. Skip mount points with escaped characters.
-            size_t p1 = line.find(' ');
-            size_t p2 = (p1 == String::npos) ? String::npos : line.find(' ', p1 + 1);
-            size_t p3 = (p2 == String::npos) ? String::npos : line.find(' ', p2 + 1);
-            if (p3 == String::npos)
-                continue;
-            String device = line.substr(0, p1);
-            String mount_point = line.substr(p1 + 1, p2 - p1 - 1);
-            String fs_type = line.substr(p2 + 1, p3 - p2 - 1);
-            if (mount_point.contains('\\'))
-                continue;
+        /// `getmntent_r` decodes the escapes of the mount table (`\040` for a space and so on).
+        mntent fs_info{};
+        constexpr size_t buf_size = 4096;
+        std::vector<char> buf(buf_size);
+        while (mounts_file && getmntent_r(mounts_file.get(), &fs_info, buf.data(), buf_size))
+        {
+            const String device = fs_info.mnt_fsname;
+            const String mount_point = fs_info.mnt_dir;
+            const String fs_type = fs_info.mnt_type;
 
             bool contains_data_path = canonical_data_path == mount_point
                 || (canonical_data_path.starts_with(mount_point)

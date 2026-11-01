@@ -59,6 +59,8 @@ String getFilesystemName([[maybe_unused]] const String & mount_point);
 /// the longest matching mount point from /proc/self/mounts. Returns an empty string when no
 /// mount point covers `directory`, and always on platforms without /proc.
 String getDirectoryFilesystemType([[maybe_unused]] const std::string & directory);
+/// The same, reading the mount table from `mounts_file_path` (in the format of `/proc/self/mounts`).
+String getDirectoryFilesystemType(const std::string & directory, const std::string & mounts_file_path);
 
 struct statvfs getStatVFS(String path);
 
