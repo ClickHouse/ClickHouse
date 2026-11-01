@@ -1001,7 +1001,8 @@ MergeTreeData::MergeTreeData(
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
     LoadingStrictnessLevel mode,
-    BrokenPartCallback broken_part_callback_)
+    BrokenPartCallback broken_part_callback_,
+    bool replay)
     : WithMutableContext(context_->getGlobalContext())
     , IStorage(table_id_)
     , format_version(date_column_name.empty() ? MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING : MERGE_TREE_DATA_OLD_FORMAT_VERSION)
@@ -1048,7 +1049,7 @@ MergeTreeData::MergeTreeData(
         try
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
-            setProperties(metadata_, metadata_, !sanity_checks);
+            setProperties(metadata_, metadata_, !sanity_checks, /*local_context=*/nullptr, replay);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
@@ -1064,7 +1065,7 @@ MergeTreeData::MergeTreeData(
         is_custom_partitioned = true;
         checkPartitionKeyAndInitMinMax(metadata_.partition_key);
     }
-    setProperties(metadata_, metadata_, !sanity_checks);
+    setProperties(metadata_, metadata_, !sanity_checks, /*local_context=*/nullptr, replay);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(*settings, metadata_, sanity_checks);

@@ -437,7 +437,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool need_check_structure,
-    const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_)
+    const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_,
+    bool replay)
     : MergeTreeData(table_id_,
                     metadata_,
                     context_,
@@ -446,7 +447,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     std::move(settings_),
                     true,                   /// require_part_metadata
                     mode,
-                    [this] (const std::string & name) { enqueuePartForCheck(name); })
+                    [this] (const std::string & name) { enqueuePartForCheck(name); },
+                    replay)
     , zookeeper_info(zookeeper_info_)
     , zookeeper_path(zookeeper_info.path)
     , replica_name(zookeeper_info.replica_name)

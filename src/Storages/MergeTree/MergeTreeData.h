@@ -556,7 +556,8 @@ public:
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
-                  BrokenPartCallback broken_part_callback_ = [](const String &){});
+                  BrokenPartCallback broken_part_callback_ = [](const String &){},
+                  bool replay = false);
 
     /// Out-of-line so the forward-declared `UniqueKeyDenseIndexOps`
     /// doesn't force a full-type include in callers that destroy

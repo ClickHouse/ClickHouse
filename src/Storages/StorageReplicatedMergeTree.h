@@ -114,7 +114,8 @@ public:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool need_check_structure,
-        const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_);
+        const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_,
+        bool replay = false);
 
     void startup() override;
 

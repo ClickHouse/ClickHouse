@@ -1282,7 +1282,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             need_check_table_structure,
-            create_query_zk_retries_info);
+            create_query_zk_retries_info,
+            /*replay=*/is_stored_definition);
     }
 
     return std::make_shared<StorageMergeTree>(

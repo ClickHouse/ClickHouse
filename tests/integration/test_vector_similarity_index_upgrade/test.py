@@ -12,7 +12,11 @@ old_node = cluster.add_instance(
     tag="25.10",
     with_installed_binary=True,
 )
-new_node = cluster.add_instance("new_node", with_zookeeper=True)
+new_node = cluster.add_instance(
+    "new_node",
+    with_zookeeper=True,
+    macros={"shard": "default", "replica": "new_node"},
+)
 
 INDEX = "vector_similarity('hnsw', 'L2Distance', 2, 'f32', 1000, 128)"
 
@@ -76,4 +80,25 @@ def test_replicated_database_applies_index_added_by_older_replica():
 
     assert "must not be greater than 512" in new_node.query_and_get_error(
         f"ALTER TABLE rdb.m ADD INDEX idx2 vec TYPE {INDEX}"
+    )
+
+
+def test_drop_database_replica_with_tables_restores_legacy_index():
+    zk_path = "/clickhouse/databases/wdb"
+    old_node.query(
+        f"CREATE DATABASE wdb ENGINE = Replicated('{zk_path}', 'shard', 'old')"
+    )
+    old_node.query(
+        f"CREATE TABLE wdb.t (id UInt64, vec Array(Float32), INDEX idx vec TYPE {INDEX}) ENGINE = ReplicatedMergeTree ORDER BY id"
+    )
+    old_node.query("DETACH DATABASE wdb")
+
+    new_node.query(
+        f"SYSTEM DROP DATABASE REPLICA 'shard|old' FROM ZKPATH '{zk_path}' WITH TABLES"
+    )
+    assert (
+        new_node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{zk_path}/replicas'"
+        ).strip()
+        == "0"
     )
