@@ -1,4 +1,4 @@
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 SET short_circuit_function_evaluation = 'force_enable';
 
 SELECT CASE 1 WHEN 0 THEN 1 / 0 WHEN 1 THEN 1 ELSE 2 / 0 END;
