@@ -1,0 +1,92 @@
+<!--
+    `ORDER BY` spilled to disk and in memory on `hits_100m_single` (100 M rows) and `hits_10m_single` (10 M rows): full sorts
+    of narrow (16 bytes) and wide rows, a deep `OFFSET` that keeps 10 M rows and a 1 M-row top-N. Spilling is forced by
+    `max_bytes_before_external_sort`; the host-dependent `max_bytes_ratio_before_external_sort` is off, except in the last
+    query, where it gates the spill (about 35 MiB on the runner).
+    The setup runs every timed query once and checks its rows in order: the spilled full sorts against the same sort in
+    memory (`cityHash64` of each row with its `rowNumberInAllBlocks()`), `OFFSET` and `LIMIT` against `arraySort` of the
+    scanned keys up to the last one returned; then the spills in `system.query_log`.
+    Per server and invocation: no table data written; temporary spill files of up to 1.7 GB per query, 26-35 GB in total;
+    no S3.
+    No longer timed (noisy in A/A runs): the in-memory full sort of `hits_10m_single`, `SELECT *` top 10 000 (lazy
+    materialization).
+-->
+<test run_all_queries="1" max_query_seconds="90">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <max_bytes_before_external_sort>0</max_bytes_before_external_sort>
+    <max_bytes_ratio_before_external_sort>0</max_bytes_ratio_before_external_sort>
+</settings>
+
+<create_query>CREATE TABLE external_sort_hits_mark ENGINE = Memory AS SELECT now64(6) AS t</create_query>
+
+<fill_query>SELECT throwIf(count() != 100000000) FROM hits_100m_single</fill_query>
+<fill_query>SELECT throwIf(count() != 10000000) FROM hits_10m_single</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(cityHash64(rowNumberInAllBlocks(), WatchID, EventTime))) != (
+        SELECT count(), sum(cityHash64(rowNumberInAllBlocks(), WatchID, EventTime))
+        FROM (SELECT WatchID, EventTime FROM hits_100m_single ORDER BY EventTime, WatchID SETTINGS max_bytes_before_external_sort = 0)))
+    FROM (SELECT WatchID, EventTime FROM hits_100m_single ORDER BY EventTime, WatchID)
+    SETTINGS max_bytes_before_external_sort = 500000000, log_comment = 'external_sort_hits.q0'
+</fill_query>
+<fill_query>
+    WITH (SELECT groupArray(URL) FROM (SELECT URL FROM hits_100m_single ORDER BY URL LIMIT 10 OFFSET 10000000)) AS r
+    SELECT throwIf(length(r) != 10 OR countIf(URL &lt; r[1]) > 10000000
+        OR r != arraySlice(arraySort(groupArrayIf(URL, URL >= r[1] AND URL &lt;= r[10])), 10000001 - countIf(URL &lt; r[1]), 10))
+    FROM hits_100m_single
+    SETTINGS max_bytes_before_external_sort = 1000000000, log_comment = 'external_sort_hits.q1'
+</fill_query>
+<fill_query>
+    WITH (SELECT groupArray((EventTime, WatchID)) FROM (SELECT WatchID, EventTime FROM hits_100m_single ORDER BY EventTime, WatchID LIMIT 1000000))
+        AS r
+    SELECT throwIf(length(r) != 1000000
+        OR r != arraySlice(arraySort(groupArrayIf((EventTime, WatchID), (EventTime, WatchID) &lt;= r[-1])), 1, 1000000))
+    FROM hits_100m_single
+    SETTINGS log_comment = 'external_sort_hits.q2'
+</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(cityHash64(rowNumberInAllBlocks(), WatchID, EventTime))) != (
+            SELECT count(), sum(cityHash64(rowNumberInAllBlocks(), WatchID, EventTime))
+            FROM (SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID SETTINGS max_bytes_before_external_sort = 0))
+        OR sum(cityHash64(WatchID, EventTime, UserID, CounterID, URL, Title, Referer, SearchPhrase))
+            != (SELECT sum(cityHash64(WatchID, EventTime, UserID, CounterID, URL, Title, Referer, SearchPhrase)) FROM hits_10m_single))
+    FROM (SELECT WatchID, EventTime, UserID, CounterID, URL, Title, Referer, SearchPhrase FROM hits_10m_single ORDER BY EventTime, WatchID)
+    SETTINGS max_bytes_before_external_sort = 100000000, log_comment = 'external_sort_hits.q3'
+</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(cityHash64(rowNumberInAllBlocks(), WatchID, EventTime))) != (
+        SELECT count(), sum(cityHash64(rowNumberInAllBlocks(), WatchID, EventTime))
+        FROM (
+            SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID
+            SETTINGS max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0)))
+    FROM (SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID)
+    SETTINGS max_bytes_before_external_sort = 10000000, max_bytes_ratio_before_external_sort = 0.0003, log_comment = 'external_sort_hits.q4'
+</fill_query>
+<fill_query>SYSTEM FLUSH LOGS</fill_query>
+<fill_query>
+    SELECT throwIf(groupArray((log_comment, ProfileEvents['ExternalSortWritePart'] > 0)) != [
+            ('external_sort_hits.q0', 1), ('external_sort_hits.q1', 1), ('external_sort_hits.q2', 0),
+            ('external_sort_hits.q3', 1), ('external_sort_hits.q4', 1)],
+        'the setup runs of the measured queries are not in query_log, or their spills differ')
+    FROM
+    (
+        SELECT log_comment, read_rows, ProfileEvents FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment LIKE 'external_sort_hits.q%'
+            AND query_start_time_microseconds >= (SELECT t FROM external_sort_hits_mark)
+        ORDER BY event_time_microseconds
+    )
+</fill_query>
+
+<query>SELECT WatchID, EventTime FROM hits_100m_single ORDER BY EventTime, WatchID FORMAT Null SETTINGS max_bytes_before_external_sort = 500000000</query>
+<query>SELECT URL FROM hits_100m_single ORDER BY URL LIMIT 10 OFFSET 10000000 FORMAT Null SETTINGS max_bytes_before_external_sort = 1000000000</query>
+<query>SELECT WatchID, EventTime FROM hits_100m_single ORDER BY EventTime, WatchID LIMIT 1000000 FORMAT Null</query>
+
+<query>SELECT WatchID, EventTime, UserID, CounterID, URL, Title, Referer, SearchPhrase FROM hits_10m_single ORDER BY EventTime, WatchID FORMAT Null SETTINGS max_bytes_before_external_sort = 100000000</query>
+<query>SELECT WatchID, EventTime FROM hits_10m_single ORDER BY EventTime, WatchID FORMAT Null SETTINGS max_bytes_before_external_sort = 10000000, max_bytes_ratio_before_external_sort = 0.0003</query>
+
+<drop_query>DROP TABLE IF EXISTS external_sort_hits_mark SYNC</drop_query>
+
+</test>

@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 set joined_subquery_requires_alias = 0;
 
 select * from (select dummy as val from system.one) any left join (select dummy as val from system.one) using val order by all;

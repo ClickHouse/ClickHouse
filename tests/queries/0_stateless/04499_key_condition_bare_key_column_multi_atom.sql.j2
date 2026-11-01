@@ -1,0 +1,85 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+-- The sparsity-stats trivial count could answer `count() WHERE flag` without index analysis; it is disabled
+-- so that the indexed counts go through the key condition.
+SET optimize_trivial_count_with_sparsity_filter = 0;
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key conditions. `settings` apply to the
+    whole check. -#}
+{% macro check(table, predicate, settings = '', condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+    {%- if settings %} SETTINGS {{ settings }}{% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+-- A bare boolean key column used as a predicate (`WHERE flag`) is analyzed as `flag != 0` through the shared
+-- comparison machinery, so it produces atoms for every key column it can constrain, exactly like the explicit
+-- predicate.
+
+-- The bare column is itself the leading key column: a single direct atom. The bare leaf composes with a
+-- multi-atom leaf in the same conjunction, the negation inverts the atoms, and the bare leaf participates in
+-- a disjunction.
+CREATE TABLE test_bare_direct (flag UInt8, ts DateTime('UTC')) ENGINE = MergeTree ORDER BY (flag, toDate(ts), ts)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_bare_direct SELECT number % 2, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(96);
+{{ check('test_bare_direct', 'flag', condition = true) }}
+{{ check('test_bare_direct', "flag AND ts >= toDateTime('2026-01-03 00:00:00', 'UTC')", condition = true) }}
+{{ check('test_bare_direct', 'NOT flag') }}
+{{ check('test_bare_direct', "flag OR ts = toDateTime('2026-01-02 00:00:00', 'UTC')") }}
+
+-- The bare column is not a key column, but two key columns are injective functions of it: both must be
+-- constrained, and the explicit `flag != 0` must produce the same condition.
+CREATE TABLE test_bare_injective (flag UInt8, x UInt64) ENGINE = MergeTree ORDER BY (negate(flag), flag + 1)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_bare_injective SELECT number % 2, number FROM numbers(100);
+{{ check('test_bare_injective', 'flag', condition = true) }}
+{{ check('test_bare_injective', 'flag != 0', condition = true) }}
+{{ check('test_bare_injective', 'NOT flag') }}
+
+-- A non-injective wrap of the bare column: `flag != 0` does not imply `intDiv(flag, 8) != 0`, so the atom is
+-- relaxed and must never prune wrongly.
+CREATE TABLE test_bare_noninjective (flag UInt8, x UInt64) ENGINE = MergeTree ORDER BY intDiv(flag, 8)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_bare_noninjective SELECT number % 2, number FROM numbers(100);
+{{ check('test_bare_noninjective', 'flag') }}
+{{ check('test_bare_noninjective', 'NOT flag') }}
+
+-- A `Nullable` bare column must not produce atoms: `WHERE nullable_flag` filters NULL rows, which the
+-- `flag != 0` atom cannot see, and the exact-count optimization would count NULL-only granules. The counts
+-- must stay correct.
+CREATE TABLE test_bare_nullable (flag Nullable(UInt8), x UInt64) ENGINE = MergeTree ORDER BY (flag, x)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1;
+INSERT INTO test_bare_nullable SELECT if(number % 3 = 2, NULL, number % 2), number FROM numbers(96);
+{{ check('test_bare_nullable', 'flag', condition = true) }}
+
+-- A `LowCardinality(UInt8)` bare column is handled through the nested type.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE test_bare_lc (flag LowCardinality(UInt8), x UInt64) ENGINE = MergeTree ORDER BY (flag, x)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_bare_lc SELECT number % 2, number FROM numbers(96);
+{{ check('test_bare_lc', 'flag', condition = true) }}
+
+-- A float bare column is compared with a zero, whose representations `-0.0` and `+0.0` compare equal while a
+-- key-side transform such as `toString` tells them apart. Only the direct atom is sound: a key that holds the
+-- column only behind such a transform builds no atom, and the counts include both zeros, with the
+-- multiple-key-columns analysis on and off.
+CREATE TABLE test_bare_float (f Float64) ENGINE = MergeTree ORDER BY toString(f)
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_bare_float SELECT if(number < 4, -0., number) FROM numbers(10);
+{{ check('test_bare_float', 'f', condition = true) }}
+{{ check('test_bare_float', 'NOT f') }}
+{{ check('test_bare_float', 'f', settings = 'analyze_index_with_multiple_key_columns_per_condition = 0') }}
+{{ check('test_bare_float', 'NOT f', settings = 'analyze_index_with_multiple_key_columns_per_condition = 0') }}
+-- The direct atom still prunes when the float column is itself a key column.
+CREATE TABLE test_bare_float_direct (f Float64) ENGINE = MergeTree ORDER BY (f, toString(f))
+SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_bare_float_direct SELECT if(number < 4, -0., number) FROM numbers(10);
+{{ check('test_bare_float_direct', 'f', condition = true) }}
+{{ check('test_bare_float_direct', 'NOT f') }}

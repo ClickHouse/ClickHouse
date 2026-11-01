@@ -118,7 +118,7 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(column.column)};
 }
 
 void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
