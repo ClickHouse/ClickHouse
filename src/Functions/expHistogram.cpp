@@ -673,17 +673,39 @@ Every 2 adjacent bins merge into one.
 SELECT quantilesDDMerge(0.0001, 0.1, 0.5, 0.9)(fromExpHistogram(1, 0, 0, [1, 2, 3, 4], 0, []));
         )",
          R"(
-┌─quantilesDDMerge(0.0001, 0.⋯, 0, [1, 2, 3, 4], 0, []))─┐
-│ [1.17157287525381,2.34314575050762,3.3137084989847607] │
-└────────────────────────────────────────────────────────┘
+┌─quantilesDDMerge(0.0001, 0.1, 0.5, 0.9)(fromExpHistogram(1, 0, 0, [1, 2, 3, 4], 0, []))─┐
+│ [1.17157287525381,2.34314575050762,3.3137084989847607]                                  │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
         )"},
         {"Quantiles of the data exported by the OpenTelemetry Collector",
          R"(
+CREATE TABLE otel_metrics_exponential_histogram
+(
+    MetricName String,
+    AggregationTemporality Int32,
+    Scale Int32,
+    ZeroCount UInt64,
+    PositiveOffset Int32,
+    PositiveBucketCounts Array(UInt64),
+    NegativeOffset Int32,
+    NegativeBucketCounts Array(UInt64)
+)
+ENGINE = Memory;
+
+INSERT INTO otel_metrics_exponential_histogram VALUES
+('http.server.request.duration', 1, 3, 1, -2, [1, 2, 3], 5, [4]),
+('http.server.request.duration', 1, 3, 0, 1, [1, 1], 0, []),
+('http.server.request.duration', 2, 3, 10, 0, [1, 1, 1, 1, 1], 0, []);
+
 SELECT quantileDDMerge(0.0001, 0.99)(fromExpHistogram(Scale, ZeroCount, PositiveOffset, PositiveBucketCounts, NegativeOffset, NegativeBucketCounts))
 FROM otel_metrics_exponential_histogram
 WHERE MetricName = 'http.server.request.duration' AND AggregationTemporality = 1;
         )",
-         ""}};
+         R"(
+┌─quantileDDMerge(0.0001, 0.99)(fromExpHistogram(Scale, ZeroCount, PositiveOffset, PositiveBucketCounts, NegativeOffset, NegativeBucketCounts))─┐
+│                                                                                                                             1.137720847831126 │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_from
