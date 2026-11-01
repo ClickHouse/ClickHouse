@@ -124,6 +124,10 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
+    /// Handles `--dump-schema`, if given, and returns true; otherwise returns false unchanged.
+    bool tryRunDumpSchema();
+    /// Whether stdin is a file, or a pipe or socket that already holds data; an empty one is not waited on.
+    bool stdinHoldsInput() const;
 
     char * argv0 = nullptr;
     String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
@@ -276,6 +280,12 @@ protected:
     /// mirroring it into `format` would make it override the `FORMAT` clause of `INSERT` queries
     /// on the input side.
     virtual std::string_view mappedFormatOptionSetting() const { return "output_format"; }
+
+    /// What `--dump-schema` cannot be combined with, as its help names it.
+    virtual std::string_view dumpSchemaConflicts() const
+    {
+        return "`--query`, `--queries-file`, `--external` (including `--scalar`) or input on stdin";
+    }
 
     static std::filesystem::path getHistoryFilePath();
 private:

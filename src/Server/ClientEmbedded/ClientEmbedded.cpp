@@ -6,6 +6,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
+#include <Common/TerminalSize.h>
 #include <Core/Settings.h>
 
 #include <iomanip>
@@ -16,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -52,7 +54,14 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
     output_stream << "This client runs on the server side inside the ClickHouse's main process." << "\n";
 
     if (options_description.main_description.has_value())
-        output_stream << options_description.main_description.value() << "\n";
+    {
+        /// This client refuses `--dump-schema*`, so its help leaves them out.
+        auto main_description = createOptionsDescription("Main options", terminal_width);
+        for (const auto & option : options_description.main_description->options())
+            if (!option->long_name().starts_with("dump-schema"))
+                main_description.add(option);
+        output_stream << main_description << "\n";
+    }
     if (options_description.external_description.has_value())
         output_stream << options_description.external_description.value() << "\n";
     if (options_description.hosts_and_ports_description.has_value())
@@ -181,6 +190,11 @@ try
         cleanup();
         return 0;
     }
+
+    /// The embedded client only ever runs the interactive SSH session, so the batch-only schema
+    /// dump would be silently ignored; refuse it instead.
+    if (options.contains("dump-schema") || options.contains("dump-schema-exclude") || options.contains("dump-schema-dir"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--dump-schema is not supported by the embedded client");
 
     addOptionsToTheClientConfiguration(options);
 

@@ -1,0 +1,18 @@
+--- the Kafka Keeper-offsets gate follows its carriers ---
+plain Kafka, keeper gate emitted: 0
+Kafka with Keeper settings, keeper gate emitted: 1
+Kafka over a named collection, keeper gate emitted: 1
+--- a plain Kafka dump replays under a Keeper-offsets constraint ---
+OK: constrained replay succeeded
+constrained replay table present: 1
+--- a YTsaurus table keeps its engine gate ---
+YTsaurus table, engine gate emitted: 1
+--- an unrelated DataLakeCatalog database that cannot be listed does not fail the dump ---
+reader dumped: 1
+unlisted catalog named for the database-less reader: 1
+unlistable catalog in the dump set still refused: 1
+--- an unreachable omitted Remote database fails only the checks that need its tables ---
+qualified reader dumped: 1
+stderr lines: 0
+database-less reader dumped: 1
+unlisted Remote database named for the database-less reader: 1

@@ -1,0 +1,29 @@
+default_nullable: dump rc=0
+SET data_type_default_nullable = 0;
+default_nullable: replay rc=0
+UInt8
+nested_table_function: dump rc=0
+SET data_type_default_nullable = 0;
+nested_table_function: replay rc=0
+key_tuple_element: dump rc=0
+SET allow_suspicious_primary_key = 1;
+SET data_type_default_nullable = 0;
+key_tuple_element: replay rc=0
+key_cast: dump rc=0
+SET allow_suspicious_primary_key = 1;
+SET data_type_default_nullable = 0;
+key_cast: replay rc=0
+bad_select: dump rc=0
+SET allow_materialized_view_with_bad_select = 1;
+SET data_type_default_nullable = 0;
+bad_select: replay rc=0
+alias: dump rc=0
+SET data_type_default_nullable = 0;
+alias: replay rc=0
+overlay: dump rc=0
+SET data_type_default_nullable = 0;
+overlay: replay rc=0
+overlay dir: dump rc=0
+overlay dir: replayed 2 tables
+1
+scalar subquery runs: 0

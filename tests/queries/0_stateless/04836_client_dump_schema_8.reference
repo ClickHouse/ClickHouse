@@ -1,0 +1,6 @@
+--- the S3Queue hive-partitioning gate follows use_hive_partitioning ---
+plain S3Queue, hive gate emitted: 0
+hive S3Queue, hive gate emitted: 1
+--- a plain S3Queue dump replays under a hive-partitioning constraint ---
+OK: constrained replay succeeded
+constrained replay table present: 1

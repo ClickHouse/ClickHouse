@@ -12,6 +12,7 @@
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
@@ -162,6 +163,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -576,7 +582,9 @@ void StorageMergeTree::alter(
     {
         return c.type == AlterCommand::MODIFY_SETTING || c.type == AlterCommand::RESET_SETTING;
     });
-    if (!only_setting_changes)
+    /// A table loaded with `load_tables_readonly` stays read-only, so its settings are not changed either: such a table also
+    /// has no deduplication log that a new `non_replicated_deduplication_window` could apply to.
+    if (!only_setting_changes || getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
         assertNotReadonly();
 
     if (local_context->getCurrentTransaction() && local_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
@@ -1873,8 +1881,9 @@ void StorageMergeTree::loadDeduplicationLog()
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
 
-    /// Deduplication log only matters on INSERTs.
-    if (!disk->isReadOnly())
+    /// Deduplication log only matters on INSERTs. Opening one can create its directory, or start a new log and remove the
+    /// old ones, which `load_tables_readonly` does not allow.
+    if (!disk->isReadOnly() && !getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk);
         deduplication_log->load();
@@ -1935,6 +1944,10 @@ void StorageMergeTree::loadMutations()
     /// `currently_processing_in_background_mutex`. See STID 3367-4813.
     chassert(current_mutations_by_version.empty());
 
+    /// With `load_tables_readonly` no file of the table changes: a temporary mutation file stays, and the mutation of a
+    /// transaction that is not resolved yet, whose file the resolution rewrites or removes, refuses the load.
+    const bool load_readonly = getContext()->getServerSettings()[ServerSetting::load_tables_readonly];
+
     for (const auto & disk : getDisks())
     {
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -1949,6 +1962,10 @@ void StorageMergeTree::loadMutations()
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
                 {
+                    if (load_readonly)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Cannot load the mutation entry {} of transaction {} with `load_tables_readonly`: resolving it "
+                            "rewrites or removes its file", it->name(), entry.tid);
                     if (auto csn = TransactionManager::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
@@ -1972,7 +1989,7 @@ void StorageMergeTree::loadMutations()
 
                 incrementMutationsCounters(mutation_counters, *entry_it->second.commands);
             }
-            else if (startsWith(it->name(), "tmp_mutation_"))
+            else if (startsWith(it->name(), "tmp_mutation_") && !load_readonly)
             {
                 disk->removeFile(it->path());
             }

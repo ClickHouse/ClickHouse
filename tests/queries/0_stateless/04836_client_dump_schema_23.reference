@@ -1,0 +1,20 @@
+--- a dump changes no file of the data path ---
+tables dumped: 6
+data path unchanged by the dump
+--- an object that was not dropped completely is refused ---
+dump rc=48, refused: 1
+data path unchanged by the refused dump
+--- a database without its metadata file is refused ---
+dump rc=48, refused: 1
+data path unchanged by the refused dump
+--- an object is created after the dictionary its predictXGBoost call reads ---
+xgboost: dump rc=0
+SET enable_xgboost = 1;
+xgboost: replay rc=0
+--- the declarations of a table-function structure keep their gates ---
+structure_statistics: dump rc=0
+SET allow_statistics = 1;
+structure_statistics: replay rc=0
+structure_codec: dump rc=0
+SET enable_zxc_codec = 1;
+structure_codec: replay rc=0
