@@ -31,7 +31,7 @@ SPILL_EVENTS="
     SYSTEM FLUSH LOGS query_log;
     SELECT log_comment, ProfileEvents['ExternalLimitByWritePart'] > 0, ProfileEvents['ExternalLimitByMerge'] > 0
     FROM system.query_log
-    WHERE type = 'QueryFinish' AND log_comment != ''
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment != ''
     ORDER BY event_time_microseconds"
 
 # Hash-table growth must respect the 90 MiB spill threshold before a replacement allocation can exceed the
@@ -124,5 +124,5 @@ local_query --ignore-error --query "
     SYSTEM FLUSH LOGS query_log;
     SELECT log_comment, errorCodeToName(exception_code), ProfileEvents['ExternalLimitByWritePart'] > 0
     FROM system.query_log
-    WHERE type = 'ExceptionWhileProcessing' AND log_comment = 'disk_quota'" 2>/dev/null
+    WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing' AND log_comment = 'disk_quota'" 2>/dev/null
 find "${LOCAL_DIR}/tmp" -type f | wc -l
