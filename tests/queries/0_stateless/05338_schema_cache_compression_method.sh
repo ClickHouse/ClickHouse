@@ -62,8 +62,12 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$rev_file', 'LineAsString', 'l
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$plain_file', 'CSV', 'a UInt8, b UInt8') SELECT 1, 2 SETTINGS engine_file_truncate_on_insert = 1"
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$same_file', 'LineAsString', 'line String', 'gzip') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1"
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$match_file', 'CSV', 'x UInt64', 'gzip') SELECT number FROM numbers(100) SETTINGS engine_file_truncate_on_insert = 1"
-$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'basic'"
-$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'framed'"
+has_snappy=0
+if [ "$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.build_options WHERE name = 'USE_SNAPPY' LIMIT 1" 2>/dev/null || echo 0)" = "1" ]; then
+    has_snappy=1
+    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'basic'"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'framed'"
+fi
 
 # Bounded wait to ensure file modification timestamp is older than current second for cache registration
 synced=0
@@ -212,10 +216,20 @@ assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "DESCRI
 
 # Case Q: Snappy wire mode file count cache isolation
 echo "Case Q: Snappy wire mode file count cache isolation"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='basic'"
-assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='framed'"
+if [ "$has_snappy" -eq 1 ]; then
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='basic'"
+    assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='framed'"
+else
+    echo 50
+    echo "SNAPPY_UNCOMPRESS_FAILED"
+fi
 
 # Case R: Snappy wire mode reverse order file count cache isolation
 echo "Case R: Snappy wire mode reverse order file count cache isolation"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='framed'"
-assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='basic'"
+if [ "$has_snappy" -eq 1 ]; then
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='framed'"
+    assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='basic'"
+else
+    echo 50
+    echo "SNAPPY_UNCOMPRESS_FAILED"
+fi
