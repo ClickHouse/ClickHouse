@@ -1,0 +1,11 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- One series sent 1000 times, with as many distinct timestamps as just below, at and just above a buffer capacity. -->
+    <query>SELECT timeSeriesRateToGrid(1000, 5095, 1, 60)(toDateTime(1000 + number % 4095), toFloat64(number % 4095)) FROM numbers(4095 * 1000) FORMAT Null</query>
+    <query>SELECT timeSeriesRateToGrid(1000, 5095, 1, 60)(toDateTime(1000 + number % 4096), toFloat64(number % 4096)) FROM numbers(4096 * 1000) FORMAT Null</query>
+    <query>SELECT timeSeriesRateToGrid(1000, 5095, 1, 60)(toDateTime(1000 + number % 4097), toFloat64(number % 4097)) FROM numbers(4097 * 1000) FORMAT Null</query>
+</test>
