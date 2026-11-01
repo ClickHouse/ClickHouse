@@ -20,3 +20,19 @@ UTC
 --- non-matching predicate: no rows, and files are pruned ---
 0
 1
+--- timestamp column: Iceberg type, rows as stored ---
+DateTime64(6)	2024-01-02 03:00:00.000000	1
+DateTime64(6)	2024-01-02 20:00:00.000000	2
+--- timestamp column: zone it carries, read under a non-UTC session ---
+UTC
+--- timestamp column: day transform, non-UTC session, equality, pruning on then off ---
+1
+1
+--- timestamp column: day transform, non-UTC session, range, pruning on then off ---
+1
+1
+--- timestamp column: day transform, UTC session ---
+1
+--- timestamp column: hour transform, fractional-offset session, pruning on then off ---
+1
+1
