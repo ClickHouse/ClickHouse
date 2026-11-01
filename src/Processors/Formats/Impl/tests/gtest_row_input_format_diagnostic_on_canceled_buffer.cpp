@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
+#include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -291,4 +292,38 @@ TEST(RowInputFormatDiagnostics, AllowErrorsWithEOFBackingStorageChange)
 
     EXPECT_EQ(result.getNumRows(), 1U);
     EXPECT_GE(source.eof_probes, 1U);
+}
+
+/// JSONCompactEachRow uses a plain ReadBuffer. A diagnostic replay must not
+/// probe EOF a third time and invalidate the retained input window.
+TEST(RowInputFormatDiagnostics, JSONCompactReplayDoesNotReprobeSourceEOF)
+{
+    Block header;
+    header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "id"});
+    header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "name"});
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    /// The closing ']' is missing. Parsing probes EOF once, the diagnostic
+    /// entry probes it again, and the third probe would replace the storage.
+    EOFReallocatingReadBuffer source("[1, \"Alice\"", 3);
+    RowInputFormatParams params;
+    params.max_block_size_rows = 100;
+    FormatSettings format_settings;
+    JSONCompactEachRowRowInputFormat format(shared_header, source, params, false, false, false, format_settings);
+
+    try
+    {
+        format.read();
+        FAIL() << "Expected a parse error for the incomplete JSONCompact row";
+    }
+    catch (const Exception & e)
+    {
+        const auto & message = e.message();
+        EXPECT_NE(message.find("Row 1"), std::string::npos);
+        EXPECT_NE(message.find("Column 0"), std::string::npos);
+        EXPECT_NE(message.find("type: UInt8"), std::string::npos);
+        EXPECT_NE(message.find("Unexpected end of file"), std::string::npos);
+    }
+
+    EXPECT_EQ(source.eof_probes, 2U);
 }

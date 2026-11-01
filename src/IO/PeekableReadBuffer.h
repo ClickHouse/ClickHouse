@@ -120,7 +120,6 @@ private:
     ReadBuffer * sub_buf;
     size_t peeked_size = 0;
 
-    bool diagnostic_replay_active = false;
     std::optional<Buffer> diagnostic_saved_working_buffer;
     std::optional<Buffer> diagnostic_saved_internal_buffer;
     Position diagnostic_saved_position = nullptr;

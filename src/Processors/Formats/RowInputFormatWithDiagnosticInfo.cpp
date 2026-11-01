@@ -71,11 +71,18 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
             "Buffer has gone, cannot extract information about what has been parsed.",
             "Buffer has gone, cannot extract information about what has been parsed.");
 
+    /// TSV/CSV use PeekableReadBuffer, but JSONCompact formats use a plain
+    /// ReadBuffer. Protect their retained post-EOF windows from repeated probes too.
+    if (restore_after_eof && !peekable)
+        in->setDiagnosticReplayActive(true);
+
     SCOPE_EXIT({
         if (restore_after_eof)
         {
             if (peekable)
                 peekable->endDiagnosticReplay();
+            else
+                in->setDiagnosticReplayActive(false);
             in->buffer() = saved_buffer;
             in->position() = saved_position;
         }

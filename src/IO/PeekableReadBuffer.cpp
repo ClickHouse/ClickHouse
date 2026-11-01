@@ -96,7 +96,7 @@ bool PeekableReadBuffer::peekNext()
 
 bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
 {
-    if (checkpoint || !size || diagnostic_replay_active)
+    if (checkpoint || !size || isDiagnosticReplayActive())
         return false;
 
     if (peeked_size)
@@ -106,7 +106,7 @@ bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
 
         /// The bytes already live in our own buffer, so just fence off EOF probes.
         diagnostic_saved_bytes = bytes;
-        diagnostic_replay_active = true;
+        setDiagnosticReplayActive(true);
         return true;
     }
 
@@ -116,7 +116,7 @@ bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
 
     const Buffer saved_working_buffer = working_buffer;
     const Buffer saved_internal_buffer = internal_buffer;
-    const auto saved_position = pos;
+    auto * const saved_position = pos;
 
     /// After a failed EOF probe the source window is empty, but its old storage
     /// can still be retained. Copy it before replay so checkpoints remain valid.
@@ -141,16 +141,16 @@ bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
     diagnostic_saved_internal_buffer.emplace(saved_internal_buffer);
     diagnostic_saved_position = saved_position;
     diagnostic_saved_bytes = bytes;
-    diagnostic_replay_active = true;
+    setDiagnosticReplayActive(true);
     return true;
 }
 
 void PeekableReadBuffer::endDiagnosticReplay()
 {
-    if (!diagnostic_replay_active)
+    if (!isDiagnosticReplayActive())
         return;
 
-    diagnostic_replay_active = false;
+    setDiagnosticReplayActive(false);
     bytes = diagnostic_saved_bytes;
 
     /// When already reading from owned memory we did not need another copy.
@@ -240,7 +240,7 @@ bool PeekableReadBuffer::nextImpl()
 
     /// Diagnostic parsing must not probe a source that was already at EOF:
     /// doing so can replace the backing storage of the saved buffer snapshots.
-    if (diagnostic_replay_active)
+    if (isDiagnosticReplayActive())
         return false;
 
     const bool reading_from_own_memory = !useSubbufferOnly();
