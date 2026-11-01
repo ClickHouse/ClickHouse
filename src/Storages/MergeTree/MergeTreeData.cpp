@@ -44,6 +44,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -51,10 +52,12 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/TypeTree.h>
@@ -5879,7 +5882,8 @@ String getTimeZoneOfDateTime(const DataTypePtr & type)
 }
 
 /// Whether a type change moves a `DateTime` or `DateTime64` to another time zone, also inside `Nullable`, `LowCardinality`,
-/// `Array`, `Tuple` and `Map`: the stored values stay, but an expression such as `toHour(dt[1])` gives other values.
+/// `Array`, `Tuple`, `Map`, `Variant`, the typed paths of `JSON` and the arguments of an `AggregateFunction`: the stored values
+/// stay, but an expression such as `toHour(dt[1])` or `toHour(finalizeAggregation(dt))` gives other values.
 bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
 {
     const auto plain_from = removeLowCardinalityAndNullable(from);
@@ -5911,6 +5915,45 @@ bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
         if (const auto * to_map = typeid_cast<const DataTypeMap *>(plain_to.get()))
             return changesTimeZone(from_map->getKeyType(), to_map->getKeyType())
                 || changesTimeZone(from_map->getValueType(), to_map->getValueType());
+
+    /// The variants are sorted by name, and a time zone in the name of a `DateTime` does not move it past another type.
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(plain_from.get()))
+    {
+        if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(plain_to.get()))
+        {
+            const auto & from_variants = from_variant->getVariants();
+            const auto & to_variants = to_variant->getVariants();
+            for (size_t i = 0; i < std::min(from_variants.size(), to_variants.size()); ++i)
+                if (changesTimeZone(from_variants[i], to_variants[i]))
+                    return true;
+        }
+        return false;
+    }
+
+    if (const auto * from_object = typeid_cast<const DataTypeObject *>(plain_from.get()))
+    {
+        if (const auto * to_object = typeid_cast<const DataTypeObject *>(plain_to.get()))
+        {
+            const auto & to_paths = to_object->getTypedPaths();
+            for (const auto & [path, from_type] : from_object->getTypedPaths())
+                if (auto it = to_paths.find(path); it != to_paths.end() && changesTimeZone(from_type, it->second))
+                    return true;
+        }
+        return false;
+    }
+
+    if (const auto * from_function = typeid_cast<const DataTypeAggregateFunction *>(plain_from.get()))
+    {
+        if (const auto * to_function = typeid_cast<const DataTypeAggregateFunction *>(plain_to.get()))
+        {
+            const auto from_arguments = from_function->getArgumentsDataTypes();
+            const auto to_arguments = to_function->getArgumentsDataTypes();
+            for (size_t i = 0; i < std::min(from_arguments.size(), to_arguments.size()); ++i)
+                if (changesTimeZone(from_arguments[i], to_arguments[i]))
+                    return true;
+        }
+        return false;
+    }
 
     return false;
 }
@@ -13777,6 +13820,30 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
+
+    /// The structures are compared ignoring the time zone of a `DateTime`, but an expression of a key over such a column, such
+    /// as `toHour(dt)`, gives other values in another time zone: the primary key and the partition of a source part would not
+    /// match the key of this table, and pruning would drop its rows. A column used in the key as is, such as `ORDER BY dt`, is
+    /// not an argument of an expression and keeps its order in any time zone, so it may differ, as `MODIFY COLUMN` allows.
+    for (const auto * key : {&my_snapshot->getPartitionKey(), &my_snapshot->getSortingKey()})
+    {
+        if (!key->expression)
+            continue;
+
+        for (const auto & action : key->expression->getActions())
+        {
+            for (const auto * child : action.node->children)
+            {
+                auto my_column = my_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, child->result_name);
+                auto src_column = src_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, child->result_name);
+                if (my_column && src_column && changesTimeZone(src_column->type, my_column->type))
+                    throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                        "Column {} is used in a key expression, and its time zone differs between the tables: {} in the source table, "
+                        "{} in the destination table",
+                        backQuoteIfNeed(child->result_name), src_column->type->getName(), my_column->type->getName());
+            }
+        }
+    }
 
     return *src_data;
 }

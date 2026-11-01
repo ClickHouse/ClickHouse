@@ -10,6 +10,13 @@ DROP TABLE IF EXISTS t_not_in_key;
 DROP TABLE IF EXISTS t_array_key;
 DROP TABLE IF EXISTS t_tuple_key;
 DROP TABLE IF EXISTS t_version_key;
+DROP TABLE IF EXISTS t_aggregate_key;
+DROP TABLE IF EXISTS t_variant_key;
+DROP TABLE IF EXISTS t_json_key;
+DROP TABLE IF EXISTS t_transfer_src;
+DROP TABLE IF EXISTS t_transfer_dst;
+DROP TABLE IF EXISTS t_transfer_plain_src;
+DROP TABLE IF EXISTS t_transfer_plain_dst;
 DROP TABLE IF EXISTS t_plain_subcolumn_key;
 
 CREATE TABLE t_sorting_key (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY toHour(dt);
@@ -42,6 +49,25 @@ INSERT INTO t_version_key SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC'
 ALTER TABLE t_version_key MODIFY COLUMN dt DateTime('Asia/Tokyo'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT count() FROM t_version_key WHERE toHour(dt) = 2;
 
+CREATE TABLE t_aggregate_key (id UInt64, dt AggregateFunction(min, DateTime('UTC'))) ENGINE = MergeTree ORDER BY toHour(finalizeAggregation(dt));
+ALTER TABLE t_aggregate_key MODIFY COLUMN dt AggregateFunction(min, DateTime('Asia/Tokyo')); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+CREATE TABLE t_variant_key (id UInt64, dt Variant(DateTime('UTC'), UInt64)) ENGINE = MergeTree ORDER BY toString(dt);
+ALTER TABLE t_variant_key MODIFY COLUMN dt Variant(DateTime('Asia/Tokyo'), UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+CREATE TABLE t_json_key (id UInt64, j JSON(a DateTime('UTC'))) ENGINE = MergeTree ORDER BY toString(j);
+ALTER TABLE t_json_key MODIFY COLUMN j JSON(a DateTime('Asia/Tokyo')); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+-- `ATTACH PARTITION FROM`, `REPLACE PARTITION` and `MOVE PARTITION TO TABLE` take the parts with their keys from a table
+-- whose column has another time zone.
+CREATE TABLE t_transfer_src (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY toHour(dt);
+CREATE TABLE t_transfer_dst (id UInt64, dt DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY toHour(dt);
+INSERT INTO t_transfer_src SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(24);
+ALTER TABLE t_transfer_dst ATTACH PARTITION tuple() FROM t_transfer_src; -- { serverError INCOMPATIBLE_COLUMNS }
+ALTER TABLE t_transfer_dst REPLACE PARTITION tuple() FROM t_transfer_src; -- { serverError INCOMPATIBLE_COLUMNS }
+ALTER TABLE t_transfer_src MOVE PARTITION tuple() TO TABLE t_transfer_dst; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT count() FROM t_transfer_dst;
+
 -- A column used in the key as is, and a column outside the keys, can still change their time zone.
 CREATE TABLE t_plain_key (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY dt;
 INSERT INTO t_plain_key VALUES (1, '2026-01-01 02:00:00');
@@ -51,6 +77,12 @@ SELECT toHour(dt), count() FROM t_plain_key WHERE dt = toDateTime('2026-01-01 11
 CREATE TABLE t_plain_subcolumn_key (id UInt64, t Tuple(a UInt8, dt DateTime('UTC'))) ENGINE = MergeTree ORDER BY t.dt;
 ALTER TABLE t_plain_subcolumn_key MODIFY COLUMN t Tuple(a UInt8, dt DateTime('Asia/Tokyo'));
 SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_plain_subcolumn_key' AND name = 't';
+
+CREATE TABLE t_transfer_plain_src (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY dt;
+CREATE TABLE t_transfer_plain_dst (id UInt64, dt DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY dt;
+INSERT INTO t_transfer_plain_src VALUES (1, '2026-01-01 02:00:00');
+ALTER TABLE t_transfer_plain_dst ATTACH PARTITION tuple() FROM t_transfer_plain_src;
+SELECT toHour(dt), count() FROM t_transfer_plain_dst WHERE dt = toDateTime('2026-01-01 11:00:00', 'Asia/Tokyo') GROUP BY 1;
 
 CREATE TABLE t_not_in_key (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE t_not_in_key MODIFY COLUMN dt DateTime('Asia/Tokyo');
@@ -65,3 +97,10 @@ DROP TABLE t_array_key;
 DROP TABLE t_tuple_key;
 DROP TABLE t_version_key;
 DROP TABLE t_plain_subcolumn_key;
+DROP TABLE t_aggregate_key;
+DROP TABLE t_variant_key;
+DROP TABLE t_json_key;
+DROP TABLE t_transfer_src;
+DROP TABLE t_transfer_dst;
+DROP TABLE t_transfer_plain_src;
+DROP TABLE t_transfer_plain_dst;
