@@ -72,6 +72,8 @@ public:
     /// Takes over the prefiltered conditions of `other`, which this step replaces. Conditions are matched by hash, so any
     /// condition that this step computes differently is evaluated for all chunks.
     void copyPrefilteredConditions(const FilterStep & other) { prefiltered_conditions = other.prefiltered_conditions; }
+    /// Adds the conditions that the rows of all chunks passed, like the columns of PREWHERE conditions, if there are prefiltered conditions.
+    void addPrefilteredConditions(const std::unordered_set<UInt64> & condition_hashes);
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }

@@ -509,6 +509,12 @@ void FilterStep::setPrefilteredConditions(UInt64 token, std::unordered_set<UInt6
     prefiltered_conditions = PrefilteredConditions{.token = token, .condition_hashes = std::move(condition_hashes)};
 }
 
+void FilterStep::addPrefilteredConditions(const std::unordered_set<UInt64> & condition_hashes)
+{
+    if (prefiltered_conditions)
+        prefiltered_conditions->condition_hashes.insert(condition_hashes.begin(), condition_hashes.end());
+}
+
 /// The atoms of the AND chain of `node` from left to right, the order of short-circuit evaluation.
 static void collectConjunctionAtoms(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms)
 {

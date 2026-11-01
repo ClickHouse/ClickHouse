@@ -247,6 +247,32 @@ static FilterDAGInfoPtr buildNonIntersectingFinalFilter(
     return filter;
 }
 
+/// The names of the conditions that all rows read with `prewhere_info` passed: its filter column and the atoms of its AND chain.
+/// They come to the WHERE as columns, like `k % 2 = 0` in `WHERE k % 2 = 0 AND v % 3 != 0` after it is moved to PREWHERE.
+static NameSet getPrewhereConditionNames(const PrewhereInfo * prewhere_info)
+{
+    NameSet names;
+    if (!prewhere_info || !prewhere_info->need_filter)
+        return names;
+    const auto * filter_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
+    if (!filter_node)
+        return names;
+    names.insert(filter_node->result_name);
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_node))
+        names.insert(atom->result_name);
+    return names;
+}
+
+/// The hashes of the inputs of `dag` that are the columns of `condition_names`.
+static std::unordered_set<UInt64> getConditionInputHashes(const ActionsDAG & dag, const NameSet & condition_names)
+{
+    std::unordered_set<UInt64> hashes;
+    for (const auto * input : dag.getInputs())
+        if (condition_names.contains(input->result_name))
+            hashes.insert(input->getHash());
+    return hashes;
+}
+
 /// Hash of `node` that does not depend on the names the node reads through.
 static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
 {
@@ -460,9 +486,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         std::unordered_set<const ActionsDAG::Node *> non_intersecting(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
         non_intersecting_final_conditions.clear();
         const bool has_prewhere = existing_prewhere_info || !optimize_result.prewhere_nodes.empty();
+        const NameSet existing_prewhere_conditions = getPrewhereConditionNames(existing_prewhere_info.get());
         for (const auto * atom : atoms)
         {
-            if (optimize_result.prewhere_nodes.contains(atom))
+            if (optimize_result.prewhere_nodes.contains(atom)
+                || (atom->type == ActionsDAG::ActionType::INPUT && existing_prewhere_conditions.contains(atom->result_name)))
                 continue;
             if (!non_intersecting.contains(atom) || ((atoms.size() != 1 || has_prewhere) && !canBeEvaluatedOnMoreRows(atom)))
                 break;
@@ -495,10 +523,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         }
     }
 
+    /// The columns of the conditions of PREWHERE are true for the rows of all ranges, so they do not stop the WHERE from
+    /// skipping the prefiltered conditions after them.
     if (optimize_result.prewhere_nodes.empty())
     {
         if (prefiltered_conditions)
             filter_step->setPrefilteredConditions(prefiltered_conditions->first, std::move(prefiltered_conditions->second));
+        filter_step->addPrefilteredConditions(
+            getConditionInputHashes(filter_step->getExpression(), getPrewhereConditionNames(existing_prewhere_info.get())));
         return;
     }
 
@@ -569,8 +601,13 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        /// Without new prefiltered conditions, the read keeps the filter of an earlier call, and the new step those of the old one.
         if (prefiltered_conditions)
             new_filter_step->setPrefilteredConditions(prefiltered_conditions->first, std::move(prefiltered_conditions->second));
+        else
+            new_filter_step->copyPrefilteredConditions(*filter_step);
+        new_filter_step->addPrefilteredConditions(
+            getConditionInputHashes(new_filter_step->getExpression(), getPrewhereConditionNames(prewhere_info.get())));
         new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
         new_step = std::move(new_filter_step);
     }
