@@ -3155,6 +3155,17 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
+
+    /// `leader_election` decides who owns the table's shared data: a node that loads the same table with
+    /// it disabled accepts unfenced writes and deletes the shared data on `DROP TABLE`. So when a new
+    /// definition inherits it enabled from the server's `merge_tree` section, record it in the definition,
+    /// and later changes of the server default do not change the ownership mode of the existing table.
+    /// Only the enabled value is recorded, so the definitions of all other tables stay as they were.
+    /// Definitions loaded from existing metadata are left as they are.
+    if (!is_loading_from_existing_metadata && (*this)[MergeTreeSetting::leader_election]
+        && std::find_if(changes.begin(), changes.end(), [](const SettingChange & c) { return c.name == "leader_election"; })
+            == changes.end())
+        changes.push_back(SettingChange{"leader_election", Field(true)});
 }
 
 void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
