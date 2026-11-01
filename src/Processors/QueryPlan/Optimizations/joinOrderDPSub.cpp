@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -58,6 +59,20 @@ bool entriesCarryStrictness(const QueryGraph & query_graph)
 /// outer join is mirrored through `reverseJoinKind` (`Left` <-> `Right`), the same equivalence the
 /// enumeration uses. Semi/anti joins keep their sides, and so do `ANY` joins: `ANY LEFT` keeps one
 /// match per left row, `ANY RIGHT` one per right row.
+/// A numeric statistics value as a double, for estimating the share of a key range.
+std::optional<double> toNumber(const std::optional<Field> & value)
+{
+    if (!value)
+        return std::nullopt;
+    switch (value->getType())
+    {
+        case Field::Types::UInt64: return static_cast<double>(value->safeGet<UInt64>());
+        case Field::Types::Int64: return static_cast<double>(value->safeGet<Int64>());
+        case Field::Types::Float64: return value->safeGet<Float64>();
+        default: return std::nullopt;
+    }
+}
+
 bool canSwap(JoinKind kind, JoinStrictness strictness)
 {
     if (isInner(kind) || isCrossOrComma(kind))
@@ -117,6 +132,9 @@ private:
     UInt64 mergeKeyClasses(
         const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask, JoinKind kind, JoinStrictness strictness) const;
     bool isReadInOrder(UInt32 relation_mask, Int32 order_class) const;
+    /// The fraction of a probe side a hash join's runtime filter lets it read: the overlap of the key range of the build side
+    /// with the key range of a probe table sorted by the key, whose granules the filter prunes. 1 when unknown.
+    double probeReadFraction(UInt32 probe_mask, UInt32 build_mask, Int32 order_class) const;
     /// Whether a later join may still use a result sorted by the equivalence class.
     bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
     /// The column of the class that the result of a plan is sorted by, as `applyOrder` sees it: a merge join on the class
@@ -206,6 +224,15 @@ private:
         std::vector<UInt64> rel_sorted_classes; /// per relation: classes it can be read in order of
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
         TUInt prepared_storage_mask = 0;
+
+        /// Per relation and class (`relation * num_classes + class`): the value range of its column of the class, if known.
+        struct KeyRange
+        {
+            double min = 0;
+            double max = 0;
+            bool known = false;
+        };
+        std::vector<KeyRange> key_ranges;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -384,6 +411,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.rel_sorted_classes.assign(num_relations, 0);
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
+    dpsub_data.key_ranges.assign(dpsub_data.interesting_orders ? num_relations * num_classes : 0, {});
     if (dpsub_data.interesting_orders)
     {
         for (size_t c = 0; c < num_classes; ++c)
@@ -405,6 +433,15 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 if (columns_per_relation[relation] == 1 && relation < query_graph.read_in_order_columns.size()
                     && query_graph.read_in_order_columns[relation].contains(column.getColumnName()))
                     dpsub_data.rel_sorted_classes[relation] |= static_cast<UInt64>(1) << c;
+
+                const auto & column_stats = query_graph.relation_stats[relation].column_stats;
+                if (auto it = column_stats.find(column.getColumnName()); columns_per_relation[relation] == 1 && it != column_stats.end())
+                {
+                    auto min = toNumber(it->second.min_value);
+                    auto max = toNumber(it->second.max_value);
+                    if (min && max && *min <= *max)
+                        dpsub_data.key_ranges[relation * num_classes + c] = {*min, *max, true};
+                }
             }
         }
 
@@ -705,6 +742,35 @@ UInt64 DPSubJoinOrderOptimizer::mergeKeyClasses(
 bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_class) const
 {
     return (dpsub_data.rel_sorted_classes[std::countr_zero(relation_mask)] >> order_class) & 1;
+}
+
+double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 build_mask, Int32 order_class) const
+{
+    if (!query_graph.runtime_filter_prunes_probe || std::popcount(probe_mask) != 1 || !isReadInOrder(probe_mask, order_class))
+        return 1.0;
+
+    const size_t num_classes = dpsub_data.class_members.size();
+    const auto & probe = dpsub_data.key_ranges[std::countr_zero(probe_mask) * num_classes + order_class];
+    if (!probe.known || probe.max <= probe.min)
+        return 1.0;
+
+    /// The keys of the build side lie in the range of each of its columns of the class.
+    double min = -std::numeric_limits<double>::infinity();
+    double max = std::numeric_limits<double>::infinity();
+    bool known = false;
+    for (UInt32 remaining = build_mask; remaining; remaining &= remaining - 1)
+    {
+        const auto & range = dpsub_data.key_ranges[std::countr_zero(remaining) * num_classes + order_class];
+        if (!range.known)
+            continue;
+        min = std::max(min, range.min);
+        max = std::min(max, range.max);
+        known = true;
+    }
+    if (!known)
+        return 1.0;
+    const double overlap = std::max(0.0, std::min(max, probe.max) - std::max(min, probe.min));
+    return std::clamp(overlap / (probe.max - probe.min), 0.0, 1.0);
 }
 
 bool DPSubJoinOrderOptimizer::isInterestingOrder(Int32 order_class, UInt32 relations) const

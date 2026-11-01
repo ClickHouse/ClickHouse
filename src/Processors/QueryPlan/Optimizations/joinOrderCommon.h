@@ -241,6 +241,8 @@ struct MergeJoinInput
     double cost;
     UInt64 rows;
     bool sorted;
+    /// The fraction of its rows a hash join reads if this input is the probe side, after its runtime filter prunes granules.
+    double probe_fraction = 1.0;
 };
 
 /// A sort-merge join costs as much as the hash join of the same inputs plus the difference between the two methods,
@@ -253,9 +255,11 @@ inline double computeMergeJoinCost(const MergeJoinInput & left, const MergeJoinI
         const double sort = input.sorted ? 0.0 : SORT_ROW_COST * rows * static_cast<double>(std::bit_width(input.rows));
         return sort + MERGE_SORTED_ROW_COST * rows;
     };
-    const auto build_rows = static_cast<double>(std::min(left.rows, right.rows));
-    const auto probe_rows = static_cast<double>(std::max(left.rows, right.rows));
-    const double hash_join = HASH_BUILD_ROW_COST * build_rows + HASH_PROBE_ROW_COST * probe_rows;
+    /// The hash table is built from the smaller input.
+    const auto & build = left.rows < right.rows ? left : right;
+    const auto & probe = left.rows < right.rows ? right : left;
+    const double hash_join = HASH_BUILD_ROW_COST * static_cast<double>(build.rows)
+        + HASH_PROBE_ROW_COST * probe.probe_fraction * static_cast<double>(probe.rows);
     const double merge_join = MERGE_JOIN_FIXED_COST + input_cost(left) + input_cost(right);
     return left.cost + right.cost + estimateJoinedRows(selectivity, left.rows, right.rows) + merge_join - hash_join;
 }

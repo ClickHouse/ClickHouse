@@ -18,6 +18,10 @@ merge join
 merge join
 -- a chain of four, in whatever tree shape: every input of every merge join is already sorted
 3	6	6
+-- build keys in a narrow range: a hash join, whose runtime filter skips most of the sorted probe side
+hash join
+-- build keys spread over the probe range: the runtime filter skips nothing, a merge join
+merge join
 -- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes
 hash join
 merge join
@@ -29,5 +33,7 @@ hash join
 3000000	13499995500000
 3000000	13499995500000
 10	45045
+2500000	6249997500000
+2500000	15624993750000
 3000000	17999994000000
 3000000	17999994000000

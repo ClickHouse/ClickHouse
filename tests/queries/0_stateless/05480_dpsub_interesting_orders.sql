@@ -12,6 +12,10 @@ SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET optimize_sorting_by_input_stream_properties = 1;
+SET enable_join_runtime_filters = 1;
+SET enable_join_runtime_filters_index_analysis = 1;
+SET materialize_statistics_on_insert = 1;
+SET use_statistics = 1;
 
 DROP TABLE IF EXISTS sorted1;
 DROP TABLE IF EXISTS sorted2;
@@ -20,6 +24,9 @@ DROP TABLE IF EXISTS sorted4;
 DROP TABLE IF EXISTS unsorted1;
 DROP TABLE IF EXISTS unsorted2;
 DROP TABLE IF EXISTS tiny;
+DROP TABLE IF EXISTS probe;
+DROP TABLE IF EXISTS build_narrow;
+DROP TABLE IF EXISTS build_wide;
 
 CREATE TABLE sorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE sorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
@@ -28,6 +35,9 @@ CREATE TABLE sorted4 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS
 CREATE TABLE unsorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE unsorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE tiny (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE build_narrow (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE build_wide (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
 -- A merge join pays a fixed cost, so it wins only for inputs of a few million rows.
 INSERT INTO sorted1 SELECT number, number FROM numbers(3000000);
@@ -37,6 +47,10 @@ INSERT INTO sorted4 SELECT number, number FROM numbers(3000000);
 INSERT INTO unsorted1 SELECT number, number FROM numbers(3000000);
 INSERT INTO unsorted2 SELECT number, number FROM numbers(3000000);
 INSERT INTO tiny SELECT number * 1000, number FROM numbers(10);
+-- Build keys in a quarter of the probe range, or spread over all of it.
+INSERT INTO probe SELECT number, number FROM numbers(10000000);
+INSERT INTO build_narrow SELECT number, number FROM numbers(2500000);
+INSERT INTO build_wide SELECT number * 4, number FROM numbers(2500000);
 
 SELECT '-- both inputs sorted by the key: merge join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
@@ -63,6 +77,14 @@ FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(sorted1.k + sorted2.k + sorted3.k + sorted4.k) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
         JOIN sorted3 ON sorted2.k = sorted3.k JOIN sorted4 ON sorted3.k = sorted4.k);
 
+SELECT '-- build keys in a narrow range: a hash join, whose runtime filter skips most of the sorted probe side';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- build keys spread over the probe range: the runtime filter skips nothing, a merge join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.k = build_wide.k)
+WHERE explain LIKE '%Algorithm:%';
+
 SELECT '-- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(sorted1.v + sorted2.v + sorted3.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k JOIN sorted3 ON sorted2.k = sorted3.k)
@@ -83,6 +105,8 @@ SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v) FROM sorted1 JOIN sorted2
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k JOIN sorted3 ON sorted2.k = sorted3.k
 SETTINGS query_plan_join_order_use_interesting_orders = 0;
 SELECT count(), sum(sorted1.v + tiny.v) FROM sorted1 JOIN tiny ON sorted1.k = tiny.k;
+SELECT count(), sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k;
+SELECT count(), sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.k = build_wide.k;
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
     JOIN sorted3 ON sorted2.k = sorted3.k JOIN sorted4 ON sorted3.k = sorted4.k;
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
@@ -96,3 +120,6 @@ DROP TABLE sorted4;
 DROP TABLE unsorted1;
 DROP TABLE unsorted2;
 DROP TABLE tiny;
+DROP TABLE probe;
+DROP TABLE build_narrow;
+DROP TABLE build_wide;
