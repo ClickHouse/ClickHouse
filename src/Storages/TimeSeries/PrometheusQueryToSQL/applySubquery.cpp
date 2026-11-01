@@ -35,6 +35,8 @@ SQLQueryPiece applySubquery(const PrometheusQueryTree::Subquery * subquery_node,
 
     expression.node = subquery_node;
     expression.type = ResultType::RANGE_VECTOR;
+    /// A range vector has no series order, so an order fixed by an inner sort*() call no longer applies.
+    expression.sort_rank_subquery.clear();
     return std::move(expression);
 }
 

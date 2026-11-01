@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <cmath>
@@ -182,6 +183,9 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     auto res = vector_arg;
     res.node = operator_node;
+    /// These operators emit the chosen series in their own order (topk/bottomk by value, set at the end),
+    /// so an order fixed by an inner sort*() call no longer applies.
+    res.sort_rank_subquery.clear();
 
     /// The vector grid becomes a named subquery because Steps 1 and 3 both read it: Step 1
     /// aggregates it to choose which series to keep, and Step 3 joins it with the chosen series
@@ -292,6 +296,19 @@ SQLQueryPiece applyLimitAggregationOperator(
             make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
         res.select_query = builder.getSelectQuery();
+    }
+
+    /// An instant topk() / bottomk() keeps its order for an outer sort*() call, as in Prometheus.
+    if ((operator_name == "topk" || operator_name == "bottomk") && (res.start_time == res.end_time))
+    {
+        ASTPtr bucket_key;
+        if (operator_node->by || operator_node->without)
+        {
+            bool metric_name_dropped = res.metric_name_dropped;
+            bucket_key = makeASTFunction("timeSeriesGroupToTags", transformGroupASTForAggregationOperator(
+                operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, metric_name_dropped));
+        }
+        setLimitAggregationRank(res, std::move(bucket_key), operator_name == "topk", context);
     }
 
     return res;
