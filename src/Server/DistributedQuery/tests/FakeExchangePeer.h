@@ -52,8 +52,8 @@ private:
     std::thread thread;
 };
 
-/// Reads the source's `SourceHello` and answers with a `SinkHello` of the same protocol version.
-inline void completeSinkHandshake(Poco::Net::StreamSocket & socket)
+/// Reads the source's `SourceHello`.
+inline void receiveSourceHello(Poco::Net::StreamSocket & socket)
 {
     using namespace StreamingExchangeProtocol;
     PacketHeader header{};
@@ -64,6 +64,13 @@ inline void completeSinkHandshake(Poco::Net::StreamSocket & socket)
     position = 0;
     while (position < body.size())
         position += socket.receiveBytes(body.data() + position, static_cast<int>(body.size() - position));
+}
+
+/// Reads the source's `SourceHello` and answers with a `SinkHello` of the same protocol version.
+inline void completeSinkHandshake(Poco::Net::StreamSocket & socket)
+{
+    using namespace StreamingExchangeProtocol;
+    receiveSourceHello(socket);
 
     WriteBufferFromOwnString reply_body;
     SinkHelloBody{.sink_version = PROTOCOL_VERSION}.write(reply_body);

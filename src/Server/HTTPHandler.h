@@ -68,6 +68,14 @@ public:
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
 
+    /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
+    /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
+    virtual bool allowMutatingIdempotentMethods(
+        const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
+    {
+        return false;
+    }
+
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
     /// directly: the wrapper snapshots the inner buffer state on construction, so bytes taken from the inner
@@ -81,6 +89,10 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
+    /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
+    /// not be lowered by request settings.
+    void setHasServerOwnedQuery() { has_server_owned_query = true; }
+
     /// Set by SQL-defined handlers, whose query is fully known in advance, so it is known whether it can consume
     /// the request body at all (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may
     /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
@@ -93,6 +105,8 @@ protected:
 
 private:
     String introspection_handler_name;
+
+    bool has_server_owned_query = false;
 
     /// Whether `consumes_request_body` carries a definitive answer. Only SQL-defined handlers set it: for them a
     /// `POST` request needs `Content-Length` up front only when the body is actually consumed. For the other
@@ -236,6 +250,9 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
+    bool parse_http_path;
+    /// Only the built-in catch-all handler enables the path-table upload mutation exception.
+    bool allow_path_table_uploads = false;
 
 public:
     explicit DynamicQueryHandler(
@@ -244,13 +261,20 @@ public:
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
-        HTTPPathHintsPtr path_hints_ = nullptr);
+        HTTPPathHintsPtr path_hints_ = nullptr,
+        bool parse_http_path_ = true,
+        bool allow_path_table_uploads_ = false);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
-    bool parsesHTTPPath() const override { return true; }
+    /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
+    /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
+    /// and nothing at all when it has none.
+    bool parsesHTTPPath() const override { return parse_http_path; }
+
+    bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler

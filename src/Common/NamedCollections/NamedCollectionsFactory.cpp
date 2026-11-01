@@ -299,13 +299,23 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
         if (query.if_not_exists)
             return;
 
-        throw Exception(
-            ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
-            "A named collection `{}` already exists",
-            query.collection_name);
+        if (!query.or_replace)
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+                "A named collection `{}` already exists",
+                query.collection_name);
+
+        /// Throws NAMED_COLLECTION_IS_IMMUTABLE before the metadata write if the existing collection comes from the server config.
+        getMutable(query.collection_name, lock);
+
+        loaded_named_collections[query.collection_name] = metadata_storage->createOrReplace(query);
+        return;
     }
 
-    add(query.collection_name, metadata_storage->create(query), lock);
+    if (query.or_replace)
+        add(query.collection_name, metadata_storage->createOrReplace(query), lock);
+    else
+        add(query.collection_name, metadata_storage->create(query), lock);
 }
 
 void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & query)

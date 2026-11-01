@@ -1,5 +1,6 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <Common/Config/ConfigurationWithUsageTracking.h>
 #include <Common/EnvironmentProxyConfigurationResolver.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Common/Exception.h>
@@ -65,6 +66,10 @@ namespace
     {
         std::vector<String> keys;
         configuration.keys(config_prefix, keys);
+        /// The URIs are picked by a prefix of their names. Look up the prefix, so that a configuration
+        /// tracking the read keys (`ConfigurationWithUsageTracking`, used for a definition of a disk) knows that
+        /// the elements with such names are read even when they are absent.
+        configuration.has(ConfigurationWithUsageTracking::getNamePrefixKey(config_prefix + ".uri"));
 
         std::vector<Poco::URI> uris;
         for (const auto & key : keys)

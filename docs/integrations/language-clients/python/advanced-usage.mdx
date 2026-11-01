@@ -13,7 +13,7 @@ For use cases which don't require transformation between ClickHouse data and nat
 
 ### Client `raw_query` method {#client-rawquery-method}
 
-The `Client.raw_query` method allows direct usage of the ClickHouse HTTP query interface using the client connection. The return value is an unprocessed `bytes` object. It offers a convenient wrapper with parameter binding, error handling, retries, and settings management using a minimal interface:
+The `Client.raw_query` method allows direct usage of the ClickHouse HTTP query interface using the client connection. The return value is an unprocessed `bytes` object. It offers a convenient wrapper with parameter binding, error handling, retries for eligible reads, and settings management using a minimal interface. See [HTTP retries](/integrations/language-clients/python/driver-api#http-retries).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -45,6 +45,8 @@ The `Client.raw_insert` method allows direct inserts of `bytes` objects or `byte
 | `transport_settings` | dict | `None` | HTTP headers added to this request. |
 
 It is the caller's responsibility to ensure that the `insert_block` is in the specified format and uses the specified compression method. ClickHouse Connect uses these raw inserts for file uploads and PyArrow Tables, delegating parsing to the ClickHouse server.
+
+String and bytes payloads can be retried after a remote connection close. Generators and open files cannot be replayed. See [Insert retries and deduplication](/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 ## Saving query results as files {#saving-query-results-as-files}
 
@@ -84,7 +86,7 @@ Similarly, you could save data in [TabSeparated](/reference/formats/TabSeparated
 
 ## Multithreaded, multiprocess, and async/event driven use cases {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
-ClickHouse Connect works well in multithreaded, multiprocess, and event-loop-driven/asynchronous applications. All query and insert processing occurs within a single thread, so operations are generally thread-safe. (Parallel processing of some operations at a low level is a possible future enhancement to overcome the performance penalty of a single thread, but even in that case thread safety will be maintained.)
+ClickHouse Connect supports multithreaded, multiprocess, and asyncio applications. A synchronous HTTP client can be shared across threads as long as concurrent calls do not use the same ClickHouse session. See the session discussion below. The async client runs some parsing and insert preparation in worker threads.
 
 Because each query or insert executed maintains state in its own `QueryContext` or `InsertContext` object, respectively, these helper objects aren't thread-safe, and they shouldn't be shared between multiple processing streams. See the additional discussion about context objects in the [QueryContexts](/integrations/language-clients/python/advanced-querying#querycontexts) and [InsertContexts](/integrations/language-clients/python/advanced-inserting#insertcontexts) sections.
 
@@ -119,6 +121,10 @@ asyncio.run(main())
 
 The async client follows the same query, insert, raw, Arrow, and streaming contract as the synchronous client. It uses aiohttp for network I/O. CPU-bound Native-format parsing may run in an executor so that it doesn't block the event loop.
 
+`insert_arrow` and `insert_df_arrow` run DataFrame conversion and Arrow encoding in a dedicated worker for each client, separate from streaming query readers. Each client runs one preparation operation at a time to limit temporary memory use. Close the client with `async with` or `await client.close()` when finished. PyArrow operations that hold Python's global interpreter lock can still pause other coroutines.
+
+An async client owns an aiohttp session created in one event loop. Before moving the client to another event loop, close it in the owning loop, then call `await client._initialize()` in the new loop before making requests. If the owning loop has already closed, call `await client.close()` followed by `await client._initialize()` in the current loop. aiohttp may still report an unclosed transport when cleanup begins only after the owning loop has closed, so close before transfer when possible.
+
 Async streaming methods are awaited before entering the returned context:
 
 ```python
@@ -137,7 +143,7 @@ Each ClickHouse query occurs within the context of a ClickHouse "session". Sessi
 - To associate specific ClickHouse settings with multiple queries (see the [user settings](/reference/settings/session-settings)). The ClickHouse `SET` command is used to change the settings for the scope of a user session.
 - To track [temporary tables.](/reference/statements/create/table#temporary-tables)
 
-By default, a synchronous `Client` uses a generated session ID. `SET` statements and temporary tables therefore persist across requests from that client. The async factory does not generate a session ID by default. ClickHouse doesn't allow concurrent queries in the same session, and the client raises a `ProgrammingError` if this is attempted, so use one of the following patterns:
+By default, a synchronous `Client` uses a generated session ID. `SET` statements and temporary tables persist across requests from that client only when those requests reach the same ClickHouse server process. The async factory does not generate a session ID by default. Named-session state and same-session overlap checks are process-local, and the client raises a `ProgrammingError` when it detects local overlap before sending the request. In ClickHouse Cloud or other load-balanced deployments, do not rely on a fixed `session_id` as distributed state or as a distributed mutex. Serialize before sending requests to ClickHouse if overlap matters. Use one of these patterns:
 
 1. Create a separate `Client` instance for each thread/process/event handler that needs session isolation. This preserves per-client session state (temporary tables and `SET` values).
 2. Use a unique `session_id` for each query via the `settings` argument when calling `query`, `command`, or `insert`, if you don't require shared session state.
@@ -161,7 +167,9 @@ In this case ClickHouse Connect doesn't send a `session_id`; the server doesn't 
 
 ## Customizing the HTTP connection pool {#customizing-the-http-connection-pool}
 
-ClickHouse Connect uses `urllib3` connection pools to handle the underlying HTTP connection to the server. By default, all client instances share the same connection pool, which is sufficient for the majority of use cases. This default pool maintains up to 8 HTTP Keep Alive connections to each ClickHouse server used by the application.
+ClickHouse Connect uses `urllib3` connection pools to handle the underlying HTTP connection to the server. By default, all synchronous client instances in a process share the same connection pool, which is sufficient for the majority of use cases. Each multiprocessing worker gets its own process-local default pool and reuses it across clients created in that worker. A client created before a fork keeps the parent's pool and should not be used in the child. The default pool maintains up to 8 HTTP Keep Alive connections to each ClickHouse server used by the application.
+
+The default socket options enable TCP keepalive and `TCP_NODELAY`. The operating system manages socket send and receive buffer sizes.
 
 For large multi-threaded applications, separate connection pools may be appropriate. Customized connection pools can be provided as the `pool_mgr` keyword argument to the main `clickhouse_connect.get_client` function:
 
@@ -177,4 +185,8 @@ client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 
 Clients can share a pool manager, or each client can use a separate manager. For more details, see the [`urllib3` PoolManager documentation](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).
 
+To set socket options, pass `socket_options` to `httputil.get_pool_manager` or `httputil.get_pool_manager_options`. This replaces the entire default list, including keepalive options and `TCP_NODELAY`. Pass `[]` or `None` to apply no explicit socket options.
+
 The async client owns an aiohttp pool rather than using `urllib3`. Configure it through `connector_limit`, `connector_limit_per_host`, and `keepalive_timeout` on `get_async_client`. Calling `await async_client.close_connections()` rotates the pool without interrupting in-flight requests.
+
+For async queries and inserts, waiting for a free pool slot has no timeout. Fully read or close streaming responses to release their pool slots. `connect_timeout` starts after a slot is available and covers DNS resolution, TCP and TLS setup, and proxy negotiation. `send_receive_timeout` limits socket reads. To set a deadline for the whole operation, including pool waiting, use `asyncio.wait_for`, for example `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`.

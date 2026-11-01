@@ -103,6 +103,8 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/StripedBlockUtil.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedInputStreamImpl.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedOutputStreamImpl.cpp"
+    "${HDFS3_SOURCE_DIR}/client/SlowMetrics.cpp"
+    "${HDFS3_SOURCE_DIR}/client/SlowNodeTracker.cpp"
     "${HDFS3_SOURCE_DIR}/client/SystemECPolicies.cpp"
     "${HDFS3_SOURCE_DIR}/client/dump.cpp"
     "${HDFS3_SOURCE_DIR}/client/erasure_coder.cpp"
@@ -158,8 +160,10 @@ set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES C
 add_library(_hdfs3 ${SRCS})
 
 add_dependencies(_hdfs3 protoc)
+# `SHELL:` keeps the two `-include` options apart, otherwise CMake de-duplicates the repeated flag.
 target_compile_options(_hdfs3 PRIVATE
-    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
+    "SHELL:-include ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3-cmake/absl_log_undef.h"
+    "SHELL:-include ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
 )
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)

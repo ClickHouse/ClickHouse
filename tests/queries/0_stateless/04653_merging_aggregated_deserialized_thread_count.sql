@@ -37,7 +37,7 @@ SETTINGS serialize_query_plan = 1,
          max_threads = 0,
          use_concurrency_control = 0,
          -- Required by the second firing oracle below. It defaults true, but it flipped false to
-         -- true in the 24.3 block of `SettingsChangesHistory.cpp`, so a `compatibility` draw
+         -- true in its 24.3 history record, so a `compatibility` draw
          -- below 24.3 turns it off and that oracle would silently read 0.
          log_processors_profiles = 1,
          log_comment = '04653_merging_aggregated_deserialized_thread_count';
@@ -85,9 +85,8 @@ WHERE initial_query_id = (
 SETTINGS enable_parallel_replicas = 0;
 
 -- Second firing oracle, pinning a different axis: the parallel replicas aggregation rewrite
--- fired. A `MergingAggregated` step on a secondary is attributable to it: of the four creators
--- of that step, the old-analyzer one is excluded by the `enable_analyzer` pin above, the planner
--- one runs on the initiator, and `makeDistributed` throws `SUPPORT_IS_DISABLED` when combined
+-- fired. A `MergingAggregated` step on a secondary is attributable to it: of the three creators
+-- of that step, the planner one runs on the initiator, and `makeDistributed` throws `SUPPORT_IS_DISABLED` when combined
 -- with parallel replicas, leaving the rewrite that builds the step this fix repairs. Where the
 -- rewrite declines, the secondary stops at partial aggregation (`setFinal(false)`), so it reports
 -- `Aggregating` but never `MergingAggregated`.

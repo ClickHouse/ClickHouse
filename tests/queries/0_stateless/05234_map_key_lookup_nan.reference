@@ -1,0 +1,22 @@
+Float64	1	nan-hit	one-five	
+Float64	2			other
+Float64	3		plain	
+Float32	1	nan-hit	one-five	
+Float32	2			other
+Float32	3		plain	
+BFloat16	1	nan-hit	one-five	
+BFloat16	2			other
+BFloat16	3		plain	
+LowCardinality(Float64)	1	nan-hit	one-five	
+LowCardinality(Float64)	2			other
+LowCardinality(Float64)	3		plain	
+Tuple(Float64, UInt8)	1	nan-hit	one-five	
+Tuple(Float64, UInt8)	2			other
+Tuple(Float64, UInt8)	3		plain	
+Tuple(Nullable(UInt8), UInt8)	1	null-hit	five	
+Tuple(Nullable(UInt8), UInt8)	2			other
+Tuple(Nullable(UInt8), UInt8)	3		plain	
+NaN value	1	1	1.5
+NaN value	2	0	2.5
+NaN value	1	1	1.5
+NaN value	2	0	2.5

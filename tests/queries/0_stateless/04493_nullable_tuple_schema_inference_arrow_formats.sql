@@ -16,14 +16,14 @@
 SET engine_file_truncate_on_insert = 1;
 
 -- Write files containing optional (nullable) struct columns, including a nested struct, while the type is allowed.
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.arrow', 'Arrow', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.arrowstream', 'ArrowStream', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.orc', 'ORC', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.parquet', 'Parquet', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
 
 -- With the type disabled, inference must not return Nullable(Tuple), and CREATE TABLE from the inferred schema must work.
-SET allow_experimental_nullable_tuple_type = 0;
+SET enable_nullable_tuple_type = 0;
 
 -- Arrow
 DESCRIBE file(currentDatabase() || '_04493.arrow', 'Arrow');
@@ -62,7 +62,7 @@ SELECT count() FROM test_04493;
 DROP TABLE test_04493;
 
 -- With the setting enabled, schema inference still returns Nullable(Tuple).
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 DESCRIBE file(currentDatabase() || '_04493.arrow', 'Arrow');
 DESCRIBE file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
 DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC');

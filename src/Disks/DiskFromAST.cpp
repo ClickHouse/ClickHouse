@@ -2,6 +2,7 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -10,8 +11,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
@@ -68,6 +69,8 @@ static std::string getOrCreateCustomDisk(
             forceAnonymousS3DiskConfig(*config);
         else
             validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
+
+        validateResolvedAzureDiskCredentials(*config, context, attach, for_system_database);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
@@ -125,6 +128,15 @@ static std::string getOrCreateCustomDisk(
     return disk_name;
 }
 
+template <typename Matcher>
+static void visitBottomUp(ASTPtr & ast, typename Matcher::Data & data)
+{
+    checkStackSize();
+    for (auto & child : ast->children)
+        visitBottomUp<Matcher>(child, data);
+    Matcher::visit(ast, data);
+}
+
 class DiskConfigurationFlattener
 {
 public:
@@ -134,8 +146,6 @@ public:
         bool attach;
         bool for_system_database;
     };
-
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
     static void visit(ASTPtr & ast, Data & data)
     {
@@ -164,8 +174,6 @@ public:
         bool for_system_database;
     };
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
-
     static void visit(ASTPtr & ast, Data & data)
     {
         if (!isDiskFunction(ast))
@@ -180,10 +188,10 @@ public:
         auto is_marker = [](const ASTPtr & arg)
         {
             const auto * eq = arg->as<ASTFunction>();
-            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() != 2)
+            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() < 2)
                 return false;
             const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
-            return key && key->name() == "_server_credentials_allowed";
+            return key && (key->name() == "_server_credentials_allowed" || key->name() == AZURE_SERVER_CREDENTIALS_MARKER);
         };
 
         /// Strip any marker the user put in the definition. This runs only on a fresh create (not on metadata
@@ -203,11 +211,22 @@ public:
         }
 
         DynamicS3DiskCredentialInfo info;
-        getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database);
+        auto xml_document = getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database);
         if (info.persist_server_credentials_allowance)
             args.push_back(makeASTFunction(
                 "equals",
                 make_intrusive<ASTIdentifier>("_server_credentials_allowed"),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
+
+        /// `include`, `from_env` and `from_zk` are resolved only later and may supply the Azure backend, so such a disk
+        /// is marked without being parsed, as S3 marks it.
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+        config->load(xml_document);
+        if (!data.context->shouldRestrictUserQueryS3Credentials()
+            && (info.has_include || info.has_substituted_value || azureDiskUsesServerIdentity(*config)))
+            args.push_back(makeASTFunction(
+                "equals",
+                make_intrusive<ASTIdentifier>(AZURE_SERVER_CREDENTIALS_MARKER),
                 make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
     }
 };
@@ -226,16 +245,14 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     if (!attach)
     {
         ASTPtr to_mark = disk_function_ast;
-        using MarkerInjector = InDepthNodeVisitor<ServerCredentialMarkerInjector, false>;
-        MarkerInjector::Data inject_data{context, for_system_database};
-        MarkerInjector{inject_data}.visit(to_mark);
+        ServerCredentialMarkerInjector::Data inject_data{context, for_system_database};
+        visitBottomUp<ServerCredentialMarkerInjector>(to_mark, inject_data);
     }
 
     auto ast = disk_function_ast->clone();
 
-    using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
-    FlattenDiskConfigurationVisitor::Data data{context, attach, for_system_database};
-    FlattenDiskConfigurationVisitor{data}.visit(ast);
+    DiskConfigurationFlattener::Data data{context, attach, for_system_database};
+    visitBottomUp<DiskConfigurationFlattener>(ast, data);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }

@@ -76,6 +76,10 @@ struct ReplicatedMergeTreeLogEntryData
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
     bool cleanup = false;
+    /// MERGE_PARTS only: the merge was explicitly ordered by OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION,
+    /// whose part selection ignores min_unreserved_disk_space_for_merge; the executing queue must ignore
+    /// the headroom too, or such an entry is postponed forever (see #80006).
+    bool bypass_min_unreserved_space = false;
     MergeType merge_type = MergeType::Regular;
     String column_name;
     String index_name;

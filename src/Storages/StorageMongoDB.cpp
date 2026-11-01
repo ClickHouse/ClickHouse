@@ -12,7 +12,11 @@
 #include <Analyzer/TableNode.h>
 #include <Common/BSONCXXHelper.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
@@ -20,8 +24,10 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
@@ -53,6 +59,46 @@ MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
 {
     static MongoDBInstanceHolder instance;
     return instance;
+}
+
+namespace
+{
+
+std::pair<LogsLevel, Poco::Message::Priority> toServerLogLevel(mongocxx::log_level level)
+{
+    switch (level)
+    {
+        case mongocxx::log_level::k_error:
+        case mongocxx::log_level::k_critical:
+            return {LogsLevel::error, Poco::Message::PRIO_ERROR};
+        case mongocxx::log_level::k_warning:
+            return {LogsLevel::warning, Poco::Message::PRIO_WARNING};
+        case mongocxx::log_level::k_message:
+        case mongocxx::log_level::k_info:
+            return {LogsLevel::information, Poco::Message::PRIO_INFORMATION};
+        case mongocxx::log_level::k_debug:
+            return {LogsLevel::debug, Poco::Message::PRIO_DEBUG};
+        case mongocxx::log_level::k_trace:
+            return {LogsLevel::trace, Poco::Message::PRIO_TRACE};
+    }
+}
+
+}
+
+void MongoDBLogger::operator()(
+    mongocxx::log_level level, bsoncxx::v1::stdx::string_view domain, bsoncxx::v1::stdx::string_view message) noexcept
+{
+    try
+    {
+        const auto [logs_level, priority] = toServerLogLevel(level);
+        LOG_IMPL(
+            log, logs_level, priority, "{}: {}",
+            std::string_view(domain.data(), domain.size()), std::string_view(message.data(), message.size()));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 namespace ErrorCodes
@@ -181,7 +227,7 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
 
 static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, /* throw_unknown_collection */ true, /* complex_args */ nullptr, table_id))
         return StorageMongoDB::getConfigurationFromCollection(named_collection, context);
 
     MongoDBConfiguration configuration;
@@ -372,23 +418,71 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     if (func_name == "$in" || func_name == "$nin")
     {
-        if (const_value.getType() == Field::Types::Array)
+        /// A list of one member arrives as a plain constant.
+        Array elements;
+        if (const_value.getType() == Field::Types::Tuple)
         {
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            const auto & value_tuple = const_value.safeGet<Tuple>();
+            elements.assign(value_tuple.begin(), value_tuple.end());
         }
-        else if (const_value.getType() == Field::Types::Tuple)
+        else if (const_value.getType() == Field::Types::Array)
+            elements = const_value.safeGet<Array>();
+        else
+            elements.push_back(const_value);
+
+        /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
+        /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
+        /// hold matches nothing. A member whose conversion loses part of the value is refused like a lossy
+        /// bound; `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
+        Array converted_elements;
+        converted_elements.reserve(elements.size());
+        for (size_t i = 0; i < elements.size(); ++i)
         {
-            auto & value_tuple = const_value.safeGet<Tuple>();
-            const_value = Array(value_tuple.begin(), value_tuple.end());
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            DataTypePtr element_type;
+            if (tuple_type && i < tuple_type->getElements().size())
+                element_type = tuple_type->getElements()[i];
+            else if (array_type)
+                element_type = array_type->getNestedType();
+            else if (!tuple_type)
+                element_type = const_type;
+
+            /// Every element is converted: the list is written with the column's type, so a `Float64`
+            /// element under an integer column would be read back as an integer.
+            if (element_type && element_type->equals(*column_type))
+            {
+                converted_elements.push_back(elements[i]);
+                continue;
+            }
+
+            auto converted = tryConvertFieldToType(elements[i], *column_type, element_type.get(), {}, /*strict=*/ true);
+            if (converted.isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
+                continue;
+            }
+            if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get()).isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
+                return {};
+            }
+            converted_elements.push_back(std::move(converted));
         }
+
+        const_value = std::move(converted_elements);
+        column_type = std::make_shared<DataTypeArray>(column_type);
+        const_type = column_type;
     }
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
     if (!const_type->equals(*column_type) && (!is_const_number || !is_column_number))
     {
-        auto converted_value = convertFieldToType(const_value, *column_type, const_type.get());
+        /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type.get());
 
         if (converted_value.isNull())
         {
@@ -631,6 +725,159 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 }
 
 
+/// The secret options of a MongoDB connection string or option list, after the password and the uri are hidden.
+static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    auto & result = finder.result;
+    const auto & function = finder.function;
+
+    auto is_masked = [&](size_t index)
+    {
+        return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
+            || (result.start <= index && index < result.start + result.count);
+    };
+
+    auto mask_argument = [&](size_t index, bool hide_unreadable)
+    {
+        const auto argument = function->arguments->at(index);
+        String value;
+        if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*argument, &value))
+        {
+            if (hide_unreadable)
+                result.replaced_arguments[index] = HIDDEN_SECRET_LITERAL;
+        }
+        else if (maskMongoDBConnectionString(value))
+        {
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
+        }
+    };
+
+    const bool is_engine = function->name() == "MongoDB";
+    const bool is_named_collection = finder.isNamedCollectionName(0);
+    const size_t size = function->arguments->size();
+
+    /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
+    /// there can move them into the user or password slot.
+    bool shifted = false;
+    if (!is_engine && size > 4 && !is_named_collection)
+    {
+        for (size_t i = 0; i < 5; ++i)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+                shifted = true;
+        }
+    }
+
+    bool seen_named = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto equals = function->arguments->at(i)->getFunction();
+        if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+        {
+            seen_named = true;
+            if (is_masked(i))
+                continue;
+
+            String key;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(0), &key))
+            {
+                /// The key is evaluated as a constant expression, so it can name `options`.
+                result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+                continue;
+            }
+            if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
+            {
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+                continue;
+
+            String value;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(1), &value))
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+            else if (maskMongoDBConnectionString(value))
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+            continue;
+        }
+
+        if (is_masked(i))
+            continue;
+
+        /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
+        if ((shifted && i > 5) || (is_named_collection && i > 0))
+        {
+            result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+            continue;
+        }
+
+        if (seen_named)
+        {
+            /// A positional argument after a named one shifts the others, so its role is unknown.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (i == 0)
+        {
+            /// The URI.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (is_engine ? i == 5 : i >= 6)
+        {
+            /// The positional `options` of the `host:port` forms.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+    }
+}
+
+SecretArgumentsSpec mongoDBSecretArguments()
+{
+    /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
+    /// MongoDB(named_collection, ..., password = 'password', ...)
+    return {.positional_secret_slots = {4}, .secret_keys = {"password"}, .custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        /// Hides the secrets of a uri, or the whole value when it is not a plain string literal.
+        auto mask_uri = [&finder](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
+        {
+            String uri;
+            if (!value.tryGetString(&uri, /* allow_identifier= */ false))
+                finder.markSecretArgument(index, argument_is_named);
+            else if (maskMongoDBConnectionString(uri))
+                finder.result.replaced_arguments[index] = String(prefix) + quoteString(uri);
+        };
+
+        /// MongoDB('mongodb://username:password@127.0.0.1:27017/database', 'collection'[, ...]). Not gated
+        /// on the argument count, which a rejected named argument changes; a `host:port` has no password.
+        if (finder.function->arguments->size() != 0)
+        {
+            const auto first = finder.function->arguments->at(0);
+            const auto first_function = first->getFunction();
+            if (first->isIdentifier())
+            {
+                String name;
+                /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
+                if (first->tryGetString(&name, /* allow_identifier= */ true) && maskMongoDBConnectionString(name))
+                    finder.result.replaced_arguments[0] = backQuoteIfNeed(name);
+            }
+            else if (!first_function || first_function->name() != "equals")
+            {
+                mask_uri(0, *first, "", /* argument_is_named= */ false);
+            }
+        }
+
+        /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+        /// Every occurrence: a duplicated or conflicting override is logged before validation rejects it.
+        for (ssize_t i = finder.findNamedArgument(nullptr, "uri"); i >= 0;
+             i = finder.findNamedArgument(nullptr, "uri", static_cast<size_t>(i) + 1))
+        {
+            const auto index = static_cast<size_t>(i);
+            mask_uri(index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
+        }
+
+        findMongoDBConnectionStringSecretArguments(finder);
+    }};
+}
+
 void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory)
 {
@@ -647,6 +894,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.constraints,
             args.comment);
     },
+    mongoDBSecretArguments(),
     {
         .source_access_type = AccessTypeObjects::Source::MONGO,
     },

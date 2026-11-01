@@ -313,31 +313,6 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
     return available_space;
 }
 
-namespace
-{
-
-/// A path built from an unhashed skip-index file name (see replace_long_file_name_to_hash) can
-/// exceed the filesystem's NAME_MAX when probed directly for existence -- e.g. checking for a
-/// legacy extension on a part that only has the packed/hashed form. That's a normal "not found
-/// under this name" outcome for an existence probe, so treat it as "doesn't exist" rather than
-/// letting it escape as an exception. Any other stat() failure (EACCES, EIO, ESTALE, ...) is a
-/// genuine problem and must keep throwing -- callers rely on that to distinguish "missing" from
-/// "broken" (e.g. MergeTreeData::loadFormatVersion, IMergeTreeDataPart::loadColumns).
-template <typename Func>
-bool existsOrFileNameTooLong(Func && func)
-try
-{
-    return func();
-}
-catch (const fs::filesystem_error & e)
-{
-    if (e.code() == std::errc::filename_too_long)
-        return false;
-    throw;
-}
-
-}
-
 bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
     return existsOrFileNameTooLong([&] { return fs::exists(fs::path(disk_path) / path); });
@@ -446,9 +421,12 @@ void DiskLocal::prepareRead(
         && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
 
     {
-        /// Use the same estimated size basis as createReadBufferFromFileBase:
-        /// read_hint first, then file_size. A large file with a small read_hint
-        /// won't trigger O_DIRECT, so page cache remains safe.
+        /// Legacy pipeline: selection is read_hint-based (0 when absent), so falling back to
+        /// file_size is a conservative upper bound when there is no hint. The optional reader
+        /// executor is different: LocalSourceReader selects by file_size and ignores read_hint,
+        /// so this expression is not an upper bound for that path (a small hint can hide a large
+        /// file). This check predates the current change; it only decides whether the userspace
+        /// page cache may coexist with an unaligned page-cache block size.
         size_t estimated_size = read_hint.value_or(file_size);
         if (use_page_cache && settings.local_fs_settings.direct_io_threshold
             && estimated_size >= settings.local_fs_settings.direct_io_threshold
@@ -816,7 +794,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
         disk->startup(skip_access_check);

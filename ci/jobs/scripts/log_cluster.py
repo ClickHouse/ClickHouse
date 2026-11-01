@@ -192,7 +192,7 @@ class LogCluster:
         values = cls.meta_values(check_start_time, check_name)
         return [c.literal.format(values[c.name]) for c in cls.meta_columns()]
 
-    def __init__(self, user, url="", password=None, readonly=False):
+    def __init__(self, user, url="", password=None, readonly=False, read_budget_s=None):
         # Explicit url/user/password skip the AWS SSM secret lookup - used for
         # running the consumers locally against the cluster.
         self.user = user
@@ -205,6 +205,17 @@ class LogCluster:
                 "X-ClickHouse-User": self.user,
                 "X-ClickHouse-Key": password,
             }
+        self._read_budget_s = read_budget_s
+        self._read_deadline = (
+            None if read_budget_s is None else time.monotonic() + read_budget_s
+        )
+        # Why the last `is_ready` probe failed, when the server itself answered
+        # it with an exception, classified like a `select` answer: a
+        # LogClusterUnavailable for the codes about its own load, a
+        # LogClusterQueryError otherwise (e.g. Code 516 for a rotated
+        # password). None when the probe succeeded or the server did not
+        # answer it (no secret, no connection, a gateway).
+        self.probe_error = None
 
     def close_session(self):
         if self._session:
@@ -212,6 +223,7 @@ class LogCluster:
             self._session = None
 
     def is_ready(self):
+        self.probe_error = None
         if not self.url:
             url = Secret.Config(
                 name=self.URL_SECRET,
@@ -244,14 +256,26 @@ class LogCluster:
                 headers=self._auth,
                 timeout=3,
             )
-            if not response.ok:
-                print("ERROR: No connection to LogCluster")
-                return False
-            if not response.json() == 1:
-                print("ERROR: LogCluster failure 1 != 1")
-                return False
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
+            return False
+        if not response.ok:
+            print(
+                f"ERROR: No connection to LogCluster: code {response.status_code}:"
+                f" {response.text.strip()[:512]}"
+            )
+            # Only an answer of the server itself is classified: no connection
+            # or a gateway answer is also what a wrong or deleted endpoint in
+            # the AWS SSM parameter looks like, and stays fail-closed.
+            if self.EXCEPTION_CODE_HEADER in response.headers:
+                self.probe_error = self._classify(response)
+            return False
+        try:
+            answer = response.json()
+        except ValueError:
+            answer = None
+        if answer != 1:
+            print("ERROR: LogCluster failure 1 != 1")
             return False
         return True
 
@@ -376,6 +400,9 @@ class LogCluster:
         reason = f"exception {code}, {reason}"
         return (LogClusterUnavailable if transient else LogClusterQueryError)(reason)
 
+    def _read_budget_spent(self):
+        return self._read_deadline is not None and time.monotonic() >= self._read_deadline
+
     def select(self, query, retries=8, timeout=60):
         """Run a read-only query and return the response body.
 
@@ -383,7 +410,10 @@ class LogCluster:
         result text. Retries transient (connection-level, and the exception
         codes the cluster reports about its own load) errors with a growing
         backoff: the shared cluster goes through minutes-long server-wide
-        memory-pressure spikes (Code 241 for every query).
+        memory-pressure spikes (Code 241 for every query). A read budget (see
+        `read_budget_s`) stops the POST retries when the caller's share of the
+        job's wall clock is spent; the first attempt is always made, so the
+        classification below is unchanged.
 
         Raises LogClusterQueryError if the cluster rejected the query and
         LogClusterUnavailable if it never answered it. The two are different
@@ -400,7 +430,20 @@ class LogCluster:
 
         response = None
         post_attempted = False
+        budget_spent = False
         for retry in range(retries):
+            # Only POST retries are cut: attempt 0 is always made, and a read
+            # that has not reached its POST yet still owes the readiness
+            # schedule below its full count, or a single transient probe failure
+            # would leave the loop with nothing attempted and classify as
+            # LogClusterNotReady while the cluster was answering.
+            if retry and post_attempted and self._read_budget_spent():
+                print(
+                    f"WARNING: LogCluster read budget of {self._read_budget_s} s spent,"
+                    " not retrying"
+                )
+                budget_spent = True
+                break
             # is_ready is a cheap `SELECT 1` and fails during the same pressure
             # spikes as the query itself, so it is retried on the same schedule.
             # It raises rather than returns False when the AWS SSM lookup of
@@ -458,9 +501,23 @@ class LogCluster:
             # response (timeout, connection reset, ...). Blaming readiness here
             # would point the incident at the wrong subsystem; the tracebacks
             # of the attempts are already in the log above.
-            raise LogClusterUnavailable("every POST attempt failed with an exception")
+            reason = "every POST attempt failed with an exception"
+            if budget_spent:
+                reason += f"; stopped retrying after the {self._read_budget_s} s read budget"
+            raise LogClusterUnavailable(reason)
         # Every attempt gave up before its POST: `is_ready()` was false for all
-        # of them (no secret, or `SELECT 1` never succeeded).
+        # of them (no secret, or `SELECT 1` never succeeded). When the last
+        # probe was answered by the server rejecting even `SELECT 1` about its
+        # own load (a replica stuck above its memory limit answers Code 241 to
+        # every query, for days), it is the same outage `select` reports green
+        # after a POST, and the endpoint is not in question: the server itself
+        # answered. A missing secret, no connection, a gateway answer or a
+        # probe the server rejected (Code 516 for a rotated password) stay
+        # fail-closed.
+        if isinstance(self.probe_error, LogClusterUnavailable):
+            raise LogClusterUnavailable(
+                f"the endpoint never became ready: {self.probe_error}"
+            )
         raise LogClusterNotReady("the endpoint never became ready")
 
 

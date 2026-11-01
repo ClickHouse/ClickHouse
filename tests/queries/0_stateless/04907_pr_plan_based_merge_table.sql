@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Reading from a `Merge` table with plan-based parallel replicas. `ReadFromMerge` is opaque to the
 -- parallel-replicas plan transformation (it unites the pipelines of its per-table subplans, not their
 -- plans), so it is first expanded into a plan-level union of the underlying `ReadFromMergeTree` reads.
@@ -21,7 +22,6 @@ INSERT INTO t_pr_merge_1 SELECT number, number % 10 FROM numbers(50000);
 INSERT INTO t_pr_merge_2 SELECT number + 50000, number % 10 FROM numbers(50000);
 CREATE TABLE m_pr_merge (a UInt64, b UInt64) ENGINE = Merge(currentDatabase(), '^t_pr_merge_[12]$');
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

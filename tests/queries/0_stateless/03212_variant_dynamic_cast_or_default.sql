@@ -90,12 +90,16 @@ WITH
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL
-      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
+      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'),
+          toIPv4('0.0.0.1'), toIPv4('0.0.0.254'), toIPv4('0.0.0.255'),
+          toIPv4('0.0.255.254'), toIPv4('0.0.255.255'),
+          toIPv4('255.255.255.254'), toIPv4('255.255.255.255'))
   ) AS bad_v4,
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL
-      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
+      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'),
+          toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'))
   ) AS bad_v6,
   bad_v4 + bad_v6 AS bad_cnt
 SELECT
@@ -112,12 +116,16 @@ WITH
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL
-      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
+      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'),
+          toIPv4('0.0.0.1'), toIPv4('0.0.0.254'), toIPv4('0.0.0.255'),
+          toIPv4('0.0.255.254'), toIPv4('0.0.255.255'),
+          toIPv4('255.255.255.254'), toIPv4('255.255.255.255'))
   ) +
   (SELECT count()
      FROM t
     WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL
-      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
+      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'),
+          toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'))
   ) AS bad_cnt
 SELECT
   'ch_dbg_offenders' AS tag,
@@ -130,9 +138,13 @@ FROM t
 WHERE bad_cnt > 0
   AND (
         (accurateCastOrNull(d,'IPv4') IS NOT NULL
-         AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1')))
+         AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'),
+          toIPv4('0.0.0.1'), toIPv4('0.0.0.254'), toIPv4('0.0.0.255'),
+          toIPv4('0.0.255.254'), toIPv4('0.0.255.255'),
+          toIPv4('255.255.255.254'), toIPv4('255.255.255.255')))
      OR (accurateCastOrNull(d,'IPv6') IS NOT NULL
-         AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1')))
+         AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'),
+          toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), toIPv6('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')))
       )
 ORDER BY id
 LIMIT 20;
