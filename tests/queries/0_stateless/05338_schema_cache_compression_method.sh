@@ -180,3 +180,26 @@ FROM system.schema_inference_cache
 WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_secret%'
 SETTINGS schema_inference_use_cache_for_url=0
 "
+
+# Case N: Arbitrary custom credential header redaction in schema inference cache
+echo "Case N: Arbitrary custom credential header redaction"
+url_custom_secret="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_custom_secret"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_custom_secret', 'CSV', 'x UInt64', 'none', headers('X-Password' = 'super-secret-password-999', 'Custom-Auth-Token' = 'bearer-token-abc'))"
+$CLICKHOUSE_CLIENT -q "
+SELECT storage, format, headers LIKE '%super-secret%', headers LIKE '%bearer-token%', headers LIKE '%x-password%=%hash:%', headers LIKE '%custom-auth-token%=%hash:%'
+FROM system.schema_inference_cache
+WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_custom_secret%'
+SETTINGS schema_inference_use_cache_for_url=0
+"
+
+# Case O: Duplicate header order sensitivity in count()
+echo "Case O: Duplicate header order sensitivity count"
+url_dup="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_dup"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_dup', 'CSV', 'x UInt64', 'gzip', headers('Accept-Encoding' = 'identity', 'Accept-Encoding' = 'gzip'))"
+assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_dup', 'CSV', 'x UInt64', 'gzip', headers('Accept-Encoding' = 'gzip', 'Accept-Encoding' = 'identity'))"
+
+# Case P: Duplicate header order sensitivity in schema inference
+echo "Case P: Duplicate header order sensitivity schema inference"
+url_dup_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_dup_schema"
+$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_dup_schema', 'CSV', 'auto', 'gzip', headers('Accept-Encoding' = 'identity', 'Accept-Encoding' = 'gzip'))"
+assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_dup_schema', 'CSV', 'auto', 'gzip', headers('Accept-Encoding' = 'gzip', 'Accept-Encoding' = 'identity'))"

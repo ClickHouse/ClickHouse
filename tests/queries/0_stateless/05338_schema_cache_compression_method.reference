@@ -39,3 +39,12 @@ Case L: Header canonicalization reuse
 Case M: Secret header redaction
 50
 URL	CSV	0	1
+Case N: Arbitrary custom credential header redaction
+50
+URL	CSV	0	0	1	1
+Case O: Duplicate header order sensitivity count
+50
+CANNOT_DECOMPRESS
+Case P: Duplicate header order sensitivity schema inference
+c1	Nullable(Int64)
+CANNOT_DECOMPRESS

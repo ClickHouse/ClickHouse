@@ -196,21 +196,8 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
 
     auto is_ignorable = [](std::string_view name) -> bool
     {
-        if (name == "traceparent" || name == "tracestate"
-            || name == "x-request-id" || name == "request-id"
-            || name == "x-correlation-id" || name == "x-amzn-trace-id")
-            return true;
-        if (name.starts_with("x-b3-"))
-            return true;
-        return false;
-    };
-
-    auto is_sensitive = [](std::string_view name) -> bool
-    {
-        return name.contains("auth") || name.contains("token")
-            || name.contains("key") || name.contains("secret")
-            || name.contains("pass") || name.contains("cookie")
-            || name.contains("credential");
+        /// Ignore OpenTelemetry trace context headers auto-injected by ClickHouse downstream.
+        return name == "traceparent" || name == "tracestate";
     };
 
     auto trim = [](std::string_view s) -> std::string_view
@@ -222,7 +209,9 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
         return s;
     };
 
-    /// Use a map to enforce last-value-wins for duplicate headers as in HTTP transport
+    /// In Poco::Net::HTTPRequest::set (inherited from NameValueCollection::set), headers are
+    /// set with case-insensitive name matching where the LAST value for a given name wins.
+    /// We iterate in original appearance order and retain the last effective value for each normalized name.
     std::unordered_map<String, String> unique_headers;
 
     for (const auto & entry : headers)
@@ -241,22 +230,18 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
 
         auto trimmed_val = trim(entry.value);
 
-        if (is_sensitive(lower_name))
-        {
-            SipHash h;
-            h.update(trimmed_val.data(), trimmed_val.size());
-            UInt64 hash_val = h.get64();
-            unique_headers[lower_name] = "hash:" + getHexUIntLowercase(hash_val);
-        }
-        else
-        {
-            unique_headers[lower_name] = String(trimmed_val);
-        }
+        /// Every header value is unconditionally hashed using SipHash-64 to prevent any credential disclosure.
+        /// Plaintext credentials never appear in system.schema_inference_cache or internal cache keys.
+        SipHash h;
+        h.update(trimmed_val.data(), trimmed_val.size());
+        UInt64 hash_val = h.get64();
+        unique_headers[lower_name] = "hash:" + getHexUIntLowercase(hash_val);
     }
 
     if (unique_headers.empty())
         return "";
 
+    /// Sort unique header names lexicographically to ensure ordering invariance for distinct headers.
     std::vector<std::pair<String, String>> normalized(unique_headers.begin(), unique_headers.end());
     std::sort(normalized.begin(), normalized.end(), [](const auto & a, const auto & b)
     {
@@ -264,7 +249,7 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
     });
 
     /// Unambiguous length-delimited serialization: len(name):name=len(val):val;
-    /// Prevents delimiter injection collision when values contain semicolons or colons.
+    /// Prevents delimiter injection collisions when names or values contain delimiters.
     String result;
     for (const auto & [name, val] : normalized)
     {
