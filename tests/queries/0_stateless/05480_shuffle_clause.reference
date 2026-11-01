@@ -46,6 +46,5 @@ MergeTree
 100	100	0
 Plan
 Shuffle (Shuffle for SHUFFLE)
-│  Shuffle key: __shuffle_key ASC
 └──ReadFromMergeTree (default.t_shuffle)
 1

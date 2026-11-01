@@ -19,11 +19,11 @@ This is an experimental feature. Enable it with the setting [`allow_experimental
 
 ## Implementation details {#implementation-details}
 
-Every row is assigned a random key, in such a way that the keys are independent uniformly distributed random numbers and the shuffled rows are sorted by them. Without `LIMIT`, the rows are scattered into `max_threads` streams at random, every stream gets its own range of keys and is shuffled in parallel with the Fisher-Yates algorithm, and the streams are concatenated. With `LIMIT n`, every stream keeps the `n` rows with the smallest keys, and the streams are merged by the keys. Shuffled streams can be merged by the keys with O(1) memory, which is used for distributed queries: the remote servers shuffle their data, and the initiator merges the shuffled streams.
+The random choices are made just in time: no random values are generated or stored for the rows in advance. Without `LIMIT`, every row is sent to a random one of `max_threads` streams, every stream is shuffled in parallel with the Fisher-Yates algorithm (in parts that fit in the CPU cache), and the streams are concatenated. With `LIMIT n`, every stream keeps a uniformly random sample of `n` rows by reservoir sampling, which skips the rows that cannot get into the sample without looking at them, and the samples are merged: the number of rows taken from every stream is drawn as sampling without replacement from the numbers of rows of the streams. In a distributed query, the remote servers shuffle their data and attach sorted random keys to the rows, and the initiator merges the shuffled streams by the keys, which takes O(1) memory.
 
 Without `LIMIT`, `SHUFFLE` keeps all rows in memory. Unlike `ORDER BY`, it does not spill data to disk.
 
-`ORDER BY rand()` and `ORDER BY rand64()` are executed the same way as `SHUFFLE` (the setting [`query_plan_use_shuffle_for_order_by_rand`](/reference/settings/session-settings#query_plan_use_shuffle_for_order_by_rand)) when the random value is not used anywhere else in the query, and when there is a `LIMIT` not larger than four times `max_block_size` (with larger limits, the partial sorting is faster), or no `LIMIT` and the external sorting is disabled.
+`ORDER BY rand()` and `ORDER BY rand64()` are executed the same way as `SHUFFLE` (the setting [`query_plan_use_shuffle_for_order_by_rand`](/reference/settings/session-settings#query_plan_use_shuffle_for_order_by_rand)) when the random value is not used anywhere else in the query, and when there is a `LIMIT` or the external sorting is disabled.
 
 ## Examples {#examples}
 

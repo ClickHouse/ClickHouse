@@ -2,7 +2,6 @@
 #include <Planner/Planner.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
@@ -604,8 +603,8 @@ public:
 
         sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
 
-        /// `SHUFFLE` is planned as sorting by an internal key column with random values (see `addShuffleStep`).
-        /// The sort description is used to merge the shuffled streams, e.g. from remote servers.
+        /// The sort description of `SHUFFLE` is used to merge the shuffled streams from remote servers by the internal
+        /// key column, which is added only to the result of a shard (see `addShuffleStep`).
         if (query_node.isShuffle())
             sort_description.emplace_back(ShuffleStep::internal_key_column_name, 1, 1);
 
@@ -1456,34 +1455,29 @@ void addSortingStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(sorting_step));
 }
 
-/// `SHUFFLE`: add the internal key column and shuffle the rows by it.
-/// The values of the key column are filled by `ShuffleStep`, which returns a stream sorted by it,
-/// so it can be merged with other shuffled streams by `addMergeSortingStep`.
+/// `SHUFFLE`: shuffle the rows. The random choices are made just in time, no random values are stored for the rows.
+/// If the result is not final (it is sent from a shard to the initiator), `ShuffleStep` appends an internal key column
+/// with sorted random keys, so that the streams of the shards can be merged by `addMergeSortingStep`.
 void addShuffleStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const PlannerQueryProcessingInfo & query_processing_info)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    const String key_column_name = ShuffleStep::internal_key_column_name;
 
-    if (query_plan.getCurrentHeader()->has(key_column_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column name `{}` is reserved for `SHUFFLE`", key_column_name);
-
-    /// The values are replaced by `ShuffleStep`, but they have to be random already:
-    /// `ShuffleStep` may scatter the rows into streams by the hash of the key.
-    ActionsDAG key_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-    const auto & key_node = key_dag.addFunction(FunctionFactory::instance().get("rand64", query_context), {}, key_column_name);
-    key_dag.getOutputs().push_back(&key_node);
-
-    auto key_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(key_dag));
-    key_step->setStepDescription("Add key for SHUFFLE");
-    query_plan.addStep(std::move(key_step));
+    std::optional<ShuffleStep::Key> key;
+    if (query_processing_info.getToStage() != QueryProcessingStage::Complete)
+    {
+        const String key_column_name = ShuffleStep::internal_key_column_name;
+        if (query_plan.getCurrentHeader()->has(key_column_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column name `{}` is reserved for `SHUFFLE`", key_column_name);
+        key = ShuffleStep::Key{.column_name = key_column_name, .replace = false, .direction = 1};
+    }
 
     auto shuffle_step = std::make_unique<ShuffleStep>(
         query_plan.getCurrentHeader(),
-        key_column_name,
-        /*direction=*/1,
+        std::move(key),
         query_analysis_result.partial_sorting_limit,
         settings[Setting::max_block_size]);
     shuffle_step->setStepDescription("Shuffle for SHUFFLE");
@@ -1935,7 +1929,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     if (expressions_analysis_result.hasSort())
         addSortingStep(query_plan, query_analysis_result, planner_context);
     else if (query_node.isShuffle())
-        addShuffleStep(query_plan, query_analysis_result, planner_context);
+        addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -3474,7 +3468,7 @@ void Planner::buildPlanForQueryNode()
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
             else if (query_node.isShuffle())
-                addShuffleStep(query_plan, query_analysis_result, planner_context);
+                addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
             else
                 addSortingStep(query_plan, query_analysis_result, planner_context);
         }

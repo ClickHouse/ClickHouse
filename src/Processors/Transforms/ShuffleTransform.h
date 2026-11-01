@@ -1,108 +1,262 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/IProcessor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Common/PODArray.h>
 
+#include <deque>
+#include <optional>
 #include <pcg_random.hpp>
 
 
 namespace DB
 {
 
-/** Shuffles the rows of a single stream into a uniformly random order in O(n) time
-  * (unlike sorting by random numbers, which is O(n * log(n))).
+/** Processors of `SHUFFLE` (and of `ORDER BY rand()`), which return the rows in a uniformly random order in O(n) time.
   *
-  * The output is sorted by a key column. The values of this column are independent uniformly distributed
-  * random numbers assigned to the rows in sorted order, while the rows themselves are put in a uniformly random
-  * order. This has exactly the same distribution as generating a random key for every row and sorting the rows by it.
+  * The random choices are made just in time; no random values are stored for the rows:
   *
-  * Because of that:
-  * - streams shuffled this way (including the streams from remote servers) are merged by `MergingSortedTransform`
-  *   on the key column with O(1) memory, and the result is a uniformly random permutation of all rows;
-  * - `ORDER BY rand()` is executed by this transform, with the `rand()` column used as the key column
-  *   (its values are replaced by the new keys, which have the same distribution).
+  * - Full shuffle: the rows are scattered into parts at random (`ScatterByPartitionTransform::createRandom`), every part
+  *   is shuffled by `ShuffleTransform`, and the parts are concatenated by `ShuffleConcatTransform`. If every row goes into
+  *   a uniformly random part and every part is uniformly shuffled, the concatenation is a uniformly random permutation:
+  *   this is the same as sorting by independent uniformly random keys, with the part number as the high part of the key.
   *
-  * The key column must be of type `UInt64` or `UInt32` (as for `rand64` and `rand`), and its input values are ignored.
+  * - With `LIMIT n`: every stream is sampled by `ReservoirSampleTransform` (reservoir sampling), and the samples are merged
+  *   by `MergingShuffledTransform`, which draws the number of rows to take from every stream as sampling without
+  *   replacement from the populations of the streams.
   *
-  * Without a limit, the rows are scattered into buckets by a random bucket number (the high part of the key),
-  * then every bucket is shuffled by the Fisher-Yates algorithm and gets random keys (the low part of the key) in sorted
-  * order. The buckets are small enough to be shuffled in the CPU cache, and the memory usage is about the size of the data.
-  *
-  * To shuffle several streams in parallel without merging them, the rows are first scattered into `num_ranges` streams
-  * at random, and the stream number `range_index` gets the keys from the `range_index`-th of `num_ranges` equal ranges.
-  * Then the concatenation of the streams in the order of `range_index` is sorted by the key.
-  *
-  * If `limit` is not zero, only the rows with the `limit` smallest keys are kept, using O(limit) memory
-  * (reservoir sampling). Merging such streams with the same limit returns a uniformly random sample of `limit` rows
-  * in a uniformly random order.
+  * Sort keys are generated only if the result has to be sorted by them: for `ORDER BY rand()` (the `rand()` column must
+  * be sorted) and for the output of a shard of a distributed query, which is merged by the key on the initiator.
+  * The keys are generated in sorted order and have the distribution of sorted independent uniformly random numbers,
+  * so the result is exactly as if the rows were sorted by random keys.
   */
-class PartialShuffleTransform final : public IAccumulatingTransform
+
+/// The number of rows of a sample of a stream, or of the stream itself: the population.
+/// Attached to the chunks of the samples, to merge them.
+struct ShuffledChunkInfo final : public ChunkInfoCloneable<ShuffledChunkInfo>
+{
+    explicit ShuffledChunkInfo(UInt64 population_) : population(population_) {}
+    ShuffledChunkInfo(const ShuffledChunkInfo &) = default;
+
+    UInt64 population = 0;
+};
+
+/// Where to put the generated sort keys.
+struct ShuffleKeyDescription
+{
+    /// Position of the key column in the output header.
+    size_t position = 0;
+    /// The key column exists in the input (its values are replaced, e.g. the `rand()` column), otherwise it is appended.
+    bool replace = false;
+    /// 1 for ascending order of keys, -1 for descending.
+    int direction = 1;
+};
+
+/// Generates sorted random keys for a sequence of rows: either for the `index`-th of `count` equal ranges of keys
+/// (the rows of a part of a full shuffle), or for the smallest of `population` random keys (a sample with `LIMIT`).
+class ShuffleKeyGenerator
 {
 public:
-    /// `direction` is 1 if the output should be sorted by the key column ascending, -1 - descending.
-    PartialShuffleTransform(
-        SharedHeader header,
-        size_t key_position_,
-        int direction_,
-        UInt64 limit_,
-        size_t max_block_size_,
-        size_t range_index_ = 0,
-        size_t num_ranges_ = 1);
+    ShuffleKeyGenerator(const DataTypePtr & type, int direction_);
 
-    String getName() const override { return "PartialShuffleTransform"; }
+    /// `num_rows` independent uniformly random keys in [index / count, (index + 1) / count) of the range of keys, sorted.
+    ColumnPtr generateInRange(pcg64 & rng, size_t num_rows, size_t index, size_t count) const;
+
+    /// The next `num_rows` of the sorted keys of `population` independent uniformly random keys.
+    ColumnPtr generateNextOrderStatistics(pcg64 & rng, size_t num_rows, UInt64 population);
+
+private:
+    ColumnPtr makeColumn(const PaddedPODArray<UInt64> & keys) const;
+
+    bool is_uint32 = false;
+    int direction = 1;
+
+    /// For order statistics: 1 - the last generated key (as a fraction of the range), and the number of generated keys.
+    double remaining_fraction = 1.0;
+    UInt64 num_generated = 0;
+};
+
+/// Shuffles all rows of a stream: scatters them into buckets by a random bucket number, and shuffles every bucket
+/// by the Fisher-Yates algorithm in the CPU cache. The memory usage is about the size of the data.
+/// If `key` is set, fills the key column of the output with sorted keys of the range `range_index` of `num_ranges`.
+class ShuffleTransform final : public IAccumulatingTransform
+{
+public:
+    ShuffleTransform(
+        SharedHeader input_header,
+        SharedHeader output_header,
+        std::optional<ShuffleKeyDescription> key_,
+        size_t max_block_size_,
+        size_t range_index_,
+        size_t num_ranges_);
+
+    String getName() const override { return "ShuffleTransform"; }
 
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;
 
 private:
-    using Keys = PaddedPODArray<UInt64>;
-
-    void consumeWithLimit(const Columns & columns, size_t num_rows);
-    void pruneReservoir();
-    UInt64 sampleRowsToSkip();
-
-    void prepareResult();
-    void prepareResultWithLimit();
     void scatterIntoBuckets();
     bool prepareNextBucket();
 
-    ColumnPtr makeKeyColumn(size_t offset, size_t length) const;
-
-    const size_t key_position;
-    const int direction;
-    const UInt64 limit;
+    const std::optional<ShuffleKeyDescription> key;
     const size_t max_block_size;
     const size_t range_index;
     const size_t num_ranges;
-    const bool is_key_uint32;
+    std::optional<ShuffleKeyGenerator> key_generator;
 
     pcg64 rng;
 
-    /// The template of the accumulated columns. The key column and constant columns are not accumulated (they are nullptr).
+    /// The template of the accumulated columns (by the input positions). Constant columns and the replaced key column
+    /// are not accumulated (they are nullptr).
     Columns empty_columns;
     size_t accumulated_rows = 0;
-
-    /// Without limit: the input chunks, which are scattered into buckets at the end.
     std::vector<Columns> chunks;
+
     std::vector<MutableColumns> buckets;
     std::vector<size_t> bucket_rows;
+    size_t num_buckets = 0;
     size_t next_bucket = 0;
 
-    /// With limit: the accumulated rows, the internal random key of every row, and the threshold:
-    /// a row with a key not less than the threshold cannot be among the rows with the `limit` smallest keys.
-    MutableColumns accumulated_columns;
-    Keys reservoir_keys;
-    UInt64 threshold;
-    /// The number of the next rows that are skipped because their keys are not less than the threshold.
-    UInt64 rows_to_skip = 0;
-
-    /// The rows which are being returned: shuffled columns and their sorted internal keys.
-    bool result_prepared = false;
+    bool buckets_prepared = false;
     Columns part_columns;
-    Keys part_keys;
+    ColumnPtr part_key;
+    size_t part_rows = 0;
     size_t part_offset = 0;
+};
+
+/// Reservoir sampling (Algorithm L by Kim-Hung Li): keeps a uniformly random sample of `limit` rows of a stream,
+/// generating O(limit * log(n / limit)) random numbers for a stream of n rows - the rows which cannot get into the sample
+/// are skipped without looking at them. Returns the sample in a uniformly random order, with `ShuffledChunkInfo`.
+class ReservoirSampleTransform final : public IAccumulatingTransform
+{
+public:
+    ReservoirSampleTransform(SharedHeader header, UInt64 limit_, size_t max_block_size_);
+
+    String getName() const override { return "ReservoirSampleTransform"; }
+
+protected:
+    void consume(Chunk chunk) override;
+    Chunk generate() override;
+
+private:
+    double randomUnit();
+    void advance();
+    void compact();
+
+    const UInt64 limit;
+    const size_t max_block_size;
+
+    pcg64 rng;
+
+    /// The template of the stored columns (nullptr for constant columns).
+    Columns empty_columns;
+    /// The rows are appended; `slots` are the positions of the rows of the sample. Replaced rows are removed by compaction.
+    MutableColumns data;
+    size_t data_rows = 0;
+    PaddedPODArray<UInt64> slots;
+
+    /// The number of rows of the stream seen so far, the index of the next row to take into the sample, and the parameter
+    /// of Algorithm L.
+    UInt64 num_seen = 0;
+    UInt64 next_index = 0;
+    double w = 0;
+
+    bool generated_prepared = false;
+    size_t output_offset = 0;
+};
+
+/// Merges uniformly random samples of streams (in uniformly random order, with `ShuffledChunkInfo`) into a uniformly random
+/// sample of the union of the streams of at most `limit` rows (all rows if `limit` is 0), in a uniformly random order.
+/// For every output block, the number of rows to take from every stream is drawn as sampling without replacement
+/// from the populations of the streams, these rows are concatenated and shuffled. Used with `LIMIT`.
+class MergingShuffledTransform final : public IProcessor
+{
+public:
+    MergingShuffledTransform(SharedHeader header, size_t num_inputs, UInt64 limit_, size_t max_block_size_);
+
+    String getName() const override { return "MergingShuffledTransform"; }
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    struct Input
+    {
+        std::deque<Chunk> chunks;
+        size_t offset = 0;
+        size_t buffered_rows = 0;
+        std::optional<UInt64> population;
+        UInt64 remaining_population = 0;
+        size_t to_take = 0;
+        bool finished = false;
+    };
+
+    void drawCounts();
+    Chunk buildBlock();
+
+    const UInt64 limit;
+    const size_t max_block_size;
+
+    pcg64 rng;
+
+    std::vector<Input> inputs_state;
+    bool populations_known = false;
+    UInt64 total_population = 0;
+    UInt64 remaining_output = 0;
+    UInt64 remaining_population = 0;
+
+    bool counts_drawn = false;
+    Chunk output_chunk;
+};
+
+/// Concatenates the streams in the order of the inputs. Unlike `ConcatProcessor`, reads all inputs at the same time,
+/// so that the scatter in front of the shuffle of the parts is not stuck.
+class ShuffleConcatTransform final : public IProcessor
+{
+public:
+    ShuffleConcatTransform(SharedHeader header, size_t num_inputs);
+
+    String getName() const override { return "ShuffleConcatTransform"; }
+
+    Status prepare() override;
+
+private:
+    std::vector<std::deque<Chunk>> queues;
+    size_t current_input = 0;
+};
+
+/// Fills the key column with sorted keys for a sample (with `ShuffledChunkInfo`): the smallest of `population` random keys.
+class FillShuffleKeyTransform final : public ISimpleTransform
+{
+public:
+    FillShuffleKeyTransform(SharedHeader input_header, SharedHeader output_header, ShuffleKeyDescription key_);
+
+    String getName() const override { return "FillShuffleKeyTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override;
+
+private:
+    const ShuffleKeyDescription key;
+    ShuffleKeyGenerator key_generator;
+    pcg64 rng;
+};
+
+/// Appends a column with zeros: the key column for the totals and extremes, which are not shuffled.
+class AppendShuffleKeyTransform final : public ISimpleTransform
+{
+public:
+    AppendShuffleKeyTransform(SharedHeader input_header, SharedHeader output_header);
+
+    String getName() const override { return "AppendShuffleKeyTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override;
 };
 
 }

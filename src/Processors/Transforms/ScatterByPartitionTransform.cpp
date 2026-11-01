@@ -8,6 +8,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 #include <Common/PODArray.h>
+#include <Common/randomSeed.h>
 
 #include <algorithm>
 
@@ -39,6 +40,13 @@ std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::create
 {
     auto transform = std::make_shared<ScatterByPartitionTransform>(std::move(header), output_size_, ColumnNumbers{});
     transform->round_robin_bucket = start_bucket % output_size_;
+    return transform;
+}
+
+std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRandom(SharedHeader header, size_t output_size_)
+{
+    auto transform = std::make_shared<ScatterByPartitionTransform>(std::move(header), output_size_, ColumnNumbers{});
+    transform->random_generator = std::make_unique<pcg64>(randomSeed());
     return transform;
 }
 
@@ -169,6 +177,32 @@ void ScatterByPartitionTransform::generateOutputChunks()
     {
         for (auto & output_chunk : output_chunks)
             output_chunk = chunk.clone();
+        return;
+    }
+
+    if (random_generator && num_rows > 0)
+    {
+        /// A uniformly random output for every row (the bias of the multiply-shift reduction is negligible).
+        selector.resize(num_rows);
+        for (auto & output_index : selector)
+            output_index = static_cast<UInt64>((static_cast<unsigned __int128>((*random_generator)()) * output_size) >> 64);
+
+        for (const auto & column : columns)
+        {
+            auto filtered_columns = column->scatter(output_size, selector);
+            for (size_t i = 0; i < output_size; ++i)
+                output_chunks[i].addColumn(std::move(filtered_columns[i]));
+        }
+
+        /// A chunk without columns: only the number of rows matters.
+        if (columns.empty())
+        {
+            std::vector<size_t> counts(output_size);
+            for (auto output_index : selector)
+                ++counts[output_index];
+            for (size_t i = 0; i < output_size; ++i)
+                output_chunks[i] = Chunk(Columns{}, counts[i]);
+        }
         return;
     }
 

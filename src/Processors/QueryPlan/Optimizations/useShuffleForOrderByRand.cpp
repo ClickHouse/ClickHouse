@@ -16,7 +16,7 @@ namespace DB::QueryPlanOptimizations
 /// Replace the full sorting by a column calculated as `rand()` or `rand64()` with `ShuffleStep`.
 ///
 /// `ShuffleStep` returns the rows in a uniformly random order in O(n), and fills the key column with
-/// independent random values of the same type in sorted order. This has exactly the same distribution
+/// sorted random keys, which have the distribution of sorted independent random values of the same type. This has exactly the same distribution
 /// as calculating `rand()` for every row and sorting by it. The output is sorted by the key column,
 /// so the merging of sorted streams (e.g. from remote servers) is not affected.
 ///
@@ -41,11 +41,6 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
 
     /// Without a limit, the shuffle keeps all rows in memory, and it does not spill to disk as the sorting does.
     if (!limit && (sort_settings.max_bytes_in_block_before_external_sort || sort_settings.max_bytes_in_query_before_external_sort))
-        return;
-
-    /// With a large limit, every stream keeps and sorts `limit` rows, and the partial sorting is faster
-    /// (with 100 million rows in 16 streams, the shuffle is faster up to `LIMIT 300000`, and slower with `LIMIT 1000000`).
-    if (limit > 4 * sort_settings.max_block_size)
         return;
 
     /// The limits for sorting are checked by the sorting transforms.
@@ -103,8 +98,7 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
 
     auto shuffle = std::make_unique<ShuffleStep>(
         sorting->getInputHeaders().front(),
-        key_column_name,
-        description.front().direction,
+        ShuffleStep::Key{.column_name = key_column_name, .replace = true, .direction = description.front().direction},
         limit,
         sort_settings.max_block_size);
     shuffle->setStepDescription("Shuffle for ORDER BY rand()");

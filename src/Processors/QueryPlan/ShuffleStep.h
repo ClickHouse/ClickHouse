@@ -7,27 +7,36 @@
 namespace DB
 {
 
-/** Returns the rows in a uniformly random order, as a single stream sorted by the key column.
-  * Used for the `SHUFFLE` clause (with an internal key column) and for `ORDER BY rand()` (with the `rand()` column as the key).
+/** Returns the rows in a uniformly random order as a single stream, in O(n) time (see `ShuffleTransform.h`).
+  * Used for the `SHUFFLE` clause and for `ORDER BY rand()`.
   *
-  * Every stream is shuffled by `PartialShuffleTransform` in O(n), which fills the key column with random keys
-  * in sorted order, and the streams are merged by the key column. See `PartialShuffleTransform` for details.
-  * The output can be merged with other streams processed this way (e.g. on remote servers) by `MergingSortedTransform`.
+  * Without a limit, the rows are scattered into `max_threads` parts at random, every part is shuffled, and the parts
+  * are concatenated. With a limit, every stream is sampled by reservoir sampling and the samples are merged, so only
+  * at least the first `limit` rows of the result are returned, as for `SortingStep`, using O(limit) memory.
   *
-  * If `limit` is not zero, only at least the first `limit` rows of the result are guaranteed to be correct,
-  * as for `SortingStep`, and the memory usage is O(limit).
+  * Optionally fills a key column with sorted random keys, so that the result is sorted by it:
+  * - for `ORDER BY rand()`, the existing `rand()` column is replaced;
+  * - for `SHUFFLE` processed on a shard of a distributed query, an internal key column is appended, and the initiator
+  *   merges the streams of the shards by it.
   */
 class ShuffleStep : public ITransformingStep
 {
 public:
-    /// The name of the internal key column for the `SHUFFLE` clause.
+    /// The name of the internal key column for the `SHUFFLE` clause on shards.
     static constexpr auto internal_key_column_name = "__shuffle_key";
 
-    /// `direction` is 1 if the output should be sorted by the key column ascending, -1 - descending.
+    struct Key
+    {
+        String column_name;
+        /// The column exists in the input and its values are replaced; otherwise a `UInt64` column is appended.
+        bool replace = false;
+        /// 1 if the output should be sorted by the key column ascending, -1 - descending.
+        int direction = 1;
+    };
+
     ShuffleStep(
         const SharedHeader & input_header,
-        String key_column_name_,
-        int direction_,
+        std::optional<Key> key_,
         UInt64 limit_,
         size_t max_block_size_);
 
@@ -38,19 +47,16 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const String & getKeyColumnName() const { return key_column_name; }
+    const std::optional<Key> & getKey() const { return key; }
     UInt64 getLimit() const { return limit; }
 
     QueryPlanStepPtr clone() const override;
     bool hasCorrelatedExpressions() const override { return false; }
 
 private:
-    void updateOutputHeader() override { output_header = input_headers.front(); }
+    void updateOutputHeader() override;
 
-    SortDescription getKeySortDescription() const;
-
-    const String key_column_name;
-    const int direction;
+    const std::optional<Key> key;
     const UInt64 limit;
     const size_t max_block_size;
 };

@@ -566,8 +566,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         for (const auto & descr : sorting_step->getSortDescription())
             required_columns[chain_top_header.getPositionByName(descr.column_name)] = true;
 
-    if (shuffle_step)
-        required_columns[chain_top_header.getPositionByName(shuffle_step->getKeyColumnName())] = true;
+    /// `SHUFFLE` needs no columns (the random choices are made just in time). For `ORDER BY rand()` the key column is kept,
+    /// because its values are replaced in place.
+    if (shuffle_step && shuffle_step->getKey() && shuffle_step->getKey()->replace)
+        required_columns[chain_top_header.getPositionByName(shuffle_step->getKey()->column_name)] = true;
 
     bool has_filter = false;
 
