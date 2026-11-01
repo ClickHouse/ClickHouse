@@ -5043,7 +5043,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            if (!scope_ptr->nullable_group_by_keys.empty() && scope_ptr->nullable_group_by_keys.contains(node))
+            if (scope_ptr->mayBeNullableGroupByKey(node) && scope_ptr->nullable_group_by_keys.contains(node))
             {
                 is_nullable_group_by_key_in_aggregate_function = true;
                 break;
@@ -5071,7 +5071,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
             {
-                auto it = scope_ptr->nullable_group_by_keys.find(node);
+                auto it = scope_ptr->mayBeNullableGroupByKey(node) ? scope_ptr->nullable_group_by_keys.find(node)
+                                                                   : scope_ptr->nullable_group_by_keys.end();
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
                     if (is_correlated_column_node)
@@ -5443,7 +5444,7 @@ bool convertNestedGroupByKeysToNullable(
 void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
 {
     for (const auto & key : group_by_keys)
-        scope.nullable_group_by_keys.emplace(key, key);
+        scope.addNullableGroupByKey(key, key);
 
     for (const auto & key : group_by_keys)
     {
@@ -5461,7 +5462,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
             if (converted)
             {
                 rerunFunctionResolve(key_with_converted_sub_keys->as<FunctionNode>(), scope.context);
-                scope.nullable_group_by_keys.emplace(std::move(key_with_converted_sub_keys), key);
+                scope.addNullableGroupByKey(std::move(key_with_converted_sub_keys), key);
             }
         }
 
@@ -5469,7 +5470,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
         {
             auto converted_key = key->clone();
             converted_key->convertToNullable();
-            scope.nullable_group_by_keys.emplace(std::move(converted_key), key);
+            scope.addNullableGroupByKey(std::move(converted_key), key);
         }
     }
 }

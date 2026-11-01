@@ -1,6 +1,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -272,6 +274,30 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
     aliases.node_to_remove_aliases.push_back(result.resolved_identifier);
 
     return result;
+}
+
+void IdentifierResolveScope::addNullableGroupByKey(QueryTreeNodePtr key_shape, const QueryTreeNodePtr & key)
+{
+    if (const auto * column_node = key_shape->as<ColumnNode>())
+        nullable_group_by_key_column_names.insert(column_node->getColumnName());
+    else if (const auto * function_node = key_shape->as<FunctionNode>())
+        nullable_group_by_key_function_names.insert(function_node->getFunctionName());
+
+    nullable_group_by_keys.emplace(std::move(key_shape), key);
+}
+
+bool IdentifierResolveScope::mayBeNullableGroupByKey(const QueryTreeNodePtr & node) const
+{
+    if (nullable_group_by_keys.empty())
+        return false;
+
+    /// Equal column nodes have equal names, and equal function nodes have equal function names.
+    if (const auto * column_node = node->as<ColumnNode>())
+        return nullable_group_by_key_column_names.contains(column_node->getColumnName());
+    if (const auto * function_node = node->as<FunctionNode>())
+        return nullable_group_by_key_function_names.contains(function_node->getFunctionName());
+
+    return true;
 }
 
 void IdentifierResolveScope::tryCacheIdentifier(

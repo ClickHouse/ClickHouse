@@ -205,6 +205,19 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
+    /** The names of the column nodes and the function nodes among the shapes in `nullable_group_by_keys`.
+      * A lookup in `nullable_group_by_keys` computes the tree hash of the node, which also covers the sources
+      * of its columns, so the column and function nodes with other names are rejected without it.
+      * Use `addNullableGroupByKey` to keep them in sync.
+      */
+    std::unordered_set<std::string> nullable_group_by_key_column_names;
+    std::unordered_set<std::string> nullable_group_by_key_function_names;
+
+    void addNullableGroupByKey(QueryTreeNodePtr key_shape, const QueryTreeNodePtr & key);
+
+    /// False if `node` is certainly not in `nullable_group_by_keys`; it does not compute the tree hash.
+    bool mayBeNullableGroupByKey(const QueryTreeNodePtr & node) const;
+
     /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
     QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
 
