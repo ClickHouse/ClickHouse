@@ -1,0 +1,89 @@
+---
+slug: /cloud/managed-postgres/walshadow
+sidebarTitle: 'WalShadow'
+title: 'المزامنة إلى ClickHouse باستخدام WalShadow'
+description: 'انسخ بيانات Postgres إلى ClickHouse باستخدام WalShadow، وهو محرك نسخ متماثل أصلي يقرأ مباشرةً من سجل WAL في PostgreSQL'
+keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'walshadow', 'wal', 'data sync']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+`WalShadow` هو محرك نسخ متماثل أصلي (native) لـ ClickHouse Managed Postgres يقرأ مباشرةً من سجل الكتابة المسبقة (WAL) في PostgreSQL. وهو مُحسَّن لتقليل زمن الاستجابة ولأحمال العمل عالية الإنتاجية، إذ يحقق تأخّر نسخ متماثل أقل من ثانية واحدة من Postgres إلى ClickHouse. ويجري تطويره بشكل مفتوح المصدر على [ClickHouse/walshadow](https://github.com/ClickHouse/walshadow).
+
+`WalShadow` هو إحدى طريقتَي النسخ المتماثل المتاحتين ضمن **Sync to ClickHouse**. أما الأخرى، [ClickPipes](/ar/cloud/managed-postgres/clickpipes)، فهي خط أنابيب بيانات مُدار بالكامل. اختر `WalShadow` عندما تحتاج إلى أدنى زمن استجابة وأقل عبء نسخ متماثل.
+
+عند توفّر `WalShadow` لخدمتك، تظهر لافتة **Private Preview** في صفحة **Overview**. انقر على **Configure WalShadow** للبدء.
+
+<Image img="/images/managed-postgres/walshadow/overview-banner.webp" alt="صفحة نظرة عامة على خدمة Postgres تعرض لافتة المعاينة الخاصة لـ WalShadow مع روابط معرفة المزيد وتهيئة WalShadow" size="md" border />
+
+<Note>
+  قبل المتابعة، تأكد من أن خدمة Postgres لديك قابلة للوصول من ClickHouse. يتصل `WalShadow` بخدمة ClickHouse الوجهة مباشرةً، لذا ستحتاج إلى مستخدم ClickHouse وكلمة مرور يمتلكان صلاحية إنشاء قواعد البيانات والجداول.
+</Note>
+
+لإعداد النسخ المتماثل، انقر على **Sync to ClickHouse** في الشريط الجانبي لمثيل Postgres لديك، ثم انقر على **Replicate data in ClickHouse**.
+
+<Image img="/images/managed-postgres/walshadow/sync-landing.webp" alt="صفحة الوصول الخاصة بـ Sync to ClickHouse تعرض طريقتَي النسخ المتماثل ClickPipes وWalShadow" size="md" border />
+
+<Steps>
+  <Step title="اختيار محرك النسخ المتماثل" id="select-replication-engine">
+    اختر **WalShadow** كمحرك للنسخ المتماثل، ثم انقر على **Next**.
+
+    <Image img="/images/managed-postgres/walshadow/select-engine.webp" alt="خطوة اختيار محرك النسخ المتماثل تعرض خياري ClickPipes وWalShadow مع تحديد WalShadow" size="md" border />
+  </Step>
+
+  <Step title="تهيئة خدمة النسخ المتماثل" id="configure-replication-service">
+    املأ إعدادات النسخ المتماثل:
+
+    * **خدمة ClickHouse**: اختر خدمة ClickHouse موجودة أو أنشئ واحدة جديدة
+    * **Postgres database**: اختر قاعدة البيانات المصدر التي سيجري النسخ المتماثل منها، أو أنشئ واحدة جديدة
+    * **طريقة النسخ المتماثل**: اختر أحد الخيارات التالية:
+      * **Initial load + CDC**: استيراد البيانات الموجودة وإبقاء الجداول محدَّثة بالتغييرات الجديدة (موصى به)
+      * **Initial load only**: استيراد لمرة واحدة للبيانات الموجودة دون أي تحديثات مستمرة
+      * **CDC only**: تخطي الاستيراد الأولي والاكتفاء بالتقاط التغييرات الجديدة من هذه النقطة فصاعدًا
+
+    <Image img="/images/managed-postgres/walshadow/configure-service.webp" alt="خطوة تهيئة خدمة النسخ المتماثل تعرض خيارات خدمة ClickHouse وقاعدة بيانات Postgres وطريقة النسخ المتماثل" size="md" border />
+
+    انقر على **Next** للمتابعة.
+  </Step>
+
+  <Step title="اختيار الجداول المراد نسخها" id="select-tables">
+    اختر قاعدة بيانات هدف وحدد الجداول التي تريد نسخها:
+
+    * **Destination database**: اختر قاعدة بيانات ClickHouse موجودة أو أنشئ واحدة جديدة
+    * **Tables**: وسّع كل schema واختر جداول فردية، أو فعّل **Select all tables**. ويمكنك لكل جدول تخصيص **Destination table name** وضبط **Column settings**.
+    * **مستخدم ClickHouse** و**ClickHouse password**: يتصل `WalShadow` بـ خدمة ClickHouse الهدف مباشرةً، لذا يحتاج إلى credentials تمتلك permission لإنشاء قاعدة البيانات الهدف والجداول.
+
+    <Image img="/images/managed-postgres/walshadow/select-tables.webp" alt="خطوة اختيار الجداول تعرض تحديد الـ schema والجداول وأسماء الجداول الهدف وcredentials الخاصة بـ ClickHouse" size="md" border />
+
+    انقر على **Replicate data to ClickHouse** لبدء النسخ المتماثل.
+  </Step>
+
+  <Step title="مراقبة WalShadow" id="monitor-walshadow">
+    بعد بدء النسخ المتماثل، يظهر `WalShadow` في صفحة **Sync to ClickHouse**. وتكون حالته **Creating** ريثما يجري تجهيز خط أنابيب بيانات وإعداد الـ initial load.
+
+    <Image img="/images/managed-postgres/walshadow/walshadow-creating.webp" alt="صفحة Sync to ClickHouse تعرض WalShadow في حالة Creating" size="md" border />
+
+    وبمجرد اكتمال التجهيز، تتغير الحالة إلى **Running**، وتعرض الصفحة metrics حية للنسخ المتماثل:
+
+    * **Status**: الحالة الراهنة لخط أنابيب بيانات (مثل `Running`)
+    * **Rows synced**: إجمالي عدد الصفوف المنسوخة إلى ClickHouse
+    * **Backfills pending**: عدد الجداول التي لا تزال بانتظار الـ initial load الخاص بها
+    * **Lag**: حجم بيانات WAL التي لم تُطبَّق بعد
+    * **Lag time**: مقدار تأخر الوجهة حاليًا عن Postgres
+    * **Uptime**: المدة التي ظل فيها خط أنابيب بيانات قيد التشغيل
+    * **Last updated**: وقت آخر تحديث للـ metrics
+
+    <Image img="/images/managed-postgres/walshadow/walshadow-running.webp" alt="صفحة Sync to ClickHouse تعرض WalShadow في حالة Running مع metrics الصفوف المتزامنة والتأخر ومدة التشغيل" size="md" border />
+  </Step>
+</Steps>
+
+## محاذير {#caveats}
+
+بعض الأمور التي ينبغي أخذها في الحسبان ما دام `WalShadow` في مرحلة Private Preview:
+
+* `WalShadow` واحد فقط لكل خدمة Postgres في الوقت الحالي.
+* العمليات (Operations) والمزيد من الـ metrics التفصيلية مدرجة ضمن خارطة الطريق (roadmap).

@@ -2,9 +2,9 @@
 -- vectorized 64-byte main loop of the AVX-512 (VPOPCNTDQ) kernel where available, not just its byte-wise tail. The
 -- AVX-512 and scalar kernels accumulate the same integer popcounts, so results are identical; this test checks the
 -- end-to-end search stays correct (exact top-k under a full-coverage shortlist, a high-recall shortlist, and self-match).
--- The codec is gated behind `allow_experimental_codecs`.
+-- The codec is gated behind `enable_quantized_codec`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization;
 -- the test harness randomizes the latter, which would shrink the shortlist and make the exact/recall checks flaky. Pin it.

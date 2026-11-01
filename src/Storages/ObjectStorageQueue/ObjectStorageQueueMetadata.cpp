@@ -10,11 +10,13 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -37,6 +39,12 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageQueueMetadataCacheSizeBytes;
     extern const Metric ObjectStorageQueueMetadataCacheSizeElements;
 };
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & ObjectStorageQueueNewestSeenTimestamp;
+    extern MetricFamily & ObjectStorageQueueNewestCommittedTimestamp;
+}
 
 namespace DB
 {
@@ -87,6 +95,11 @@ namespace
         return mode == ObjectStorageQueueMode::UNORDERED;
     }
 
+    bool isExclusive(ObjectStorageQueueMode mode)
+    {
+        return mode == ObjectStorageQueueMode::EXCLUSIVE;
+    }
+
     UInt128 getMetadataCacheKey(const std::string & path)
     {
         SipHash hash;
@@ -104,6 +117,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
+    size_t processing_state_cache_ttl_seconds_,
     size_t keeper_multiread_batch_size_,
     size_t metadata_cache_size_bytes_,
     size_t metadata_cache_size_elements_)
@@ -116,12 +130,13 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
-    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
+    , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
+    , processing_state_cache_ttl_seconds(processing_state_cache_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
@@ -154,11 +169,12 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     }
 
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, "
-        "result buckets num: {}, use persistent processing nodes: {}, "
+        log, "Mode: {}, buckets: {}, processing threads: {}, metadata_cache_size_bytes: {},"
+        "metadata_cache_size_elements: {}, result buckets num: {}, use persistent processing nodes: {}, "
         "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num,
+        table_metadata.processing_threads_num.load(), metadata_cache_size_bytes_,
+        metadata_cache_size_elements_, buckets_num,
         use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
 }
 
@@ -249,6 +265,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 bucketing_mode,
                 partitioning_mode,
@@ -262,9 +279,32 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                processing_state_cache_ttl_seconds,
+                zookeeper_name,
+                log);
+        case ObjectStorageQueueMode::EXCLUSIVE:
+            return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
+                path,
+                file_status,
+                table_metadata.loading_retries,
+                *metadata_ref_count,
+                *this,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
     }
+}
+
+bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
+{
+    std::lock_guard lock(exclusive_processing_paths_mutex);
+    return exclusive_processing_paths.insert(getMetadataCacheKey(path)).second;
+}
+
+void ObjectStorageQueueMetadata::releaseExclusiveProcessing(const std::string & path)
+{
+    std::lock_guard lock(exclusive_processing_paths_mutex);
+    exclusive_processing_paths.erase(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -530,6 +570,10 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         metadata_paths = ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num);
     }
+    else if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        metadata_paths = ObjectStorageQueueExclusiveFileMetadata::getMetadataPaths();
+    }
     else
     {
         metadata_paths = ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
@@ -617,6 +661,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
+                    noop,
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
@@ -708,6 +753,34 @@ namespace
             return info;
         }
     };
+}
+
+void ObjectStorageQueueMetadata::updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id)
+{
+    std::lock_guard lock(pipeline_lag_watermarks_mutex);
+    auto & watermarks = pipeline_lag_watermarks[storage_id.getFullTableName()];
+    if (timestamp > watermarks.newest_seen)
+    {
+        watermarks.newest_seen = timestamp;
+        DimensionalMetrics::set(
+            DimensionalMetrics::ObjectStorageQueueNewestSeenTimestamp,
+            {storage_id.getDatabaseName(), storage_id.getTableName()},
+            static_cast<double>(timestamp));
+    }
+}
+
+void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id)
+{
+    std::lock_guard lock(pipeline_lag_watermarks_mutex);
+    auto & watermarks = pipeline_lag_watermarks[storage_id.getFullTableName()];
+    if (timestamp > watermarks.newest_committed)
+    {
+        watermarks.newest_committed = timestamp;
+        DimensionalMetrics::set(
+            DimensionalMetrics::ObjectStorageQueueNewestCommittedTimestamp,
+            {storage_id.getDatabaseName(), storage_id.getTableName()},
+            static_cast<double>(timestamp));
+    }
 }
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
@@ -1481,6 +1554,8 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
             use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
             persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
+        if (change.name == "processing_state_cache_ttl_seconds")
+            processing_state_cache_ttl_seconds = change.value.safeGet<UInt64>();
     }
 }
 

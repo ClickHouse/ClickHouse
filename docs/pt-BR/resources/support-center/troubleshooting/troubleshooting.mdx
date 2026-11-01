@@ -187,7 +187,7 @@ Verifique:
    * Se você executar o ClickHouse no Docker em uma rede IPv6, certifique-se de que `network=host` esteja definido.
 
 2. Configurações do endpoint.
-   * Verifique as configurações [listen&#95;host](/pt-BR/reference/settings/server-settings/settings#listen_host) e [tcp&#95;port](/pt-BR/reference/settings/server-settings/settings#tcp_port).
+   * Verifique as configurações [listen&#95;host](/pt-BR/reference/settings/server-settings/settings/listen#listen_host) e [tcp&#95;port](/pt-BR/reference/settings/server-settings/settings/tcp-port#tcp_port).
    * Por padrão, o servidor ClickHouse aceita conexões apenas via localhost.
 
 3. Configurações do protocolo HTTP:
@@ -197,8 +197,8 @@ Verifique:
 4. Configurações de conexão segura.
 
    * Verifique:
-     * A configuração [tcp&#95;port&#95;secure](/pt-BR/reference/settings/server-settings/settings#tcp_port_secure).
-     * As configurações dos [certificados SSL](/pt-BR/reference/settings/server-settings/settings#openssl).
+     * A configuração [tcp&#95;port&#95;secure](/pt-BR/reference/settings/server-settings/settings/tcp-port#tcp_port_secure).
+     * As configurações dos [certificados SSL](/pt-BR/reference/settings/server-settings/settings/other#openssl).
    * Use os parâmetros corretos ao se conectar. Por exemplo, use o parâmetro `port_secure` com `clickhouse_client`.
 
 5. Configurações do usuário:

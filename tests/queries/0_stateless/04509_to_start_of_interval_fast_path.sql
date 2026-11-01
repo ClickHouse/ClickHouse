@@ -3,6 +3,9 @@
 -- since the epoch; other time zones and interval kinds take the generic path.
 
 -- Equivalence with the dedicated functions (which use the same rounding via a compile-time constant).
+-- Also covers the clamping of `DateTime64` arguments into a `DateTime` result, which happens in the legacy mode.
+SET to_start_of_interval_preserves_argument_type = 0;
+
 SELECT 'equivalence with dedicated functions';
 SELECT countIf(toStartOfInterval(t, INTERVAL 1 MINUTE) != toStartOfMinute(t))
      + countIf(toStartOfInterval(t, INTERVAL 5 MINUTE) != toStartOfFiveMinutes(t))
@@ -55,6 +58,9 @@ SELECT toStartOfInterval(toDateTime('2024-04-07 03:10:00', 'Australia/Lord_Howe'
 
 -- Values outside the lookup table (before 1900, after 2299): the offset is extrapolated there and can have
 -- a sub-minute component (`Asia/Kolkata` is +5:53:28 before 1906), so they must keep the generic path.
+-- Extended results are required here: the standard-precision result is a DateTime, and every value in these
+-- ranges saturates to a bound of it, which would compare equal on both sides whatever the rounding did.
+SET enable_extended_results_for_datetime_functions = 1;
 SELECT 'out of LUT range';
 SELECT countIf(toStartOfInterval(t, INTERVAL 1 MINUTE) != toStartOfMinute(t))
      + countIf(toStartOfInterval(t, INTERVAL 5 MINUTE) != toStartOfFiveMinutes(t))
@@ -67,8 +73,13 @@ SELECT countIf(toStartOfInterval(t, INTERVAL 1 MINUTE) != toStartOfMinute(t))
      + countIf(toStartOfInterval(t, INTERVAL 1 HOUR) != toStartOfHour(t))
 FROM (SELECT toDateTime64(arrayJoin([-2209000000., -3786749363., 16725303245., 10413800000.]) + number * 97.13, 3, 'Europe/Moscow') AS t FROM numbers(20000));
 
--- Pre-epoch DateTime64 values.
+-- Pre-epoch DateTime64 values. The rounded value is before the epoch, so the extended result keeps it and the
+-- standard-precision DateTime result saturates to the lower bound; both are asserted.
 SELECT 'pre-epoch';
+SELECT toStartOfInterval(toDateTime64('1969-12-31 23:59:58.123', 3, 'UTC'), INTERVAL 7 SECOND);
+SELECT toStartOfInterval(toDateTime64('1969-12-31 23:59:58.123', 3, 'UTC'), INTERVAL 5 MINUTE);
+SELECT toStartOfInterval(toDateTime64('1900-01-02 03:04:05.678', 3, 'Asia/Kolkata'), INTERVAL 15 MINUTE);
+SET enable_extended_results_for_datetime_functions = 0;
 SELECT toStartOfInterval(toDateTime64('1969-12-31 23:59:58.123', 3, 'UTC'), INTERVAL 7 SECOND);
 SELECT toStartOfInterval(toDateTime64('1969-12-31 23:59:58.123', 3, 'UTC'), INTERVAL 5 MINUTE);
 SELECT toStartOfInterval(toDateTime64('1900-01-02 03:04:05.678', 3, 'Asia/Kolkata'), INTERVAL 15 MINUTE);

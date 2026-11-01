@@ -7,10 +7,8 @@
 -- predicate first because its default 1% selectivity looks "more selective",
 -- ignoring that the Map column is ~500x more expensive to read.
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 0;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 SET use_statistics = 1;
 SET explain_query_plan_default = 'legacy';

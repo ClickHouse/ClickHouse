@@ -21,6 +21,7 @@ public:
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
     KindStack getKindStack() const override;
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -49,8 +50,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

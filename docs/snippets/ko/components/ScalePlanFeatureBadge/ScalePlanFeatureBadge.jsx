@@ -10,5 +10,4 @@ export const ScalePlanFeatureBadge = ({feature='이 기능', linking_verb_are = 
         </div>
     )
 }
-
 export default ScalePlanFeatureBadge;

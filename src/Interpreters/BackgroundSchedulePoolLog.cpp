@@ -1,6 +1,7 @@
 #include <Interpreters/BackgroundSchedulePoolLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -21,6 +22,8 @@ ColumnsDescription BackgroundSchedulePoolLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "Hostname of the server executing the query."},
+        {"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."},
+        {"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Event time with microseconds precision."},
@@ -48,6 +51,8 @@ void BackgroundSchedulePoolLogElement::appendToBlock(MutableColumns & columns) c
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

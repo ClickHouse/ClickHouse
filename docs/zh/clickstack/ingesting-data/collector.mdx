@@ -555,7 +555,7 @@ service:
   ### 使用异步插入
 </div>
 
-通常，当 collector 的吞吐量较低时，用户往往不得不发送更小的批次，但同时仍希望数据能以尽可能低的端到端延迟到达 ClickHouse。在这种情况下，当batch 处理器的 `timeout` 到期时，就会发送小批次。这可能会带来问题，此时就需要使用异步插入。如果你将数据发送到以 Gateway 角色运行的 ClickStack collector，这种情况通常较少见——由于它们充当聚合器，可以缓解这一问题——请参见 [Collector 角色](#collector-roles)。
+通常，当 collector 的吞吐量较低时，用户往往不得不发送更小的批次，但同时仍希望数据能以尽可能低的端到端延迟到达 ClickHouse。在这种情况下，当batch processor 的 `timeout` 到期时，就会发送小批次。这可能会带来问题，此时就需要使用异步插入。如果你将数据发送到以 Gateway 角色运行的 ClickStack collector，这种情况通常较少见——由于它们充当聚合器，可以缓解这一问题——请参见 [Collector 角色](#collector-roles)。
 
 如果无法保证使用大批次，可以通过 [异步插入](/zh/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) 将批处理交给 ClickHouse。启用异步插入后，数据会先写入缓冲区，随后再异步写入数据库存储。
 
@@ -565,7 +565,7 @@ service:
 
 要为 collector 启用异步插入，请在连接字符串中添加 `async_insert=1`。我们建议使用 `wait_for_async_insert=1` (默认值) 来获得投递保证——更多细节请参见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
 
-异步插入的数据会在 ClickHouse 缓冲区 flush 后写入。当超过 [`async_insert_max_data_size`](/zh/reference/settings/session-settings#async_insert_max_data_size) 时，或自第一次 `INSERT` 查询起经过 [`async_insert_busy_timeout_ms`](/zh/reference/settings/session-settings#async_insert_max_data_size) 毫秒后，就会发生这种情况。如果 `async_insert_stale_timeout_ms` 设置为非零值，则会在距离上一次查询经过 `async_insert_stale_timeout_ms milliseconds` 后写入数据。你可以调整这些设置来控制管道的端到端延迟。可用于调优缓冲区 flush 的更多设置记录在[这里](/zh/reference/settings/session-settings#async_insert)。通常，默认值已经足够合适。
+异步插入的数据会在 ClickHouse 缓冲区 flush 后写入。当超过 [`async_insert_max_data_size`](/zh/reference/settings/session-settings/async-insert#async_insert_max_data_size) 时，或自第一次 `INSERT` 查询起经过 [`async_insert_busy_timeout_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) 毫秒后，就会发生这种情况。如果 `async_insert_stale_timeout_ms` 设置为非零值，则会在距离上一次查询经过 `async_insert_stale_timeout_ms milliseconds` 后写入数据。你可以调整这些设置来控制管道的端到端延迟。可用于调优缓冲区 flush 的更多设置记录在[这里](/zh/reference/settings/session-settings/async-insert#async_insert)。通常，默认值已经足够合适。
 
 <Info>
   **考虑自适应异步插入**
@@ -573,7 +573,7 @@ service:
   如果只使用少量 agent、吞吐量较低，但对端到端延迟有严格要求，则[自适应异步插入](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)可能会有帮助。一般来说，它们并不适用于 ClickHouse 常见的高吞吐量可观测性用例。
 </Info>
 
-最后，使用异步插入时，之前与 ClickHouse 同步插入相关的去重行为默认不会启用。如有需要，请参见设置 [`async_insert_deduplicate`](/zh/reference/settings/session-settings#async_insert_deduplicate)。
+最后，使用异步插入时，之前与 ClickHouse 同步插入相关的去重行为默认不会启用。如有需要，请参见设置 [`async_insert_deduplicate`](/zh/reference/settings/session-settings/async-insert#async_insert_deduplicate)。
 
 有关如何配置此功能的完整细节，请参见这篇[文档页面](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)，或阅读这篇深入讲解的[博客文章](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
 

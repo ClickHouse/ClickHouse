@@ -21,12 +21,10 @@
       ]
     },
     {
-      "group": "네이티브 프로토콜",
+      "group": "native protocol",
       "pages": [
-        "ko/resources/develop-contribute/native-protocol/basics",
-        "ko/resources/develop-contribute/native-protocol/client",
-        "ko/resources/develop-contribute/native-protocol/server",
-        "ko/resources/develop-contribute/native-protocol/columns",
+        "ko/resources/develop-contribute/native-protocol/protocol",
+        "ko/resources/develop-contribute/native-protocol/format",
         "ko/resources/develop-contribute/native-protocol/hash"
       ]
     },
@@ -46,11 +44,11 @@
     {
       "group": "통합 개발",
       "pages": [
+        "ko/resources/develop-contribute/integrations/index",
         "ko/resources/develop-contribute/integrations/building-integrations",
         "ko/resources/develop-contribute/integrations/testing-your-integration",
         "ko/resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "ko/resources/develop-contribute/integrations/index"
+      ]
     },
     {
       "group": "로드맵",

@@ -37,9 +37,6 @@
           "$ref": "./products/managed-postgres/navigation.json"
         },
         {
-          "$ref": "./clickstack/navigation.json"
-        },
-        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "Langfuse"
@@ -47,7 +44,10 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "오픈소스"
+          "item": "오픈 소스"
+        },
+        {
+          "$ref": "./clickstack/navigation.json"
         },
         {
           "$ref": "./products/agentic-data-stack/navigation.json"
@@ -66,7 +66,8 @@
         {
           "item": "생태계",
           "pages": [
-            "ko/integrations/home"
+            "ko/integrations/home",
+            "ko/integrations/data-catalogs"
           ]
         },
         {
@@ -96,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "리소스"
+      "tab": "자료"
     }
   ]
 }

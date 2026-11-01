@@ -5,8 +5,15 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
+#include <unordered_set>
+
 namespace DB
 {
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
+
+using MaterializedCTESet = std::unordered_set<MaterializedCTEPtr>;
 
 
 class MaterializingCTEStep : public ITransformingStep
@@ -103,6 +110,11 @@ public:
     /// recursive `buildSetInplace` claims the same CTE first).
     void optimizePlans(const QueryPlanOptimizationSettings & optimization_settings);
 
+    /// Drop the CTEs in `ctes_to_erase` from this step, so that it no longer
+    /// claims them. Returns true if the step is left owning nothing, i.e. the
+    /// node can be spliced out of the plan.
+    bool eraseCTEs(const MaterializedCTESet & ctes_to_erase);
+
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 
@@ -118,5 +130,17 @@ private:
 /// reader. Nested `DelayedCreatingSetsStep` source plans (held in
 /// `subqueries`, not in the immediate node tree) are not touched.
 void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan);
+
+/// Same as `removeAllDelayedMaterializingCTEsStep`, but restricted to the CTEs
+/// in `ctes_to_remove`: a step that also owns CTEs outside that set keeps those
+/// and stays in the plan. Used by `ReadFromMerge` and the parallel replicas local
+/// plan to stop a nested plan from claiming a CTE that the outer query references
+/// as well - see the comments at the call sites.
+void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedCTESet & ctes_to_remove);
+
+/// Every materialized CTE reachable from `node`. Pointer identity is what matters:
+/// all references to one CTE - including the ones a child plan resolves by name to
+/// the CTE's temporary `StorageMemory` - share the same `MaterializedCTE` object.
+MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node);
 
 }

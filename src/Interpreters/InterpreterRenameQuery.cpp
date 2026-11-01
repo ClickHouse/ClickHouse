@@ -45,7 +45,8 @@ BlockIO InterpreterRenameQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
+    if (!skip_access_check)
+        getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
     String current_database = getContext()->getCurrentDatabase();
 
@@ -90,6 +91,17 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 
     for (const auto & elem : descriptions)
     {
+        /// With the asynchronous loading of tables, a table is attached only by its load job, so wait
+        /// for the source and the destination before the existence checks below, the same way
+        /// `tryGetTable` does: otherwise a table that is still loading is treated as nonexistent.
+        auto wait_table_started = [&](const String & database_name, const String & table_name)
+        {
+            if (auto database = database_catalog.tryGetDatabase(database_name))
+                database->waitTableStarted(table_name);
+        };
+        wait_table_started(elem.from_database_name, elem.from_table_name);
+        wait_table_started(elem.to_database_name, elem.to_table_name);
+
         if (elem.if_exists)
         {
             chassert(!rename.exchange);
@@ -167,7 +179,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_mv*/ true);
-            from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
+            if (!keep_source_view_dependencies)
+                from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
         try
         {
@@ -248,6 +261,14 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     if (db)
     {
+        /// The database-level `DDLGuard` taken above only serializes this query against other
+        /// database-level DDL (`CREATE`, `DROP`, `RENAME DATABASE`). Table-level DDL takes the shared
+        /// side of `database_ddl_mutex`, so the exclusive side is what excludes a concurrent
+        /// `CREATE TABLE` / `ATTACH TABLE`: the rename re-keys every table of the database, and
+        /// `renameDatabase` validates and rewrites the exact set of tables it sees under this lock.
+        /// The same lock is held by `CREATE DATABASE` and `DROP DATABASE`.
+        auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
+
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
     }

@@ -55,7 +55,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
 **활성화**
 
-비동기 메트릭 로그 이력 수집 [`system.asynchronous_metric_log`](/ko/reference/system-tables/asynchronous_metric_log)을 수동으로 활성화하려면, 다음 내용으로 `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` 파일을 생성하십시오:
+`system.asynchronous_metric_log`의 비동기 메트릭 로그 이력 수집을 수동으로 활성화하려면 [시스템 테이블 참고](/ko/reference/system-tables/asynchronous_metric_log)를 확인하고, 다음 내용으로 `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` 파일을 생성하십시오:
 
 ```xml
 <clickhouse>

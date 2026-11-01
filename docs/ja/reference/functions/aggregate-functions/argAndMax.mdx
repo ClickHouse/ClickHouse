@@ -46,6 +46,15 @@ argAndMax(arg, val)
 **基本的な使い方**
 
 ```sql title=Query
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argAndMax(user, salary) FROM salary;
 ```
 

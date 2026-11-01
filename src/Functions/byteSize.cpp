@@ -31,9 +31,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt64>();
+        return "(...) -> UInt64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -100,7 +100,7 @@ SELECT byteSize('string')
         )",
         R"(
 ┌─byteSize('string')─┐
-│                 15 │
+│                 14 │
 └────────────────────┘
         )"
     },
@@ -111,7 +111,7 @@ SELECT byteSize(NULL, 1, 0.3, '')
         )",
         R"(
 ┌─byteSize(NULL, 1, 0.3, '')─┐
-│                         19 │
+│                         18 │
 └────────────────────────────┘
         )"
     }

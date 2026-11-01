@@ -1,0 +1,55 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+
+# `--interactive` together with `--query` or `--queries-file` runs the given queries as a batch
+# before the prompt is entered, so that prelude follows the batch contract of `--ignore-error`:
+# a failing statement is reported and the next one still runs.
+#
+# `Client::processConfig` used to read `ignore-error` only in its non-interactive branch, and a
+# delayed-interactive run on a terminal takes the other one. The option was dropped there, so the
+# prelude stopped at its first failing statement and the exit code of that statement ended the run
+# before the prompt was ever reached.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# --query
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --ignore-error --interactive --query \"SELECT throwIf(1); SELECT 'the prelude went on'\""
+expect "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO"
+expect "the prelude went on"
+expect ":) "
+send -- "SELECT 'and the prompt is reachable';\r"
+expect "and the prompt is reachable"
+expect ":) "
+send -- "exit\r"
+expect eof
+
+# --queries-file
+system "echo \"SELECT throwIf(1); SELECT 'the prelude went on'\" > $CLICKHOUSE_TMP/$basename.sql"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --ignore-error --interactive --queries-file $CLICKHOUSE_TMP/$basename.sql"
+expect "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO"
+expect "the prelude went on"
+expect ":) "
+send -- "SELECT 'and the prompt is reachable';\r"
+expect "and the prompt is reachable"
+expect ":) "
+send -- "exit\r"
+expect eof

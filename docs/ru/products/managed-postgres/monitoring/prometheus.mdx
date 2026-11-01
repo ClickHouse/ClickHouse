@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
 sidebarTitle: 'конечная точка Prometheus'
-title: Интеграция Managed Postgres с Prometheus
-description: 'Собирайте метрики Managed Postgres в Prometheus, Grafana, Datadog или любой коллектор, совместимый с OpenMetrics'
+title: 'Интеграция ClickHouse Managed Postgres с Prometheus'
+description: 'Собирайте метрики ClickHouse Managed Postgres в Prometheus, Grafana, Datadog или любой коллектор, совместимый с OpenMetrics'
 keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'метрики', 'openmetrics', 'обсервабилити']
 doc_type: 'guide'
 ---
@@ -14,17 +14,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
-Managed Postgres предоставляет две конечные точки метрик, совместимые с Prometheus,
+ClickHouse Managed Postgres предоставляет две конечные точки метрик, совместимые с Prometheus,
 в [ClickHouse Cloud API][cloud-api]:
 
-| Конечная точка | Путь                                                   | Возвращает                                               |
-| -------------- | ------------------------------------------------------ | -------------------------------------------------------- |
-| Организация    | `/v1/organizations/{orgId}/postgres/prometheus`        | Метрики для всех сервисов Managed Postgres в организации |
-| Экземпляр      | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Метрики для одного сервиса                               |
+| Конечная точка | Путь                                                   | Возвращает                                                          |
+| -------------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
+| Организация    | `/v1/organizations/{orgId}/postgres/prometheus`        | Метрики для всех сервисов ClickHouse Managed Postgres в организации |
+| Экземпляр      | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Метрики для одного сервиса                                          |
 
 <Note>
   Конечная точка на уровне организации возвращает метрики максимум для 100 сервисов. Если в вашей
-  организации более 100 сервисов Managed Postgres, [обратитесь в
+  организации более 100 сервисов ClickHouse Managed Postgres, [обратитесь в
   поддержку](https://clickhouse.com/support/program).
 </Note>
 
@@ -124,7 +124,7 @@ scrape_configs:
 долю откатов, активность кортежей, I/O, хранилище по отдельным базам
 данных и взаимные блокировки.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Панель мониторинга Grafana для сервисов Managed Postgres" size="md" border />
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Панель мониторинга Grafana для сервисов ClickHouse Managed Postgres" size="md" border />
 
 <div id="import-dashboard">
   ### Импорт панели мониторинга
@@ -179,8 +179,8 @@ provisioning для панелей мониторинга. Grafana сопост�
 ](/ru/products/cloud/features/monitoring/prometheus), поэтому описанные там конфигурации Grafana Cloud, Grafana
 Alloy и агента OpenMetrics для Datadog
 применимы и здесь. Укажите в `metrics_path` путь организации или
-экземпляра Managed Postgres вместо пути ClickHouse.
+экземпляра ClickHouse Managed Postgres вместо пути ClickHouse.
 
-[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+[cloud-api]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "Управление ключами API"

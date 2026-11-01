@@ -266,4 +266,10 @@ bool KeeperLogStore::hasCommitReaderForTests() const
     return changelog.hasCommitReaderForTests();
 }
 
+void KeeperLogStore::setForceSerialStartupReadForTesting(bool value)
+{
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    changelog.setForceSerialStartupReadForTesting(value);
+}
+
 }

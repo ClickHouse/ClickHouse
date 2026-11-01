@@ -12,16 +12,14 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، ويتم توليدها تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="max_replicated_fetches_network_bandwidth">
-  ## max_replicated_fetches_network_bandwidth
-</div>
+## max_replicated_fetches_network_bandwidth
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 يحدّ من السرعة القصوى لتبادل البيانات عبر الشبكة، بالبايت في
 الثانية، لعمليات [الجلب](/ar/reference/engines/table-engines/mergetree-family/replication)
 في النسخ المتماثل. يُطبَّق هذا الإعداد على جدول معيّن، بخلاف
-الإعداد [`max_replicated_fetches_network_bandwidth_for_server`](/ar/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+الإعداد [`max_replicated_fetches_network_bandwidth_for_server`](/ar/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 الذي يُطبَّق على الخادم.
 
 يمكنك تقييد كلٍّ من شبكة الخادم والشبكة الخاصة بجدول معيّن، ولكن لتحقيق
@@ -43,11 +41,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 يمكن استخدامه لتقييد السرعة عند نسخ البيانات لإضافة
 عُقد جديدة أو استبدالها.
 
-<div id="max_replicated_logs_to_keep">
-  ## max_replicated_logs_to_keep
-</div>
+## max_replicated_logs_to_keep
 
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
 عدد السجلات التي يمكن أن يحتوي عليها سجل ClickHouse Keeper إذا كانت هناك
 replica غير نشطة. وتُعد replica غير النشطة مفقودة عند تجاوز هذا العدد.
@@ -56,42 +52,34 @@ replica غير نشطة. وتُعد replica غير النشطة مفقودة ع�
 
 * أي عدد صحيح موجب.
 
-<div id="max_replicated_merges_in_queue">
-  ## max_replicated_merges_in_queue
-</div>
+## max_replicated_merges_in_queue
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 عدد مهام دمج الأجزاء وتعديلها المسموح بتنفيذها بالتزامن في قائمة انتظار ReplicatedMergeTree.
 
-<div id="max_replicated_merges_with_ttl_in_queue">
-  ## max_replicated_merges_with_ttl_in_queue
-</div>
+## max_replicated_merges_with_ttl_in_queue
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 عدد مهام دمج الأجزاء باستخدام TTL المسموح بتنفيذها بالتزامن في
 قائمة انتظار ReplicatedMergeTree.
 
-<div id="max_replicated_mutations_in_queue">
-  ## max_replicated_mutations_in_queue
-</div>
+## max_replicated_mutations_in_queue
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
 عدد مهام الأجزاء قيد التعديل المسموح بتنفيذها بالتزامن في
 قائمة انتظار ReplicatedMergeTree.
 
-<div id="max_replicated_sends_network_bandwidth">
-  ## max_replicated_sends_network_bandwidth
-</div>
+## max_replicated_sends_network_bandwidth
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 يحدّ من الحد الأقصى لسرعة تبادل البيانات عبر الشبكة، بالبايت في
-الثانية، لعمليات الإرسال [المكررة](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
+الثانية، لعمليات الإرسال [ذات النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
 ويُطبَّق هذا الإعداد على جدول معيّن، بخلاف
-إعداد [`max_replicated_sends_network_bandwidth_for_server`](/ar/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+إعداد [`max_replicated_sends_network_bandwidth_for_server`](/ar/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 الذي يُطبَّق على الخادم.
 
 يمكنك تقييد كلٍّ من شبكة الخادم والشبكة الخاصة بجدول معيّن، ولكن

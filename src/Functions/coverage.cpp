@@ -58,11 +58,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        if (kind == Kind::Files)
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+        return kind == Kind::Files ? "() -> Array(String)" : "() -> Array(UInt32)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -120,10 +118,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-    }
+    String getSignatureString() const override { return "() -> Array(UInt64)"; }
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto column = ColumnUInt64::create();

@@ -163,7 +163,7 @@ ORDER BY c DESC
 ```
 
 <Note>
-  Esse recurso é aproveitado pelo TTL quando a configuração [`ttl_only_drop_parts=1`](/pt-BR/reference/settings/merge-tree-settings#ttl_only_drop_parts) é usada. Consulte [Gerenciamento de dados com TTL](#data-management-with-ttl-time-to-live) para mais detalhes.
+  Esse recurso é aproveitado pelo TTL quando a configuração [`ttl_only_drop_parts=1`](/pt-BR/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) é usada. Consulte [Gerenciamento de dados com TTL](#data-management-with-ttl-time-to-live) para mais detalhes.
 </Note>
 
 <div id="applications">
@@ -221,7 +221,7 @@ Por padrão, os dados com TTL expirado são removidos quando o ClickHouse [mescl
   Os TTLs não são aplicados imediatamente, e sim de acordo com um agendamento, como observado acima. A configuração da tabela MergeTree `merge_with_ttl_timeout` define o intervalo mínimo, em segundos, antes de repetir uma mesclagem com TTL de exclusão. O valor padrão é 14400 segundos (4 horas). Mas esse é apenas o intervalo mínimo; a mesclagem de TTL pode demorar mais para ser acionada. Se o valor for muito baixo, muitas mesclagens fora do agendamento serão executadas, o que pode consumir muitos recursos. A expiração de um TTL pode ser forçada com o comando `ALTER TABLE my_table MATERIALIZE TTL`.
 </Info>
 
-**Importante: recomendamos usar a configuração [`ttl_only_drop_parts=1`](/pt-BR/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (aplicada pelo esquema padrão). Quando essa configuração está habilitada, o ClickHouse remove uma parte inteira quando todas as linhas nela tiverem expirado. Remover partes inteiras, em vez de limpar parcialmente linhas com TTL expirado (o que é feito por meio de mutações que consomem muitos recursos quando `ttl_only_drop_parts=0`), permite usar valores menores para `merge_with_ttl_timeout` e reduzir o impacto no desempenho do sistema. Se os dados estiverem particionados pela mesma unidade usada na expiração do TTL, por exemplo, dia, as partes naturalmente conterão apenas dados do intervalo definido. Isso garantirá que `ttl_only_drop_parts=1` possa ser aplicado com eficiência.
+**Importante: recomendamos usar a configuração [`ttl_only_drop_parts=1`](/pt-BR/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) ** (aplicada pelo esquema padrão). Quando essa configuração está habilitada, o ClickHouse remove uma parte inteira quando todas as linhas nela tiverem expirado. Remover partes inteiras, em vez de limpar parcialmente linhas com TTL expirado (o que é feito por meio de mutações que consomem muitos recursos quando `ttl_only_drop_parts=0`), permite usar valores menores para `merge_with_ttl_timeout` e reduzir o impacto no desempenho do sistema. Se os dados estiverem particionados pela mesma unidade usada na expiração do TTL, por exemplo, dia, as partes naturalmente conterão apenas dados do intervalo definido. Isso garantirá que `ttl_only_drop_parts=1` possa ser aplicado com eficiência.
 
 <div id="column-level-ttl">
   ### TTL em nível de coluna

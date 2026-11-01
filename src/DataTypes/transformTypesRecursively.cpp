@@ -1,23 +1,17 @@
 #include <DataTypes/transformTypesRecursively.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include <Common/Exception.h>
 
 #include <unordered_set>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 static TypeIndexesSet getTypesIndexes(const DataTypes & types)
 {
@@ -198,123 +192,155 @@ void transformTypesRecursively(
 namespace
 {
 
-/// Applies `callback` to the simple types nested in `type` and rebuilds the enclosing containers
-/// around any type the callback replaced. Returns nullptr when nothing was replaced, so an untouched
-/// subtree keeps its original type object together with its customizations (a custom name such as
-/// `Point`, a custom serialization).
-DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::function<void(DataTypePtr &)> & callback)
+bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
 {
-    DataTypePtr replacement;
+    for (size_t i = 0; i + 1 < alternatives.size(); ++i)
+        for (size_t j = i + 1; j < alternatives.size(); ++j)
+            if (alternatives[i]->equals(*alternatives[j]))
+                return true;
+    return false;
+}
 
-    if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+DataTypePtr replaceNestedTypesInPairImpl(
+    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool skip_custom_name)
+{
+    const WhichDataType left_which(left);
+    const WhichDataType right_which(right);
+
+    /// Neither wrapper hides a leaf, so a pair differing only by one of them still has to be walked.
+    if (right_which.isLowCardinality() && !left_which.isLowCardinality())
+        return replaceNestedTypesInPairImpl(left, removeLowCardinality(right), on_leaf, skip_custom_name);
+    if (right_which.isNullable() && !left_which.isNullable())
+        return replaceNestedTypesInPairImpl(left, removeNullable(right), on_leaf, skip_custom_name);
+
+    const bool descendable = left_which.isNullable() || left_which.isLowCardinality() || left_which.isArray()
+        || left_which.isMap() || left_which.isTuple() || left_which.isVariant();
+
+    if (!descendable)
+        return on_leaf(left, right);
+
+    /// Rebuilding below cannot keep the name, so hand back `right` whole, and only once the children clear:
+    /// restoring a customization over children that did not is how a relabel changes what a level means.
+    if (!skip_custom_name && (left->hasCustomName() || right->hasCustomName()) && left->getName() != right->getName())
     {
-        if (auto new_nested = replaceNestedSimpleTypes(type_nullable->getNestedType(), callback))
-            replacement = std::make_shared<DataTypeNullable>(new_nested);
+        if (!left->equals(*right))
+            return nullptr;
+        return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ true) ? right : nullptr;
     }
-    else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+
+    if (left_which.isNullable())
     {
-        if (auto new_nested = replaceNestedSimpleTypes(type_array->getNestedType(), callback))
+        const DataTypePtr left_nested = removeNullable(left);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, removeNullable(right), on_leaf, false);
+        if (!nested)
+            return nullptr;
+        return nested.get() == left_nested.get() ? left : makeNullable(nested);
+    }
+
+    if (left_which.isLowCardinality())
+    {
+        const DataTypePtr left_nested = removeLowCardinality(left);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, removeLowCardinality(right), on_leaf, false);
+        if (!nested)
+            return nullptr;
+        return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeLowCardinality>(nested);
+    }
+
+    if (left_which.isArray())
+    {
+        const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+        if (!right_array)
+            return nullptr;
+        const DataTypePtr left_nested = assert_cast<const DataTypeArray &>(*left).getNestedType();
+        auto nested = replaceNestedTypesInPairImpl(left_nested, right_array->getNestedType(), on_leaf, false);
+        if (!nested)
+            return nullptr;
+        return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeArray>(nested);
+    }
+
+    if (left_which.isMap())
+    {
+        const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+        if (!right_map)
+            return nullptr;
+        const auto & left_map = assert_cast<const DataTypeMap &>(*left);
+        auto key = replaceNestedTypesInPairImpl(left_map.getKeyType(), right_map->getKeyType(), on_leaf, false);
+        auto value = replaceNestedTypesInPairImpl(left_map.getValueType(), right_map->getValueType(), on_leaf, false);
+        if (!key || !value)
+            return nullptr;
+        if (key.get() == left_map.getKeyType().get() && value.get() == left_map.getValueType().get())
+            return left;
+        return std::make_shared<DataTypeMap>(key, value);
+    }
+
+    if (left_which.isTuple())
+    {
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+        const auto & left_tuple = assert_cast<const DataTypeTuple &>(*left);
+        if (!right_tuple || right_tuple->getElements().size() != left_tuple.getElements().size())
+            return nullptr;
+        /// `DataTypeTuple::equals` cannot see the naming mode (an anonymous tuple compares by its ordinal
+        /// names), while serialization does (`toJSONString` writes an object or an array), so a pair that
+        /// disagrees on it is not interchangeable whether or not a child moves.
+        if (right_tuple->hasExplicitNames() != left_tuple.hasExplicitNames())
+            return nullptr;
+        DataTypes elements;
+        elements.reserve(left_tuple.getElements().size());
+        bool moved = false;
+        for (size_t i = 0; i < left_tuple.getElements().size(); ++i)
         {
-            replacement = std::make_shared<DataTypeArray>(new_nested);
-
-            /// `Nested` semantics - `isNested`, subcolumn resolution, the printed name - key off the
-            /// custom name, so it must survive the rebuild.
-            if (isNested(type))
-            {
-                if (const auto * new_tuple = typeid_cast<const DataTypeTuple *>(new_nested.get()))
-                    replacement->setCustomization(std::make_unique<DataTypeCustomDesc>(
-                        std::make_unique<DataTypeNestedCustomName>(new_tuple->getElements(), new_tuple->getElementNames())));
-            }
+            auto nested = replaceNestedTypesInPairImpl(left_tuple.getElements()[i], right_tuple->getElements()[i], on_leaf, false);
+            if (!nested)
+                return nullptr;
+            moved |= nested.get() != left_tuple.getElements()[i].get();
+            elements.push_back(std::move(nested));
         }
-    }
-    else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        DataTypes new_elements = type_tuple->getElements();
-        bool any_replaced = false;
-        for (auto & element : new_elements)
-        {
-            if (auto new_element = replaceNestedSimpleTypes(element, callback))
-            {
-                element = new_element;
-                any_replaced = true;
-            }
-        }
-
-        if (any_replaced)
-        {
-            if (type_tuple->hasExplicitNames())
-                replacement = std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames());
-            else
-                replacement = std::make_shared<DataTypeTuple>(new_elements);
-        }
-    }
-    else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
-    {
-        auto new_key = replaceNestedSimpleTypes(type_map->getKeyType(), callback);
-        auto new_value = replaceNestedSimpleTypes(type_map->getValueType(), callback);
-        if (new_key || new_value)
-            replacement = std::make_shared<DataTypeMap>(
-                new_key ? new_key : type_map->getKeyType(), new_value ? new_value : type_map->getValueType());
-    }
-    else if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get()))
-    {
-        DataTypes new_variants = type_variant->getVariants();
-        bool any_replaced = false;
-        for (auto & variant : new_variants)
-        {
-            if (auto new_variant = replaceNestedSimpleTypes(variant, callback))
-            {
-                variant = new_variant;
-                any_replaced = true;
-            }
-        }
-
-        if (any_replaced)
-        {
-            /// A replacement changes a name (e.g. the alternative gains a version prefix), so two
-            /// alternatives that differed only in that name can collapse into one. Keeping the type
-            /// unreplaced instead would announce the wrong nested types (e.g. an aggregate function
-            /// state version other than the one the payload is written with), so this must be an
-            /// error, not a silent no-op.
-            std::unordered_set<String> names;
-            for (const auto & variant : new_variants)
-                if (!names.insert(variant->getName()).second)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot rewrite the nested types of {}: two of its alternatives would become the same type {}",
-                        type->getName(), variant->getName());
-
-            /// The default DataTypeVariant constructor re-sorts the alternatives by name, which after a
-            /// rename would silently permute the discriminators of an existing column. Keep the original
-            /// order.
-            replacement = std::make_shared<DataTypeVariant>(new_variants, DataTypeVariant::FixedDiscriminatorOrder{});
-        }
-    }
-    else
-    {
-        DataTypePtr maybe_replaced = type;
-        callback(maybe_replaced);
-        if (maybe_replaced != type)
-            replacement = maybe_replaced;
+        if (!moved)
+            return left;
+        if (left_tuple.hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, left_tuple.getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
     }
 
-    if (!replacement)
+    const auto * right_variant = typeid_cast<const DataTypeVariant *>(right.get());
+    const auto & left_variant = assert_cast<const DataTypeVariant &>(*left);
+    if (!right_variant || right_variant->getVariants().size() != left_variant.getVariants().size())
         return nullptr;
-
-    /// A custom name is part of the observable type, so a wrapper whose custom name cannot be
-    /// faithfully rebuilt (the callback is responsible for the custom names of the types it replaces)
-    /// is kept as it was rather than replaced with a type that lies about its name.
-    if (type->hasCustomName() && !replacement->hasCustomName())
+    DataTypes alternatives;
+    alternatives.reserve(left_variant.getVariants().size());
+    std::unordered_set<String> names;
+    bool moved = false;
+    for (size_t i = 0; i < left_variant.getVariants().size(); ++i)
+    {
+        auto nested = replaceNestedTypesInPairImpl(left_variant.getVariants()[i], right_variant->getVariants()[i], on_leaf, false);
+        if (!nested)
+            return nullptr;
+        /// A Variant holding one type twice has no unambiguous discriminator for it, and a replacement can
+        /// turn two alternatives that differed only in a name into the same type.
+        if (!names.insert(nested->getName()).second)
+            return nullptr;
+        moved |= nested.get() != left_variant.getVariants()[i].get();
+        alternatives.push_back(std::move(nested));
+    }
+    if (!moved)
+        return left;
+    /// Alternatives are paired by position, which is what `DataTypeVariant::equals` compares, but position
+    /// is only a canonical name order: once a side holds two alternatives that are `equals`-equal to each
+    /// other, several pairings satisfy `equals` and a replacement would announce one alternative's values
+    /// under another's. `allow_suspicious_variant_types` is what admits such a type in the first place.
+    if (hasEqualsAmbiguousAlternatives(left_variant.getVariants())
+        || hasEqualsAmbiguousAlternatives(right_variant->getVariants()))
         return nullptr;
-
-    return replacement;
+    /// The canonical constructor sorts alternatives by name and squashes equal ones, either of which would
+    /// renumber the discriminators the data was written with.
+    return std::make_shared<DataTypeVariant>(alternatives, DataTypeVariant::FixedDiscriminatorOrder{});
 }
 
 }
 
-void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
+DataTypePtr replaceNestedTypesInPair(const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf)
 {
-    if (auto replaced = replaceNestedSimpleTypes(type, callback))
-        type = replaced;
+    return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ false);
 }
 
 }

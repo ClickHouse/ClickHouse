@@ -17,11 +17,13 @@ Ce guide présente deux façons de gérer les utilisateurs de base de données :
 
 Les utilisateurs de la console SQL sont créés pour chaque session et authentifiés à l’aide de certificats X.509 renouvelés automatiquement. L’utilisateur est supprimé à la fin de la session. Lorsque vous générez des listes d’accès pour des audits, accédez à l’onglet Settings du service dans la console et tenez compte de l’accès à la console SQL en plus des utilisateurs de base de données existant dans la base de données. Si des rôles personnalisés sont configurés, l’accès de l’utilisateur figure dans le rôle dont le nom se termine par le nom d’utilisateur de cet utilisateur.
 
-<div id="sql-console-users-and-roles">
-  ## Utilisateurs et rôles de la console SQL
-</div>
+## Utilisateurs et rôles de la console SQL {#sql-console-users-and-roles}
 
-Les rôles de base de la console SQL peuvent être attribués aux utilisateurs disposant des permissions Service Read Only et Service Admin. Pour en savoir plus, consultez [Gérer les attributions de rôles de la console SQL](/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Ce guide montre comment créer un rôle personnalisé pour un utilisateur de la console SQL.
+Les rôles de base de la console SQL peuvent être attribués aux utilisateurs disposant des permissions Service Read Only et Service Admin. Pour en savoir plus, consultez [Gérer les utilisateurs cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). Ce guide montre comment créer un rôle personnalisé pour un utilisateur de la console SQL.
+
+<Tip>
+  Préférez les [rôles de base de données gérés par ClickHouse Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) pour gérer l’accès aux bases de données depuis la console. Les rôles `sql-console-role:<email>` ne sont pas compatibles avec les sessions JWT au sein de la console SQL.
+</Tip>
 
 Pour créer un rôle personnalisé pour un utilisateur de la console SQL et lui attribuer un rôle générique, exécutez les commandes suivantes. L’adresse e-mail doit correspondre à celle de l’utilisateur dans la console.
 
@@ -124,9 +126,7 @@ Nous vous recommandons de créer un nouveau compte utilisateur associé à une p
 
 Vous pouvez utiliser un générateur de hachage SHA256 ou une fonction telle que `hashlib` en Python pour convertir un mot de passe d’au moins 12 caractères, avec un niveau de complexité approprié, en chaîne SHA256, puis la fournir à l’administrateur système comme mot de passe. Cela garantit que l’administrateur ne voit pas les mots de passe en clair et ne les manipule pas.
 
-<div id="database-access-listings-with-sql-console-users">
-  ### Liste des accès à la base de données avec les utilisateurs de la console SQL
-</div>
+### Liste des accès à la base de données avec les utilisateurs de la console SQL {#database-access-listings-with-sql-console-users}
 
 Le processus suivant permet de générer une liste complète des accès dans la console SQL et les bases de données de votre organisation.
 
@@ -172,8 +172,6 @@ Le processus suivant permet de générer une liste complète des accès dans la 
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## Utilisateurs du Warehouse
-</div>
+## Utilisateurs du Warehouse {#warehouse-users}
 
 Les utilisateurs du Warehouse sont partagés entre les services d&#39;un même Warehouse. Pour plus d&#39;informations, consultez les [contrôles d&#39;accès du Warehouse](/fr/products/cloud/features/infrastructure/warehouses#access-controls).

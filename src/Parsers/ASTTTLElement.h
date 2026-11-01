@@ -46,6 +46,7 @@ public:
     String getID(char) const override { return "TTLElement"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 

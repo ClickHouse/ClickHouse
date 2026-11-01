@@ -105,19 +105,19 @@ SHOW  wal_level;
   ## 네트워크 액세스 구성
 </div>
 
-<Note>
-  ClickPipes는 Private Service Connect (PSC) 연결을 지원하지 않습니다. AlloyDB 인스턴스에 대한 공개 액세스를 허용하지 않는 경우, [SSH 터널을 사용](#configure-network-access)하여 안전하게 연결할 수 있습니다. PSC는 향후 지원될 예정입니다.
-</Note>
-
-다음으로, ClickPipes에서 AlloyDB 인스턴스로의 연결을 허용해야 합니다.
+다음으로, ClickPipes가 AlloyDB 인스턴스에 연결하는 방식을 선택합니다.
 
 <Tabs>
+  <Tab title="Private Service Connect 사용">
+    GCP에서 호스팅되는 ClickHouse Cloud 서비스의 프라이빗 연결을 구성하려면 [GCP Private Service Connect 가이드](/ko/integrations/clickpipes/networking/gcp-psc)에 따라 AlloyDB 인스턴스의 Reverse Private Endpoint를 구성합니다.
+  </Tab>
+
   <Tab title="ClickPipes IP 허용">
     1. Google Cloud Console에서 AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters) 페이지로 이동합니다. 프라이머리 인스턴스를 선택하여 **Overview** 페이지를 엽니다.
 
     2. 아래로 스크롤하여 **Instances in your cluster** 섹션으로 이동한 다음 **Edit primary**를 클릭합니다.
 
-    3. **Enable Public IP** 확인란을 선택하여 공용 인터넷을 통해 인스턴스에 연결할 수 있도록 합니다. **Authorized external networks** 아래에 서비스가 배포된 리전에 해당하는 [ClickPipes 정적 IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 입력합니다.
+    3. **Enable Public IP** 확인란을 선택하여 공용 인터넷을 통해 인스턴스에 연결할 수 있도록 합니다. **Authorized external networks** 아래에 서비스가 배포된 리전에 해당하는 [ClickPipes 정적 IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)을 입력합니다.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="IP 허용 목록을 사용해 공개 액세스를 위한 네트워킹 구성" size="lg" border />
 
@@ -137,7 +137,7 @@ SHOW  wal_level;
        * GCE 인스턴스가 AlloyDB 인스턴스와 동일한 Virtual Private Network (VPC)에 있는지 확인합니다.
        * GCE 인스턴스에 [고정 공용 IP 주소](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address)가 있는지 확인합니다. 이 IP 주소는 ClickPipes를 SSH 배스천 호스트에 연결할 때 사용합니다.
 
-    2. 서비스가 배포된 리전에 해당하는 [ClickPipes 정적 IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)에서 들어오는 트래픽을 허용하도록 SSH 배스천 호스트의 방화벽 규칙을 업데이트합니다.
+    2. 서비스가 배포된 리전에 해당하는 [ClickPipes 정적 IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)에서 들어오는 트래픽을 허용하도록 SSH 배스천 호스트의 방화벽 규칙을 업데이트합니다.
 
     3. SSH 배스천 호스트에서 들어오는 트래픽을 허용하도록 AlloyDB의 방화벽 규칙을 업데이트합니다.
   </Tab>

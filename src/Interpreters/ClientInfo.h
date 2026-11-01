@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/HTTPFieldLess.h>
 #include <Common/OpenTelemetryTracingContext.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Poco/Net/SocketAddress.h>
 
 /// On ppc64le, Poco's socket headers transitively include <termios.h>, which defines the CR1/CR2/CR3
@@ -53,6 +54,7 @@ public:
         PROMETHEUS = 8,
         BACKGROUND = 9, // e.g. queries from refreshable materialized views
         ARROW_FLIGHT = 10,
+        ICEBERG_REST_CATALOG = 11,
     };
 
     enum class HTTPMethod : uint8_t
@@ -101,11 +103,12 @@ public:
 
     Interface interface = Interface::TCP;
     bool is_secure = false;
+    /// The connection was accepted on the introspection port.
+    bool is_from_introspection_port = false;
     String certificate;
 
     /// For tcp
     String os_user;
-    String client_hostname;
     String client_name;
     /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
     /// detected from environment variables. Empty when no agent is detected.
@@ -204,12 +207,21 @@ public:
     /// already known or the connection version is not.
     void setClientVersionFromConnectionIfUnknown();
 
+    void setClientVersion(UInt64 client_version_major_, UInt64 client_version_minor_, UInt64 client_version_patch_, unsigned client_tcp_protocol_version_);
+
+    /// A query without a client-reported version (server-initiated, or from an interface such as HTTP
+    /// that does not send one) has this server as its initiator: fill in this server's version.
+    void setInitiatorVersionIfUnset();
+
     /// Initialize parameters related to HTTP request.
     void setFromHTTPRequest(const Poco::Net::HTTPRequest & request);
 
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
     String getVersionStr() const;
+
+    /// Hostname of the machine this `ClientInfo` describes.
+    const String & getClientHostName() const;
 
 private:
     struct ForwardedForCache;
@@ -219,8 +231,23 @@ private:
     mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
 
     void fillOSUserHostNameAndVersionInfo();
+
+    String client_hostname;
+    bool resolve_client_hostname_on_demand = false;
 };
 
 String toString(ClientInfo::Interface interface);
 String toString(ClientInfo::HTTPMethod method);
+
+/// Exactly the values of `ClientInfo::Interface`, for a column whose value this server sets itself.
+DataTypePtr getClientInterfaceEnum();
+/// The same values plus `Unknown`, for a column carrying the interface a client reported: `ClientInfo::read`
+/// accepts any byte off the wire, and an `Enum8` cannot render a value outside its own domain.
+DataTypePtr getReportedClientInterfaceEnum();
+/// Maps a reported interface into the domain of `getReportedClientInterfaceEnum`.
+Int8 reportedClientInterfaceEnumValue(ClientInfo::Interface interface);
+
+/// One type is enough here: `HTTPMethod::UNKNOWN` is an enumerator, so it is both the non-HTTP value and the fallback.
+DataTypePtr getClientHTTPMethodEnum();
+Int8 reportedClientHTTPMethodEnumValue(ClientInfo::HTTPMethod method);
 }

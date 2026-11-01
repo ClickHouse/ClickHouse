@@ -26,12 +26,19 @@ public:
 
     void markAsShardLimit() { is_shard_limit = true; }
 
+    QueryPlanStepPtr clone() const override;
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     bool hasCorrelatedExpressions() const override { return false; }
+
+    /// `LIMIT -n` returns the *last* `n` rows, and `addPreliminaryLimitStep` can push it to the shard, so
+    /// this step can be the replica-output boundary. It is a top-N taken from the tail, so like
+    /// `LimitStep` its output is replicated: every replica ships its own last `n` rows.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override

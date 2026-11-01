@@ -47,11 +47,13 @@ import SystemLogParameters from '/snippets/ar/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings).
+إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings/log-queries#log_queries).
 
 تُسجَّل الاستعلامات في جدول [system.query&#95;log](/ar/reference/system-tables/query_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول في المَعلمة `table` (انظر أدناه).
 
 <SystemLogParameters />
+
+تنشئ المَعلمة `enable_user_query_log` (المُمكّنة افتراضيًا) [`system.user_query_log`](/ar/reference/system-tables/user_query_log)، الذي يتيح لكل مستخدم الاطلاع على سجلاته الخاصة في جدول سجل الاستعلامات المُهيأ دون الحاجة إلى الوصول إلى الجدول نفسه. لا يعمل هذا إلا عندما يُخزَّن سجل الاستعلامات محليًا: إذا كان `engine` يفوّض التنفيذ إلى خادم آخر (على سبيل المثال، `Distributed`)، فعطّل `enable_user_query_log`، لأن `system.user_query_log` لا يمكنه فرض التحقق من الوصول لكل مستخدم عبر حدود خادم يعمل ببروتوكول ClickHouse، ويرفض القراءة من مثل هذه الواجهة الخلفية.
 
 إذا لم يكن الجدول موجودًا، فسينشئه ClickHouse. وإذا تغيّرت بنية سجل الاستعلامات عند تحديث خادم ClickHouse، فستُعاد تسمية الجدول ذي البنية القديمة، ويُنشأ جدول جديد تلقائيًا.
 
@@ -67,6 +69,7 @@ import SystemLogParameters from '/snippets/ar/_system-log-parameters.mdx';
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -146,7 +149,7 @@ import SystemLogParameters from '/snippets/ar/_system-log-parameters.mdx';
   ## query_thread_log
 </div>
 
-إعداد لتسجيل خيوط الاستعلامات المستلَمة عند استخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings#log_query_threads).
+إعداد لتسجيل خيوط الاستعلامات المستلَمة عند استخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings/log-query#log_query_threads).
 
 تُسجَّل الاستعلامات في جدول [system.query&#95;thread&#95;log](/ar/reference/system-tables/query_thread_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول في المعلَمة `table` (انظر أدناه).
 
@@ -173,7 +176,7 @@ import SystemLogParameters from '/snippets/ar/_system-log-parameters.mdx';
   ## query_views_log
 </div>
 
-إعداد لتسجيل طرق العرض (المباشرة، والمُجسَّدة، وما إلى ذلك) المرتبطة بالاستعلامات الواردة عند استخدام الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings#log_query_views).
+إعداد لتسجيل طرق العرض (المباشرة، والمُجسَّدة، وما إلى ذلك) المرتبطة بالاستعلامات الواردة عند استخدام الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings/log-query#log_query_views).
 
 تُسجَّل الاستعلامات في جدول [system.query&#95;views&#95;log](/ar/reference/system-tables/query_views_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول في المعلمة `table` (انظر أدناه).
 

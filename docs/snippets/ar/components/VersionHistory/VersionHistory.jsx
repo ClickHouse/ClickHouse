@@ -3,7 +3,7 @@ export const VersionHistory = ({ rows = [] }) => {
     return null;
   }
 
-  const headers = ["الإصدار", "القيمة الافتراضية", "ملاحظة"];
+  const headers = ["الإصدار", "القيمة الافتراضية", "التعليق"];
   const border = "1px solid rgba(128, 128, 128, 0.3)";
   const cell = {
     border,
@@ -52,5 +52,4 @@ export const VersionHistory = ({ rows = [] }) => {
     </details>
   );
 };
-
 export default VersionHistory;

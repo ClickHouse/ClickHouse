@@ -1,14 +1,19 @@
 ---
 sidebarTitle: 'Automatic idling'
 slug: /cloud/features/autoscaling/idling
-description: 'Automatic idling and adaptive idling in ClickHouse Cloud'
+description: 'Understand automatic idling costs, connection delays, and adaptive idling in ClickHouse Cloud'
 keywords: ['idling', 'automatic idling', 'adaptive idling', 'cost savings', 'pause']
 title: 'Automatic idling'
 doc_type: 'guide'
 ---
 
 ## Automatic idling {#automatic-idling}
-In the **Settings** page, you can also choose whether or not to allow automatic idling of your service when it is inactive for a certain duration (i.e. when the service isn't executing any user-submitted queries).  Automatic idling reduces the cost of your service, as you're not billed for compute resources when the service is paused.
+
+Automatic idling pauses a ClickHouse Cloud service after a period without user-submitted queries, subject to the [adaptive idling conditions](#adaptive-idling). You can enable automatic idling and configure the inactivity duration on the service's **Settings** page.
+
+## What is billed while the service is paused? {#billing-while-paused}
+
+You aren't billed for compute resources while the service is paused. Storage and backups continue to be billed; idling does not remove your stored data. See [pricing](/products/cloud/reference/billing/billing-overview) for billing details.
 
 <Warning>
 **Configure the IP access list for your service**
@@ -16,8 +21,22 @@ In the **Settings** page, you can also choose whether or not to allow automatic 
 When you create a ClickHouse Cloud service, the default setting for the IP allow list is 'Allow from anywhere.' We strongly recommend restricting access to specific IP addresses or ranges as soon as possible. Services set to `Allow from anywhere` may be periodically moved from an idle to an active state by internet crawlers and scanners that look for public IPs, which may result in unexpected costs.
 </Warning>
 
-### Adaptive Idling {#adaptive-idling}
- ClickHouse Cloud implements adaptive idling to prevent disruptions while optimizing cost savings. The system evaluates several conditions before transitioning a service to idle. Adaptive idling overrides the idling duration setting when any of the below listed conditions are met:
+## What happens when a client connects to a paused service? {#connecting-to-a-paused-service}
+
+A paused service must become active before it can respond to queries. Connections to the service can time out while it is paused. Applications using automatic idling need to tolerate this delay and handle connection timeouts. Test your client's timeout and retry behavior with an idle service before relying on automatic idling in production.
+
+<Danger>
+**When not to use automatic idling**
+
+Automatic idling is suitable for services that are used infrequently and can tolerate a delay before responding to queries. It isn't recommended for services that power customer-facing features that are used frequently. Disable automatic idling if your application cannot tolerate this delay.
+</Danger>
+
+## When can a service enter idle? {#adaptive-idling}
+
+ClickHouse Cloud implements adaptive idling to allow background maintenance to complete and to adjust the inactivity duration based on server initialization time. These conditions control **when an active service can pause**; the durations below aren't a prediction or guarantee of how long a client will wait when connecting to a paused service.
+
+Adaptive idling overrides the configured inactivity duration in the following cases:
+
 - When the number of parts exceeds the maximum active parts threshold (default: 10,000), the service isn't idled so that background maintenance can continue
 - When there are ongoing merge operations, the service isn't idled until those merges complete to avoid interrupting critical data consolidation
 - Additionally, the service also adapts idle timeouts based on server initialization time:
@@ -26,12 +45,8 @@ When you create a ClickHouse Cloud service, the default setting for the IP allow
   - If server initialization time is between 30 and 60 minutes, the idle timeout is set to 30 minutes.
   - If server initialization time is more than 60 minutes, the idle timeout is set to 1 hour
 
+## What background work stops while the service is paused? {#background-work-while-paused}
+
 <Note>
 The service may enter an idle state where it suspends refreshes of [refreshable materialized views](/concepts/features/materialized-views/refreshable-materialized-view), consumption from [S3Queue](/reference/engines/table-engines/integrations/s3queue), and scheduling of new merges. Existing merge operations will complete before the service transitions to the idle state. To ensure continuous operation of refreshable materialized views and S3Queue consumption, disable the idle state functionality.
 </Note>
-
-<Danger>
-**When not to use automatic idling**
-
-Use automatic idling only if your use case can handle a delay before responding to queries, because when a service is paused, connections to the service will time out. Automatic idling is ideal for services that are used infrequently and where a delay can be tolerated. It isn't recommended for services that power customer-facing features that are used frequently.
-</Danger>

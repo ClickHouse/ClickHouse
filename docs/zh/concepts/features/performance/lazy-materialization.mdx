@@ -50,7 +50,7 @@ keywords: ['optimization', '惰性物化']
 
 来看下面这个示例查询：它会找出 helpful votes 数量最多的 Amazon 评论，不考虑日期、产品、评分或验证状态，并返回前 3 条评论及其 title、headline 和全文。
 
-首先，在禁用 惰性物化 (使用 [`query_plan_optimize_lazy_materialization`](/zh/reference/settings/session-settings#query_plan_optimize_lazy_materialization)) 的情况下运行该查询 (文件系统缓存处于冷状态) ：
+首先，在禁用 惰性物化 (使用 [`query_plan_optimize_lazy_materialization`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization)) 的情况下运行该查询 (文件系统缓存处于冷状态) ：
 
 ```sql title="Query"
 SELECT
@@ -92,7 +92,7 @@ review_body:     This item has wolves on it which makes it intrinsically swee...
 Peak memory usage: 1.11 GiB.
 ```
 
-接着，再次运行该查询 (同样是在文件系统缓存未预热的情况下) ，但这次启用了延迟物化：
+接着，再次运行该查询 (同样是在文件系统缓存未预热的情况下) ，但这次启用了惰性物化：
 
 ```sql title="Query" highlight={11}
 SELECT

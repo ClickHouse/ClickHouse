@@ -32,7 +32,11 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `schema` — Схема PostgreSQL.
 * `use_table_cache` — Определяет, кэшируется ли структура таблицы базы данных. Необязательный параметр. Значение по умолчанию: `0`.
 
-<div id="data_types-support">
+Параметры TLS/SSL передаются в `libpq` и могут быть заданы через [именованную коллекцию](/ru/concepts/features/configuration/server-config/named-collections) или в качестве завершающих аргументов ключ-значение: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`), а также сертификаты и ключ в одном из двух вариантов. `sslrootcert` (CA‑сертификат), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) — это пути к локальным файлам сервера; они принимаются только из именованной коллекции, определённой в файле конфигурации сервера. Вместо этого параметры `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают литеральное содержимое соответствующих файлов; их можно указывать в SQL (например, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), а в журналах и запросах `SHOW` они маскируются так же, как пароль. Если они не заданы, применяются значения `libpq` по умолчанию (`sslmode=prefer`).
+
+<a id="data_types-support" />
+
+<div id="data-types-support">
   ## Поддержка типов данных
 </div>
 

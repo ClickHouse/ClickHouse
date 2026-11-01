@@ -86,20 +86,7 @@ REPLICA IDENTITY FULL을 사용하면 변경되지 않은 TOAST 컬럼도 복제
   ### 공개 IP가 없거나 프라이빗 네트워크에 있는 Postgres 데이터베이스에 연결할 수 있나요?
 </div>
 
-네. ClickPipes for Postgres는 프라이빗 네트워크에 있는 데이터베이스에 연결할 수 있는 두 가지 방법을 제공합니다:
-
-1. **SSH 터널링**
-   * 대부분의 사용 사례에 적합합니다
-   * 설정 방법은 [여기](/ko/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)를 참조하세요
-   * 모든 리전에서 사용할 수 있습니다
-
-2. **AWS PrivateLink**
-   * 다음 3개의 AWS 리전에서 사용할 수 있습니다:
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * 자세한 설정 방법은 [PrivateLink 문서](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)를 참조하세요
-   * PrivateLink를 사용할 수 없는 리전에서는 SSH 터널링을 사용하세요
+네. ClickPipes가 공개 인터넷에 노출되지 않은 데이터 소스에 연결하는 방법은 [ClickPipes 네트워킹](/ko/integrations/clickpipes/networking)에서 확인하세요.
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### UPDATE와 DELETE는 어떻게 처리하나요?

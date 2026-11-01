@@ -30,10 +30,15 @@ public:
     template <typename ConnectionType>
     void load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load);
 
+    /// Load suggestions through an already established connection, synchronously.
+    /// Errors are reported to `error_stream` (inside the embedded client, `std::cerr`
+    /// belongs to the server process, not to the user's terminal).
     void load(IServerConnection & connection,
               const ConnectionTimeouts & timeouts,
               Int32 suggestion_limit,
-              const ClientInfo & client_info);
+              const ClientInfo & client_info,
+              const Settings & settings,
+              std::ostream & error_stream);
 
     /// Older server versions cannot execute the query loading suggestions.
     static constexpr int MIN_SERVER_REVISION = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
@@ -49,7 +54,7 @@ public:
     bool lastExchangeEndedInSync() const { return last_exchange_ended_in_sync.load(); }
 
 private:
-    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
+    void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, const Settings & settings);
 
     void fillWordsFromBlock(const Block & block);
 

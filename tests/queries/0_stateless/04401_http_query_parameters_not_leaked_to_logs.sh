@@ -7,6 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A unique secret marker so we only look at log lines produced by this test (parallel-safe).
 secret="find_me_${CLICKHOUSE_DATABASE}_TOPSECRET"
+# `system.text_log` is keyed by time: its scans below are bounded to this test's lifetime.
+test_start=$(${CLICKHOUSE_CLIENT} --query="SELECT toUnixTimestamp(now())")
 
 # Send the secret as the value of sensitive query-string parameters. The server logs
 # "Request URI: ..." at trace level; the value must be redacted there.
@@ -39,7 +41,7 @@ for _ in {1..60}; do
             countIf(message LIKE '%Request URI%' AND message LIKE '%param_secret_key=[HIDDEN]%') > 0
             AND countIf(message LIKE '%Request URI%' AND message LIKE '%param_visible=${secret}\\_visible%') > 0
         FROM system.text_log
-        WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND
+        WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
         SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0")
     [ "$landed" = "1" ] && break
     sleep 0.5
@@ -48,27 +50,27 @@ done
 echo "--- secret values must NOT appear in text_log ---"
 ${CLICKHOUSE_CLIENT} --query="
     SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
       AND message LIKE '%${secret}\\_skey%'
     SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
 
 ${CLICKHOUSE_CLIENT} --query="
     SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
       AND (message LIKE '%${secret}\\_pw%' OR message LIKE '%${secret}\\_sig%')
     SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
 
 echo "--- a percent-encoded sensitive name (pass%77ord -> password) must also be redacted ---"
 ${CLICKHOUSE_CLIENT} --query="
     SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
       AND message LIKE '%${secret}\\_enc%'
     SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
 
 echo "--- the Request URI line for the secret param must be logged with [HIDDEN] ---"
 ${CLICKHOUSE_CLIENT} --query="
     SELECT count() > 0 FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
       AND message LIKE '%Request URI%'
       AND message LIKE '%param_secret_key=[HIDDEN]%'
     SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"
@@ -76,7 +78,7 @@ ${CLICKHOUSE_CLIENT} --query="
 echo "--- a non-sensitive parameter value is still visible ---"
 ${CLICKHOUSE_CLIENT} --query="
     SELECT count() > 0 FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND
+    WHERE event_date >= yesterday() AND event_time >= toDateTime(${test_start})
       AND message LIKE '%Request URI%'
       AND message LIKE '%param_visible=${secret}\\_visible%'
     SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0"

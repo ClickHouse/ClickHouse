@@ -191,7 +191,7 @@ Em um único nó, as faixas de execução dividem os dados em intervalos indepen
 A execução da consulta é ainda mais paralelizada por:
 
 1. **Vetorizaçāo SIMD**: operações sobre dados colunares usam [instruções SIMD da CPU](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (por exemplo, [AVX512](https://en.wikipedia.org/wiki/AVX-512)), permitindo o processamento em lote de valores.
-2. **Paralelismo em nível de cluster**: em configurações distribuídas, cada nó realiza o processamento da consulta localmente. [Estados de agregação parciais](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) são transmitidos ao nó iniciador e mesclados. Se as chaves de `GROUP BY` da consulta estiverem alinhadas com as chaves de sharding, a mesclagem pode ser [minimizada ou totalmente evitada](/pt-BR/reference/settings/session-settings#distributed_group_by_no_merge).
+2. **Paralelismo em nível de cluster**: em configurações distribuídas, cada nó realiza o processamento da consulta localmente. [Estados de agregação parciais](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) são transmitidos ao nó iniciador e mesclados. Se as chaves de `GROUP BY` da consulta estiverem alinhadas com as chaves de sharding, a mesclagem pode ser [minimizada ou totalmente evitada](/pt-BR/reference/settings/session-settings/distributed#distributed_group_by_no_merge).
 
 <br />
 

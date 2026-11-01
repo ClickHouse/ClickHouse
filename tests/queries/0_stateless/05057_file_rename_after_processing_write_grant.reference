@@ -1,0 +1,64 @@
+--- the read-only grant set really is read-only: an explicit write is refused
+WRITE ON FILE
+--- a renaming SELECT through file() is refused, and renames nothing
+WRITE ON FILE
+intact
+--- the same through url(file://), which resolves to a file() delegate
+WRITE ON FILE
+intact
+--- the same through fileCluster(), refused on the initiator
+WRITE ON FILE
+intact
+--- and through fileCluster() even when no plan optimization runs, which builds no task iterator
+WRITE ON FILE
+intact
+--- EXPLAIN PIPELINE builds the readers, so it renames too, and is refused
+WRITE ON FILE
+intact
+--- EXPLAIN PLAN renames nothing, but needs the privileges of the query it explains
+WRITE ON FILE
+intact
+--- structure resolution builds no reader and keeps working with READ ON FILE alone
+x	UInt8
+x	UInt8
+intact
+--- a plain read without the setting is not affected
+7
+intact
+--- and neither is a fileCluster read without the setting
+7
+intact
+--- a distributed INSERT SELECT is refused too, and inserts nothing
+WRITE ON FILE
+intact
+0
+--- a DESCRIBE with the rule set arms nothing in the Filesystem cache for a later query
+7
+intact
+7
+intact
+--- and it does not serve a renaming query from an entry cached without the rule
+WRITE ON FILE
+intact
+7
+renamed
+--- two references to one armed table in a query read the same table, renamed once at the end
+1	1
+renamed
+--- and they still share it when one of them also changed an unrelated setting of its own
+1	1
+renamed
+--- a URL database over file:// is gated the same way
+WRITE ON FILE
+intact
+7
+renamed
+--- with WRITE ON FILE granted, the rename happens
+7
+renamed
+--- and the fileCluster workers still perform it once the initiator is authorized
+7
+renamed
+--- as does a distributed INSERT SELECT, which also delivers its rows
+renamed
+1

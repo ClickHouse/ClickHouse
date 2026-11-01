@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: 'Обзор'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'веб', 'браузер', 'Cloudflare', 'воркеры', 'клиент', 'подключение', 'интеграция']
 slug: /integrations/javascript
 description: 'Официальный JS-клиент для подключения к ClickHouse.'
@@ -20,7 +20,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
 Доступны две версии клиента для разных сред:
 
-* `@clickhouse/client` - только Node.js
+* `@clickhouse/client` - только для Node.js
 * `@clickhouse/client-web` - браузеры (Chrome/Firefox), Cloudflare workers
 
 При использовании TypeScript убедитесь, что используется версия не ниже [4.5](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html), так как она поддерживает [inline import and export syntax](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html#type-modifiers-on-import-names).
@@ -33,7 +33,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
   JS-клиент поставляется с навыками AI-агентов, которые помогают ИИ-агентам для программирования работать с клиентом. Установите их командой:
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1011,7 +1011,7 @@ await client.query({
 целочисленного переполнения, поскольку максимальные значения этих типов превышают `Number.MAX_SAFE_INTEGER`.
 
 Однако это поведение можно изменить
-с помощью [настройки `output_format_json_quote_64bit_integers`](/ru/reference/settings/formats#output_format_json_quote_64bit_integers)
+с помощью [настройки `output_format_json_quote_64bit_integers`](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 .
 
 **Пример:** Настройте выходной формат JSON для 64-битных чисел.
@@ -1077,7 +1077,7 @@ client.query({
 запроса с конкретными динамическими значениями на стороне клиента.
 
 Оформите запрос как обычно, а затем заключите в фигурные скобки значения, которые хотите передать из параметров приложения в
-запрос, в следующем формате:
+следующем формате:
 
 ```text
 {<name>: <data_type>}
@@ -1103,7 +1103,7 @@ await client.query({
 })
 ```
 
-Дополнительные сведения см. по адресу: https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax.
+Дополнительные сведения см. по адресу: https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax.
 
 <div id="compression">
   ### Сжатие

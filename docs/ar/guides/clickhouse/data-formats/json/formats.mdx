@@ -11,7 +11,7 @@ doc_type: 'guide'
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 LIMIT 5
 ```
 
@@ -35,7 +35,7 @@ LIMIT 5
   ## قراءة JSON ككائن
 </div>
 
-تُظهر أمثلتنا السابقة كيف يقرأ `JSONEachRow` تنسيق newline-delimited JSON، بحيث يُقرأ كل سطر ككائن منفصل يُربَط بصف في جدول، ويُربَط كل مفتاح بعمود. وهذا مثالي في الحالات التي تكون فيها بنية JSON معروفة ويكون لكل عمود نوع واحد فقط.
+تُظهر أمثلتنا السابقة كيف يقرأ `JSONEachRow` تنسيق JSON مفصول بأسطر جديدة، بحيث يُقرأ كل سطر ككائن منفصل يُربَط بصف في جدول، ويُربَط كل مفتاح بعمود. وهذا مثالي في الحالات التي تكون فيها بنية JSON معروفة ويكون لكل عمود نوع واحد فقط.
 
 في المقابل، يتعامل `JSONAsObject` مع كل سطر على أنه كائن `JSON` واحد ويخزّنه في عمود واحد من النوع [`JSON`](/ar/reference/data-types/newjson)، مما يجعله أنسب لحمولات JSON المتداخلة وللحالات التي تكون فيها المفاتيح ديناميكية وقد تحتمل أكثر من نوع واحد.
 
@@ -45,7 +45,7 @@ LIMIT 5
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5
 ```
 
@@ -72,7 +72,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5;
 
 SELECT *
@@ -93,7 +93,7 @@ LIMIT 2;
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONEachRow')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONEachRow')
 ```
 
 ```response
@@ -110,7 +110,7 @@ You can specify the structure manually: (in file/uri bluesky/file_0001.json.gz).
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONAsObject')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONAsObject')
 ```
 
 ```response
@@ -225,7 +225,7 @@ SELECT * FROM sometable;
   ### تحديد قيم مفاتيح الكائن الأب
 </div>
 
-لنفترض أننا نريد أيضًا حفظ القيم الموجودة في مفاتيح الكائن الأب داخل الجدول. في هذه الحالة، يمكننا استخدام [الخيار التالي](/ar/reference/settings/formats#format_json_object_each_row_column_for_object_name) لتحديد اسم العمود الذي نريد حفظ قيم المفاتيح فيه:
+لنفترض أننا نريد أيضًا حفظ القيم الموجودة في مفاتيح الكائن الأب داخل الجدول. في هذه الحالة، يمكننا استخدام [الخيار التالي](/ar/reference/settings/formats/format#format_json_object_each_row_column_for_object_name) لتحديد اسم العمود الذي نريد حفظ قيم المفاتيح فيه:
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -401,7 +401,7 @@ LIMIT 1
   ## الوصول إلى كائنات JSON المتداخلة
 </div>
 
-يمكن الإشارة إلى [مفاتيح JSON المتداخلة](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) عبر تفعيل [خيار الإعدادات التالي](/ar/reference/settings/formats#input_format_import_nested_json):
+يمكن الإشارة إلى [مفاتيح JSON المتداخلة](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) عبر تفعيل [خيار الإعدادات التالي](/ar/reference/settings/formats/input-format#input_format_import_nested_json):
 
 ```sql
 SET input_format_import_nested_json = 1
@@ -454,7 +454,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-سيتجاهل ClickHouse الأعمدة غير المعروفة أثناء الاستيراد. يمكن إيقاف هذا السلوك باستخدام خيار الإعدادات ‏[input&#95;format&#95;skip&#95;unknown&#95;fields](/ar/reference/settings/formats#input_format_skip_unknown_fields):
+سيتجاهل ClickHouse الأعمدة غير المعروفة أثناء الاستيراد. يمكن إيقاف هذا السلوك باستخدام خيار الإعدادات ‏[input&#95;format&#95;skip&#95;unknown&#95;fields](/ar/reference/settings/formats/input-format#input_format_skip_unknown_fields):
 
 ```sql
 SET input_format_skip_unknown_fields = 0;

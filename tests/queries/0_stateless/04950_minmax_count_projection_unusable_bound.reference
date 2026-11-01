@@ -1,0 +1,64 @@
+--- NULL in a nullable sorting key
+499	499
+1	1
+400
+499	499
+499	499
+499	499
+99	99
+--- the maximum shares a part with the unusable value
+200	200
+200	200
+--- NULL nested in a tuple sorting key
+(5,3)	(5,3)
+(200,2)	(200,2)
+--- NaN in a float sorting key, no Nullable involved
+200	200
+200	200
+200	200
+200	200
+200	200
+200	200
+(200,2)	(200,2)
+--- a part whose index samples only granule starts
+Wide	1
+200	200
+Wide	1
+200	200
+--- computed bounds of a minmax column
+200	200
+200	200
+(5,3)	(5,3)
+(1,100)	(1,100)
+(5,3)	(5,3)
+--- unaffected: the projection must keep serving these
+499
+1
+499
+1
+200
+1
+inf
+1
+(5,3)
+1
+(5,3)
+1
+5
+1
+200
+1
+2
+1
+--- a part holding one repeated unusable value contributes nothing, so it stays served
+\N
+1
+nan
+1
+6	6
+1
+\N
+1
+--- only the slot that needs the unusable bound loses the projection
+1
+0
