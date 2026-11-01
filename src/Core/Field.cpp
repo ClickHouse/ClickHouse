@@ -843,6 +843,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal32> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -852,6 +854,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal64> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -861,6 +865,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal128> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -870,6 +876,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal256> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -878,6 +886,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         String str;
         ReadBufferFromString buf{dump};
         readQuoted(str, buf);
+        if (!buf.eof())
+            show_error();
         return str;
     }
 
@@ -997,20 +1007,24 @@ Field Field::restoreFromDump(std::string_view dump_)
     prefix = std::string_view{"AggregateFunctionState_("};
     if (dump.starts_with(prefix))
     {
-        std::string_view after_prefix = dump.substr(prefix.length());
-        size_t comma = after_prefix.find(',');
-        size_t end = after_prefix.find(')', comma + 1);
-        if ((comma == std::string_view::npos) || (end != after_prefix.length() - 1))
-            show_error();
-        std::string_view name_view = after_prefix.substr(0, comma);
-        std::string_view data_view = after_prefix.substr(comma + 1, end - comma - 1);
-        trim(name_view);
-        trim(data_view);
-        ReadBufferFromString name_buf{name_view};
-        ReadBufferFromString data_buf{data_view};
+        /// `FieldVisitorDump` writes `AggregateFunctionState_('name', 'data')`. Both quoted strings
+        /// may legitimately contain embedded `,` (e.g. `quantiles(0.5, 0.9)` as the name) or `)`
+        /// (binary bytes in the serialized aggregate state), so a raw search for `,` / `)` is
+        /// quote-unaware and rejects valid round-trips. Parse the two quoted strings in order and
+        /// then require the closing paren and EOF.
+        ReadBufferFromString buf{dump.substr(prefix.length())};
         AggregateFunctionStateData res;
-        readQuotedString(res.name, name_buf);
-        readQuotedString(res.data, data_buf);
+        readQuotedString(res.name, buf);
+        skipWhitespaceIfAny(buf);
+        if (!checkChar(',', buf))
+            show_error();
+        skipWhitespaceIfAny(buf);
+        readQuotedString(res.data, buf);
+        skipWhitespaceIfAny(buf);
+        if (!checkChar(')', buf))
+            show_error();
+        if (!buf.eof())
+            show_error();
         return res;
     }
 
