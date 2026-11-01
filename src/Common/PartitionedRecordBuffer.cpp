@@ -95,8 +95,9 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
 {
     /// A chunk is sized in multiples of the header's alignment, so the chunk carved after it in the block starts
     /// aligned. Records need no alignment, and a chunk for a record larger than the doubled capacity is
-    /// sized by that record. The header keeps the size in 32 bits, so a record whose chunk would not fit them is
-    /// rejected before anything is allocated or changed.
+    /// sized by that record. A record that takes more than half of the chunk cap gets a chunk of its own size,
+    /// allocated apart from the blocks (see the class comment). The header keeps the size in 32 bits, so a record
+    /// whose chunk would not fit them is rejected before anything is allocated or changed.
     const size_t needed = ::Memory::alignUp(sizeof(ChunkHeader) + bytes + tail_padding_bytes, alignof(ChunkHeader));
     if (needed > std::numeric_limits<decltype(ChunkHeader::capacity)>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "A record of {} bytes does not fit a chunk of the partitioned record buffer", bytes);
@@ -109,7 +110,7 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
     size_t capacity = 0;
     char * data = nullptr;
     Block * block = nullptr;
-    if (needed > max_chunk_bytes)
+    if (needed > max_chunk_bytes / 2)
     {
         capacity = needed;
         data = static_cast<char *>(Allocator<false, false>().alloc(capacity));

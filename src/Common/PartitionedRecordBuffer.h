@@ -22,7 +22,10 @@ namespace DB
 /// classes would each take its arena path, whose locks and extent bookkeeping cost more than the records the chunk
 /// holds, while a block is one allocation for many chunks. Consecutive partitions share blocks in groups of
 /// `partitions_per_group`, chosen by the caller to match the consumption order. A block is freed once all its
-/// chunks are released, allowing consumers to reclaim memory without waiting for unrelated groups.
+/// chunks are released, allowing consumers to reclaim memory without waiting for unrelated groups. A record of more
+/// than half the chunk cap is the exception: it gets a chunk of its own size, allocated apart from the blocks, since
+/// a capped chunk would hold that record alone and leave up to half of itself unused, which for a partition of such
+/// records doubles their memory.
 ///
 /// A group's blocks grow too. Its first block takes the first chunks of its partitions, so those stay the
 /// minimum allocation, and each later block is as large as the group's earlier blocks together, up to a cap.

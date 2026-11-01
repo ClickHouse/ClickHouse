@@ -60,7 +60,7 @@ size_t allocatedByAppend(
 TEST(PartitionedRecordBuffer, ChunkGrowthAndLargeRecords)
 {
     /// The last allocation group contains one partition. Mixed record sizes exercise chunk alignment,
-    /// block rollover, and records allocated separately because they exceed the shared chunk size.
+    /// block rollover, and records allocated separately because they take more than half of the chunk cap.
     PartitionedRecordBuffer buffer(3, 2);
     std::array<std::string, 3> expected;
     for (size_t row = 0; row < 300; ++row)
