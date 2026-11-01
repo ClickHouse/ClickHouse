@@ -1,0 +1,12 @@
+--- fileCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- urlCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- fileCluster, non-replicated destination ---
+1	7	10
+2	5	6
+3	7	30
