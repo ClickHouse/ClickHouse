@@ -67,6 +67,9 @@ class ExecutorTasks : public ISpillRequestListener
     /// Total number of non-preempted slots.
     size_t total_slots = 0;
 
+    /// The most waiting threads that `tryWakeUpOtherThreadsWithTasks` wakes at once.
+    static constexpr size_t max_threads_woken_at_once = 64;
+
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
 
@@ -95,6 +98,11 @@ public:
     void rethrowFirstThreadException(const LoggerPtr & log);
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
+    /// Wakes up to `count` idle threads while tasks are pending, at most `max_threads_woken_at_once` of them. A pipeline
+    /// that grows during the query pushes many tasks at once, which a chain of single wake-ups would hand to the idle
+    /// threads one at a time; the threads woken here take the tasks at once, and wake more if any are left.
+    void tryWakeUpOtherThreadsWithTasks(ExecutionThreadContext & self, size_t count, std::unique_lock<std::mutex> & lock);
+
     void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<IProcessor> & queue, std::unique_lock<std::mutex> & lock);
 
     /// It sets the task for specified thread `context`.

@@ -1,8 +1,11 @@
 #include <Processors/Executors/Runtime/V1/ExecutorTasks.h>
+
 #include <Processors/IProcessor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
+
+#include <array>
 
 namespace DB
 {
@@ -110,6 +113,25 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadConte
 
     lock.unlock();
     executor_contexts[thread_to_wake]->wakeUp();
+}
+
+void ExecutorTasks::tryWakeUpOtherThreadsWithTasks(ExecutionThreadContext & self, size_t count, std::unique_lock<std::mutex> & lock)
+{
+    if (count <= 1)
+    {
+        tryWakeUpAnyOtherThreadWithTasks(self, lock);
+        return;
+    }
+    if (threads_queue.empty() || finished || (fast_task_queue.empty() && task_queue.empty()))
+        return;
+
+    std::array<size_t, max_threads_woken_at_once> threads_to_wake;
+    const size_t num_threads_to_wake = std::min({count, threads_queue.size(), threads_to_wake.size()});
+    for (size_t i = 0; i < num_threads_to_wake; ++i)
+        threads_to_wake[i] = threads_queue.popAny();
+    lock.unlock();
+    for (size_t i = 0; i < num_threads_to_wake; ++i)
+        executor_contexts[threads_to_wake[i]]->wakeUp();
 }
 
 void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
@@ -235,8 +257,8 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
         const size_t total_slots_now = total_slots;
         const size_t num_threads_now = num_threads;  // const after init but read for clarity
 
-        /// Wake up at least one thread that will wake up other threads if required
-        tryWakeUpAnyOtherThreadWithTasks(context, lock);
+        /// Wake up a thread for every new task: the woken threads wake up others if tasks are left.
+        tryWakeUpOtherThreadsWithTasks(context, pushed, lock);
 
         /// Return the number of additional pipeline threads the caller should target: pushed
         /// tasks that idle threads can't cover, clamped to remaining pipeline-width headroom
