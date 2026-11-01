@@ -58,6 +58,7 @@ namespace
 
 void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String, Int64> & result, const String & current_path)
 {
+    checkStackSize();
     auto type_str = type->getValue<String>(Iceberg::f_type);
     if (type_str == "map")
     {

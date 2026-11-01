@@ -1,0 +1,7 @@
+1	[1,2]	\N
+1	[1,2]	\N
+2	[3]	x
+id=1 arr=2 arr.element=3 extra=4 last-column-id=4
+1
+1	\N	\N
+id=1 c=5 d=6 last-column-id=6
