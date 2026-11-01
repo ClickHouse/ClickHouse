@@ -168,7 +168,7 @@ assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "SELECT
 echo "Case L: Header canonicalization reuse"
 url_hdr_canon="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_hdr_canon"
 $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_canon', 'CSV', 'x UInt64', 'gzip', headers('Accept-Encoding' = 'gzip'))"
-$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_canon', 'CSV', 'x UInt64', 'gzip', headers(' accept-encoding ' = ' gzip '))"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_canon', 'CSV', 'x UInt64', 'gzip', headers('accept-encoding' = ' gzip '))"
 
 # Case M: Secret header redaction in schema inference cache
 echo "Case M: Secret header redaction"
