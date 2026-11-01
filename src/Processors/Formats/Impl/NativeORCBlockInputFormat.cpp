@@ -1056,8 +1056,34 @@ struct ORCRowGroupFilterColumn
     UInt64 orc_column_id;
     /// What the reader returns for NULL when it is not NULL (`input_format_null_as_default`).
     std::optional<Field> null_value;
+    /// The columns between the root and this one, all STRUCT for a tuple element.
+    std::vector<UInt64> ancestors;
 };
 
+}
+
+/// The ids of the columns strictly between `root` and its descendant `column`.
+static std::vector<UInt64> getORCAncestorColumnIds(const ORC::Type & root, const ORC::Type & column)
+{
+    std::vector<UInt64> ancestors;
+    const ORC::Type * node = &root;
+    while (node != &column)
+    {
+        if (node != &root)
+            ancestors.push_back(node->getColumnId());
+        const ORC::Type * next = nullptr;
+        for (UInt64 i = 0; i < node->getSubtypeCount() && !next; ++i)
+        {
+            const auto * subtype = node->getSubtype(i);
+            if (subtype->getColumnId() <= column.getColumnId() && column.getColumnId() <= subtype->getMaximumColumnId())
+                next = subtype;
+        }
+        if (!next)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC column {} is not in the subtree of column {}",
+                column.getColumnId(), node->getColumnId());
+        node = next;
+    }
+    return ancestors;
 }
 
 static Range getRangeFromORCStatistics(const ORC::Proto::ColumnStatistics & stats, const ORCRowGroupFilterColumn & column)
@@ -1111,11 +1137,11 @@ static ORC::RowGroupFilter buildORCRowGroupFilter(
     for (size_t key_column : key_condition->getUsedColumnsInOrder())
     {
         const String & name = key_names[key_column];
-        const auto * column = header.findByName(name, ignore_case);
-        if (!column)
+        auto column_types = findHeaderTypesByPath(header, name, ignore_case);
+        if (!column_types)
             continue;
 
-        DataTypePtr type = column->type;
+        DataTypePtr type = column_types->result_type;
         const auto * orc_type = traverseDownORCTypeByName(name, &schema, type, ignore_case);
         if (!orc_type)
             continue;
@@ -1124,17 +1150,18 @@ static ORC::RowGroupFilter buildORCRowGroupFilter(
         if (kind != ORC::TypeKind::BYTE && kind != ORC::TypeKind::SHORT && kind != ORC::TypeKind::INT && kind != ORC::TypeKind::LONG)
             continue;
 
-        if (!isSameTypeAsInORCFile(column->type, *orc_type, format_settings))
+        if (!isSameTypeAsInORCFile(column_types->result_type, *orc_type, format_settings))
             continue;
 
         std::optional<Field> null_value;
-        if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(column->type))
+        const auto & declared_type = column_types->declared_type;
+        if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(declared_type))
         {
-            auto default_column = column->type->createColumn();
+            auto default_column = declared_type->createColumn();
             default_column->insertDefault();
             null_value = (*default_column)[0];
         }
-        columns.push_back({key_column, orc_type->getColumnId(), std::move(null_value)});
+        columns.push_back({key_column, orc_type->getColumnId(), std::move(null_value), getORCAncestorColumnIds(schema, *orc_type)});
     }
     if (columns.empty())
         return {};
@@ -1143,8 +1170,20 @@ static ORC::RowGroupFilter buildORCRowGroupFilter(
     {
         Hyperrectangle hyperrectangle(key_types.size(), Range::createWholeUniverse());
         for (const auto & column : columns)
-            if (const auto * stats = get_statistics(column.orc_column_id))
-                hyperrectangle[column.key_column] = getRangeFromORCStatistics(*stats, column);
+        {
+            const auto * stats = get_statistics(column.orc_column_id);
+            if (!stats)
+                continue;
+            /// A field has no value where a struct holding it is NULL, so its statistics bound
+            /// only the row groups where no such struct is NULL.
+            if (!std::ranges::all_of(column.ancestors, [&](UInt64 id)
+                {
+                    const auto * ancestor = get_statistics(id);
+                    return ancestor && ancestor->has_null == false;
+                }))
+                continue;
+            hyperrectangle[column.key_column] = getRangeFromORCStatistics(*stats, column);
+        }
         return key_condition->checkInHyperrectangle(hyperrectangle, key_types).can_be_true;
     };
 }

@@ -23,4 +23,11 @@ in 8192	3	0	999998	1499998
 in 10000	3	0	999998	1499998
 in 10000	3	0	999998	1499998
 null or	1
+null pruned	10000
 default	28572
+default pruned	10000
+tuple	1	100000
+tuple	1	100000
+tuple	10000
+struct nulls	10
+struct nulls flat	10

@@ -1,6 +1,14 @@
--- Tags: no-fasttest
--- Tag no-fasttest: ORC is not built in fasttest.
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: ORC is not built in fasttest.
 
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+cp "$CUR_DIR/data_orc/struct_null_field_statistics.orc" "$USER_FILES_PATH/${CLICKHOUSE_DATABASE}_05495_struct_nulls.orc"
+
+$CLICKHOUSE_CLIENT --multiquery <<'EOF'
 -- ORC filter pushdown through a monotonic function chain over a column.
 -- `count()` under `indexHint` is the number of rows read, each row group has 10000 rows.
 
@@ -47,11 +55,32 @@ SELECT 'in 10000', count(), min(id), max(id), sum(id) FROM file(currentDatabase(
 
 -- A NULL satisfies `IS NULL` in a row group whose other values do not satisfy the chain.
 INSERT INTO FUNCTION file(currentDatabase() || '_05495_null.orc', ORC)
-    SELECT if(number = 195000, NULL, 1000000 + number)::Nullable(Int64) AS id FROM numbers(200000);
+    SELECT if(number = 5000, NULL, 1000000 + number)::Nullable(Int64) AS id FROM numbers(200000);
 SELECT 'null or', count() FROM file(currentDatabase() || '_05495_null.orc', ORC) WHERE id + 1 = 999 OR id IS NULL;
+SELECT 'null pruned', count() FROM file(currentDatabase() || '_05495_null.orc', ORC) WHERE indexHint(intDiv(id, 10) = 110000);
 
 -- With `input_format_null_as_default` a NULL is read as the default of a non-Nullable column.
 INSERT INTO FUNCTION file(currentDatabase() || '_05495_default.orc', ORC)
     SELECT if(number % 7 = 0, NULL, number + 1)::Nullable(Int64) AS id FROM numbers(200000);
 SELECT 'default', count() FROM file(currentDatabase() || '_05495_default.orc', ORC, 'id Int64') WHERE id + 1 = 1
     SETTINGS input_format_null_as_default = 1;
+SELECT 'default pruned', count() FROM file(currentDatabase() || '_05495_default.orc', ORC, 'id Int64') WHERE indexHint(id + 1 = 190002) SETTINGS input_format_null_as_default = 1;
+
+-- A tuple element prunes like a column. `indexHint` does not keep the subcolumn rewrite, so the rows read come from `query_log`.
+INSERT INTO FUNCTION file(currentDatabase() || '_05495_tuple.orc', ORC) SELECT tuple(number)::Tuple(x Int64) AS t FROM numbers(200000);
+SELECT 'tuple', count(), sum(t.x) FROM file(currentDatabase() || '_05495_tuple.orc', ORC) WHERE t.x + 1 = 100001
+    SETTINGS optimize_functions_to_subcolumns = 1, log_comment = '05495_tuple';
+SELECT 'tuple', count(), sum(t.x) FROM file(currentDatabase() || '_05495_tuple.orc', ORC) WHERE t.x + 1 = 100001
+    SETTINGS optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT 'tuple', read_rows FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '05495_tuple' AND type = 'QueryFinish';
+
+-- A field has no value where its struct is NULL; this file does not count those rows in the field's statistics.
+SELECT 'struct nulls', count() FROM file(currentDatabase() || '_05495_struct_nulls.orc', ORC, 't Nullable(Tuple(x Nullable(Int64)))')
+    WHERE t.x + 1 = 5 OR t.x IS NULL SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'struct nulls flat', count() FROM file(currentDatabase() || '_05495_struct_nulls.orc', ORC, '`t.x` Int64')
+    WHERE t.x + 1 = 1 SETTINGS input_format_null_as_default = 1;
+EOF
+
+rm -f "$USER_FILES_PATH/${CLICKHOUSE_DATABASE}_05495_struct_nulls.orc"
