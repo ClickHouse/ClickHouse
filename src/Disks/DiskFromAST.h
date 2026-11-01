@@ -22,6 +22,10 @@ namespace DiskFromAST
 
 {
     void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
+    /// The name of a disk described by a `disk(...)` function without a `name` argument. `serialization` is the
+    /// function formatted with `formatWithSecretsOneLine`, after its nested `disk(...)` functions were replaced
+    /// with the names of the disks they describe.
+    std::string getGeneratedDiskName(const std::string & serialization);
     CustomDiskFromAST createCustomDisk(const ASTPtr & disk_function, ContextPtr context, bool attach, bool for_system_database = false);
 }
 

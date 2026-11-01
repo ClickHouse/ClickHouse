@@ -16,6 +16,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
@@ -104,46 +105,59 @@ static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_t
 namespace
 {
 
-/// Collects the names of the disks defined by the `disk(...)` functions in `ast` (the `name` argument) and the
-/// names of the disks they refer to (a `disk` argument with a name instead of a nested `disk(...)` function, as
-/// the disk wrapped by a `cache` or `encrypted` disk).
-void collectCustomDiskNames(const ASTPtr & ast, NameSet & defined, NameSet & referenced)
+/// Collects the names of the disks defined by the `disk(...)` functions in `ast` and the names of the disks they
+/// refer to (a `disk` argument with a name instead of a nested `disk(...)` function, as the disk wrapped by a `cache`
+/// or `encrypted` disk). A disk without a `name` argument gets a name generated from its definition, which is what
+/// other tables use to refer to it, so it is calculated as in `DiskFromAST::createCustomDisk`: `ast` must be a copy,
+/// and its nested `disk(...)` functions are replaced with the names of the disks they describe.
+void collectCustomDiskNames(ASTPtr & ast, NameSet & defined, NameSet & referenced)
 {
     checkStackSize();
-    for (const auto & child : ast->children)
+
+    std::optional<String> explicit_name;
+    if (isDiskFunction(ast))
+    {
+        const auto & function = ast->as<const ASTFunction &>();
+        if (function.arguments)
+        {
+            for (const auto & argument : function.arguments->children)
+            {
+                const auto * equals = argument->as<ASTFunction>();
+                if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+                    continue;
+
+                const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
+                if (!key)
+                    continue;
+
+                String value;
+                const auto & value_ast = equals->arguments->children[1];
+                if (const auto * literal = value_ast->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                    value = literal->value.safeGet<String>();
+                else if (const auto * identifier = value_ast->as<ASTIdentifier>())
+                    value = identifier->name();
+                else
+                    continue;
+
+                if (key->name() == "name")
+                    explicit_name = value;
+                else if (key->name() == "disk")
+                    referenced.insert(value);
+            }
+        }
+    }
+
+    /// The references above are collected before the nested `disk(...)` functions are replaced with their names,
+    /// so that the disks defined in the same definition are not counted as references.
+    for (auto & child : ast->children)
         collectCustomDiskNames(child, defined, referenced);
 
     if (!isDiskFunction(ast))
         return;
 
-    const auto & function = ast->as<const ASTFunction &>();
-    if (!function.arguments)
-        return;
-
-    for (const auto & argument : function.arguments->children)
-    {
-        const auto * equals = argument->as<ASTFunction>();
-        if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
-            continue;
-
-        const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
-        if (!key)
-            continue;
-
-        String value;
-        const auto & value_ast = equals->arguments->children[1];
-        if (const auto * literal = value_ast->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-            value = literal->value.safeGet<String>();
-        else if (const auto * identifier = value_ast->as<ASTIdentifier>())
-            value = identifier->name();
-        else
-            continue;
-
-        if (key->name() == "name")
-            defined.insert(value);
-        else if (key->name() == "disk")
-            referenced.insert(value);
-    }
+    String name = explicit_name ? *explicit_name : DiskFromAST::getGeneratedDiskName(ast->formatWithSecretsOneLine());
+    defined.insert(name);
+    ast = make_intrusive<ASTLiteral>(name);
 }
 
 /// A table whose inline disk definition refers to other disks by name, see `DatabaseOrdinary::loadTablesMetadata`.
@@ -186,7 +200,8 @@ void collectCustomDiskNames(const ASTCreateQuery & create_query, NameSet & defin
     if (!disk_setting->tryGet<CustomType>(custom) || 0 != strcmp(custom.getTypeName(), "AST"))
         return;
 
-    collectCustomDiskNames(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, defined, referenced);
+    auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast->clone();
+    collectCustomDiskNames(ast, defined, referenced);
 }
 
 /// Whether the storage settings of the table define a disk inline with `disk = disk(...)`.

@@ -107,10 +107,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     }
     else
     {
-        /// We need a unique name for a created custom disk, but it needs to be the same
-        /// after table is reattached or server is restarted, so take a hash of the disk
-        /// configuration serialized ast as a disk name suffix.
-        disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
+        disk_name = DiskFromAST::getGeneratedDiskName(serialization);
     }
 
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
@@ -297,6 +294,14 @@ CustomDiskFromAST DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast
     CustomDiskRegistrationPtr registration = registrations.empty() ? nullptr : std::move(registrations.front());
 
     return {assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>(), std::move(registration)};
+}
+
+std::string DiskFromAST::getGeneratedDiskName(const std::string & serialization)
+{
+    /// We need a unique name for a created custom disk, but it needs to be the same
+    /// after table is reattached or server is restarted, so take a hash of the disk
+    /// configuration serialized ast as a disk name suffix.
+    return DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(sipHash128(serialization.data(), serialization.size()));
 }
 
 void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)
