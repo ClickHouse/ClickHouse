@@ -160,7 +160,11 @@ def test_delta_lake_follows_the_session(started_cluster):
     the table's metadata was created: after an opted-in session read the table, a restricted session is refused
     without a token request, and the opt-in still signs its requests."""
 
-    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+    # Builds without delta-kernel (e.g. MSan) do not have the engine.
+    if int(delta_node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLakeAzure'").strip()) == 0:
+        pytest.skip("DeltaLakeAzure engine is not available")
+
+    allow ={"s3_allow_server_credentials_in_user_queries": 1}
     kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
     delta_node.query("DROP TABLE IF EXISTS t_delta SYNC")
     # `ATTACH` loads the table lazily, so nothing is read before the first query and no Delta log is needed.
