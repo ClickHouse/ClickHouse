@@ -21,7 +21,7 @@ class BinaryFormatReader final : public FormatWithNamesAndTypesReader
 public:
     BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
     bool readFieldImpl(IColumn & column, const SerializationPtr & serialization);
 
     void skipField(size_t file_column) override;

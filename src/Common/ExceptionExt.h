@@ -9,6 +9,10 @@ namespace DB
 template <class Logger>
 void tryLogCurrentExceptionImpl(Logger logger, const std::string & start_of_message, LogsLevel level)
 {
+    /// The `throw;` below that marks the exception as logged terminates when no exception is being handled.
+    if (!std::current_exception())
+        return;
+
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);

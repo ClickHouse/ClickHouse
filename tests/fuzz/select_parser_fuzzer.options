@@ -1,5 +1,6 @@
 [libfuzzer]
 timeout = 60
+use_value_profile = 1
 dict = all.dict
 # The seed corpus is generated from `tests/queries`, whose largest file is ~380 KB. Without an
 # explicit `max_len` libFuzzer sizes every input after that file, and parsing a query that long in

@@ -1,0 +1,179 @@
+---
+slug: /use-cases/observability/clickstack/anomaly-detection
+title: 'Anomaly detection alerts with ClickStack'
+sidebarTitle: 'Anomaly detection'
+description: 'Alert when a metric moves outside its expected range, without choosing a fixed threshold, using anomaly detection in ClickStack.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observability', 'alerts', 'anomaly detection', 'z-score', 'baseline', 'dynamic thresholds', 'standard deviation']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+<Info>
+**Beta: Managed ClickStack only**
+
+Anomaly detection alerts are in beta and available in Managed ClickStack. They aren't available in ClickStack Open Source. Behavior and defaults may change while the feature is in beta.
+</Info>
+
+Anomaly detection alerts notify you when a value moves outside its expected range, instead of when it crosses a fixed number. ClickStack learns the expected range from the recent history of the series, so you don't need to know in advance what "too many errors" or "too slow" means for each service.
+
+Use anomaly detection when:
+
+- The right threshold differs per service, endpoint, or customer, and you group the alert by that dimension.
+- Normal values drift over the day, so any fixed threshold is either noisy at peak or blind off-peak.
+- You care about sudden changes, such as error spikes, latency jumps, or traffic that drops to zero, more than about absolute levels.
+
+Use a [static threshold alert](/clickstack/features/alerts) when there is a hard limit you always want enforced, such as "p99 latency above 2 seconds" or "any payment failure".
+
+## Supported alerts {#supported-alerts}
+
+Anomaly detection is a detection mode on an existing alert, not a separate alert type. It's available on:
+
+- [Search alerts](/clickstack/features/alerts#search-alerts), which score the count of matching events.
+- [Dashboard chart alerts](/clickstack/features/alerts#dashboard-alerts) on charts built with the chart builder.
+
+Anomaly detection isn't available for [SQL-based chart alerts](/clickstack/features/alerts#sql-based-alerts). If you switch a chart with an anomaly alert to SQL mode, ClickStack converts the alert to a static threshold alert. Switch the chart back to the builder to keep anomaly detection.
+
+## Creating an anomaly alert {#creating-an-anomaly-alert}
+
+<Steps>
+<Step title="Open the alert editor" id="open-alert-editor">
+
+Open the alert editor for a saved search or a dashboard chart, as described in [Alerts](/clickstack/features/alerts#types-of-alerts).
+
+</Step>
+<Step title="Select anomaly detection" id="select-anomaly-detection">
+
+Under **Alert type**, select **Anomaly detection**. The default is **Static threshold**.
+
+</Step>
+<Step title="Configure the condition" id="configure-condition">
+
+The condition reads as a sentence: **Alert when z-score is at least** `3` **when value is** `outside expected range` **compared to the past** `2 hours` **checked every** `5 minute`.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-condition.webp" alt="Anomaly detection selected as the alert type, with the z-score, direction, baseline, and interval controls, a plain-language summary, and the backtest result" size="lg"/>
+
+- **z-score is at least** (default `3`): how many standard deviations a value must be from the expected value to count as anomalous. The minimum is 0.5, and the arrows change it in steps of 0.5. Lower values are more sensitive and fire more often.
+- **When value is** (default `outside expected range`): which direction to alert on: `above expected`, `below expected`, or `outside expected range`. Use `above expected` for error counts and latency, and `below expected` for throughput or sign-ups.
+- **Compared to the past** (default 2 hours): how much history ClickStack uses to measure normal variation: 30 minutes, or 1, 2, 4, 6, 12, or 24 hours. A longer baseline gives a more stable range but adapts more slowly to a new normal.
+- **Checked every** (default 5 minutes): how often the alert is evaluated: 5, 15, or 30 minutes, or 1 hour. Shorter and longer intervals aren't available for anomaly alerts.
+
+Below the condition, ClickStack summarizes what the alert will do, for example: "Every 5 minutes, values are compared to their typical range from the past 2 hours. Notifies when values rise above the expected range, once per incident."
+
+<Tip>
+Prefer `above expected` or `below expected` over `outside expected range` for spiky series. After a short spike, the expected value lags behind and stays high for a few minutes, so the return to normal can also score as anomalous. With `outside expected range`, a single spike can notify twice.
+</Tip>
+
+</Step>
+<Step title="Review the backtest and preview" id="review-preview">
+
+The line under the summary is a backtest: it replays the current settings over recent history and reports how often the alert would have notified, for example "Would have notified 6 times in the past 24 hours, firing on 12 of 288 checks." For search alerts, the backtest covers the last 24 hours. For dashboard chart alerts, it covers the chart's selected time range, up to 24 hours. The count turns yellow when the alert would notify more than 10 times a day.
+
+The **Anomaly detection chart** below the form plots the same range:
+
+- The solid line is the series.
+- The dashed line is the expected baseline.
+- The shaded area is the alert trigger zone. A value inside it, past the expected range, fires.
+- **Notify** markers show where the alert would have sent a notification.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-preview.webp" alt="Anomaly detection chart showing a 24-hour series with the expected baseline, the shaded alert trigger zone, and a Notify marker at each of six spikes" size="lg"/>
+
+When the alert is grouped, the backtest totals all series. Select **Show breakdown by series** to see which series would have notified most. In the example below, one sparse series accounts for more than 40% of the notifications, which suggests excluding it or alerting on it separately.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-backtest-breakdown.webp" alt="Backtest breakdown listing notification episodes per service for a grouped anomaly alert" size="md"/>
+
+Adjust the z-score, direction, and baseline until the backtest matches what you want to be notified about. If the alert would notify many times a day, raise the z-score or narrow the direction.
+
+</Step>
+<Step title="Choose a notification channel and save" id="save-anomaly-alert">
+
+Choose a webhook or other channel, as with any alert. See [Adding a webhook](/clickstack/features/alerts#add-webhook). Save the alert to start evaluating it.
+
+</Step>
+</Steps>
+
+### Suitability warnings {#suitability-warnings}
+
+Some series are poor fits for anomaly detection. A warning appears under the preview chart before you save, but doesn't block saving:
+
+| Warning | Cause | What to do |
+|---|---|---|
+| Not enough history for a baseline yet | The series is new, or most of the preview range has no baseline data. | Wait for more data, or use a static threshold until there is history. |
+| Most time buckets are empty | More than half of the minutes since the series first had data are empty, roughly fewer than one event per minute. | Widen the search, remove a group-by, or use a static threshold. |
+| This series is nearly flat | The series barely varies, so tiny fluctuations produce extreme z-scores. | Use a static threshold, or raise the z-score. |
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-suitability-warning.webp" alt="Anomaly detection chart for a sparse series with a warning that most time buckets are empty" size="lg"/>
+
+## How anomaly detection works {#how-it-works}
+
+On every evaluation, ClickStack scores the evaluation window one bucket at a time. Buckets are 60 seconds long.
+
+For each bucket:
+
+1. **Expected value.** ClickStack takes the moving average of the 7 buckets that ended one evaluation window earlier. Expected values are never negative.
+2. **Spread.** ClickStack computes the standard deviation of the series in ClickHouse, over the baseline you selected in **Compared to the past**. The baseline is never shorter than one evaluation window.
+3. **z-score.** The z-score is `(value − expected) / standard deviation`.
+4. **Decision.** The bucket fires when the z-score passes the configured threshold in the configured direction, and the value differs from the expected value by at least 5% of the expected value, or by 0.01 when the expected value is 0. The 5% floor stops near-constant series from firing on trivial wiggles.
+
+The expected range is `expected ± z-score × standard deviation`, widened by the 5% floor. In the preview, everything outside it is shaded as the alert trigger zone.
+
+An evaluation window fires if any of its buckets fires.
+
+### Empty buckets {#empty-buckets}
+
+How ClickStack treats a minute with no data depends on the aggregation:
+
+- **Counts and sums** (including search alerts): an empty bucket is scored as zero. This means an alert with direction `below expected` or `outside expected range` fires when traffic stops entirely.
+- **Averages, percentiles, minimum, maximum, ratios, and metric sources**: an empty bucket means there was nothing to measure, so it's skipped rather than scored as zero.
+
+A bucket without enough history behind it isn't scored, so a brand-new series doesn't fire until it has a baseline.
+
+### Grouped alerts {#grouped-alerts}
+
+When an alert is grouped by a field, such as `ServiceName`, each group is a separate series with its own expected range and alert state. ClickStack scores up to 100 series per alert, preferring the series with the most data. A series that is already alerting keeps being scored until it resolves, even if it falls out of the top 100.
+
+### Notifications and resolution {#notifications}
+
+Anomaly alerts notify once per incident, per series:
+
+- When a series starts firing, ClickStack sends one notification and marks the series as alerting.
+- While the series keeps firing on later evaluations, no further notifications are sent.
+- When an evaluation window has no firing buckets, the series resolves and ClickStack sends a resolved notification.
+
+If several evaluations were missed, for example during an outage, the next evaluation catches up on the missed windows and still sends at most one firing notification per series.
+
+ClickStack waits 30 seconds after a window closes before evaluating it, so late-arriving data is counted.
+
+Notifications describe the anomaly instead of a threshold. For example:
+
+- Title: `Alert for "Checkout errors" - value 142 is above the expected range (z-score 4.4)`
+- Body: `Value 142 is above the expected range — z-score 4.4 vs sensitivity 3; expected 120 ± 5 (expected range 105 to 135).`
+
+Custom alert names and messages can reference the bucket that triggered the notification with `{{anomaly.value}}`, `{{anomaly.expectedValue}}`, `{{anomaly.expectedStddev}}`, `{{anomaly.lowerBound}}`, `{{anomaly.upperBound}}`, and `{{anomaly.zScore}}`. These values are only set on firing notifications. Resolved notifications don't include them, so wrap them in `{{#if anomaly}}...{{/if}}` if the same name or message is used for both.
+
+## Monitoring anomaly alerts {#monitoring}
+
+On the **Alerts** page, set **Filter by type** to **Anomaly** to show only anomaly alerts. Each row describes the condition, for example "If value is above expected with z-score at least 3".
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alerts-list.webp" alt="Alerts page filtered to anomaly alerts, showing one alert with its condition and recent evaluation history" size="lg"/>
+
+Select an alert to open its detail page. Below the condition summary, which includes the interval and baseline, ClickStack shows how often the alert fired over its retained history, for example "Fired 2 times in the past 2 days." Select the range to show it in the chart and evaluation history.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-detail.webp" alt="Anomaly alert detail page showing the condition summary and how many times the alert fired in the past 2 days" size="lg"/>
+
+The **Evaluation History** table lists each check with its state, the latest value, and how many series were alerting. Rows with a notification duration sent a notification, both when the alert fired and when it resolved.
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-history.webp" alt="Evaluation history for an anomaly alert, with Alert and Ok states for each 5-minute check" size="lg"/>
+
+If an alert stays in the alerting state for 20 or more consecutive windows, the detail page suggests that the series has a new normal rather than an anomaly. Raise the z-score, or update the alert so it compares against a more relevant baseline.
+
+## Backtesting with MCP {#backtesting-with-mcp}
+
+With the [ClickStack MCP server](/clickstack/mcp), an AI assistant can backtest anomaly settings before you save them. The `clickstack_backtest_anomaly_alert` tool replays a configuration against up to 24 hours of history and reports, per series, the notifications it would have sent, along with data-quality warnings. The tool is read-only.
+
+## Tuning tips {#tuning-tips}
+
+- **Alert is too noisy:** raise the z-score in steps of 0.5, or change the direction from `outside expected range` to the side you care about.
+- **Alert missed a real incident:** lower the z-score, or shorten the baseline so the range reflects recent behavior.
+- **Alert fires all day after a deploy:** The series has a new normal, and longer baselines take more time to adapt than shorter ones.
+- **Low-volume series:** group by fewer dimensions, or alert on a broader search, so each series has at least one event per minute.

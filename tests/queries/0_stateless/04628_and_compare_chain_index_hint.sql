@@ -1,7 +1,6 @@
 -- Comparisons derived by `optimize_and_compare_chain` are wrapped in `indexHint`:
 -- they still prune the read set but cost nothing per row.
 
-SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
 
 DROP TABLE IF EXISTS t_chain_hint;

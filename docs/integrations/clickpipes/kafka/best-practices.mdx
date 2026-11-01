@@ -48,6 +48,13 @@ The main tradeoff is part size. Larger insert blocks produce fewer, larger [part
 
 A pipe works best when the number of partitions is close to the number of internal insert "workers", since each worker then handles roughly one partition and has the memory headroom to build large blocks. Both the worker count and the available memory scale with replica size and count, which you configure under **Settings** -> **Advanced Settings** -> **Scaling**.
 
+## Tombstone handling {#tombstone-handling}
+
+Kafka tombstones are records with a key and a null value. Under **Advanced Settings**, you can configure how a Kafka ClickPipe handles them:
+
+- **Delete matching rows** deletes matching rows from the destination table using a [lightweight delete](/concepts/features/operations/delete/lightweight-delete). This option is available only when exactly-once semantics is enabled. Lightweight deletes are expensive and are not appropriate for large workloads.
+- **Mark rows as deleted** writes each tombstone as a row. For large workloads, this is the recommended option: create a [`ReplacingMergeTree`](/reference/engines/table-engines/mergetree-family/replacingmergetree) destination table and select the `_is_deleted` virtual column. ClickPipes configures that virtual column as the engine's `is_deleted` column.
+
 ## Authentication {#authentication}
 For Apache Kafka protocol data sources, ClickPipes supports [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) authentication with TLS encryption, as well as `SASL/SCRAM-SHA-256` and `SASL/SCRAM-SHA-512`. Depending on the streaming source (Redpanda, MSK, etc) will enable all or a subset of these auth mechanisms based on compatibility. If you auth needs differ please [give us feedback](https://clickhouse.com/company/contact?loc=clickpipes).
 

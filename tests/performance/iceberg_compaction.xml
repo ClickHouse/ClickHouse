@@ -1,0 +1,61 @@
+<!--
+    Iceberg `OPTIMIZE` that does real work: each run creates a fresh table, loads a 6.0 M-row base and a 0.6 M-row tagged slice,
+    deletes the slice (min/max on `l_tag` limits the scan to the new file), and `OPTIMIZE` rewrites every data file without the
+    deleted rows. The paired query stops before the `OPTIMIZE`, which is about 40 % of `rebuild_optimize`, so a regression in it
+    shows about 2.5 times smaller. A fresh table per run, because a reused one drifts (old data and delete files, one empty data
+    file per `OPTIMIZE`). No schema change in the history: `OPTIMIZE` after `DELETE` on a schema-evolved table destroys the
+    metadata (https://github.com/ClickHouse/ClickHouse/issues/120833).
+    One cycle in the setup checks both results against the source: after the `DELETE`, and after the `OPTIMIZE` (no delete file
+    left; read without the trivial count, which the removed deletes inflate: https://github.com/ClickHouse/ClickHouse/pull/109288).
+    Every run checks the row count and that no delete file is left, not the data files (every `OPTIMIZE` leaves an empty one, and
+    https://github.com/ClickHouse/ClickHouse/pull/124114 changes what it keeps).
+    Per server and invocation, into the job-local S3: 0.13 GB by the setup, 0.13 GB per run of `rebuild_optimize` and 0.07 GB per
+    run of `rebuild_only` (about 1.3 GB with prewarm and 5 runs each); nothing on local disk.
+-->
+<test requires_s3="1" run_all_queries="1" max_query_seconds="120">
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+    <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>
+    <iceberg_insert_max_rows_in_data_file>1000000</iceberg_insert_max_rows_in_data_file>
+    <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+</settings>
+
+<create_query>CREATE TABLE icp_opt (l_orderkey Int32, l_partkey Int32, l_quantity Float64, l_extendedprice Float64, l_shipdate Date, l_tag Int32) ENGINE = IcebergS3(perf_s3, filename = 'iceberg_compaction_opt_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</create_query>
+<fill_query>INSERT INTO icp_opt SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice, l_shipdate, 0 FROM tpch10.lineitem WHERE l_orderkey % 10 = 0 SETTINGS max_insert_threads = 1</fill_query>
+<fill_query>INSERT INTO icp_opt SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice, l_shipdate, 1 FROM tpch10.lineitem WHERE l_orderkey % 100 = 1 SETTINGS max_insert_threads = 1</fill_query>
+<fill_query>DELETE FROM icp_opt WHERE l_tag = 1</fill_query>
+<fill_query>SELECT throwIf(countIf(content = 1) != 1) FROM system.iceberg_files WHERE database = 'default' AND table = 'icp_opt'</fill_query>
+<fill_query>SELECT throwIf((SELECT count(), sum(cityHash64(*)) FROM icp_opt) != (count(), sum(cityHash64(l_orderkey, l_partkey, toFloat64(l_quantity), toFloat64(l_extendedprice), l_shipdate, toInt32(0))))) FROM tpch10.lineitem WHERE l_orderkey % 10 = 0</fill_query>
+<fill_query>OPTIMIZE TABLE icp_opt</fill_query>
+<fill_query>SELECT throwIf(countIf(content = 1) != 0 OR sumIf(record_count, content = 0) != (SELECT count() FROM tpch10.lineitem WHERE l_orderkey % 10 = 0)) FROM system.iceberg_files WHERE database = 'default' AND table = 'icp_opt'</fill_query>
+<fill_query>SELECT throwIf((SELECT count(), sum(cityHash64(*)) FROM icp_opt) != (count(), sum(cityHash64(l_orderkey, l_partkey, toFloat64(l_quantity), toFloat64(l_extendedprice), l_shipdate, toInt32(0))))) FROM tpch10.lineitem WHERE l_orderkey % 10 = 0 SETTINGS optimize_trivial_count_query = 0</fill_query>
+
+<query type="shell"><![CDATA[
+    s=$(date +%s%N)
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --allow_experimental_iceberg_compaction 1 --iceberg_insert_max_rows_in_data_file 1000000 --max_insert_threads 1 --optimize_trivial_count_query 0 --query "
+        DROP TABLE IF EXISTS icp_opt_run SYNC;
+        CREATE TABLE icp_opt_run (l_orderkey Int32, l_partkey Int32, l_quantity Float64, l_extendedprice Float64, l_shipdate Date, l_tag Int32) ENGINE = IcebergS3(perf_s3, filename = 'iceberg_compaction_opt_$s/');
+        INSERT INTO icp_opt_run SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice, l_shipdate, 0 FROM tpch10.lineitem WHERE l_orderkey % 10 = 0;
+        INSERT INTO icp_opt_run SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice, l_shipdate, 1 FROM tpch10.lineitem WHERE l_orderkey % 100 = 1;
+        DELETE FROM icp_opt_run WHERE l_tag = 1;
+        OPTIMIZE TABLE icp_opt_run;
+        SELECT throwIf(countIf(content = 1) != 0 OR (SELECT count() FROM icp_opt_run) != (SELECT count() FROM tpch10.lineitem WHERE l_orderkey % 10 = 0)) FROM system.iceberg_files WHERE database = 'default' AND table = 'icp_opt_run';
+        DROP TABLE icp_opt_run SYNC"
+]]></query>
+<query type="shell"><![CDATA[
+    s=$(date +%s%N)
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --iceberg_insert_max_rows_in_data_file 1000000 --max_insert_threads 1 --optimize_trivial_count_query 0 --query "
+        DROP TABLE IF EXISTS icp_ref_run SYNC;
+        CREATE TABLE icp_ref_run (l_orderkey Int32, l_partkey Int32, l_quantity Float64, l_extendedprice Float64, l_shipdate Date, l_tag Int32) ENGINE = IcebergS3(perf_s3, filename = 'iceberg_compaction_ref_$s/');
+        INSERT INTO icp_ref_run SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice, l_shipdate, 0 FROM tpch10.lineitem WHERE l_orderkey % 10 = 0;
+        INSERT INTO icp_ref_run SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice, l_shipdate, 1 FROM tpch10.lineitem WHERE l_orderkey % 100 = 1;
+        DELETE FROM icp_ref_run WHERE l_tag = 1;
+        SELECT throwIf(count() != (SELECT count() FROM tpch10.lineitem WHERE l_orderkey % 10 = 0)) FROM icp_ref_run;
+        DROP TABLE icp_ref_run SYNC"
+]]></query>
+
+<drop_query>DROP TABLE IF EXISTS icp_opt, icp_opt_run, icp_ref_run SYNC</drop_query>
+</test>

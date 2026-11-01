@@ -210,7 +210,7 @@ ORDER BY substream;
 └───────────┴────────────────────┘
 ```
 )DOCS_MD",
-         .category = FunctionDocumentation::Category::TableFunction},
+         .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

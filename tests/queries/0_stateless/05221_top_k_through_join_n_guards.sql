@@ -24,7 +24,6 @@
 -- optimisation fires unconditionally (no second-pass deferral) whenever the
 -- n-guards allow it, making the plan-level observation unambiguous.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS t_l_guards;

@@ -25,7 +25,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case3_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case3_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_alter_race MODIFY COLUMN b UInt32 FIRST"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_alter_race WHERE b != a * 2"
@@ -45,7 +45,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case4_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case4_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_single ADD COLUMN c UInt32 DEFAULT 42"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_single"
@@ -67,7 +67,7 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case5_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case5_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_add_col_multi ADD COLUMN c UInt32 DEFAULT 42"
 wait "$INSERT_PID"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_add_col_multi"
@@ -82,9 +82,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_add_col_multi"
 # TRUNCATE (no table lock at all on MergeTree).
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_excl_lock_mv"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_excl_lock"
+# Local disk for both tables: a write-through filesystem cache can stall the flush's part write past the writer's timeout.
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE test_async_sel_excl_lock (a UInt32)
-    ENGINE = MergeTree ORDER BY a
+    ENGINE = MergeTree ORDER BY a SETTINGS storage_policy = 'default'
 "
 ${CLICKHOUSE_CLIENT} \
     --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 \
@@ -95,12 +96,12 @@ ${CLICKHOUSE_CLIENT} \
     WHERE sleepEachRow(0.001) = 0
 " &
 INSERT_PID=$!
-wait_for_query_to_start "insert_case6_${CLICKHOUSE_DATABASE}" 30
+wait_for_query_to_start "insert_case6_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 # Waits out the SELECT above, then takes the write lock while the INSERT waits for its flush. Short
 # timeout: it bounds what the deadlock costs here, and the good path needs only the SELECT to end.
 ${CLICKHOUSE_CLIENT} --lock_acquire_timeout=10 -q "
     CREATE MATERIALIZED VIEW test_async_sel_excl_lock_mv
-    ENGINE = MergeTree ORDER BY a POPULATE
+    ENGINE = MergeTree ORDER BY a SETTINGS storage_policy = 'default' POPULATE
     AS SELECT a FROM test_async_sel_excl_lock
 "
 wait "$INSERT_PID"
