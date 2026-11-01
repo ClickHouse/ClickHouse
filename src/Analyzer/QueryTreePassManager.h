@@ -27,8 +27,15 @@ public:
     /// Run query tree passes on query tree
     void run(QueryTreeNodePtr & query_tree_node);
 
+    /// The number of the first passes that are run by `runOnlyResolve`: the passes up to and including
+    /// `RemoveUnusedProjectionColumnsPass`, zero if it is not registered.
+    size_t getResolvePassesCount() const { return resolve_passes_count; }
+
     /// Run only query tree passes responsible to name resolution.
     void runOnlyResolve(QueryTreeNodePtr & query_tree_node);
+
+    /// Run query tree passes on query tree starting from from_pass_index.
+    void runFrom(QueryTreeNodePtr & query_tree_node, size_t from_pass_index);
 
     /** Run query tree passes on query tree up to up_to_pass_index.
       * Throws exception if up_to_pass_index is greater than passes size.
