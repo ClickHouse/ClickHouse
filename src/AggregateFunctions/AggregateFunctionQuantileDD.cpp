@@ -66,9 +66,11 @@ Before any bins merge, the scale is 18 at relative accuracy 0.000001, 15 at 0.00
 0.01. The bins are a little narrower than the buckets of these scales. Each time pairs of adjacent bins merge, the scale
 goes down by 1.
 
-Bins merge since ClickHouse 26.11. Versions 26.3 to 26.10 throw the exception `DDSketch store key range too large` for
-such values instead, and versions 26.2 and earlier keep the requested accuracy with unlimited memory. The states of such
-values that they wrote, and the states of other DDSketch implementations, are read with merged bins too.
+Bins merge in ClickHouse 26.11 and later. For values this far apart, versions 26.3 to 26.10 throw the exception
+`DDSketch store key range too large`, and versions 26.2 and earlier keep the requested accuracy, using as much memory as
+the range of the values needs. A state whose bins are too far apart, written by version 26.2 or earlier or by another
+DDSketch implementation, gets its bins merged when it is read, so its quantiles can be less accurate than in the version
+that wrote it.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileDD(relative_accuracy, [level])(expr)

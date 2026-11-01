@@ -35,6 +35,7 @@ public:
 
         gamma = (1 + relative_accuracy) / (1 - relative_accuracy);
         multiplier = 1 / std::log(gamma);
+        key_multiplier = multiplier;
         updateBounds();
     }
 
@@ -82,6 +83,7 @@ public:
         result.setGamma(downscaledGamma(shift));
         if (!std::isfinite(result.gamma) || !(result.relative_accuracy < 1.0)) [[unlikely]]
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DDSketch gamma {} downscaled by {} is {}", gamma, shift, result.gamma);
+        result.key_multiplier = std::ldexp(key_multiplier, -shift);
         return result;
     }
 
@@ -118,7 +120,9 @@ public:
         /// Values of the partial bin below `min_key` go one bin up: `validKeyRange` rejects that bin, and released
         /// versions check the same range, so they must be able to read the states we write. That bin is outside the
         /// relative accuracy guarantee
-        return static_cast<int>(std::max(std::floor(logGamma(value) + offset), min_key));
+        /// After a downscale, the largest values can get a key above `max_valid_key`
+        const Float64 raw_key = std::max(std::floor(std::log(value) * key_multiplier + offset), min_key);
+        return static_cast<int>(std::min(raw_key, static_cast<Float64>(max_valid_key)));
     }
 
     Float64 value(int key) const { return lowerBound(key) * (1 + relative_accuracy); }
@@ -215,6 +219,7 @@ protected:
     {
         gamma = gamma_;
         multiplier = 1 / std::log(gamma);
+        key_multiplier = multiplier;
         relative_accuracy = (gamma - 1) / (gamma + 1);
         updateBounds();
     }
@@ -251,6 +256,9 @@ protected:
     Int64 min_valid_key = 0;
     Int64 max_valid_key = 0;
     Float64 multiplier = 0.0;
+    /// Used by `key`. `downscaled(shift)` divides it by 2^shift. This is exact, so `key` returns the original key >> shift,
+    /// the same key as a downscaled bin gets. `multiplier` of the new gamma is slightly off and can return the next key
+    Float64 key_multiplier = 0.0;
     Float64 offset = 0.0;
 };
 

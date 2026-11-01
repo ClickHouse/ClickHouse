@@ -62,6 +62,8 @@ values too far apart
 15	[1.000008,2.853516]
 15	[1.000008,2.853516]
 15	[1.000008,2.853516]
+1	14	3	0	49571	0	0	1	1
+-1	14	3	0	0	0	49571	1	1
 1	1
 dense	100000	17	1
 negative	4	17	1
@@ -111,4 +113,20 @@ gammas of the scales
 -1	0
 1	0
 2	-1
+levels of quantilesDD
+empty	1
+mixed	1
+negative	1
+one value	1
+positive	1
+skewed	1
+weight below 1, mixed	1
+weight below 1, positive	1
+zeros	1
+1
+results of Date and DateTime
+1970-01-01	['1970-01-01','1970-01-01']
+1970-01-01 00:00:00	['1970-01-01 00:00:00','1970-01-01 00:00:00']
+2149-06-06	['2149-06-06']	2149-06-04
+2106-02-07 06:28:15	['2106-02-07 06:28:15']
 errors

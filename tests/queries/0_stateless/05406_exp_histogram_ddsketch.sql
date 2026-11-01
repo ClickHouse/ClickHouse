@@ -217,6 +217,18 @@ SELECT toExpHistogram(quantileDDMergeState(0.000001)(s)).scale, arrayMap(q -> ro
 FROM (SELECT arrayJoin([
     (SELECT quantileDDState(0.000001)(v) FROM (SELECT arrayJoin([1, 1.2]) AS v)),
     (SELECT quantileDDState(0.000001)(v) FROM (SELECT arrayJoin([2.8535162336408666, 1, 2.8535162336408666]) AS v))]) AS s);
+-- The result does not depend on the order of the values or on how they are split between states. 2.8535904260274387
+-- makes the sketch downscale, and then 8.14294574739231 is at the edge of a bin
+SELECT sign, h.scale, h.count, h.positive_offset, length(h.positive_bucket_counts), h.negative_offset, length(h.negative_bucket_counts),
+    h = toExpHistogram(arrayReduce('quantileDDState(0.000001)', arrayMap(v -> sign * v, [1, 8.14294574739231, 2.8535904260274387]))),
+    h = toExpHistogram(arrayReduce('quantileDDMergeState(0.000001)', [
+        arrayReduce('quantileDDState(0.000001)', arrayMap(v -> sign * v, [1, 2.8535904260274387])),
+        arrayReduce('quantileDDState(0.000001)', [sign * 8.14294574739231])]))
+FROM
+(
+    SELECT sign, toExpHistogram(arrayReduce('quantileDDState(0.000001)', arrayMap(v -> sign * v, [1, 2.8535904260274387, 8.14294574739231]))) AS h
+    FROM (SELECT arrayJoin([1, -1]) AS sign)
+);
 -- A downscale makes the bins cover a bit less of the largest finite numbers. They go into the highest bin, whether they come
 -- before the downscale or after it
 SELECT a = b, a > 1.7e308 AND isFinite(a)
@@ -320,6 +332,44 @@ WITH CAST(fromExpHistogram(0, 0, 0, [1, 2, 3, 4], 0, [], 0.000001), 'String') AS
     CAST(concat(substring(canonical, 1, 1), reinterpretAsFixedString(reinterpretAsUInt64(substring(canonical, 2, 8)) + ulps), substring(canonical, 10)), 'AggregateFunction(quantileDD(0.000001), Float64)') AS off
 SELECT ulps, toExpHistogram(off).scale
 FROM (SELECT arrayJoin([-1, 1, 2]) AS ulps);
+
+SELECT 'levels of quantilesDD';
+-- `quantilesDD` gives the same bits as `quantileDD` for each level, with unsorted and repeated levels
+SELECT name, arrayMap(x -> reinterpretAsUInt64(x), q) = arrayMap(x -> reinterpretAsUInt64(x), [q0, q1, q2, q3, q4, q5, q6, q7, q8, q9])
+FROM
+(
+    SELECT name,
+        quantilesDDMerge(0.01, 0.9, 0, 0.25, 0.5, 0.5, 0.75, 1, 0.01, 0.99, 0.333)(s) AS q,
+        quantileDDMerge(0.01, 0.9)(s) AS q0, quantileDDMerge(0.01, 0)(s) AS q1, quantileDDMerge(0.01, 0.25)(s) AS q2,
+        quantileDDMerge(0.01, 0.5)(s) AS q3, quantileDDMerge(0.01, 0.5)(s) AS q4, quantileDDMerge(0.01, 0.75)(s) AS q5,
+        quantileDDMerge(0.01, 1)(s) AS q6, quantileDDMerge(0.01, 0.01)(s) AS q7, quantileDDMerge(0.01, 0.99)(s) AS q8,
+        quantileDDMerge(0.01, 0.333)(s) AS q9
+    FROM
+    (
+        SELECT 'positive' AS name, quantileDDState(0.01)(toFloat64(number + 1)) AS s FROM numbers(1000)
+        UNION ALL SELECT 'negative', quantileDDState(0.01)(-toFloat64(number + 1)) FROM numbers(1000)
+        UNION ALL SELECT 'zeros', quantileDDState(0.01)(toFloat64(0)) FROM numbers(10)
+        UNION ALL SELECT 'mixed', quantileDDState(0.01)(toFloat64(number % 21) - 10) FROM numbers(1000)
+        UNION ALL SELECT 'one value', quantileDDState(0.01)(toFloat64(-3)) FROM numbers(1)
+        UNION ALL SELECT 'empty', quantileDDState(0.01)(toFloat64(number)) FROM numbers(0)
+        UNION ALL SELECT 'skewed', quantileDDState(0.01)(toFloat64(if(number < 990, 1, number * 1000))) FROM numbers(1000)
+        -- The bin counts 1 become 0.25: the total weight is below 1, so the ranks are negative and decrease as the level grows
+        UNION ALL SELECT 'weight below 1, positive', CAST(unhex(replaceAll(hex(CAST(quantileDDState(0.01)(toFloat64(number + 1)), 'String')), '000000000000F03F', '000000000000D03F')), 'AggregateFunction(quantileDD(0.01), Float64)') FROM numbers(3)
+        UNION ALL SELECT 'weight below 1, mixed', CAST(unhex(replaceAll(hex(CAST(quantileDDState(0.01)(toFloat64(number) - 1), 'String')), '000000000000F03F', '000000000000D03F')), 'AggregateFunction(quantileDD(0.01), Float64)') FROM numbers(3)
+    )
+    GROUP BY name
+)
+ORDER BY name;
+SELECT quantilesDD(0.01, 0.9, 0.1, 0.5)(toInt32(number) - 500) = [quantileDD(0.01, 0.9)(toInt32(number) - 500), quantileDD(0.01, 0.1)(toInt32(number) - 500), quantileDD(0.01, 0.5)(toInt32(number) - 500)]
+FROM numbers(1000);
+
+SELECT 'results of Date and DateTime';
+-- The quantiles of `Date` and `DateTime` stay in the range of the type: an empty state gives 0, and the value of a bin
+-- above the largest value of the type gives that value
+SELECT quantileDD(0.01)(d), quantilesDD(0.01, 0.5, 0.9)(d) FROM (SELECT toDate('2020-01-01') AS d WHERE 0);
+SELECT quantileDD(0.01)(d), quantilesDD(0.01, 0.5, 0.9)(d) FROM (SELECT toDateTime('2020-01-01 00:00:00', 'UTC') AS d WHERE 0);
+SELECT quantileDD(0.02)(toDate(65535)), quantilesDD(0.02, 0.5)(toDate(65535)), quantileDD(0.01)(toDate(65535));
+SELECT quantileDD(0.02)(toDateTime(4294967295, 'UTC')), quantilesDD(0.02, 0.5)(toDateTime(4294967295, 'UTC'));
 
 SELECT 'errors';
 SELECT fromExpHistogram(-6, 0, 0, [1], 0, []); -- { serverError BAD_ARGUMENTS }
