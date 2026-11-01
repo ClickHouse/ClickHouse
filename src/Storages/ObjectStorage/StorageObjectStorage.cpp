@@ -753,6 +753,13 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
     if (distributed_processing || configuration->isDataLakeConfiguration())
         return {};
 
+    /// A listable HTTP `URL` table (wildcard from index pages) is backed by `WebObjectStorage`, which follows
+    /// redirects without keeping the final resource. A stable index entry can redirect first to one resource
+    /// and then to another, and both can have the same strong `ETag`, size and `Last-Modified`, so none of the
+    /// inputs below would move although the data changed. Fail closed until the resolved resource can be hashed.
+    if (configuration->getType() == ObjectStorageType::Web)
+        return {};
+
     /// The object set to hash. Prefer the set the query's read actually consumed (pinned in the query
     /// context by the reading side); fall back to a fresh listing otherwise (the pre-read check, and
     /// non-query callers such as `system.tables`). Hashing the consumed set at finalization closes a
