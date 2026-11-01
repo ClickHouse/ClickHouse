@@ -3275,15 +3275,21 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
             /// rule `getMutationsStatus` and `waitForMutation` report. Stopping at the first such
             /// entry instead left it permanently unfinished here, so its counters were never
             /// decremented and no entry behind it was ever marked done either.
-            if (!parts_for_visibility)
-                parts_for_visibility = getDataPartsVectorForInternalUsage();
+            /// The scope of a done mutation cannot grow again, so retained completed entries are not
+            /// rescanned; only the bookkeeping below still applies to them.
+            bool part_in_scope_left = false;
+            if (!entry.is_done)
+            {
+                if (!parts_for_visibility)
+                    parts_for_visibility = getDataPartsVectorForInternalUsage();
 
-            const auto version = static_cast<Int64>(mutation_version);
-            const bool part_in_scope_left = std::any_of(
-                parts_for_visibility->begin(), parts_for_visibility->end(), [&](const auto & part)
-                {
-                    return getPartMutationScope(*part, version, entry.tid) != PartMutationScope::Outside;
-                });
+                const auto version = static_cast<Int64>(mutation_version);
+                part_in_scope_left = std::any_of(
+                    parts_for_visibility->begin(), parts_for_visibility->end(), [&](const auto & part)
+                    {
+                        return getPartMutationScope(*part, version, entry.tid) != PartMutationScope::Outside;
+                    });
+            }
             if (part_in_scope_left)
             {
                 erasable_prefix = false;
