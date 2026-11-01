@@ -308,9 +308,29 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     in_function->setAlias(or_with_expression.alias);
 
     /// 2. Insert the new IN expression.
-
+    ///
+    /// Put the `IN` at the slot of the FIRST equality of its chain, so the OR operand
+    /// order is preserved. `or` is evaluated lazily from left to right
+    /// (`short_circuit_function_evaluation`), so appending the `IN` after everything else
+    /// would move a guard the user wrote (e.g. `x = 0 OR intDiv(1, x) != 0 OR x = 2 OR x = 3`
+    /// becoming `intDiv(1, x) != 0 OR x IN (0, 2, 3)`) and stop it from protecting the throwing
+    /// expression. The equality slots other than the first are left as-is; `cleanupOrExpressions`
+    /// erases them below, which keeps the relative order of all remaining operands (declined
+    /// chains, non-equality operands, and the inserted `IN`s of other chains).
     auto & operands = getFunctionOperands(or_with_expression.or_function);
-    operands.push_back(in_function);
+    auto first_slot = operands.end();
+    for (auto it = operands.begin(); it != operands.end(); ++it)
+    {
+        if (std::binary_search(equality_functions.begin(), equality_functions.end(), it->get()))
+        {
+            first_slot = it;
+            break;
+        }
+    }
+    if (first_slot == operands.end())
+        operands.push_back(std::move(in_function));
+    else
+        operands.insert(first_slot, std::move(in_function));
 }
 
 void LogicalExpressionsOptimizer::cleanupOrExpressions()
