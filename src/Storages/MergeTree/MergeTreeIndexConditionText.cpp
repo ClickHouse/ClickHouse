@@ -36,6 +36,9 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeMap.h>
+#include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
@@ -191,6 +194,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
     NameSet columns_shadowing_map_subcolumns_,
+    NamesAndTypesList index_required_columns_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(index_sample_block)
@@ -199,6 +203,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , index_required_columns(std::move(index_required_columns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -2338,6 +2343,19 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const String & 
     const auto & [map_column_name, serialized_key] = *parsed;
     if (hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, quoteString(serialized_key))))
         return true;
+
+    /// An Enum key is serialized as its name, but `m[1]` names the numeric value in the index expression.
+    if (const auto map_column = index_required_columns.tryGetByName(map_column_name))
+    {
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(map_column->type.get()))
+        {
+            if (const auto * enum_type = typeid_cast<const IDataTypeEnum *>(map_type->getKeyType().get()))
+            {
+                const auto value = enum_type->castToValue(Field(serialized_key));
+                return hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, applyVisitor(FieldVisitorToString(), value)));
+            }
+        }
+    }
 
     /// An integer key is named as a number literal, e.g. `arrayElement(m, 1)` for `m[1]`.
     std::string_view digits = serialized_key;

@@ -100,6 +100,7 @@ public:
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
         NameSet columns_shadowing_map_subcolumns_,
+        NamesAndTypesList index_required_columns_,
         JSONIndexArgumentTypes json_argument_types_);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -250,6 +251,8 @@ private:
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
     NameSet columns_shadowing_map_subcolumns;
+    /// Columns the index expression reads, to find the type of a Map whose subcolumn is looked up.
+    NamesAndTypesList index_required_columns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;
