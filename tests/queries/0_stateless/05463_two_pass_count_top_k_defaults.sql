@@ -104,6 +104,20 @@ ALTER TABLE t_two_pass_drop ADD COLUMN c UInt64 DEFAULT rand() % 1000;
 SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT c, s, count() FROM t_two_pass_drop GROUP BY c, s ORDER BY count() DESC LIMIT 10);
 DROP TABLE t_two_pass_drop;
 
+SELECT 'a DROP COLUMN, a RENAME COLUMN and an UPDATE that have finished: applied';
+DROP TABLE IF EXISTS t_two_pass_finished;
+CREATE TABLE t_two_pass_finished (k UInt64, s String, c UInt64, d UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_two_pass_finished SELECT intHash64(number) % 1000, toString(number % 7), number, number FROM numbers(200000);
+ALTER TABLE t_two_pass_finished DROP COLUMN c SETTINGS mutations_sync = 2;
+SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT k, s, count() FROM t_two_pass_finished GROUP BY k, s ORDER BY count() DESC LIMIT 10);
+ALTER TABLE t_two_pass_finished RENAME COLUMN d TO d2 SETTINGS mutations_sync = 2;
+SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT k, s, count() FROM t_two_pass_finished GROUP BY k, s ORDER BY count() DESC LIMIT 10);
+ALTER TABLE t_two_pass_finished UPDATE s = concat(s, '!') WHERE k % 7 = 0 SETTINGS mutations_sync = 2;
+SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT k, s, count() FROM t_two_pass_finished GROUP BY k, s ORDER BY count() DESC LIMIT 10)
+SETTINGS apply_mutations_on_fly = 1;
+DROP TABLE t_two_pass_finished;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['TwoPassCountTopKPasses'] >= 3, ProfileEvents['TwoPassCountTopKFallbacks']
 FROM system.query_log

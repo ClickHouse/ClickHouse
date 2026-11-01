@@ -50,4 +50,8 @@ a pending ALTER MODIFY COLUMN from Nullable: the reader replaces NULL with the d
 a pending DROP COLUMN, then ADD COLUMN of the same name and type: the part keeps the dropped one, not applied
 1
 0
+a DROP COLUMN, a RENAME COLUMN and an UPDATE that have finished: applied
+1
+1
+1
 two_pass_defaults_on	1	0

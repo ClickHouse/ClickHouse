@@ -38,6 +38,7 @@
 #include <Processors/Transforms/TwoPassCountTopKTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -1135,9 +1136,20 @@ bool readsNarrowColumns(const ActionsDAG & dag, const String & filter_column)
 bool readerExpressionsAreRepeatable(const ReadFromMergeTree & read, const RangesInDataParts & parts)
 {
     /// A pending DROP or RENAME COLUMN makes the reader compute a column the part stores under the same name and type.
+    /// Only the mutations newer than the part apply to it: the snapshot may also hold finished ones.
     const auto & mutations = read.getMutationsSnapshot();
     if (mutations && (mutations->hasDataMutations() || mutations->hasMetadataMutations()))
-        return false;
+    {
+        auto has_pending = [&](const RangesInDataPart & part)
+        {
+            return std::ranges::any_of(mutations->getOnFlyMutationCommandsForPart(part.data_part), [](const MutationCommand & command)
+            {
+                return AlterConversions::isSupportedDataMutation(command.type) || AlterConversions::isSupportedMetadataMutation(command.type);
+            });
+        };
+        if (std::ranges::any_of(parts, has_pending))
+            return false;
+    }
     const auto & metadata = read.getStorageMetadata();
     auto columns = metadata->getColumns();
     for (const auto & column : metadata->virtuals)
