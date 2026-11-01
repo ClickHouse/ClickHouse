@@ -18,6 +18,11 @@ SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND d > 'abc'; --
 -- Without the reordering the division is evaluated first.
 SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND d > '2010-01-01' SETTINGS short_circuit_function_evaluation_reorder_arguments = 0; -- { serverError ILLEGAL_DIVISION }
 
+-- `notEmpty` reads only the size of a string, and `s != ''` is rewritten to it (and not to `s.size != 0`).
+SET optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND notEmpty(s);
+SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND s != '';
+
 DROP TABLE t_cmp_const_string;
 
 -- The rows a PREWHERE step rejects may reach the next step only if it cannot throw on them. A comparison of a tuple of
