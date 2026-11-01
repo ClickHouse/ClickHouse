@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <bit>
-#include <cmath>
 #include <limits>
 #include <unordered_map>
 #include <vector>
@@ -65,14 +64,6 @@ bool canSwap(JoinKind kind, JoinStrictness strictness)
         return true;
     return strictness == JoinStrictness::All && (isLeft(kind) || isRight(kind) || isFull(kind));
 }
-
-/// Per-row costs relative to probing a hash table, comparing hash and sort-merge joins.
-constexpr double HASH_BUILD_ROW_COST = 3.0;
-constexpr double HASH_PROBE_ROW_COST = 1.0;
-constexpr double MERGE_ROW_COST = 1.0;
-/// Merging the streams of an input read in order (`FinishSorting`); a full sort costs `SORT_ROW_COST * log2(rows)` per row.
-constexpr double SORTED_INPUT_ROW_COST = 0.5;
-constexpr double SORT_ROW_COST = 0.2;
 
 class DPSubJoinOrderOptimizer
 {
@@ -128,11 +119,10 @@ private:
     bool isReadInOrder(UInt32 relation_mask, Int32 order_class) const;
     /// Whether a later join may still use a result sorted by the equivalence class.
     bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
-    static double hashJoinCost(UInt64 left_rows, UInt64 right_rows);
-    static double mergeJoinCost(UInt64 left_rows, UInt64 right_rows);
-    static double sortCost(UInt64 rows, bool sorted);
-    /// An equality of two members of the class, one from each side.
-    JoinActionRef makeMergeKeyCondition(Int32 order_class, UInt32 left_mask, UInt32 right_mask) const;
+    /// The column of the class that the result of a plan is sorted by, as `applyOrder` sees it: a merge join on the class
+    /// is sorted by the key of its left input. For any other plan, the first column of the class in its relations.
+    template <typename DPTable, std::unsigned_integral TUInt>
+    const JoinActionRef & orderColumn(const DPTable & dptable, TUInt S, Int32 plan_index, Int32 order_class) const;
 
     bool useInterestingOrders() const { return dpsub_data.interesting_orders; }
 
@@ -722,35 +712,18 @@ bool DPSubJoinOrderOptimizer::isInterestingOrder(Int32 order_class, UInt32 relat
     return query_graph.reuse_join_output_order && (dpsub_data.class_relations[order_class] & ~relations);
 }
 
-double DPSubJoinOrderOptimizer::hashJoinCost(UInt64 left_rows, UInt64 right_rows)
+template <typename DPTable, std::unsigned_integral TUInt>
+const JoinActionRef & DPSubJoinOrderOptimizer::orderColumn(const DPTable & dptable, TUInt S, Int32 plan_index, Int32 order_class) const
 {
-    /// `buildPhysicalPlan` builds the hash table from the smaller input.
-    return HASH_BUILD_ROW_COST * static_cast<double>(std::min(left_rows, right_rows))
-        + HASH_PROBE_ROW_COST * static_cast<double>(std::max(left_rows, right_rows));
-}
+    const auto & table_entry = dptable[S];
+    const auto & plan = plan_index < 0 ? table_entry : table_entry.ordered.at(plan_index);
+    if (plan.method == JoinMethod::Merge && plan.merge_class == order_class)
+        return orderColumn(dptable, plan.left, plan.left_plan, order_class);
 
-double DPSubJoinOrderOptimizer::mergeJoinCost(UInt64 left_rows, UInt64 right_rows)
-{
-    return MERGE_ROW_COST * (static_cast<double>(left_rows) + static_cast<double>(right_rows));
-}
-
-double DPSubJoinOrderOptimizer::sortCost(UInt64 rows, bool sorted)
-{
-    const auto n = static_cast<double>(rows);
-    return sorted ? SORTED_INPUT_ROW_COST * n : SORT_ROW_COST * n * std::log2(std::max(n, 2.0));
-}
-
-JoinActionRef DPSubJoinOrderOptimizer::makeMergeKeyCondition(Int32 order_class, UInt32 left_mask, UInt32 right_mask) const
-{
-    auto find_column = [&](UInt32 side) -> const JoinActionRef &
-    {
-        for (const auto & column : dpsub_data.class_members[order_class])
-            if ((static_cast<UInt32>(1) << *column.getSourceRelations().getSingleBit()) & side)
-                return column;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Equivalence class {} has no column in relations {}", order_class, toBinaryString(side));
-    };
-    return JoinActionRef::transform(
-        {find_column(left_mask), find_column(right_mask)}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+    for (const auto & column : dpsub_data.class_members[order_class])
+        if ((static_cast<UInt32>(1) << *column.getSourceRelations().getSingleBit()) & S)
+            return column;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Equivalence class {} has no column in relations {}", order_class, toBinaryString(S));
 }
 
 std::optional<std::pair<JoinKind, JoinStrictness>>
@@ -893,21 +866,17 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// `outer_join_conditions`), so this only diverts genuine post-join filters.
     bool is_inner_step = isInner(entry.kind) || isCrossOrComma(entry.kind);
 
-    /// The merge key goes first, so that the inputs are sorted by it before the other keys.
-    const JoinActionRef * merge_key_edge = nullptr;
+    /// The merge key goes first, on the columns the inputs are sorted by; `cleanupJoinPredicates` drops the conditions it makes redundant.
     if (entry.method == JoinMethod::Merge)
     {
-        for (const auto * e : entry.edges)
-            if (dpsub_data.edge_class[e - query_graph.edges.data()] == entry.merge_class)
-                merge_key_edge = e;
+        const auto & left_column = orderColumn(dptable, entry.left, entry.left_plan, entry.merge_class);
+        const auto & right_column = orderColumn(dptable, entry.right, entry.right_plan, entry.merge_class);
         join_operator.expression.push_back(
-            merge_key_edge ? *merge_key_edge : makeMergeKeyCondition(entry.merge_class, entry.left, entry.right));
+            JoinActionRef::transform({left_column, right_column}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
     }
 
     for (const auto * e : entry.edges)
     {
-        if (e == merge_key_edge)
-            continue;
         if (is_inner_step || query_graph.outer_join_conditions.contains(*e))
             join_operator.expression.push_back(*e);
         else
@@ -938,7 +907,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     ///
     /// Leave the sides alone when the query pins `query_plan_join_swap_table`, and in a graph whose
     /// entries do not carry the real strictness: the swap in `optimizeJoin` decides those later.
-    const bool can_swap = entriesCarryStrictness(query_graph) && canSwap(entry.kind, entry.strictness);
+    /// A merge join keeps its sides: its result is sorted by the key of the left input, which `orderColumn` relies on.
+    const bool can_swap = entriesCarryStrictness(query_graph) && canSwap(entry.kind, entry.strictness) && entry.method != JoinMethod::Merge;
     if (!query_graph.join_swap_table && can_swap)
     {
         const auto & left_rows = left->estimated_rows;
@@ -995,12 +965,12 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
-        std::vector<JoinActionRef*> edges; // needed for physical plan generation
         JoinMethod method{JoinMethod::Hash};
-        Int32 merge_class{-1};  /// equivalence class of the merge key
-        Int32 order_class{-1};  /// equivalence class the result is sorted by, if a later join may use it
-        Int32 left_plan{-1};    /// plan of `left` in its `ordered`, -1 for its cheapest plan
-        Int32 right_plan{-1};
+        Int8 merge_class{-1};  /// equivalence class of the merge key
+        Int8 order_class{-1};  /// equivalence class the result is sorted by, if a later join may use it
+        Int8 left_plan{-1};    /// plan of `left` in its `ordered`, -1 for its cheapest plan
+        Int8 right_plan{-1};
+        std::vector<JoinActionRef*> edges; // needed for physical plan generation
     };
     struct DPEntry : DPPlan
     {

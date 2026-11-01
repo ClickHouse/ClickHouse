@@ -1312,6 +1312,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     && lhs_estimation.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
+            /// A merge join keeps the sides the optimizer chose, the later joins rely on the order of its left input.
+            if (entry->join_method == JoinMethod::Merge)
+                flip_join = false;
 
             /// fixme: USING clause handled specially in join algorithm, so swap breaks it
             /// At the time of writing, we're not able to swap inputs for ANY or SEMI partial merge join, because it only supports inner or left joins, but not right

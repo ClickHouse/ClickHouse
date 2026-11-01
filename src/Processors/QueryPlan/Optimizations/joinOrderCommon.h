@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 #include <algorithm>
+#include <bit>
 #include <limits>
 
 namespace DB
@@ -223,6 +224,40 @@ inline std::optional<UInt64> estimateJoinCardinality(
 inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
 {
     return left->cost + right->cost + estimateJoinedRows(selectivity, left->estimated_rows, right->estimated_rows);
+}
+
+/// Per-row costs relative to a hash table probe, measured with `parallel_hash` and `full_sorting_merge` on `MergeTree` tables.
+constexpr double HASH_BUILD_ROW_COST = 4.0;
+constexpr double HASH_PROBE_ROW_COST = 1.0;
+/// Merging an input read in order costs about as much as a probe, plus a fixed cost per join.
+constexpr double MERGE_SORTED_ROW_COST = 1.0;
+constexpr double MERGE_JOIN_FIXED_COST = 5'000'000;
+/// A full sort costs `SORT_ROW_COST * log2(rows)` per row, with the logarithm rounded up to an integer.
+constexpr double SORT_ROW_COST = 0.8;
+
+/// An input of a sort-merge join: the cost of its plan, its rows, and whether it is sorted by the merge key.
+struct MergeJoinInput
+{
+    double cost;
+    UInt64 rows;
+    bool sorted;
+};
+
+/// A sort-merge join costs as much as the hash join of the same inputs plus the difference between the two methods,
+/// so it is comparable with `computeJoinCost`, and plans without sorted inputs keep their costs.
+inline double computeMergeJoinCost(const MergeJoinInput & left, const MergeJoinInput & right, const SelectivityEstimate & selectivity)
+{
+    auto input_cost = [](const MergeJoinInput & input)
+    {
+        const auto rows = static_cast<double>(input.rows);
+        const double sort = input.sorted ? 0.0 : SORT_ROW_COST * rows * static_cast<double>(std::bit_width(input.rows));
+        return sort + MERGE_SORTED_ROW_COST * rows;
+    };
+    const auto build_rows = static_cast<double>(std::min(left.rows, right.rows));
+    const auto probe_rows = static_cast<double>(std::max(left.rows, right.rows));
+    const double hash_join = HASH_BUILD_ROW_COST * build_rows + HASH_PROBE_ROW_COST * probe_rows;
+    const double merge_join = MERGE_JOIN_FIXED_COST + input_cost(left) + input_cost(right);
+    return left.cost + right.cost + estimateJoinedRows(selectivity, left.rows, right.rows) + merge_join - hash_join;
 }
 
 }

@@ -16,14 +16,18 @@ Read type: InOrder
 Read type: InOrder
 merge join
 merge join
+-- a chain of four, in whatever tree shape: every input of every merge join is already sorted
+3	6	6
 -- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes
 hash join
 merge join
 -- the setting is off: hash join
 hash join
 -- results
-50000	3749925000
-50000	3749925000
-16667	1527747221
-16667	1527747221
+3000000	8999997000000
+3000000	8999997000000
+3000000	13499995500000
+3000000	13499995500000
 10	45045
+3000000	17999994000000
+3000000	17999994000000

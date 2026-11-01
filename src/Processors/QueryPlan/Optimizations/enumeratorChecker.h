@@ -5,7 +5,10 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
+#include <limits>
+#include <vector>
 
 namespace DB
 {
@@ -61,14 +64,21 @@ private:
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
         const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges);
 
-    struct SortedInput
+    struct MergeInputCandidate
     {
-        Int32 plan;
-        double cost; /// including sorting by the key
-        UInt64 rows;
+        Int8 plan;
+        MergeJoinInput input;
     };
-    /// The cheapest plan of the subset sorted by the equivalence class, or nullopt if no plan has a row estimate.
-    std::optional<SortedInput> cheapestSortedInput(UInt subset, Int32 key) const;
+    struct MergeInputCandidates
+    {
+        std::array<MergeInputCandidate, 2> items;
+        size_t size = 0;
+        const MergeInputCandidate * begin() const { return items.data(); }
+        const MergeInputCandidate * end() const { return items.data() + size; }
+    };
+    /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
+    /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
+    MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
 
     DPTable dp_table;
     Optimizer & optimizer;
@@ -166,26 +176,29 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
 }
 
 template <class TDPTable, class TOptimizer>
-std::optional<typename EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::SortedInput>
-EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::cheapestSortedInput(const UInt subset, const Int32 key) const
+typename EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::MergeInputCandidates
+EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UInt subset, const Int32 key) const
 {
     const auto & entry = dp_table[subset];
-    std::optional<SortedInput> best;
-    auto consider = [&](const Plan & plan, Int32 plan_index, bool sorted)
+    MergeInputCandidates candidates;
+    auto add = [&](const Plan & plan, Int8 plan_index, bool sorted)
     {
-        if (!plan.estimated_rows)
-            return;
-        const double cost = plan.cost + optimizer.sortCost(*plan.estimated_rows, sorted);
-        if (!best || cost < best->cost)
-            best = SortedInput{plan_index, cost, *plan.estimated_rows};
+        if (plan.estimated_rows)
+            candidates.items[candidates.size++] = {plan_index, {plan.cost, *plan.estimated_rows, sorted}};
     };
 
     const bool is_leaf = std::popcount(subset) == 1;
-    consider(entry, -1, is_leaf ? optimizer.isReadInOrder(static_cast<UInt32>(subset), key) : entry.order_class == key);
+    add(entry, -1, is_leaf ? optimizer.isReadInOrder(static_cast<UInt32>(subset), key) : entry.order_class == key);
+    /// `ordered` has at most one plan per class.
     for (size_t i = 0; i < entry.ordered.size(); ++i)
+    {
         if (entry.ordered[i].order_class == key)
-            consider(entry.ordered[i], static_cast<Int32>(i), true);
-    return best;
+        {
+            add(entry.ordered[i], static_cast<Int8>(i), true);
+            break;
+        }
+    }
+    return candidates;
 }
 
 template <class TDPTable, class TOptimizer>
@@ -198,40 +211,57 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
     for (UInt64 keys = optimizer.mergeKeyClasses(edges, left_mask, right_mask, kind, strictness); keys; keys &= keys - 1)
     {
         const auto key = static_cast<Int32>(std::countr_zero(keys));
-        const auto left = cheapestSortedInput(lhs_subset, key);
-        const auto right = cheapestSortedInput(rhs_subset, key);
-        if (!left || !right)
+        const MergeInputCandidate * left = nullptr;
+        const MergeInputCandidate * right = nullptr;
+        double cost = std::numeric_limits<double>::infinity();
+        const auto left_candidates = mergeInputCandidates(lhs_subset, key);
+        const auto right_candidates = mergeInputCandidates(rhs_subset, key);
+        for (const auto & left_candidate : left_candidates)
+        {
+            for (const auto & right_candidate : right_candidates)
+            {
+                const double candidate_cost = computeMergeJoinCost(left_candidate.input, right_candidate.input, selectivity);
+                if (candidate_cost < cost)
+                {
+                    cost = candidate_cost;
+                    left = &left_candidate;
+                    right = &right_candidate;
+                }
+            }
+        }
+        if (!left)
             continue;
 
-        /// Costed as the hash join of the same inputs plus the difference, so plans without sorted inputs keep their costs.
+        /// Decide where the plan goes before building it, a plan that is not kept costs no allocation.
+        auto & entry = dp_table[result_subset];
+        const bool keeps_order = optimizer.isInterestingOrder(key, static_cast<UInt32>(result_subset));
+        auto ordered_it = keeps_order ? std::ranges::find(entry.ordered, key, &Plan::order_class) : entry.ordered.end();
+        const bool new_ordered = keeps_order && ordered_it == entry.ordered.end();
+        const bool better_ordered = keeps_order && !new_ordered && cost < ordered_it->cost;
+        const bool better_cheapest = cost < entry.cost;
+        if (!new_ordered && !better_ordered && !better_cheapest)
+            continue;
+
         Plan plan;
         plan.left = lhs_subset;
         plan.right = rhs_subset;
         plan.left_plan = left->plan;
         plan.right_plan = right->plan;
-        plan.cost = left->cost + right->cost + estimateJoinedRows(selectivity, left->rows, right->rows)
-            + optimizer.mergeJoinCost(left->rows, right->rows) - optimizer.hashJoinCost(left->rows, right->rows);
+        plan.cost = cost;
         plan.sel = selectivity.reported_value;
         plan.kind = kind;
         plan.strictness = strictness;
-        plan.estimated_rows = optimizer.estimateCardinality(left->rows, right->rows, selectivity, kind, strictness);
+        plan.estimated_rows = optimizer.estimateCardinality(left->input.rows, right->input.rows, selectivity, kind, strictness);
         plan.edges.assign(edges.begin(), edges.end());
         plan.method = JoinMethod::Merge;
-        plan.merge_class = key;
-        plan.order_class = optimizer.isInterestingOrder(key, static_cast<UInt32>(result_subset)) ? key : -1;
+        plan.merge_class = static_cast<Int8>(key);
+        plan.order_class = keeps_order ? static_cast<Int8>(key) : -1;
 
-        LOG_TEST(optimizer.log, "merge join on class {} costs: {}", key, plan.cost);
-
-        auto & entry = dp_table[result_subset];
-        if (plan.order_class >= 0)
-        {
-            auto it = std::ranges::find(entry.ordered, key, &Plan::order_class);
-            if (it == entry.ordered.end())
-                entry.ordered.push_back(plan);
-            else if (plan.cost < it->cost)
-                *it = plan;
-        }
-        if (plan.cost < entry.cost)
+        if (new_ordered)
+            entry.ordered.push_back(plan);
+        else if (better_ordered)
+            *ordered_it = plan;
+        if (better_cheapest)
             static_cast<Plan &>(entry) = std::move(plan);
     }
 }

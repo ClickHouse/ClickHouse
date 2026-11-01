@@ -16,6 +16,7 @@ SET optimize_sorting_by_input_stream_properties = 1;
 DROP TABLE IF EXISTS sorted1;
 DROP TABLE IF EXISTS sorted2;
 DROP TABLE IF EXISTS sorted3;
+DROP TABLE IF EXISTS sorted4;
 DROP TABLE IF EXISTS unsorted1;
 DROP TABLE IF EXISTS unsorted2;
 DROP TABLE IF EXISTS tiny;
@@ -23,15 +24,18 @@ DROP TABLE IF EXISTS tiny;
 CREATE TABLE sorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE sorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE sorted3 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE sorted4 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE unsorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE unsorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE tiny (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
-INSERT INTO sorted1 SELECT number, number FROM numbers(100000);
-INSERT INTO sorted2 SELECT number * 2, number FROM numbers(100000);
-INSERT INTO sorted3 SELECT number * 3, number FROM numbers(100000);
-INSERT INTO unsorted1 SELECT number, number FROM numbers(100000);
-INSERT INTO unsorted2 SELECT number * 2, number FROM numbers(100000);
+-- A merge join pays a fixed cost, so it wins only for inputs of a few million rows.
+INSERT INTO sorted1 SELECT number, number FROM numbers(3000000);
+INSERT INTO sorted2 SELECT number, number FROM numbers(3000000);
+INSERT INTO sorted3 SELECT number, number FROM numbers(3000000);
+INSERT INTO sorted4 SELECT number, number FROM numbers(3000000);
+INSERT INTO unsorted1 SELECT number, number FROM numbers(3000000);
+INSERT INTO unsorted2 SELECT number, number FROM numbers(3000000);
 INSERT INTO tiny SELECT number * 1000, number FROM numbers(10);
 
 SELECT '-- both inputs sorted by the key: merge join';
@@ -53,6 +57,12 @@ SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%',
 WHERE explain LIKE '%Algorithm:%' OR explain LIKE '%Read type:%' OR explain LIKE '%Prefix sort description:%'
 ORDER BY 1;
 
+SELECT '-- a chain of four, in whatever tree shape: every input of every merge join is already sorted';
+SELECT countIf(explain LIKE '%FullSortingMergeJoin%'), countIf(explain LIKE '%Sort % before JOIN%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(sorted1.k + sorted2.k + sorted3.k + sorted4.k) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
+        JOIN sorted3 ON sorted2.k = sorted3.k JOIN sorted4 ON sorted3.k = sorted4.k);
+
 SELECT '-- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(sorted1.v + sorted2.v + sorted3.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k JOIN sorted3 ON sorted2.k = sorted3.k)
@@ -73,10 +83,16 @@ SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v) FROM sorted1 JOIN sorted2
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k JOIN sorted3 ON sorted2.k = sorted3.k
 SETTINGS query_plan_join_order_use_interesting_orders = 0;
 SELECT count(), sum(sorted1.v + tiny.v) FROM sorted1 JOIN tiny ON sorted1.k = tiny.k;
+SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
+    JOIN sorted3 ON sorted2.k = sorted3.k JOIN sorted4 ON sorted3.k = sorted4.k;
+SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
+    JOIN sorted3 ON sorted2.k = sorted3.k JOIN sorted4 ON sorted3.k = sorted4.k
+SETTINGS query_plan_join_order_use_interesting_orders = 0;
 
 DROP TABLE sorted1;
 DROP TABLE sorted2;
 DROP TABLE sorted3;
+DROP TABLE sorted4;
 DROP TABLE unsorted1;
 DROP TABLE unsorted2;
 DROP TABLE tiny;
