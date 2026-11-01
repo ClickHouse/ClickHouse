@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <Core/NamesAndTypes.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -11,7 +13,7 @@ namespace DB
 class StorageTimeSeries;
 struct TimeSeriesSettings;
 
-/// Represents a storage for table function timeSeriesSelector().
+/// Represents a storage for table functions timeSeriesSelector() and timeSeriesHistogramSelector().
 class StorageTimeSeriesSelector : public StorageWithCommonVirtualColumns
 {
 public:
@@ -26,6 +28,13 @@ public:
 
         /// Whether the samples table stores buckets of samples (see `TimeSeriesSettings::hasBucketedSamples`):
         /// the column `samples` with an array of samples per row, or the columns `timestamp` and `value` with one sample per row.
+
+        /// The data target read by the selector: ViewTarget::Samples for timeSeriesSelector(),
+        /// ViewTarget::Histograms for timeSeriesHistogramSelector().
+        ViewTarget::Kind data_target = ViewTarget::Samples;
+
+        /// Payload columns read and returned: `value` for Samples, the 15 histogram payload columns for Histograms (see `getTimeSeriesHistogramPayloadColumns`).
+        NamesAndTypes data_columns;
 
         PrometheusQueryTree selector;
 
@@ -47,7 +56,7 @@ public:
         ReturnColumns return_columns = ReturnColumns::Samples;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, ViewTarget::Kind data_target = ViewTarget::Samples);
 
     StorageTimeSeriesSelector(const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_);
 

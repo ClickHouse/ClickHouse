@@ -1,0 +1,9 @@
+-- NaN counts are rejected unless the histogram is a stale marker
+-- custom buckets (schema -53) must not use the zero bucket and need finite strictly increasing bounds
+-- the exact integer counts must match the counts of an integer histogram and be empty for a float one
+-- the accepted histograms
+1970-01-01 00:00:01.000	17	0	nan	nan	[]	0	[]
+1970-01-01 00:00:02.000	1	-53	4	0	[1,2.5]	0	[]
+1970-01-01 00:00:03.000	0	0	2	0	[]	2	[2]
+-- a rejected INSERT leaves no rows in the tags, samples and histograms tables
+0	0	0
