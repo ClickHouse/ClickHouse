@@ -1,4 +1,5 @@
--- Blocks whose only `GROUP BY` key holds one value or a few long runs of values are aggregated like a constant key.
+-- Blocks whose only `GROUP BY` key, of 2, 4 or 8 bytes or a `FixedString(1)`, holds one value or a few long runs of values
+-- are aggregated like a constant key.
 -- Every cell compares the result with `optimize_group_by_constant_keys = 0` by `EXCEPT ALL` in both directions and prints 0.
 
 SET max_threads = 1;
@@ -165,9 +166,10 @@ INNER JOIN (SELECT k, count() AS c, sum(v) AS s, groupBitmap(v) AS b FROM t_key_
 SETTINGS enable_group_by_top_k_optimization = 0, max_threads = 4, max_block_size = 65536, optimize_trivial_group_by_limit_query = 1, exact_rows_before_limit = 0, optimize_aggregation_in_order = 0, optimize_group_by_constant_keys = 1;
 DROP TABLE t_key_runs_kept;
 
--- Blocks of one value or of several keys, also of more than eight runs, with keys of 1, 2, 4 and 8 bytes, are aggregated
--- in batches of one place per run only with the setting on; with it off they take one place per row. The one-value block
--- has a `UInt8` key: its per-row path has no consecutive-keys cache, which takes one-place batches for one value on its own.
+-- Blocks of one value or of several keys, also of more than eight runs, with keys of 2, 4 and 8 bytes and `FixedString(1)`,
+-- are aggregated in batches of one place per run only with the setting on; with it off they take one place per row. The
+-- one-value blocks have `FixedString(1)` and `UInt16` keys: their per-row paths have no consecutive-keys cache, which takes
+-- one-place batches for one value on its own. A 1-byte number (`UInt8`) keeps its lookup table, also for one value.
 SELECT 'several runs per block, one place per run';
 SELECT bitShiftLeft(toUInt64(intDiv(number, 3000) % 5), 32) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
 SETTINGS max_block_size = 20000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 1, log_comment = '05486_key_runs_on' FORMAT Null;
@@ -181,6 +183,14 @@ SELECT toUInt8(intDiv(number, 30000)) AS k, count(), sum(number) FROM numbers(30
 SETTINGS max_block_size = 10000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 1, log_comment = '05486_key_runs_one_value_uint8_on' FORMAT Null;
 SELECT toUInt8(intDiv(number, 30000)) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
 SETTINGS max_block_size = 10000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 0, log_comment = '05486_key_runs_one_value_uint8_off' FORMAT Null;
+SELECT toUInt16(intDiv(number, 30000)) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
+SETTINGS max_block_size = 10000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 1, log_comment = '05486_key_runs_one_value_uint16_on' FORMAT Null;
+SELECT toUInt16(intDiv(number, 30000)) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
+SETTINGS max_block_size = 10000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 0, log_comment = '05486_key_runs_one_value_uint16_off' FORMAT Null;
+SELECT toFixedString(toString(intDiv(number, 30000)), 1) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
+SETTINGS max_block_size = 10000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 1, log_comment = '05486_key_runs_one_value_fixed_string_on' FORMAT Null;
+SELECT toFixedString(toString(intDiv(number, 30000)), 1) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
+SETTINGS max_block_size = 10000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 0, log_comment = '05486_key_runs_one_value_fixed_string_off' FORMAT Null;
 SELECT toUInt16(intDiv(number, 3000) % 5) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
 SETTINGS max_block_size = 20000, enable_adaptive_aggregator = 0, optimize_group_by_constant_keys = 1, log_comment = '05486_key_runs_uint16_on' FORMAT Null;
 SELECT toUInt16(intDiv(number, 3000) % 5) AS k, count(), sum(number) FROM numbers(300000) GROUP BY k
@@ -194,6 +204,7 @@ SELECT log_comment, ProfileEvents['AggregationOptimizedEqualRangesOfKeys'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase()
     AND log_comment IN ('05486_key_runs_on', '05486_key_runs_off', '05486_key_runs_over_eight_on', '05486_key_runs_over_eight_off',
-        '05486_key_runs_one_value_uint8_on', '05486_key_runs_one_value_uint8_off', '05486_key_runs_uint16_on',
-        '05486_key_runs_uint16_off', '05486_key_runs_uint32_on', '05486_key_runs_uint32_off')
+        '05486_key_runs_one_value_uint8_on', '05486_key_runs_one_value_uint8_off', '05486_key_runs_one_value_uint16_on',
+        '05486_key_runs_one_value_uint16_off', '05486_key_runs_one_value_fixed_string_on', '05486_key_runs_one_value_fixed_string_off',
+        '05486_key_runs_uint16_on', '05486_key_runs_uint16_off', '05486_key_runs_uint32_on', '05486_key_runs_uint32_off')
 ORDER BY log_comment;
