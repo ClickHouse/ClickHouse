@@ -118,3 +118,71 @@ SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_ev
 SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM (SELECT toString(number) AS s, number FROM numbers(10)) WHERE isValidUTF8(repeat(s, 10)) AND number % 2 = 0)
 WHERE explain LIKE '%AND column%'
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+-- Comparison of Tuples containing types whose row-level comparisons can throw (Variant, Dynamic)
+-- must be classified as canThrow, preventing the optimizer from moving the tuple comparison ahead
+-- of guard predicates in WHERE (Issue #125919).
+SELECT count() FROM values(
+    'k UInt64, t1 Tuple(Variant(String, UInt64)), t2 Tuple(Variant(String, UInt64))',
+    (1, tuple(1), tuple('a')),
+    (2, tuple(2), tuple(2))
+) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
+SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+    short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+SELECT count() FROM values(
+    'k UInt64, t1 Tuple(Variant(String, UInt64)), t2 Tuple(Variant(String, UInt64))',
+    (1, tuple(1), tuple('a')),
+    (2, tuple(2), tuple(2))
+) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
+SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+    short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 0;
+
+SELECT count() FROM values(
+    'k UInt64, t1 Tuple(Dynamic), t2 Tuple(Dynamic)',
+    (1, tuple(1), tuple('a')),
+    (2, tuple(2), tuple(2))
+) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
+SETTINGS enable_dynamic_type = 1, query_plan_merge_filters = 1,
+    short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+SELECT count() FROM values(
+    'k UInt64, t1 Tuple(Tuple(Variant(String, UInt64))), t2 Tuple(Tuple(Variant(String, UInt64)))',
+    (1, tuple(tuple(1)), tuple(tuple('a'))),
+    (2, tuple(tuple(2)), tuple(tuple(2)))
+) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
+SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+    short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+SELECT count() FROM values(
+    'k UInt64, t1 Tuple(Variant(String, UInt64)), t2 Tuple(Variant(String, UInt64))',
+    (1, tuple(1), tuple('a')),
+    (2, tuple(2), tuple(2))
+) WHERE repeat(toString(k), 2) = '22' AND t1 != t2
+SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+    short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+SELECT count() FROM values(
+    'k UInt64, t1 Tuple(Variant(String, UInt64)), t2 Tuple(Variant(String, UInt64))',
+    (1, tuple(1), tuple('a')),
+    (2, tuple(1), tuple(2))
+) WHERE repeat(toString(k), 2) = '22' AND t1 < t2
+SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+    short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1, pretty = 0, compact = 1
+    SELECT count() FROM values('k UInt64, t1 Tuple(UInt64), t2 Tuple(UInt64)', (1, tuple(1), tuple(1)), (2, tuple(2), tuple(2)))
+    WHERE isValidUTF8(repeat(toString(k), 10)) AND t1 = t2
+)
+WHERE explain LIKE '%AND column%'
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1, pretty = 0, compact = 1
+    SELECT count() FROM values('k UInt64, t1 Tuple(Variant(String, UInt64)), t2 Tuple(Variant(String, UInt64))', (1, tuple(1), tuple(1)), (2, tuple(2), tuple(2)))
+    WHERE isValidUTF8(repeat(toString(k), 10)) AND t1 = t2
+)
+WHERE explain LIKE '%AND column%'
+SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1,
+    short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
