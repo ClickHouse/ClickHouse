@@ -290,7 +290,10 @@ struct HiddenExpressionArguments
 /** Returns the cycle of aliases which prevented `name` from being resolved, starting and ending with the same alias,
   * or an empty result if there is no such cycle.
   *
-  * The aliases are taken from the expressions being resolved. An alias of a plain identifier is resolved and removed
+  * The aliases are taken from the expressions being resolved, which can be in nested scopes.
+  * Example: SELECT arrayMap(y -> b, [1]) AS a, a + 1 AS b
+  *
+  * An alias of a plain identifier is resolved and removed
   * from the stack before the failure is reported, so a chain of such aliases is followed from `name` to the stack.
   * Example: SELECT b AS a, a AS b
   *
@@ -299,6 +302,8 @@ struct HiddenExpressionArguments
   */
 Strings findAliasCycle(const std::string & name, const IdentifierResolveScope & scope)
 {
+    Strings nested_scopes_aliases;
+
     for (const auto * current_scope = &scope; current_scope != nullptr; current_scope = current_scope->parent_scope)
     {
         const auto & stack = current_scope->expressions_in_resolve_process_stack;
@@ -322,12 +327,17 @@ Strings findAliasCycle(const std::string & name, const IdentifierResolveScope & 
         }
 
         if (stack.getExpressionWithAlias(current_name) == nullptr)
+        {
+            Strings scope_aliases = stack.getAliasLookups();
+            nested_scopes_aliases.insert(nested_scopes_aliases.begin(), scope_aliases.begin(), scope_aliases.end());
             continue;
+        }
 
         Strings cycle = stack.getAliasLookupPath(current_name);
+        cycle.insert(cycle.end(), nested_scopes_aliases.begin(), nested_scopes_aliases.end());
         cycle.insert(cycle.end(), chain.begin(), chain.end());
         if (cycle.size() < 2)
-            continue;
+            return {};
 
         cycle.push_back(std::move(current_name));
         return cycle;

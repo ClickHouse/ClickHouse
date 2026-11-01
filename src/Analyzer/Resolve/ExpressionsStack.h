@@ -127,6 +127,20 @@ public:
         return result;
     }
 
+    /// Returns the aliases of all expressions on the stack which were reached through an identifier.
+    Strings getAliasLookups() const
+    {
+        Strings result;
+
+        for (const auto & expression : expressions)
+        {
+            if (expression->hasAlias() && alias_lookup_expressions.contains(expression))
+                result.push_back(expression->getAlias());
+        }
+
+        return result;
+    }
+
     bool has(const IQueryTreeNode * node) const
     {
         return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });

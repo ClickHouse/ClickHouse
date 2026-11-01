@@ -29,6 +29,7 @@ check "SELECT a + 1 AS z, b + 1 AS a, a + 1 AS b"
 # Cycles through a nested scope.
 check "SELECT arrayMap(y -> y + a, [1]) AS b, b AS a"
 check "SELECT (SELECT a) AS b, b AS a"
+check "SELECT arrayMap(y -> b, [1]) AS a, a + 1 AS b"
 
 # An alias of a subexpression written in place is not a cycle, and neither is a reference to itself.
 check "SELECT ((unknown_column + 1) AS y) + 1 AS unknown_column"
