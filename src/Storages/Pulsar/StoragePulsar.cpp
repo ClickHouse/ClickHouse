@@ -490,12 +490,8 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
-    modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     if ((*pulsar_settings)[PulsarSetting::pulsar_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
-    /// The parser is reset after every message, so its own error allowance would apply per message.
-    /// `PulsarSource` counts the broken messages of the whole block against `pulsar_skip_broken_messages` instead.
-    modified_context->setSetting("input_format_allow_errors_num", Field{0});
 
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
@@ -505,6 +501,13 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
 
     /// Apply all other settings from the table definition (non-pulsar-related, e.g. format settings).
     modified_context->applySettingsChanges(pulsar_settings->getFormatSettings());
+
+    /// The parser is reset after every message, so its own error allowance would apply per message.
+    /// `PulsarSource` counts the broken messages of the whole block against `pulsar_skip_broken_messages` instead.
+    /// Set after the format settings of the table, so that they can not restore a per-message allowance
+    /// (a definition that sets them is rejected on `CREATE`, but may come from an older version).
+    modified_context->setSetting("input_format_allow_errors_num", Field{0});
+    modified_context->setSetting("input_format_allow_errors_ratio", 0.);
 
     /// It does not make sense to use auto detection here, since the format
     /// will be reset for each message, plus, auto detection takes CPU
@@ -520,8 +523,18 @@ ProducerPtr StoragePulsar::createProducer()
 {
     ProducerPtr producer = std::make_shared<pulsar::Producer>();
     pulsar::ProducerConfiguration config;
-    size_t poll_timeout = getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
-    config.setSendTimeout(static_cast<int>(poll_timeout));
+    /// The client treats a zero (or negative) send timeout as no timeout at all: a synchronous `send` would
+    /// then wait forever for a broker that stopped acknowledging, and `KILL QUERY` could not interrupt it.
+    /// Use the same effective timeout as the consumers and require it to fit into the client's `int`.
+    const size_t send_timeout_ms = getPollTimeoutMilliseconds();
+    if (send_timeout_ms == 0 || send_timeout_ms > static_cast<size_t>(std::numeric_limits<int>::max()))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The setting `pulsar_poll_timeout_ms` (or the inherited `stream_poll_timeout_ms`), used as the send timeout "
+            "of the Pulsar producer, must be positive and not bigger than {} milliseconds, but it is {}",
+            std::numeric_limits<int>::max(),
+            send_timeout_ms);
+    config.setSendTimeout(static_cast<int>(send_timeout_ms));
     config.setBlockIfQueueFull(true);
 
     if (topics.size() > 1)
@@ -894,8 +907,49 @@ void registerStoragePulsar(StorageFactory & factory)
 
         auto pulsar_settings = std::make_unique<PulsarSettings>();
 
+        /// The settings of the table whose value was unfolded from the `{database}` and `{table}` macros
+        /// and stored in the definition (see below). The rest of the definition is the same for all of them.
+        static constexpr std::string_view broker_identity_setting_names[]
+            = {"pulsar_service_url", "pulsar_topic_list", "pulsar_group_name", "pulsar_schema"};
+
+        auto expand_table_macros = [&](const String & value)
+        {
+            Macros::MacroExpansionInfo info;
+            /// NOTE: it's not recursive
+            info.expand_special_macros_only = true;
+            info.table_id = args.table_id;
+            info.table_id.uuid = UUIDHelpers::Nil;
+            return args.getContext()->getMacros()->expand(value, info);
+        };
+
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
+            /// `SETTINGS` of the table are applied on top of the collection, so they are overrides of its keys:
+            /// a key that is `NOT OVERRIDABLE` can not be replaced, and replacing a stored key requires
+            /// `SHOW NAMED COLLECTIONS SECRETS`, as for the other broker engines. The only exception is the value of
+            /// a collection key unfolded from the table macros, which this function stores in the definition itself
+            /// (see below), so that the definition stays loadable. A fresh definition (`CREATE` or a full `ATTACH`)
+            /// may carry it only with the names of this table. A replayed one keeps the names the table had when
+            /// it was created, so it may differ after a `RENAME`.
+            if (args.storage_def->settings)
+            {
+                const bool is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
+                for (const auto & change : args.storage_def->settings->changes)
+                {
+                    const bool is_broker_identity_setting
+                        = std::ranges::find(broker_identity_setting_names, change.name) != std::end(broker_identity_setting_names);
+                    if (is_broker_identity_setting && named_collection->has(change.name)
+                        && change.value.getType() == Field::Types::String)
+                    {
+                        const auto stored_value = named_collection->get<String>(change.name);
+                        const auto expanded_value = expand_table_macros(stored_value);
+                        if (expanded_value != stored_value
+                            && (is_replayed_definition || change.value.safeGet<String>() == expanded_value))
+                            continue;
+                    }
+                    checkNamedCollectionOverride(*named_collection, change.name, args.getLocalContext());
+                }
+            }
             pulsar_settings->loadFromNamedCollection(named_collection);
         }
         else if (!args.storage_def->settings)
@@ -918,16 +972,12 @@ void registerStoragePulsar(StorageFactory & factory)
                 {"pulsar_group_name", &PulsarSetting::pulsar_group_name},
                 {"pulsar_schema", &PulsarSetting::pulsar_schema},
             };
+            static_assert(std::size(broker_identity_settings) == std::size(broker_identity_setting_names));
             for (const auto & [setting_name, setting] : broker_identity_settings)
             {
                 auto & field = (*pulsar_settings)[*setting];
                 const String value = field.value;
-                Macros::MacroExpansionInfo info;
-                /// NOTE: it's not recursive
-                info.expand_special_macros_only = true;
-                info.table_id = args.table_id;
-                info.table_id.uuid = UUIDHelpers::Nil;
-                const auto expanded = args.getContext()->getMacros()->expand(value, info);
+                const auto expanded = expand_table_macros(value);
                 if (expanded == value)
                     continue;
 
@@ -966,6 +1016,21 @@ void registerStoragePulsar(StorageFactory & factory)
                         "The `Pulsar` table engine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns, "
                         "but column `{}` has one",
                         column.name);
+            }
+        }
+
+        /// The parser's own error allowance would be reset after every message and could skip any number
+        /// of broken messages in a block, so `PulsarSource` ignores it and uses `pulsar_skip_broken_messages`.
+        if (is_fresh_definition)
+        {
+            for (const auto & change : pulsar_settings->getFormatSettings())
+            {
+                if ((change.name == "input_format_allow_errors_num" || change.name == "input_format_allow_errors_ratio")
+                    && !change.value.isNull() && change.value != Field{UInt64{0}} && change.value != Field{Float64{0}})
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The setting `{}` is not supported by the `Pulsar` table engine, use `pulsar_skip_broken_messages` instead",
+                        change.name);
             }
         }
 

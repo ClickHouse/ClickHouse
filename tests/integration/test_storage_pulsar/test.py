@@ -827,6 +827,24 @@ def test_zero_poll_timeout_rejected(pulsar_cluster):
     assert "pulsar_poll_timeout_ms" in error
 
 
+def test_send_timeout_must_fit_the_client(pulsar_cluster):
+    # The send timeout of a producer is the effective poll timeout of the table. The client
+    # takes an `int`, and a non-positive value would disable the timeout, so an `INSERT`
+    # with a timeout that does not fit is rejected instead of waiting forever.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(
+        pulsar_table(
+            "test.pulsar_writer",
+            "large_send_timeout_topic",
+            "large_send_timeout_group",
+            extra_settings=", pulsar_poll_timeout_ms = 2147483648",
+        )
+    )
+    error = instance.query_and_get_error("INSERT INTO test.pulsar_writer VALUES (1, 1)")
+    assert "BAD_ARGUMENTS" in error
+    assert "send timeout" in error
+
+
 def test_batch_size_above_int_max_rejected(pulsar_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS test")
     for setting in ("pulsar_max_block_size", "pulsar_poll_max_batch_size"):
@@ -1236,6 +1254,97 @@ def test_skip_broken_messages_budget_is_per_block(pulsar_cluster):
 
     for name in budget_tables:
         instance.query(f"DROP TABLE test.{name} SYNC")
+
+
+def test_parser_error_allowance_rejected(pulsar_cluster):
+    # The parser is reset after every message, so its own error allowance would let any
+    # number of broken messages through a block, bypassing `pulsar_skip_broken_messages`.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for setting in (
+        "input_format_allow_errors_num = 1",
+        "input_format_allow_errors_ratio = 0.5",
+    ):
+        error = instance.query_and_get_error(
+            pulsar_table(
+                "test.pulsar_reader",
+                "allow_errors_topic",
+                "allow_errors_group",
+                extra_settings=", pulsar_skip_broken_messages = 1, " + setting,
+            )
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert "pulsar_skip_broken_messages" in error
+
+
+def test_named_collection_overrides_in_settings(pulsar_cluster):
+    # `SETTINGS` of a table override the keys of its named collection, so they are checked
+    # like the overrides of the other broker engines. The keys unfolded from the table macros
+    # are stored in the definition by the server itself and must keep it loadable.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_nc SYNC")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_nc_renamed SYNC")
+    instance.query("DROP USER IF EXISTS pulsar_nc_user")
+    instance.query("DROP NAMED COLLECTION IF EXISTS pulsar_nc")
+    instance.query(
+        """
+        CREATE NAMED COLLECTION pulsar_nc AS
+            pulsar_service_url = 'pulsar://pulsar1:6650',
+            pulsar_topic_list = '{table}_nc_topic' NOT OVERRIDABLE,
+            pulsar_group_name = 'nc_group',
+            pulsar_format = 'JSONEachRow'
+        """
+    )
+    instance.query("CREATE USER pulsar_nc_user")
+    instance.query("GRANT CREATE TABLE, DROP TABLE ON test.* TO pulsar_nc_user")
+    instance.query("GRANT READ, WRITE ON PULSAR TO pulsar_nc_user")
+    instance.query("GRANT NAMED COLLECTION ON * TO pulsar_nc_user")
+
+    # A locked key can not be replaced, either by `CREATE` or by a full `ATTACH`.
+    error = instance.query_and_get_error(
+        "CREATE TABLE test.pulsar_nc (key UInt64, value UInt64) ENGINE = Pulsar(pulsar_nc) "
+        "SETTINGS pulsar_topic_list = 'another_topic'"
+    )
+    assert "Override not allowed for 'pulsar_topic_list'" in error
+    error = instance.query_and_get_error(
+        "ATTACH TABLE test.pulsar_nc UUID '00000000-0000-0000-0000-000000000005' "
+        "(key UInt64, value UInt64) ENGINE = Pulsar(pulsar_nc) "
+        "SETTINGS pulsar_topic_list = 'another_topic'"
+    )
+    assert "Override not allowed for 'pulsar_topic_list'" in error
+
+    # Replacing a stored key requires the secrets privilege.
+    error = instance.query_and_get_error(
+        "CREATE TABLE test.pulsar_nc (key UInt64, value UInt64) ENGINE = Pulsar(pulsar_nc) "
+        "SETTINGS pulsar_group_name = 'another_group'",
+        user="pulsar_nc_user",
+    )
+    assert "SHOW NAMED COLLECTIONS SECRETS" in error
+
+    # The locked key with macros is unfolded and stored in the definition. The definition
+    # stays loadable after a rename, and can be attached again from `SHOW CREATE TABLE`.
+    instance.query(
+        "CREATE TABLE test.pulsar_nc (key UInt64, value UInt64) ENGINE = Pulsar(pulsar_nc)",
+        user="pulsar_nc_user",
+    )
+    create_query = instance.query("SHOW CREATE TABLE test.pulsar_nc")
+    assert "pulsar_nc_nc_topic" in create_query
+    instance.query("DETACH TABLE test.pulsar_nc")
+    instance.query("ATTACH TABLE test.pulsar_nc")
+    instance.query("RENAME TABLE test.pulsar_nc TO test.pulsar_nc_renamed")
+    instance.query("DETACH TABLE test.pulsar_nc_renamed")
+    instance.query("ATTACH TABLE test.pulsar_nc_renamed")
+    assert "pulsar_nc_nc_topic" in instance.query("SHOW CREATE TABLE test.pulsar_nc_renamed")
+    instance.query("DROP TABLE test.pulsar_nc_renamed SYNC")
+
+    instance.query(
+        "ATTACH TABLE test.pulsar_nc UUID '00000000-0000-0000-0000-000000000006' "
+        "(key UInt64, value UInt64) ENGINE = Pulsar(pulsar_nc) "
+        "SETTINGS pulsar_topic_list = 'pulsar_nc_nc_topic'"
+    )
+    instance.query("DROP TABLE test.pulsar_nc SYNC")
+
+    instance.query("DROP USER pulsar_nc_user")
+    instance.query("DROP NAMED COLLECTION pulsar_nc")
 
 
 def test_aborted_select_redelivers_prefetched_messages(pulsar_cluster):
