@@ -1041,6 +1041,23 @@ bool hasPartsWithDifferentDynamicColumnType(const StorageSnapshotPtr & storage_s
         [&](const StorageSnapshotPtr & snapshot) { return hasPartsWithDifferentDynamicColumnTypeInStorage(snapshot, column_name); });
 }
 
+/// Whether a storage the storage of the snapshot forwards the read to (see `anyStorageReadFrom`) has the column
+/// `column_name` with another type, or does not have it at all. Reading the whole column through such a wrapper
+/// (`Buffer` or `MaterializedView` over a destination with a different type, `Merge` over tables with different
+/// types) converts it to the type of the wrapper, while a forwarded subcolumn of the wrapper type may not exist
+/// in the underlying table (`n.null` of `Nullable(UInt8)` over `UInt8`), or may not commute with the conversion,
+/// so the subcolumn is extracted from the whole column there.
+bool hasForwardedColumnWithDifferentType(const StorageSnapshotPtr & storage_snapshot, const String & column_name, const DataTypePtr & column_type)
+{
+    return anyStorageReadFrom(
+        storage_snapshot,
+        [&](const StorageSnapshotPtr & snapshot)
+        {
+            auto column = snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_name);
+            return !column || !column->type->equals(*column_type);
+        });
+}
+
 /// Build the expression that reads the subcolumn inside the subquery, or nullptr if it cannot be built.
 /// For a column read from a table, it is a direct reference to the subcolumn. For a column exported
 /// by a deeper subquery, it is a `getSubcolumn` function that is pushed down further when that
@@ -1319,6 +1336,9 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
             return nullptr;
 
         if (hasPartsWithDifferentDynamicColumnType(storage_snapshot, inner_column->getColumnName()))
+            return nullptr;
+
+        if (hasForwardedColumnWithDifferentType(storage_snapshot, inner_column->getColumnName(), inner_column->getColumnType()))
             return nullptr;
 
         auto subcolumn_full_name = inner_column->getColumnName() + "." + subcolumn_path;
@@ -2056,17 +2076,15 @@ void processQuery(
             || (query_node.hasLimitAfter() && hasAggregateFunctionNodes(query_node.getLimitAfter()))
             || (query_node.hasLimitUntil() && hasAggregateFunctionNodes(query_node.getLimitUntil()));
 
-        if (query_node.hasGroupBy())
+        /// With `ROLLUP`, `CUBE` and `GROUPING SETS` the grouping sets and the masks of `grouping` are built over the
+        /// list of the keys, and keys replaced with the same pushed column (`length(arr)` and `arr.size0`) would be
+        /// deduplicated, so the keys are not replaced there (occurrences evaluated before the aggregation still are).
+        if (query_node.hasGroupBy() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube()
+            && !query_node.isGroupByWithGroupingSets())
         {
             for (const auto & key_node : query_node.getGroupBy().getNodes())
             {
-                if (query_node.isGroupByWithGroupingSets())
-                {
-                    for (const auto & inner_key_node : key_node->as<ListNode &>().getNodes())
-                        state.group_by_keys.push_back(inner_key_node);
-                }
-                else
-                    state.group_by_keys.push_back(key_node);
+                state.group_by_keys.push_back(key_node);
             }
         }
     }
