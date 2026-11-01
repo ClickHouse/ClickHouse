@@ -32,14 +32,11 @@ do
     echo "ATTACH TABLE stored.t (id Int32, arr Array(Int32), CONSTRAINT c ${constraint_type} arrayJoin(arr) > 0) ENGINE = MergeTree ORDER BY tuple();" \
         > "${WORKING_FOLDER}/metadata/stored/t.sql"
 
-    for analyzer in 0 1
-    do
-        echo "--- ${constraint_type}, enable_analyzer = ${analyzer}"
-        ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --query "
-            SELECT arrayJoin(arr) AS e FROM stored.t WHERE arrayJoin(arr) > 0 ORDER BY e
-            SETTINGS optimize_using_constraints = 1, convert_query_to_cnf = 1, optimize_substitute_columns = 1,
-                     optimize_append_index = 1, enable_analyzer = ${analyzer}"
-    done
+    echo "--- ${constraint_type}"
+    ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --query "
+        SELECT arrayJoin(arr) AS e FROM stored.t WHERE arrayJoin(arr) > 0 ORDER BY e
+        SETTINGS optimize_using_constraints = 1, convert_query_to_cnf = 1, optimize_substitute_columns = 1,
+                 optimize_append_index = 1"
 
     rm -rf "${WORKING_FOLDER}/data" "${WORKING_FOLDER}/store" "${WORKING_FOLDER}/metadata/stored/t.sql"
 done

@@ -12,7 +12,11 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -99,6 +103,10 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
 
 void MergeTreeDeduplicationLog::load()
 {
+    /// Table state: not charged to the query that happens to touch it, and kept in the arena for state
+    /// that outlives queries rather than fragmenting the ones serving them.
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     if (!disk->existsDirectory(logs_dir))
     {
         if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
@@ -139,9 +147,11 @@ void MergeTreeDeduplicationLog::load()
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
 
-        /// Can happen in case we have unfinished log
-        if (!current_writer)
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+        /// written record (see `prepareToWrite`). Opening it eagerly here would add a phantom blob to the
+        /// log file on object storages when the table is shut down without writing any record: finalizing
+        /// an empty `WriteMode::Append` buffer registers the blob in the metadata without uploading any
+        /// object, and a subsequent load would fail to read it (e.g. with `NoSuchKey` on S3).
     }
 }
 
@@ -179,7 +189,8 @@ void MergeTreeDeduplicationLog::rotate()
     existing_logs.emplace(new_log_number, new_log_description);
 
     /// Nothing below can throw.
-    if (current_writer)
+    /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
+    if (current_writer && !current_writer->isCanceled())
     {
         try
         {
@@ -204,9 +215,16 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
-        if (current_sum > deduplication_window)
+        /// Never drop the current active log — it may still be open for writing
+        if (itr->first == current_log_number)
         {
-            /// We have more logs than required, all older files (including current) can be dropped
+            current_sum += itr->second.entries_count;
+            continue;
+        }
+
+        if (current_sum >= deduplication_window)
+        {
+            /// We have more logs than required, all older files (excluding current) can be dropped
             remove_from_value = itr->first;
             break;
         }
@@ -222,7 +240,10 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
-            disk->removeFile(itr->second.path);
+            LOG_DEBUG(getLogger("MergeTreeDeduplicationLog"), "Dropping outdated deduplication log {}", itr->second.path);
+            /// A writer that was canceled instead of finalized never published its path on an
+            /// object-storage disk, so the log this entry names may not exist.
+            disk->removeFileIfExists(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
                 break;
@@ -259,8 +280,43 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeededAfterWrite()
     }
 }
 
+void MergeTreeDeduplicationLog::prepareToWrite()
+{
+    /// A failed flush cancels the writer, and a canceled buffer rejects every later write, so a dead
+    /// writer must be replaced. `rotate` also works on a disk that cannot append.
+    if (current_writer && (current_writer->isCanceled() || current_writer->isFinalized()))
+        rotate();
+    else if (!current_writer)
+    {
+        /// There is no writer for an unfinished log until the first record is written to it, so open
+        /// it here (see the comment in `load`). A disk that cannot append gets a new log instead.
+        if (disk_supports_writing_with_append && !existing_logs.empty())
+            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        else
+            rotate();
+    }
+
+    chassert(current_writer != nullptr);
+}
+
+bool MergeTreeDeduplicationLog::containsAny(const std::vector<std::string> & block_ids)
+{
+    std::lock_guard lock(state_mutex);
+
+    if (deduplication_window == 0)
+        return false;
+
+    for (const auto & block_id : block_ids)
+        if (deduplication_map.contains(block_id))
+            return true;
+
+    return false;
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
 
     /// We support zero case because user may want to disable deduplication with
@@ -290,7 +346,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    chassert(current_writer != nullptr);
+    prepareToWrite();
 
     for (const auto & block_id : block_ids)
     {
@@ -314,6 +370,8 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
 void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
 
     /// We support zero case because user may want to disable deduplication with
@@ -328,8 +386,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
-    chassert(current_writer != nullptr);
-
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
         const auto & part_info = itr->value;
@@ -337,6 +393,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         /// deduplication history
         if (drop_part_info.contains(part_info))
         {
+            prepareToWrite();
+
             /// Create drop record
             MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
@@ -363,6 +421,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
 
     if (stopped)
@@ -378,14 +438,15 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();
 
-    /// Can happen in case we have unfinished log
-    if (!current_writer)
-        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+    /// written record (see `prepareToWrite` and the comment in `load`).
 }
 
 
 void MergeTreeDeduplicationLog::shutdown()
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
     if (stopped)
         return;
@@ -398,7 +459,12 @@ void MergeTreeDeduplicationLog::shutdown()
         /// any error, causing logical error (see ~MemoryBuffer()).
         try
         {
-            current_writer->finalize();
+            /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
+            if (!current_writer->isCanceled())
+            {
+                current_writer->finalize();
+                current_writer->sync();
+            }
             current_writer.reset();
         }
         catch (...)
@@ -413,6 +479,10 @@ void MergeTreeDeduplicationLog::shutdown()
 MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
 {
     shutdown();
+
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    deduplication_map.clear();
+    existing_logs.clear();
 }
 
 }

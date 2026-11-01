@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -163,7 +164,10 @@ struct DataType
             if (real_type == "BOOLEAN")
             {
                 type.root_type = RootDataType::BOOLEAN;
-                type.clickhouse_data_type = std::make_shared<DataTypeInt8>();
+                /// `Bool` is `UInt8` with a custom name, so it only exists in the factory. Reporting
+                /// `Int8` here would render the values as `0`/`1` and make a Paimon `BOOLEAN`
+                /// indistinguishable from a Paimon `TINYINT`.
+                type.clickhouse_data_type = DataTypeFactory::instance().get("Bool");
             }
             else if (real_type == "STRING" || real_type.starts_with("VARCHAR"))
             {

@@ -9,6 +9,8 @@
 
 #include <Common/logger_useful.h>
 
+#include <limits>
+
 
 /// Maximum number of messages about incorrect data in the log.
 constexpr size_t MAX_ERROR_MESSAGES = 10;
@@ -77,6 +79,46 @@ void CollapsingSortedAlgorithm::insertRow(RowRef & row)
     merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 }
 
+void CollapsingSortedAlgorithm::bufferInvalidSignRow(const RowRef & row, size_t pos)
+{
+    const auto & columns = *row.all_columns;
+
+    if (invalid_sign_columns.empty())
+    {
+        invalid_sign_columns.reserve(columns.size());
+        for (const auto * column : columns)
+            invalid_sign_columns.push_back(column->cloneEmpty());
+    }
+
+    for (size_t i = 0, size = columns.size(); i < size; ++i)
+        invalid_sign_columns[i]->insertFrom(*columns[i], row.row_num);
+
+    invalid_sign_rows.push_back({pos, row.owned_chunk->getNumRows()});
+}
+
+/// Does not pull mid-key: `insertRows` hands back one chunk per call, so a second pull would be
+/// dropped. A key holding a long run of invalid signs therefore overshoots `max_block_size`, and
+/// `merge` drains the oversized block on its next pass.
+void CollapsingSortedAlgorithm::insertBufferedInvalidSignRowsBefore(size_t pos)
+{
+    if (next_invalid_sign_index >= invalid_sign_rows.size()
+        || invalid_sign_rows[next_invalid_sign_index].pos >= pos)
+        return;
+
+    ColumnRawPtrs raw_columns;
+    raw_columns.reserve(invalid_sign_columns.size());
+    for (const auto & column : invalid_sign_columns)
+        raw_columns.push_back(column.get());
+
+    while (next_invalid_sign_index < invalid_sign_rows.size()
+           && invalid_sign_rows[next_invalid_sign_index].pos < pos)
+    {
+        merged_data->insertRow(
+            raw_columns, next_invalid_sign_index, invalid_sign_rows[next_invalid_sign_index].source_block_size);
+        ++next_invalid_sign_index;
+    }
+}
+
 std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 {
     if (count_positive == 0 && count_negative == 0 && count_invalid == 0)
@@ -87,17 +129,29 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 
     std::optional<Chunk> res;
 
-    if ((last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0))
+    /// False when the signs cancelled, or the key held none: the kept invalid-sign rows are then
+    /// all it contributes.
+    const bool keeps_a_selected_row
+        = (last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0);
+
+    if (keeps_a_selected_row && count_positive <= count_negative && !only_positive_sign)
     {
-        if (count_positive <= count_negative && !only_positive_sign)
+        insertBufferedInvalidSignRowsBefore(first_negative_pos);
+
+        if (!isRowFiltered(first_negative_row))
         {
             insertRow(first_negative_row);
 
             if (out_row_sources_buf)
                 current_row_sources[first_negative_pos].setSkipFlag(false);
         }
+    }
 
-        if (count_positive >= count_negative)
+    if (keeps_a_selected_row && count_positive >= count_negative)
+    {
+        insertBufferedInvalidSignRowsBefore(last_positive_pos);
+
+        if (!isRowFiltered(last_positive_row))
         {
             if (merged_data->hasEnoughRows())
                 res = merged_data->pull();
@@ -107,14 +161,21 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
             if (out_row_sources_buf)
                 current_row_sources[last_positive_pos].setSkipFlag(false);
         }
-
-        if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-        {
-            if (count_incorrect_data < MAX_ERROR_MESSAGES)
-                reportIncorrectData();
-            ++count_incorrect_data;
-        }
     }
+
+    if (keeps_a_selected_row
+        && !(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
+    {
+        if (count_incorrect_data < MAX_ERROR_MESSAGES)
+            reportIncorrectData();
+        ++count_incorrect_data;
+    }
+
+    insertBufferedInvalidSignRowsBefore(std::numeric_limits<size_t>::max());
+
+    invalid_sign_columns.clear();
+    invalid_sign_rows.clear();
+    next_invalid_sign_index = 0;
 
     first_negative_row.clear();
     last_positive_row.clear();
@@ -163,7 +224,8 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// We write data for the previous primary key.
             auto res = insertRows();
 
-            current_row.swap(last_row);
+            /// Copy, do not swap: the invalid-sign branch below reads `current_row` this iteration.
+            last_row = current_row;
 
             count_negative = 0;
             count_positive = 0;
@@ -181,7 +243,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
                 return Status(std::move(*res));
         }
 
-        /// Initially, skip all rows. On insert, unskip "corner" rows.
+        /// Initially, skip all rows. On insert, unskip the selected ones.
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
@@ -210,10 +272,22 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// Do not return it for SELECT ... FINAL.
             if (!only_positive_sign)
             {
-                insertRow(current_row);
+                /// Rows read, not emitted: `insertRows` tells a group that produced nothing from
+                /// one that was never there, and only the latter may leave its row sources unwritten.
                 ++count_invalid;
-                if (out_row_sources_buf)
-                    current_row_sources[current_pos].setSkipFlag(false);
+
+                if (!isRowFiltered(current_row))
+                {
+                    /// Buffer only what a vertical merge could have to reorder: its gather stage
+                    /// pairs the Nth unskipped row source with the Nth merged row.
+                    if (!out_row_sources_buf || (count_positive == 0 && count_negative == 0))
+                        insertRow(current_row);
+                    else
+                        bufferInvalidSignRow(current_row, current_pos);
+
+                    if (out_row_sources_buf)
+                        current_row_sources[current_pos].setSkipFlag(false);
+                }
             }
 
             if (count_invalid_sign < MAX_ERROR_MESSAGES)

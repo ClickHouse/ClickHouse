@@ -1,0 +1,16 @@
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+-- the row numbers a filter leaves behind are the ones of the surviving rows
+1	1
+4	4
+7	7
+-- _row_number alone, with no column of the file projected
+45

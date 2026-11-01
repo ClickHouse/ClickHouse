@@ -5,8 +5,6 @@
 -- non-analyzer path. ALIAS (read-time) and EPHEMERAL (a non-stored insert input) may
 -- reference virtual columns and keep working. See issue #111658.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_dv;
 
 -- Reject DEFAULT/MATERIALIZED over _table and _database at CREATE TABLE.

@@ -147,7 +147,8 @@
                 "products/cloud/guides/security/saml-sso-removal",
                 "products/cloud/guides/security/cloud-access-management/scim-setup",
                 "products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-                "products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+                "products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+                "products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
               ]
             }
           ]
@@ -332,6 +333,7 @@
             "products/cloud/reference/billing/payment-thresholds",
             "products/cloud/reference/billing/spend-alerts",
             "products/cloud/reference/billing/managing-payment-methods",
+            "products/cloud/reference/billing/self-service-prepaid-credit-management",
             "products/cloud/reference/billing/billing-compliance"
           ]
         },

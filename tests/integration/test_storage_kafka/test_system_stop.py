@@ -84,7 +84,7 @@ def setup_consuming_table(table, topic, keeper=False):
             SELECT key, value FROM test.{table};
         """,
         settings=(
-            {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+            {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
         ),
     )
 
@@ -342,7 +342,7 @@ def test_kafka2_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):
                 CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
                     SELECT key, value FROM test.{table};
                 """,
-                settings={"allow_experimental_kafka_offsets_storage_in_keeper": 1},
+                settings={"allow_kafka_offsets_storage_in_keeper": 1},
             )
 
             # Pre-load the topic while halted, then resume and wait for a fresh cycle to start streaming
@@ -434,7 +434,7 @@ def test_stop_during_insert_does_not_duplicate(kafka_cluster, keeper):
                 SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+                {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
             ),
         )
 
@@ -486,7 +486,7 @@ def test_cancel_during_insert_does_not_duplicate(kafka_cluster, keeper):
                 SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+                {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
             ),
         )
 
@@ -878,7 +878,7 @@ def test_cancel_during_direct_select_does_not_drop_messages(kafka_cluster, keepe
                          kafka_flush_interval_ms = 500{keeper_settings};
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1}
+                {"allow_kafka_offsets_storage_in_keeper": 1}
                 if keeper
                 else {}
             ),
@@ -981,7 +981,7 @@ def test_direct_select_rejected_when_view_attached_while_stopped(kafka_cluster, 
                 ENGINE = MergeTree ORDER BY key;
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+                {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
             ),
         )
 
@@ -1069,7 +1069,7 @@ def test_refresh_survives_active_direct_reader(kafka_cluster):
                          kafka_replica_name = 'r1';
             CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
             """,
-            settings={"allow_experimental_kafka_offsets_storage_in_keeper": 1},
+            settings={"allow_kafka_offsets_storage_in_keeper": 1},
         )
         produce(kafka_cluster, table, 0, n)
 

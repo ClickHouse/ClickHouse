@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: the guard lives in the planner, so the old analyzer returns UNKNOWN_TABLE here.
-
 DROP TABLE IF EXISTS loop_no_columns_target;
 DROP TABLE IF EXISTS loop_no_columns_alias;
 DROP TABLE IF EXISTS loop_no_columns_base;

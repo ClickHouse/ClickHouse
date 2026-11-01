@@ -1,0 +1,8 @@
+--- url ---
+60	30
+--- s3 ---
+60	30
+--- forwarded queries of url ---
+3	3	60
+--- forwarded queries of s3 ---
+3	3	60

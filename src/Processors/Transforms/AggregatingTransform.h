@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <condition_variable>
@@ -13,6 +14,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/SpillableAdapter.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -22,6 +24,8 @@
 
 namespace DB
 {
+
+class AdaptiveSessionSpillable;
 
 class AggregatedChunkInfo final : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
@@ -178,22 +182,57 @@ struct ManyAggregatedData
         const std::shared_ptr<std::atomic<size_t>> shard_budget;
     };
 
+    /// Shared state of the kept-keys cutoff (`Aggregator::Params::shared_kept_keys_for_overflow_any`).
+    ///
+    /// The streams aggregate completely normally until the first stream exceeds
+    /// `max_rows_to_group_by` (`checkLimits` sets its `no_more_keys` in `ANY` mode). That stream
+    /// publishes a `seed` block of exactly `max_rows_to_group_by` of its keys with empty aggregate
+    /// states and sets `frozen`. Every stream then rebuilds its `AggregatedDataVariants` to exactly
+    /// the kept key set — before consuming its next chunk, or at merge preparation for the streams
+    /// that had already finished — keeping the states it accumulated for the kept keys and dropping
+    /// the rest, and continues on the regular `no_more_keys` path against the rebuilt table.
+    ///
+    /// The merged values of the kept keys are exact: every row consumed before the stream applied
+    /// the cutoff was aggregated normally, and every later row of a kept key finds the key in the
+    /// rebuilt table. Rows of the dropped keys are irrelevant — the keys are absent from every
+    /// rebuilt table, so they never reach the merged result (an unspecified subset of the groups
+    /// is a valid result for the LIMIT-without-ORDER-BY queries this serves).
+    struct SharedKeptKeys
+    {
+        std::mutex mutex;
+        std::atomic<bool> frozen{false};
+        /// Kept keys + empty aggregate states in the mergeable block layout.
+        /// Written once under `mutex`; immutable after `frozen` is set (readers synchronize
+        /// with an acquire load of `frozen`). Shared with every rebuilt
+        /// `AggregatedDataVariants::kept_keys_seed`, which the `Aggregator` re-seeds from after
+        /// an external-aggregation spill.
+        ConstBlockPtr seed;
+        /// Per-variant: the variant was rebuilt to the kept key set. Written only by the variant's
+        /// owning stream during consumption; read by the last finishing stream in `initGenerate`,
+        /// synchronized via `num_finished`.
+        std::vector<char> applied;
+    };
+
     ManyAggregatedDataVariants variants;
     /// One lazy value-keyed table per producer for results from retired dictionaries.
     /// Keep it separate from the initial local index table so that table can still pre-merge
     /// by index if its dictionary reappears at the end of the input.
     ManyAggregatedDataVariants dictionary_aggregation_results;
     std::atomic<UInt32> num_finished = 0;
+    std::shared_ptr<SharedKeptKeys> shared_kept_keys;
 
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
     /// `variants.size()` cannot be used instead: the last finisher appends dictionary tables
-    /// and the adaptive aggregation's early-drain routing table.
+    /// to `variants`, and reading the size of a vector that is concurrently grown is a data race.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
     /// `AdaptiveAggregationSession`); shared by all the participating transforms.
     AdaptiveAggregationSessionPtr adaptive_session;
+    /// The spillable component of the staged records the finished producers handed over to `adaptive_session`, created
+    /// with the first producer and registered by every producer (see `AdaptiveSessionSpillable`).
+    std::shared_ptr<AdaptiveSessionSpillable> adaptive_spillable;
 
     const std::shared_ptr<DictionaryAggregationBackpressure> dictionary_backpressure
         = std::make_shared<DictionaryAggregationBackpressure>();
@@ -232,6 +271,12 @@ struct ManyAggregatedData
 
     /// Once shards have been created, their sizes cannot serve as per-producer size hints.
     std::atomic<bool> has_created_dictionary_shards = false;
+
+    void enableSharedKeptKeys()
+    {
+        shared_kept_keys = std::make_shared<SharedKeptKeys>();
+        shared_kept_keys->applied.resize(variants.size(), 0);
+    }
 
     ~ManyAggregatedData();
 
@@ -272,7 +317,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_ = 1);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -284,9 +329,12 @@ public:
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
+        size_t output_streams_ = 1);
 
     ~AggregatingTransform() override;
+
+    const Aggregator & getAggregator() const { return params->aggregator; }
 
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
@@ -295,13 +343,33 @@ public:
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
     void onCancel() noexcept override;
 
+    std::span<ISpillable * const> getSpillables() override { return {spillables.data(), adaptive_spillable ? 2uz : 1uz}; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+    const TemporaryDataOnDiskScope * getSpillScope() const { return params->aggregator.getSpillScope(); }
+
 protected:
     void consume(Chunk chunk);
 
 private:
+    SpillableAdapter<AggregatingTransform> spillable{*this};
+    /// The transform's own component, preceded by the adaptive session's when the transform is an adaptive producer.
+    std::array<ISpillable *, 2> spillables{&spillable, nullptr};
+
     size_t getGeneratingStepGroup() const;
     bool executeDictionaryAggregationLease(ManyAggregatedData::DictionaryAggregationLease lease);
     bool retireCurrentDictionary();
+
+    /// Rebuilds `variants` to the shared kept key set (see ManyAggregatedData::SharedKeptKeys).
+    /// With `may_freeze` (this stream has just exceeded `max_rows_to_group_by`), publishes the
+    /// kept key set first unless another stream has already frozen it.
+    void applySharedKeptKeysCutoff(bool may_freeze);
+
+    /// On the branches that do not share one kept key set (`skip_merging`, a single stream, the
+    /// sharded aggregation) every stream caps itself, so its table already holds nothing but its
+    /// own kept keys. Capture them as the stream's seed so that external aggregation stays
+    /// available under the cutoff (see `Aggregator::spillAllowedUnderKeptKeysCutoff`).
+    void capturePerStreamKeptKeysSeed();
 
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
@@ -331,12 +399,16 @@ private:
     const IColumn * previous_single_dictionary = nullptr;
     bool dictionary_sharding_enabled = false;
     size_t dictionary_shard_offset = 0;
+    /// Index of `variants` in `many_data->variants` (for `SharedKeptKeys::applied`).
+    size_t variant_index = 0;
 
-    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
+    /// Per-transform context of the adaptive aggregation, created when the shared state exists
     /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
     /// included header (see `AdaptiveAggregationImpl.h`).
     std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
-
+    /// Held past the reset of `many_data` at the finish of this producer: the executor keeps the registration of the
+    /// component until this transform finishes.
+    std::shared_ptr<AdaptiveSessionSpillable> adaptive_spillable;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
@@ -363,6 +435,9 @@ private:
     std::list<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
+    /// How many streams `AggregatingStep` spreads this transform's output over; 1 when it doesn't.
+    size_t output_streams = 1;
 
     void initGenerate();
 };

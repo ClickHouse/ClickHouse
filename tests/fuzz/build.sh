@@ -1,6 +1,12 @@
 #!/bin/bash -eu
 
 # copy fuzzer options and dictionaries
+#
+# all.dict is not committed: the fuzzing configure step generates a
+# source-derived fallback into tests/fuzz/, and the nightly libFuzzer job
+# overwrites it with the authoritative binary-derived one (update_dict.sh).
+# Either way it is present here, so copy whichever is current instead of
+# generating a second one.
 cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/
 

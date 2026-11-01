@@ -82,7 +82,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_iceberg=true;
+SET allow_database_iceberg=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -294,7 +294,7 @@ def test_hide_sensitive_info(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
         try:
             node.query(
-                f"""SET allow_experimental_database_iceberg=true;
+                f"""SET allow_database_iceberg=true;
 CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
             )
@@ -362,7 +362,7 @@ def test_backup_database(started_cluster):
     node.query("DROP DATABASE backup_database SYNC")
     assert "backup_database" not in node.query("SHOW DATABASES")
 
-    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_database_iceberg": 1})
     assert (
         node.query("SHOW CREATE DATABASE backup_database")
         == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio1:9001/warehouse-rest\\'\n"
@@ -524,7 +524,7 @@ def test_invalid_auth_header_format(started_cluster):
     with pytest.raises(Exception) as err:
         node.query(
             f"""
-            SET allow_experimental_database_iceberg = 1;
+            SET allow_database_iceberg = 1;
             CREATE DATABASE {CATALOG_NAME}
             ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
             SETTINGS

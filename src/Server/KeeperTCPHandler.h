@@ -77,6 +77,8 @@ private:
     Poco::Timespan max_session_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id{-1};
+    /// Session the client asked to continue in its handshake, 0 for a new session.
+    int64_t previous_session_id{0};
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
     Poco::Timespan send_timeout;
@@ -105,7 +107,13 @@ private:
     void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
-    void sendHandshake(bool has_leader, bool & use_compression);
+    enum class HandshakeResult
+    {
+        Accepted,
+        Rejected,
+        SessionExpired,
+    };
+    void sendHandshake(HandshakeResult result, bool & use_compression);
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);

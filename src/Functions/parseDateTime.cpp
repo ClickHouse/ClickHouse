@@ -459,7 +459,7 @@ namespace
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale_);
 
             scale = scale_;
         }
@@ -524,6 +524,15 @@ namespace
             if (!yearIsInValidRange(week_year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
 
+            if (week_of_year_ == 53)
+            {
+                Int32 days_since_epoch_of_jan_first = 0;
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_first, (daysSinceEpochFromDate(week_year_, 1, 1)))
+                Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_first);
+                if (first_day_of_week_year != 4 && !(isLeapYear(week_year_) && first_day_of_week_year == 3))
+                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week 53 for ISO week year {}", week_year_)
+            }
+
             Int32 days_since_epoch_of_jan_fourth = 0;
             ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate(week_year_, 1, 4)))
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
@@ -562,8 +571,10 @@ namespace
         [[nodiscard]]
         Int64OrError buildDateTime(const DateLUTImpl & time_zone)
         {
-            if (is_hour_of_half_day && !is_am)
-                hour += 12;
+            /// The hour of a half-day clock is stored in [0, 11], and PM adds 12 hours to it. They are added to a copy: for a
+            /// time zone name in the string (`z` in Joda syntax), this function also runs before the final conversion, so
+            /// adding them to `hour` itself added them twice.
+            const Int32 hour_of_day = is_hour_of_half_day && !is_am ? hour + 12 : hour;
 
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
@@ -574,11 +585,33 @@ namespace
             else
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
-            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
+            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
             /// Time zone is not specified, use local time zone
             if (!has_time_zone_offset)
-                time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
+            {
+                /// Convert the local time as `toDateTime` does. The offset at `seconds_since_epoch`, which is the local
+                /// time read as UTC, can be the one from the other side of a daylight saving time change.
+                auto local_year = static_cast<Int16>(year);
+                auto local_month = static_cast<UInt8>(month);
+                auto local_day = static_cast<UInt8>(day);
+                /// For a week date or a day of the year, take the calendar date from the day number.
+                if (week_date_format || day_of_year_format)
+                {
+                    const auto values = time_zone.getValues(ExtendedDayNum(days_since_epoch));
+                    local_year = values.year;
+                    local_month = values.month;
+                    local_day = values.day_of_month;
+                }
+                time_zone_offset = seconds_since_epoch
+                    - time_zone.makeDateTime(
+                        local_year,
+                        local_month,
+                        local_day,
+                        static_cast<UInt8>(hour_of_day),
+                        static_cast<UInt8>(minute),
+                        static_cast<UInt8>(second));
+            }
 
             /// Time zone is specified in format string.
             seconds_since_epoch -= time_zone_offset;
@@ -612,10 +645,43 @@ namespace
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so the throwing variant must not be executed on the whole dictionary -
+        /// the empty string is not a date and it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
+
+        /// Documentation-only — the override below is authoritative (it computes
+        /// the DateTime64 scale from the number of `S` placeholders in the
+        /// format string, and attaches the timezone from the optional third arg).
+        String getSignatureString() const override
+        {
+            String result;
+            if constexpr (return_type == ReturnType::DateTime)
+                result = "DateTime";
+            else
+                result = "DateTime64";
+            if constexpr (error_handling == ErrorHandling::Null)
+                result = "Nullable(" + result + ")";
+            return "(String, [const String], [const String]) -> " + result;
+        }
+
+        /// There is no types-only answer: the result type depends on the *values* of the optional
+        /// arguments — the timezone comes from the third argument and, for the `DateTime64`
+        /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
+        /// Decline this entry point instead of letting the documentation-only signature above
+        /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "getReturnType is not implemented for {}: the result type can only be derived "
+                "when the values of the format and timezone arguments are known",
+                getName());
+        }
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
@@ -884,6 +950,20 @@ namespace
                 return cur;
             }
 
+            [[nodiscard]]
+            static PosOrError readDayOfMonthNumber(Pos cur, Pos end, const String & fragment, Int32 & day_of_month)
+            {
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "two digits are expected for day of month", fragment))
+                if (cur[0] < '0' || cur[0] > '9' || cur[1] < '0' || cur[1] > '9') [[unlikely]]
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because two digits are expected for day of month",
+                        fragment,
+                        std::string_view(cur, end - cur))
+
+                return readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day_of_month);
+            }
+
             template <typename T, NeedCheckSpace need_check_space>
             [[nodiscard]]
             static PosOrError readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
@@ -1072,7 +1152,7 @@ namespace
             static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_month = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day_of_month))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
             }
@@ -1088,7 +1168,7 @@ namespace
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
 
                 Int32 day = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day))
 
@@ -1140,7 +1220,7 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
 
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
@@ -1786,12 +1866,17 @@ namespace
             {
                 std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
+                const bool has_offset_before_time_zone = parsed_value.has_time_zone_offset;
                 const auto result = parsed_value.buildDateTime(date_time_zone);
                 if (result.has_value())
                 {
-                    const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);
+                    /// An offset parsed before the time zone name selects the instant, for example one of the two occurrences
+                    /// of a repeated local time, and the time zone gives its offset at that instant. Without such an offset,
+                    /// keep the offset that `buildDateTime` resolved for the local time: the offset at the resulting instant
+                    /// differs from it for a local time that does not exist.
+                    if (has_offset_before_time_zone)
+                        parsed_value.time_zone_offset = date_time_zone.timezoneOffset(*result);
                     parsed_value.has_time_zone_offset = true;
-                    parsed_value.time_zone_offset = timezone_offset;
                     return end;
                 }
                 else

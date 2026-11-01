@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 SET join_algorithm = 'ie_join';
 SET query_plan_join_swap_table = 0;
 

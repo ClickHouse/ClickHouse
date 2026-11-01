@@ -18,7 +18,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /** Implements LIMIT [n] AFTER expr [ALL] [UNTIL expr].
  * Without ALL, outputs rows starting from the first row where start condition is true,
- * until the first row where end condition is true (exclusive) or limit is reached.
+ * until the first row at or after that start where the end condition is true (exclusive),
+ * or until the limit is reached. End matches before the start have no effect.
  * With ALL, outputs the union of all matching windows without duplicating rows.
  * If no start condition: output from first row.
  * If no end condition: output until limit or stream end.
@@ -51,8 +52,9 @@ public:
 
 private:
     /// Evaluates boundary conditions over the input columns they need rather than over the whole chunk.
-    struct BoundaryEvaluation
+    class BoundaryEvaluation
     {
+    public:
         BoundaryEvaluation(
             const Block & header,
             ActionsDAG conditions,
@@ -60,13 +62,21 @@ private:
             const std::optional<String> & end_column_name,
             const ExpressionActionsSettings & actions_settings);
 
-        /// Computes the boundary columns of a chunk; a boundary that `actions` does not compute stays null.
-        void evaluate(const Block & header, const Columns & chunk_columns, size_t num_rows, ColumnPtr & start_column, ColumnPtr & end_column) const;
+        /// Returns the boundary columns and shared intermediates in the output header's order.
+        Columns evaluate(const Columns & columns, size_t num_rows) const;
 
+        const Block & getOutputHeader() const;
+        ColumnPtr getStartColumn(const Columns & columns) const { return start_position ? columns[*start_position] : nullptr; }
+        ColumnPtr getEndColumn(const Columns & columns) const { return end_position ? columns[*end_position] : nullptr; }
+
+    private:
         ExpressionActionsPtr actions;
-        /// Header positions of the columns `actions` reads.
-        std::vector<size_t> input_positions;
-        /// Positions of the boundary columns in the evaluated block.
+        Block input_header;
+        /// Positions of the required columns in the source chunk.
+        std::vector<size_t> required_column_positions;
+        /// Mapping from action inputs to positions in the reduced input header.
+        std::vector<ssize_t> action_input_positions;
+        /// Positions of the boundary columns in the evaluated result.
         std::optional<size_t> start_position;
         std::optional<size_t> end_position;
     };
@@ -80,9 +90,13 @@ private:
     /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.
     void setDone();
 
-    /// Evaluates every boundary of the query.
-    std::optional<BoundaryEvaluation> boundary_evaluation;
-    /// Evaluates `UNTIL` alone, because once the single range has started `AFTER` no longer matters.
+    /// Evaluates both boundaries for `ALL`, or through the starting chunk when `UNTIL` cannot skip chunks.
+    std::optional<BoundaryEvaluation> combined_evaluation;
+    /// Evaluates `AFTER` while waiting for the single range to start.
+    std::optional<BoundaryEvaluation> start_only_evaluation;
+    /// Evaluates `UNTIL` using the starting chunk's shared intermediates from `AFTER`.
+    std::optional<BoundaryEvaluation> end_after_start_evaluation;
+    /// Evaluates `UNTIL` alone in subsequent chunks or when there is no `AFTER` condition.
     std::optional<BoundaryEvaluation> end_only_evaluation;
 
     /// ALL mode: emit the union of all windows opened by AFTER matches.

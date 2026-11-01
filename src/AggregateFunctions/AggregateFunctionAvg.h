@@ -244,6 +244,25 @@ public:
             writeBinary(this->data(place).denominator, buf);
     }
 
+    /// final: AggregateFunctionAvg is not final (AggregateFunctionSumCount derives from it), so the
+    /// batch loop can only devirtualize these if the methods themselves are.
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const final
+    {
+        return sizeof(Numerator) + (std::is_unsigned_v<Denominator> ? VAR_UINT_MAX_SIZE : sizeof(Denominator));
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const final
+    {
+        writeBinaryLittleEndian(this->data(place).numerator, dst);
+
+        if constexpr (std::is_unsigned_v<Denominator>)
+            dst = writeVarUInt(this->data(place).denominator, dst);
+        else
+            writeBinary(this->data(place).denominator, dst);
+
+        return dst;
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readBinaryLittleEndian(this->data(place).numerator, buf);
@@ -301,6 +320,19 @@ public:
             return true;
         }))
             return;
+
+        /// `Interval` is backed by `Int64` and is not one of the basic types dispatched above.
+        /// The average of a set of intervals is an interval of the same unit, so the result keeps
+        /// the type of the argument and only the number of units is averaged.
+        if (result_which.isInterval())
+        {
+            auto & col = assert_cast<ColumnVector<Int64> &>(to);
+            if constexpr (std::is_integral_v<Numerator> && std::is_integral_v<Denominator>)
+                col.getData().push_back(avgResultToValueExact<Int64>(this->data(place).numerator, this->data(place).denominator));
+            else
+                col.getData().push_back(avgResultToValue<Int64>(compute_avg()));
+            return;
+        }
 
         assert_cast<ColumnVector<Float64> &>(to).getData().push_back(compute_avg());
     }

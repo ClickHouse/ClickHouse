@@ -76,6 +76,7 @@ public:
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return data->isFixedAndContiguous(); }
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
 
@@ -99,8 +100,10 @@ public:
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertFrom(const IColumn & src_, size_t n) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
@@ -135,7 +138,6 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool hasEqualOffsets(const ColumnArray & other) const;
@@ -189,6 +191,7 @@ public:
         data->forEachMutableSubcolumnRecursively(callback);
     }
 
+    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(offsets);
@@ -245,13 +248,6 @@ private:
 
     /// Multiply the values if the nested column is ColumnString. The code is too complicated.
     ColumnPtr replicateString(const Offsets & replicate_offsets) const;
-
-    /** Non-constant arrays of constant values are quite rare.
-      * Most functions can not work with them, and does not create such columns as a result.
-      * An exception is the function `replicate` (see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
-      * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
-      */
-    ColumnPtr replicateConst(const Offsets & replicate_offsets) const;
 
     /** The following is done by simply replicating of nested columns.
       */

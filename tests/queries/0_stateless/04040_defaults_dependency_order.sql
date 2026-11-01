@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 SELECT 'test_diamond';
 DROP TABLE IF EXISTS test_diamond;
 CREATE TABLE test_diamond (

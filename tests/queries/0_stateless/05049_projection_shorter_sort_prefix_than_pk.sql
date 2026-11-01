@@ -13,7 +13,6 @@ SET optimize_use_projections = 1;
 SET optimize_use_projection_filtering = 1;
 SET query_plan_optimize_lazy_materialization = 0;
 SET read_in_order_use_virtual_row = 1;
-SET query_plan_optimize_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_remove_unused_columns = 1;
 SET use_top_k_dynamic_filtering = 0;

@@ -1,3 +1,9 @@
+-- The assertions below require one `EXPLAIN` line to carry both the reading step and the text
+-- `RIGHT JOIN`, i.e. the shipped SQL query, so they describe the query-based implementation only.
+-- Plan-based ships a serialized plan fragment and distributes the same joins; see
+-- `05240_pr_plan_based_right_join_materialized_left`.
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t_mid;
 DROP TABLE IF EXISTS t_right;
 DROP TABLE IF EXISTS t_merge_left;
@@ -10,7 +16,6 @@ INSERT INTO t_mid SELECT number FROM numbers(10);
 CREATE TABLE t_right (key UInt64) ENGINE = MergeTree ORDER BY key;
 INSERT INTO t_right SELECT number FROM numbers(10);
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1,
     max_parallel_replicas = 2,
