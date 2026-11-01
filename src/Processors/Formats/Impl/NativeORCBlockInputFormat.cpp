@@ -183,11 +183,15 @@ std::unique_ptr<ORC::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 /// names through the same recursive walk, so pruning and reading always agree on the column.
 static const ORC::Type *
 traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case);
+static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type, const String & name, bool ignore_case);
 
 struct ORCPredicateColumnTypes
 {
     DataTypePtr result_type;
     DataTypePtr declared_type;
+    /// Set for a tuple element: the header column holding it and the substreams it is extracted by.
+    std::optional<NameAndTypePair> tuple_column;
+    ISerialization::SubstreamPath tuple_element_path;
 };
 
 /// True when `path` is a named tuple element at every level, so it is a file leaf with its own
@@ -245,7 +249,7 @@ static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
             /// A dotted field name can also resolve to a virtual subcolumn of another element.
             if (path.back().type != ISerialization::Substream::TupleElement)
                 continue;
-            return ORCPredicateColumnTypes{subcolumn->data.type, path.back().data.type};
+            return ORCPredicateColumnTypes{subcolumn->data.type, path.back().data.type, NameAndTypePair{column->name, column->type}, path};
         }
     }
     return {};
@@ -256,8 +260,41 @@ static std::optional<ORCPredicateColumnTypes> findHeaderTypesByPath(
     const Block & header, const String & name, bool ignore_case)
 {
     if (const auto * column = header.findByName(name, ignore_case))
-        return ORCPredicateColumnTypes{column->type, column->type};
+        return ORCPredicateColumnTypes{column->type, column->type, {}, {}};
     return findTupleElementKeyTypes(header, name, ignore_case);
+}
+
+/// The ORC field the reader reads a predicate column from. An element name can contain a dot, so a
+/// tuple element is found by its element path, not by the first field in the file matching a prefix.
+static const ORC::Type * findORCTypeForPredicateColumn(
+    const String & name, const ORCPredicateColumnTypes & column_types, const ORC::Type & schema, bool ignore_case)
+{
+    /// The resolver rewrites the type it is given when it descends a LIST (a flattened Nested column).
+    if (!column_types.tuple_column)
+    {
+        auto type = column_types.result_type;
+        return traverseDownORCTypeByName(name, &schema, type, ignore_case);
+    }
+
+    auto type = column_types.tuple_column->type;
+    const auto * orc_type = traverseDownORCTypeByName(column_types.tuple_column->name, &schema, type, ignore_case);
+    for (const auto & substream : column_types.tuple_element_path)
+    {
+        if (!orc_type)
+            return nullptr;
+        if (substream.type == ISerialization::Substream::NullableElements)
+            continue;
+        if (substream.type == ISerialization::Substream::ArrayElements && orc_type->getKind() == ORC::LIST)
+            orc_type = orc_type->getSubtype(0);
+        else if (substream.type == ISerialization::Substream::TupleElement && orc_type->getKind() == ORC::STRUCT)
+        {
+            auto field = findORCStructFieldByName(orc_type, substream.name_of_substream, ignore_case);
+            orc_type = field ? orc_type->getSubtype(*field) : nullptr;
+        }
+        else
+            return nullptr;
+    }
+    return orc_type;
 }
 
 /// KeyCondition derives its key names from this block, and the ORC header carries only the parent
@@ -797,12 +834,8 @@ static void buildORCSearchArgumentImpl(
                 break;
             }
 
-            /// The resolver rewrites the type it is given when it descends a LIST (a flattened
-            /// Nested column), so give it a scratch copy: the guards below must judge the key's
-            /// own type, which is what KeyCondition's RPN holds.
             const auto & column_type = column_types->result_type;
-            auto resolved_type = column_type;
-            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
+            const auto * orc_type = findORCTypeForPredicateColumn(column_name, *column_types, schema, ignore_case);
             if (!orc_type)
             {
                 builder.literal(ORC::TruthValue::YES_NO_NULL);
@@ -1134,8 +1167,7 @@ static ORC::RowGroupFilter buildORCRowGroupFilter(
         if (!column_types)
             continue;
 
-        DataTypePtr type = column_types->result_type;
-        const auto * orc_type = traverseDownORCTypeByName(name, &schema, type, ignore_case);
+        const auto * orc_type = findORCTypeForPredicateColumn(name, *column_types, schema, ignore_case);
         if (!orc_type)
             continue;
 

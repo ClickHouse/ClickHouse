@@ -88,9 +88,21 @@ SELECT 'tuple', count(), sum(t.x) FROM file(currentDatabase() || '_05495_tuple.o
     SETTINGS optimize_functions_to_subcolumns = 1, log_comment = '05495_tuple';
 SELECT 'tuple', count(), sum(t.x) FROM file(currentDatabase() || '_05495_tuple.orc', ORC) WHERE t.x + 1 = 100001
     SETTINGS optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 0;
+
+-- `t.x.y` is the element named `x.y`, which the file stores after the field `y` of the element `x`.
+INSERT INTO FUNCTION file(currentDatabase() || '_05495_dotted.orc', ORC)
+    SELECT if(number < 10000, tuple(tuple(toInt64(100)), toInt64(7)), tuple(tuple(toInt64(7)), toInt64(100)))::Tuple(x Tuple(y Int64), `x.y` Int64) AS t
+    FROM numbers(20000);
+SELECT 'dotted', count() FROM file(currentDatabase() || '_05495_dotted.orc', ORC, 't Tuple(`x.y` Int64, x Tuple(y Int64))')
+    WHERE t.x.y + 1 = 8 SETTINGS optimize_functions_to_subcolumns = 1, log_comment = '05495_dotted';
+SELECT 'dotted', count() FROM file(currentDatabase() || '_05495_dotted.orc', ORC, 't Tuple(`x.y` Int64, x Tuple(y Int64))')
+    WHERE t.x.y = 7 SETTINGS optimize_functions_to_subcolumns = 1;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT 'tuple', read_rows FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = '05495_tuple' AND type = 'QueryFinish';
+SELECT 'dotted', read_rows FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '05495_dotted' AND type = 'QueryFinish';
 
 -- A field has no value where its struct is NULL; this file does not count those rows in the field's statistics.
 SELECT 'struct nulls', count() FROM file(currentDatabase() || '_05495_struct_nulls.orc', ORC, 't Nullable(Tuple(x Nullable(Int64)))')

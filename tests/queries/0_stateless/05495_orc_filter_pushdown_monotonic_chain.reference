@@ -35,6 +35,9 @@ default	28572
 default pruned	10000
 tuple	1	100000
 tuple	1	100000
+dotted	10000
+dotted	10000
 tuple	10000
+dotted	10000
 struct nulls	10
 struct nulls flat	10
