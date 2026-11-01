@@ -2208,6 +2208,12 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 - An `older_than` closer to now than `iceberg_orphan_files_min_retention_seconds` is rejected, because the files of a write that has not committed yet are not referenced by the table metadata and look like orphans; keep the setting above the longest time a write to the table can take to commit
 </Note>
 
+### Metadata Log Retention {#iceberg-metadata-log-retention}
+
+Each commit records the previous metadata file in the `metadata-log` of the new one. The log keeps at most `write.metadata.previous-versions-max` previous metadata files (an Iceberg table property, default `100`). Older entries are dropped on commit, and the files they name become collectable by `remove_orphan_files`.
+
+ClickHouse does not delete metadata files on commit, even when the table sets `write.metadata.delete-after-commit.enabled`: without a transactional catalog, a commit is refused only if the metadata file of its version already exists, so deleting an old version would let a delayed writer commit that version again.
+
 ## See Also {#see-also}
 
 * [Iceberg engine](/reference/engines/table-engines/integrations/iceberg)
