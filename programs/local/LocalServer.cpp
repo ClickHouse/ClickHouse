@@ -738,8 +738,11 @@ void LocalServer::tryInitPath()
             data_home = home_path / "Library" / "Application Support";
 #else
         /// The XDG Base Directory Specification tells to treat a relative $XDG_DATA_HOME as unset.
-        const char * xdg_data_home = getenv("XDG_DATA_HOME"); // NOLINT(concurrency-mt-unsafe)
-        if (xdg_data_home && *xdg_data_home && fs::path(xdg_data_home).is_absolute())
+        /// Read it through the wide environment on Windows and construct the path from UTF-8:
+        /// `getenv` + `fs::path(const char *)` would round-trip through the active code page
+        /// and mangle any component outside it.
+        const auto xdg_data_home = pathFromString(getPathFromEnvironment("XDG_DATA_HOME"));
+        if (!xdg_data_home.empty() && xdg_data_home.is_absolute())
             data_home = xdg_data_home;
         else if (!home_path.empty())
             data_home = home_path / ".local" / "share";

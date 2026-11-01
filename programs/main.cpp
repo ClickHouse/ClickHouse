@@ -487,6 +487,30 @@ int main(int argc_, char ** argv_)
     static const UINT original_console_input_code_page = GetConsoleCP();
     if (original_console_input_code_page != 0 && original_console_input_code_page != CP_UTF8 && SetConsoleCP(CP_UTF8))
         std::atexit([] { SetConsoleCP(original_console_input_code_page); });
+
+    /// Formatting of `Pretty` formats, the progress bar and cursor control are written as ANSI escape
+    /// sequences, and a console interprets them only with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` set on
+    /// its screen buffer - otherwise it displays them as text. Set it for the lifetime of the process
+    /// and restore the original modes on exit. The line editor saves the mode it finds (already with
+    /// the flag) and restores exactly that after reading a query, so the query output keeps it too.
+    /// Standard output and standard error usually share one screen buffer: the second one then
+    /// already has the flag and is left alone. Redirected output is not a console and is skipped.
+    static std::vector<std::pair<HANDLE, DWORD>> original_console_output_modes;
+    for (DWORD std_handle : {STD_OUTPUT_HANDLE, STD_ERROR_HANDLE})
+    {
+        HANDLE handle = GetStdHandle(std_handle);
+        DWORD mode = 0;
+        if (handle == nullptr || handle == INVALID_HANDLE_VALUE || !GetConsoleMode(handle, &mode))
+            continue;
+        if ((mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0 && SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+            original_console_output_modes.emplace_back(handle, mode);
+    }
+    if (!original_console_output_modes.empty())
+        std::atexit([]
+        {
+            for (auto it = original_console_output_modes.rbegin(); it != original_console_output_modes.rend(); ++it)
+                SetConsoleMode(it->first, it->second);
+        });
 #endif
 
     /// PHDR cache is required for query profiler to work reliably
