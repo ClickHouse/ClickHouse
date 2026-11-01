@@ -1469,9 +1469,12 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
 static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
-    const std::string & qualifier,
+    const IdentifierLookup & identifier_lookup,
     const IdentifierResolveScope & scope)
 {
+    const auto & qualifier = identifier_lookup.identifier.front();
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+
     auto get_column_source = [](QueryTreeNodePtr resolved_identifier) -> TableExpressionNodePtr
     {
         while (const auto * function = resolved_identifier->as<FunctionNode>())
@@ -1501,7 +1504,7 @@ static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
 
     auto resolved_by_alias = [&](const TableExpressionNodePtr & source)
     {
-        return source && source->hasAlias() && source->getAlias() == qualifier;
+        return source && lookupMatchesTableExpressionAlias(identifier_lookup, source, name_match_mode);
     };
 
     auto resolved_by_table_name = [&](const TableExpressionNodePtr & source)
@@ -1513,9 +1516,10 @@ static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
         if (it == scope.table_expression_node_to_data.end())
             return false;
 
-        if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+        if (lookupPartMatchesName(identifier_lookup, 0, it->second.table_name, name_match_mode, it->second.table_name_pinned))
             return true;
 
+        /// Materialized CTE names stay exact under `standard` matching, as in `tryBindIdentifierToTableExpression`.
         if (const auto * table_node = source->as<TableNode>())
             if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier)
                 return true;
@@ -1587,7 +1591,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier.front(), scope))
+                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup, scope))
         {
             if (*qualifier_alias_side == JoinTableSide::Right)
                 resolve_result = identifier;
@@ -1918,21 +1922,26 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
 /// matched against the database and table names of the leaf table expressions (`db.table.column`);
 /// this binding is weaker and must not compete with a successful alias / table-name resolution,
 /// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
+/// Under `standard` name matching aliases, table and database names are matched with the same
+/// quote-aware folding as in `tryBindIdentifierToTableExpression`.
 static bool qualifierBindsToJoinSubtree(
     const TableExpressionNodePtr & join_tree_node,
-    const Identifier & identifier,
+    const IdentifierLookup & identifier_lookup,
     const IdentifierResolveScope & scope,
     bool database_qualified)
 {
     if (!join_tree_node)
         return false;
 
+    const auto & identifier = identifier_lookup.identifier;
     const auto & qualifier = identifier.front();
 
     if (qualifier.empty())
         return false;
 
-    if (!database_qualified && join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+
+    if (!database_qualified && lookupMatchesTableExpressionAlias(identifier_lookup, join_tree_node, name_match_mode))
         return true;
 
     switch (join_tree_node->getNodeType())
@@ -1940,8 +1949,8 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), identifier, scope, database_qualified)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), identifier, scope, database_qualified);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), identifier_lookup, scope, database_qualified)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), identifier_lookup, scope, database_qualified);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
@@ -1950,7 +1959,7 @@ static bool qualifierBindsToJoinSubtree(
             for (size_t i = 0; i < num_tables; ++i)
             {
                 auto expr = cross.getTableExpressionTypedAt(i);
-                if (qualifierBindsToJoinSubtree(expr, identifier, scope, database_qualified))
+                if (qualifierBindsToJoinSubtree(expr, identifier_lookup, scope, database_qualified))
                     return true;
             }
             return false;
@@ -1958,7 +1967,7 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier, scope, database_qualified);
+            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier_lookup, scope, database_qualified);
         }
         default:
             break;
@@ -1968,14 +1977,15 @@ static bool qualifierBindsToJoinSubtree(
     if (it == scope.table_expression_node_to_data.end())
         return false;
     if (database_qualified)
-        return !it->second.database_name.empty() && it->second.database_name == qualifier
-            && it->second.table_name == identifier[1];
+        return lookupPartMatchesName(identifier_lookup, 0, it->second.database_name, name_match_mode)
+            && lookupPartMatchesName(identifier_lookup, 1, it->second.table_name, name_match_mode, it->second.table_name_pinned);
 
-    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+    if (lookupPartMatchesName(identifier_lookup, 0, it->second.table_name, name_match_mode, it->second.table_name_pinned))
         return true;
 
     /// A materialized CTE is registered under its internal temporary table name;
     /// the name visible to queries is the CTE name, and it qualifies like a table name.
+    /// Materialized CTE names stay exact under `standard` matching, as in `tryBindIdentifierToTableExpression`.
     if (const auto * table_node = join_tree_node->as<TableNode>())
         if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier)
             return true;
@@ -2025,9 +2035,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             /// expression lookup (`db.table.*` is looked up by its qualifier `db.table`), while an
             /// expression lookup needs a third part for the column name (`db.table.column`).
             const size_t min_database_qualified_parts = is_table_lookup ? 2 : 3;
-            const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/false)
+            const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup, scope, /*database_qualified=*/false)
                 || (identifier_lookup.identifier.getPartsSize() >= min_database_qualified_parts
-                    && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/true));
+                    && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup, scope, /*database_qualified=*/true));
             if ((is_table_lookup || is_qualified_expr) && binds_qualifier)
                 denied_qualified_access = side;
             return QueryTreeNodePtr{};
@@ -2069,8 +2079,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ false);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ false);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
@@ -2092,9 +2102,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
       */
     if (binds_left != binds_right && !left_resolved_identifier && !right_resolved_identifier)
     {
-        if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+        if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ true))
             right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right, JoinTableSide::Right);
-        else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+        else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ true))
             left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right, JoinTableSide::Left);
 
         if (ambiguous_in_join_tree)
@@ -2337,7 +2347,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier.front(), scope))
+                         left_resolved_identifier, right_resolved_identifier, identifier_lookup, scope))
         {
             resolved_side = qualifier_alias_side;
             resolved_identifier = (resolved_side == JoinTableSide::Left) ? left_resolved_identifier : right_resolved_identifier;
