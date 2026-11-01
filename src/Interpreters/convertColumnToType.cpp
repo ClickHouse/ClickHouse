@@ -456,7 +456,8 @@ ColumnPtr convertColumnToTypeOrNull(
     /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
     /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
     const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
-    if (strict)
+    /// A `NULL` has no curve payload; let the existing null-conversion rules handle it.
+    if (strict && !field.isNull())
         assertExponentialTimeDecayingConversionTypesCompatible(source, to, "strict conversion");
     retagBoolInField(field, source);
 

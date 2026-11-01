@@ -3527,32 +3527,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             const auto & settings = scope.context->getSettingsRef();
 
-            /// Preserve pairwise validation before getSetElementsForConstantValue
-            /// converts layout-compatible set literals to the left-hand type.
-            auto assert_set_element_type_compatible = [&](const DataTypePtr & set_element_type)
-            {
-                if (typeid_cast<const DataTypeNothing *>(removeNullable(set_element_type).get()))
-                    return;
-
-                assertExponentialTimeDecayingTypesCompatible(
-                    first_argument_constant_type, set_element_type, "IN constant set");
-            };
-
-            if (isExponentialTimeDecaying(removeNullable(second_argument_constant_type)))
-                assert_set_element_type_compatible(second_argument_constant_type);
-            else if (const auto * set_element_types = typeid_cast<const DataTypeTuple *>(second_argument_constant_type.get()))
-            {
-                for (const auto & set_element_type : set_element_types->getElements())
-                    assert_set_element_type_compatible(set_element_type);
-            }
-            else
-                assert_set_element_type_compatible(second_argument_constant_type);
-
             auto result_block = getSetElementsForConstantValue(
                 first_argument_constant_type, second_argument_constant_column, second_argument_constant_type,
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                    .validate_time_decay_types = true,
                 });
 
 
