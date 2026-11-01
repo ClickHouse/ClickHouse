@@ -1,7 +1,7 @@
 -- A substring search condition that uses all queried columns is moved to PREWHERE with
 -- `apply_string_filters_during_scan` only if the reader can apply it as a string filter during the scan.
--- It cannot, when the column is read by the existing PREWHERE or the row policy,
--- or when the read columns may be written to the columns cache.
+-- It cannot, when the column is read by the existing PREWHERE or the row policy.
+-- The columns cache does not affect the decision: the reader skips the filter only for the columns it writes to the cache.
 
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, optimize_prewhere_after_pushdown = 1;
 SET apply_string_filters_during_scan = 1;
