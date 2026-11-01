@@ -1,4 +1,5 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
+#include <Core/PostgreSQL/Utils.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -63,8 +65,10 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool schema_as_a_part_of_table_name_,
+    bool coordinated_,
     StorageInfos storages_info_,
-    const String & name_for_logger)
+    const String & name_for_logger,
+    std::function<void(const String &)> verify_source_)
     : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
@@ -75,9 +79,11 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , lsn_value(getLSNValue(start_lsn))
     , max_block_size(max_block_size_)
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
+    , coordinated(coordinated_)
+    , verify_source(std::move(verify_source_))
 {
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        auto tx = std::make_shared<pqxx::nontransaction>(getVerifiedConnection());
         current_lsn = advanceLSN(tx);
         tx->commit();
     }
@@ -92,14 +98,23 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
         {
             /// The structure of the PostgreSQL table might no longer match the structure of
             /// the nested ClickHouse table (for example, a column was added or dropped in
-            /// PostgreSQL while the server was down). Do not fail the whole consumer because
-            /// of a single out-of-sync table: skip it (the user can bring it back with
-            /// DETACH/ATTACH) and keep replicating the rest of the tables. Only the expected
-            /// structure-mismatch error is handled this way; any other error is a real problem
-            /// and must propagate.
+            /// PostgreSQL while the server was down). Only the expected structure-mismatch error
+            /// is handled here; any other error is a real problem and must propagate.
             if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
                 throw;
 
+            /// In coordinated mode a single out-of-sync table must abort the whole attempt, exactly
+            /// like a failed snapshot load does in `PostgreSQLReplicationHandler::startSynchronization`:
+            /// a consumer started with a partial table set keeps advancing the shared slot's
+            /// `confirmed_flush_lsn` on every commit, so the WAL of the skipped table is acknowledged
+            /// and discarded - and `DETACH`/`ATTACH`, the usual repair path, is rejected in coordinated
+            /// mode, so nothing could heal the subset. Throwing here makes `coordinationFunc` release
+            /// the leadership, so a healthy peer can take over before any WAL is advanced.
+            if (coordinated)
+                throw;
+
+            /// Without coordination the remaining tables still get a consumer, and the user can bring
+            /// the skipped one back with `DETACH`/`ATTACH`.
             tryLogCurrentException(
                 log,
                 fmt::format("Table {} is skipped from replication because its structure does not match "
@@ -944,8 +959,14 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            /// `deleted_tables` and `waiting_list` are keyed by the ClickHouse table name, which includes
-            /// the PostgreSQL schema in the multi-schema modes, as for the other message types.
+            /// The gate must be consulted under the very key the rest of the consumer uses
+            /// (`waiting_list`, `deleted_tables`, `storages` and `tables_to_sync` are all keyed by
+            /// `postgres_table_name`, which is schema-qualified in multi-schema mode). With the bare
+            /// PostgreSQL name a pre-`start_lsn` `Relation` message for `schema1.t` would bypass the
+            /// waiting gate, and a structure or replica-identity mismatch below would then erase
+            /// `storages["schema1.t"]` while `waiting_list["schema1.t"]` stayed behind - the first later
+            /// `I`/`U`/`D` for that relation would consume the waiting entry and dereference the missing
+            /// storage.
             if (!isSyncAllowed(relation_id, table_name))
                 return;
 
@@ -980,9 +1001,12 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             auto log_table_structure_changed = [&](const std::string & reason)
             {
                 LOG_INFO(log, "Table structure of the table {} changed ({}), "
-                         "will mark it as skipped from replication. "
-                         "Please perform manual DETACH and ATTACH of the table to bring it back",
-                         table_name, reason);
+                         "will mark it as skipped from replication. {}",
+                         table_name, reason,
+                         coordinated
+                             ? "Recreate the coordinated database after reconciling the PostgreSQL schema "
+                               "to resume replication"
+                             : "Please perform manual DETACH and ATTACH of the table to bring it back");
             };
 
             Int16 num_columns = readInt16(replication_message, pos, size);
@@ -1196,7 +1220,7 @@ void MaterializedPostgreSQLConsumer::updateLsn()
 {
     try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        auto tx = std::make_shared<pqxx::nontransaction>(getVerifiedConnection());
         current_lsn = advanceLSN(tx);
         tables_to_sync.clear();
         tx->commit();
@@ -1205,6 +1229,33 @@ void MaterializedPostgreSQLConsumer::updateLsn()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+pqxx::connection & MaterializedPostgreSQLConsumer::getVerifiedConnection()
+{
+    pqxx::connection & result = connection->getRef();
+    if (verify_source && connection->getGeneration() != verified_connection_generation)
+    {
+        try
+        {
+            /// Read the identifier through this very connection: a separate connection to the same endpoint
+            /// may reach another backend (the endpoint could have been switched in between, or a proxy routes
+            /// each connection on its own), which would prove nothing about the one the slot is used through.
+            pqxx::nontransaction tx(result);
+            const String source_system_identifier = postgres::fetchSystemIdentifier(tx);
+            tx.commit();
+            verify_source(source_system_identifier);
+        }
+        catch (...)
+        {
+            /// Never read or advance the slot through this connection. Breaking the consumer makes the
+            /// replication handler release the leadership; whoever takes over checks the source again.
+            broken = true;
+            throw;
+        }
+        verified_connection_generation = connection->getGeneration();
+    }
+    return result;
 }
 
 String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
@@ -1276,16 +1327,43 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
 void MaterializedPostgreSQLConsumer::markTableAsSkipped(
     Int32 relation_id, const String & relation_name, const String & skip_reason)
 {
+    /// In coordinated mode a table must never be skipped while the consumer keeps running: every later
+    /// commit would still advance the shared slot's `confirmed_flush_lsn`, so the WAL of the skipped table
+    /// would be acknowledged and discarded, and `DETACH`/`ATTACH`, the usual repair path, is rejected in
+    /// coordinated mode. This is the same partial-table-set problem that a failed snapshot load or a
+    /// structure mismatch at startup abort on. Break the consumer instead, without touching any state:
+    /// `consume` rethrows from now on, and the replication handler tears the consumer down and releases
+    /// the leadership, so nothing past the last confirmed LSN is acknowledged.
+    if (coordinated)
+    {
+        broken = true;
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Table {} cannot be replicated any more {}. A coordinated `MaterializedPostgreSQL` setup does not skip "
+            "tables, so the replication is stopped without advancing the replication slot. "
+            "Recreate the coordinated database after reconciling the PostgreSQL schema to resume replication",
+            relation_name,
+            skip_reason);
+    }
+
     skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
     storages.erase(relation_name);
+    /// A table can be skipped while it is still waiting for its `start_lsn` (it was added to replication
+    /// and its snapshot was loaded, but the consumer has not read the WAL up to that position yet). Its
+    /// `waiting_list` entry must go with the storage: `isSyncAllowed` consults `waiting_list` before the
+    /// skip list, so a leftover entry would let the table pass the gate as soon as the LSN is reached and
+    /// the DML paths would dereference the storage that was just erased.
+    waiting_list.erase(relation_name);
     /// The storage is gone, so its queued buffers can no longer be flushed. Drop them to keep
     /// `tables_to_sync` consistent with `storages` (`syncTables` looks the table up there).
     tables_to_sync.erase(relation_name);
     LOG_WARNING(
         log,
-        "Table {} is skipped from replication stream {}. "
-        "Please detach this table and reattach to resume the replication (relation id: {})",
-        relation_name, skip_reason, relation_id);
+        "Table {} is skipped from replication stream {}. Please detach this table and reattach to resume replication "
+        "(relation id: {})",
+        relation_name,
+        skip_reason,
+        relation_id);
 }
 
 void MaterializedPostgreSQLConsumer::addNested(
@@ -1350,6 +1428,11 @@ void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
 /// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
 bool MaterializedPostgreSQLConsumer::consume()
 {
+    if (broken)
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "The coordinated replication consumer stopped because a table cannot be replicated any more "
+            "or the connection does not lead to the recorded source PostgreSQL cluster");
+
     if (!tables_to_sync.empty())
     {
         syncTables();
@@ -1358,7 +1441,7 @@ bool MaterializedPostgreSQLConsumer::consume()
     bool slot_empty = true;
     try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        auto tx = std::make_shared<pqxx::nontransaction>(getVerifiedConnection());
 
         /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.
@@ -1404,7 +1487,7 @@ bool MaterializedPostgreSQLConsumer::consume()
             }
             catch (const Exception & e)
             {
-                if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+                if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR && !broken)
                     continue;
 
                 throw;
@@ -1413,6 +1496,9 @@ bool MaterializedPostgreSQLConsumer::consume()
     }
     catch (const Exception &)
     {
+        if (broken)
+            throw;
+
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
