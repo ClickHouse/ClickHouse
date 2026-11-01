@@ -82,7 +82,7 @@ private:
     void withVimState(const std::function<void(int &, std::u32string &)> & func);
     /// Clear any pending vim command and start the next input in insert mode.
     void resetVimForNewInput();
-    void vimCharwise(int & pos, std::u32string & text, int oldpos);
+    void vimCharwise(int & pos, std::u32string & text, int oldpos, bool allow_empty = false);
     void vimLinewise(int & pos, std::u32string & text, int oldpos);
     /// `cc`, also used by `S`.
     void vimChangeLines(int & pos, std::u32string & text);

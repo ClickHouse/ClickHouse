@@ -1,4 +1,5 @@
 #include <Client/ReplxxLineReader.h>
+#include <Common/UTF8Helpers.h>
 
 #include <algorithm>
 #include <string_view>
@@ -592,16 +593,53 @@ void ReplxxLineReader::bindDefaultKey(T && f, int mode)
     rx.bind_default_key(vimHandler(std::forward<T>(f)), mode);
 }
 
+namespace
+{
+
+/* The number of terminal columns that replxx uses to display a character of the input. */
+int displayWidth(char32_t c)
+{
+    /* replxx displays a tab as four spaces and other control characters as two, like `^A`. */
+    if (c == '\t')
+        return 4;
+    if (c < ' ' || (c >= 0x7F && c <= 0x9F))
+        return 2;
+    char utf8[4];
+    size_t size = DB::UTF8::convertCodePointToUTF8(static_cast<int>(c), utf8, sizeof(utf8));
+    return static_cast<int>(DB::UTF8::computeWidth(reinterpret_cast<const UInt8 *>(utf8), size));
+}
+
+/* The position on the line starting at `line_start` of the character displayed at `column`,
+ * or of the last character of the line if the line is shorter. */
+int displayColumnToPos(const std::u32string & text, int line_start, int column)
+{
+    int length = static_cast<int>(text.length());
+    int line_column = 0;
+    int i = line_start;
+    for (; i < length && text[i] != '\n'; i++)
+    {
+        line_column += displayWidth(text[i]);
+        if (line_column > column || i + 1 == length || text[i + 1] == '\n')
+            break;
+    }
+    return i;
+}
+
+}
+
 void ReplxxLineReader::recomputeCurswant(int pos, std::u32string & text)
 {
-    /* The buffer can be empty and the cursor can be at its end: never index `text` past its last character. */
+    /* Like vim, `j` and `k` keep the display column rather than the character offset, so tabs and
+     * wide characters are accounted for. The column is relative to the input text: continuation
+     * lines are not indented by the prompt width. The buffer can be empty and the cursor can be at
+     * its end: never index `text` past its last character. */
     int length = static_cast<int>(text.length());
-    auto is_newline = [&](int i) { return i < length && text[i] == '\n'; };
-    int prev_newline = std::min(pos, length);
-    while (prev_newline > 0 && !is_newline(prev_newline))
-        --prev_newline;
-    /* The column is relative to the input text: continuation lines are not indented by the prompt width. */
-    curswant = std::max(!is_newline(prev_newline) || pos == 0 ? pos + 1 : pos - prev_newline, 1);
+    int line_start = std::min(pos, length);
+    while (line_start > 0 && text[line_start - 1] != '\n')
+        --line_start;
+    curswant = 0;
+    for (int i = line_start; i < std::min(pos, length); i++)
+        curswant += displayWidth(text[i]);
 }
 
 void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char motion)
@@ -819,9 +857,11 @@ void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32
         resetVim(&pos, &text);
 }
 
-void ReplxxLineReader::vimCharwise(int & pos, std::u32string & text, int oldpos)
+void ReplxxLineReader::vimCharwise(int & pos, std::u32string & text, int oldpos, bool allow_empty)
 {
-    /* Exclusive characterwise range between the old and the new position, e.g. `dh`, `cl`. */
+    /* Exclusive characterwise range between the old and the new position, e.g. `dh`, `cl`.
+     * An empty range means that the motion failed, unless `allow_empty` is set: like vim,
+     * `cl` on an empty line still enters insert mode. */
     int start = std::min(oldpos, pos);
     int count = std::abs(pos - oldpos);
     if (op && count > 0)
@@ -831,7 +871,7 @@ void ReplxxLineReader::vimCharwise(int & pos, std::u32string & text, int oldpos)
         text.erase(start, count);
         pos = start;
     }
-    if (op == OPERATOR_C && count > 0)
+    if (op == OPERATOR_C && (count > 0 || allow_empty))
     {
         rx.set_editing_mode(MODE_INSERT);
         resetVim();
@@ -1271,7 +1311,8 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             int limit = op ? length : length - 1;
             for (int rep = 0; rep < reps && pos < limit && text[pos] != '\n' && (op || text[pos + 1] != '\n'); rep++)
                 pos++;
-            vimCharwise(pos, text, oldpos);
+            /* With an operator, `l` does not fail at the end of the line: it selects nothing. */
+            vimCharwise(pos, text, oldpos, /* allow_empty = */ true);
         },
         MODE_NORMAL);
 
@@ -1285,21 +1326,12 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             int reps = vimReps();
             for (int rep = 0; rep < reps; rep++)
             {
-                int prev = pos;
-                int offset = curswant;
-
-                for (int i = pos; i < length; i++)
-                {
-                    if (text[i] == '\n')
-                    {
-                        for (pos = i + 1; pos < length - 1 && pos < i + offset; pos++)
-                            if (text[pos] == '\n' || text[pos + 1] == '\n')
-                                break;
-                        break;
-                    }
-                }
-                if (pos == prev)
+                int next_newline = pos;
+                for (; next_newline < length && text[next_newline] != '\n'; next_newline++)
+                    ;
+                if (next_newline >= length)
                     break;
+                pos = displayColumnToPos(text, next_newline + 1, curswant);
             }
             if (op)
             {
@@ -1324,33 +1356,15 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             int reps = vimReps();
             for (int rep = 0; rep < reps && pos > 0; rep++)
             {
-                int prev_newline = pos - 1;
-                for (; prev_newline > 0; prev_newline--)
-                    if (text[prev_newline] == '\n')
-                        break;
-
-                int offset = curswant;
-
-                if (prev_newline == 0)
-                {
-                    if (text[0] == '\n')
-                        pos = 0;
+                int line_start = std::min(pos, length);
+                for (; line_start > 0 && text[line_start - 1] != '\n'; line_start--)
+                    ;
+                if (line_start == 0)
                     break;
-                }
-
-                for (int i = prev_newline - 1; i >= 0; i--)
-                {
-                    if (text[i] == '\n' || i == 0)
-                    {
-                        int no_newline = text[i] != '\n';
-                        if (no_newline)
-                            offset = std::max(offset - 1, 0);
-                        for (pos = no_newline ? 0 : i + 1; pos < length - 1 && pos < i + offset; pos++)
-                            if (text[pos] == '\n' || text[pos + 1] == '\n')
-                                break;
-                        break;
-                    }
-                }
+                int prev_line_start = line_start - 1;
+                for (; prev_line_start > 0 && text[prev_line_start - 1] != '\n'; prev_line_start--)
+                    ;
+                pos = displayColumnToPos(text, prev_line_start, curswant);
             }
             if (op)
             {

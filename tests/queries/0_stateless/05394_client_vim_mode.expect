@@ -651,5 +651,38 @@ submit
 expect "9000"
 expect ":) "
 
+# `cl` on an empty line selects nothing, but still enters insert mode.
+send -- "SELECT 5000\r\r+ 23"
+escape
+send -- "ggjcl+ 9"
+escape
+submit
+expect "5032"
+expect ":) "
+
+# `j` and `k` keep the display column: a wide character takes two columns.
+send -- "SELECT concat('x',\r '你好abcd')"
+escape
+send -- "gg7ljx"
+submit
+expect "x你好acd"
+expect ":) "
+
+send -- "SELECT concat('ab你好cd',\r'0123456789abcdefghijk')"
+escape
+send -- "4hkx"
+submit
+expect "ab你cd0123456789abcdefghijk"
+expect ":) "
+
+# A tab takes several columns, so `j` from the third column lands on it.
+# The tab is pasted: typing it would trigger completion.
+send -- "SELECT 1000 +\r\033\[200~\t23\033\[201~"
+escape
+send -- "gg2ljx"
+submit
+expect "1023"
+expect ":) "
+
 send -- "\4"
 expect eof
