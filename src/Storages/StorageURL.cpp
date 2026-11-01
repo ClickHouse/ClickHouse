@@ -56,7 +56,6 @@
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
-#include <Common/SipHash.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
