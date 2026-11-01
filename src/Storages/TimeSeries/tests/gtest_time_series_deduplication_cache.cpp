@@ -46,16 +46,21 @@ namespace
         return keys;
     }
 
+    std::vector<String> makeKeys(size_t num_keys)
+    {
+        std::vector<String> keys;
+        for (size_t i = 0; i != num_keys; ++i)
+            keys.push_back("k" + std::to_string(i));
+        return keys;
+    }
+
     struct Fixture
     {
         static constexpr UInt64 EXPIRATION_SECONDS = 3600;
-        static constexpr UInt64 MAX_OFFSET_SECONDS = EXPIRATION_SECONDS / 4;
+        /// Mirrors `MIN_LIFETIME_RATIO` in TimeSeriesDeduplicationCache.cpp.
+        static constexpr UInt64 MIN_LIFETIME_SECONDS = EXPIRATION_SECONDS * 4 / 5;
 
         TimeSeriesDeduplicationCache::TimePoint now{std::chrono::steady_clock::time_point{} + std::chrono::hours(1000)};
-
-        /// The random values returned in turn, the sequence repeats.
-        std::vector<UInt64> random_values{0};
-        size_t num_random_values_drawn = 0;
 
         TimeSeriesDeduplicationCache cache;
 
@@ -67,12 +72,11 @@ namespace
                   CurrentMetrics::TimeSeriesTagsDeduplicationCacheBytes,
                   ProfileEvents::TimeSeriesTagsDeduplicationCacheHits,
                   ProfileEvents::TimeSeriesTagsDeduplicationCacheMisses,
-                  [this] { return now; },
-                  [this] { return random_values[num_random_values_drawn++ % random_values.size()]; })
+                  [this] { return now; })
         {
         }
 
-        /// Writes `keys` with the next random values and marks them as written.
+        /// Writes `keys` and marks them as written.
         void write(const std::vector<String> & keys)
         {
             TimeSeriesDeduplicationCache::PendingRows pending_rows;
@@ -90,37 +94,11 @@ namespace
     };
 }
 
-TEST(TimeSeriesDeduplicationCache, ExpirationOffsetIsZeroForShortPeriods)
-{
-    for (UInt64 expiration_seconds = 0; expiration_seconds < 4; ++expiration_seconds)
-    {
-        for (UInt64 random_value : {UInt64{0}, UInt64{1}, UInt64{7}, UInt64{123456789}})
-            EXPECT_EQ(TimeSeriesDeduplicationCache::expirationOffsetSeconds(expiration_seconds, random_value), 0u);
-    }
-}
-
-TEST(TimeSeriesDeduplicationCache, ExpirationOffsetIsBoundedByAQuarterOfThePeriod)
-{
-    const UInt64 expiration_seconds = 3600;
-    const UInt64 max_offset = expiration_seconds / 4;
-
-    for (UInt64 random_value = 0; random_value < 5000; ++random_value)
-        EXPECT_LE(TimeSeriesDeduplicationCache::expirationOffsetSeconds(expiration_seconds, random_value), max_offset);
-
-    EXPECT_EQ(TimeSeriesDeduplicationCache::expirationOffsetSeconds(expiration_seconds, 0), 0u);
-    EXPECT_EQ(TimeSeriesDeduplicationCache::expirationOffsetSeconds(expiration_seconds, max_offset), max_offset);
-    EXPECT_EQ(TimeSeriesDeduplicationCache::expirationOffsetSeconds(expiration_seconds, max_offset + 1), 0u);
-    EXPECT_EQ(TimeSeriesDeduplicationCache::expirationOffsetSeconds(4, 1), 1u);
-    EXPECT_EQ(TimeSeriesDeduplicationCache::expirationOffsetSeconds(4, 2), 0u);
-}
-
-TEST(TimeSeriesDeduplicationCache, RowsWrittenTogetherExpireAcrossTheLastQuarter)
+TEST(TimeSeriesDeduplicationCache, RowsWrittenTogetherExpireAcrossTheLastFifth)
 {
     Fixture f;
 
-    /// Each row draws its own offset. The rows are counted, not named: the draws follow the undefined order of the pending rows.
-    f.random_values = {0, Fixture::MAX_OFFSET_SECONDS, Fixture::MAX_OFFSET_SECONDS};
-    const std::vector<String> keys{"a", "b", "c"};
+    const auto keys = makeKeys(100);
     f.write(keys);
 
     const auto written_at = f.now;
@@ -128,49 +106,61 @@ TEST(TimeSeriesDeduplicationCache, RowsWrittenTogetherExpireAcrossTheLastQuarter
     f.now = written_at;
     EXPECT_EQ(f.toWrite(keys).size(), 0u);
 
-    f.now = written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS - Fixture::MAX_OFFSET_SECONDS - 1);
+    f.now = written_at + std::chrono::seconds(Fixture::MIN_LIFETIME_SECONDS - 1);
     EXPECT_EQ(f.toWrite(keys).size(), 0u);
 
-    f.now = written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS - Fixture::MAX_OFFSET_SECONDS);
-    EXPECT_EQ(f.toWrite(keys).size(), 2u);
-
-    f.now = written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS - 1);
-    EXPECT_EQ(f.toWrite(keys).size(), 2u);
+    /// Each row's lifetime is uniform over the last fifth, so the chance that all 100 land on one side of the midpoint is 2 * 2^-100.
+    f.now = written_at + std::chrono::seconds((Fixture::MIN_LIFETIME_SECONDS + Fixture::EXPIRATION_SECONDS) / 2);
+    size_t num_expired_at_midpoint = f.toWrite(keys).size();
+    EXPECT_GT(num_expired_at_midpoint, 0u);
+    EXPECT_LT(num_expired_at_midpoint, 100u);
 
     f.now = written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS);
-    EXPECT_EQ(f.toWrite(keys).size(), 3u);
+    EXPECT_EQ(f.toWrite(keys).size(), 100u);
 }
 
-TEST(TimeSeriesDeduplicationCache, RewriteRestartsThePeriodWithANewOffset)
+TEST(TimeSeriesDeduplicationCache, RewriteRestartsThePeriod)
 {
     Fixture f;
 
-    f.random_values = {Fixture::MAX_OFFSET_SECONDS};
     f.write({"a"});
 
     const auto first_written_at = f.now;
-    f.now = first_written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS - Fixture::MAX_OFFSET_SECONDS);
-    f.random_values = {0};
+    f.now = first_written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS);
+    EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{"a"});
     f.write({"a"});
 
     const auto second_written_at = f.now;
-    f.now = second_written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS - 1);
+    f.now = second_written_at + std::chrono::seconds(Fixture::MIN_LIFETIME_SECONDS - 1);
     EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{});
 
     f.now = second_written_at + std::chrono::seconds(Fixture::EXPIRATION_SECONDS);
     EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{"a"});
 }
 
-TEST(TimeSeriesDeduplicationCache, MaximumExpirationIsSafe)
+TEST(TimeSeriesDeduplicationCache, MaximumExpirationNeverExpires)
 {
-    const UInt64 expiration_seconds = std::numeric_limits<UInt64>::max();
-    Fixture f(expiration_seconds);
+    Fixture f(std::numeric_limits<UInt64>::max());
 
-    f.random_values = {expiration_seconds / 4};
     f.write({"a"});
 
     EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{});
 
     f.now += std::chrono::seconds(1);
     EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{});
+
+    f.now += std::chrono::hours(24 * 365 * 100);
+    EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{});
+}
+
+TEST(TimeSeriesDeduplicationCache, OneSecondPeriodExpiresWithinASecond)
+{
+    Fixture f(1);
+
+    f.write({"a"});
+
+    EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{});
+
+    f.now += std::chrono::seconds(1);
+    EXPECT_EQ(f.toWrite({"a"}), std::vector<String>{"a"});
 }

@@ -26,7 +26,7 @@ class Block;
 /// Collapsing the duplicates is the job of the target table's engine (`ReplacingMergeTree` or `AggregatingMergeTree`).
 ///
 /// An entry expires when the expiration period has passed since the row was written, hits don't prolong it. Each entry expires
-/// up to a quarter of the period early by a random offset, so the rows written together aren't all written again at the same moment.
+/// up to a fifth of the period early by a random offset, so the rows written together aren't all written again at the same moment.
 /// So every row is written again at least once per expiration period, and any difference between the cache and the table
 /// disappears within that period.
 /// When the cache is full, the entries used only once are evicted first, then the least recently used ones (the `SLRU` policy).
@@ -48,10 +48,8 @@ public:
 
     using TimePoint = std::chrono::steady_clock::time_point;
 
-    /// The sources of the current time and of the random values, replaceable by tests. Empty functions use the steady clock
-    /// and the thread-local random generator.
+    /// The source of the current time, replaceable by tests. An empty function uses the steady clock.
     using Clock = std::function<TimePoint()>;
-    using RandomSource = std::function<UInt64()>;
 
     TimeSeriesDeduplicationCache(
         size_t max_size_bytes_,
@@ -60,11 +58,7 @@ public:
         CurrentMetrics::Metric bytes_metric,
         ProfileEvents::Event hits_event_,
         ProfileEvents::Event misses_event_,
-        Clock clock_ = {},
-        RandomSource random_source_ = {});
-
-    /// The number of seconds an entry expires early, chosen from `random_value`: at most a quarter of `expiration_seconds`.
-    static UInt64 expirationOffsetSeconds(UInt64 expiration_seconds, UInt64 random_value);
+        Clock clock_ = {});
 
     /// Returns `block` without the rows already written by earlier inserts (found in the cache) and without the rows pending
     /// in the same insert (found in `pending_rows`). A row is identified by the column `key_column_index` and counts as the same
@@ -78,12 +72,11 @@ public:
     void markRowsAsWritten(PendingRows && pending_rows);
 
 private:
-    /// The latest row written for a key. `lifetime_seconds` is the expiration period shortened by the random offset of the entry.
+    /// The latest row written for a key and the time when its entry expires.
     struct WrittenRow
     {
         RowHash row_hash{};
-        TimePoint written_at{};
-        UInt64 lifetime_seconds{};
+        TimePoint expiration_time{};
     };
 
     struct WrittenRowWeight
@@ -138,11 +131,13 @@ private:
         PendingRows & pending_rows,
         const PaddedPODArray<UInt8> & filter);
 
-    /// Whether the lifetime of `written_row` has passed since it was written: such an entry doesn't make a row a duplicate.
+    /// Whether `written_row` has expired: such an entry doesn't make a row a duplicate.
     bool isExpired(const WrittenRow & written_row, TimePoint now) const;
 
+    /// The time when an entry written at `now` expires: `lifetime_ratio` of the expiration period after `now`.
+    TimePoint getExpirationTime(TimePoint now, Float64 lifetime_ratio) const;
+
     TimePoint currentTime() const;
-    UInt64 randomValue() const;
 
     Cache cache;
     const UInt64 expiration_seconds;
@@ -150,7 +145,6 @@ private:
     const ProfileEvents::Event hits_event;
     const ProfileEvents::Event misses_event;
     const Clock clock;
-    const RandomSource random_source;
 };
 
 using TimeSeriesDeduplicationCachePtr = std::shared_ptr<TimeSeriesDeduplicationCache>;

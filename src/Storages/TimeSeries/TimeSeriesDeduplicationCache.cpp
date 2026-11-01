@@ -7,12 +7,18 @@
 #include <Common/thread_local_rng.h>
 #include <Core/Block.h>
 
+#include <random>
+
 
 namespace DB
 {
 
 namespace
 {
+    /// An entry lives at least this part of the expiration period: the rest is cut off by a random amount,
+    /// so the rows written together don't expire together.
+    constexpr Float64 MIN_LIFETIME_RATIO = 0.8;
+
     /// Returns `block` without the rows filtered out, `num_passed_rows` is the number of rows passing the filter.
     Block applyFilter(const Block & block, const PaddedPODArray<UInt8> & filter, size_t num_passed_rows)
     {
@@ -36,34 +42,19 @@ TimeSeriesDeduplicationCache::TimeSeriesDeduplicationCache(
     CurrentMetrics::Metric bytes_metric,
     ProfileEvents::Event hits_event_,
     ProfileEvents::Event misses_event_,
-    Clock clock_,
-    RandomSource random_source_)
+    Clock clock_)
     : cache(bytes_metric, entries_metric, max_size_bytes_)
     , expiration_seconds(expiration_seconds_)
     , max_pending_rows(max_size_bytes_ / APPROXIMATE_ENTRY_SIZE)
     , hits_event(hits_event_)
     , misses_event(misses_event_)
     , clock(std::move(clock_))
-    , random_source(std::move(random_source_))
 {
-}
-
-UInt64 TimeSeriesDeduplicationCache::expirationOffsetSeconds(UInt64 expiration_seconds, UInt64 random_value)
-{
-    UInt64 max_offset_seconds = expiration_seconds / 4;
-    if (!max_offset_seconds)
-        return 0;
-    return random_value % (max_offset_seconds + 1);
 }
 
 TimeSeriesDeduplicationCache::TimePoint TimeSeriesDeduplicationCache::currentTime() const
 {
     return clock ? clock() : std::chrono::steady_clock::now();
-}
-
-UInt64 TimeSeriesDeduplicationCache::randomValue() const
-{
-    return random_source ? random_source() : thread_local_rng();
 }
 
 Block TimeSeriesDeduplicationCache::filterOutWrittenRows(
@@ -191,11 +182,20 @@ void TimeSeriesDeduplicationCache::trimPendingRows(
     }
 }
 
+TimeSeriesDeduplicationCache::TimePoint TimeSeriesDeduplicationCache::getExpirationTime(TimePoint now, Float64 lifetime_ratio) const
+{
+    /// `steady_clock` counts nanoseconds in `Int64`, so an expiration period which doesn't fit means the entry never expires.
+    auto max_lifetime_seconds = std::chrono::duration_cast<std::chrono::seconds>(TimePoint::max() - now).count();
+    if (expiration_seconds >= static_cast<UInt64>(max_lifetime_seconds))
+        return TimePoint::max();
+
+    std::chrono::duration<Float64> lifetime{static_cast<Float64>(expiration_seconds) * lifetime_ratio};
+    return now + std::chrono::duration_cast<TimePoint::duration>(lifetime);
+}
+
 bool TimeSeriesDeduplicationCache::isExpired(const WrittenRow & written_row, TimePoint now) const
 {
-    /// The elapsed time is compared in seconds, so that any value of the setting fits without overflow.
-    auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - written_row.written_at).count();
-    return (elapsed_seconds >= 0) && (static_cast<UInt64>(elapsed_seconds) >= written_row.lifetime_seconds);
+    return now >= written_row.expiration_time;
 }
 
 void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows_)
@@ -204,12 +204,12 @@ void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows
 
     /// A row already in the cache is replaced: either its values have changed, or a concurrent insert has just written the same
     /// row, and then the time of writing is correct anyway.
-    /// The lifetime of each row is shortened by its own random offset, so the rows written together don't expire together.
     auto now = currentTime();
+    std::uniform_real_distribution<Float64> lifetime_ratio_distribution(MIN_LIFETIME_RATIO, 1);
     for (const auto & [key_hash, row_hash] : pending_rows)
     {
-        UInt64 lifetime_seconds = expiration_seconds - expirationOffsetSeconds(expiration_seconds, randomValue());
-        WrittenRow written_row{.row_hash = row_hash, .written_at = now, .lifetime_seconds = lifetime_seconds};
+        Float64 lifetime_ratio = lifetime_ratio_distribution(thread_local_rng);
+        WrittenRow written_row{.row_hash = row_hash, .expiration_time = getExpirationTime(now, lifetime_ratio)};
         cache.set(key_hash, std::make_shared<WrittenRow>(written_row));
     }
 }
