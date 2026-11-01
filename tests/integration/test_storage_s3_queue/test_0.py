@@ -1186,6 +1186,58 @@ def test_move_fails_closed_when_source_rewritten_before_post_processing(
     )
 
 
+def test_move_collision_does_not_hide_a_rewritten_source(started_cluster):
+    """The in-batch collision shortcut must not skip the generation check: a colliding source that
+    was rewritten after its rows were read must not be committed as processed, or the replacement
+    would never be ingested."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_collision_rewritten_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    rewritten = b"7,8,9\n"
+    collisions_before = move_collisions(node)
+    rewrites_before = move_source_rewrites(node)
+
+    put_s3_file_content(started_cluster, f"{files_path}/a/part.csv", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/b/part.csv", b"4,5,6\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": f"/clickhouse/{table_name}",
+            "processing_threads_num": 1,
+        },
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        hive_partitioning_path="*/",
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # Both files are read and inserted; `b/part.csv` is the one that collides with `a/part.csv`.
+        put_s3_file_content(started_cluster, f"{files_path}/b/part.csv", rewritten)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+
+    wait_until(lambda: move_collisions(node) > collisions_before, timeout=90)
+    wait_until(lambda: move_source_rewrites(node) > rewrites_before, timeout=90)
+    # The collision did not commit the rewritten file, so its replacement is ingested later.
+    wait_until(
+        lambda: node.query(
+            f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL"
+        )
+        == "1\t2\t3\n4\t5\t6\n7\t8\t9\n",
+        timeout=90,
+    )
+
+
 def test_ordered_reads_a_rewritten_file_before_a_later_key(started_cluster):
     """An ordered queue whose post-processing finds a rewritten file must read the new generation
     before a later key moves the processed pointer past it."""

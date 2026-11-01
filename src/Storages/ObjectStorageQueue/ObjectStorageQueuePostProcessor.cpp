@@ -589,6 +589,22 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
             if (!destinations.insert(destination.remote_path).second)
             {
                 reportMoveCollision(object_from, destination);
+                /// The shortcut must not hide a source rewritten after it was ingested: the rewrite has to reach `process`.
+                try
+                {
+                    auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/false);
+                    if (source_metadata && !isSameGeneration(type, source_metadata->etag, object_from.etag))
+                        throw Exception(
+                            type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
+                                                             : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "Object {} was not moved: it changed after it was ingested "
+                            "(its `ETag` is {} instead of {})",
+                            object_from.remote_path, source_metadata->etag, object_from.etag);
+                }
+                catch (...)
+                {
+                    changed_generation.rememberIfCurrentExceptionIsOne();
+                }
                 continue;
             }
             /// The task outlives this iteration, so it takes its own copy of the source object.
@@ -836,6 +852,26 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 if (!destinations.insert(object_to.remote_path).second)
                 {
                     reportMoveCollision(object_from, object_to);
+                    /// The shortcut must not hide a source rewritten after it was ingested: the rewrite has to reach `process`.
+                    try
+                    {
+                        const auto source_info = S3::getObjectInfo(
+                            *src_client,
+                            src_bucket,
+                            object_from.remote_path,
+                            /*version_id=*/object_from.version_id,
+                            /*with_metadata=*/false,
+                            /*with_tags=*/false);
+                        if (source_info.etag != object_from.etag)
+                            throw Exception(
+                                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                "S3 object {} was not moved: it changed after it was ingested (its `ETag` is {} instead of {})",
+                                object_from.remote_path, source_info.etag, object_from.etag);
+                    }
+                    catch (...)
+                    {
+                        changed_generation.rememberIfCurrentExceptionIsOne();
+                    }
                     continue;
                 }
                 try
@@ -1029,6 +1065,21 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 if (!destinations.insert(object_to.remote_path).second)
                 {
                     reportMoveCollision(object_from, object_to);
+                    /// The shortcut must not hide a source rewritten after it was ingested: the rewrite has to reach `process`.
+                    try
+                    {
+                        const String current_etag = AzureBlobStorage::getETagOrEmpty(
+                            src_client->GetBlobClient(object_from.remote_path).GetProperties().Value.ETag);
+                        if (AzureBlobStorage::normalizeETag(current_etag) != AzureBlobStorage::normalizeETag(object_from.etag))
+                            throw Exception(
+                                ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "Azure blob {} was not moved: it changed after it was ingested (its `ETag` is {} instead of {})",
+                                object_from.remote_path, current_etag, object_from.etag);
+                    }
+                    catch (...)
+                    {
+                        changed_generation.rememberIfCurrentExceptionIsOne();
+                    }
                     continue;
                 }
                 try
