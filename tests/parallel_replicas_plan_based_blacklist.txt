@@ -1,4 +1,5 @@
     A read from a UNIQUE KEY table is shipped, but cannot be serialized (SUPPORT_IS_DISABLED)
+    https://github.com/ClickHouse/ClickHouse/issues/128534
 03313_unique_key_mutation_guard
 04046_unique_key_ddl
 04105_unique_key_insert
@@ -8,7 +9,8 @@
 04196_unique_key_read_skips_an_uncommitted_part
 04198_unique_key_read_sees_a_lost_reply_commit
 
-    A read from a projection is shipped and loses the projection on the replica (_parent_part_offset not found)
+    A join with `mergeTreeProjection` throws `NOT_FOUND_COLUMN_IN_BLOCK`: the replica resolves the projection side as the base table
+    https://github.com/ClickHouse/ClickHouse/issues/128537
 03401_normal_projection_with_part_offset
 03401_normal_projection_with_part_offset_no_sorting
 03785_rebuild_projection_with_part_offset
@@ -18,7 +20,8 @@
 03045_unknown_identifier_alias_substitution
 03143_cte_scope
 
-    A ParallelReplicasSplit marker is left in the plan when the split is not applied
+    A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
+    https://github.com/ClickHouse/ClickHouse/issues/128539
 02377_optimize_sorting_by_input_stream_properties_2
 02404_memory_bound_merging
 03305_mergine_aggregated_filter_push_down
@@ -26,13 +29,25 @@
 04093_lazy_final_combined_filtering
 04095_lazy_final_with_lazy_materialization
 
-    An optimization is skipped whenever parallel replicas are enabled (fuseFilterIntoArrayJoin, lazy materialization over joins)
+    `force_primary_key` throws `INDEX_NOT_USED` on a replica when the filter is a constant above `ARRAY JOIN`
+    https://github.com/ClickHouse/ClickHouse/issues/128542
+05350_comparison_tuple_elimination_shared_alias
+
+    Three plan optimizations are switched off for every query, not only for steps that are shipped
+    https://github.com/ClickHouse/ClickHouse/issues/128546
 01655_plan_optimizations
+04669_fuse_filter_into_array_join
+05042_fuse_filter_array_join_left_distributed
+05044_lower_array_join_function
+05137_fuse_row_conditions_into_array_join
+05243_array_join_element_filter_block_boundary
+05385_fuse_filter_array_join_lift_row_actions
+05397_fuse_filter_into_left_array_join
 05399_additional_result_filter_extremes
 05405_lazy_materialization_for_join_object_storage_default_dependency
 
-    The read is shipped without its filter, so `force_primary_key` throws `INDEX_NOT_USED` on a replica
-05350_comparison_tuple_elimination_shared_alias
+    The check meant to run without parallel replicas gets them from the CI profile: add `enable_parallel_replicas = 0` to it
+05138_pr_plan_based_array_join_filter_not_fused
 
     A replica throws `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` on `hasToken(CAST(s, 'String'), ...)`: the text index does not skip the NULL granule there
 05340_text_index_preprocessor_cast_drop_nullable
@@ -137,14 +152,6 @@
 01655_plan_optimizations_optimize_read_in_window_order_long
 02910_prefetch_unexpceted_exception
 03850_nested_cluster_table_function_task_iterator
-04669_fuse_filter_into_array_join
 04908_group_by_top_k_max_k_cap
 05019_group_by_top_k_compatibility
-05042_fuse_filter_array_join_left_distributed
-05044_lower_array_join_function
-05137_fuse_row_conditions_into_array_join
-05138_pr_plan_based_array_join_filter_not_fused
 05175_autopr_keep_cluster_engines
-05243_array_join_element_filter_block_boundary
-05385_fuse_filter_array_join_lift_row_actions
-05397_fuse_filter_into_left_array_join
