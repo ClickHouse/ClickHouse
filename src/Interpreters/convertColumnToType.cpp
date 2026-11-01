@@ -615,6 +615,11 @@ bool convertAlternative(
 
     const ActiveAlternative alternative = resolveActiveAlternative(column, from, row);
     retagBoolInField(field, alternative.type);
+    /// This is a member of a composite, so, as `convertFieldToType` does for the members it converts itself, a
+    /// `DateTime` alternative with a time of day is not representable as a `Date`. The check must run here, as the
+    /// member is converted to `to` below and the outer conversion then sees it typed as `Date` already.
+    if (strict && isDateTimeElementWithTimeOfDay(field, *to, alternative.type.get()))
+        return false;
     /// The alternative can be a composite holding `Variant`/`Dynamic` members of its own.
     const DataTypePtr source = rewriteNestedAlternativesType(alternative.type, to);
     if (source != alternative.type

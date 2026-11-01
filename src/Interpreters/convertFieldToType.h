@@ -90,6 +90,11 @@ Field convertFieldToType(
     bool strict = false,
     bool convert_inexact_floats = false);
 
+/// Under `strict`, whether `src`, a `DateTime` / `DateTime64` value of type `from_type_hint`, has a time of day
+/// (or a fractional second) and so cannot be represented as `to_type` when that is a `Date` / `Date32` member
+/// of an `Array`, `Tuple` or `Map`. Scalars keep truncation, so the callers apply it to members only.
+bool isDateTimeElementWithTimeOfDay(const Field & src, const IDataType & to_type, const IDataType * from_type_hint);
+
 /// Same as convertFieldToType but returns empty Field in case of an exception.
 Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool strict = false, bool convert_inexact_floats = false);
 

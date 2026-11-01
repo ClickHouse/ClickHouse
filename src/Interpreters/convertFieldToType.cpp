@@ -600,6 +600,8 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
 }
 
+}
+
 /// Under `strict`, a `DateTime` / `DateTime64` member of an `Array`, `Tuple` or `Map` constant that has a time of
 /// day is not representable as a `Date` / `Date32`: comparing a `Date` with it converts the `Date` to midnight in
 /// the time zone of the `DateTime`, so it can never be equal. Truncating it to its day (as `CAST` does) would make
@@ -633,6 +635,9 @@ bool isDateTimeElementWithTimeOfDay(const Field & src, const IDataType & to_type
 
     return false;
 }
+
+namespace
+{
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
