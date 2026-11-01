@@ -101,6 +101,28 @@ struct ExponentialTimeDecayedState
         mergeExact(rhs, decay_length);
     }
 
+    std::pair<Float64, Float64> getDecayedValues(Float64 target_time, Float64 decay_length) const
+    {
+        const Float64 distance = target_time - max_time;
+        const Float64 decay = std::exp(-distance / decay_length);
+        if (decay >= std::numeric_limits<Float64>::min())
+            return {weighted_sum * decay, weight * decay};
+
+        /// An overflowing difference can only involve opposite-sign finite timestamps.
+        /// Divide them first in that case, so a representable normalized distance is preserved.
+        const Float64 normalized_distance = std::isfinite(distance)
+            ? distance / decay_length
+            : target_time / decay_length - max_time / decay_length;
+
+        /// Apply the decay in four steps, keeping the factor normal whenever the final
+        /// product can be represented. Forming the full tiny factor first can lose a
+        /// representable contribution even when it is multiplied by a large value.
+        const Float64 quarter_decay = std::exp(-normalized_distance / 4);
+        return {
+            weighted_sum * quarter_decay * quarter_decay * quarter_decay * quarter_decay,
+            weight * quarter_decay * quarter_decay * quarter_decay * quarter_decay};
+    }
+
     void mergeExact(const ExponentialTimeDecayedState & rhs, Float64 decay_length)
     {
         if (rhs.empty())
@@ -114,18 +136,16 @@ struct ExponentialTimeDecayedState
 
         if (rhs.max_time > max_time)
         {
-            const Float64 distance = rhs.max_time - max_time;
-            const Float64 decay = std::exp(-distance / decay_length);
-            weighted_sum = weighted_sum * decay + rhs.weighted_sum;
-            weight = weight * decay + rhs.weight;
+            const auto [decayed_sum, decayed_weight] = getDecayedValues(rhs.max_time, decay_length);
+            weighted_sum = decayed_sum + rhs.weighted_sum;
+            weight = decayed_weight + rhs.weight;
             max_time = rhs.max_time;
         }
         else if (rhs.max_time < max_time)
         {
-            const Float64 distance = max_time - rhs.max_time;
-            const Float64 decay = std::exp(-distance / decay_length);
-            weighted_sum += rhs.weighted_sum * decay;
-            weight += rhs.weight * decay;
+            const auto [decayed_sum, decayed_weight] = rhs.getDecayedValues(max_time, decay_length);
+            weighted_sum += decayed_sum;
+            weight += decayed_weight;
         }
         else
         {
