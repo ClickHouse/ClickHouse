@@ -150,10 +150,11 @@ public:
         /// The submap visited next: 0 for the empty key, 1-3 for the fixed-size classes, 4 for the generic
         /// submap, 5 after the end.
         size_t submap = 0;
-        typename Base::T1::const_iterator it1;
-        typename Base::T2::const_iterator it2;
-        typename Base::T3::const_iterator it3;
-        typename Base::Ts::const_iterator its;
+        /// The traversal sets the iterator of a submap when it enters that submap.
+        typename Base::T1::const_iterator it1{nullptr, nullptr};
+        typename Base::T2::const_iterator it2{nullptr, nullptr};
+        typename Base::T3::const_iterator it3{nullptr, nullptr};
+        typename Base::Ts::const_iterator its{nullptr, nullptr};
     };
 
     /// Calls `func(key, mapped)` for the values from `position` in `forEachValue` order. A `func` returning false
