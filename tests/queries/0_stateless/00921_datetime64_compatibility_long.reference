@@ -114,24 +114,24 @@ Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:15:00"
 ------------------------------------------
 SELECT toStartOfInterval(N, INTERVAL 1 year, \'Asia/Istanbul\')
-Code: 43
 "Date","2019-01-01"
-"Date","2019-01-01"
+"DateTime('Asia/Istanbul')","2019-01-01 00:00:00"
+"DateTime64(3, 'Asia/Istanbul')","2019-01-01 00:00:00.000"
 ------------------------------------------
 SELECT toStartOfInterval(N, INTERVAL 1 month, \'Asia/Istanbul\')
-Code: 43
 "Date","2019-09-01"
-"Date","2019-09-01"
+"DateTime('Asia/Istanbul')","2019-09-01 00:00:00"
+"DateTime64(3, 'Asia/Istanbul')","2019-09-01 00:00:00.000"
 ------------------------------------------
 SELECT toStartOfInterval(N, INTERVAL 1 day, \'Asia/Istanbul\')
+"Date","2019-09-16"
 "DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 00:00:00.000"
 ------------------------------------------
 SELECT toStartOfInterval(N, INTERVAL 15 minute, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:15:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:15:00"
+"DateTime64(3, 'Asia/Istanbul')","2019-09-16 19:15:00.000"
 ------------------------------------------
 SELECT date_trunc(\'year\', N, \'Asia/Istanbul\')
 Code: 43
