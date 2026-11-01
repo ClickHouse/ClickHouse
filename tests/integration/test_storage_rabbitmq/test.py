@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import random
+import subprocess
 import threading
 import time
 import uuid
@@ -10,6 +11,7 @@ from random import randrange
 
 import pika
 import pytest
+import requests
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -3997,10 +3999,11 @@ def test_rabbitmq_reconnect_drops_stale_deliveries(rabbitmq_cluster, db, unique)
         """
     )
 
-    def rabbitmqctl(*args):
+    def rabbitmqctl(*args, **kwargs):
         return rabbitmq_cluster.exec_in_container(
             rabbitmq_cluster.rabbitmq_docker_id,
             ["env", f"RABBITMQ_ERLANG_COOKIE={rabbitmq_cluster.rabbitmq_cookie}", "rabbitmqctl", *args],
+            **kwargs,
         )
 
     def view_rows():
@@ -4026,21 +4029,38 @@ def test_rabbitmq_reconnect_drops_stale_deliveries(rabbitmq_cluster, db, unique)
     while view_rows() < 5 * block_size:
         assert time.monotonic() < deadline, "consumption did not start"
         time.sleep(0.1)
-    rabbitmqctl("close_all_connections", "test")
+    # Through the management API: a new rabbitmqctl process occasionally never returns.
+    requests.delete(
+        f"http://{rabbitmq_cluster.rabbitmq_ip}:{rabbitmq_cluster.rabbitmq_management_port}/api/connections/username/root",
+        auth=("root", "clickhouse"),
+        headers={"X-Reason": "test"},
+        timeout=30,
+    ).raise_for_status()
     assert view_rows() < messages_num // 2, "the backlog was consumed before the connection dropped"
     instance.wait_for_log_line(f"\\({db}.rabbitmq\\): Connection restored")
 
     # Done once the broker holds nothing for the queue and nothing more is inserted.
+    abandoned_calls = 0
+
     def queue_drained():
-        out = rabbitmqctl("-q", "list_queues", "name", "messages_ready", "messages_unacknowledged")
+        nonlocal abandoned_calls
+        # A rabbitmqctl call occasionally never returns, so give up on it and ask again.
+        try:
+            out = rabbitmqctl("-q", "list_queues", "name", "messages_ready", "messages_unacknowledged", timeout=30)
+        except Exception as e:
+            if not isinstance(e.__cause__, subprocess.TimeoutExpired):
+                raise
+            abandoned_calls += 1
+            logging.warning("rabbitmqctl list_queues did not return within 30 s, asking again")
+            return False
         queues = [line.split() for line in out.splitlines() if unique in line]
         return bool(queues) and all(q[1] == "0" and q[2] == "0" for q in queues)
 
     deadline = time.monotonic() + 3 * DEFAULT_TIMEOUT_SEC
     last_count, stable_since = -1, time.monotonic()
-    while not (queue_drained() and time.monotonic() - stable_since >= 3):
+    while not (time.monotonic() - stable_since >= 3 and queue_drained()):
         current = view_rows()
-        assert time.monotonic() < deadline, f"consumption did not finish, {current} rows"
+        assert time.monotonic() < deadline, f"consumption did not finish, {current} rows, {abandoned_calls} rabbitmqctl calls timed out"
         if current != last_count:
             last_count, stable_since = current, time.monotonic()
         time.sleep(0.5)
