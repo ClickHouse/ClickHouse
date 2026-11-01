@@ -7304,7 +7304,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
     size_t first_function_number,
-    DataTypePtr current_type,
+    const DataTypePtr & key_type,
     bool single_point)
 {
     if (functions.empty())
@@ -7317,7 +7317,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
-    current_type = recursiveRemoveLowCardinality(current_type);
+    DataTypePtr current_type = recursiveRemoveLowCardinality(key_type);
 
     /// The functions are evaluated on the endpoints of a key range, which are values the analysis
     /// substitutes rather than values the query asked about, so they can fail for an endpoint the
