@@ -3308,6 +3308,30 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             data.default_database = saved_default_database;
             return;
         }
+
+        /// A refreshable materialized view analyzes its `SELECT` in the view's own database rather than the
+        /// session's current one (`InterpreterCreateQuery` switches the current database of the analysis
+        /// context to `create.getDatabase()`), so `USE db1; CREATE MATERIALIZED VIEW db2.mv REFRESH ... AS
+        /// SELECT * FROM src` reads `db2.src`. Walk the `SELECT` with that database in effect; a name a
+        /// session temporary table takes still resolves to it, as in the analysis. An unqualified view is
+        /// created in the session's current database, which is already the default.
+        if (const auto * create = ast->as<ASTCreateQuery>();
+            create && create->is_materialized_view && create->refresh_strategy && create->select && !create->getDatabase().empty())
+        {
+            for (const auto & child : ast->children)
+            {
+                if (child.get() == create->select)
+                {
+                    const auto saved_default_database = data.default_database;
+                    data.default_database = create->getDatabase();
+                    collectTablesInQuery(child, data, active_ctes, active_aliases);
+                    data.default_database = saved_default_database;
+                }
+                else
+                    collectTablesInQuery(child, data, active_ctes, active_aliases);
+            }
+            return;
+        }
     }
     else if (const auto * function = ast->as<ASTFunction>())
     {
@@ -3881,8 +3905,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             internal_context->setSetting("enable_full_text_index", Field(true));
             /// The same holds for a column of an `AggregateFunction` type over a `timeSeries*` function: its
             /// type is rejected while re-parsing the definition unless `enable_time_series_aggregate_functions`
-            /// is set.
+            /// is set. `AggregateFunction(sequenceNextNode(...), ...)` is gated the same way by
+            /// `enable_funnel_functions`, and `AggregateFunction(flameGraph, ...)` by
+            /// `allow_introspection_functions`. The pair only re-reads a definition that already exists and
+            /// evaluates no function, so allowing them does not expose anything new.
             internal_context->setSetting("enable_time_series_aggregate_functions", Field(true));
+            internal_context->setSetting("enable_funnel_functions", Field(true));
+            internal_context->setSetting("allow_introspection_functions", Field(true));
             /// A `DateTime` column without an explicit time zone takes the time zone of the context that
             /// loads the table's definition, i.e. `session_timezone` if it is set. Keep the outer query's
             /// one, so that the reattached table interprets its values the same way as before the reattach.
