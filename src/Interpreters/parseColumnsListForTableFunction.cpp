@@ -73,37 +73,50 @@ DataTypeValidationSettings DataTypeValidationSettings::forNonStorageDefinition(c
 }
 
 
+namespace
+{
+void validateTimeDecayType(const IDataType & data_type, bool validate_nested_types)
+{
+    bool is_experimental_time_decay_type = isExponentialTimeDecaying(data_type);
+    if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
+    {
+        const String & function_name = aggregate_function_type->getFunctionName();
+        const auto & factory = AggregateFunctionFactory::instance();
+        if (factory.hasExecutionAvailabilityCheck(function_name))
+        {
+            if (factory.hasWindowCreator(function_name))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The function '{}' can only be used as a window function, not as an aggregate function, "
+                    "so its state cannot be used as a data type",
+                    function_name);
+
+            is_experimental_time_decay_type = true;
+        }
+
+        if (validate_nested_types)
+            for (const auto & argument_type : aggregate_function_type->getArgumentsDataTypes())
+                forEachInTypeTree(*argument_type, [](const IDataType & nested_type)
+                {
+                    validateTimeDecayType(nested_type, true);
+                });
+    }
+
+    if (is_experimental_time_decay_type)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create column with type '{}' because exponential time decay aggregate functions are experimental. "
+            "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow them",
+            data_type.getName());
+}
+}
+
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
     auto validate_callback = [&](const IDataType & data_type)
     {
         if (!settings.allow_experimental_time_decay_aggregate_functions)
-        {
-            bool is_experimental_time_decay_type = isExponentialTimeDecaying(data_type);
-            if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
-            {
-                const String & function_name = aggregate_function_type->getFunctionName();
-                const auto & factory = AggregateFunctionFactory::instance();
-                if (factory.hasExecutionAvailabilityCheck(function_name))
-                {
-                    if (factory.hasWindowCreator(function_name))
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "The function '{}' can only be used as a window function, not as an aggregate function, "
-                            "so its state cannot be used as a data type",
-                            function_name);
-
-                    is_experimental_time_decay_type = true;
-                }
-            }
-
-            if (is_experimental_time_decay_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because exponential time decay aggregate functions are experimental. "
-                    "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow them",
-                    data_type.getName());
-        }
+            validateTimeDecayType(data_type, settings.validate_nested_types);
 
         if (!settings.allow_suspicious_low_cardinality_types)
         {
