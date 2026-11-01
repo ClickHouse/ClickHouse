@@ -18,7 +18,7 @@ QUERY_PID=""
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --ignore-error -q "
+    ${CLICKHOUSE_CLIENT} --kill_throw_if_noop 0 --ignore-error -q "
         SYSTEM DISABLE FAILPOINT ${OWNER_EXCEPTION};
         SYSTEM DISABLE FAILPOINT ${OWNER_PAUSE};
         SYSTEM DISABLE FAILPOINT ${LOW_THRESHOLD};

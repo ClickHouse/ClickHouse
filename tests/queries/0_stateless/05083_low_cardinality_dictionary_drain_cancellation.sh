@@ -17,7 +17,7 @@ QUERY_LOG_CHECKS=""
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${QUERY_ID}' ASYNC FORMAT Null; SYSTEM DISABLE FAILPOINT ${OWNER_PAUSE}" ||:
+    ${CLICKHOUSE_CLIENT} --kill_throw_if_noop 0 -q "KILL QUERY WHERE query_id = '${QUERY_ID}' ASYNC FORMAT Null; SYSTEM DISABLE FAILPOINT ${OWNER_PAUSE}" ||:
     if [[ -n "${QUERY_PID}" ]]; then
         timeout 30 tail --pid="${QUERY_PID}" --sleep-interval=0.05 -f /dev/null ||:
         wait "${QUERY_PID}" ||:
