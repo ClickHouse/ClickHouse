@@ -82,16 +82,28 @@ bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
     return false;
 }
 
+namespace
+{
+
+/// Validate trailing bytes after the outer `}`: optional whitespace, optional `;` (like `JSONEachRow`
+/// uses to end `INSERT` data), optional whitespace, then EOF. Shared between the row-reader
+/// (`readSuffix`) and the schema-reader paths so both reject the same payloads.
+void assertJSONObjectEachRowSuffix(ReadBuffer & buf)
+{
+    skipWhitespaceIfAny(buf);
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+    }
+    assertEOF(buf);
+}
+
+}
+
 void JSONObjectEachRowInputFormat::readSuffix()
 {
-    skipWhitespaceIfAny(*in);
-    /// Like `JSONEachRow`: an optional `;` may end the data of an `INSERT`.
-    if (!in->eof() && *in->position() == ';')
-    {
-        ++in->position();
-        skipWhitespaceIfAny(*in);
-    }
-    assertEOF(*in);
+    assertJSONObjectEachRowSuffix(*in);
 }
 
 JSONObjectEachRowSchemaReader::JSONObjectEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -108,6 +120,11 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
         throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Unexpected end of data: expected '}}' that closes the object");
     if (JSONUtils::checkAndSkipObjectEnd(in))
     {
+        /// `IRowWithNamesSchemaReader::readSchema()` stops as soon as `eof = true` and never calls
+        /// a suffix hook, so schema-only entry points (`DESCRIBE format(JSONObjectEachRow, ...)`,
+        /// `DESCRIBE file(..., JSONObjectEachRow)`) must validate trailing bytes here with the
+        /// same contract as the row-reader's `readSuffix`.
+        assertJSONObjectEachRowSuffix(in);
         eof = true;
         return {};
     }

@@ -20,3 +20,10 @@ SELECT * FROM format(JSONObjectEachRow, 'y Int64', '{}xyz') SETTINGS max_block_s
 SELECT * FROM format(JSONObjectEachRow, 'y Int64', '{"a":{"y":1}}}') SETTINGS max_block_size = 65536; -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 SELECT * FROM format(JSONObjectEachRow, 'y Int64', '{"a":{"y":1},"b":{"y":2}};') ORDER BY y SETTINGS max_block_size = 1;
 SELECT * FROM format(JSONObjectEachRow, 'y Int64', '{"a":{"y":1},"b":{"y":2}} ;  ') ORDER BY y SETTINGS max_block_size = 65536;
+
+-- The schema-inference path must enforce the same suffix contract as the row-reader path:
+-- `IRowWithNamesSchemaReader::readSchema()` returns as soon as `eof = true` and never calls
+-- a suffix hook, so without an explicit check `DESCRIBE` would silently accept trailing bytes.
+DESCRIBE format(JSONObjectEachRow, '{"x":{"y":1}}xyz'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+DESCRIBE format(JSONObjectEachRow, '{"x":{"y":1}}');
+DESCRIBE format(JSONObjectEachRow, '{"x":{"y":1}} ;');
