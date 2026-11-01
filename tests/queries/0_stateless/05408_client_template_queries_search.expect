@@ -34,12 +34,17 @@ send -- "SELECT 'kept' || '_line'"
 
 # Ctrl-O (octal code of O is 017, see ascii(7))
 send -- "\017"
-# we cannot use "expect" for skim, since it dups the fd, and expect will not catch it
-sleep 1
-
-# Escape aborts the picker
-send -- "\033"
-sleep 1
+# we cannot use "expect" for skim, since it dups the fd, and expect will not catch it.
+# Without skim the message is printed and there is no picker, so Escape must not be sent:
+# followed by Enter it would be read as Alt-Enter and insert a newline instead of submitting the line.
+expect {
+    "requires a build with skim support" {}
+    -timeout 3 timeout {
+        # Escape aborts the picker
+        send -- "\033"
+        sleep 1
+    }
+}
 
 # the line survived: executing it prints the result, which is not present in the echo
 send -- "\r"
