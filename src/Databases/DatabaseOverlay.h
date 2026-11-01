@@ -100,6 +100,7 @@ public:
         LoadJobSet startup_after,
         LoadingStrictnessLevel mode) override;
     void waitTableStarted(const String & name) const override;
+    void waitTablesStarted(const FilterByNameFunction & filter_by_table_name, bool no_throw) const override;
     void waitDatabaseStarted() const override;
     void stopLoading() override;
     void checkMetadataFilenameAvailability(const String & table_name) const override;
@@ -126,6 +127,7 @@ public:
 
     bool isTableExist(const String & table_name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
+    void waitTablesStarted(const FilterByNameFunction & filter_by_table_name, bool no_throw) const override;
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
     DatabaseTablesIteratorPtr getTablesIteratorWithHint(
         ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const override;

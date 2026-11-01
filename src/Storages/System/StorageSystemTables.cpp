@@ -169,11 +169,12 @@ ColumnPtr getFilteredTables(
         }
         else
         {
+            database->waitTablesStarted(IDatabase::combineFilters(/* filter_by_table_name */ {}, tables_filter), /* no_throw */ true);
             if (engine_column || uuid_column)
             {
                 auto table_it = database->getTablesIteratorWithHint(context,
                                                                        /* filter_by_table_name */ {},
-                                                                       /* skip_not_loaded */ false,
+                                                                       /* skip_not_loaded */ true,
                                                                        tables_filter);
                 for (; table_it->isValid(); table_it->next())
                 {
@@ -194,7 +195,7 @@ ColumnPtr getFilteredTables(
             {
                 auto table_details = database->getLightweightTablesIteratorWithHint(context,
                                                                       /* filter_by_table_name */ {},
-                                                                      /* skip_not_loaded */ false,
+                                                                      /* skip_not_loaded */ true,
                                                                       tables_filter);
                 for (const auto & table_detail : table_details)
                 {
@@ -419,9 +420,11 @@ protected:
     /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
+        databases_cursor.getDatabase()->waitTablesStarted(
+            IDatabase::combineFilters(getFilterByTableName(), tables_filter), /* no_throw */ true);
         auto table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(context,
                                 getFilterByTableName(),
-                                /* skip_not_loaded */ false,
+                                /* skip_not_loaded */ true,
                                 tables_filter);
 
         size_t count = 0;
@@ -645,10 +648,13 @@ protected:
 
             const DatabasePtr & database = databases_cursor.getDatabase();
             if (!databases_cursor.hasTablesIterator())
+            {
+                database->waitTablesStarted(IDatabase::combineFilters(getFilterByTableName(), tables_filter), /* no_throw */ true);
                 databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(context,
                         getFilterByTableName(),
-                        /* skip_not_loaded */ false,
+                        /* skip_not_loaded */ true,
                         tables_filter));
+            }
 
             auto & tables_it = databases_cursor.getTablesIterator();
             for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())

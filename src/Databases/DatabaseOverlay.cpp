@@ -381,6 +381,12 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
+void DatabaseOverlay::waitTablesStarted(const FilterByNameFunction & filter_by_table_name, bool no_throw) const
+{
+    for (const auto & db : databases)
+        db->waitTablesStarted(filter_by_table_name, no_throw);
+}
+
 bool DatabaseOverlay::isExternal() const
 {
     for (const auto & db : databases)
@@ -695,6 +701,13 @@ StoragePtr DatabaseOverlayReadOnly::tryGetTable(const String & table_name, Conte
     if (source.empty())
         return nullptr;
     return std::make_shared<StorageAlias>(StorageID(getDatabaseName(), table_name), getContext(), source, table_name);
+}
+
+void DatabaseOverlayReadOnly::waitTablesStarted(const FilterByNameFunction & filter_by_table_name, bool no_throw) const
+{
+    for (const auto & source : source_databases)
+        if (auto database = tryGetOverlaySource(source))
+            database->waitTablesStarted(filter_by_table_name, no_throw);
 }
 
 DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIterator(

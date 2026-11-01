@@ -956,6 +956,20 @@ void DatabaseOrdinary::stopLoading()
     stop_load_table.clear();
 }
 
+void DatabaseOrdinary::waitTablesStarted(const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool no_throw) const
+{
+    LoadTaskPtrs tasks_to_wait;
+    {
+        std::lock_guard lock(mutex);
+        if (!filter_by_table_name)
+            tasks_to_wait.reserve(startup_table.size());
+        for (const auto & [table_name, task] : startup_table)
+            if (!filter_by_table_name || filter_by_table_name(table_name))
+                tasks_to_wait.emplace_back(task);
+    }
+    waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait, no_throw);
+}
+
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
     if (!skip_not_loaded)
@@ -964,16 +978,7 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
         // It is important, because otherwise table might be:
         //  - not attached and thus will be missed in the snapshot;
         //  - not started, which is not good for DDL operations.
-        LoadTaskPtrs tasks_to_wait;
-        {
-            std::lock_guard lock(mutex);
-            if (!filter_by_table_name)
-                tasks_to_wait.reserve(startup_table.size());
-            for (const auto & [table_name, task] : startup_table)
-                if (!filter_by_table_name || filter_by_table_name(table_name))
-                    tasks_to_wait.emplace_back(task);
-        }
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
+        waitTablesStarted(filter_by_table_name, /* no_throw */ false);
     }
     return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
