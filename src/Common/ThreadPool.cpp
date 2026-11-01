@@ -140,13 +140,13 @@ namespace
         std::unique_lock<std::mutex> & pool_lock;
         std::mutex & holders_mutex;
 
-        void lock()
+        void lock() TSA_NO_THREAD_SAFETY_ANALYSIS
         {
             pool_lock.lock();
             holders_mutex.lock();
         }
 
-        void unlock()
+        void unlock() TSA_NO_THREAD_SAFETY_ANALYSIS
         {
             holders_mutex.unlock();
             pool_lock.unlock();
