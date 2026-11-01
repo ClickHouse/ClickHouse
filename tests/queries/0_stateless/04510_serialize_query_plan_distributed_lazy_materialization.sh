@@ -16,7 +16,7 @@ explain_query()
     then
         settings+=", ${extra_settings}"
     fi
-    "$CLICKHOUSE_CLIENT" --query "EXPLAIN actions=1, distributed=1 ${select_query} SETTINGS ${settings}"
+    $CLICKHOUSE_CLIENT --query "EXPLAIN actions=1, distributed=1 ${select_query} SETTINGS ${settings}"
 }
 
 expect_enabled()
@@ -71,7 +71,7 @@ expect_unbounded_coordination_limit()
     echo "coordination row limit: enabled"
 }
 
-"$CLICKHOUSE_CLIENT" --multiquery --query "
+$CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE IF EXISTS dlm_dist;
     DROP TABLE IF EXISTS dlm_local;
     CREATE TABLE dlm_local (key UInt64, tie Nullable(UInt64), payload String) ENGINE = MergeTree ORDER BY key;
@@ -92,7 +92,7 @@ expect_unbounded_coordination_limit
 expect_disabled "maximum limit" "$query" "query_plan_optimize_distributed_lazy_materialization=1, query_plan_max_limit_for_lazy_materialization=4"
 expect_disabled "parallel replicas" "$query" "query_plan_optimize_distributed_lazy_materialization=1, allow_experimental_parallel_reading_from_replicas=1, max_parallel_replicas=2"
 
-"$CLICKHOUSE_CLIENT" --multiquery --query "
+$CLICKHOUSE_CLIENT --multiquery --query "
     CREATE DATABASE IF NOT EXISTS shard_0;
     CREATE DATABASE IF NOT EXISTS shard_1;
     DROP TABLE IF EXISTS shard_0.dlm_local_04510;
@@ -107,8 +107,8 @@ expect_disabled "parallel replicas" "$query" "query_plan_optimize_distributed_la
 "
 
 winner_query="SELECT payload FROM dlm_interleaved_dist ORDER BY key DESC, tie ASC LIMIT 3 OFFSET 2"
-enabled=$("$CLICKHOUSE_CLIENT" --query "${winner_query} SETTINGS ${base_settings}, query_plan_optimize_distributed_lazy_materialization=1")
-disabled=$("$CLICKHOUSE_CLIENT" --query "${winner_query} SETTINGS ${base_settings}, query_plan_optimize_distributed_lazy_materialization=0")
+enabled=$($CLICKHOUSE_CLIENT --query "${winner_query} SETTINGS ${base_settings}, query_plan_optimize_distributed_lazy_materialization=1")
+disabled=$($CLICKHOUSE_CLIENT --query "${winner_query} SETTINGS ${base_settings}, query_plan_optimize_distributed_lazy_materialization=0")
 expected=$'s1-8\ns0-7\ns1-6'
 if [[ "$enabled" != "$expected" ]]
 then
@@ -124,7 +124,7 @@ then
 fi
 echo "interleaved winners: correct"
 
-"$CLICKHOUSE_CLIENT" --multiquery --query "
+$CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE dlm_interleaved_dist;
     DROP TABLE shard_0.dlm_local_04510;
     DROP TABLE shard_1.dlm_local_04510;
