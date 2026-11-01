@@ -1639,8 +1639,8 @@ BlockIO InterpreterInsertQuery::execute()
     {
         /// Consumed on a copy: a caller that queues this insert keeps them, for the flush to check its own table.
         context_without_insert_expectations = Context::createCopy(context);
-        context_without_insert_expectations->setSetting("insert_expected_table_engine", String{});
-        context_without_insert_expectations->setSetting("insert_expected_column_types", Field{Map{}});
+        /// Reset rather than set to empty: a changed mandatory setting would still be sent to a shard that reads from it.
+        context_without_insert_expectations->resetSettingsToDefaultValue({"insert_expected_table_engine", "insert_expected_column_types"});
         context = context_without_insert_expectations;
         WithMutableContext::context = context;
     }

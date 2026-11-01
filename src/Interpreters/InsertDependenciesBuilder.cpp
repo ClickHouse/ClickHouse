@@ -1356,8 +1356,7 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     if (!select_context->getSettingsRef()[Setting::insert_expected_table_engine].value.empty()
         || !select_context->getSettingsRef()[Setting::insert_expected_column_types].value.empty())
     {
-        select_context->setSetting("insert_expected_table_engine", String{});
-        select_context->setSetting("insert_expected_column_types", Field{Map{}});
+        select_context->resetSettingsToDefaultValue({"insert_expected_table_engine", "insert_expected_column_types"});
     }
 
     auto insert_context = Context::createCopy(select_context);

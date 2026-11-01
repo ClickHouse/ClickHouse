@@ -459,7 +459,7 @@ void PrometheusRemoteWriteProtocol::write(
     if (distributed_target)
     {
         forceDeliveryToShards(*metadata, samples_column_name, getContext());
-        checkPrometheusQueryDistributedWrite(*time_series_storage, *distributed_target, getContext());
+        checkPrometheusQueryDistributedWrite(*time_series_storage, *distributed_target, getContext(), block);
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);

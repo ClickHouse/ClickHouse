@@ -7464,12 +7464,14 @@ Result:
     DECLARE(String, insert_expected_table_engine, "", R"(
 If not empty, an `INSERT` is refused unless the table it names has this engine, checked on the table the `INSERT` resolves when it is executed (for an asynchronous insert, when the queue flushes it). Once the table passes, the requirement is consumed: the writes that table makes on its own, into its inner tables or through materialized views, are not checked. A `Distributed` table is not checked itself but forwards the setting to its shards, as any query setting, where each shard's insert checks the table it resolves; its materialized views are not checked.
 
+The setting is mandatory on the wire: a shard of a version that does not know it refuses the `INSERT` instead of ignoring the requirement.
+
 Remote write over a `Distributed` table sets it to `TimeSeries`, so that a shard-local table swapped for one of another engine after the initiator's check refuses the batch where the insert resolves it, instead of taking it. A `Distributed` table that a shard's insert resolves is checked like any other table, so it does not forward the setting a second time.
 
 Possible values:
 
 - An empty string (no check) or a table engine name, for example `TimeSeries`.
-)", 0, \
+)", IMPORTANT, \
         {"26.11", "", "", "New setting: when not empty, an INSERT is refused unless the target table has exactly this engine."}) \
     DECLARE(Map, insert_expected_column_types, "", R"(
 If not empty, an `INSERT` is refused unless the table it names declares these columns with exactly these types, checked with `insert_expected_table_engine` and consumed with it. A `Distributed` table forwards the setting to its shards instead of checking itself.
@@ -7481,7 +7483,7 @@ Remote write over a `Distributed` table sets it to the type of the samples colum
 ```sql
 INSERT INTO t SETTINGS insert_expected_column_types = {'samples': 'Array(Tuple(DateTime64(3), Float64))'} VALUES (...)
 ```
-)", 0, \
+)", IMPORTANT, \
         {"26.11", "", "", "New setting: when not empty, an INSERT is refused unless the target table declares exactly these column types."}) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(

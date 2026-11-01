@@ -2143,6 +2143,24 @@ size_t StorageDistributed::getShardCount() const
     return getCluster()->getShardCount();
 }
 
+std::vector<bool> StorageDistributed::getShardsReceivingRows(const Block & block) const
+{
+    const auto cluster = getCluster();
+    std::vector<bool> receives_rows(cluster->getShardsInfo().size(), true);
+    /// A key that is not deterministic would send the rows elsewhere when the sink evaluates it again.
+    if (receives_rows.size() <= 1 || !sharding_key_expr || !sharding_key_is_deterministic)
+        return receives_rows;
+
+    checkShardingKeySetsAreBuilt();
+    Block block_with_sharding_key = block;
+    sharding_key_expr->execute(block_with_sharding_key);
+    const auto selector = createSelector(cluster, block_with_sharding_key.getByName(sharding_key_column_name));
+    receives_rows.assign(receives_rows.size(), false);
+    for (size_t shard_index : selector)
+        receives_rows[shard_index] = true;
+    return receives_rows;
+}
+
 ClusterPtr StorageDistributed::getCluster() const
 {
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);

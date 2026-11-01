@@ -401,6 +401,27 @@ def test_no_shard_keeps_its_half_when_the_caller_asks_for_an_early_commit():
         time.sleep(0.5)
 
 
+def test_a_denied_local_shard_is_refused_before_a_remote_partition_commits():
+    """The local grant is asked for before any shard is sent data: a remote series whose samples span
+    partitions would otherwise commit its first partition before the local delivery is denied, and
+    Prometheus drops the batch on the 403 while the remote rows stay behind.
+    """
+    month = 31 * 24 * 3600
+    response = mixed_write(
+        "partitions_metric",
+        [LOCAL_HOST, REMOTE_HOST],
+        MIXED_INSERT_USER,
+        samples={START_TIME: 1.0, START_TIME + month: 2.0, START_TIME + 2 * month: 3.0},
+    )
+    assert response.status_code == 403, response.text
+    assert "metrics.ts_mixed" in response.text, response.text
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        assert mixed_counts("partitions_metric") == [0, 0]
+        time.sleep(0.5)
+
+
 def test_an_early_commit_setting_still_writes_the_shards_a_caller_may_write():
     """Pinned off rather than refused: the same request from a caller granted both shards is the
     write it always was."""

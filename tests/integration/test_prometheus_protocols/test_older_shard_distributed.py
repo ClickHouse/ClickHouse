@@ -88,3 +88,18 @@ def test_query_endpoints_are_refused_while_a_shard_runs_an_older_server(endpoint
         {},
     )
     assert OLDER_SERVER in error, error
+
+
+def test_an_insert_expectation_is_refused_by_an_older_shard_instead_of_ignored():
+    """The setting is mandatory on the wire, so a shard that does not know it fails the INSERT
+    rather than taking the rows without the check, whatever the surface that sent it.
+    """
+    error = node.query_and_get_error(
+        "INSERT INTO default.prom_older (metric_name, tags, samples) "
+        f"VALUES ('older_sql_metric', map('host', 'h0'), [(toDateTime64({START_TIME}, 3), 1)])",
+        settings={
+            "insert_expected_table_engine": "TimeSeries",
+            "distributed_foreground_insert": 1,
+        },
+    )
+    assert "insert_expected_table_engine" in error, error

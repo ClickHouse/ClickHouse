@@ -248,7 +248,7 @@ namespace
 
         /// getSetting needs no grant. A server that knows this setting checks the target of its own insert and the access of
         /// its timeSeriesSelector, which came in the same release; an older one refuses the name.
-        enum class Capability { Current, Older, Unknown };
+        enum class Capability { Current, Older, Unknown, Unreachable };
         auto replica_capability = [&](const auto & pool)
         {
             bool answered = false;
@@ -261,12 +261,16 @@ namespace
             {
                 if (e.code() == ErrorCodes::UNKNOWN_SETTING || e.code() == ErrorCodes::UNKNOWN_FUNCTION)
                     return Capability::Older;
+                /// Neither proven current nor proven older: not allowed to run, below.
                 return Capability::Unknown;
             }
-            return answered ? Capability::Current : Capability::Unknown;
+            /// A connection the pool could not open answers nothing and raises nothing.
+            return answered ? Capability::Current : Capability::Unreachable;
         };
         /// Such a replica would take a write unchecked or answer a read past the policies of its shard-local table.
         Strings older_replicas;
+        /// A replica whose probe failed with an exception: it may be an older one, so it is not allowed to run either.
+        Strings unproven_replicas;
 
         /// CHECK GRANT needs no grant itself, and asks on the connection the sink's own insert uses.
         String check_insert_grant = "CHECK GRANT INSERT(";
@@ -339,6 +343,16 @@ namespace
                     older_replicas.push_back(fmt::format("{} ({})", pool->getAddress(), replica_table));
                     continue;
                 }
+                if (capability == Capability::Unknown)
+                {
+                    unproven_replicas.push_back(fmt::format("{} ({})", pool->getAddress(), replica_table));
+                    continue;
+                }
+                if (capability == Capability::Unreachable)
+                {
+                    judge(pool->getAddress(), replica_table, "", "", "unreachable");
+                    continue;
+                }
 
                 /// SHOW CREATE TABLE and DESC TABLE ask the replica for SHOW COLUMNS on that table alone, so the
                 /// probe reads no `system` table of its own; a replica that will not answer even that is skipped below.
@@ -375,11 +389,8 @@ namespace
                             ++verified_on_shard;
                             continue;
                         }
-                        if (capability != Capability::Current)
-                            unavailable = "denies the probe and does not check its own insert";
                         /// Refused before any shard is written, rather than by that insert once another shard took its rows.
-                        else
-                            unavailable = insert_refusal(pool, replica_table);
+                        unavailable = insert_refusal(pool, replica_table);
                         if (unavailable.empty())
                         {
                             ++verified_on_shard;
@@ -442,6 +453,15 @@ namespace
                 "of an insert nor the access of timeSeriesSelector, retry once they are upgraded: {}",
                 for_write ? "Remote write" : "A prometheus query", storage.getStorageID().getNameForLogs(),
                 older_replicas.size(), fmt::join(older_replicas, ", "));
+
+        /// Retryable: the probe may succeed next time.
+        if (!unproven_replicas.empty())
+            throw Exception(
+                ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                "{} over table {} is refused while the server version of {} replica(s) could not be determined, "
+                "retry later: {}",
+                for_write ? "Remote write" : "A prometheus query", storage.getStorageID().getNameForLogs(),
+                unproven_replicas.size(), fmt::join(unproven_replicas, ", "));
 
         /// A replica the check could not see would take the samples unchecked.
         if (for_write && !unavailable_replicas.empty())
@@ -555,7 +575,7 @@ void pinDistributedReadSettings(const ContextMutablePtr & context)
 }
 
 void checkPrometheusQueryDistributedWrite(
-    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
+    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, const Block & block)
 {
     /// The sink honours both as for any INSERT (the second only without a key); here a batch goes where the key sends it or nowhere.
     const auto & settings = context->getSettingsRef();
@@ -568,7 +588,37 @@ void checkPrometheusQueryDistributedWrite(
 
     /// A shard that is this server itself is written in-process on the caller's context, and the sink skips a shard
     /// whose split is empty, so its own insert asks for the INSERT grant there exactly when this batch needs it.
-    const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
+    const auto & distributed = typeid_cast<const StorageDistributed &>(storage);
+    const auto cluster = distributed.getCluster();
+
+    /// Authorized for the shards this server writes in-process before any shard is sent data: that insert's own check
+    /// would otherwise deny the caller after a remote shard has committed its part of the batch. A split that cannot
+    /// be evaluated here counts as non-empty for every shard, so the refusal errs on the side of nothing written.
+    std::vector<bool> receives_rows(cluster->getShardsInfo().size(), true);
+    if (receives_rows.size() > 1)
+    {
+        try
+        {
+            receives_rows = distributed.getShardsReceivingRows(block);
+        }
+        catch (...) /// NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
+    const auto & remote_id = target.remote_time_series_storage_id;
+    const auto columns_to_send = settings[Setting::insert_allow_materialized_columns]
+        ? storage.getInMemoryMetadataPtr(context, false)->getSampleBlock().getNames()
+        : storage.getInMemoryMetadataPtr(context, false)->getSampleBlockNonMaterialized().getNames();
+    const auto & all_addresses = cluster->getShardsAddresses();
+    for (size_t shard_index = 0; shard_index != all_addresses.size(); ++shard_index)
+    {
+        if (!receives_rows[shard_index]
+            || !std::ranges::any_of(all_addresses[shard_index], [](const auto & address) { return address.is_local; }))
+            continue;
+        if (const auto local_id = context->tryResolveStorageID(remote_id))
+            context->checkAccess(AccessType::INSERT, local_id, columns_to_send);
+    }
+
     checkShardTargets(storage, target, context, cluster, /* for_write = */ true);
 }
 
