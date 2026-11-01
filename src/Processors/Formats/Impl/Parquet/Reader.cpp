@@ -486,8 +486,9 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
             if ((!has_min || !has_max) && converter && converter->statsNeedBothBounds())
                 continue;
 
-            bool stats_usable = true;
-            if (has_min)
+            bool stats_usable = !has_min || !has_max
+                || !column_info.decoder.statsInverted(column_meta.statistics.min_value, column_meta.statistics.max_value);
+            if (stats_usable && has_min)
                 stats_usable = column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
             if (stats_usable && has_max)
                 stats_usable = column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
@@ -2831,7 +2832,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             else
             {
                 const bool stats_usable
-                    = column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
+                    = !column_info.decoder.statsInverted(column_index.min_values[page_idx], column_index.max_values[page_idx])
+                    && column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
                     && column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
                 if (!stats_usable || !adjustRangeFromIndexIfNeeded(range, column_info, can_be_null))

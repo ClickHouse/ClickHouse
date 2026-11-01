@@ -1417,6 +1417,11 @@ bool PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const
     return true;
 }
 
+bool PageDecoderInfo::statsInverted(std::span<const char> min, std::span<const char> max) const
+{
+    return allow_stats && fixed_size_converter && fixed_size_converter->statsInverted(min, max);
+}
+
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
     parq::Encoding::type encoding, std::span<const char> data, const StringValueFilter * string_value_filter) const
 {
@@ -2024,7 +2029,7 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
     }
 }
 
-std::optional<Field> IntConverter::convertField(std::span<const char> data, bool /*is_max*/) const
+UInt64 IntConverter::loadValue(std::span<const char> data) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in int statistics: {} != {}", data.size(), input_size);
@@ -2042,6 +2047,20 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
     /// Sign-extend.
     if (input_signed && input_size < 8 && (val >> (input_size * 8 - 1)) != 0)
         val |= 0 - (1ul << (input_size * 8));
+
+    return val;
+}
+
+bool IntConverter::statsInverted(std::span<const char> min, std::span<const char> max) const
+{
+    UInt64 min_val = loadValue(min);
+    UInt64 max_val = loadValue(max);
+    return input_signed ? Int64(min_val) > Int64(max_val) : min_val > max_val;
+}
+
+std::optional<Field> IntConverter::convertField(std::span<const char> data, bool /*is_max*/) const
+{
+    UInt64 val = loadValue(data);
 
     /// A day outside the requested date type's window is saturated or rejected by the read: the former bounds
     /// nothing, the latter makes the chunk unreadable. Before the sign check, as a negative day is outside `Date` too.
