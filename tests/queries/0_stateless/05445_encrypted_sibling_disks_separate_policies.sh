@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-replicated-database
+# Tags: no-fasttest, no-object-storage, no-replicated-database
+# Tag no-fasttest: an `encrypted` disk needs OpenSSL, which the fast test build leaves out
 # Tag no-replicated-database: the disks below are not shared between replicas
 
 # Two `encrypted` disks over one and the same disk are siblings: neither stands on the other, and both

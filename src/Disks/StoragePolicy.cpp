@@ -512,7 +512,14 @@ void StoragePolicy::validateDisksHaveDistinctStorageNamespaces() const
     ///
     /// Registration cannot decide this: a disk is created long before it is known which policy will hold
     /// it, and two disks over one storage used by separate policies are a supported setup.
-    const auto & policy_disks = getDisks();
+    ///
+    /// The volumes are flattened here instead of calling `getDisks`, because the constructors call this
+    /// and a virtual call during construction does not reach an override.
+    Disks policy_disks;
+    for (const auto & volume : volumes)
+        for (const auto & disk : volume->getDisks())
+            policy_disks.push_back(disk);
+
     for (size_t i = 0; i < policy_disks.size(); ++i)
     {
         for (size_t j = i + 1; j < policy_disks.size(); ++j)
