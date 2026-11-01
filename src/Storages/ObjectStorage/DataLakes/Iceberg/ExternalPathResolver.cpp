@@ -121,6 +121,44 @@ bool keyHasDotOrEmptySegments(std::string_view key)
     return false;
 }
 
+/// Whether `path` is spelled below `dir` without `.`, `..` or empty segments and none of its components below `dir` is a symlink.
+/// Such a path stays below `dir` after canonicalization, which is costly per file, so this is checked with one `lstat` per component.
+bool isBelowDirectoryWithoutSymlinks(const std::string & dir, const std::string & path)
+{
+    if (dir.empty() || !path.starts_with(dir))
+        return false;
+
+    size_t segment_begin = dir.size();
+    if (!dir.ends_with('/'))
+    {
+        if (path.size() <= segment_begin || path[segment_begin] != '/')
+            return false;
+        ++segment_begin;
+    }
+
+    const std::string_view relative_path = std::string_view(path).substr(segment_begin);
+    if (relative_path.empty() || keyHasDotOrEmptySegments(relative_path))
+        return false;
+
+    while (segment_begin < path.size())
+    {
+        size_t segment_end = path.find('/', segment_begin);
+        if (segment_end == std::string::npos)
+            segment_end = path.size();
+
+        std::error_code ec;
+        const auto status = std::filesystem::symlink_status(path.substr(0, segment_end), ec);
+        /// Canonicalization appends the missing rest of the path as spelled.
+        if (status.type() == std::filesystem::file_type::not_found)
+            return true;
+        if (ec || std::filesystem::is_symlink(status))
+            return false;
+
+        segment_begin = segment_end + 1;
+    }
+    return true;
+}
+
 std::string factoryTypeForScheme(const std::string & normalized_scheme)
 {
     if (normalized_scheme == "s3") return "s3";
@@ -1190,6 +1228,8 @@ bool isObjectInTableDirectory(
     if (storage->getType() == ObjectStorageType::Local)
     {
         const std::filesystem::path key_prefix = storage->getCommonKeyPrefix();
+        if (isBelowDirectoryWithoutSymlinks((key_prefix / table_path).string(), (key_prefix / key).string()))
+            return true;
         auto canonical = [&](const std::string & path) { return std::filesystem::weakly_canonical(key_prefix / path).string(); };
         return keyIsInsidePrefix(canonical(table_path), canonical(key), /*is_filesystem_path*/ true);
     }
