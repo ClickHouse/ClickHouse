@@ -20,7 +20,7 @@ CREATE TABLE t AS s3Clustr('TopSecretValue')(1)
 SELECT * FROM viewIfPermitted(SELECT 1 ELSE s3Clustr('TopSecretValue')(1))
 CREATE TABLE t AS s3('http://127.0.0.1:1/x/', 'minio', 'TopSecretValue')(1)
 CREATE TABLE t ENGINE = S3('http://127.0.0.1:1/x/', 'minio', 'TopSecretValue')(1)
-CREATE DATABASE d ENGINE = MySQL('127.0.0.1:1', 'db', 'user', 'TopSecretValue')(1)
+CREATE DATABASE d ENGINE = Remote('127.0.0.1:1', 'db', 'user', 'TopSecretValue')(1)
 BACKUP TABLE t TO S3('http://127.0.0.1:1/x/', 'minio', 'TopSecretValue')(1)
 SELECT quantile(0.5)(number) FROM numbers(1)
 EOF
