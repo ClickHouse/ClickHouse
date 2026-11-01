@@ -1,6 +1,7 @@
 #include <Common/StringUtils.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTObjectTypeArgument.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -111,8 +112,13 @@ void ASTObjectTypedPathArgument::readJSON(const Poco::JSON::Object & json)
     path = r.getString("path");
     if (path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ObjectTypedPathArgument` must have a non-empty 'path' during AST JSON deserialization");
+    /// `ObjectArgumentParser` produces this slot only through `ParserDataType`, whose top-level node
+    /// is always a data type (`ASTDataType` / `ASTEnumDataType` / `ASTTupleDataType`). Use
+    /// `dynamic_cast` so the hierarchy's specialized subclasses are accepted — `IAST::as` matches
+    /// exact `typeid` and would reject `ASTTupleDataType` / `ASTEnumDataType` here, which breaks
+    /// the round-trip of `JSON(a Tuple(...))` / `JSON(a Enum8(...))`.
     auto child = r.readChild("data_type");
-    if (!child || !(child->as<ASTDataType>() || child->as<ASTFunction>()))
+    if (!child || !dynamic_cast<const ASTDataType *>(child.get()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ObjectTypedPathArgument` must have a data type as 'data_type' during AST JSON deserialization");
     type = child;
     children.push_back(type);
@@ -143,14 +149,44 @@ void ASTObjectTypeArgument::readJSON(const Poco::JSON::Object & json)
         children.push_back(skip_path);
         ++count;
     }
-    if (auto child = r.readChildOfType<ASTLiteral>("skip_path_regexp"))
+    /// `ObjectArgumentParser` parses `SKIP REGEXP '<regexp>'` with `ParserStringLiteral`, so the
+    /// literal is always a `String` field. Reject non-string literals so `formatImpl` cannot emit
+    /// `SKIP REGEXP 42` or similar parser-impossible shapes.
+    if (auto child = r.readStringLiteralChild("skip_path_regexp"))
     {
         skip_path_regexp = child;
         children.push_back(skip_path_regexp);
         ++count;
     }
+    /// `ObjectArgumentParser` builds `parameter` with `makeASTOperator("equals", identifier, number)`,
+    /// i.e. an `equals` operator-function whose arguments are exactly an identifier followed by a
+    /// numeric literal. Validate that shape so a payload that stashes an arbitrary function here
+    /// cannot format as `JSON(<garbage>)` — the generic `ASTFunction` check accepts anything.
     if (auto child = r.readChildOfType<ASTFunction>("parameter"))
     {
+        const auto * function = child->as<ASTFunction>();
+        const bool shape_ok = function
+            && function->name == "equals"
+            && function->isOperator()
+            && function->arguments
+            && function->arguments->as<ASTExpressionList>()
+            && function->arguments->children.size() == 2
+            && function->arguments->children[0]
+            && function->arguments->children[0]->as<ASTIdentifier>()
+            && function->arguments->children[1]
+            && [&]()
+            {
+                const auto * literal = function->arguments->children[1]->as<ASTLiteral>();
+                if (!literal)
+                    return false;
+                const auto type = literal->value.getType();
+                return type == Field::Types::UInt64
+                    || type == Field::Types::Int64
+                    || type == Field::Types::Float64;
+            }();
+        if (!shape_ok)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ObjectTypeArgument` 'parameter' must be an `equals(identifier, number)` operator during AST JSON deserialization");
         parameter = child;
         children.push_back(parameter);
         ++count;
