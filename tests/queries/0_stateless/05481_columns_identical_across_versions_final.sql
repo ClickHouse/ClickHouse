@@ -22,6 +22,8 @@ CREATE TABLE t_plain
     mode LowCardinality(String),
     score UInt32,
     score_bucket UInt32 MATERIALIZED intDiv(score, 100),
+    stats Tuple(kills UInt32),
+    kills UInt32 MATERIALIZED stats.kills,
     version UInt64,
     deleted UInt8,
     INDEX idx_mode mode TYPE set(10) GRANULARITY 1,
@@ -34,15 +36,15 @@ SETTINGS index_granularity = 64, index_granularity_bytes = 10485760, min_bytes_f
     add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 0;
 
 CREATE TABLE t_identical AS t_plain;
-ALTER TABLE t_identical MODIFY SETTING columns_varying_across_versions = 'score';
+ALTER TABLE t_identical MODIFY SETTING columns_varying_across_versions = 'score, stats';
 
 SYSTEM STOP MERGES t_plain;
 SYSTEM STOP MERGES t_identical;
 
 -- Version 1 of every row, then version 2 of every second row with a new score, some of them deleted.
 -- Rows 0..333 are in month 1, 334..667 in month 2, 668..999 in month 3; `mode` is 'b' for the rows 900..999.
-INSERT INTO t_plain SELECT number, 1 + intDiv(number, 334), if(number >= 900, 'b', 'a'), number, 1, 0 FROM numbers(1000);
-INSERT INTO t_plain SELECT number * 2, 1 + intDiv(number * 2, 334), if(number * 2 >= 900, 'b', 'a'), 5000 + number, 2, number % 7 = 0 FROM numbers(500);
+INSERT INTO t_plain SELECT number, 1 + intDiv(number, 334), if(number >= 900, 'b', 'a'), number, tuple(number), 1, 0 FROM numbers(1000);
+INSERT INTO t_plain SELECT number * 2, 1 + intDiv(number * 2, 334), if(number * 2 >= 900, 'b', 'a'), 5000 + number, tuple(5000 + number), 2, number % 7 = 0 FROM numbers(500);
 INSERT INTO t_identical SELECT * FROM t_plain WHERE version = 1;
 INSERT INTO t_identical SELECT * FROM t_plain WHERE version = 2;
 
@@ -60,6 +62,7 @@ SELECT 'prewhere', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAI
 
 -- A column computed from a varying column varies as well.
 SELECT 'no prewhere for column computed from varying', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_identical FINAL WHERE score_bucket = 9);
+SELECT 'no prewhere for column computed from varying subcolumn', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_identical FINAL WHERE kills = 900);
 
 SELECT 'no range extension', countIf(explain LIKE '%PrimaryKeyExpand%') FROM (EXPLAIN indexes = 1 SELECT id FROM t_identical FINAL WHERE mode = 'b');
 

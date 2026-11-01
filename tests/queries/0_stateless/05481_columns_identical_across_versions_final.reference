@@ -2,6 +2,7 @@ equal results	1
 equal results with varying column	1	25
 prewhere	1
 no prewhere for column computed from varying	0
+no prewhere for column computed from varying subcolumn	0
 no range extension	0
 range extension within mode	Granules: 4/2
 partition pruning	1

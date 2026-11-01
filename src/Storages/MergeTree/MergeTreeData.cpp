@@ -2769,7 +2769,13 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
                     continue;
                 IdentifierNameSet used_names;
                 column_default.expression->collectIdentifierNames(used_names);
-                if (std::ranges::any_of(used_names, [&](const String & used_name) { return varying.contains(used_name); }))
+                /// A subcolumn (e.g. `payload.x`) varies with its column.
+                auto is_varying = [&](const String & used_name)
+                {
+                    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used_name);
+                    return varying.contains(column ? column->getNameInStorage() : used_name);
+                };
+                if (std::ranges::any_of(used_names, is_varying))
                 {
                     varying.insert(name);
                     changed = true;
