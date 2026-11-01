@@ -259,7 +259,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         /// restore the order after the spill (see `LimitByStep::preserveInputOrder`). An empty description
         /// carries no order to preserve.
         if (!properties->sort_description.empty())
-            limit_by_step->preserveInputOrder();
+            limit_by_step->preserveInputOrder(properties->sort_description);
 
         return std::move(*properties);
     }

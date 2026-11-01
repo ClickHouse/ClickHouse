@@ -1658,7 +1658,7 @@ void addLimitByStep(
             query_plan.getCurrentHeader(), LimitByStep::Settings(settings), length, offset, column_names, always_read_till_end);
         /// `LIMIT BY` sits above the `ORDER BY` sorting in the plan: the sorted order has to survive it up to the result.
         if (query_node.hasOrderBy())
-            step->preserveInputOrder();
+            step->preserveInputOrder(query_analysis_result.sort_description);
         return step;
     };
 

@@ -61,9 +61,12 @@ struct GroupLimitParams
 /// the seen count descending, placing seen rows first in each group so that their counts start the rank of
 /// the group. Input runs follow in arrival order, keeping arrival precedence through input-index ties.
 ///
-/// When input order must be preserved, `GroupLimitSpillLayout` attaches arrival numbers to spilled rows.
-/// After merging, `MergeSortingTransform` restores that order and can itself spill.
-/// Otherwise, rows follow the spill comparison order, which is fingerprint order for generic keys.
+/// When input order must be preserved, `MergeSortingTransform` sorts the merged rows back into it and can
+/// itself spill. It sorts by the columns of the input order when the caller provides them and the spilled
+/// rows carry them, and otherwise by arrival numbers that `GroupLimitSpillLayout` attaches to spilled rows.
+/// Rows that tie on the sort columns can then come out in a different order than in memory, which the sort
+/// order allows. Without the order requirement, rows follow the spill comparison order, which is fingerprint
+/// order for generic keys.
 /// Scheduler requests synchronously write unconnected runs and release their memory before returning;
 /// their readers are attached at the next pipeline update.
 template <typename Traits>
@@ -72,10 +75,12 @@ class ExternalGroupLimitTransform final : public IProcessor
     using Filter = typename Traits::Filter;
 
 public:
-    /// `max_bytes_before_external_` is the spill threshold of query memory; zero leaves spilling to the memory
-    /// scheduler's requests. A non-null `shared_filter_bytes_` reports memory snapshots to
-    /// `DistinctLimitsCheckingTransform`, which enforces the limits across all streams of a parallel `DISTINCT`.
-    /// In that mode, `params_.size_limits` must be unlimited.
+    /// `max_bytes_before_external_` is the spill threshold of query memory; zero leaves spilling to the
+    /// memory scheduler's requests. A non-null `shared_filter_bytes_` reports memory snapshots to
+    /// `DistinctLimitsCheckingTransform`, which enforces the limits across all streams of a parallel
+    /// `DISTINCT`. In that mode, `params_.size_limits` must be unlimited. A non-empty
+    /// `input_sort_description_` is the order of the input rows. With `preserve_input_order_`, a spill sorts
+    /// its rows back by it when they carry its columns, and by arrival numbers otherwise.
     ExternalGroupLimitTransform(
         SharedHeader header_,
         const GroupLimitParams & params_,
@@ -85,7 +90,8 @@ public:
         size_t max_block_size_rows_,
         size_t preferred_block_bytes_,
         bool preserve_input_order_,
-        DistinctSetMemoryTracker::SharedCounter shared_filter_bytes_ = nullptr);
+        DistinctSetMemoryTracker::SharedCounter shared_filter_bytes_ = nullptr,
+        SortDescription input_sort_description_ = {});
 
     ~ExternalGroupLimitTransform() override;
 
@@ -299,6 +305,9 @@ private:
     const size_t max_block_size_rows;
     const size_t preferred_block_bytes;
     const bool preserve_input_order;
+    /// The order of the input by columns that spilled rows carry, which restores it after a spill. Empty when
+    /// arrival numbers restore it, or when the order does not matter.
+    const SortDescription input_order_description;
     /// Created at the first spill from the representation selected by the initialized filter.
     std::optional<GroupLimitSpillLayout> spill_layout;
 

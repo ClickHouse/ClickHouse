@@ -65,7 +65,8 @@ ExternalGroupLimitTransform<Traits>::ExternalGroupLimitTransform(
     size_t max_block_size_rows_,
     size_t preferred_block_bytes_,
     bool preserve_input_order_,
-    DistinctSetMemoryTracker::SharedCounter shared_filter_bytes_)
+    DistinctSetMemoryTracker::SharedCounter shared_filter_bytes_,
+    SortDescription input_sort_description_)
     : IProcessor({header_}, {header_})
     , params(params_)
     , filter_memory(shared_filter_bytes_)
@@ -76,6 +77,10 @@ ExternalGroupLimitTransform<Traits>::ExternalGroupLimitTransform(
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_bytes(preferred_block_bytes_)
     , preserve_input_order(preserve_input_order_)
+    , input_order_description(
+          preserve_input_order_ && GroupLimitSpillLayout::spillsSortColumns(*header_, input_sort_description_)
+              ? std::move(input_sort_description_)
+              : SortDescription{})
 {
     chassert(params.group_limit_end > 0);
     chassert(!shared_filter_bytes_ || !params.size_limits.hasLimits());
@@ -518,7 +523,7 @@ void ExternalGroupLimitTransform<Traits>::consumeHashing(Hashing & hashing)
     /// arrival numbers recording each row's original position. These columns are added when the key
     /// representation needs fingerprints or the result must preserve input order.
     const size_t service_columns_bytes = GroupLimitSpillLayout::estimateServiceColumnsMemory(
-        input_chunk.getNumRows(), hashing.filter.getKeyRepresentation(), preserve_input_order);
+        input_chunk.getNumRows(), hashing.filter.getKeyRepresentation(), attachesArrivalNumbers());
 
     /// A seen run contains keys already counted before spilling, allowing the final merge to rank
     /// later rows. Extraction targets `DEFAULT_BYTES_IN_RUN` bytes per run; twice that target covers
@@ -1044,7 +1049,8 @@ void ExternalGroupLimitTransform<Traits>::prepareTail(PreparingTail & tail)
     ProfileEvents::increment(Traits::tailKeptRowsEvent(), tail.collecting.sorted_rows);
     LOG_TRACE(log, "Preparing final {} merge "
         "(temporary runs: {}, in-memory chunks: {}, restore input order: {})",
-        Traits::operator_name, temporary_files_num, tail.collecting.sorted_chunks.size(), spill_layout->preservesInputOrder());
+        Traits::operator_name, temporary_files_num, tail.collecting.sorted_chunks.size(),
+        !preserve_input_order ? "no" : (attachesArrivalNumbers() ? "by arrival numbers" : "by sort columns"));
 
     /// Register the final input even when the tail is empty, then close merge-input registration.
     /// The tail is merged under the same group limit as input runs on disk.
@@ -1083,26 +1089,27 @@ typename ExternalGroupLimitTransform<Traits>::PreparedMerge ExternalGroupLimitTr
     PreparedMerge prepared;
     prepared.merger = std::make_shared<GroupLimitSortedTransform>(
         String(Traits::merge_transform_name), SharedHeaders{}, merged_header, spill_layout->getKeySortDescription(),
-        spill_layout->getSeenRowsColumnName(), params.group_offset, params.group_limit_end, max_block_size_rows,
+        spill_layout->getSeenRowsColumn(), params.group_offset, params.group_limit_end, max_block_size_rows,
         /*have_all_inputs=*/ false);
 
-    if (spill_layout->preservesInputOrder())
+    if (preserve_input_order)
     {
-        const auto & arrival_number_description = spill_layout->getArrivalNumberSortDescription();
+        const auto & restoration_description
+            = attachesArrivalNumbers() ? spill_layout->getArrivalNumberSortDescription() : input_order_description;
 
-        /// Restore arrival order under the same spill policy as input runs. The group limit leaves only
+        /// Restore the input order under the same spill policy as input runs. The group limit leaves only
         /// result rows, so the sort can safely retain a hinted prefix. Rows admitted during hashing already
         /// form the result's prefix and reduce the remaining hint.
         chassert(!params.limit_hint || result_rows < params.limit_hint);
         const UInt64 remaining_limit_hint = params.limit_hint ? params.limit_hint - result_rows : 0;
         prepared.order_restoration.emplace_back(
-            std::make_shared<PartialSortingTransform>(merged_header, arrival_number_description, remaining_limit_hint));
+            std::make_shared<PartialSortingTransform>(merged_header, restoration_description, remaining_limit_hint));
 
         /// Remerge at the run-size threshold before considering another spill. The sorter stops
         /// remerging when it cannot halve retained memory, avoiding repeated unproductive merges.
         prepared.order_restoration.emplace_back(std::make_shared<MergeSortingTransform>(
             merged_header,
-            arrival_number_description,
+            restoration_description,
             max_block_size_rows,
             preferred_block_bytes,
             remaining_limit_hint,

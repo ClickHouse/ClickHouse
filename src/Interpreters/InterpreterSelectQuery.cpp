@@ -3479,7 +3479,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
             always_read_till_end);
         /// `LIMIT BY` sits above the `ORDER BY` sorting in the plan: the sorted order has to survive it up to the result.
         if (query.orderBy())
-            step->preserveInputOrder();
+            step->preserveInputOrder(getSortDescription(query, context));
         return step;
     };
 

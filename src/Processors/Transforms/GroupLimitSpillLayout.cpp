@@ -22,16 +22,21 @@ constexpr auto FINGERPRINT_COLUMN_NAME = "__key_fingerprint";
 constexpr auto SEEN_ROWS_COLUMN_NAME = "__seen_rows";
 constexpr auto ARRIVAL_NUMBER_COLUMN_NAME = "__arrival_number";
 
-/// Selects the non-constant columns in header order. Constants are restored from the header after
-/// merging, so their values do not need to be written to the temporary runs.
+/// Spill runs carry the non-constant input columns. Constants are restored from the header after merging, so
+/// their values do not need to be written to the temporary runs.
+bool isSpilledColumn(const ColumnWithTypeAndName & column)
+{
+    return !column.column || !isColumnConst(*column.column);
+}
+
+/// Selects the spilled columns in header order.
 ColumnNumbers calculateSpillColumnsPositions(const Block & header)
 {
     ColumnNumbers positions;
     positions.reserve(header.columns());
     for (size_t pos = 0; pos < header.columns(); ++pos)
     {
-        const auto & column = header.getByPosition(pos).column;
-        if (!column || !isColumnConst(*column))
+        if (isSpilledColumn(header.getByPosition(pos)))
             positions.push_back(pos);
     }
     return positions;
@@ -122,13 +127,22 @@ GroupLimitSpillLayout::GroupLimitSpillLayout(
     seen_run_header = std::make_shared<const Block>(std::move(seen));
 }
 
+bool GroupLimitSpillLayout::spillsSortColumns(const Block & input_header, const SortDescription & description)
+{
+    return std::ranges::all_of(description, [&](const SortColumnDescription & sort_column)
+    {
+        const auto * column = input_header.findByName(sort_column.column_name);
+        return column && isSpilledColumn(*column);
+    });
+}
+
 size_t GroupLimitSpillLayout::estimateServiceColumnsMemory(
-    size_t num_rows, SpillKeyRepresentation key_representation, bool preserve_input_order)
+    size_t num_rows, SpillKeyRepresentation key_representation, bool attach_arrival_numbers)
 {
     /// These columns are constructed at their final size, so allocation includes padding but no
     /// power-of-two capacity rounding.
     size_t bytes = 0;
-    if (preserve_input_order)
+    if (attach_arrival_numbers)
     {
         using Array = ColumnUInt64::Container;
         bytes += PODArrayDetails::minimum_memory_for_elements(num_rows, sizeof(UInt64), Array::pad_left, Array::pad_right);

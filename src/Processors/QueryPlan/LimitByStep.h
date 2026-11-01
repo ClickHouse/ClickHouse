@@ -71,14 +71,21 @@ public:
     /// partition sets so no `LIMIT BY` group spans two streams.
     void skipStreamMerging() { skip_stream_merging = true; }
 
-    /// The step must return the rows in their input order: it runs above the `ORDER BY` sorting of its query
-    /// (set by the planners), or the optimizer propagates a global order through it, which the steps above may
-    /// rely on (set by the `applyOrder` optimization). The in-memory `LIMIT BY` keeps the order by construction;
-    /// a spilling one restores it after merging its runs (see `ExternalLimitByTransform`). Without this flag the
-    /// input order has no meaning, so a spilling `LIMIT BY` may keep any rows of a group that fit its window, and
-    /// returns them grouped by key.
-    void preserveInputOrder() { preserve_input_order = true; }
-    bool preservesInputOrder() const { return preserve_input_order; }
+    /// The step must return the rows in their input order, which follows `input_order_`: it runs above the
+    /// `ORDER BY` sorting of its query (set by the planners), or the optimizer propagates a global order
+    /// through it, which the steps above may rely on (set by the `applyOrder` optimization). The in-memory
+    /// `LIMIT BY` keeps the order by construction; a spilling one sorts the rows returned after spilling back
+    /// into it (see `ExternalLimitByTransform`): by the columns of `input_order_` when the spilled rows carry
+    /// them all, and by arrival numbers otherwise. Without an input order, the order has no meaning, so a
+    /// spilling `LIMIT BY` may keep any rows of a group that fit its window, and returns them grouped by key.
+    void preserveInputOrder(SortDescription input_order_) { input_order = std::move(input_order_); }
+    bool preservesInputOrder() const { return !input_order.empty(); }
+
+    /// Only the first `hint` rows of the output are read, by a `LIMIT` above the step (set by the
+    /// `limitPushDown` optimization). A spilling `LIMIT BY` stops once its result has that many rows, and
+    /// restores the input order of only that many rows after a spill. Zero disables the hint; of two hints,
+    /// the smaller applies.
+    void updateLimitHint(UInt64 hint);
 
 private:
     void updateOutputHeader() override
@@ -98,7 +105,9 @@ private:
     SortDescription sorted_columns_descr;
 
     bool skip_stream_merging = false;
-    bool preserve_input_order = false;
+    /// The order that the output must keep; empty when the order has no meaning.
+    SortDescription input_order;
+    UInt64 limit_hint = 0;
 };
 
 }

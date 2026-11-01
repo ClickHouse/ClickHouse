@@ -28,9 +28,9 @@ using namespace DB;
 /// `QueryPlanSerializationSettings::readBinary` rejects unknown setting names, so older peers receive
 /// neither threshold and use in-memory execution with its memory requirements.
 ///
-/// Step version 1 adds the input-order bit to the flags byte and is introduced at the same global version.
-/// Older peers preserve input order through their in-memory execution; newer peers receive the requirement
-/// for order restoration after spilling.
+/// Step version 1 adds the input-order bit to the flags byte, followed by the sort description of the order,
+/// and is introduced at the same global version. Older peers preserve input order through their in-memory
+/// execution; newer peers receive the order that a spill restores.
 namespace
 {
 
@@ -59,7 +59,11 @@ LimitByStep makeStep(const SharedHeader & header, bool preserve_input_order, boo
     LimitByStep step(
         header, LimitByStep::Settings{}, /*group_length_=*/ 2, /*group_offset_=*/ 1, Names{"k"}, always_read_till_end);
     if (preserve_input_order)
-        step.preserveInputOrder();
+    {
+        SortDescription input_order;
+        input_order.emplace_back("k", 1, 1);
+        step.preserveInputOrder(std::move(input_order));
+    }
     return step;
 }
 
@@ -137,6 +141,10 @@ TEST(ExternalLimitByPlanSetting, InputOrderFlagRespectsPeerVersion)
         const auto restored = roundTrip(step, header, version, step_version);
         EXPECT_EQ(restored->preservesInputOrder(), preserve_input_order && version == current_version);
         EXPECT_EQ(restored->alwaysReadTillEnd(), always_read_till_end);
+        /// The restored step writes the same bytes, so the sort description of the order survives the round trip.
+        EXPECT_EQ(
+            serializeStep(*restored, version, step_version, /*for_cache_key=*/ false),
+            serializeStep(step, version, step_version, /*for_cache_key=*/ false));
         if (version == pre_setting_version && preserve_input_order)
             EXPECT_EQ(
                 serializeStep(step, version, step_version, /*for_cache_key=*/ false),

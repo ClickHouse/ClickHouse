@@ -195,13 +195,16 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
         return std::make_shared<ExternalLimitByTransform>(
             header,
-            GroupLimitParams{.key_columns = columns, .group_offset = group_offset, .group_limit_end = group_limit_end},
+            GroupLimitParams{
+                .key_columns = columns, .group_offset = group_offset, .group_limit_end = group_limit_end, .limit_hint = limit_hint},
             external_threshold,
             tmp_data_on_disk,
             settings.min_free_disk_space,
             settings.max_block_size,
             settings.prefer_external_sort_block_bytes,
-            preserve_input_order);
+            preservesInputOrder(),
+            /*shared_filter_bytes_=*/ nullptr,
+            input_order);
     };
 
     /// Per stream sorted.
@@ -295,7 +298,7 @@ void LimitByStep::describeActions(FormatSettings & format_settings) const
         format_settings.out << prefix << "Reads all data\n";
     if (skip_stream_merging)
         format_settings.out << prefix << "Skip stream merging: 1\n";
-    if (preserve_input_order)
+    if (preservesInputOrder())
         format_settings.out << prefix << "Preserve input order: 1\n";
 }
 
@@ -311,7 +314,7 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Reads All Data", always_read_till_end);
     if (skip_stream_merging)
         map.add("Skip stream merging", true);
-    if (preserve_input_order)
+    if (preservesInputOrder())
         map.add("Preserve input order", true);
 }
 
@@ -322,11 +325,13 @@ void LimitByStep::serializeSettings(QueryPlanSerializationSettings & plan_settin
 
 void LimitByStep::serialize(Serialization & ctx) const
 {
+    /// The input order is part of the plan's meaning but not of the hash-table cache key. The limit hint is
+    /// not serialized: the follower derives it from its plan, as for `DISTINCT`.
+    const bool write_input_order = ctx.step_version >= 1 && !ctx.for_cache_key && preservesInputOrder();
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END)
     {
         UInt8 flags = always_read_till_end ? 1 : 0;
-        /// The input-order flag is part of the plan's meaning but not of the hash-table cache key.
-        if (ctx.step_version >= 1 && !ctx.for_cache_key && preserve_input_order)
+        if (write_input_order)
             flags |= 2;
         writeIntBinary(flags, ctx.out);
     }
@@ -338,6 +343,9 @@ void LimitByStep::serialize(Serialization & ctx) const
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         ctx.writeColumnName(column);
+
+    if (write_input_order)
+        serializeSortDescription(input_order, ctx.out, ctx.version);
 }
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
@@ -371,8 +379,20 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     auto step = std::make_unique<LimitByStep>(
         ctx.input_headers.front(), Settings(ctx.settings), group_length, group_offset, std::move(columns), always_read_till_end);
     if (preserve_input_order)
-        step->preserveInputOrder();
+    {
+        SortDescription input_order;
+        deserializeSortDescription(input_order, ctx.in, ctx.version);
+        step->preserveInputOrder(std::move(input_order));
+    }
     return step;
+}
+
+void LimitByStep::updateLimitHint(UInt64 hint)
+{
+    if (hint && limit_hint)
+        limit_hint = std::min(hint, limit_hint);
+    else
+        limit_hint = std::max(hint, limit_hint);
 }
 
 void LimitByStep::applyOrder(const SortDescription & sort_description)
