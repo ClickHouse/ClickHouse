@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest, long, no-msan
+# Tag long: 13 PromQL checks run twice each plus 8 EXPLAINs, each in its own clickhouse-client process, which takes too long in the flaky check.
 # Tag no-fasttest: PromQL needs ANTLR4. Tag no-msan: under MSan each PromQL query takes many seconds to plan, as in 05271.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
