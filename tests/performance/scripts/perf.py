@@ -1240,9 +1240,15 @@ if not args.use_existing_tables:
 
     if args.table_engine:
         # The same rewritten statements run on every server.
-        rewritten, tables = iceberg_engine.rewrite_setup_queries(
-            [q for q, _ in create_queries], args.table_engine, test_name, args.binary[-1]
-        )
+        try:
+            rewritten, tables = iceberg_engine.rewrite_setup_queries(
+                [q for q, _ in create_queries], args.table_engine, test_name, args.binary[-1]
+            )
+        except iceberg_engine.IcebergRewriteError as e:
+            raise Exception(
+                f"{e}. If the test cannot run on Iceberg tables, add it with the reason to "
+                'tests/performance/iceberg_skip_list.txt, or mark it <test iceberg="0">'
+            ) from e
         create_queries = [(q, tolerate) for q, (_, tolerate) in zip(rewritten, create_queries)]
         print(f"table-engine\t{args.table_engine}\t{len(tables)}")
         if not tables:

@@ -147,3 +147,41 @@ def test_runs_with_table_engine(test_path, skip_list):
         _MERGE_TREE_ENGINE.search(e.text or "")
         for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "create_query")
     )
+
+
+# The code that the Iceberg configuration measures, and its harness: a pull
+# request that changes it runs the configuration on every selected test.
+ICEBERG_PERFORMANCE_PATHS = (
+    "src/Storages/ObjectStorage/",
+    "src/Databases/DataLake/",
+    "src/Processors/Formats/Impl/Parquet",
+    "tests/performance/scripts/",
+    "tests/performance/iceberg_skip_list.txt",
+    "ci/jobs/performance_tests.py",
+    "ci/jobs/scripts/perf/",
+)
+
+
+def _relative(path):
+    return path.removeprefix("./").removeprefix("/")
+
+
+def iceberg_code_changed(changed_files):
+    """Whether a changed file is under `ICEBERG_PERFORMANCE_PATHS`."""
+    return any(_relative(f).startswith(ICEBERG_PERFORMANCE_PATHS) for f in changed_files)
+
+
+def changed_iceberg_tests(changed_files, perf_dir):
+    """The added or changed test files of `perf_dir` that the Iceberg
+    configuration runs: a pull request that adds a test runs it in the
+    configuration, so that the test does not break it."""
+    prefix = _relative(perf_dir).rstrip("/") + "/"
+    skip_list = iceberg_skip_list(perf_dir)
+    tests = []
+    for f in changed_files:
+        name = _relative(f).removeprefix(prefix)
+        if "/" in name or not name.endswith(".xml") or not os.path.exists(os.path.join(perf_dir, name)):
+            continue
+        if test_runs_with_table_engine(os.path.join(perf_dir, name), skip_list):
+            tests.append(name)
+    return sorted(set(tests))
