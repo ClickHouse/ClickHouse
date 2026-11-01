@@ -64,6 +64,8 @@ struct PrometheusQueryEvaluationSettings
     /// The step for subqueries without an explicit one, as in `http_requests_total[10m:]`; 15 seconds by default.
     std::optional<DurationType> default_subquery_step;
 
+    /// A range query is rejected if (end_time - start_time) / step is greater than this value; 0 means no limit.
+    UInt64 max_points_per_series = 0;
     /// Copy label matchers across binary operators, see the setting `promql_push_down_label_matchers`.
     bool push_down_label_matchers = true;
 };
