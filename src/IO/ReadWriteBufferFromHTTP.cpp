@@ -1059,6 +1059,9 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     if (response.has("Last-Modified"))
         res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
 
+    if (response.has("Date"))
+        res.response_date = tryParseHTTPDate(response.get("Date"));
+
     return res;
 }
 
