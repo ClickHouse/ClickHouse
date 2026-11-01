@@ -8164,7 +8164,7 @@ Possible values:
 Toggles a query-plan-level optimization which executes `ORDER BY rand()` and `ORDER BY rand64()` by shuffling the rows
 (the same way as the `SHUFFLE` clause) instead of sorting them, which takes O(n) time instead of O(n * log(n)).
 The result has the same distribution: the values of the `rand()` column are replaced by other random values in sorted order.
-Applies when the `rand()` value is not used in other expressions, and when there is a `LIMIT` or the external sorting is disabled
+Applies when the `rand()` value is not used in other expressions, and when there is a `LIMIT` not larger than four times `max_block_size` (with larger limits, the partial sorting is faster), or no `LIMIT` and the external sorting is disabled
 (the shuffle does not spill to disk).
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 

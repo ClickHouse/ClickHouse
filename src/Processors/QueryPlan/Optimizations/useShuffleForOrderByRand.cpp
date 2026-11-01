@@ -43,6 +43,11 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
     if (!limit && (sort_settings.max_bytes_in_block_before_external_sort || sort_settings.max_bytes_in_query_before_external_sort))
         return;
 
+    /// With a large limit, every stream keeps and sorts `limit` rows, and the partial sorting is faster
+    /// (with 100 million rows in 16 streams, the shuffle is faster up to `LIMIT 300000`, and slower with `LIMIT 1000000`).
+    if (limit > 4 * sort_settings.max_block_size)
+        return;
+
     /// The limits for sorting are checked by the sorting transforms.
     if (sort_settings.size_limits.hasLimits())
         return;
