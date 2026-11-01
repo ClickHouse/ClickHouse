@@ -1,7 +1,8 @@
--- A hash join built by several build streams frees a right table of many heap objects on the `HashJoinDtor` pool.
--- The thread that destroys the join frees a table built by a single build stream, and a table of few objects,
--- however many bytes they hold. `query_log.thread_ids` lists the pool threads too, but they come from the
--- global pool and also run the pipeline, so only the thread names in `system.query_thread_log` show the pool.
+-- A hash join built by several build streams frees its right table on the `HashJoinDtor` pool when the table holds
+-- many heap objects. The thread that destroys the join frees the table instead when one build stream built it, or when
+-- it holds few objects, whatever their size in bytes.
+-- `query_log.thread_ids` lists the pool threads too, but they come from the global pool and also run the pipeline, so
+-- only the thread names in `system.query_thread_log` show the pool.
 
 SET join_algorithm = 'hash';
 SET max_threads = 4;

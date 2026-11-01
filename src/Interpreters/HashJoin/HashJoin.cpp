@@ -130,10 +130,9 @@ size_t capReserveAtSpillBudget(size_t keys, size_t max_reserve_bytes, const Hash
 
     if (!keys || !max_reserve_bytes)
         return keys;
-    size_t cell_size = 0;
-    std::visit(
+    const size_t cell_size = std::visit(
         [&](const auto & maps_)
-        { maps_.visit(type, [&]<typename Table>(const std::shared_ptr<Table> &) { cell_size = sizeof(typename Table::cell_type); }); },
+        { return maps_.visit(type, []<typename Table>(const std::shared_ptr<Table> &) { return sizeof(typename Table::cell_type); }); },
         maps);
     return std::min(keys, max_reserve_bytes / (budget_divisor * max_cells_per_key * cell_size));
 }

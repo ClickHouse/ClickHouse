@@ -77,7 +77,7 @@ public:
 
     /// Call under the lock of `slot`; `map` is map `map_idx`. On the first insert of `slot` into it, reserves the
     /// slot's share of `reserve_keys` over the slot's buckets. Returns that share, or 0 when nothing was reserved.
-    /// The share is used only for `HashJoinPreallocatedElementsInHashTables`.
+    /// The caller uses the returned share only for `HashJoinPreallocatedElementsInHashTables`.
     template <typename Map>
     size_t reserveOnFirstInsert(Map & map, size_t map_idx, size_t slot)
     {

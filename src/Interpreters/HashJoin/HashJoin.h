@@ -143,7 +143,7 @@ struct BuildResult
   * that is always filled under the same lock. It is a sub-table of a `TwoLevelHashTable`, or a set of cache lines
   * of the flat `PartitionedFixedHashTable`. The parallel layout has `NUM_HASH_TABLE_BUCKETS` buckets, and the
   * serial layout has one. A slot is a group of buckets with one lock and one arena (see `BuildSlots`). The serial
-  * layout has one slot, and the parallel layout one per build stream.
+  * layout has one slot, and the parallel layout one per build stream, rounded up to a power of two and capped at the bucket count.
   *
   * 2. Process "left" table and join corresponding rows from "right" table by lookups in the map.
   * This is done in joinBlock methods.

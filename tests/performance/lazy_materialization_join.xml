@@ -48,8 +48,10 @@
     <!-- Control: a single table, which the other lazy materialization path handles. -->
     <query>SELECT k, payload FROM lazy_join_facts ORDER BY sipHash64(k, ts) LIMIT 10 FORMAT Null</query>
 
-    <!-- The two joins again, with the layout that `parallel_hash_join_threshold` picks for the default `join_algorithm`
-         list. There are no row estimates here, so both hash tables are built in parallel. -->
+    <!-- The query with two joins again, with the layout that `parallel_hash_join_threshold` picks. It lists both
+         `parallel_hash` and `hash` because older versions pick the layout by the threshold only when both are listed.
+         `query_plan_optimize_join_order_limit = 0` leaves both joins without a row estimate, so both hash tables are
+         built in parallel. -->
     <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS join_algorithm = 'parallel_hash,hash', parallel_hash_join_threshold = 100000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS lazy_join_facts</drop_query>
