@@ -117,6 +117,9 @@ public:
     /// (e.g. 0x80), but dictionary tokens hardly ever start with them, so this would not skip anything.
     bool canSkipPrefixes() const;
 
+    /// Memory used by the states and transitions.
+    size_t memoryUsage() const;
+
     /// Intersects the DFA with a sorted sequence of tokens, i.e. a dictionary. The DFA itself is immutable: it is built
     /// once per query and shared by the dictionary scans of all parts. Every scan uses its own `Cursor`, which remembers
     /// the states visited for the previous token. Adjacent dictionary tokens usually share a long prefix, and the states

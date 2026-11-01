@@ -207,6 +207,14 @@ bool TextIndexDictionaryDFA::canSkipPrefixes() const
     return false;
 }
 
+size_t TextIndexDictionaryDFA::memoryUsage() const
+{
+    size_t bytes = states.capacity() * sizeof(State);
+    for (const auto & state : states)
+        bytes += state.transitions.capacity() * sizeof(Transition);
+    return bytes;
+}
+
 /// Reads `token` with the DFA. If `token` is rejected, computes the smallest string greater than `token` which is still
 /// a prefix of a matching token. This works like incrementing a number: keep the longest prefix of `token` which can be
 /// continued with a larger byte than in `token`, and append the smallest such byte.

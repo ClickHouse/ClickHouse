@@ -73,7 +73,8 @@ TextSearchQuery::TextSearchQuery(
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
     std::vector<OptimizedRegularExpression> patterns_,
-    VectorWithMemoryTracking<String> phrase_tokens_)
+    VectorWithMemoryTracking<String> phrase_tokens_,
+    TextIndexAutomatonBudget * automaton_budget)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
@@ -87,8 +88,16 @@ TextSearchQuery::TextSearchQuery(
     for (const auto & pattern : patterns)
     {
         std::shared_ptr<const TextIndexDictionaryDFA> automaton;
-        if (pattern.getMatchKind() == RegexpMatchKind::Prefix || pattern.getMatchKind() == RegexpMatchKind::Exact)
-            automaton = TextIndexDictionaryDFA::literal(pattern.getRequiredSubstring(), pattern.getMatchKind() == RegexpMatchKind::Prefix);
+        /// Without a budget (no shared condition), only the per-automaton limit applies.
+        const size_t max_memory = automaton_budget ? automaton_budget->available() : TextIndexAutomatonBudget::pattern_limit;
+        /// A failed attempt is charged the full limit: RE2 spends time proportional to its memory budget before it gives up.
+        size_t charge = max_memory;
+        if (max_memory == 0)
+        {
+            /// The budget is spent: use the regular dictionary scan.
+        }
+        else if (pattern.getMatchKind() == RegexpMatchKind::Prefix || pattern.getMatchKind() == RegexpMatchKind::Exact)
+            automaton = TextIndexDictionaryDFA::literal(pattern.getRequiredSubstring(), pattern.getMatchKind() == RegexpMatchKind::Prefix, max_memory);
         else if (pattern.getRE2())
         {
             /// The existing SQL surface supplies `LIKE` patterns. Leading wildcards
@@ -101,11 +110,19 @@ TextSearchQuery::TextSearchQuery(
                 suffix->Decref();
             if (has_prefix && !prefix.empty())
             {
-                automaton = TextIndexDictionaryDFA::fromRegexp(*pattern.getRE2());
+                automaton = TextIndexDictionaryDFA::fromRegexp(*pattern.getRE2(), max_memory);
                 if (automaton && !automaton->canSkipPrefixes())
                     automaton.reset();
             }
+            else
+                charge = 0;
         }
+        else
+            charge = 0;
+        if (automaton)
+            charge = automaton->memoryUsage();
+        if (automaton_budget)
+            automaton_budget->charge(charge);
         pattern_automata.push_back(std::move(automaton));
     }
 }
@@ -1608,7 +1625,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
                         function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), &automaton_budget));
                 return true;
             }
         }
@@ -1651,7 +1668,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
                         function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), &automaton_budget));
                 return true;
             }
         }
@@ -1687,7 +1704,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
                     function_name, TextSearchMode::Any, pattern_read_mode,
-                    VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), &automaton_budget));
             return true;
         }
         return false;

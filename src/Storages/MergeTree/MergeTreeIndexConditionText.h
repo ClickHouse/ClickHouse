@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/TextIndexDictionaryDFA.h>
@@ -41,6 +43,27 @@ enum class TextIndexDirectReadMode : uint8_t
     Hint,
 };
 
+/// Bounds the work and memory spent on dictionary automata (see `TextIndexDictionaryDFA`) by all `LIKE` patterns of one
+/// condition. A single automaton is capped by `pattern_limit`, but without a shared budget, a query with many patterns
+/// (e.g. hundreds of `OR`ed `LIKE`s) would build and keep one automaton per pattern.
+/// A pattern which gets no automaton uses the regular dictionary scan, so the budget only affects speed.
+struct TextIndexAutomatonBudget
+{
+    static constexpr size_t pattern_limit = 256 * 1024;
+    static constexpr size_t total_limit = 4 * 1024 * 1024;
+
+    /// Returns how much memory the next automaton may use, 0 if the budget is spent.
+    size_t available() const { return std::min(remaining.load(), pattern_limit); }
+    /// Charges `bytes`, saturating at zero.
+    void charge(size_t bytes)
+    {
+        size_t current = remaining.load();
+        while (!remaining.compare_exchange_weak(current, current - std::min(current, bytes))) {}
+    }
+
+    std::atomic<size_t> remaining{total_limit};
+};
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
@@ -50,7 +73,8 @@ struct TextSearchQuery
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
         std::vector<OptimizedRegularExpression> patterns_ = {},
-        VectorWithMemoryTracking<String> phrase_tokens_ = {});
+        VectorWithMemoryTracking<String> phrase_tokens_ = {},
+        TextIndexAutomatonBudget * automaton_budget = nullptr);
 
     const String & getFunctionName() const { return function_name; }
     TextSearchMode getSearchMode() const { return search_mode; }
@@ -243,6 +267,8 @@ private:
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
+    /// Shared by the automata of all `LIKE` patterns of this condition.
+    mutable TextIndexAutomatonBudget automaton_budget;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
