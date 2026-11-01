@@ -365,6 +365,11 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
+                /// A bare IP address inside the quotes is handled above. If an IP type comes from here, the address is wrapped
+                /// in its own single quotes, which the CSV reader keeps as a part of the value.
+                if (type && (isIPv4(type) || isIPv6(type)))
+                    return std::make_shared<DataTypeString>();
+
                 /// Return String type if one of the following conditions apply
                 ///  - we couldn't infer any type
                 ///  - it's a number and csv.try_infer_numbers_from_strings = 0
@@ -410,6 +415,11 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 return ip_type;
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);
+
+            /// A bare IP address is handled above. If an IP type comes from here, the address is wrapped in single quotes,
+            /// which the Escaped and Raw readers keep as a part of the value, so it is a String.
+            if (type && (isIPv4(type) || isIPv6(type)))
+                return std::make_shared<DataTypeString>();
 
             /// A leading zero carries information in these formats (zip codes, phone numbers), so a field
             /// that starts with one and infers an integer stays a `String`. `allow_number_leading_zeros`
