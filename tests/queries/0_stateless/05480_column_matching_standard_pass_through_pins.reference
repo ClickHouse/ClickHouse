@@ -15,3 +15,7 @@ UNKNOWN_IDENTIFIER
 2
 --- unquoted definitions stay foldable
 1
+--- a query parameter keeps the quotes of its alias
+UNKNOWN_IDENTIFIER
+1	1
+1	1

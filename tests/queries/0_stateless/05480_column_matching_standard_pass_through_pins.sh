@@ -30,3 +30,8 @@ ${CLIENT_STANDARD} --query 'SELECT FOO FROM (SELECT "Foo" AS Bar, "Foo" + 1 AS F
 
 echo '--- unquoted definitions stay foldable'
 ${CLIENT_STANDARD} --query 'SELECT foo FROM (SELECT * FROM (SELECT 1 AS Foo))'
+
+echo '--- a query parameter keeps the quotes of its alias'
+${CLIENT_STANDARD} --param_p=1 --query 'SELECT {p:UInt8} AS "Foo", foo' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --param_p=1 --query 'SELECT {p:UInt8} AS "Foo", "Foo"'
+${CLIENT_STANDARD} --param_p=1 --query 'SELECT {p:UInt8} AS Foo, foo'

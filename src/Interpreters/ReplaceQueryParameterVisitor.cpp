@@ -271,14 +271,18 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     const auto & ast_param = ast->as<ASTQueryParameter &>();
     const String & type_name = ast_param.type;
     String alias = ast_param.alias;
+    IdentifierPartQuote alias_quote = ast_param.getAliasQuote();
 
     const auto data_type = DataTypeFactory::instance().get(type_name);
     Field literal = resolveParameterValueAsField(ast_param.name, type_name);
 
     ast = makeASTForQueryParameter(literal, type_name, data_type);
 
-    /// Keep the original alias.
-    ast->setAlias(alias);
+    /// Keep the original alias with its quoting: a double-quoted alias is exact under `standard` name matching.
+    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
+        ast_with_alias->setAlias(alias, alias_quote);
+    else
+        ast->setAlias(alias);
 }
 
 void ReplaceQueryParameterVisitor::visitSettingsChanges(SettingsChanges & changes)
