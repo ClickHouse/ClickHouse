@@ -997,19 +997,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
                 estimates.erase(it);
         }
 
-        try
+        if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
         {
-            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
-            {
-                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                return false;
-            }
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                part.data_part->name), LogsLevel::debug);
+            LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+            return false;
         }
         return true;
     };
