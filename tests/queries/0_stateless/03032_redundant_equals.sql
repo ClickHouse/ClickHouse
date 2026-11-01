@@ -11,8 +11,6 @@ ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', 
 
 INSERT INTO test_table SELECT number FROM numbers(100000);
 
-SET enable_analyzer = 1;
-
 SELECT * FROM test_table WHERE k in (100) = 1;
 SELECT * FROM test_table WHERE k = (100) = 1;
 SELECT * FROM test_table WHERE k not in (100) = 0;

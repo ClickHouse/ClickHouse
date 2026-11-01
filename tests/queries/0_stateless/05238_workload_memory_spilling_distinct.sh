@@ -63,10 +63,14 @@ FROM (SELECT DISTINCT [number % 1048576] AS k FROM numbers(4194304))
 "
 
 # Preliminary sets may be released too; final deduplication must still remove every duplicate.
+# A parallel final `DISTINCT` splits the keys into smaller per-stream sets that may fit the budget, so it is
+# disabled to keep spilling the single final set.
+# The first half of the input holds each key once, so however the blocks are split between the 4 streams, one of
+# them sees at least a quarter of the keys, and its preliminary set exceeds `min_bytes_to_spill`.
 run_query parallel "
-SELECT count() = 1048576, sum(k) = 549755289600
-FROM (SELECT DISTINCT number % 1048576 AS k FROM numbers_mt(8388608))
-SETTINGS max_threads = 4
+SELECT count() = 4194304, sum(k) = 8796090925056
+FROM (SELECT DISTINCT number % 4194304 AS k FROM numbers_mt(8388608))
+SETTINGS max_threads = 4, allow_parallel_distinct = 0
 "
 
 # The final `DISTINCT` follows an expression sort and must restore arrival order after spilling.

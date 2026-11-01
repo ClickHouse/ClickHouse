@@ -279,9 +279,10 @@ if __name__ == "__main__":
     )
     info.store_kv_data("changed_files", changed_files)
 
-    # The merge-queue targeted checks also rerun the tests that `master` changed
-    # after the PR's last CI run. Computed here, because only this job has the
-    # commit history. Fail-close: the targeted checks require this key.
+    # The merge-queue flaky check (stateless) and targeted integration check also
+    # rerun the tests that `master` changed after the PR's last CI run. Computed
+    # here, because only this job has the commit history. Fail-close: those jobs
+    # require this key.
     if info.is_merge_queue_event:
         info.store_kv_data(
             "merge_queue_drift_tests",

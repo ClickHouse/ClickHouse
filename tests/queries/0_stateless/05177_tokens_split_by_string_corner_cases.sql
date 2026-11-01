@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT 'NUL separators, binary strings, and duplicate separators';
 SELECT arrayMap(hex, tokens(materialize('a\0b\0\0c\0'), 'splitByString', ['\0']));
