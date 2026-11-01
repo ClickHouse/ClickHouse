@@ -186,8 +186,10 @@ $CLICKHOUSE_CLIENT -q "SELECT countIf(query LIKE '%k3y_05473%'), count() > 0 FRO
     WHERE event_date >= yesterday() AND initial_query_id = '${CLICKHOUSE_DATABASE}_05473_secret' AND NOT is_initial_query
     AND current_database IN ['default', currentDatabase()]"
 
-# `SELECT a, x, ...` binds the column `x` of the files to the column `y` of the table, so `DEFAULT x` must not read it.
-write_file col.jsonl "a UInt32, x UInt32" "(1, 2)"
+# `SELECT a, x, ...` binds the column `x` of the files to the column `y` of the table, so `DEFAULT x` must not read it,
+# while `w DEFAULT z + 10` still reads `z`.
+write_file col_1.jsonl "a UInt32, x UInt32" "(1, 2)"
+write_file col_2.jsonl "a UInt32, x UInt32, z UInt32" "(3, 4, 6)"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS col_05473;
     DROP TABLE IF EXISTS col_dist_05473;
@@ -200,21 +202,21 @@ $CLICKHOUSE_CLIENT -q "
 function check_col()
 {
     echo "--- $1 ---"
-    $CLICKHOUSE_CLIENT -q "SELECT z != y, w != 10 FROM $2"
+    $CLICKHOUSE_CLIENT -q "SELECT x, z != y, w = z + 10 FROM $2 ORDER BY x"
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $2"
 }
 
 $CLICKHOUSE_CLIENT -q "
-    INSERT INTO col_05473 SELECT a, x, z, w FROM s3('${S3_DIR}/col.jsonl', 'JSONEachRow')
+    INSERT INTO col_05473 SELECT a, x, z, w FROM s3('${S3_DIR}/col_{1,2}.jsonl', 'JSONEachRow')
     SETTINGS parallel_replicas_for_cluster_engines = 0"
 check_col "DEFAULT reading a column bound to another column, s3" col_05473
 
 $CLICKHOUSE_CLIENT -q "
-    INSERT INTO col_dist_05473 SELECT a, x, z, w FROM s3Cluster('${CLUSTER}', '${S3_DIR}/col.jsonl', 'JSONEachRow')
+    INSERT INTO col_dist_05473 SELECT a, x, z, w FROM s3Cluster('${CLUSTER}', '${S3_DIR}/col_{1,2}.jsonl', 'JSONEachRow')
     SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1"
 check_col "DEFAULT reading a column bound to another column, s3Cluster" col_05473
 
-echo '{"a":1,"x":2}' | $CLICKHOUSE_CLIENT -q "INSERT INTO col_input_05473 SELECT a, x, z, w FROM input() FORMAT JSONEachRow"
+printf '{"a":1,"x":2}\n{"a":3,"x":4,"z":6}\n' | $CLICKHOUSE_CLIENT -q "INSERT INTO col_input_05473 SELECT a, x, z, w FROM input() FORMAT JSONEachRow"
 check_col "DEFAULT reading a column bound to another column, input()" col_input_05473
 
 # A column of the files named `toString` is bound to `junk`, and in the files' structure it shadows the function the

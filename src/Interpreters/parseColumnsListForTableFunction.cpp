@@ -299,14 +299,6 @@ void removeMisboundDefaultsFromStructureHint(
             removed.insert(name);
     }
 
-    for (bool changed = !removed.empty(); changed;)
-    {
-        changed = false;
-        for (const auto & [name, required] : reads)
-            if (!removed.contains(name) && std::ranges::any_of(required, [&](const String & read) { return removed.contains(read); }))
-                changed |= removed.insert(name).second;
-    }
-
     for (const auto & name : removed)
         structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
 }
