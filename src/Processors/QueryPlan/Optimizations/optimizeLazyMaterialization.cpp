@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -500,6 +501,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
+    /// `SHUFFLE` works the same way as sorting by its key column.
+    auto * shuffle_step = typeid_cast<ShuffleStep *>(root.children.front()->step.get());
     bool reading_in_order = false;
 
     /// The chain of Expression/Filter steps down to the reading step starts right below
@@ -516,6 +519,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
         reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
 
+        chain_top_node = root.children.front()->children.front();
+    }
+    else if (shuffle_step)
+    {
         chain_top_node = root.children.front()->children.front();
     }
 
@@ -558,6 +565,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (sorting_step)
         for (const auto & descr : sorting_step->getSortDescription())
             required_columns[chain_top_header.getPositionByName(descr.column_name)] = true;
+
+    if (shuffle_step)
+        required_columns[chain_top_header.getPositionByName(shuffle_step->getKeyColumnName())] = true;
 
     bool has_filter = false;
 
@@ -655,7 +665,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// this is the only way to avoid reading all columns for every scanned row. For non-FINAL
     /// reads, PREWHERE already covers this shape. Object storage, file and memory reads have no FINAL,
     /// so the no-sorting case never applies to them.
-    if (!sorting_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
+    if (!sorting_step && !shuffle_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
         return false;
 
     std::unique_ptr<LazilyReadFromMergeTree> merge_tree_lazy_reading;
@@ -786,7 +796,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
     }
 
-    if (sorting_step)
+    if (sorting_step || shuffle_step)
     {
         auto new_sorting_step = std::move(root.children.front()->step);
         new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
