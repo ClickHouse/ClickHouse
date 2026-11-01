@@ -96,6 +96,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        filter->copyPrefilteredConditions(*parent_filter);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -149,6 +150,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    condition_name,
                                                    true);
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
+        /// Only the leading conditions of the AND chain can be skipped, and these are the conditions of the child.
+        filter->copyPrefilteredConditions(*child_filter);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);

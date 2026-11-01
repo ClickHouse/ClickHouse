@@ -60,6 +60,9 @@ public:
     /// The rows of the chunks with `PrefilteredChunkInfo` with `token` already passed the conditions with these hashes
     /// (see `optimize_move_to_prewhere_if_final_non_intersecting`), so they are not evaluated again for these chunks.
     void setPrefilteredConditions(UInt64 token, std::unordered_set<UInt64> condition_hashes);
+    /// Takes over the prefiltered conditions of `other`, which this step replaces. Conditions are matched by hash, so any
+    /// condition that this step computes differently is evaluated for all chunks.
+    void copyPrefilteredConditions(const FilterStep & other) { prefiltered_conditions = other.prefiltered_conditions; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }

@@ -721,7 +721,13 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         // std::cerr << ".. Main header " << reading_step->getOutputHeader()->dumpNames() << std::endl;
     }
 
-    std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
+    /// The filter of the main branch, and the step it is split from.
+    struct MainFilter
+    {
+        FilterDAGInfo filter;
+        const FilterStep * original;
+    };
+    std::list<std::variant<ActionsDAG, MainFilter>> main_steps;
     std::list<ActionsDAG> lazy_steps;
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
@@ -747,7 +753,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             auto split_result = splitFilterStep(*filter_step, step_to_split.required_positions, required_columns);
             // std::cerr << "fsplit_result l: " << split_result.main_filter_step.actions.dumpDAG() << std::endl;
             // std::cerr << "fsplit_result r: " << split_result.lazy_expression_step.dumpDAG() << std::endl;
-            main_steps.push_back(std::move(split_result.main_filter_step));
+            main_steps.push_back(MainFilter{std::move(split_result.main_filter_step), filter_step});
             lazy_steps.push_back(std::move(split_result.lazy_expression_step));
             required_columns = std::move(split_result.available_input_positions);
         }
@@ -779,10 +785,13 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
         else
         {
-            auto filter_dag_info = std::move(std::get<FilterDAGInfo>(step));
-            main_plan.addStep(std::make_unique<FilterStep>(
+            auto & main_filter = std::get<MainFilter>(step);
+            auto filter_step = std::make_unique<FilterStep>(
                 main_plan.getCurrentHeader(),
-                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column));
+                std::move(main_filter.filter.actions), main_filter.filter.column_name, main_filter.filter.do_remove_column);
+            /// The main branch evaluates this filter, so it keeps the prefiltered conditions.
+            filter_step->copyPrefilteredConditions(*main_filter.original);
+            main_plan.addStep(std::move(filter_step));
         }
     }
 
