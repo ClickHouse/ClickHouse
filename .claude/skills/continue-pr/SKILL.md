@@ -242,7 +242,7 @@ Skip this step for PRs from branches of `$REPO` itself (`headRepositoryOwner` is
 
 3. Verify that every commit added since the approved commit is from the current user. The `author` and `committer` logins that GitHub shows are derived from the e-mail addresses in the commit header, which anyone can forge, so they prove nothing. Accept a commit only by one of these:
    - it is already in the base branch (`git merge-base --is-ancestor <sha> "origin/$BASE_BRANCH"` succeeds) — such commits arrive with merges of the base branch;
-   - its exact SHA is in the ledger of commits pushed by this skill (see step 7): `grep -qx <sha> "$PUSHED_LEDGER"`;
+   - its exact SHA is in the ledger of commits that this skill created itself and pushed (see step 7): `grep -qx <sha> "$PUSHED_LEDGER"`;
    - it has a verified signature and `committer.login` is `$ME` — the signing key then belongs to the current user's account. Commits signed by `web-flow` do not count: they can be created through the API with an arbitrary author.
    ```bash
    PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
@@ -410,12 +410,21 @@ Before every commit and push, run this safety gate. It is a hard stop:
    ```
    Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
 
-After the gate succeeds, record the commits that are about to be pushed in the ledger used by step 4a (it lives outside the repository, so it survives worktree removal), then push:
+Step 4a trusts only commits that this skill created itself. Immediately after every `git commit` or `git merge` that creates a commit in this workflow (fixes, conflict resolutions, merges of the base or the remote PR branch), record it. Always merge with `git merge --no-ff`: a fast-forward creates no commit, and `HEAD` would then be someone else's commit.
+
+```bash
+git rev-parse HEAD >> "tmp/continue-pr-$PR_NUMBER-created"
+```
+
+Never record commits obtained any other way — checked out, fetched, or brought in by a merge — even if they look like yours: the remote branch can be rewritten at any time, so "not on the remote yet" does not mean "created here". A commit that was forgotten in this file is merely not trusted, and step 4a then leaves the approval to a human.
+
+After the gate succeeds, move the recorded commits that are part of this push into the ledger used by step 4a (it lives outside the repository, so it survives worktree removal), then push:
 
 ```bash
 PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
 mkdir -p "$(dirname "$PUSHED_LEDGER")"
-git rev-list "$REMOTE_HEAD..HEAD" >> "$PUSHED_LEDGER"
+touch "tmp/continue-pr-$PR_NUMBER-created"
+git rev-list "$REMOTE_HEAD..HEAD" | grep -Fxf "tmp/continue-pr-$PR_NUMBER-created" >> "$PUSHED_LEDGER"
 git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
 ```
 
