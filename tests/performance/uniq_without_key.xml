@@ -1,4 +1,9 @@
 <test>
+    <!-- Measures the parallel merge of the sets, which the radix partitioned `uniqExact` does not use. -->
+    <settings>
+        <optimize_uniq_exact_radix_partitioning>0</optimize_uniq_exact_radix_partitioning>
+    </settings>
+
     <substitutions>
         <substitution>
            <name>uniq_keys</name>

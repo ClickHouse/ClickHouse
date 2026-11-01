@@ -799,7 +799,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.comment,
             args.mode,
             args.getContext());
-    }, features, Documentation{
+    }, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

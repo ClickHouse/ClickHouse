@@ -50,6 +50,10 @@ node_corrected = cluster.add_instance(
     user_configs=[
         "configs/users.d/overrides.xml",
     ],
+    # Dirty pages are given back only by `SYSTEM JEMALLOC PURGE` on this node: a purge skips an
+    # arena that jemalloc's own decay is purging at the same moment.
+    env_variables={"MALLOC_CONF": "dirty_decay_ms:-1"},
+    instance_env_variables=True,
 )
 
 
@@ -222,7 +226,7 @@ def test_correction_follows_measurement():
 
     # Only the worker can move `MemoryTracking` without any allocation or deallocation
     # happening, and only a change of the memory the process really uses can make it do so.
-    # jemalloc keeps the pages a query freed as dirty pages for a while (`dirty_decay_ms`),
+    # jemalloc keeps the pages a query freed as dirty pages (on `node_corrected`, until a purge),
     # and `SYSTEM JEMALLOC PURGE` gives them back to the OS at once. Neither event goes
     # through the memory tracker, so with the correction disabled `MemoryTracking` cannot
     # react to either of them, while with the correction enabled it has to.
@@ -274,8 +278,7 @@ def test_correction_follows_measurement():
     # the raw counter, and the gap between the two would be the same constant in all three
     # samples. With the correction enabled, the query leaves hundreds of megabytes of dirty
     # pages behind (about 700 MiB when measured), which the measurement includes and the
-    # counter does not, and the purge takes them away again. `dirty_decay_ms` is 5 seconds,
-    # so half a second later most of the pages are still retained.
+    # counter does not, and the purge takes them away again.
     assert gap_after - gap_before > 64 * MiB
     assert gap_after - gap_purged > 64 * MiB
     assert tracking_after - tracking_purged > 64 * MiB

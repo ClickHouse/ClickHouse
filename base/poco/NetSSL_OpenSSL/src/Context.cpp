@@ -205,7 +205,7 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 	/* The probe paths are based on:
 		* https://www.happyassassin.net/posts/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
 		* Golang's crypto probing paths:
-		*   https://golang.org/search?q=certFiles   and certDirectories
+		*   https://github.com/golang/go/blob/master/src/crypto/x509/root_linux.go (certFiles) and root_unix.go (certDirectories)
 		*/
 	static const char *paths[] = {
 		"/etc/pki/tls/certs/ca-bundle.crt",
@@ -467,6 +467,18 @@ void Context::init(const Params& params)
 			SSL_CTX_set_verify(_pSSLContext, params.verificationMode, &SSLManager::verifyServerCallback);
 		else
 			SSL_CTX_set_verify(_pSSLContext, params.verificationMode, &SSLManager::verifyClientCallback);
+
+		// SSL_CTX_set_ciphersuites accepts an empty string and then selects no TLS 1.3 suite at all.
+		std::string cipherSuites = Poco::trim(params.cipherSuites);
+		if (!cipherSuites.empty())
+		{
+			ERR_clear_error();
+			if (SSL_CTX_set_ciphersuites(_pSSLContext, cipherSuites.c_str()) != 1)
+			{
+				std::string msg = Utility::getLastError();
+				throw SSLContextException(std::string("Cannot set cipher suites ") + cipherSuites, msg);
+			}
+		}
 
 		// Only ':', ' ', ';' and ',' separate items in an OpenSSL cipher list, so a newline or
 		// tab is a lexing error rather than padding.

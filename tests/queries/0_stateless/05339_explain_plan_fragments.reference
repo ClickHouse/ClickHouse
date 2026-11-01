@@ -1,0 +1,148 @@
+-- shuffle join with aggregation
+Query fragment 4 (main) · tasks=1
+GatherSend (final_result)
+  GatherReceive (exchange_3)
+
+Query fragment 3 (stage_3) · tasks=3
+GatherSend (exchange_3)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      ShuffleReceive (exchange_2)
+
+Query fragment 2 (stage_2) · tasks=3
+ShuffleSend (exchange_2)
+  Aggregating (partial)
+    Expression (Before GROUP BY)
+      JoinLogical
+        ShuffleReceive (exchange_0)
+        ShuffleReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=3
+ShuffleSend (exchange_1)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.small)
+
+Query fragment 0 (stage_0) · tasks=3
+ShuffleSend (exchange_0)
+  Expression (Calculate left join keys)
+    Expression (Change column names to column identifiers)
+      ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: hash(modulo(plus(__table1.bid, 1_UInt8), 5000_UInt16)), streaming, F0 -> F2, buckets 3 -> 3
+  exchange_1: hash(__table2.sid), streaming, F1 -> F2, buckets 3 -> 3
+  exchange_2: hash(__table2.sid), streaming, F2 -> F3, buckets 3 -> 3
+  exchange_3: gather, streaming, F3 -> F4, buckets 3 -> 1
+Levels: [F0, F1] -> [F2] -> [F3] -> [F4]
+-- broadcast join
+Query fragment 3 (main) · tasks=1
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      GatherReceive (exchange_2)
+
+Query fragment 2 (stage_2) · tasks=3
+GatherSend (exchange_2)
+  Aggregating (partial)
+    Expression (Before GROUP BY)
+      JoinLogical
+        ShuffleReceive (exchange_0)
+        BroadcastReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=1
+BroadcastSend (exchange_1)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.small)
+
+Query fragment 0 (stage_0) · tasks=1
+ShuffleSend (exchange_0)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: any, streaming, F0 -> F2, buckets 1 -> 3
+  exchange_1: broadcast, streaming, F1 -> F2, buckets 1 -> 3
+  exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
+Levels: [F0, F1] -> [F2] -> [F3]
+-- aggregation
+Query fragment 2 (main) · tasks=1
+GatherSend (final_result)
+  GatherReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=3
+GatherSend (exchange_1)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      ShuffleReceive (exchange_0)
+
+Query fragment 0 (stage_0) · tasks=3
+ShuffleSend (exchange_0)
+  Aggregating (partial)
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: hash(modulo(__table1.bid, 10_UInt8)), streaming, F0 -> F1, buckets 3 -> 3
+  exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
+Levels: [F0] -> [F1] -> [F2]
+-- order by
+Query fragment 1 (main) · tasks=1
+GatherSend (final_result)
+  Expression (Project names)
+    GatherReceive (exchange_0)
+
+Query fragment 0 (stage_0) · tasks=3
+GatherSend (exchange_0)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+      ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: gather sorted by __table1.bid DESC, streaming, F0 -> F1, buckets 3 -> 1
+Levels: [F0] -> [F1]
+-- pretty
+Query fragment 2 (main) · tasks=1
+Output: bid MOD 10, sum(bid)
+
+GatherSend (final_result)
+└──GatherReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=3
+Output: bid MOD 10, sum(bid)
+
+GatherSend (exchange_1)
+└──Expression ((Project names + Projection))
+   └──MergingAggregated (merge)
+      └──ShuffleReceive (exchange_0)
+
+Query fragment 0 (stage_0) · tasks=3
+Output: bid MOD 10, sum(bid)
+
+ShuffleSend (exchange_0)
+└──Aggregating (partial)
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      └──ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: hash(bid MOD 10), streaming, F0 -> F1, buckets 3 -> 3
+  exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
+Levels: [F0] -> [F1] -> [F2]
+-- make_distributed_plan = 0
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.big)
+-- make_distributed_plan = 0, without fragments
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.big)
+-- fallback to local execution
+Expression ((Project names + Projection))
+  TotalsHaving
+    Aggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ReadFromMergeTree (default.big)
+
+Not distributed: make_distributed_plan does not support WITH TOTALS
+-- errors

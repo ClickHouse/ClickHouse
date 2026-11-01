@@ -10,6 +10,7 @@
 #include <chrono>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 
 namespace DB
@@ -38,8 +39,8 @@ public:
 
     /// The rows which one insert is going to write, mapping the key of a row to the hash of its latest values. They are kept
     /// apart from the cache until the insert is finished, because a failed insert must not make the next inserts skip its rows.
-    /// The map holds at most as many rows as the cache, which bounds the memory of an insert. A row beyond that limit is written
-    /// even if it repeats within the insert.
+    /// The map holds at most as many rows as the cache. When a block overflows it, the keys of the block's last written rows are
+    /// forgotten and removed from the cache too, so that an older row of such a key isn't skipped when it's written again.
     using PendingRows = std::unordered_map<KeyHash, RowHash, UInt128TrivialHash>;
 
     TimeSeriesDeduplicationCache(
@@ -83,11 +84,47 @@ private:
     static constexpr size_t APPROXIMATE_ENTRY_SIZE
         = (sizeof(KeyHash) + 6 * sizeof(void *)) + (sizeof(KeyHash) + 2 * sizeof(void *)) + (sizeof(WrittenRow) + 3 * sizeof(void *));
 
-    /// Resets `filter` for the rows of `block` already written or pending, and adds the other rows passing the filter to `pending_rows`.
-    /// Returns the number of rows passing the filter.
+    /// A row of a block passing the filter, with the hash of its key and the hash of all its values.
+    struct HashedRow
+    {
+        KeyHash key_hash;
+        RowHash row_hash;
+        size_t row_in_filter;
+    };
+    using HashedRows = std::vector<HashedRow>;
+
+    /// The entries of the cache for the keys of `HashedRows`, in the same order. An entry is null if the key isn't in the cache.
+    using WrittenRows = std::vector<Cache::MappedPtr>;
+
+    /// Resets `filter` for the rows of `block` already written or pending, and adds the other rows passing the filter
+    /// to `pending_rows`, which is then trimmed to the capacity of the cache. Returns the number of rows passing the filter.
     size_t excludeWrittenRowsFromFilter(
         const Block & block, size_t key_column_index, PaddedPODArray<UInt8> & filter, PendingRows & pending_rows);
 
+    /// Calculates the hashes of the rows of `block` passing `filter`.
+    static HashedRows hashRows(const Block & block, size_t key_column_index, const PaddedPODArray<UInt8> & filter);
+
+    /// Resets `filter` for the duplicate rows and returns the number of such duplicate rows.
+    /// A row is considered a duplicate in one of the following cases:
+    /// - its key is already pending in this insert and the row is the same as the pending row;
+    /// - its key isn't pending and the row is the same as the row written by an earlier insert (the entry in `written_rows`),
+    ///   and that entry hasn't expired.
+    /// Each other row becomes the pending row.
+    size_t excludeDuplicateRowsFromFilter(
+        const HashedRows & hashed_rows,
+        const WrittenRows & written_rows,
+        PaddedPODArray<UInt8> & filter,
+        PendingRows & pending_rows) const;
+
+    /// Trims `pending_rows` to the capacity of the cache, starting from the keys of the last written rows of the block
+    /// (the rows passing `filter`). The trimmed keys are removed from the cache too, see `PendingRows`.
+    void trimPendingRows(
+        const HashedRows & hashed_rows,
+        const WrittenRows & written_rows,
+        PendingRows & pending_rows,
+        const PaddedPODArray<UInt8> & filter);
+
+    /// Whether `expiration_seconds` have passed since `written_row` was written: such an entry doesn't make a row a duplicate.
     bool isExpired(const WrittenRow & written_row, TimePoint now) const;
 
     Cache cache;
