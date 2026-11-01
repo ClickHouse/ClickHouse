@@ -118,6 +118,8 @@ public:
 
     bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
+    bool alwaysReportsETag() const override { return object_storage->alwaysReportsETag(); }
+
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE

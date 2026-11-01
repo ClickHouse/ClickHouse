@@ -782,17 +782,23 @@ bool writeMetadataFileAndVersionHint(
     /// file when the commit throws, so failing after writing it would leave the new snapshot visible
     /// to listing-based readers while readers with `iceberg_use_version_hint = 1` stay on the old
     /// one.
-    auto storage_version_hint_path = resolver.resolve(version_hint_path);
-    const auto version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
-    if (version_hint.exists && version_hint.etag.empty() && version_hint.version < metadata_file_info.version)
-        throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
+    /// A storage that reports a tag for every object can never fail this check, so it is skipped
+    /// there and the commit does not pay for an extra request.
+    VersionHintState version_hint;
+    if (!object_storage->alwaysReportsETag())
+    {
+        auto storage_version_hint_path = resolver.resolve(version_hint_path);
+        version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
+        if (version_hint.exists && version_hint.etag.empty() && version_hint.version < metadata_file_info.version)
+            throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
+    }
 
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
     /// An existing hint read above is reused, so that a commit does not pay for reading it twice.
-    /// An absent one is read again: another writer may have created it while the metadata file
-    /// was being written.
+    /// An absent one (or one that was not read) is read again: another writer may have created it
+    /// while the metadata file was being written.
     (void)tryWriteVersionHintFileImpl(
         resolver,
         metadata_file_info,
