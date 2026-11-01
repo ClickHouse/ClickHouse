@@ -39,6 +39,7 @@ static struct InitFiu
     REGULAR(executing_graph_add_node_fail) \
     REGULAR(executing_graph_build_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
+    PAUSEABLE_ONCE(replicated_queue_pause_before_loading_mutations) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
@@ -190,6 +191,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(smt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
+    PAUSEABLE_ONCE(rmt_mutations_status_pause_before_pulling_log) \
+    PAUSEABLE_ONCE(rmt_mutations_status_pause_after_queue_snapshot) \
+    PAUSEABLE_ONCE(rmt_insert_pause_before_commit) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
