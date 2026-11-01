@@ -1320,6 +1320,9 @@ Two settings control when spilling starts:
 
 When both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling.
 
+Spilling also waits until `DISTINCT` itself holds the smaller of the threshold and about 16 MiB. When other
+parts of the query hold the memory, spilling less would free little and only delay the results.
+
 `max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
 set an absolute threshold below that limit. For example, this query uses a 16 MiB spill threshold
 with a 256 MiB query memory limit:
@@ -3706,6 +3709,9 @@ Two settings control when spilling starts:
   neither limit applies.
 
 When both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling.
+
+Spilling also waits until `LIMIT BY` itself holds the smaller of the threshold and about 16 MiB. When other
+parts of the query hold the memory, spilling less would free little and only delay the results.
 
 For example, this query keeps the two largest values of each of one million keys and starts spilling
 once the query uses 16 MiB:

@@ -493,6 +493,7 @@ static struct InitFiu
     ONCE(mysql_output_format_cancel_mid_loop) \
     ONCE(postgresql_output_format_cancel_mid_loop) \
     PAUSEABLE_ONCE(external_group_limit_seen_run_prepared_pause) \
+    REGULAR(external_group_limit_skip_spill_floor) \
     ONCE(hash_join_throw_after_data_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \

@@ -34,6 +34,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
@@ -194,6 +195,9 @@ class ExternalDistinctTransformTest : public testing::Test
 protected:
     void SetUp() override
     {
+        /// These tests switch states of a few keys to external mode to exercise the spill mechanics, which the
+        /// spill floor would keep hashing.
+        FailPointInjection::enableFailPoint("external_group_limit_skip_spill_floor");
         disk = createDisk("external_distinct");
         tmp_data = std::make_shared<TemporaryDataOnDiskScope>(
             TemporaryDataOnDiskSettings{}, std::make_shared<SingleDiskVolume>("temporary", disk));
@@ -203,6 +207,7 @@ protected:
     {
         tmp_data.reset();
         destroyDisk(disk);
+        FailPointInjection::disableFailPoint("external_group_limit_skip_spill_floor");
     }
 
     /// Track query allocations independently of the thread running the test suite.

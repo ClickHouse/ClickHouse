@@ -43,9 +43,10 @@ struct GroupLimitParams
 /// the operator's profile events.
 ///
 /// The transform streams the rows of each group's window until tracked query memory exceeds its spill
-/// threshold, projected growth and spill workspace exceed the remaining threshold budget, or the memory scheduler
-/// requests a spill (see `spill`). Its filter retains typed keys, or 128-bit fingerprints of generic keys, which the
-/// spill runs compare instead of the keys.
+/// threshold, projected growth and spill workspace exceed the remaining threshold budget, or the memory
+/// scheduler requests a spill (see `spill`). The threshold triggers no spill while the filter state stays
+/// below a run's worth of bytes (see `isBelowSpillFloor`). Its filter retains typed keys, or 128-bit
+/// fingerprints of generic keys, which the spill runs compare instead of the keys.
 ///
 /// At the first spill, the filter's groups become sorted seen runs carrying the number of input rows seen per
 /// group. Extraction prepares one run at a time with a soft byte target and waits for its file to finish.
@@ -292,8 +293,15 @@ private:
     OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
     /// Drain an unconnected run on the calling thread, transferring its finalized file to the reader.
     void spillRun(PreparedRun run);
-    /// Returns the minimum run size, also used by the sort that restores input order.
+    /// Returns the minimum run size, also used by the sort that restores input order and as the spill floor.
     size_t minBytesInRun() const;
+    /// Whether a filter state of `state_bytes`, grown by `growth_bytes`, stays below the spill floor,
+    /// `minBytesInRun`. Spilling such a state frees almost nothing when other operators hold the query
+    /// memory, but holds back the results until the input ends, which also defeats an early `LIMIT`.
+    bool isBelowSpillFloor(size_t state_bytes, size_t growth_bytes) const;
+    /// Whether spilled rows carry arrival numbers, which restore the input order when they do not carry its
+    /// columns.
+    bool attachesArrivalNumbers() const { return preserve_input_order && input_order_description.empty(); }
 
     const GroupLimitParams params;
     /// Outlives the state that owns the filter and its seen-group extractor.

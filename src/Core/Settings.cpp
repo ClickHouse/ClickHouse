@@ -3916,7 +3916,8 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
     \
     DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
 Query memory threshold, in bytes, for spilling `DISTINCT` data to disk. Actual memory usage can exceed
-this threshold.
+this threshold. Spilling also waits until `DISTINCT` itself holds the smaller of the threshold and about
+16 MiB, since spilling less would free little memory.
 
 `0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
 the smaller is used. Set both settings to `0` to disable spilling.
@@ -3937,7 +3938,8 @@ use `max_bytes_before_external_distinct`, leaving room for additional memory usa
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
     DECLARE(UInt64, max_bytes_before_external_limit_by, 0, R"(
 Query memory threshold, in bytes, for spilling `LIMIT BY` data to disk. Actual memory usage can exceed
-this threshold.
+this threshold. Spilling also waits until `LIMIT BY` itself holds the smaller of the threshold and about
+16 MiB, since spilling less would free little memory.
 
 `0` disables this threshold. If `max_bytes_ratio_before_external_limit_by` also provides a threshold,
 the smaller is used. Set both settings to `0` to disable spilling.

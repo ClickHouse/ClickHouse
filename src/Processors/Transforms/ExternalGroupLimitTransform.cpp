@@ -31,6 +31,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char external_group_limit_seen_run_prepared_pause[];
+    extern const char external_group_limit_skip_spill_floor[];
 }
 
 namespace
@@ -93,6 +94,14 @@ template <typename Traits>
 size_t ExternalGroupLimitTransform<Traits>::minBytesInRun() const
 {
     return max_bytes_before_external ? std::min(max_bytes_before_external, DEFAULT_BYTES_IN_RUN) : DEFAULT_BYTES_IN_RUN;
+}
+
+template <typename Traits>
+bool ExternalGroupLimitTransform<Traits>::isBelowSpillFloor(size_t state_bytes, size_t growth_bytes) const
+{
+    fiu_do_on(FailPoints::external_group_limit_skip_spill_floor, { return false; });
+    const size_t floor = minBytesInRun();
+    return growth_bytes < floor && state_bytes < floor - growth_bytes;
 }
 
 template <typename Traits>
@@ -581,8 +590,16 @@ void ExternalGroupLimitTransform<Traits>::consumeHashing(Hashing & hashing)
     /// arena storing string keys, and other per-group state.
     /// Filtering releases its masks and packed keys before spilling; `spill_memory` already includes
     /// any pending filtered output. The budget covers the larger workspace alongside possible filter-state growth.
-    if (!max_bytes_before_external
-        || check_memory_budget(hashing.filter.estimateGrowthMemory(input_chunk), std::max(filtering_memory, spill_memory)))
+    /// A state that stays below the spill floor with this growth keeps hashing whatever the query memory.
+    auto can_hash_whole_chunk = [&]
+    {
+        if (!max_bytes_before_external)
+            return true;
+        const size_t growth = hashing.filter.estimateGrowthMemory(input_chunk);
+        return isBelowSpillFloor(hashing.filter.getTotalByteCount(), growth)
+            || check_memory_budget(growth, std::max(filtering_memory, spill_memory));
+    };
+    if (can_hash_whole_chunk())
     {
         output_chunk = hashing.filter.filter(std::move(input_chunk));
         processed_rows = input_rows;
@@ -655,7 +672,8 @@ void ExternalGroupLimitTransform<Traits>::consumeHashing(Hashing & hashing)
 
     /// Actual allocations and concurrent operators can consume more than the pre-insertion estimate.
     const Int64 query_memory_usage_after_insert = getCurrentQueryMemoryUsage();
-    if (max_bytes_before_external && query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external))
+    if (max_bytes_before_external && !isBelowSpillFloor(hashing.filter.getTotalByteCount(), 0)
+        && query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external))
     {
         LOG_TRACE(log, "Switching {} to external mode: query memory exceeded the spill threshold after insertion "
             "(query memory: {}, spill threshold: {})",

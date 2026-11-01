@@ -29,6 +29,8 @@ SETTINGS log_comment = '05342_external_limit_by_runs/blocks_wide';
 
 -- Before the final merge, the rows collected after the last run stay in memory when they fit beside the file
 -- readers. The decision follows estimates of the reader buffers, so `temporary_files_buffer_size` is pinned.
+-- The 32 MiB threshold spills only a state that grows past the spill floor of about 16 MiB, so the query
+-- counts a million keys, and the sort below stays in memory.
 SET max_block_size = 4096;
 SET prefer_external_sort_block_bytes = 1048576;
 SET temporary_files_buffer_size = 1048576;
@@ -36,11 +38,11 @@ SET temporary_files_buffer_size = 1048576;
 -- Order restoration merges the files with the retained in-memory tail.
 SELECT count(), groupArray(v) = arrayReverseSort(groupArray(v)), sum(cityHash64(k, v)) FROM
 (
-    SELECT k, v FROM (SELECT cityHash64(number) % 20000 AS k, number AS v FROM numbers(65537))
+    SELECT k, v FROM (SELECT cityHash64(number) % 1000000 AS k, number AS v FROM numbers(3000000))
     ORDER BY v DESC LIMIT 3 OFFSET 2 BY k
 )
-SETTINGS max_bytes_before_external_limit_by = 33554432,
-    log_comment = '05342_external_limit_by_runs/tail_kept_ordered';
+SETTINGS max_bytes_before_external_limit_by = 33554432, max_bytes_before_external_sort = 0,
+    max_bytes_ratio_before_external_sort = 0, log_comment = '05342_external_limit_by_runs/tail_kept_ordered';
 
 SET max_bytes_before_external_limit_by = 131072;
 
