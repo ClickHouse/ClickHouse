@@ -429,7 +429,7 @@ def test_query_argument():
     create_index_with_documents("dsl", [{"id": i} for i in range(10)])
 
     def query_argument(query_body):
-        return f"query = '{json.dumps(query_body)}'"
+        return f"query('{json.dumps(query_body)}')"
 
     def read_ids(table_function, where=""):
         return node.query(
@@ -466,7 +466,7 @@ def test_query_numeric_tokens():
         [{"key": "1.0"}] * 5 + [{"key": "1"}] * 2,
         mapping={"properties": {"key": {"type": "keyword"}}},
     )
-    term_query = "query = '" + json.dumps({"term": {"key": 1.0}}) + "'"
+    term_query = "query('" + json.dumps({"term": {"key": 1.0}}) + "')"
     table_function = elasticsearch_table_function("numeric_tokens", extra_arguments=term_query)
 
     assert node.query(f"SELECT count(), uniqExact(_id) FROM {table_function}") == "5\t5\n"

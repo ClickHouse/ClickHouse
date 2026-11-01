@@ -15,6 +15,9 @@ INSERT INTO t_exchange_codec_default SELECT concat('key ', toString(number % 100
 SET compatibility = '';
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
 SET distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_shuffle_join_bucket_count = 2;
+-- The shuffle carries the input rows, which compress well: aggregating before the shuffle would leave
+-- one small state per key to send.
+SET distributed_plan_force_shuffle_aggregation = 1;
 
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec_default GROUP BY k)
   SETTINGS network_compression_method = 'NONE', log_comment = '05407_default';

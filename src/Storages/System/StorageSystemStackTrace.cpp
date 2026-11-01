@@ -3,6 +3,7 @@
 #include <poll.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <chrono>
 #include <mutex>
 #include <unordered_map>
 #include <memory>
@@ -89,14 +90,18 @@ std::atomic<uintptr_t> expected_responding_thread = 0;
 #endif
 
 /** Notes:
-  * Only one query from the table can be processed at the moment of time.
-  * This is ensured by the mutex in StorageSystemStackTraceSource.
+  * Only one collection of stack traces can run at the moment of time.
+  * This is ensured by the mutex below, which StackTraceSource holds while it fills one block only:
+  * a single query plan can read this table more than once, on one thread.
   * We obtain information about threads by sending signal and receiving info from the signal handler.
   * Information is passed via global variables and pipe is used for signaling.
   * Actually we can send all information via pipe, but we read from it with timeout just in case,
   * so it's convenient to use it only for signaling.
   */
-std::mutex mutex;
+std::timed_mutex mutex;
+
+/// strsignal is not thread-safe and the description never changes, so it is resolved once.
+const std::string signal_description = strsignal(STACK_TRACE_SERVICE_SIGNAL); /// NOLINT(concurrency-mt-unsafe)
 
 StackTrace stack_trace{NoCapture{}};
 
@@ -423,9 +428,6 @@ public:
 #ifdef OS_LINUX
         , proc_it("/proc/self/task")
 #endif
-        /// It shouldn't be possible to do concurrent reads from this table.
-        , lock(mutex)
-        , signal_str(strsignal(STACK_TRACE_SERVICE_SIGNAL)) /// NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
@@ -442,6 +444,13 @@ public:
 protected:
     Chunk generate() override
     {
+        /// The signal protocol passes data through process-global state, so collections must not
+        /// overlap. One block at a time is enough, and one plan may read this table twice on one thread.
+        std::unique_lock lock(mutex, std::defer_lock);
+        while (!lock.try_lock_for(std::chrono::milliseconds(50)))
+            if (isCancelled())
+                return {};
+
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -468,6 +477,9 @@ protected:
 
         for (UInt64 tid : thread_ids_data)
         {
+            if (isCancelled())
+                return {};
+
             size_t res_index = 0;
 
             String thread_name;
@@ -584,7 +596,7 @@ protected:
                 }
 
                 if (signal_blocked)
-                    LOG_DEBUG(log, "Thread {} ({}) blocks SIG{} signal", tid, thread_name, signal_str);
+                    LOG_DEBUG(log, "Thread {} ({}) blocks SIG{} signal", tid, thread_name, signal_description);
                 else
                     LOG_DEBUG(log, "Cannot obtain a stack trace for thread {} ({})", tid, thread_name);
 
@@ -653,9 +665,6 @@ private:
 
     size_t signals_sent = 0;
     size_t signals_sent_ms = 0;
-
-    std::unique_lock<std::mutex> lock;
-    const char * signal_str;
 
     ColumnPtr getFilteredThreadIds()
     {
@@ -735,7 +744,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
-            "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
+            "are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());

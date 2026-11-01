@@ -215,7 +215,7 @@ bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadat
     return getTableSnapshot()->getVersion() == delta_lake_metadata.getTableSnapshot()->getVersion();
 }
 
-std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context) const
+std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context, const std::optional<DataLakeTableStateSnapshot> &) const
 {
     const auto & settings = context->getSettingsRef();
     if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;

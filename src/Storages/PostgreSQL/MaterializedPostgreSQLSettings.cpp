@@ -22,6 +22,10 @@ namespace ErrorCodes
 #define LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, materialized_postgresql_max_block_size, 65536, "Number of row collected before flushing data into table.", 0) \
     DECLARE(String, materialized_postgresql_tables_list, "", "List of tables for MaterializedPostgreSQL database engine", 0) \
+    DECLARE(String, materialized_postgresql_unmaterialized_tables_list, "", \
+        "Internal, set automatically: the published tables of a whole-schema MaterializedPostgreSQL database that were never " \
+        "materialized (for example, their initial snapshot has failed). It is persisted together with `materialized_postgresql_tables_list` " \
+        "by `ATTACH TABLE` and `DETACH TABLE PERMANENTLY`, so that `BACKUP` keeps refusing to omit these tables after a restart", 0) \
     DECLARE(String, materialized_postgresql_schema_list, "", "List of schemas for MaterializedPostgreSQL database engine", 0) \
     DECLARE(String, materialized_postgresql_replication_slot, "", "A user-created replication slot", 0) \
     DECLARE(String, materialized_postgresql_snapshot, "", "User provided snapshot in case he manages replication slots himself", 0) \

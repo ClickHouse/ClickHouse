@@ -4,7 +4,6 @@
 -- The right side is made much larger so that the (incorrectly) swapped
 -- variant would win on cost via a cheaper broadcast build.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

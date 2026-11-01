@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
+    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int BAD_ARGUMENTS;
@@ -492,6 +493,83 @@ Poco::URI SettingFieldURI::parseURI(const String & str)
     }
 }
 
+
+static bool isTriBoolKeyword(const Field & f, std::string_view keyword)
+{
+    return f.getType() == Field::Types::String && f.safeGet<String>() == keyword;
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::SettingFieldTriBool(const Field & f) : is_keyword(isTriBoolKeyword(f, keyword))
+{
+    if (!is_keyword)
+        base = SettingFieldBool(f);
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword> & SettingFieldTriBool<Keyword>::operator=(const Field & f)
+{
+    changed = true;
+    is_keyword = isTriBoolKeyword(f, keyword);
+    if (!is_keyword)
+        base = f;
+    return *this;
+}
+
+template <typename Keyword>
+SettingFieldTriBool<Keyword>::operator Field() const
+{
+    return is_keyword ? Field(String(keyword)) : Field(base);
+}
+
+template <typename Keyword>
+String SettingFieldTriBool<Keyword>::toString() const
+{
+    return is_keyword ? String(keyword) : base.toString();
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::parseFromString(const String & str)
+{
+    changed = true;
+    is_keyword = (str == keyword);
+    if (!is_keyword)
+        base.parseFromString(str);
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::writeBinary(WriteBuffer & out) const
+{
+    if (is_keyword)
+        writeStringBinary(keyword, out);
+    else
+        base.writeBinary(out);
+}
+
+template <typename Keyword>
+void SettingFieldTriBool<Keyword>::readBinary(ReadBuffer & in)
+{
+    changed = true;
+
+    /// A Bool is a varint 0/1 (see `SettingFieldNumber`); the keyword string starts with its length, which is longer.
+    UInt64 x = 0;
+    readVarUInt(x, in);
+    is_keyword = x > 1;
+    if (!is_keyword)
+    {
+        base = SettingFieldBool(x != 0);
+        return;
+    }
+
+    if (x != keyword.size())
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value of a setting", keyword);
+    String str(x, '\0');
+    in.readStrict(str.data(), x);
+    if (str != keyword)
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse a bool or '{}' from the binary value '{}' of a setting", keyword, str);
+}
+
+template struct SettingFieldTriBool<SettingFieldKeywordForce>;
 
 void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & out)
 {
