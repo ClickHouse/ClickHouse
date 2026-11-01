@@ -23,7 +23,7 @@ def spark_catalog_config():
 
 
 def _options(rng, gates):
-    primary_key = rng.random() < 0.6
+    primary_key = rng.random() < 0.6 and not gates.active("paimon_primary_key_tables")
     return {
         "primary_key": primary_key,
         "bucket": rng.choice([1, 2, 4]) if primary_key else -1,
@@ -92,6 +92,15 @@ class SparkPaimonWriter(Writer):
         if gates.active("paimon_row_type"):
             caps = dataclasses.replace(
                 caps, nested_kinds=tuple(k for k in caps.nested_kinds if k != "struct")
+            )
+        if gates.active("paimon_columns_by_name"):
+            caps = dataclasses.replace(
+                caps,
+                op_weights={
+                    k: v
+                    for k, v in caps.op_weights.items()
+                    if k not in ("rename_column", "drop_column")
+                },
             )
         return caps
 

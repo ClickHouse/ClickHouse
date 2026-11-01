@@ -26,6 +26,16 @@ KNOWN_ISSUES = [
         "Hudi Merge-on-Read log files are ignored; the Hudi writer creates Copy-on-Write tables only.",
     ),
     KnownIssue(
+        "paimon_primary_key_tables",
+        "https://github.com/ClickHouse/ClickHouse/issues/128549",
+        "Paimon primary-key tables are refused with `NOT_IMPLEMENTED` because merge-on-read is not implemented (https://github.com/ClickHouse/ClickHouse/pull/113460); the Paimon writer creates append-only tables.",
+    ),
+    KnownIssue(
+        "paimon_columns_by_name",
+        "https://github.com/ClickHouse/ClickHouse/issues/128541",
+        "Paimon columns are resolved by name instead of field id; since https://github.com/ClickHouse/ClickHouse/pull/127816 a data file written before a rename or a drop and re-add is refused with `NOT_IMPLEMENTED`; the Paimon writer does not rename or drop columns.",
+    ),
+    KnownIssue(
         "paimon_date_before_epoch",
         "https://github.com/ClickHouse/ClickHouse/issues/128306",
         "Paimon `DATE` is read as `Date` instead of `Date32`, so a date before 1970-01-01 fails with `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`; the Paimon writer does not use `DATE`.",
@@ -39,6 +49,11 @@ KNOWN_ISSUES = [
         "paimon_row_type",
         "https://github.com/ClickHouse/ClickHouse/issues/128307",
         "A Paimon `ROW` (struct) column makes the table unreadable (`Unsupported Paimon type: ROW`, `Paimon/Types.h`); the Paimon writer does not use structs.",
+    ),
+    KnownIssue(
+        "clickhouse_iceberg_compaction_after_schema_change",
+        "https://github.com/ClickHouse/ClickHouse/issues/120833",
+        "ClickHouse Iceberg compaction (`OPTIMIZE`) after a `DELETE` on a schema-evolved table rewrites the metadata under schema-id 0, which then fails with `ICEBERG_SPECIFICATION_VIOLATION`; the ClickHouse Iceberg writer does not compact.",
     ),
     KnownIssue(
         "clickhouse_iceberg_timestamp_ntz",

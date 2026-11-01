@@ -127,7 +127,13 @@ class ClickHouseIcebergWriter(Writer):
     def adjust_caps(caps, gates):
         import dataclasses
 
-        return dataclasses.replace(caps, primitive_kinds=_iceberg_kinds(gates))
+        caps = dataclasses.replace(caps, primitive_kinds=_iceberg_kinds(gates))
+        if gates.active("clickhouse_iceberg_compaction_after_schema_change"):
+            caps = dataclasses.replace(
+                caps,
+                op_weights={k: v for k, v in caps.op_weights.items() if k != "compact"},
+            )
+        return caps
 
     @property
     def ch_table(self):
