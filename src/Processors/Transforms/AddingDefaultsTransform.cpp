@@ -157,7 +157,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         return;
 
     const auto * block_missing_values = input_format.getMissingValues();
-    if (!block_missing_values)
+    /// `BlockMissingValues::empty` is also true when the mask holds no columns at all, where the lookups below would be out of range.
+    if (!block_missing_values || block_missing_values->empty())
         return;
 
     const auto & header = getOutputPort().getHeader();
