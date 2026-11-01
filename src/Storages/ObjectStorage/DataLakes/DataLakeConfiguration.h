@@ -408,6 +408,10 @@ public:
     {
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
+    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
+    }
 
     void drop(ContextPtr local_context) override
     {
@@ -515,6 +519,12 @@ public:
     bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
     {
         return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
+    }
+
+    std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override
+    {
+        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, context);
     }
 
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new

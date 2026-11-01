@@ -9,6 +9,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -31,6 +32,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_statistics;
+extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -38,6 +40,9 @@ namespace QueryPlanOptimizations
 
 namespace
 {
+
+/// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
+constexpr Float64 array_join_rows_multiplier = 100;
 
 String dumpStatsForLogs(const RelationStats & stats)
 {
@@ -276,8 +281,38 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .source = RowEstimateSource::PrimaryIndex};
     }
 
-    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
-        return RelationStats{};
+    if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
+    {
+        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
+            return RelationStats{};
+
+        auto estimate = reading->estimateReadFromDataLakeMetadata();
+        if (!estimate)
+            return RelationStats{};
+
+        String table_display_name = reading->getStorageID().getTableName();
+        RelationStats unknown{
+            .estimated_rows = {},
+            .table_name = table_display_name,
+            .imprecise_estimate = true,
+            .source = RowEstimateSource::DataLakeMetadata};
+        if (!estimate->rows)
+            return unknown;
+
+        /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
+        const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
+
+        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
+        if (has_filter && !estimate->pruned_data_files && *estimate->rows != 0)
+            return unknown;
+
+        const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
+        return RelationStats{
+            .estimated_rows = estimate->rows,
+            .table_name = table_display_name,
+            .imprecise_estimate = !exact,
+            .source = RowEstimateSource::DataLakeMetadata};
+    }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
@@ -332,8 +367,32 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
-        expression_step && !expression_step->getExpression().hasArrayJoin())
+    const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
+    const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(step);
+    if (array_join_step || (expression_step && expression_step->getExpression().hasArrayJoin()))
+    {
+        /// A filter above the array join can read its output, which the statistics of the input do not describe.
+        auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
+        if (stats.estimated_rows && *stats.estimated_rows != 0)
+        {
+            /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.
+            if (filter || (array_join_step && array_join_step->hasElementFilter()))
+            {
+                stats.estimated_rows.reset();
+                stats.imprecise_estimate = true;
+            }
+            else
+                stats.estimated_rows = toUInt64Saturating(Float64(*stats.estimated_rows) * array_join_rows_multiplier);
+        }
+        if (expression_step)
+            remapColumnStats(stats.column_stats, expression_step->getExpression());
+        else
+            for (const auto & column : array_join_step->getColumns())
+                stats.column_stats.erase(column);
+        return stats;
+    }
+
+    if (expression_step)
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         remapColumnStats(stats.column_stats, expression_step->getExpression());

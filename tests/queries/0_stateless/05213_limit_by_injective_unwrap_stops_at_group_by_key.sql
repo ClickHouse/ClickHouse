@@ -6,7 +6,6 @@ DROP TABLE IF EXISTS t_limit_by_injective;
 CREATE TABLE t_limit_by_injective (c0 Int32, c1 Int32) ENGINE = Memory;
 INSERT INTO t_limit_by_injective VALUES (1, 10), (1, 20), (2, 30);
 
-SET enable_analyzer = 1;
 SET optimize_injective_functions_in_limit_by = 1;
 
 -- The `GROUP BY` key stays `c0 + 1` when its own injective unwrapping is disabled.

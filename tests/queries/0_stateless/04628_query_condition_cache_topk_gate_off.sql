@@ -19,7 +19,6 @@
 -- and from the write side via `count()` on `system.query_condition_cache` after running only
 -- TopK queries on a cleared cache.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- Turn the gate off: this test covers the contract of the query condition cache being
 -- switched off for TopK reads.

@@ -12,8 +12,6 @@
 -- the old analyzer clone each alias into every nested subquery, which for an alias containing `EXPLAIN`
 -- expands exponentially.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_unknown_atoms;
 DROP TABLE IF EXISTS t_unknown_dim;
 DROP TABLE IF EXISTS t_unknown_estimates;

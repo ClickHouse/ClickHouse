@@ -1,6 +1,7 @@
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Selectors.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/sliceHasConstArrayLookup.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashSet.h>
 #include <base/memcmpSmall.h>
@@ -145,6 +146,10 @@ struct ArrayHasAnySelectArraySourcePair : public ArraySourcePairSelector<ArrayHa
                                  UInt8 * result, size_t size)
     {
         using SourceType = typename std::decay_t<Source>;
+
+        if (ConstArrayLookup::tryExecute<ArraySearchType::Any>(
+                first, is_first_const, is_first_nullable, second, is_second_const, is_second_nullable, result, size))
+            return;
 
         if (is_first_nullable)
         {
