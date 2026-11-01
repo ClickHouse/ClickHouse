@@ -11,9 +11,11 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -36,7 +38,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -462,8 +468,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API (/api/v1/query, query_range, series, labels,
+/// label/<name>/values, metadata) and the always-empty rules, alerts and query_exemplars endpoints.
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -478,12 +484,17 @@ public:
         LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
+        empty_result = getEmptyResult(Poco::URI(request.getURI()).getPath());
     }
 
     bool isSettingLikeParameter(const String & name) override
     {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
         if (name.empty())
+            return false;
+
+        /// The endpoints with an empty result run no query, so their parameters are not settings.
+        if (empty_result)
             return false;
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
@@ -518,8 +529,9 @@ public:
         response.setContentType("application/json");
 
         /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
+        /// A request answered with a fixed empty result doesn't need the table.
         StoragePtr table;
-        if (!Poco::URI(uri).getPath().ends_with("/format_query"))
+        if (!empty_result && !Poco::URI(uri).getPath().ends_with("/format_query"))
             table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
 
         try
@@ -535,6 +547,19 @@ public:
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
                 formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
+            if (empty_result)
+            {
+                /// Like Prometheus, query_exemplars answers 204 No Content to an expression without a selector.
+                if (!validateEmptyResultRequest(uri_path))
+                {
+                    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+                    response.setChunkedTransferEncoding(false);
+                    return;
+                }
+                writeString(*empty_result, getOutputStream(response));
                 return;
             }
 
@@ -667,6 +692,188 @@ public:
     }
 
 private:
+    /// ClickHouse has no rules, alerts or exemplars, so these endpoints always return an empty result.
+    static std::optional<std::string_view> getEmptyResult(std::string_view uri_path)
+    {
+        if (uri_path.ends_with("/rules"))
+            return R"({"status":"success","data":{"groups":[]}})";
+        if (uri_path.ends_with("/alerts"))
+            return R"({"status":"success","data":{"alerts":[]}})";
+        if (uri_path.ends_with("/query_exemplars"))
+            return R"({"status":"success","data":[]})";
+        return std::nullopt;
+    }
+
+    std::optional<std::string_view> empty_result;
+
+    /// Checks a query_exemplars expression like the Prometheus parser does. Returns false if it has no selector.
+    static bool validateExemplarsQuery(const String & query_text)
+    {
+        using ResultType = PrometheusQueryResultType;
+        /// Prometheus functions that can't be converted to SQL yet, with their argument types.
+        static const std::unordered_map<std::string_view, std::vector<ResultType>> unsupported_functions = {
+            {"sort", {ResultType::INSTANT_VECTOR}},
+            {"sort_desc", {ResultType::INSTANT_VECTOR}},
+            {"histogram_count", {ResultType::INSTANT_VECTOR}},
+            {"histogram_sum", {ResultType::INSTANT_VECTOR}},
+            {"histogram_avg", {ResultType::INSTANT_VECTOR}},
+            {"histogram_stddev", {ResultType::INSTANT_VECTOR}},
+            {"histogram_stdvar", {ResultType::INSTANT_VECTOR}},
+            {"histogram_fraction", {ResultType::SCALAR, ResultType::SCALAR, ResultType::INSTANT_VECTOR}},
+        };
+
+        PrometheusQueryTree query{query_text};
+        std::vector<std::unique_ptr<PrometheusQueryTree::Node>> nodes;
+        const auto * root = query.getRoot()->clone(nodes);
+        std::vector<std::unique_ptr<PrometheusQueryTree::Node>> constants;
+        bool has_selector = false;
+        /// `clone` puts every node after its children, so the arguments of a node are rewritten before the node itself.
+        for (auto & node : nodes)
+        {
+            has_selector |= (node->node_type == PrometheusQueryTree::NodeType::InstantSelector);
+            replaceParametersWithConstants(*node, constants, query.getTimeScale());
+            if (node->node_type != PrometheusQueryTree::NodeType::Function)
+                continue;
+            auto & function = typeid_cast<PrometheusQueryTree::Function &>(*node);
+            auto it = unsupported_functions.find(function.function_name);
+            if (it == unsupported_functions.end())
+                continue;
+
+            const auto & argument_types = it->second;
+            if (function.children.size() != argument_types.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' expects {} arguments, but was called with {} arguments",
+                                function.function_name, argument_types.size(), function.children.size());
+            for (size_t i = 0; i != argument_types.size(); ++i)
+            {
+                const auto * argument = function.children[i];
+                if (argument->result_type != argument_types[i])
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' expects an argument of type {}, but expression {} has type {}",
+                                    function.function_name, argument_types[i], argument->toString(query), argument->result_type);
+            }
+
+            /// Call a convertible function with the same argument types, so the conversion still checks the arguments.
+            if (function.function_name == "histogram_fraction")
+            {
+                function.function_name = "clamp";
+                function.children = {function.children[2], function.children[0], function.children[1]};
+            }
+            else
+            {
+                function.function_name = "abs";
+            }
+        }
+
+        checkConversionToSQL(*root, query.getTimeScale());
+        return has_selector;
+    }
+
+    /// The parser doesn't check the argument types and counts of functions, the conversion to SQL does.
+    /// The SQL is never run, so it may name a table that doesn't exist.
+    static void checkConversionToSQL(const PrometheusQueryTree::Node & root, UInt32 time_scale)
+    {
+        std::vector<std::unique_ptr<PrometheusQueryTree::Node>> nodes;
+        const auto * new_root = root.clone(nodes);
+        PrometheusQueryEvaluationSettings evaluation_settings;
+        evaluation_settings.time_series_storage_id = StorageID{"default", "query_exemplars"};
+        evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
+        evaluation_settings.use_current_time = true;
+        auto checked_query = std::make_shared<PrometheusQueryTree>(std::move(nodes), new_root, time_scale);
+        PrometheusQueryToSQL::Converter{checked_query, evaluation_settings}.getSQL();
+    }
+
+    /// Prometheus checks the values of parameters and label names only when it evaluates a query, the SQL conversion checks them.
+    /// So such an argument is replaced with a constant of the same type, after a non-literal one is checked on its own.
+    static void replaceParametersWithConstants(
+        PrometheusQueryTree::Node & node, std::vector<std::unique_ptr<PrometheusQueryTree::Node>> & constants, UInt32 time_scale)
+    {
+        bool has_scalar_parameter = false;
+        size_t first_label_name = node.children.size();
+        if (node.node_type == PrometheusQueryTree::NodeType::Function)
+        {
+            const auto & function_name = typeid_cast<const PrometheusQueryTree::Function &>(node).function_name;
+            has_scalar_parameter = (function_name == "histogram_quantile") || (function_name == "quantile_over_time");
+            if ((function_name == "label_replace") || (function_name == "label_join"))
+                first_label_name = 1;
+        }
+        else if ((node.node_type == PrometheusQueryTree::NodeType::AggregationOperator) && (node.children.size() == 2))
+        {
+            /// The parameter of `quantile`, `topk`, `bottomk`, `limitk` and `count_values` is the first of two arguments.
+            if (typeid_cast<const PrometheusQueryTree::AggregationOperator &>(node).operator_name == "count_values")
+                first_label_name = 0;
+            else
+                has_scalar_parameter = true;
+        }
+
+        if (has_scalar_parameter && !node.children.empty() && (node.children[0]->result_type == PrometheusQueryResultType::SCALAR))
+        {
+            auto & parameter = node.children[0];
+            if (parameter->node_type != PrometheusQueryTree::NodeType::Scalar)
+                checkConversionToSQL(*parameter, time_scale);
+            auto constant = std::make_unique<PrometheusQueryTree::Scalar>();
+            constant->parent = &node;
+            parameter = constants.emplace_back(std::move(constant)).get();
+        }
+
+        for (size_t i = first_label_name; i < node.children.size(); ++i)
+        {
+            if (node.children[i]->node_type != PrometheusQueryTree::NodeType::StringLiteral)
+                continue;
+            auto constant = std::make_unique<PrometheusQueryTree::StringLiteral>();
+            constant->string = "x";
+            constant->parent = &node;
+            node.children[i] = constants.emplace_back(std::move(constant)).get();
+        }
+    }
+
+    /// Rejects the malformed requests that Prometheus also rejects on the endpoints with an empty result.
+    /// Returns false for a query_exemplars expression without a selector, which has no result at all.
+    bool validateEmptyResultRequest(std::string_view uri_path) const
+    {
+        if (uri_path.ends_with("/query_exemplars"))
+        {
+            String start = params->get("start", "");
+            String end = params->get("end", "");
+            Int64 start_time = start.empty() ? std::numeric_limits<Int64>::min() : parseTimeSeriesTimestamp(start, 3).value;
+            Int64 end_time = end.empty() ? std::numeric_limits<Int64>::max() : parseTimeSeriesTimestamp(end, 3).value;
+            if (end_time < start_time)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'end' timestamp must not be before the 'start' timestamp");
+
+            return validateExemplarsQuery(params->get("query", ""));
+        }
+        else if (uri_path.ends_with("/rules"))
+        {
+            String type = Poco::toLower(params->get("type", ""));
+            if (!type.empty() && type != "alert" && type != "record")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'type' parameter: '{}', expected 'alert' or 'record'", type);
+
+            static const NameSet bool_values{"", "1", "t", "true", "0", "f", "false"};
+            String exclude_alerts = params->get("exclude_alerts", "");
+            if (!bool_values.contains(Poco::toLower(exclude_alerts)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'exclude_alerts' parameter: '{}', expected a boolean", exclude_alerts);
+
+            for (const auto & match : params->getAll("match[]"))
+            {
+                PrometheusQueryTree selector;
+                selector.parse(match);
+                const auto * root = selector.getRoot();
+                if (!root || (root->node_type != PrometheusQueryTree::NodeType::InstantSelector))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter is not an instant selector", quoteString(match));
+            }
+
+            String group_limit = params->get("group_limit", "");
+            String group_next_token = params->get("group_next_token", "");
+            Int64 parsed_group_limit = 0;
+            if (!group_limit.empty() && (!tryParse(parsed_group_limit, group_limit.data(), group_limit.size()) || parsed_group_limit <= 0))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value of the 'group_limit' parameter: '{}', expected a positive integer", group_limit);
+
+            /// There are no rule groups, so no token is valid.
+            if (!group_next_token.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'group_next_token' parameter: '{}'", group_next_token);
+        }
+        return true;
+    }
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
@@ -775,8 +982,8 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
-        /// are served by the Query implementation, which itself returns 404 for unknown paths.
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, rules, alerts,
+        /// query_exemplars) are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
 
