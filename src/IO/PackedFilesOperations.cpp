@@ -74,6 +74,29 @@ static void assertOutputNotInsideInput(
             "Output path {} is the same as or nested under the input path {} on the same backing store; "
             "the recursive operation would descend into its own generated output",
             output_dir, input_dir);
+
+    if (disk_in->isRemote() || disk_out->isRemote())
+        return;
+
+    /// The lexical check above misses aliases of the same directory: a symlink, or on Windows a path that
+    /// differs only in case, because directories there are normally case-insensitive (but can be configured
+    /// as case-sensitive, so lowercasing the strings would be wrong). Compare the identity of the
+    /// directories instead: the output is inside the input iff the input is the output itself or one of its
+    /// ancestors. The output may not exist yet, so only its existing ancestors are compared.
+    std::error_code ec;
+    if (!fs::is_directory(in, ec))
+        return;
+    for (fs::path ancestor = out; !ancestor.empty(); ancestor = ancestor.parent_path())
+    {
+        if (fs::equivalent(ancestor, in, ec))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Output path {} is the same as or nested under the input path {} on the same backing store; "
+                "the recursive operation would descend into its own generated output",
+                output_dir, input_dir);
+        if (ancestor == ancestor.parent_path())
+            break;
+    }
 }
 
 ArchiveListing listPacked(const DiskPtr & disk_in, const String & input_file)
