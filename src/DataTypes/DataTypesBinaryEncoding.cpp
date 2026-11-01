@@ -66,10 +66,15 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
+/// Every version extends the previous one, and the writer uses the lowest version that can represent the type,
+/// so a type without the new arguments keeps the encoding of an older version.
 /// Version 1 adds a flags byte after each typed path name. It is written only for types with SHARED paths.
+/// Version 2 adds the list of SHARED REGEXP rules after the path regexps to skip, keeping the flags bytes of version 1.
+/// It is written only for types with SHARED REGEXP rules.
 const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
 const UInt8 TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS = 1;
-/// Flags of a typed path in version 1. Other bits are reserved.
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION_WITH_SHARED_DATA_PATH_REGEXPS = 2;
+/// Flags of a typed path since version 1. Other bits are reserved.
 const UInt8 TYPED_PATH_FLAG_SHARED = 0x1;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
@@ -523,8 +528,13 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
                 break;
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            const auto & shared_data_path_regexps = object_type.getSharedDataPathRegexps();
             /// Write version of the serialization because we can add new arguments in the JSON type.
-            UInt8 serialization_version = object_type.hasSharedTypedPaths() ? TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS : TYPE_JSON_SERIALIZATION_VERSION;
+            UInt8 serialization_version = TYPE_JSON_SERIALIZATION_VERSION;
+            if (!shared_data_path_regexps.empty())
+                serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_SHARED_DATA_PATH_REGEXPS;
+            else if (object_type.hasSharedTypedPaths())
+                serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS;
             writeBinary(serialization_version, buf);
             writeVarUInt(object_type.getMaxDynamicPaths(), buf);
             writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
@@ -545,6 +555,12 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(path_regexps_to_skip.size(), buf);
             for (const auto & regexp : path_regexps_to_skip)
                 writeStringBinary(regexp, buf);
+            if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_SHARED_DATA_PATH_REGEXPS)
+            {
+                writeVarUInt(shared_data_path_regexps.size(), buf);
+                for (const auto & regexp : shared_data_path_regexps)
+                    writeStringBinary(regexp, buf);
+            }
             break;
         }
         default:
@@ -818,7 +834,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         {
             UInt8 serialization_version = 0;
             readBinary(serialization_version, buf);
-            if (serialization_version > TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS)
+            if (serialization_version > TYPE_JSON_SERIALIZATION_VERSION_WITH_SHARED_DATA_PATH_REGEXPS)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected version of JSON type binary encoding");
             size_t max_dynamic_paths = 0;
             readVarUInt(max_dynamic_paths, buf);
@@ -879,6 +895,24 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 readStringBinary(regexp, buf);
                 path_regexps_to_skip.push_back(regexp);
             }
+
+            std::vector<String> shared_data_path_regexps;
+            if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_SHARED_DATA_PATH_REGEXPS)
+            {
+                size_t shared_data_path_regexps_size = 0;
+                readVarUInt(shared_data_path_regexps_size, buf);
+                if (shared_data_path_regexps_size > MAX_ARRAY_SIZE)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Too many shared data path regexps during JSON type decoding: {}. Maximum: {}", shared_data_path_regexps_size, MAX_ARRAY_SIZE);
+
+                shared_data_path_regexps.reserve(shared_data_path_regexps_size);
+                for (size_t i = 0; i != shared_data_path_regexps_size; ++i)
+                {
+                    String regexp;
+                    readStringBinary(regexp, buf);
+                    shared_data_path_regexps.push_back(regexp);
+                }
+            }
+
             return std::make_shared<DataTypeObject>(
                 DataTypeObject::SchemaFormat::JSON,
                 typed_paths,
@@ -886,7 +920,8 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 path_regexps_to_skip,
                 max_dynamic_paths,
                 max_dynamic_types,
-                shared_typed_paths);
+                shared_typed_paths,
+                shared_data_path_regexps);
         }
     }
 

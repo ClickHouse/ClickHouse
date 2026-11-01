@@ -6,6 +6,10 @@
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+namespace re2
+{
+class RE2;
+}
 
 namespace DB
 {
@@ -43,7 +47,8 @@ public:
         std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
-        std::unordered_set<String> shared_typed_paths_ = {});
+        std::unordered_set<String> shared_typed_paths_ = {},
+        std::vector<String> shared_data_path_regexps_ = {});
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
@@ -69,6 +74,8 @@ public:
     bool equals(const IDataType & rhs) const override;
     /// Equal except for the set of SHARED typed paths. Such types have identical columns.
     bool equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) const;
+    /// Equal except for the SHARED REGEXP rules, which change only where new dynamic paths are placed.
+    bool equalsExceptSharedDataPathRegexps(const IDataType & rhs) const;
 
     void updateHashImpl(SipHash & hash) const override;
 
@@ -99,6 +106,8 @@ public:
     UnorderedMapWithMemoryTracking<String, SerializationPtr> getTypedPathSerializations() const;
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
+    const std::vector<String> & getSharedDataPathRegexps() const { return shared_data_path_regexps; }
+    const std::shared_ptr<const re2::RE2> & getSharedDataPathMatcher() const { return shared_data_path_matcher; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
@@ -119,6 +128,9 @@ public:
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 
+    /// Equal except for both path placement rules: the SHARED marks of typed paths and the SHARED REGEXP rules.
+    bool equalsExceptPathPlacement(const DataTypeObject & rhs) const;
+
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
@@ -136,11 +148,18 @@ private:
     std::unordered_set<String> paths_to_skip;
     /// List of regular expressions that should be used to skip paths during data parsing.
     std::vector<String> path_regexps_to_skip;
+    /// List of regular expressions for paths that are always stored in shared data.
+    std::vector<String> shared_data_path_regexps;
+    /// All shared data path regexps combined into one, nullptr if there are none.
+    std::shared_ptr<const re2::RE2> shared_data_path_matcher;
     /// Limit on the number of paths that can be stored as subcolumn.
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
 };
 
+
+/// Returns true if JSON types (possibly inside Array or Nullable) differ only in SHARED REGEXP.
+bool isJSONSharedDataPathRegexpsOnlyChange(const IDataType & from, const IDataType & to);
 
 }

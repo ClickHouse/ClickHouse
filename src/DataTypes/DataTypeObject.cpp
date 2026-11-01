@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -77,12 +78,14 @@ DataTypeObject::DataTypeObject(
     std::vector<String> path_regexps_to_skip_,
     size_t max_dynamic_paths_,
     size_t max_dynamic_types_,
-    std::unordered_set<String> shared_typed_paths_)
+    std::unordered_set<String> shared_typed_paths_,
+    std::vector<String> shared_data_path_regexps_)
     : schema_format(schema_format_)
     , typed_paths(std::move(typed_paths_))
     , shared_typed_paths(std::move(shared_typed_paths_))
     , paths_to_skip(std::move(paths_to_skip_))
     , path_regexps_to_skip(std::move(path_regexps_to_skip_))
+    , shared_data_path_regexps(std::move(shared_data_path_regexps_))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
@@ -98,6 +101,27 @@ DataTypeObject::DataTypeObject(
         if (!regexp->ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp->error());
         compiled_regexps_to_skip.push_back(std::move(regexp));
+    }
+
+    if (!shared_data_path_regexps.empty())
+    {
+        re2::RE2::Options options;
+        options.set_log_errors(false);
+        String combined_regexp;
+        for (const auto & regexp_str : shared_data_path_regexps)
+        {
+            auto regexp = re2::RE2(regexp_str, options);
+            if (!regexp.ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp.error());
+            if (!combined_regexp.empty())
+                combined_regexp += "|";
+            combined_regexp += "(?:" + regexp_str + ")";
+        }
+
+        auto matcher = std::make_shared<const re2::RE2>(combined_regexp, options);
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid combined SHARED REGEXP '{}': {}", combined_regexp, matcher->error());
+        shared_data_path_matcher = std::move(matcher);
     }
 
     for (const auto & [typed_path, type] : typed_paths)
@@ -174,7 +198,23 @@ bool DataTypeObject::isDefaultInsertTrivial() const
 bool DataTypeObject::equals(const IDataType & rhs) const
 {
     if (const auto * object = typeid_cast<const DataTypeObject *>(&rhs))
-        return equalsIgnoringSharedTypedPaths(*object) && shared_typed_paths == object->shared_typed_paths;
+        return equalsExceptPathPlacement(*object) && shared_typed_paths == object->shared_typed_paths
+            && shared_data_path_regexps == object->shared_data_path_regexps;
+
+    return false;
+}
+
+bool DataTypeObject::equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) const
+{
+    /// The SHARED REGEXP rules are compared: the column of the type carries their matcher.
+    return equalsExceptPathPlacement(rhs) && shared_data_path_regexps == rhs.shared_data_path_regexps;
+}
+
+bool DataTypeObject::equalsExceptSharedDataPathRegexps(const IDataType & rhs) const
+{
+    /// The SHARED marks of typed paths are compared: they change the layout of the stored data.
+    if (const auto * object = typeid_cast<const DataTypeObject *>(&rhs))
+        return equalsExceptPathPlacement(*object) && shared_typed_paths == object->shared_typed_paths;
 
     return false;
 }
@@ -191,7 +231,7 @@ void DataTypeObject::forEachKnownDynamicSubcolumnName(const SubcolumnNameCallbac
     }
 }
 
-bool DataTypeObject::equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) const
+bool DataTypeObject::equalsExceptPathPlacement(const DataTypeObject & rhs) const
 {
     if (typed_paths.size() != rhs.typed_paths.size())
         return false;
@@ -328,6 +368,12 @@ String DataTypeObject::doGetName() const
         out << "SKIP REGEXP " << quoteString(skip_regexp);
     }
 
+    for (const auto & shared_regexp : shared_data_path_regexps)
+    {
+        write_separator();
+        out << "SHARED REGEXP " << quoteString(shared_regexp);
+    }
+
     if (!first)
         out << ")";
 
@@ -341,7 +387,7 @@ MutableColumnPtr DataTypeObject::createColumn() const
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
 
-    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types, shared_data_path_matcher);
 }
 
 DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) const
@@ -352,7 +398,8 @@ DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) 
         new_typed_paths.emplace(sorted_typed_paths[i].first, new_children[i]);
 
     return std::make_shared<DataTypeObject>(
-        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_paths);
+        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_paths,
+        shared_data_path_regexps);
 }
 
 namespace
@@ -937,6 +984,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     std::unordered_set<String> shared_typed_paths;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> path_regexps_to_skip;
+    std::vector<String> shared_data_path_regexps;
 
     size_t max_dynamic_types = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
     size_t max_dynamic_paths = DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
@@ -1009,10 +1057,27 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
             path_regexps_to_skip.push_back(literal->value.safeGet<String>());
         }
+        else if (object_type_argument->shared_path_regexp)
+        {
+            const auto * literal = object_type_argument->shared_path_regexp->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SHARED REGEXP section of {} type arguments: {}. Expected string literal with path regexp", magic_enum::enum_name(schema_format), object_type_argument->shared_path_regexp->formatForErrorMessage());
+
+            shared_data_path_regexps.push_back(literal->value.safeGet<String>());
+        }
     }
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types, std::move(shared_typed_paths));
+    std::sort(shared_data_path_regexps.begin(), shared_data_path_regexps.end());
+    return std::make_shared<DataTypeObject>(
+        schema_format,
+        std::move(typed_paths),
+        std::move(paths_to_skip),
+        std::move(path_regexps_to_skip),
+        max_dynamic_paths,
+        max_dynamic_types,
+        std::move(shared_typed_paths),
+        std::move(shared_data_path_regexps));
 }
 
 const DataTypePtr & DataTypeObject::getTypeOfSharedData()
@@ -1051,6 +1116,14 @@ void DataTypeObject::updateHashImpl(SipHash & hash) const
     hash.update(path_regexps_to_skip.size());
     for (const auto & regexp : path_regexps_to_skip)
         hash.update(regexp);
+
+    /// Keep the hash of types without SHARED REGEXP unchanged.
+    if (!shared_data_path_regexps.empty())
+    {
+        hash.update(shared_data_path_regexps.size());
+        for (const auto & regexp : shared_data_path_regexps)
+            hash.update(regexp);
+    }
 }
 
 DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
@@ -1106,6 +1179,26 @@ UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getType
     return result;
 }
 
+bool isJSONSharedDataPathRegexpsOnlyChange(const IDataType & from, const IDataType & to)
+{
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(&from))
+    {
+        const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+        return to_array && isJSONSharedDataPathRegexpsOnlyChange(*from_array->getNestedType(), *to_array->getNestedType());
+    }
+
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from))
+    {
+        const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to);
+        return to_nullable && isJSONSharedDataPathRegexpsOnlyChange(*from_nullable->getNestedType(), *to_nullable->getNestedType());
+    }
+
+    const auto * from_object = typeid_cast<const DataTypeObject *>(&from);
+    const auto * to_object = typeid_cast<const DataTypeObject *>(&to);
+    return from_object && to_object && from_object->getSharedDataPathRegexps() != to_object->getSharedDataPathRegexps()
+        && from_object->equalsExceptSharedDataPathRegexps(*to_object);
+}
+
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
     return createObject(arguments, DataTypeObject::SchemaFormat::JSON);
@@ -1137,7 +1230,8 @@ To declare a column of `JSON` type, you can use the following syntax:
     some.path TypeName,
     SHARED some.path TypeName,
     SKIP path.to.skip,
-    SKIP REGEXP 'paths_regexp'
+    SKIP REGEXP 'paths_regexp',
+    SHARED REGEXP 'paths_regexp'
 )
 ```
 Where the parameters in the syntax above are defined as:
@@ -1150,6 +1244,9 @@ Where the parameters in the syntax above are defined as:
 | `SHARED some.path TypeName` | A type hint whose path is stored in a MergeTree part together with the other `SHARED` paths of the column, in a constant number of files, instead of files of its own. See [`SHARED` typed paths](#shared-typed-paths). |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
+| `SHARED REGEXP 'path_regexp'` | An optional hint with a regular expression for paths that are always stored in [shared data](#shared-data-structure). Such paths never become dynamic paths, even if the limit on dynamic paths is not reached. | |
+
+`SHARED REGEXP` uses partial matching against the full flattened path, so use `^...$` to match the whole path. A path inside an object, like `a.b.c`, is matched by its full path, but paths of objects inside arrays are not matched. Typed paths are not affected by `SHARED REGEXP`, and paths matched by `SKIP` or `SKIP REGEXP` are still skipped. Changing only `SHARED REGEXP` of a `JSON`, `Array(JSON)` or `Nullable(JSON)` column with `ALTER TABLE ... MODIFY COLUMN` does not rewrite data parts. New inserts use the new rules immediately, and parts written before the change use them at their next merge. The rules are applied only when a path is added to a column: if an inserted block already has the same `JSON` type with matched paths stored as dynamic paths (for example `INSERT SELECT` from a part written before the change, or a block in the `Native` format), the inserted part keeps them as dynamic paths until its next merge. The flattened `Native` serialization (`output_format_native_use_flattened_dynamic_and_json_serialization = 1`) does not keep this layout, and a block combined with blocks that store those paths in shared data may not keep it either.
 
 <WhenToUseJson />
 
