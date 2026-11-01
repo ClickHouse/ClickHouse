@@ -190,7 +190,7 @@ We recommend materialized columns for basic processing. They're especially usefu
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), Default),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
         `TraceId` String,
         `SpanId` String,
         `TraceFlags` UInt32,
@@ -267,7 +267,7 @@ In order to ensure we don't persist the data twice (in the source and target tab
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), Default),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
         `TraceId` String,
         `SpanId` String,
         `TraceFlags` UInt32,
@@ -535,7 +535,7 @@ ALIAS columns are calculated at query time and aren't stored in the table. There
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), Default),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
         `TraceId` String,
         `SpanId` String,
         `TraceFlags` UInt32,

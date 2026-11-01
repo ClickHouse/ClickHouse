@@ -146,7 +146,7 @@ CREATE TABLE users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), Default),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -283,7 +283,7 @@ In most cases, denormalization requires the adding of a single column or statist
 ```sql
 CREATE TABLE posts_with_duplicate_count
 (
-  `Id` Int32 CODEC(Delta(4), Default),
+  `Id` Int32 CODEC(Delta, Default),
    ... -other columns
    `DuplicatePosts` UInt16
 ) ENGINE = MergeTree
@@ -322,7 +322,7 @@ Each post can contain a number of links to other posts as shown in the `PostLink
 SET flatten_nested=0
 CREATE TABLE posts_with_links
 (
-  `Id` Int32 CODEC(Delta(4), Default),
+  `Id` Int32 CODEC(Delta, Default),
    ... -other columns
    `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
    `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),

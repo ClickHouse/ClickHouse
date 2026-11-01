@@ -15,7 +15,7 @@ A lookup using Map can be 10x slower than a String column. The experiment below 
 -- create table with SpanNAme as String and ResourceAttributes as Map
 DROP TABLE IF EXISTS tbl;
 CREATE TABLE tbl (
-    `Timestamp` DateTime64(9) CODEC (Delta(8), Default),
+    `Timestamp` DateTime64(9) CODEC(Delta, Default),
     `TraceId` String,
     `ServiceName` LowCardinality(String),
     `Duration` UInt8, -- Int64
