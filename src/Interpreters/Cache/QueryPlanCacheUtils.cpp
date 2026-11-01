@@ -12,6 +12,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
@@ -1096,6 +1097,20 @@ namespace
 
 bool queryTreeIsEligibleImpl(const IQueryTreeNode & node, const ContextPtr & context, bool allow_scalar_subqueries)
 {
+    /// A table function is planned as a `ReadFromTableFunctionStep` leaf, and a temporary table
+    /// (including the storage of a reused `MATERIALIZED` CTE) resolves into the temporary database.
+    /// `collectQueryPlanCacheDependencies` always rejects both, so reject them here, before the
+    /// logical plan is built, so that such queries do not pay for planning twice.
+    if (node.as<TableFunctionNode>())
+        return false;
+
+    if (const auto * table_node = node.as<TableNode>())
+    {
+        if (table_node->isTemporaryTable()
+            || table_node->getStorageID().getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
+            return false;
+    }
+
     if (const auto * function_node = node.as<FunctionNode>())
     {
         if (function_node->isOrdinaryFunction())

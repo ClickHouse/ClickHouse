@@ -1489,7 +1489,8 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             analyzer_interpreter->getQueryTree(), context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
-            "Not caching plan: query uses non-deterministic functions or scalar subqueries (see query_plan_cache_allow_scalar_subqueries)");
+            "Not caching plan: query uses non-deterministic functions, scalar subqueries (see query_plan_cache_allow_scalar_subqueries), "
+            "table functions or temporary tables");
         return nullptr;
     }
 
