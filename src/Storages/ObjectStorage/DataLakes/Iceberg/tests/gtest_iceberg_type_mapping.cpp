@@ -34,10 +34,11 @@ TEST(IcebergTypeMapping, DateTime64MicrosWritesAsTimestamptz)
     EXPECT_EQ(icebergTypeName(std::make_shared<DataTypeDateTime64>(6, "UTC")), Iceberg::f_timestamptz);
 }
 
-TEST(IcebergTypeMapping, DateTime64NanosWritesAsTimestamptzNs)
+/// `timestamptz_ns` exists only in format version 3, so nanoseconds keep the microsecond type.
+TEST(IcebergTypeMapping, DateTime64NanosWritesAsTimestamptz)
 {
-    EXPECT_EQ(icebergTypeName(std::make_shared<DataTypeDateTime64>(9)), Iceberg::f_timestamptz_ns);
-    EXPECT_EQ(icebergTypeName(std::make_shared<DataTypeDateTime64>(9, "UTC")), Iceberg::f_timestamptz_ns);
+    EXPECT_EQ(icebergTypeName(std::make_shared<DataTypeDateTime64>(9)), Iceberg::f_timestamptz);
+    EXPECT_EQ(icebergTypeName(std::make_shared<DataTypeDateTime64>(9, "UTC")), Iceberg::f_timestamptz);
 }
 
 #endif
