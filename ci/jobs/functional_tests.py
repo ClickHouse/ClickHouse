@@ -724,7 +724,11 @@ def main():
 
     runner_options += f" --jobs {workers}"
 
-    if is_flaky_check or is_targeted_check:
+    if is_targeted_check and info.is_merge_queue_event:
+        # The merge queue is meant to fail fast: a few failures are enough to bounce
+        # the entry, and running the rest of the selection only delays the queue.
+        runner_options += " --max-failures 3"
+    elif is_flaky_check or is_targeted_check:
         # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
         runner_options += " --max-failures 5"
 
@@ -1334,9 +1338,11 @@ def main():
             )
 
         elif is_targeted_check:
-            # Also bounds the merge-queue latency; there the reduced rerun_count
-            # usually ends the run earlier.
-            TARGETED_CHECK_TIME_LIMIT = 30 * 60  # 30 min
+            # The merge-queue run gets the tighter budget of the merge-queue flaky
+            # check: it delays merges directly, and its reduced rerun_count usually
+            # ends the run earlier anyway. Reaching the limit is not a failure (see
+            # `GLOBAL_TIME_LIMIT_EXIT_CODE` in `FTResultsProcessor`).
+            TARGETED_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 30 * 60
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )

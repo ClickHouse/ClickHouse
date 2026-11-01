@@ -39,6 +39,8 @@ RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
 
 
 MAX_FAILS_BEFORE_DROP = 5
+# The merge-queue targeted check stops after this many failed tests (fail fast).
+MERGE_QUEUE_MAX_FAILURES = 3
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
 # flaky-check run will execute. A PR can mechanically touch a large number of integration
 # test modules (e.g. a repo-wide lint/format change), and running every one of them
@@ -1695,6 +1697,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # targeted integration jobs, so a local run of one (e.g. the `integration` job alias)
         # runs as a regular job: test selection needs the PR diff and CIDB.
         is_targeted_check = False
+    is_merge_queue_targeted_check = is_targeted_check and info.is_merge_queue_event
 
     per_test_coverage_dir = f"{temp_path}/per_test_coverage"
     cidb_cluster = None
@@ -2114,15 +2117,17 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # than a best-effort report). 45 min matches the functional flaky check and leaves
     # ample room for the hard-kill backstop (+600s below), cleanup and reporting.
     FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min - kept below the external job-cancellation ceiling
-    # The merge-queue targeted check delays merges directly, so it gets a soft budget
-    # too, counted from the job start like the flaky one. It runs the selection once,
-    # and a session-timeout of a targeted check is not a job failure (see below), so a
-    # selection that does not fit is cut short rather than holding the queue.
-    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 30 * 60
+    # The merge-queue targeted check delays merges directly, and the queue is meant to
+    # fail fast, so it gets a tight soft budget, counted from the job start like the
+    # flaky one and equal to the one of the merge-queue stateless checks. It runs the
+    # selection once, and a session-timeout of a targeted check is not a job failure
+    # (see below), so a selection that does not fit is cut short rather than holding
+    # the queue.
+    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 20 * 60
     check_time_limit = 0
     if is_flaky_check:
         check_time_limit = FLAKY_CHECK_TIME_LIMIT
-    elif is_targeted_check and info.is_merge_queue_event:
+    elif is_merge_queue_targeted_check:
         check_time_limit = MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT
     if check_time_limit:
         elapsed_s = int(sw.duration)
@@ -2136,6 +2141,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
         session_timeout_sequential = min(session_timeout_sequential, remaining_s)
 
     error_info = []
+
+    # The merge-queue targeted check stops at `MERGE_QUEUE_MAX_FAILURES` failed tests:
+    # a few failures are enough to bounce the entry, and running the rest of the
+    # selection only delays the queue. pytest (and xdist) stops scheduling tests once
+    # `--maxfail` is reached; the sequential phase gets what remains of the limit.
+    maxfail_option = ""
+    if is_merge_queue_targeted_check:
+        maxfail_option = f"--maxfail={MERGE_QUEUE_MAX_FAILURES}"
 
     failed_test_cases = []
 
@@ -2186,7 +2199,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             parallel_timed_out,
             parallel_hard_killed,
         ) = run_pytest_and_collect_results(
-            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} {maxfail_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
@@ -2211,12 +2224,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
+    max_fails_before_drop = MAX_FAILS_BEFORE_DROP
+    if is_merge_queue_targeted_check:
+        max_fails_before_drop = MERGE_QUEUE_MAX_FAILURES
+        maxfail_option = f"--maxfail={MERGE_QUEUE_MAX_FAILURES - fail_num}"
     # Under LLVM coverage the sequential phase runs regardless of how many
     # parallel tests failed: the coverage shard exists to execute code, and
     # dropping the phase would silently publish a profile that is short by
     # every sequential test. Test failures gate the PR through the regular
     # (non-coverage) jobs. An infrastructure error still skips the phase.
-    if sequential_test_modules and (fail_num < MAX_FAILS_BEFORE_DROP or is_llvm_coverage) and not has_error:
+    if sequential_test_modules and (fail_num < max_fails_before_drop or is_llvm_coverage) and not has_error:
         for attempt in range(sequential_repeat_cnt):
             # Recompute the remaining budget at every iteration and stop scheduling
             # new runs once it is exhausted (soft timeout).
@@ -2238,7 +2255,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 sequential_timed_out,
                 sequential_hard_killed,
             ) = run_pytest_and_collect_results(
-                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
+                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} {maxfail_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
@@ -2416,9 +2433,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
             if Path(DOCKER_IN_DOCKER_LOG).exists():
                 attached_files.append(DOCKER_IN_DOCKER_LOG)
 
-    # Rerun failed tests if any to check if failure is reproducible
+    # Rerun failed tests if any to check if failure is reproducible. Not in the merge
+    # queue, which must fail fast: the PR CI already reran the PR's failures.
     if 0 < len(failed_test_cases) < 10 and not (
-        is_flaky_check or is_bugfix_validation or info.is_local_run
+        is_flaky_check
+        or is_bugfix_validation
+        or info.is_local_run
+        or is_merge_queue_targeted_check
     ):
         test_result_retries, _, _ = run_pytest_and_collect_results(
             command=f"{quote_tests(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
