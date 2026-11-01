@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
@@ -43,7 +44,19 @@ private:
     void handleLoadTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
     void handleTableExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
     void handleDropTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const Poco::URI & uri, HTTPServerResponse & response, const Context & context) const;
+    void handleUpdateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
 
+    /// Writes the new metadata file and moves the table pointer to it with a version check. Sends the response.
+    void commitTableMetadata(
+        const IcebergRESTCatalogWarehouse & warehouse,
+        const IcebergNamespaceName & ns,
+        const String & table,
+        const IcebergTablePointer & pointer,
+        const Poco::JSON::Object::Ptr & metadata,
+        CompressionMethod compression_method,
+        HTTPServerResponse & response) const;
+
+    static void checkNotReadonly(const Context & context, const String & action);
     static void checkDDLAllowed(const Context & context, const String & action);
 
     static std::optional<IcebergNamespaceName> getNamespaceOrSendNotFound(
@@ -52,6 +65,9 @@ private:
     Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
     static void sendLoadTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
+    static void sendCommitTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
+    /// Maps `NOT_IMPLEMENTED` to `UnsupportedOperationException` and other codes to `BadRequestException`.
+    static void sendCommitRequestError(HTTPServerResponse & response, int code, const String & message);
 
     /// Reads the whole request body. Returns nullopt after answering 413 if the body exceeds max_size.
     static std::optional<String> readRequestBody(HTTPServerRequest & request, HTTPServerResponse & response, size_t max_size);

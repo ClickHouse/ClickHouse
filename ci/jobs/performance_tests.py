@@ -52,6 +52,9 @@ raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
 # measured servers). Keep in sync with CHPC_REPORT_LOCAL_{QUERY,SERVER}_SETTINGS
 # in compare.sh.
 REPORT_LOCAL_QUERY_SETTINGS = [
+    # Report-building invocations run concurrently and must not share (and lock)
+    # the default designated data directory in the home directory.
+    "--tmp",
     # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
     # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
     "--max_bytes_before_external_group_by=0",
@@ -891,11 +894,32 @@ def get_server_commit_sha(server):
     return sha if GIT_HASH_RE.fullmatch(sha) else ""
 
 
+def local_command(binary):
+    """`clickhouse local` of `binary`, independent of `HOME`.
+
+    Without `--tmp`, a build that has the option uses the persistent default
+    directory in the home, so a locked or broken directory there would fail the
+    probe. The reference build can be older than the option and rejects it as
+    an unrecognized argument, but it already uses a unique temporary directory,
+    so `--tmp` is passed only to a binary that lists it in `--help` (like
+    `shell_env_for` in tests/performance/scripts/perf.py).
+    """
+    local_help = subprocess.run(
+        [binary, "local", "--help"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    tmp_option = " --tmp" if re.search(r"^\s*--tmp\s", local_help, re.MULTILINE) else ""
+    return f"{binary} local{tmp_option}"
+
+
 def get_binary_commit_sha(binary):
     # A downloaded binary may lack the executable bit.
     os.chmod(binary, 0o755)
     sha = Shell.get_output_or_raise(
-        f"{binary} local -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+        f"{local_command(binary)} -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
     )
     assert GIT_HASH_RE.fullmatch(sha), f"no GIT_HASH in [{binary}]: [{sha}]"
     return sha
@@ -913,7 +937,7 @@ def write_ci_logs_sender_user(config_dir, binary):
     """
     known_settings = set(
         Shell.get_output(
-            f'{binary} local --query "SELECT name FROM system.settings"', strict=True
+            f'{local_command(binary)} --query "SELECT name FROM system.settings"', strict=True
         ).split()
     )
     config = yaml.safe_load(Path(log_export.CI_LOGS_SENDER_USER_CONFIG).read_text())
@@ -1282,7 +1306,7 @@ def match_reference_debug_info():
     def resolved_lines(binary):
         # Running clickhouse also decompresses the self-extracting binary in place.
         out = Shell.get_output(
-            f'{binary} local --allow_introspection_functions=1 --query "{probe}"'
+            f'{local_command(binary)} --allow_introspection_functions=1 --query "{probe}"'
         )
         return int(out) if out and out.strip().isdigit() else 0
 
@@ -2810,6 +2834,9 @@ def main():
     s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
     needs_s3 = bool(s3_paths)
     needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
+    needs_iceberg_read_dataset = needs_s3_read_dataset or any(
+        map(test_discovery.test_requires_local_read_dataset, run_paths)
+    )
     needs_s3_public_data = nightly and any(map(test_discovery.test_requires_public_data, run_paths))
     needs_s3_catalog = nightly and any(map(test_discovery.test_requires_s3_catalog, run_paths))
 
@@ -2824,7 +2851,7 @@ def main():
             return False
         if seed and needs_s3_public_data and not s3_service.seed_public_data(f"{perf_wd}/s3_public_data"):
             return False
-        if seed and needs_s3_catalog and not s3_service.seed_catalog(f"{perf_right}/clickhouse"):
+        if seed and needs_s3_catalog and not s3_service.seed_catalog(local_command(f"{perf_right}/clickhouse")):
             return False
         if not s3_service.write_side_override(perf_left_config, "left"):
             return False
@@ -2955,7 +2982,7 @@ def main():
                 Shell.check(f"touch {perf_left}/.done")
         if res and not nightly:
             reference_sha = Shell.get_output(
-                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+                f"{local_command(f'{perf_left}/clickhouse')} -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
 
     # Also on a resume: never attribute measurements to a different reference.
@@ -3019,7 +3046,11 @@ def main():
 
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
-        if not Path(f"{db_path}/.done").is_file():
+        db_done = Path(f"{db_path}/.done").is_file()
+        iceberg_dir = Path(db_path) / "user_files" / s3_service.READ_DATASET_DIRECTORY
+        iceberg_done = Path(db_path) / f".{s3_service.READ_DATASET_DIRECTORY}.done"
+        # Retry missing or partially extracted Iceberg fixtures in cached db0.
+        if not db_done or (needs_iceberg_read_dataset and (not iceberg_dir.is_dir() or not iceberg_done.is_file())):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
@@ -3030,6 +3061,8 @@ def main():
                 "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
+            if db_done:
+                dataset_paths = {"tpch_ice10": dataset_paths["tpch_ice10"]}
             stop_watch = Utils.Stopwatch()
             errors = download_and_extract_datasets(dataset_paths.values(), db_path)
             res = not errors
@@ -3043,7 +3076,9 @@ def main():
                 )
             )
             if res:
-                Shell.check(f"touch {db_path}/.done")
+                iceberg_done.touch()
+                if not db_done:
+                    Shell.check(f"touch {db_path}/.done")
 
     if res and JobStages.CONFIGURE in stages:
         print("Configure")
@@ -3269,7 +3304,7 @@ def main():
         if reference_warning:
             # Read the actual binary's identity, including when resuming at `report`.
             reference_sha = Shell.get_output(
-                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+                f"{local_command(f'{perf_left}/clickhouse')} -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
             with open(f"{perf_wd}/left-commit.txt", "a", encoding="utf-8") as reference:
                 reference.write(
