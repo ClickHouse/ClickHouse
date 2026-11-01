@@ -25,6 +25,8 @@ merge join
 -- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes
 hash join
 merge join
+-- join_algorithm set explicitly without full_sorting_merge: hash join
+hash join
 -- the setting is off: hash join
 hash join
 -- results

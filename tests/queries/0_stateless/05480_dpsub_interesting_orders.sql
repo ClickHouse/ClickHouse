@@ -6,7 +6,6 @@ SET query_plan_join_order_use_interesting_orders = 1;
 SET enable_join_transitive_predicates = 1;
 SET optimize_read_in_order = 1;
 SET max_rows_in_set_to_optimize_join = 0;
-SET join_algorithm = 'hash';
 SET query_plan_join_swap_table = 'auto';
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_randomize = 0;
@@ -91,6 +90,11 @@ SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%',
 WHERE explain LIKE '%Algorithm:%'
 ORDER BY 1
 SETTINGS optimize_sorting_by_input_stream_properties = 0;
+
+SELECT '-- join_algorithm set explicitly without full_sorting_merge: hash join';
+SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
+WHERE explain LIKE '%Algorithm:%'
+SETTINGS join_algorithm = 'parallel_hash';
 
 SELECT '-- the setting is off: hash join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
