@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 -- `parseQueryToJSON` walks the parsed query recursively, so a query nested deeper than that walk can
 -- follow must be reported rather than crash the server. `max_parser_depth` is raised far above the
 -- nesting so that the parser's own limit does not answer first, and the refused depths are far past
