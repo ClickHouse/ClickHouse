@@ -550,9 +550,13 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
     Task & task = tasks.emplace_back();
     task.offset = start_offset;
     task.length = end_offset - task.offset;
-    /// All covered ranges may be empty (e.g. column chunks of zero size in corrupted metadata). Then the amplification
-    /// is only multiplied by zero lengths, but must be finite: converting `0 * inf` (NaN) to an integer is undefined behavior.
-    task.memory_amplification = static_cast<double>(task.length) / static_cast<double>(std::max(total_length_of_covered_ranges, size_t(1)));
+    /// All covered ranges can be empty, e.g. column chunks with zero length in a malformed file. Then
+    /// the ratio would be NaN or infinity, which is UB to convert to size_t in `startPrefetch`. The
+    /// memory usage of such requests is their length, i.e. zero.
+    if (total_length_of_covered_ranges == 0)
+        task.memory_amplification = 1.;
+    else
+        task.memory_amplification = 1. * static_cast<double>(task.length) / static_cast<double>(total_length_of_covered_ranges);
     size_t initial_refcount = end_idx - start_idx + 1;
     task.refcount.store(initial_refcount);
 
