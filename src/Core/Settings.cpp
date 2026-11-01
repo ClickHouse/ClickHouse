@@ -11382,6 +11382,23 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(Double, promql_lookback_delta, 300, R"(
+The lookback period of PromQL instant selectors, in seconds: an instant selector returns the latest sample newer than this.
+Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API,
+where a non-zero `lookback_delta` URL parameter takes priority. It is the same as the `--query.lookback-delta` flag of Prometheus:
+0 means the default of 5 minutes. The value is kept to the microsecond, so a value below 1 microsecond also means the default.
+A negative value is an error.
+)", IMPORTANT | PRIVATE_PREVIEW, \
+        {"26.11", 300, 300, "New setting."}) \
+    \
+    DECLARE(Double, promql_default_subquery_step, 15, R"(
+The step of PromQL subqueries written without one, such as `max_over_time(rate(x[1m])[30m:])`, in seconds.
+Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API.
+0 means the default of 15 seconds. Prometheus uses its global `evaluation_interval` here, which is 1 minute by default.
+The value is kept to the microsecond, so a value below 1 microsecond also means the default. A negative value is an error.
+)", IMPORTANT | PRIVATE_PREVIEW, \
+        {"26.11", 15, 15, "New setting."}) \
+    \
     DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
 Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
 )", PRIVATE_PREVIEW, \
