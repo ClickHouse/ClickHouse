@@ -132,6 +132,31 @@ void DiskWithPath::setPath(const String & any_path)
     }
 }
 
+namespace
+{
+
+/// Splits an absolute path into the volume it is on and the path inside the volume. The volume is the
+/// root name: empty on POSIX, a drive (`C:`) on Windows - except for a UNC path (`//server/share/x`),
+/// where `std::filesystem` takes only `//server` as the root name and leaves the share in the relative
+/// path, although the share is what the root directory of the path is. So the share is moved to the volume.
+std::pair<String, fs::path> splitVolume(const fs::path & path)
+{
+    String volume = pathToGenericString(path.root_name());
+    fs::path relative = path.relative_path();
+    if (volume.starts_with("//") && !relative.empty())
+    {
+        auto it = relative.begin();
+        volume += "/" + pathToGenericString(*it);
+        fs::path rest;
+        for (++it; it != relative.end(); ++it)
+            rest /= *it;
+        relative = std::move(rest);
+    }
+    return {std::move(volume), std::move(relative)};
+}
+
+}
+
 String DiskWithPath::validatePathAndGetAsRelative(const String & path)
 {
     String lexically_normal_path = pathToGenericString(pathFromString(path).lexically_normal());
@@ -144,19 +169,20 @@ String DiskWithPath::validatePathAndGetAsRelative(const String & path)
     const auto fs_path = pathFromString(lexically_normal_path);
 
     /// Stripping a root name loses which drive or share the path is on, and a disk has one root only:
-    /// the built-in `local` disk is rooted at `/`, which is the root of the current drive. A path on
-    /// another drive or share would silently name the same relative path on the current drive, so it
-    /// is refused. Drive letters and server names are case-insensitive. On POSIX the root name is always empty.
-    const String root_name = pathToGenericString(fs_path.root_name());
-    const String current_root_name = pathToGenericString(fs::current_path().root_name());
-    if (!std::ranges::equal(root_name, current_root_name, [](char a, char b) { return toLowerIfAlphaASCII(a) == toLowerIfAlphaASCII(b); }))
+    /// the built-in `local` disk is rooted at `/`, which is the root of the current volume. A path on
+    /// another drive or share would silently name the same relative path on the current volume, so it
+    /// is refused. Drive letters, server and share names are case-insensitive. On POSIX the root name is
+    /// always empty.
+    const auto [volume, relative] = splitVolume(fs_path);
+    const String current_volume = splitVolume(fs::current_path()).first;
+    if (!std::ranges::equal(volume, current_volume, [](char a, char b) { return toLowerIfAlphaASCII(a) == toLowerIfAlphaASCII(b); }))
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "Path {} is not on the drive of the current directory ({}), which is the only one a disk can address",
+            "Path {} is not on the volume of the current directory ({}), which is the only one a disk can address",
             path,
-            current_root_name);
+            current_volume);
 
-    return pathToGenericString(fs_path.relative_path());
+    return pathToGenericString(relative);
 }
 
 String DiskWithPath::normalizePathAndGetAsRelative(const String & messyPath)
