@@ -32,19 +32,23 @@ WITH
     (SELECT arraySort(groupArray(extract(explain, '\\bd\\[(?:no_stats~)?(\\d+)\\]'))) FROM (EXPLAIN actions = 1, compact = 1, pretty = 1
         SELECT sum(v) FROM branches WHERE b = 1 AND y = 1) WHERE explain LIKE '%⋈%') AS by_cast_integer,
     (SELECT arraySort(groupArray(extract(explain, '\\bd\\[(?:no_stats~)?(\\d+)\\]'))) FROM (EXPLAIN actions = 1, compact = 1, pretty = 1
-        SELECT sum(v) FROM branches WHERE n IS NOT NULL AND y = 1) WHERE explain LIKE '%⋈%') AS by_null
-SELECT alone NOT IN ('', '0'), by_string = arraySort(['0', alone]), by_cast_integer = arraySort(['0', alone]), by_null = arraySort(['0', alone]);
+        SELECT sum(v) FROM branches WHERE n IS NOT NULL AND y = 1) WHERE explain LIKE '%⋈%') AS by_null,
+    (SELECT arraySort(groupArray(extract(explain, '\\bd\\[(?:no_stats~)?(\\d+)\\]'))) FROM (EXPLAIN actions = 1, compact = 1, pretty = 1
+        SELECT sum(v) FROM branches WHERE n IS NULL AND y = 1) WHERE explain LIKE '%⋈%') AS by_is_null
+SELECT alone NOT IN ('', '0'), by_string = arraySort(['0', alone]), by_cast_integer = arraySort(['0', alone]), by_null = arraySort(['0', alone]), by_is_null = arraySort(['0', alone]);
 
 SELECT '-- comparisons of materialized constants are decided as they are executed';
 WITH
     (SELECT extract(explain, '\\bd\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN actions = 1, compact = 1, pretty = 1
         SELECT sum(f.v) FROM fact AS f JOIN dim AS d ON f.k = d.k WHERE d.y = 1) WHERE explain LIKE '%⋈%') AS alone,
     (SELECT extract(explain, '\\bd\\[(?:no_stats~)?(\\d+)\\]') FROM (EXPLAIN actions = 1, compact = 1, pretty = 1
-        SELECT sum(v) FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND i < toUInt64(1)
+        SELECT sum(v) FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND e <= CAST('b', 'Enum8(''b'' = 1, ''a'' = 2)')
+            AND i < toUInt64(1) AND NOT (i > toUInt64(1))
             AND dec >= toDecimal32(1.5, 2) AND dt > toDate('2026-01-01') AND fs != toFixedString('ac', 2)) WHERE explain LIKE '%⋈%') AS all_true
 SELECT all_true = alone;
 SELECT
-    (SELECT count() FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND i < toUInt64(1)
+    (SELECT count() FROM constants WHERE y = 1 AND e < CAST('a', 'Enum8(''b'' = 1, ''a'' = 2)') AND e <= CAST('b', 'Enum8(''b'' = 1, ''a'' = 2)')
+        AND i < toUInt64(1) AND NOT (i > toUInt64(1))
         AND dec >= toDecimal32(1.5, 2) AND dt > toDate('2026-01-01') AND fs != toFixedString('ac', 2))
         = (SELECT count() FROM fact AS f JOIN dim AS d ON f.k = d.k WHERE d.y = 1);
 
