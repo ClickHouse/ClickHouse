@@ -272,6 +272,29 @@ class Targeting:
         fpath = fpath.removeprefix("./")
         return fpath.startswith("tests/queries/0_stateless/") and Path(fpath).is_file()
 
+    @classmethod
+    def owning_test_modules(cls, changed_files):
+        """Test modules of the integration test packages whose supporting files (configs,
+        data, package-local helpers) changed, e.g. `test_x/configs/config.xml` -> `test_x/test*.py`.
+        Changed test modules themselves are found by `is_integration_test_file`."""
+        modules = []
+        for file in changed_files:
+            file = file.removeprefix("./")
+            parts = file.split("/")
+            if (
+                len(parts) < 4
+                or parts[:2] != ["tests", "integration"]
+                or not parts[2].startswith("test_")
+                or parts[2].startswith("test_e2e_")
+                or cls.is_integration_test_file(file)
+            ):
+                continue
+            package = Path("tests/integration") / parts[2]
+            modules.extend(
+                str(p.relative_to("tests/integration")) for p in sorted(package.glob("test*.py"))
+            )
+        return list(dict.fromkeys(modules))
+
     @staticmethod
     def is_integration_test_file(fpath: str) -> bool:
         """A changed path that is itself an integration test module."""
@@ -645,10 +668,15 @@ class Targeting:
                 [f for f in drift_files if f.startswith("tests/queries/")],
                 verbose=False,
             ),
+            # Changed modules and the modules of packages whose supporting files
+            # (configs, data, package-local helpers) changed, as for the PR's own changes.
             cls.INTEGRATION_JOB_TYPE: sorted(
-                f.removeprefix("tests/integration/")
-                for f in drift_files
-                if cls.is_integration_test_file(f)
+                {
+                    f.removeprefix("tests/integration/")
+                    for f in drift_files
+                    if cls.is_integration_test_file(f)
+                }
+                | set(cls.owning_test_modules(drift_files))
             ),
         }
 

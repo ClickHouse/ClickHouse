@@ -390,6 +390,20 @@ class SelectionSmoke(unittest.TestCase):
             {"delta"},
         )
 
+    def test_merge_queue_drift_owning_modules(self):
+        # A `master` change to a package-local fixture selects the package's modules,
+        # as for the PR's own changes.
+        self.assertEqual(
+            Targeting.owning_test_modules(
+                ["tests/integration/test_database_disk/configs/database_disk.xml"]
+            ),
+            ["test_database_disk/test.py"],
+        )
+        self.assertEqual(
+            Targeting.owning_test_modules(["tests/integration/test_database_disk/test.py"]),
+            [],
+        )
+
     def test_selection_pattern_selects_only_its_own_test(self):
         """A selected test's selector must select that test's file and no other.
 

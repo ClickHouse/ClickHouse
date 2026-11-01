@@ -41,6 +41,8 @@ RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
 MAX_FAILS_BEFORE_DROP = 5
 # The merge-queue targeted check stops after this many failed tests (fail fast).
 MERGE_QUEUE_MAX_FAILURES = 3
+# The selection sources that are run whatever the coverage ranking (see `protect_selection`).
+MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed", "merge_queue_drift"}
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
 # flaky-check run will execute. A PR can mechanically touch a large number of integration
 # test modules (e.g. a repo-wide lint/format change), and running every one of them
@@ -956,29 +958,6 @@ def report_rabbitmq_recreations(result: Result) -> int:
     return count
 
 
-def owning_test_modules(changed_files: List[str]) -> List[str]:
-    """Test modules of the integration test packages whose supporting files (configs,
-    data, package-local helpers) changed, e.g. `test_x/configs/config.xml` -> `test_x/test*.py`.
-    Changed test modules themselves are found by `Targeting.is_integration_test_file`."""
-    modules = []
-    for file in changed_files:
-        file = file.removeprefix("./")
-        parts = file.split("/")
-        if (
-            len(parts) < 4
-            or parts[:2] != ["tests", "integration"]
-            or not parts[2].startswith("test_")
-            or parts[2].startswith("test_e2e_")
-            or Targeting.is_integration_test_file(file)
-        ):
-            continue
-        package = Path("tests/integration") / parts[2]
-        modules.extend(
-            str(p.relative_to("tests/integration")) for p in sorted(package.glob("test*.py"))
-        )
-    return list(dict.fromkeys(modules))
-
-
 # A targeted job runs one batch of the full suite when the shared integration harness
 # changes: neither coverage nor the owning-module mapping can select tests for it.
 HARNESS_FALLBACK_BATCHES = 8
@@ -1826,6 +1805,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
 
     targeted_tests = []
+    mandatory_test_modules = set()
     if is_targeted_check:
         assert not args.test, "--test not supposed to be used for targeted check ???"
         targeter = Targeting(info=info)
@@ -1858,7 +1838,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # check, and so do the modules of packages whose supporting files changed: the
         # coverage selector sees only source files.
         changed_files = info.get_changed_files() or []
-        tests = changed_test_modules + owning_test_modules(changed_files) + tests
+        owning_modules = Targeting.owning_test_modules(changed_files)
+        # The modules that run whatever the coverage ranking: the merge-queue check
+        # reserves part of its time budget for those of them in the sequential phase.
+        mandatory_test_modules = set(changed_test_modules + owning_modules) | {
+            r["test"].split("::")[0]
+            for r in targeter.selection_diagnostics["selected"]
+            if set(r["sources"]) & MANDATORY_SELECTION_SOURCES
+        }
+        tests = changed_test_modules + owning_modules + tests
         harness_files = [f for f in changed_files if is_shared_harness_file(f)]
         if harness_files:
             fallback_parallel, fallback_sequential = get_parallel_sequential_tests_to_run(
@@ -2160,6 +2148,20 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # Cap per-phase session timeouts so a single phase cannot consume the entire budget.
         session_timeout_parallel = min(session_timeout_parallel, remaining_s)
         session_timeout_sequential = min(session_timeout_sequential, remaining_s)
+        # The parallel phase runs first, so in the merge-queue targeted check a large
+        # coverage selection there could use the whole budget before a changed (or
+        # otherwise mandatory) module of the sequential phase starts, and the job would
+        # pass without it. Leave half of the budget to the sequential phase then; the
+        # mandatory modules come first within each phase (see the sort above).
+        mandatory_sequential = [
+            t for t in sequential_test_modules if t.split("::")[0] in mandatory_test_modules
+        ]
+        if is_merge_queue_targeted_check and parallel_test_modules and mandatory_sequential:
+            session_timeout_parallel = min(session_timeout_parallel, max(remaining_s // 2, 60))
+            print(
+                f"Mandatory sequential modules {mandatory_sequential}: the parallel phase "
+                f"gets {session_timeout_parallel}s"
+            )
 
     error_info = []
 
