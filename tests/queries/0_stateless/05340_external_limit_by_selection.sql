@@ -6,10 +6,15 @@ SET max_untracked_memory = 0;
 SET max_block_size = 1000;
 -- Parallel replicas would split the `MergeTree` reads below and change their plans.
 SET enable_parallel_replicas = 0;
+-- An enabled adaptive memory scheduler selects the spilling transform even without a threshold.
+SET enable_adaptive_memory_spill_scheduler = 0;
 
--- The spilling transform replaces the in-memory one only when a threshold is set. A ratio must be at least 0
--- and less than 1.
+-- The spilling transform replaces the in-memory one only when a threshold is set or a memory scheduler can ask it
+-- to spill. A ratio must be at least 0 and less than 1.
 SELECT count() FROM (EXPLAIN PIPELINE SELECT number % 10 AS k FROM numbers(100) LIMIT 2 BY k SETTINGS max_bytes_before_external_limit_by = 0) WHERE explain LIKE '%ExternalLimitByTransform%';
+SET enable_adaptive_memory_spill_scheduler = 1;
+SELECT count() FROM (EXPLAIN PIPELINE SELECT number % 10 AS k FROM numbers(100) LIMIT 2 BY k SETTINGS max_bytes_before_external_limit_by = 0) WHERE explain LIKE '%ExternalLimitByTransform%';
+SET enable_adaptive_memory_spill_scheduler = 0;
 SELECT count() FROM (EXPLAIN PIPELINE SELECT number % 10 AS k FROM numbers(100) LIMIT 2 BY k) WHERE explain LIKE '%ExternalLimitByTransform%';
 SELECT count() FROM (SELECT number % 10 AS k FROM numbers(100) LIMIT 2 BY k) SETTINGS max_bytes_ratio_before_external_limit_by = 1; -- { serverError BAD_ARGUMENTS }
 

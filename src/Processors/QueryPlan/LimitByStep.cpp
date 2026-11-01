@@ -160,18 +160,20 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
-    /// The hash-based transforms below keep a count per group, which can spill to disk. The sorted-stream
-    /// transform keeps one group at a time and never needs to.
+    /// The hash-based transforms below keep a count per group, which can spill to disk once query memory reaches
+    /// the threshold or when a memory scheduler asks. The sorted-stream transform keeps one group at a time and
+    /// never needs to.
     const UInt64 group_limit_end = computeGroupLimitEnd(group_length, group_offset);
     const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
         settings.max_bytes_before_external_limit_by, settings.max_bytes_ratio_before_external_limit_by,
         "max_bytes_ratio_before_external_limit_by");
+    const bool external = external_threshold || build_settings.isSchedulerSpillingEnabled();
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk;
     auto create_hash_transform = [&](const SharedHeader & header) -> ProcessorPtr
     {
         /// Constant keys form one group, and `LIMIT 0 BY` returns no rows, so neither needs spill storage.
-        if (!external_threshold || group_length == 0 || calculateLimitByKeyColumnsPositions(*header, columns).empty())
+        if (!external || group_length == 0 || calculateLimitByKeyColumnsPositions(*header, columns).empty())
             return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns, always_read_till_end);
 
         /// Sorted-stream execution never invokes this factory. Create the scope only for hash-based execution,
