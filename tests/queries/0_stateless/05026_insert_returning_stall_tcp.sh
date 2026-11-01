@@ -9,6 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the thread waiting for the data, otherwise they get into the middle of a result packet.
 # The client stalls between blocks (the first block is emitted when the second row arrives), while
 # `sleep_in_send_data_ms` keeps the result packet half-written during the stall.
+# The order of the result blocks is not guaranteed when the blocks are processed by several insert threads
+# (`max_insert_threads` is randomized in CI), so the result is sorted.
 
 $CLICKHOUSE_CLIENT -q "create table t_05026_insert_returning_stall (x UInt8) engine = Null"
 
@@ -16,6 +18,6 @@ $CLICKHOUSE_CLIENT -q "create table t_05026_insert_returning_stall (x UInt8) eng
     --input_format_max_block_wait_ms 100 --input_format_connection_handling 1 \
     --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 --input_format_parallel_parsing 0 \
     -q "INSERT INTO t_05026_insert_returning_stall (x) RETURNING (SELECT x)
-        SETTINGS sleep_in_send_data_ms = 1000, interactive_delay = 100000, async_insert = 0 FORMAT TSV"
+        SETTINGS sleep_in_send_data_ms = 1000, interactive_delay = 100000, async_insert = 0 FORMAT TSV" | sort
 
 $CLICKHOUSE_CLIENT -q "drop table t_05026_insert_returning_stall"
