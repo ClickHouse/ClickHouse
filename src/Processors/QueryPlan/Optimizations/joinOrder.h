@@ -3,6 +3,7 @@
 #include <concepts>
 #include <vector>
 #include <Core/Joins.h>
+#include <Core/Names.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
@@ -163,6 +164,14 @@ struct QueryGraph
     /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
+
+    /// DPsub chooses between hash and sort-merge joins by the sort order of their inputs.
+    bool use_interesting_orders = false;
+    /// The order of a sort-merge join result is used by the sort of a later join (`optimize_sorting_by_input_stream_properties`).
+    bool reuse_join_output_order = false;
+
+    /// Per relation: the columns of its equi-join conditions that it can be read in order of.
+    std::vector<NameSet> read_in_order_columns;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

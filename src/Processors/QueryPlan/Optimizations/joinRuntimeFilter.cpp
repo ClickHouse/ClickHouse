@@ -326,6 +326,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
+        /// A runtime filter would drop `full_sorting_merge`, which the join order optimizer chose for sorted inputs.
+        !join_step->isPlannedAsSortMerge() &&
         std::ranges::any_of(join_algorithms, supports_runtime_filter);
 
     if (!can_use_runtime_filter)

@@ -449,6 +449,9 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
     query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
     query_graph.join_swap_table = optimization_settings.join_swap_table;
+    query_graph.use_interesting_orders = optimization_settings.query_plan_join_order_use_interesting_orders
+        && optimization_settings.enable_join_transitive_predicates;
+    query_graph.reuse_join_output_order = optimization_settings.optimize_sorting_by_input_stream_properties;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),

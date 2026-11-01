@@ -515,6 +515,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_execute_functions_after_sorting", trueOrFalseSetting},
        {"query_plan_filter_push_down", trueOrFalseSetting},
        {"query_plan_filter_push_down_below_limit_by", trueOrFalseSetting},
+       {"query_plan_join_order_use_interesting_orders", trueOrFalseSetting},
        {"query_plan_join_shard_by_pk_ranges", trueOrFalseSetting},
        {"query_plan_join_swap_table",
         CHSetting(

@@ -1,0 +1,29 @@
+-- both inputs sorted by the key: merge join
+Read type: InOrder
+Read type: InOrder
+merge join
+-- neither input sorted: hash join
+hash join
+-- sorted inputs, but a tiny build side: hash join
+hash join
+-- a chain on one key: both joins merge, the result of the first one is not sorted again
+Prefix sort description: k ASC
+Prefix sort description: k ASC
+Prefix sort description: k ASC
+Prefix sort description: k ASC
+Read type: InOrder
+Read type: InOrder
+Read type: InOrder
+merge join
+merge join
+-- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes
+hash join
+merge join
+-- the setting is off: hash join
+hash join
+-- results
+50000	3749925000
+50000	3749925000
+16667	1527747221
+16667	1527747221
+10	45045

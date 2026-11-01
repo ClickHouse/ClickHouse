@@ -26,8 +26,11 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <algorithm>
@@ -1047,6 +1050,53 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+/// The columns of each relation's equi-join conditions that `optimizeReadInOrder` could read the relation in order of.
+static std::vector<NameSet> getReadInOrderColumns(
+    const QueryGraph & query_graph, const std::vector<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings)
+{
+    std::vector<NameSet> candidates(inputs.size());
+    for (const auto & edge : query_graph.edges)
+    {
+        if (!edge)
+            continue;
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+        for (const auto & side : {lhs, rhs})
+        {
+            auto column = side.resolveAliases();
+            auto relation = column.getSourceRelations().getSingleBit();
+            if (column.getNode()->type == ActionsDAG::ActionType::INPUT && relation && *relation < inputs.size())
+                candidates[*relation].insert(column.getColumnName());
+        }
+    }
+
+    std::vector<NameSet> result(inputs.size());
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (candidates[i].empty())
+            continue;
+        auto * reading_node = findReadingStepForReadInOrder(*inputs[i], /*read_in_order_through_join=*/ false);
+        auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+        if (!reading || reading->isParallelReadingFromReplicas())
+            continue;
+
+        const auto & header = inputs[i]->step->getOutputHeader();
+        for (const auto & column : candidates[i])
+        {
+            if (!header->has(column))
+                continue;
+            SortDescription sort_description;
+            sort_description.emplace_back(column);
+            SortingStep sorting(header, std::move(sort_description), 0, sorting_settings);
+            auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), *inputs[i]);
+            if (order && order->direction == 1)
+                result[i].insert(column);
+        }
+    }
+    return result;
+}
+
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
@@ -1070,6 +1120,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
             query_graph.prepared_storage_relations.set(i);
     }
+
+    /// `CreateSetAndFilterOnTheFlyStep` (`max_rows_in_set_to_optimize_join`) prevents reading in order.
+    if (const auto & context = *query_graph_builder.context; context.optimization_settings.query_plan_join_order_use_interesting_orders
+        && context.optimization_settings.read_in_order && context.join_settings.max_rows_in_set_to_optimize_join == 0)
+        query_graph.read_in_order_columns = getReadInOrderColumns(query_graph, query_graph_builder.inputs, context.sorting_settings);
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
@@ -1428,16 +1483,26 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 current_input_nodes.at(first_dropped_node_pos).second = first_dropped_node;
             }
 
+            /// A join planned as a sort-merge join runs as `full_sorting_merge`, the other algorithms remain its fallback.
+            auto step_join_settings = join_settings;
+            if (entry->join_method == JoinMethod::Merge)
+            {
+                std::erase(step_join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE);
+                step_join_settings.join_algorithms.insert(step_join_settings.join_algorithms.begin(), JoinAlgorithm::FULL_SORTING_MERGE);
+            }
+
             auto join_step = std::make_unique<JoinStepLogical>(
                 left_header_ptr,
                 right_header_ptr,
                 std::move(join_operator),
                 std::move(current_expression_actions),
                 actions_after_join,
-                join_settings,
+                step_join_settings,
                 sorting_settings);
 
             join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
+            if (entry->join_method == JoinMethod::Merge)
+                join_step->setPlannedAsSortMerge();
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;
