@@ -3,6 +3,9 @@
 #include "config.h"
 
 #include <Client/ProgressTable.h>
+#if USE_REPLXX
+#include <Client/ReplxxLineReader.h>
+#endif
 #include <Client/Suggest.h>
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -283,6 +286,12 @@ private:
     /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
     /// output path, so it neither prints anything nor disturbs the visible query state.
     Block fetchDocumentation(const String & query, const String & word);
+
+#if USE_REPLXX
+    /// Loads the saved template queries from `system.template_queries` for the Ctrl-O search.
+    /// Throws if the server does not have the table or the query fails.
+    std::vector<ReplxxLineReader::TemplateQuery> fetchTemplateQueries();
+#endif
 
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
