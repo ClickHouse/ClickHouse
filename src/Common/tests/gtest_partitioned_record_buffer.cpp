@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <functional>
@@ -76,6 +77,30 @@ TEST(PartitionedRecordBuffer, ChunkGrowthAndLargeRecords)
     {
         EXPECT_EQ(buffer.recordsOf(partition), 100);
         EXPECT_EQ(readPartition(buffer, partition), expected[partition]);
+    }
+}
+
+TEST(PartitionedRecordBuffer, ChunksDoubleUpToTheCap)
+{
+    /// A partition's chunks double from the first chunk up to the cap the buffer is given, and no further: the largest
+    /// chunk of a long partition holds more than half the cap and no more than the cap.
+    for (const size_t cap : {PartitionedRecordBuffer::default_max_chunk_bytes, PartitionedRecordBuffer::default_max_chunk_bytes / 2})
+    {
+        PartitionedRecordBuffer buffer(1, 1, PartitionedRecordBuffer::max_first_chunk_bytes, cap);
+        std::string expected;
+        for (size_t row = 0; row < 1000; ++row)
+        {
+            const std::string record(100, static_cast<char>('a' + row % 26));
+            appendRecord(buffer, 0, record);
+            expected += record;
+        }
+        buffer.finishAppending();
+
+        size_t largest_chunk = 0;
+        buffer.forEachChunk(0, [&](std::string_view chunk) { largest_chunk = std::max(largest_chunk, chunk.size()); });
+        EXPECT_GT(largest_chunk, cap / 2) << cap;
+        EXPECT_LE(largest_chunk, cap) << cap;
+        EXPECT_EQ(readPartition(buffer, 0), expected);
     }
 }
 
