@@ -104,6 +104,8 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    /// `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`.
+    static bool isPerTokenPatternFunction(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
@@ -118,6 +120,7 @@ public:
     const Block & getHeader() const { return header; }
 
     /// Create text search query for the function node if it is suitable for optimization.
+    /// A query with nothing to search only rewrites the function to the index tokenizer.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
@@ -187,6 +190,10 @@ private:
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
+
+    /// Returns true if the column is the subcolumn `m.key_<key>`, which `optimize_functions_to_subcolumns`
+    /// makes of `m['key']`, and the index is built on `m['key']`.
+    bool hasIndexForMapElementSubcolumn(const String & column_name) const;
 
     /// Returns the constant key of `m['key']` (`arrayElement` or `m.key_<key>` subcolumn) on this
     /// index's column.
