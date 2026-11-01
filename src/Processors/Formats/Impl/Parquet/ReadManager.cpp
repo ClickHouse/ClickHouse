@@ -1437,7 +1437,11 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
     row_subgroup.filter.clear(&diff);
     row_subgroup.output.clear();
     for (ColumnSubchunk & col : row_subgroup.columns)
+    {
         col.column_and_offsets_memory.reset(&diff);
+        /// Still holds the decoded leaves of an output column that was never formed (a step stopped early).
+        col = {};
+    }
 }
 
 std::string ReadManager::collectDeadlockDiagnostics()
