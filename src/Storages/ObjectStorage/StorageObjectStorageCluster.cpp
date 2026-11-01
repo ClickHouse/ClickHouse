@@ -407,7 +407,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -445,7 +446,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     if (!endsWith(table_function->name, "Cluster"))
     {
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -471,7 +473,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         /// by it.
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         if (!target_cluster_name.empty())
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));

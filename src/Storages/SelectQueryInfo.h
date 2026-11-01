@@ -145,6 +145,11 @@ struct SelectQueryInfo
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
     TableExpressionNodePtr table_expression;
 
+    /// A parallel-replicas read through a table function is coordinated under the name of the storage the call
+    /// resolved to, not under the identity of the call: set for a read shipped in a plan fragment, which a replica
+    /// rebuilds from the storage alone. Kept here so that every step rebuilt from this read inherits it.
+    bool parallel_replicas_coordinated_under_storage_name = false;
+
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
