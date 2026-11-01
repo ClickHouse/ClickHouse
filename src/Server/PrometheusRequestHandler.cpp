@@ -110,7 +110,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent"));
+        LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
