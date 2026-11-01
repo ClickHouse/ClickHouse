@@ -102,6 +102,8 @@ EXCLUDE=(
     05318_parquet_rle_boolean.parquet
     # File for the 05334 test of string filters with `DELTA_BYTE_ARRAY` pages.
     string_filters_delta_byte_array.parquet
+    # Hand-crafted malformed DELTA_BINARY_PACKED file for the 05459 test, loading it here would print an exception.
+    05459_delta_binary_packed_miniblock_overflow.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

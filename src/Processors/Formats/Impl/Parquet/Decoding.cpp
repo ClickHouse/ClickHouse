@@ -783,8 +783,9 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     size_t miniblock_idx = 0; // within block
     /// Initially set to 1 as a special case to report the first value.
     size_t miniblock_values_remaining = 1;
-    /// Bit-packed deltas of the current miniblock, and the position of the next one in bits.
+    /// Bit-packed deltas of the current miniblock, its end, and the position of the next delta in bits.
     const UInt8 * miniblock_data = nullptr;
+    const UInt8 * miniblock_end = nullptr;
     size_t miniblock_bit_offset = 0;
 
     PODArray<UInt64> temp_values;
@@ -856,8 +857,10 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         if (miniblock_bit_widths[miniblock_idx] > 64)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED miniblock bit width: {}", size_t(miniblock_bit_widths[miniblock_idx]));
 
+        const size_t bit_width = miniblock_bit_widths[miniblock_idx];
         miniblock_values_remaining = values_per_block / miniblocks_per_block;
-        size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
+        size_t available = size_t(end - data);
+        size_t bytes = 0;
 
         /// Tolerate missing padding at the end of the last block.
         /// The Parquet spec requires zero-padding the last block to the full block size,
@@ -865,18 +868,22 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         /// The missing bytes correspond to padding values beyond total_values_remaining
         /// that would never be read by decodeImpl, so we reduce the miniblock's readable
         /// value count to match the available data.
-        size_t available = size_t(end - data);
-        if (bytes > available)
+        /// The comparison is in values, so that a huge block size in a corrupted header
+        /// cannot overflow the size of the miniblock in bytes.
+        if (bit_width > 0 && miniblock_values_remaining > available * 8 / bit_width)
         {
-            bytes = available;
-            if (miniblock_bit_widths[miniblock_idx] > 0)
-                miniblock_values_remaining = (available * 8) / miniblock_bit_widths[miniblock_idx];
-
+            miniblock_values_remaining = available * 8 / bit_width;
             if (!miniblock_values_remaining)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data in DELTA_BINARY_PACKED miniblock");
+            bytes = available;
+        }
+        else
+        {
+            bytes = (miniblock_values_remaining * bit_width + 7) / 8;
         }
 
         miniblock_data = reinterpret_cast<const UInt8 *>(data);
+        miniblock_end = miniblock_data + bytes;
         miniblock_bit_offset = 0;
         data += bytes;
     }
@@ -1004,8 +1011,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             size_t bits_per_delta = miniblock_bit_widths[miniblock_idx];
             if (bits_per_delta > sizeof(T) * 8)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED bit width {} is too big for {}-byte values", bits_per_delta, sizeof(T));
-            /// `nextMiniblock` made sure that the values are in bounds.
-            unpackBits(miniblock_data, reinterpret_cast<const UInt8 *>(end), miniblock_bit_offset, bits_per_delta, out_values, n);
+            /// `nextMiniblock` made sure that all `miniblock_values_remaining` values fit in the miniblock.
+            unpackBits(miniblock_data, miniblock_end, miniblock_bit_offset, bits_per_delta, out_values, n);
             miniblock_bit_offset += n * bits_per_delta;
 
             /// Locals, because `out_values` may alias the members.
