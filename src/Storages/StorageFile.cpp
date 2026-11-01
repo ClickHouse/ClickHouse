@@ -3154,7 +3154,7 @@ void ReadFromFile::orderFilesByTopKBound(
         ordered_files.push_back(std::move(state->files[i]));
     files_iterator->setFiles(std::move(ordered_files));
 #else
-    UNUSED(format_filter_info, num_streams);
+    UNUSED(format_filter_info, num_streams, query_condition_cache_table_id);
 #endif
 }
 
