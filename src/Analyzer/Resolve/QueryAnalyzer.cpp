@@ -1518,7 +1518,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             {
                 auto function_node = std::make_shared<FunctionNode>(identifier.getFullName());
                 function_node->resolveAsFunction(function_resolver->build({}));
-                lookup_result.resolved_identifier = std::move(function_node);
+                if (scope_to_resolve_alias_expression->isResolvingAsofJoinExpression())
+                    lookup_result.resolved_identifier = std::move(function_node);
+                else
+                    lookup_result.resolved_identifier = foldConstantCast(function_node);
                 lookup_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
             }
         }
@@ -1955,7 +1958,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         {
             auto function_node = std::make_shared<FunctionNode>(identifier_name);
             function_node->resolveAsFunction(function_resolver->build({}));
-            resolve_result.resolved_identifier = std::move(function_node);
+            if (scope.isResolvingAsofJoinExpression())
+                resolve_result.resolved_identifier = std::move(function_node);
+            else
+                resolve_result.resolved_identifier = foldConstantCast(function_node);
             resolve_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
         }
     }

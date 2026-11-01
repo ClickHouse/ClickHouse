@@ -178,13 +178,14 @@ QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTre
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
-/// Constant-fold a resolved `_CAST(<constant>, <type>)` function node, exactly as `resolveFunction` would.
+/// Constant-fold a resolved function node with constant arguments, exactly as `resolveFunction` would: a
+/// `_CAST(<constant>, <type>)`, or a function written without parentheses (`CURRENT_DATABASE`).
 /// Passes that create a `_CAST` after normal resolution (e.g. `IfTransformStringsToEnumPass`,
 /// `DistanceTransposedPartialReadsPass`) must fold it here so that a remote shard / parallel replica, which
 /// re-analyzes the shipped AST and folds the constant on its side, names the resulting `ConstantNode`
 /// identically. Otherwise the action-node names on the initiator and the shard diverge and the initiator
 /// cannot find the column the shard produced (issues #74716, #110719). If the node cannot be folded (not a
-/// resolved `_CAST`, non-constant arguments, or a value >= 1 MiB, matching `resolveFunction`) the original
+/// resolved function, non-constant arguments, or a value >= 1 MiB, matching `resolveFunction`) the original
 /// node is returned unchanged.
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
 
