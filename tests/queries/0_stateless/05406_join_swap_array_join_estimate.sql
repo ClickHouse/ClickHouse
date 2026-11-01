@@ -59,6 +59,33 @@ SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_l WHERE id > 1000) AS s 
 SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_s) AS s INNER JOIN aj_r ON aj_r.id = s.k;
 SELECT count() FROM (SELECT k FROM aj_l ARRAY JOIN arr AS k) AS s INNER JOIN aj_r ON aj_r.id = s.k;
 
+-- A filter on the array-joined elements leaves 6 rows in `s`; the estimate of its input must not make `aj_r` the build side.
+-- The third count is the plans that show no row estimate for `s`.
+SELECT 'ARRAY JOIN, element filter', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%'), countIf(explain ILIKE '%s[no_stats~?]%')
+FROM (EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM aj_r INNER JOIN (SELECT id FROM aj_l ARRAY JOIN arr AS k WHERE k = 5) AS s ON aj_r.id = s.id
+    SETTINGS query_plan_fuse_filter_into_array_join = 1)
+WHERE explain ILIKE '%Join:%';
+
+SELECT 'ARRAY JOIN, filter step', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%'), countIf(explain ILIKE '%s[no_stats~?]%')
+FROM (EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM aj_r INNER JOIN (SELECT id FROM aj_l ARRAY JOIN arr AS k WHERE k = 5) AS s ON aj_r.id = s.id
+    SETTINGS query_plan_fuse_filter_into_array_join = 0)
+WHERE explain ILIKE '%Join:%';
+
+SELECT 'arrayJoin, filter', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%'), countIf(explain ILIKE '%s[no_stats~?]%')
+FROM (EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM aj_r INNER JOIN (SELECT id FROM (SELECT id, arrayJoin(arr) AS k FROM aj_l) WHERE k = 5) AS s ON aj_r.id = s.id
+    SETTINGS query_plan_lower_array_join_function = 0, query_plan_merge_expressions = 0)
+WHERE explain ILIKE '%Join:%';
+
+-- A filter on the elements of an empty input keeps its estimate of 0 rows.
+SELECT 'ARRAY JOIN, element filter, empty input', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%')
+FROM (EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM (SELECT id FROM aj_l ARRAY JOIN arr AS k WHERE id > 1000 AND k = 5) AS s INNER JOIN aj_r ON aj_r.id = s.id
+    SETTINGS query_plan_fuse_filter_into_array_join = 1)
+WHERE explain ILIKE '%Join:%';
+
 DROP TABLE aj_l;
 DROP TABLE aj_s;
 DROP TABLE aj_r;

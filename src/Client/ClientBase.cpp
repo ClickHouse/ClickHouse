@@ -866,7 +866,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    if (block.empty())
+    if (block.empty() || local_format_error_happened)
         return;
 
     processed_rows_from_blocks += block.rows();
@@ -898,6 +898,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         //this is a bad catch. It catches too much cases unrelated to LocalFormatError
         /// Catch client errors like NO_ROW_DELIMITER
+        local_format_error_happened = true;
         throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
     }
 
@@ -1001,6 +1002,8 @@ void ClientBase::onLogData(Block & block)
 
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
+    if (local_format_error_happened)
+        return;
     initOutputFormat(block, parsed_query);
     output_format->setTotals(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
@@ -1008,6 +1011,8 @@ void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
+    if (local_format_error_happened)
+        return;
     initOutputFormat(block, parsed_query);
     output_format->setExtremes(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
@@ -1346,6 +1351,7 @@ catch (...)
         std_out_wrapper->cancel();
     std_out_wrapper.reset();
 
+    local_format_error_happened = true;
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
 
@@ -2130,6 +2136,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 }
                 catch (...)
                 {
+                    local_format_error_happened = true;
                     local_format_error = std::make_exception_ptr(
                         LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
                     sendCancel(local_format_error);
@@ -2751,7 +2758,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    /// `FROM INFILE` names the data source, so stdin is not read for it. Do not even check stdin then: the check waits
+    /// for data or EOF, so an open pipe would block the query.
+    bool have_data_in_stdin = !parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
     if (need_render_progress)
     {
@@ -2856,16 +2865,13 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 std::move(pipe),
                 parsed_query,
-                have_data_in_stdin);
+                /*have_more_data=*/ false);
         }
         catch (Exception & e)
         {
             e.addMessage("data for INSERT was parsed from file");
             throw;
         }
-
-        if (have_data_in_stdin && !cancelled)
-            sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
     {
@@ -3171,6 +3177,7 @@ void ClientBase::processParsedSingleQuery(
     error_code = 0;
     cancelled = false;
     cancelled_printed = false;
+    local_format_error_happened = false;
     client_exception.reset();
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
