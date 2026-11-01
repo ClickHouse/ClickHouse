@@ -109,7 +109,10 @@ private:
         Pair max_bucket = array[size - 1];
         if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
             return std::numeric_limits<Value>::quiet_NaN();
-        CumulativeHistogramValue max_position = max_bucket.second;
+        ensureMonotonic(array, size);
+        CumulativeHistogramValue max_position = array[size - 1].second;
+        if (max_position == 0)
+            return std::numeric_limits<Value>::quiet_NaN();
         Float64 position = static_cast<Float64>(max_position) * level;
         return quantileInterpolated(array, size, position);
     }
@@ -137,11 +140,12 @@ private:
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
         Pair max_bucket = array[size - 1];
-        CumulativeHistogramValue max_position = max_bucket.second;
+        ensureMonotonic(array, size);
+        CumulativeHistogramValue max_position = array[size - 1].second;
 
         for (size_t j = 0; j < num_levels; ++j)
         {
-            if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
+            if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity() || max_position == 0)
             {
                 result[indices[j]] = std::numeric_limits<Value>::quiet_NaN();
             }
@@ -150,6 +154,23 @@ private:
                 Float64 position = static_cast<Float64>(max_position) * levels[indices[j]];
                 result[indices[j]] = quantileInterpolated(array, size, position);
             }
+        }
+    }
+
+    /// Like Prometheus, raise a decreasing cumulative count to the previous one and snap tiny float deltas to it.
+    static void ensureMonotonic(Pair * array, size_t size)
+    {
+        CumulativeHistogramValue prev = array[0].second;
+        for (size_t i = 1; i < size; ++i)
+        {
+            CumulativeHistogramValue & curr = array[i].second;
+            bool small_delta = false;
+            if constexpr (std::is_floating_point_v<CumulativeHistogramValue>)
+                small_delta = std::abs(curr - prev) < 1e-12 * std::clamp(std::abs(curr) + std::abs(prev), std::numeric_limits<Float64>::min(), std::numeric_limits<Float64>::max());
+            if (small_delta || curr < prev)
+                curr = prev;
+            else
+                prev = curr;
         }
     }
 
@@ -260,6 +281,7 @@ Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a histogram using
 
 To get the interpolated value, all the passed values are combined into an array, which are then sorted by their corresponding bucket upper bound values.
 Quantile interpolation is then performed similarly to the PromQL [histogram_quantile()](https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) function on a classic histogram, performing a linear interpolation using the lower and upper bound of the bucket in which the quantile position is found.
+As in PromQL, cumulative values are first made monotonic (floating-point values that differ by a relative `1e-12` or less count as equal), and the result is `NaN` if the histogram has no observations.
 
 **See Also**
 
@@ -274,7 +296,7 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
     };
     FunctionDocumentation::Arguments arguments_quantilePrometheusHistogram = {
         {"bucket_upper_bound", "Upper bounds of the histogram buckets. The highest bucket must have an upper bound of `+Inf`.", {"Float*"}},
-        {"cumulative_bucket_value", "Cumulative values of the histogram buckets. Values must be monotonically increasing as the bucket upper bound increases.", {"UInt*", "Float*"}}
+        {"cumulative_bucket_value", "Cumulative values of the histogram buckets. Values should not decrease as the bucket upper bound increases. A value lower than the one of the previous bucket is raised to it.", {"UInt*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_quantilePrometheusHistogram = {"Returns the quantile of the specified level. The floating-point type of the result matches the type of `bucket_upper_bound`.", {"Float32", "Float64"}};
     FunctionDocumentation::Examples examples_quantilePrometheusHistogram = {
@@ -310,7 +332,7 @@ quantilesPrometheusHistogram(level1, level2, ...)(bucket_upper_bound, cumulative
     };
     FunctionDocumentation::Arguments arguments_quantilesPrometheusHistogram = {
         {"bucket_upper_bound", "Upper bounds of the histogram buckets. The highest bucket must have an upper bound of `+Inf`.", {"Float*"}},
-        {"cumulative_bucket_value", "Cumulative values of the histogram buckets. Values must be monotonically increasing as the bucket upper bound increases.", {"UInt*", "Float*"}}
+        {"cumulative_bucket_value", "Cumulative values of the histogram buckets. Values should not decrease as the bucket upper bound increases. A value lower than the one of the previous bucket is raised to it.", {"UInt*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_quantilesPrometheusHistogram = {"Array of quantiles of the specified levels in the same order as the levels were specified. The floating-point type of the result matches the type of `bucket_upper_bound`.", {"Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples_quantilesPrometheusHistogram = {
