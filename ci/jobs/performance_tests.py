@@ -203,6 +203,9 @@ JOB_START = time.monotonic()
 JOB_END_RESERVE_SEC = 300
 # The uploads get at least this long, however late the job is.
 DASHBOARD_MIN_UPLOAD_SEC = 60
+# compare.sh's confirmation reruns end this long before `job_end`: after them, the rest of the report,
+# the uploads and the dashboard gate take about two minutes.
+CONFIRM_END_RESERVE_SEC = 180
 # Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 # Pause between the log export flushes of a nightly run.
@@ -3357,10 +3360,17 @@ def main():
         # generated ci-checks.tsv using UInt32, so use the master sentinel (0)
         # for this local-only report instead of passing a negative PR number.
         report_pr_number = 0 if info.is_local_run else info.pr_number
+        # compare.sh counts `CHPC_CONFIRM_DEADLINE_SEC` from its own start, like `SECONDS`.
+        confirm_deadline = (
+            ""
+            if end is None
+            else f"CHPC_CONFIRM_DEADLINE_SEC={int(end - CONFIRM_END_RESERVE_SEC - time.monotonic())} "
+        )
         commands = [
             f"PR_TO_TEST={report_pr_number} "
             f"SHA_TO_TEST={tested_sha} "
             f"{'CHPC_NIGHTLY=1 ' if nightly else ''}"
+            f"{confirm_deadline}"
             "stage=get_profiles "
             f"{script_path}",
         ]

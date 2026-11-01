@@ -1010,10 +1010,16 @@ then
     perf_py="$script_dir/../../../../tests/performance/scripts/perf.py"
 fi
 
-# Also cap the confirmation wall-clock time. Tests not rerun keep their
-# original verdict (fail-open in the strict direction: no demotion).
+# Also cap the confirmation wall-clock time: 20 minutes, or less when the
+# caller passes CHPC_CONFIRM_DEADLINE_SEC (the SECONDS of this script by which
+# the reruns must end). Tests not rerun keep their original verdict
+# (fail-open in the strict direction: no demotion).
 local confirm_deadline=$(( SECONDS + 1200 ))
-local confirm_test confirm_test_file confirm_indexes
+if [ -n "${CHPC_CONFIRM_DEADLINE_SEC:-}" ] && [ "$CHPC_CONFIRM_DEADLINE_SEC" -lt "$confirm_deadline" ]
+then
+    confirm_deadline=$CHPC_CONFIRM_DEADLINE_SEC
+fi
+local confirm_test confirm_test_file confirm_indexes confirm_time_left
 # Every start of a binary puts its thread stacks at the same place, and a change
 # can come from where the hot frames land in their pages alone, so rerun at three
 # stack placements and confirm a change only if it reproduces at two (step 4).
@@ -1023,6 +1029,16 @@ local tls_surplus=("" $(( 512 + 21 * 64 )) $(( 512 + 43 * 64 )))
 local placement placements_done=0
 for placement in 0 1 2
 do
+    if [ "$SECONDS" -ge "$confirm_deadline" ]
+    then
+        if [ "$placements_done" -eq 0 ]
+        then
+            echo "confirm_changes: WARNING: no time left, skipping confirmation"
+            return 0
+        fi
+        echo "confirm_changes: WARNING: time budget exhausted before stack placement $placement, using the placements measured so far"
+        break
+    fi
     echo "confirm_changes: rerunning at stack placement $placement (static TLS surplus ${tls_surplus[placement]:-default})"
     # The caller runs us with errexit disabled (fail-open), which also masks
     # failures inside restart: its return value only reflects the last check.
@@ -1048,7 +1064,8 @@ do
 
     for confirm_test in $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq)
     do
-        if [ "$SECONDS" -ge "$confirm_deadline" ]
+        confirm_time_left=$(( confirm_deadline - SECONDS ))
+        if [ "$confirm_time_left" -le 0 ]
         then
             echo "confirm_changes: WARNING: time budget exhausted at stack placement $placement, the remaining tests are not rerun"
             break 2
@@ -1069,8 +1086,9 @@ do
         # The output goes through a temp file renamed only on success: a partial
         # raw file from a failed rerun could otherwise demote the queries that
         # did rerun, contradicting "the whole test keeps its original verdict".
+        # timeout: a rerun must not run past the deadline (a cut rerun fails like any other).
         # shellcheck disable=SC2086
-        if "$perf_py" "$confirm_test_file" \
+        if timeout -k 10 "$confirm_time_left" "$perf_py" "$confirm_test_file" \
             --host localhost localhost \
             --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
             --binary left/clickhouse right/clickhouse \
