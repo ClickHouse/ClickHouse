@@ -74,6 +74,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
     hash_state.update(limit_after_all);
+    hash_state.update(shuffle);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -255,19 +256,8 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
-    if (shuffle())
-    {
+    if (shuffle)
         ostr << s.nl_or_ws << indent_str << "SHUFFLE";
-        if (!shuffle()->children.empty())
-        {
-            auto nested_frame = frame;
-            nested_frame.expression_list_prepend_whitespace = false;
-
-            ostr << " (";
-            shuffle()->format(ostr, s, state, nested_frame);
-            ostr << ")";
-        }
-    }
 
     if (limitByLength())
     {
@@ -637,7 +627,6 @@ void ASTSelectQuery::normalizeChildrenOrder()
         Expression::LIMIT_UNTIL,
         Expression::SETTINGS,
         Expression::INTERPOLATE,
-        Expression::SHUFFLE
     };
 
     ASTs new_children;

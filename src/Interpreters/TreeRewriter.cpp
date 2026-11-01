@@ -1508,7 +1508,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
     }
 
-    if (select_query->shuffle())
+    if (select_query->shuffle)
     {
         if (!settings[Setting::allow_experimental_shuffle_query])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");

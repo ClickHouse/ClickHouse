@@ -487,10 +487,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
 
-    if (select_query_typed.shuffle() && !allow_experimental_shuffle_query)
+    if (select_query_typed.shuffle && !allow_experimental_shuffle_query)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
 
-    current_query_tree->setIsShuffle(static_cast<bool>(select_query_typed.shuffle()));
+    current_query_tree->setIsShuffle(select_query_typed.shuffle);
     current_query_tree->setIsLimitAfterAll(select_query_typed.limit_after_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here

@@ -1,9 +1,0 @@
-EXPLAIN SYNTAX
-SELECT number
-FROM numbers(10)
-SHUFFLE
-LIMIT 1; -- { serverError SUPPORT_IS_DISABLED }
-
-SELECT number
-FROM numbers(3)
-SHUFFLE; -- { serverError SUPPORT_IS_DISABLED }

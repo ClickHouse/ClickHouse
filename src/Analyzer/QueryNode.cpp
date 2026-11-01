@@ -18,7 +18,6 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -518,6 +517,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
     select_query->order_by_all = is_order_by_all;
+    select_query->shuffle = is_shuffle;
     select_query->limit_by_all = is_limit_by_all;
     select_query->limit_after_all = is_limit_after_all;
 
@@ -639,8 +639,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
 
-    if (is_shuffle)
-        select_query->setExpression(ASTSelectQuery::Expression::SHUFFLE, make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)}));
 
     if (hasSettingsChanges())
     {

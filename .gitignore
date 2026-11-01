@@ -199,7 +199,6 @@ tests/casa_del_dolor/_instances*
 
 # Claude preferences
 .claude/*.local.*
-tmp/
 
 # Stray local benchmark binary
 /src/bench_pr

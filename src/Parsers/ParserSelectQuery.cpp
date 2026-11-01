@@ -392,7 +392,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_until;
     ASTPtr top_length;
     ASTPtr settings;
-    ASTPtr shuffle;
 
     /// WITH expr_list
     {
@@ -670,14 +669,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         select_query->order_by_all = order_by_all;
     }
-
-    //SHUFFLE expr
-    if (s_shuffle.ignore(pos, expected))
+    /// SHUFFLE is used in place of ORDER BY
+    else if (s_shuffle.ignore(pos, expected))
     {
-        if (order_expression_list)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot use SHUFFLE together with ORDER BY");
-
-        shuffle = make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)}); // flag: shuffle is present
+        select_query->shuffle = true;
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
@@ -908,7 +903,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, std::move(limit_until));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
     select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
-    select_query->setExpression(ASTSelectQuery::Expression::SHUFFLE, std::move(shuffle));
     return true;
 }
 
@@ -936,7 +930,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -965,6 +959,7 @@ The expression list immediately after `SELECT` is required; all other clauses ar
 - [WINDOW clause](/reference/functions/window-functions/index)
 - [QUALIFY clause](/reference/statements/select/qualify)
 - [ORDER BY clause](/reference/statements/select/order-by)
+- [SHUFFLE clause](/reference/statements/select/shuffle)
 - [LIMIT BY clause](/reference/statements/select/limit-by)
 - [LIMIT clause](/reference/statements/select/limit)
 - [OFFSET clause](/reference/statements/select/offset)
@@ -1197,7 +1192,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -3121,6 +3116,68 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "GROUP BY", "ALTER TABLE ... MODIFY ORDER BY"},
+    };
+
+    documentation["SHUFFLE"] =
+    {
+        .description = R"DOCS_MD(
+The `SHUFFLE` clause returns the rows of the query result in a uniformly random order. It is used in place of the [ORDER BY](/reference/statements/select/order-by) clause and cannot be combined with it.
+
+It returns the same result as `ORDER BY rand()`, but works in O(n) time instead of O(n * log(n)).
+
+`SHUFFLE` can be used without `LIMIT`, to randomize the order of all rows, or with `LIMIT n`, to take a uniformly random sample of `n` rows (also returned in a random order). With `LIMIT n`, every stream keeps only `n` rows, so the memory usage is O(n) regardless of the number of rows in the query result. `OFFSET` and `LIMIT BY` can be used as with `ORDER BY`.
+
+<Note>
+This is an experimental feature. Enable it with the setting [`allow_experimental_shuffle_query`](/reference/settings/session-settings#allow_experimental_shuffle_query). It requires the analyzer (`enable_analyzer = 1`).
+</Note>
+
+## Implementation details {#implementation-details}
+
+Every stream of the query pipeline is shuffled independently with the Fisher-Yates algorithm, and every row is assigned a random key in such a way that the keys are independent uniformly distributed random numbers and the output of every stream is sorted by them. The shuffled streams are merged by these keys, which takes O(1) memory. The same applies to distributed queries: the remote servers shuffle their data, and the initiator merges the shuffled streams.
+
+Without `LIMIT`, `SHUFFLE` keeps all rows in memory. Unlike `ORDER BY`, it does not spill data to disk.
+
+`ORDER BY rand()` and `ORDER BY rand64()` are executed the same way as `SHUFFLE` (the setting [`query_plan_use_shuffle_for_order_by_rand`](/reference/settings/session-settings#query_plan_use_shuffle_for_order_by_rand)) when the random value is not used anywhere else in the query, and when there is a `LIMIT` or the external sorting is disabled.
+
+## Examples {#examples}
+
+```sql
+SET allow_experimental_shuffle_query = 1;
+
+SELECT number FROM numbers(5) SHUFFLE;
+```
+
+```text
+┌─number─┐
+│      3 │
+│      0 │
+│      4 │
+│      1 │
+│      2 │
+└────────┘
+```
+
+A random sample of three rows:
+
+```sql
+SELECT number FROM numbers(1000000) SHUFFLE LIMIT 3;
+```
+
+```text
+┌─number─┐
+│ 493721 │
+│  20857 │
+│ 871324 │
+└────────┘
+```
+
+`SHUFFLE` is a keyword after the `FROM` clause. To use `shuffle` as a table alias, write `AS shuffle`.
+)DOCS_MD",
+        .syntax = R"(
+SELECT ... SHUFFLE [LIMIT [n, ]m] ...
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "ORDER BY", "LIMIT", "SAMPLE"},
     };
 
     documentation["LIMIT"] =

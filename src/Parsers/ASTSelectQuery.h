@@ -39,8 +39,7 @@ public:
         LIMIT_AFTER,
         LIMIT_UNTIL,
         SETTINGS,
-        INTERPOLATE,
-        SHUFFLE
+        INTERPOLATE
     };
 
     static String expressionToString(Expression expr)
@@ -89,8 +88,6 @@ public:
                 return "SETTINGS";
             case Expression::INTERPOLATE:
                 return "INTERPOLATE";
-            case Expression::SHUFFLE:
-                return "SHUFFLE";
         }
         return "";
     }
@@ -112,6 +109,8 @@ public:
     bool limit_with_ties = false;
     bool limit_by_all = false;
     bool limit_after_all = false;
+    /// `SHUFFLE` is used in place of `ORDER BY`: the result rows are returned in a uniformly random order.
+    bool shuffle = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
@@ -143,7 +142,6 @@ public:
     ASTPtr limitUntil()     const { return getExpression(Expression::LIMIT_UNTIL); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
-    ASTPtr shuffle()        const { return getExpression(Expression::SHUFFLE); }
 
     bool hasFiltration() const { return where() || prewhere() || having() || qualify(); }
 
