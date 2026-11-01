@@ -3,22 +3,26 @@
 AggregateFunction(sum, Int32)	0
 AggregateFunction(sum, Int32)	5050
 \N	\N
-AggregateFunction(sumOrNull, UInt64)	\N
 \N
 5050
-AggregateFunction(sum, Int32)	0
 AggregateFunction(sum, Int32)	5050
-\N	\N
-5050	5050
 \N
 5050
-AggregateFunction(sum, Int32)	0
-AggregateFunction(sum, Int32)	5050
-\N	\N
-AggregateFunction(sumOrNull, UInt64)	\N
 \N
 5050
-AggregateFunction(sum, Int32)	0
-AggregateFunction(sum, Int32)	5050
-\N	\N
-5050	5050
+AggregateFunction(sumOrNull, Int32)	\N
+AggregateFunction(sumOrNull, Int32)	5050
+\N
+5050
+\N
+3
+3
+\N
+5050
+AggregateFunction(sumOrNull, Int32)	\N
+AggregateFunction(sumOrNull, Int32)	5050
+\N
+5050
+\N
+3
+3
