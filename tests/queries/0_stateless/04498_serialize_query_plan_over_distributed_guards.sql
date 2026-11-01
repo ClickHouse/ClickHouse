@@ -7,7 +7,6 @@
 -- distributed_group_by_no_merge) do not throw SUPPORT_IS_DISABLED. The make-only section pins the
 -- same guards with the plan path disabled (make_distributed_plan = 1, serialize_query_plan = 0).
 
-SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 
 DROP TABLE IF EXISTS mdp_local;

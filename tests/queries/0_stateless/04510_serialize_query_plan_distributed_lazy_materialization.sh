@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-base_settings="enable_analyzer=1, serialize_query_plan=1, query_plan_optimize_lazy_materialization=1, distributed_push_down_limit=1, skip_unavailable_shards=0, explain_query_plan_default='legacy'"
+base_settings="serialize_query_plan=1, query_plan_optimize_lazy_materialization=1, distributed_push_down_limit=1, skip_unavailable_shards=0, explain_query_plan_default='legacy'"
 query="SELECT payload FROM dlm_dist ORDER BY key DESC, tie ASC LIMIT 3 OFFSET 2"
 
 explain_query()

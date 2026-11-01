@@ -4,7 +4,6 @@
 -- the initiator (a per-shard LIMIT is not a global LIMIT) while each shard plan
 -- gets a copy with limit = limit + offset and offset = 0.
 
-SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 SET explain_query_plan_default = 'legacy';
 

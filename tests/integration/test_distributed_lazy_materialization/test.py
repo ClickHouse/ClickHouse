@@ -20,7 +20,6 @@ shards = [shard1, shard2]
 
 BASE_SETTINGS = ", ".join(
     [
-        "enable_analyzer = 1",
         "serialize_query_plan = 1",
         "query_plan_optimize_lazy_materialization = 1",
         "distributed_push_down_limit = 1",

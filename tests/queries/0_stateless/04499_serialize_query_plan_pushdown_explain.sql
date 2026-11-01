@@ -5,7 +5,6 @@
 -- shard plan (above ReadFromTable); the plain (initiator) plan must keep only
 -- ReadFromRemote, i.e. it does not re-run the filter/projection.
 
-SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 SET explain_query_plan_default = 'legacy';
 

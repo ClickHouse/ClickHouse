@@ -3,7 +3,6 @@
 -- serialize_query_plan = 0 (the legacy path). The reference asserts that both
 -- blocks are identical.
 
-SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 
 DROP TABLE IF EXISTS sweep_local;

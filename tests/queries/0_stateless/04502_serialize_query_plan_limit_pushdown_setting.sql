@@ -2,7 +2,6 @@
 -- distributed_push_down_limit = 0 must disable the LIMIT copy-down into the per-shard
 -- plan of a ReadFromRemotePlanStep placeholder (parity with the legacy path).
 
-SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 SET explain_query_plan_default = 'legacy';
 
