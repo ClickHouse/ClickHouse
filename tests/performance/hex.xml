@@ -1,12 +1,39 @@
 <test>
-    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(8))))</query>
-    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(16))))</query>
-    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(32))))</query>
-    <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize(randomString(64))))</query>
-    <query>SELECT count(unhex(materialize(hex(randomString(8))))) FROM numbers(2_000_000)</query>
-    <query>SELECT count(unhex(materialize(hex(randomString(8)) || hex(randomString(8, 1)) ))) FROM numbers(2_000_000)</query>
-    <query>SELECT count(unhex(materialize(hex(randomString(8)) || hex(randomString(8, 1)) || hex(randomString(8, 2)) || hex(randomString(8, 3))))) FROM numbers(2_000_000)</query>
-    <query>SELECT count(unhex(materialize(hex(randomString(8)) || hex(randomString(8, 1)) || hex(randomString(8, 2)) || hex(randomString(8, 3)) || hex(randomString(8, 4)) || hex(randomString(8, 5)) || hex(randomString(8, 6)) || hex(randomString(8, 7))))) FROM numbers(2_000_000)</query>
+    <!-- The inputs are materialized constants or a pre-filled table, so the measured time is mostly `hex` and
+         `unhex` and not the generation of random input. -->
+    <substitutions>
+        <substitution>
+            <!-- Decoded bytes per row: each length takes a different branch in the vectorized decoders. -->
+            <name>len</name>
+            <values>
+                <value>4</value>
+                <value>8</value>
+                <value>12</value>
+                <value>16</value>
+                <value>20</value>
+                <value>24</value>
+                <value>32</value>
+                <value>48</value>
+                <value>64</value>
+                <value>100</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Rows of 0 to 40 bytes, so the length branches of the decoders are not predictable. -->
+    <create_query>CREATE TABLE hex_mixed (h String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO hex_mixed SELECT hex(randomString(number % 41)) FROM numbers(5_000_000)</fill_query>
+
+    <!-- `hex` encodes the whole column buffer at once, so the row length only changes the per-row overhead. -->
+    <query>SELECT count() FROM numbers(10_000_000) WHERE NOT ignore(hex(materialize(repeat('J', 8))))</query>
+    <query>SELECT count() FROM numbers(10_000_000) WHERE NOT ignore(hex(materialize(repeat('J', 64))))</query>
+
+    <query>SELECT count() FROM numbers(10_000_000) WHERE NOT ignore(unhex(materialize(repeat('4a', {len}))))</query>
+    <query>SELECT count() FROM hex_mixed WHERE NOT ignore(unhex(h)) SETTINGS max_threads = 1</query>
+    <!-- An odd number of digits: the first digit is decoded on its own. -->
+    <query>SELECT count() FROM numbers(10_000_000) WHERE NOT ignore(unhex(materialize(repeat('4a', 20) || 'a')))</query>
+    <!-- An even-length `FixedString` is decoded as one buffer. -->
+    <query>SELECT count() FROM numbers(10_000_000) WHERE NOT ignore(unhex(materialize(toFixedString(repeat('4a', 20), 40))))</query>
 
     <query>SELECT count() FROM numbers(2_000_000) WHERE NOT ignore(hex(materialize('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')))</query>
     <query>SELECT count() FROM numbers(500_000) WHERE NOT ignore(hex(materialize('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')))</query>
@@ -19,4 +46,5 @@
     <query>SELECT count() FROM numbers(10_000_000) WHERE NOT ignore(hex(toDecimal128(number, 2)))</query>
     <query>SELECT count() FROM numbers(10_000_000) WHERE NOT ignore(hex(toIPv6(toIPv4(number))))</query>
 
+    <drop_query>DROP TABLE IF EXISTS hex_mixed</drop_query>
 </test>
