@@ -1332,6 +1332,19 @@ fn snapshot_etag_identity(etag: Option<&str>) -> (bool, [u8; SNAPSHOT_DIGEST_SIZ
     }
 }
 
+/// Whether `actual` is the snapshot `expected` describes. The manifest path, size and SHA-256 of its bytes
+/// identify the snapshot. The e_tag is supplementary: the object store does not always report it for the same
+/// manifest (e.g. Lance resolves a historical version with the V1 naming scheme without a HEAD request, so
+/// it has no e_tag, while the discovery of the latest version has one), so it is compared only when both
+/// sides have it.
+fn snapshot_matches(actual: &ch_lance_snapshot_info, expected: &ch_lance_snapshot_info) -> bool {
+    actual.version == expected.version
+        && actual.manifest_id == expected.manifest_id
+        && actual.manifest_size == expected.manifest_size
+        && actual.manifest_sha256 == expected.manifest_sha256
+        && (!actual.has_etag || !expected.has_etag || actual.etag_sha256 == expected.etag_sha256)
+}
+
 fn validate_snapshot(snapshot: &ch_lance_snapshot_info) -> FfiResult<()> {
     if snapshot.version == 0 {
         return Err(FfiError::invalid_argument(
@@ -1592,7 +1605,7 @@ async fn checkout_exact_snapshot(
                 error
             }
         })?;
-    if actual != expected {
+    if !snapshot_matches(&actual, &expected) {
         return Err(FfiError::new(
             ChLanceErrorKind::SnapshotMismatch,
             origin,
@@ -5028,7 +5041,69 @@ mod tests {
 
     #[test]
     fn ffi_total_rows_uses_requested_snapshot() {
-        let dir = write_test_dataset();
+        check_total_rows_uses_requested_snapshot(write_test_dataset());
+    }
+
+    /// With the V1 naming scheme, Lance resolves a historical version without a HEAD request, so the checked out
+    /// manifest has no e_tag, while the snapshot pinned from the latest version has one.
+    #[test]
+    fn ffi_total_rows_uses_requested_snapshot_with_v1_manifest_paths() {
+        use lance::dataset::WriteParams;
+
+        let dir = tempfile::tempdir().unwrap();
+        let batch = make_batch(vec![1, 2, 3]);
+        let schema = batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        let params = WriteParams {
+            enable_v2_manifest_paths: false,
+            ..Default::default()
+        };
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(
+                reader,
+                dir.path().to_str().unwrap(),
+                Some(params),
+            ))
+            .unwrap();
+        assert!(dir.path().join("_versions").join("1.manifest").exists());
+        check_total_rows_uses_requested_snapshot(dir);
+    }
+
+    #[test]
+    fn snapshot_matches_ignores_missing_etag_only() {
+        let expected = ch_lance_snapshot_info {
+            version: 1,
+            manifest_id: [1; SNAPSHOT_DIGEST_SIZE],
+            manifest_size: 10,
+            manifest_sha256: [2; SNAPSHOT_DIGEST_SIZE],
+            has_etag: true,
+            etag_sha256: [3; SNAPSHOT_DIGEST_SIZE],
+        };
+        assert!(snapshot_matches(&expected, &expected));
+
+        let without_etag = ch_lance_snapshot_info {
+            has_etag: false,
+            etag_sha256: [0; SNAPSHOT_DIGEST_SIZE],
+            ..expected
+        };
+        assert!(snapshot_matches(&without_etag, &expected));
+        assert!(snapshot_matches(&expected, &without_etag));
+
+        let other_etag = ch_lance_snapshot_info {
+            etag_sha256: [4; SNAPSHOT_DIGEST_SIZE],
+            ..expected
+        };
+        assert!(!snapshot_matches(&other_etag, &expected));
+
+        let other_bytes = ch_lance_snapshot_info {
+            manifest_sha256: [5; SNAPSHOT_DIGEST_SIZE],
+            ..without_etag
+        };
+        assert!(!snapshot_matches(&other_bytes, &expected));
+    }
+
+    fn check_total_rows_uses_requested_snapshot(dir: tempfile::TempDir) {
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
         let options = dataset_options(&uri);
         let mut error = empty_error();
