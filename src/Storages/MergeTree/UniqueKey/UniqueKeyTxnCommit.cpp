@@ -8,6 +8,7 @@
 #include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
@@ -35,6 +36,7 @@
 
 namespace ProfileEvents
 {
+extern const Event RejectedInserts;
 extern const Event UniqueKeyDedupProbes;
 extern const Event UniqueKeyConflictOverwriteRows;
 extern const Event UniqueKeyConflictIgnoredRows;
@@ -229,6 +231,7 @@ public:
         , block(request.block)
         , transaction(request.transaction)
         , deduplication_hashes(request.deduplication_hashes)
+        , database_rows_limit_exception(request.database_rows_limit_exception)
     {
         own_part = request.temp_part.part;
     }
@@ -278,6 +281,8 @@ private:
 
     /// Every row conflicted under IGNORE, so nothing is published
     bool part_discarded = false;
+
+    std::exception_ptr database_rows_limit_exception;
 };
 
 ProbeTargetPartPtr UniqueKeyTxnCommit::InsertCommit::makeSSTProbeTarget(const MergeTreeDataPartPtr & target)
@@ -394,6 +399,20 @@ DeleteBitmapPtr UniqueKeyTxnCommit::InsertCommit::computeOwnKills(const std::vec
 
 bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
 {
+    /// The database had reached `max_rows` when the insert started: reject a block that is not a replay.
+    /// Decided before the block is registered in the dedup log, as in `MergeTreeSink::commitPart`.
+    if (database_rows_limit_exception)
+    {
+        auto * deduplication_log = storage.getDeduplicationLog();
+        const bool is_replay = !deduplication_hashes.empty() && deduplication_log
+            && deduplication_log->containsAny(getDeduplicationBlockIds(deduplication_hashes));
+        if (!is_replay)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            std::rethrow_exception(database_rows_limit_exception);
+        }
+    }
+
     /// Also registers the block ids in the dedup log.
     allocation = std::make_unique<BlockAllocation>(
         storage.log.load(), storage.allocateBlockNumber(CommittingBlock::Op::NewPart), storage.getDeduplicationLog(), *own_part,
