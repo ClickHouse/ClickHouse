@@ -116,7 +116,7 @@ bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescripti
 /// result is used only for validation, so replacing a subcolumn with its whole parent column is fine.
 /// An identifier rooted at an argument of an enclosing lambda, e.g. `z.a` in `arrayMap(z -> z.a, arrs)`,
 /// is a field of that argument, not a qualified column, so it is left as is.
-void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescription & columns, NameSet & lambda_arguments)
+void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescription & columns, NameSet & lambda_arguments, bool & changed)
 {
     checkStackSize();
 
@@ -143,6 +143,7 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
                     auto alias_identifier = make_intrusive<ASTIdentifier>(alias_name);
                     alias_identifier->setAlias(identifier->tryGetAlias());
                     ast = std::move(alias_identifier);
+                    changed = true;
                     return;
                 }
             }
@@ -160,7 +161,7 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
 
         auto & body = func->arguments->children[1];
         auto * old_ptr = body.get();
-        removeQualifiersFromAliasColumnIdentifiers(body, columns, lambda_arguments);
+        removeQualifiersFromAliasColumnIdentifiers(body, columns, lambda_arguments, changed);
         if (body.get() != old_ptr)
             func->arguments->updatePointerToChild(old_ptr, body.get());
 
@@ -172,7 +173,7 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
     for (auto & child : ast->children)
     {
         auto * old_ptr = child.get();
-        removeQualifiersFromAliasColumnIdentifiers(child, columns, lambda_arguments);
+        removeQualifiersFromAliasColumnIdentifiers(child, columns, lambda_arguments, changed);
         if (child.get() != old_ptr)
             ast->updatePointerToChild(old_ptr, child.get());
     }
@@ -199,10 +200,27 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     {
         using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
         ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
-        NameSet qualifier_lambda_arguments;
-        removeQualifiersFromAliasColumnIdentifiers(expanded_custom_key_ast, columns, qualifier_lambda_arguments);
-        ReplaceAliasToExprVisitor::Data data{columns, {}};
-        ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
+        /// Alias expansion can introduce new qualified or subcolumn references to other `ALIAS` columns
+        /// (`b ALIAS a.v` expands to `a.v`), which `ReplaceAliasByExpressionMatcher` does not expand by
+        /// itself. Repeat both steps until normalization no longer changes anything. Each round expands
+        /// at least one more `ALIAS` column of a chain, and the chain cannot be longer than the number of
+        /// `ALIAS` columns unless it is cyclic.
+        const size_t max_rounds = columns.getAliases().size() + 1;
+        for (size_t round = 0;; ++round)
+        {
+            if (round > max_rounds)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot expand ALIAS columns in the custom key expression: too many nested ALIAS columns");
+
+            NameSet qualifier_lambda_arguments;
+            bool changed = false;
+            removeQualifiersFromAliasColumnIdentifiers(expanded_custom_key_ast, columns, qualifier_lambda_arguments, changed);
+            if (round > 0 && !changed)
+                break;
+            ReplaceAliasToExprVisitor::Data data{columns, {}};
+            ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
+        }
         /// Unlike a DDL key, the setting is not rewritten by `AddDefaultDatabaseVisitor`, so `a IN arr`
         /// arrives with a plain identifier on the right-hand side. It is a table only if it is neither
         /// a column (possibly table-qualified, `a IN t.arr`) nor a lambda argument (`z -> a IN z`).
