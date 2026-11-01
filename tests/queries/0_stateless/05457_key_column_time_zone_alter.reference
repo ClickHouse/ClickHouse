@@ -1,5 +1,8 @@
 1
 1
 1
+1
+1
 11	1
+Tuple(a UInt8, dt DateTime(\'Asia/Tokyo\'))
 DateTime(\'Asia/Tokyo\')

@@ -51,6 +51,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
@@ -5866,24 +5868,51 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
-/// The time zone of a `DateTime` or `DateTime64` type, also inside `Nullable` and `LowCardinality`, or an empty string for
-/// any other type.
+/// The time zone of a `DateTime` or `DateTime64` type, or an empty string for any other type.
 String getTimeZoneOfDateTime(const DataTypePtr & type)
 {
-    const auto plain_type = removeLowCardinalityAndNullable(type);
-    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(plain_type.get()))
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type.get()))
         return date_time->getTimeZone().getTimeZone();
-    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(plain_type.get()))
+    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
         return date_time64->getTimeZone().getTimeZone();
     return {};
 }
 
-/// Whether a type change moves a `DateTime` or `DateTime64` to another time zone.
+/// Whether a type change moves a `DateTime` or `DateTime64` to another time zone, also inside `Nullable`, `LowCardinality`,
+/// `Array`, `Tuple` and `Map`: the stored values stay, but an expression such as `toHour(dt[1])` gives other values.
 bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
 {
-    const String from_time_zone = getTimeZoneOfDateTime(from);
-    const String to_time_zone = getTimeZoneOfDateTime(to);
-    return !from_time_zone.empty() && !to_time_zone.empty() && from_time_zone != to_time_zone;
+    const auto plain_from = removeLowCardinalityAndNullable(from);
+    const auto plain_to = removeLowCardinalityAndNullable(to);
+
+    const String from_time_zone = getTimeZoneOfDateTime(plain_from);
+    const String to_time_zone = getTimeZoneOfDateTime(plain_to);
+    if (!from_time_zone.empty() || !to_time_zone.empty())
+        return !from_time_zone.empty() && !to_time_zone.empty() && from_time_zone != to_time_zone;
+
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(plain_from.get()))
+        if (const auto * to_array = typeid_cast<const DataTypeArray *>(plain_to.get()))
+            return changesTimeZone(from_array->getNestedType(), to_array->getNestedType());
+
+    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(plain_from.get()))
+    {
+        if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(plain_to.get()))
+        {
+            const auto & from_elements = from_tuple->getElements();
+            const auto & to_elements = to_tuple->getElements();
+            for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+                if (changesTimeZone(from_elements[i], to_elements[i]))
+                    return true;
+        }
+        return false;
+    }
+
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(plain_from.get()))
+        if (const auto * to_map = typeid_cast<const DataTypeMap *>(plain_to.get()))
+            return changesTimeZone(from_map->getKeyType(), to_map->getKeyType())
+                || changesTimeZone(from_map->getValueType(), to_map->getValueType());
+
+    return false;
 }
 
 /// Comma-separated list of backquoted identifiers, for exception messages.
@@ -6634,8 +6663,52 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
+    /// Changing only the time zone of a `DateTime` keeps the stored values and needs no mutation, so the checks of the type
+    /// change below do not see it, but an expression of the key over the column, such as `toHour(dt)`, gives other values
+    /// afterwards: the primary key and the partitions of the existing parts would no longer match the key, and pruning would
+    /// drop their rows. Checked for every column, the version column included. A `Replicated` database re-executes the ALTER
+    /// per replica, so only the initial execution judges it: a secondary refusing what the initiator committed would retry
+    /// its queue entry forever.
+    auto check_time_zone_of_key_column = [&](const AlterCommand & command)
+    {
+        if (command.type != AlterCommand::MODIFY_COLUMN || !command.data_type || isSecondaryDDLReplay(local_context)
+            || !old_metadata.getColumns().hasPhysical(command.column_name))
+            return;
+
+        const auto & old_type = old_metadata.getColumns().getPhysical(command.column_name).type;
+        bool changes_time_zone_in_key = columns_alter_type_forbidden.contains(command.column_name) && changesTimeZone(old_type, command.data_type);
+
+        /// A key expression can also use a subcolumn of the column, such as `toHour(t.dt)` of a `Tuple`.
+        if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); !changes_time_zone_in_key && it != column_to_subcolumns_used_in_keys.end())
+        {
+            for (const auto & subcolumn : it->second)
+            {
+                if (!columns_alter_type_forbidden.contains(subcolumn))
+                    continue;
+                const auto subcolumn_name = std::string_view(subcolumn).substr(command.column_name.size() + 1);
+                const auto old_subcolumn_type = old_type->tryGetSubcolumnType(subcolumn_name);
+                const auto new_subcolumn_type = command.data_type->tryGetSubcolumnType(subcolumn_name);
+                if (old_subcolumn_type && new_subcolumn_type && changesTimeZone(old_subcolumn_type, new_subcolumn_type))
+                {
+                    changes_time_zone_in_key = true;
+                    break;
+                }
+            }
+        }
+
+        if (!changes_time_zone_in_key)
+            return;
+
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "ALTER of key column {} from type {} to type {} is forbidden, because the column is used in a key expression "
+            "whose values can depend on the time zone",
+            backQuoteIfNeed(command.column_name), old_type->getName(), command.data_type->getName());
+    };
+
     for (const AlterCommand & command : commands)
     {
+        check_time_zone_of_key_column(command);
+
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
@@ -6821,21 +6894,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                     "Cannot reset setting '{}' because it doesn't exist for MergeTree engines family",
                                     reset_setting);
             }
-        }
-        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
-            && columns_alter_type_forbidden.contains(command.column_name)
-            && old_metadata.getColumns().hasPhysical(command.column_name)
-            && changesTimeZone(old_metadata.getColumns().getPhysical(command.column_name).type, command.data_type))
-        {
-            /// Changing only the time zone keeps the stored values and needs no mutation, so it is not checked below, but an
-            /// expression of the key over the column, such as `toHour(dt)`, gives other values afterwards: the primary key and
-            /// the partitions of the existing parts would no longer match the key, and pruning would drop their rows.
-            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "ALTER of key column {} from type {} to type {} is forbidden, because the column is used in a key expression "
-                "whose values can depend on the time zone",
-                backQuoteIfNeed(command.column_name),
-                old_metadata.getColumns().getPhysical(command.column_name).type->getName(),
-                command.data_type->getName());
         }
         else if (const auto mutation_stage = command.getMutationStageDecision(*storage_metadata_snapshot, local_context);
                  mutation_stage.requires_mutation)
