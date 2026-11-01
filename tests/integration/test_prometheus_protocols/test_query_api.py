@@ -438,7 +438,7 @@ def test_large_compressed_response():
     # the 1 MiB buffers of the compressor and of the HTTP response.
     url = (
         f"http://{node.ip_address}:9093/api/v1/query_range"
-        "?query=time()&start=0&end=999999&step=1"
+        "?query=time()&start=0&end=999999&step=1&promql_max_points_per_series=0"
     )
     plain = requests.get(url, headers={"Accept-Encoding": "identity"})
     assert plain.status_code == 200, plain.text
@@ -476,6 +476,7 @@ def test_error_after_compressor_flush():
         f"http://{node.ip_address}:9093/api/v1/query_range"
         f"?query={urllib.parse.quote_plus('stream_error')}"
         f"&start=110&end=210&step=0.001"
+        f"&promql_max_points_per_series=0"
         f"&http_response_buffer_size={64 * 1024 * 1024}"
         f"&max_block_size=1"
         f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
