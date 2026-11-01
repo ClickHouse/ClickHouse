@@ -139,11 +139,25 @@ const std::unordered_map<std::string_view, DatePartFunction> date_part_functions
     {"$isoDayOfWeek", {"toDayOfWeek", 0}},
 };
 
-/// Operators that fold their arguments into a tree of binary applications.
+/// Operators that fold their arguments into a balanced tree of binary applications, see `makeBalancedFold`.
 const std::unordered_map<std::string_view, std::string> folded_functions = {
     {"$add", "plus"},
     {"$multiply", "multiply"},
 };
+
+/** The operands `[begin, end)` of an operator such as `$add`, folded with the binary `function`
+  * into a balanced tree, keeping their order: `((a + b) + (c + d))` rather than `(((a + b) + c) + d)`.
+  * The analyzer resolves an expression recursively, with a few kilobytes of stack per level, so a
+  * chain of a hundred operands already exhausts the stack a query may use, while the depth of a
+  * balanced tree is the logarithm of their number.
+  */
+ASTPtr makeBalancedFold(const std::string & function, const std::vector<ASTPtr> & operands, size_t begin, size_t end)
+{
+    if (end - begin == 1)
+        return operands[begin]->clone();
+    size_t middle = begin + (end - begin) / 2;
+    return makeASTFunction(function, makeBalancedFold(function, operands, begin, middle), makeBalancedFold(function, operands, middle, end));
+}
 
 /// A member of the document of an operator such as `$regexFind` or `$dateTrunc`.
 const rapidjson::Value & requireMember(const rapidjson::Value & value, const char * name, std::string_view operator_name)
@@ -1041,7 +1055,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         if (arguments.size() > max_folded_operands)
             throw Exception(
                 ErrorCodes::TOO_DEEP_AST,
-                "'{}' has {} operands, more than {}: the operations are nested one into another",
+                "'{}' has {} operands, more than {}",
                 name,
                 arguments.size(),
                 max_folded_operands);
@@ -1049,13 +1063,12 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         /// that checks it, see `withIntegerOverflowCheck`.
         return withValues(arguments, [&](const std::vector<ASTPtr> & operands)
         {
-            ASTPtr exact = operands[0];
-            ASTPtr approximate = makeASTFunction("toFloat64", operands[0]->clone());
-            for (size_t i = 1; i < operands.size(); ++i)
-            {
-                exact = makeASTFunction(it->second, exact, operands[i]->clone());
-                approximate = makeASTFunction(it->second, approximate, makeASTFunction("toFloat64", operands[i]->clone()));
-            }
+            std::vector<ASTPtr> approximate_operands;
+            approximate_operands.reserve(operands.size());
+            for (const auto & operand : operands)
+                approximate_operands.push_back(makeASTFunction("toFloat64", operand->clone()));
+            ASTPtr exact = makeBalancedFold(it->second, operands, 0, operands.size());
+            ASTPtr approximate = makeBalancedFold(it->second, approximate_operands, 0, approximate_operands.size());
             auto checked = withIntegerOverflowCheck(exact, std::move(approximate));
             if (name != "$add")
                 return checked;

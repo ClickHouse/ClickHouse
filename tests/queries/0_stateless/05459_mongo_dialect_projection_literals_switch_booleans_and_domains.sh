@@ -42,12 +42,14 @@ err --short_circuit_function_evaluation disable --query 'db.mongo_t.aggregate([{
 mongo --short_circuit_function_evaluation disable --query 'db.mongo_t.aggregate([{"$sort" : {"id" : 1}}, {"$project" : {"_id" : 0, "r" : {"$switch" : {"branches" : [{"case" : {"$eq" : ["$id", 1]}, "then" : "one"}, {"case" : {"$eq" : ["$id", 2]}, "then" : null}]}}}}]);'
 mongo --query 'db.mongo_t.aggregate([{"$match" : {"id" : 3}}, {"$project" : {"_id" : 0, "r" : {"$switch" : {"branches" : [{"case" : false, "then" : 1}]}}}}]);'
 
-# Each level of a translation that copied its branch would double the query.
+# Each level of a translation that copied its branch would double the query: three levels take
+# about 260 elements of the AST, while a doubling would need more than 500. The nesting is kept
+# shallow, as the analyzer resolves each level recursively, and a sanitizer build allows little stack.
 nested='"$id"'
-for _ in $(seq 8); do
+for _ in $(seq 3); do
     nested="{\"\$switch\" : {\"branches\" : [{\"case\" : true, \"then\" : $nested}]}}"
 done
-mongo --max_ast_elements 1000 --query "db.mongo_t.aggregate([{\"\$sort\" : {\"id\" : 1}}, {\"\$project\" : {\"_id\" : 0, \"r\" : $nested}}]);"
+mongo --max_ast_elements 400 --query "db.mongo_t.aggregate([{\"\$sort\" : {\"id\" : 1}}, {\"\$project\" : {\"_id\" : 0, \"r\" : $nested}}]);"
 
 echo '-- booleans in numeric accumulators'
 mongo --query 'db.mongo_t.aggregate([{"$group" : {"_id" : null, "s" : {"$sum" : "$active"}, "a" : {"$avg" : "$active"}, "p" : {"$stdDevPop" : "$active"}, "q" : {"$stdDevSamp" : "$active"}, "n" : {"$sum" : "$id"}, "m" : {"$avg" : "$id"}, "c" : {"$sum" : 1}}}]);'
