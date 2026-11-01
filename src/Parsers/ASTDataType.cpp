@@ -596,6 +596,18 @@ void collectLambdaNamesImpl(const IAST & ast, LambdaNames & lambda_names, Identi
     {
         if (auto alias = function->tryGetAlias(); !alias.empty())
             lambda_names.insert(std::move(alias));
+
+        /// A formal parameter of a lambda can be bound to a lambda, as in `(f -> f('UUID'))(x -> x)`, and a call
+        /// of the parameter then takes precedence over a function of the same name.
+        if (function->arguments && !function->arguments->children.empty())
+        {
+            if (const auto * parameters = function->arguments->children[0]->as<ASTFunction>(); parameters && parameters->arguments)
+            {
+                for (const auto & parameter : parameters->arguments->children)
+                    if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                        lambda_names.insert(parameter_identifier->name());
+            }
+        }
     }
     else if (const auto * identifier = ast.as<ASTIdentifier>())
     {

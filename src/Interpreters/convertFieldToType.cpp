@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -632,7 +633,52 @@ Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
         return res;
     }
 
+    /// The values of the dynamic paths of a `JSON` value come from `ColumnDynamic::get`, so they are already in the
+    /// layout of `UUID`, but the values of the typed paths keep the layout of their types.
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(unwrapped_type); object_type && src.getType() == Field::Types::Object)
+    {
+        Object res = src.safeGet<Object>();
+        for (const auto & [path, path_type] : object_type->getTypedPaths())
+        {
+            if (auto it = res.find(path); it != res.end())
+                it->second = uuid2LeavesToUUIDLayout(it->second, *path_type);
+        }
+        return res;
+    }
+
     return src;
+}
+
+/// Converts the values of a `JSON` value of type `from_type` to the paths of `to_type`. A typed path keeps its value
+/// in the layout of its type, while a dynamic path keeps it in the layout of `UUID` (see `ColumnDynamic::get`).
+/// Only the paths with `UUID2` on either side are converted: the representation of other values does not depend on
+/// the type.
+Field convertObjectFieldUUIDLayouts(
+    const Object & src,
+    const DataTypeObject & from_type,
+    const DataTypeObject & to_type,
+    const FormatSettings & format_settings)
+{
+    static const DataTypePtr dynamic_type = std::make_shared<DataTypeDynamic>();
+    const auto & from_typed_paths = from_type.getTypedPaths();
+    const auto & to_typed_paths = to_type.getTypedPaths();
+
+    Object res = src;
+    for (auto & [path, value] : res)
+    {
+        auto from_it = from_typed_paths.find(path);
+        auto to_it = to_typed_paths.find(path);
+        const DataTypePtr & from_path_type = from_it != from_typed_paths.end() ? from_it->second : dynamic_type;
+        const DataTypePtr & to_path_type = to_it != to_typed_paths.end() ? to_it->second : dynamic_type;
+        if (value.isNull() || (!typeContainsUUID2(*from_path_type) && !typeContainsUUID2(*to_path_type)))
+            continue;
+
+        if (to_it == to_typed_paths.end())
+            value = uuid2LeavesToUUIDLayout(value, *from_path_type);
+        else
+            value = convertFieldToType(value, *to_path_type, from_path_type.get(), format_settings);
+    }
+    return res;
 }
 
 /// The source type of a nested element `value` (an element of an array, a tuple or a map), for the conversion of its
@@ -1782,7 +1828,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (isObject(type))
     {
         if (src.getType() == Field::Types::Object)
-            return src; /// Already in needed type.
+        {
+            /// The value is already of the needed kind, but the typed paths of `JSON` keep the layout of their types.
+            const auto * from_object_type = typeid_cast<const DataTypeObject *>(removeNullableAndLowCardinalityFromHint(from_type_hint));
+            const auto * to_object_type = typeid_cast<const DataTypeObject *>(&type);
+            if (from_object_type && to_object_type && (typeContainsUUID2(*from_object_type) || typeContainsUUID2(*to_object_type)))
+                return convertObjectFieldUUIDLayouts(src.safeGet<Object>(), *from_object_type, *to_object_type, format_settings);
+            return src;
+        }
 
         /// TODO: add conversion from Map/Tuple to Object.
     }

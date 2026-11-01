@@ -754,10 +754,15 @@ private:
         const auto inner_type_decayed = removeNullable(removeLowCardinality(array_type->getNestedType()));
         const auto arg_decayed = removeNullable(removeLowCardinality(arguments[1].type));
 
-        /// A `Dynamic` (or `JSON`) value can hold either layout, which is not known from the type. The constant path
+        /// A `Dynamic` (or `JSON`) value can hold either layout, which is not known from the type, and a `Variant`
+        /// value with UUID alternatives loses its discriminator when it becomes a `Field`. The constant path
         /// compares the extracted `Field` values without their types, while the generic path compares the columns by
         /// their actual types. So search a constant array through the generic path when such a value meets a UUID.
-        const auto is_dynamic = [](const IDataType & t) { return isDynamic(t) || isObject(t); };
+        const auto is_dynamic = [](const IDataType & t)
+        {
+            return isDynamic(t) || isObject(t)
+                || (isVariant(t) && anyInTypeTree(t, [](const IDataType & u) { return isUUID(u) || isUUID2(u); }));
+        };
         const auto may_hold_uuid = [&](const IDataType & t)
         {
             return anyInTypeTree(t, [&](const IDataType & u) { return isUUID(u) || isUUID2(u) || is_dynamic(u); });
