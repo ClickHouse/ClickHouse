@@ -3,6 +3,7 @@
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
+#include <Common/SettingsChanges.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -91,6 +92,9 @@ public:
     virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
         const DataLakeTableStateSnapshot &, ContextPtr) const { return nullptr; }
 
+    /// Table settings with which another server resolves exactly `state` instead of the latest table version.
+    virtual SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot &) const { return {}; }
+
     /// Whether to reload the schema (columns) from metadata before each query in order
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
     virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
@@ -153,6 +157,11 @@ public:
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr, ContextPtr) const { return nullptr; }
+    /// The mapper of the current schema regardless of the table's write format, unlike
+    /// `getColumnMapperForCurrentSchema`, which is only given to the readers of that format.
+    /// The filters of a query use the current column names, and a reader with a per-file mapper
+    /// (see `getColumnMapperForObject`) needs it to translate them to the names of the file.
+    virtual ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr, ContextPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,

@@ -88,6 +88,7 @@ public:
 
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
     std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr local_context) const override;
+    SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot & state) const override;
     bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
 
     bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
@@ -152,6 +153,7 @@ public:
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     SinkToStoragePtr write(
         SharedHeader sample_block,
