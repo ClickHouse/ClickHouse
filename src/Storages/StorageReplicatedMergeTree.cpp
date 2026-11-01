@@ -6704,7 +6704,8 @@ bool StorageReplicatedMergeTree::optimize(
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
-                            /*storage_id_=*/getStorageID()
+                            /*storage_id_=*/getStorageID(),
+                            /*merge_forced_horizontal_=*/deduplicate || cleanup
                         ),
                         /*partitions_hint=*/std::nullopt);
                 }
@@ -11634,7 +11635,9 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
         std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(true);
         std::string replica;
 
-        auto watch = zookeeper->createWatchFromRawCallback(fmt::format("watchZeroCopyLock::{}", reinterpret_cast<void *>(flag.get())), [flag]() -> Coordination::WatchCallback
+        /// The id is a cache key of the watch callback, so it must be unique for every registration.
+        static std::atomic<UInt64> watch_counter{0};
+        auto watch = zookeeper->createWatchFromRawCallback(fmt::format("watchZeroCopyLock::{}", watch_counter.fetch_add(1)), [flag]() -> Coordination::WatchCallback
         {
             return [flag](const auto &)
             {

@@ -2,6 +2,9 @@
 
 SET enable_multiple_prewhere_read_steps = 0;
 
+-- `ColumnsCache` creates the null maps of the columns it stores, which is visible in `dumpColumnStructure`.
+SET use_columns_cache = 0;
+
 SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS nullable_tuple_sparse;

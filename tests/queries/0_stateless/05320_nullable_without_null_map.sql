@@ -2,6 +2,9 @@
 -- Check that the columns with and without a null map are processed consistently,
 -- including the blocks with and without NULLs mixed in one query.
 
+-- `ColumnsCache` creates the null maps of the columns it stores.
+SET use_columns_cache = 0;
+
 DROP TABLE IF EXISTS t_nullable;
 
 CREATE TABLE t_nullable (id UInt64, x Nullable(UInt64), s Nullable(String), y Nullable(UInt32), arr Array(Nullable(UInt8)))
