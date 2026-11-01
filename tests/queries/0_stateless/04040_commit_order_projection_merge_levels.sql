@@ -1,7 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree, no-parallel-replicas
 
-set enable_analyzer = 1;
-
 -- Bound the wait, so that a scheduled merge that never runs fails this test with
 -- `TIMEOUT_EXCEEDED` instead of polling until the harness kills it: `SYSTEM SYNC MERGES` treats
 -- `max_execution_time = 0`, the default of a stateless test, as "wait forever".

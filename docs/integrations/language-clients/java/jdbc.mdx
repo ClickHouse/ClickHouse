@@ -27,15 +27,36 @@ We recommend using the latest java client directly if performance/direct access 
 
 ### Setup {#setup}
 
-```xml
-{/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
-<dependency>
-    <groupId>com.clickhouse</groupId>
-    <artifactId>clickhouse-jdbc</artifactId>
-    <version>0.10.0</version>
-    <classifier>all</classifier>
-</dependency>
-```
+<Tabs>
+    <Tab title="Maven">
+
+        ```xml
+        {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+        <dependency>
+            <groupId>com.clickhouse</groupId>
+            <artifactId>clickhouse-jdbc</artifactId>
+            <version>0.9.8</version>
+            <classifier>all</classifier>
+        </dependency>
+        ```
+
+    </Tab>
+    <Tab title="Gradle (Kotlin)">
+
+        ```kotlin
+        // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+        implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+        ```
+    </Tab>
+    <Tab title="Gradle">
+
+        ```groovy
+        // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+        implementation 'com.clickhouse:clickhouse-jdbc:0.9.8:all'
+        ```
+
+    </Tab>
+</Tabs>
 
 If you are using JDBC driver within an application that requires jar to be added to the classpath, you need to add download the jar from:
 - [Maven Central](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc) and add it to the classpath

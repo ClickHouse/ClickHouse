@@ -19,11 +19,17 @@ size_t getMaxBytesBeforeExternalProcessing(size_t max_bytes, double max_bytes_ra
 
 std::optional<UInt64> getCurrentQueryHardLimit();
 
+/// Memory the current thread can still allocate before the strictest hard limit of its query, user or the server; none if no limit is set.
+std::optional<UInt64> getCurrentQueryAvailableMemory();
+
 /// Return current query tracked memory usage
 Int64 getCurrentQueryMemoryUsage();
 
 /// The current query deliberately leaves memory to something that outlives it (e.g. the data of an in-memory table).
 void setCurrentQueryMemoryDriftExpected();
+
+/// `size` bytes the current query allocated now belong to the server, see `MemoryTracker::handOverToServer`.
+void handOverCurrentQueryMemoryToServer(Int64 size);
 
 /// The tracker of the user the current thread's memory is charged to, or `nullptr`.
 MemoryTracker * getCurrentUserMemoryTracker();

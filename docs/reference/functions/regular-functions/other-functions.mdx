@@ -4294,7 +4294,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -6211,6 +6211,10 @@ For more information see the page [Transactional (ACID) support](/concepts/featu
 </Note>
     
 
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
 **Syntax**
 
 ```sql
@@ -6260,6 +6264,10 @@ This function is part of an experimental feature set. Enable experimental transa
 ```
 
 For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
 </Note>
 
 **Syntax**

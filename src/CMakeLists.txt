@@ -114,6 +114,12 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_GPU)
+    add_subdirectory (GPU)
+
+    add_headers_and_sources(dbms GPU)
+endif ()
+
 if (ENABLE_EXAMPLES)
     add_subdirectory (Examples)
 endif()
@@ -212,6 +218,7 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
 add_headers_and_sources(dbms Storages/BigQuery)
+add_headers_and_sources(dbms Storages/Elasticsearch)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
@@ -393,6 +400,7 @@ add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
+add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -474,14 +482,6 @@ set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES 
 set_source_files_properties(Server/KeeperJemallocHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
 
-# Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
-# Add OBJECT_DEPENDS only if the submodule is checked out.
-set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")
-if (EXISTS "${_nlp_charset}")
-    set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
-        "${_nlp_charset}")
-endif()
-
 set_source_files_properties(Storages/System/attachInformationSchemaTables.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schemata.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/tables.sql;\
@@ -492,7 +492,11 @@ ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/referential_const
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/statistics.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/engines.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/character_sets.sql;\
-${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql")
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/user_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schema_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/table_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/column_privileges.sql")
 
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
@@ -517,6 +521,8 @@ add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_transforms_window Processors/Transforms/Window)
 add_object_library(clickhouse_window_functions WindowFunctions)
+add_object_library(clickhouse_window_functions_common WindowFunctions/Common)
+add_object_library(clickhouse_window_functions_general WindowFunctions/General)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
@@ -524,6 +530,7 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_streaming Processors/Streaming)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
+add_object_library(clickhouse_processors_queryplan_fragments Processors/QueryPlan/Fragments)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_processors_queryplan_profiling_execution Processors/QueryPlan/Profiling/Execution)
 add_object_library(clickhouse_processors_queryplan_profiling_metrics Processors/QueryPlan/Profiling/Metrics)
@@ -554,22 +561,24 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 # TUs where libcxx hardening needs to be disabled are specified here.
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
-    Processors/Transforms/WindowTransform.cpp  # window functions
-    Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
-    Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
-    Processors/Transforms/Window/Partition.cpp  # window functions
-    Processors/Transforms/Window/Frame.cpp  # window functions
-    Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
-    WindowFunctions/WindowFunctionRank.cpp                   # window functions
-    WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
-    WindowFunctions/WindowFunctionRowNumber.cpp              # window functions
-    WindowFunctions/WindowFunctionNtile.cpp                  # window functions
-    WindowFunctions/WindowFunctionPercentRank.cpp            # window functions
-    WindowFunctions/WindowFunctionCumeDist.cpp               # window functions
-    WindowFunctions/WindowFunctionNthValue.cpp               # window functions
-    WindowFunctions/WindowFunctionLagLead.cpp                # window functions
-    WindowFunctions/WindowFunctionExponentialTimeDecayed.cpp # window functions
-    WindowFunctions/WindowFunctionNonNegativeDerivative.cpp  # window functions
+    Processors/Transforms/WindowTransform.cpp                        # window functions
+    Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
+    Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
+    Processors/Transforms/Window/Partition.cpp                       # window functions
+    Processors/Transforms/Window/Peers.cpp                           # window functions
+    Processors/Transforms/Window/Frame.cpp                           # window functions
+    Processors/Transforms/Window/WindowTransformParams.cpp           # window functions
+    WindowFunctions/Common/WindowArguments.cpp                       # window functions
+    WindowFunctions/General/WindowFunctionRank.cpp                   # window functions
+    WindowFunctions/General/WindowFunctionDenseRank.cpp              # window functions
+    WindowFunctions/General/WindowFunctionRowNumber.cpp              # window functions
+    WindowFunctions/General/WindowFunctionNtile.cpp                  # window functions
+    WindowFunctions/General/WindowFunctionPercentRank.cpp            # window functions
+    WindowFunctions/General/WindowFunctionCumeDist.cpp               # window functions
+    WindowFunctions/General/WindowFunctionNthValue.cpp               # window functions
+    WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
+    WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
+    WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
@@ -577,6 +586,9 @@ set_property(SOURCE
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 endif()
+
+# Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
+add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/Impl/Vortex)
 
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
@@ -590,6 +602,17 @@ endif()
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+
+if (ENABLE_GPU)
+    target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf ch_gpu::cudart ch_contrib::nvcomp)
+
+    # The streams are named as `rmm::cuda_stream_view`, which holds a `cudaStream_t` and nothing
+    # of either standard library. Only the headers are taken: linking the island's targets would
+    # bring their libstdc++ build with them.
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE
+        "$<TARGET_PROPERTY:_cccl,INTERFACE_INCLUDE_DIRECTORIES>"
+        "$<TARGET_PROPERTY:_rmm,INTERFACE_INCLUDE_DIRECTORIES>")
+endif ()
 target_link_libraries (dbms PRIVATE ch_contrib::sql_console_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::xxHash)
@@ -639,6 +662,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
+            ch_contrib::gdeflate
             ch_contrib::zxc
             ch_contrib::roaring
 )
@@ -999,6 +1023,14 @@ if (TARGET ch_rust::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
 endif ()
 
+if (TARGET ch_rust::vortex)
+    # Last in the link line for the same reason as delta_kernel_rs above: the crate carries its own
+    # zstd and our contrib has to win.
+    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::vortex,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::vortex)
+    target_link_libraries(dbms PRIVATE ch_rust::vortex)
+endif ()
+
 if (TARGET ch_contrib::sha3iuf)
     target_link_libraries(dbms PUBLIC ch_contrib::sha3iuf)
 endif()
@@ -1033,6 +1065,9 @@ if (ENABLE_TESTS)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-sign-compare
+        # gtest prints pointers in its assertion messages, so the ban on printing of pointers (see the root CMakeLists.txt) is lifted for tests.
+        -UFMT_DISALLOW_POINTERS
+        -U_LIBCPP_DISALLOW_PRINTING_POINTERS
     )
 
     target_compile_definitions(unit_tests_dbms PRIVATE
@@ -1063,6 +1098,10 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
     endif()
 
+    if (TARGET ch_contrib::brotli)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::brotli)
+    endif()
+
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
@@ -1089,6 +1128,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::arrow_ipc_metadata)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::arrow_ipc_metadata)
     endif()
 
     if (TARGET ch_contrib::silk_fibers)
