@@ -3301,6 +3301,30 @@ FINAL
 1 row in set. Elapsed: 0.002 sec.
 ```
 
+### Columns identical in all versions of a row {#columns-identical-across-versions}
+
+With `FINAL`, a condition on a column outside the sorting key is evaluated after the merge: evaluating it before the merge could drop the latest version of a row and return an outdated one instead. So such conditions are not moved to `PREWHERE`, data skipping indexes on such columns need extra reads (see `use_skip_indexes_if_final_exact_mode`), and the query condition cache is not used.
+
+Often some columns never change between the versions of a row, e.g. the creation time of an entity. Declare them with the table setting `columns_identical_across_versions`, or declare the columns that can change with `columns_varying_across_versions` (then all other columns are considered identical). Queries with `FINAL` treat the identical columns like the sorting key columns: conditions on them are evaluated before the merge, data skipping indexes on them are used without extra reads, partitions are pruned by them, and the query condition cache is used for conditions on them.
+
+```sql
+CREATE TABLE matches
+(
+    `match_id` UInt64,
+    `start_time` DateTime,
+    `game_mode` LowCardinality(String),
+    `score` UInt32,
+    `version` UInt64,
+    INDEX idx_game_mode game_mode TYPE set(100)
+)
+ENGINE = ReplacingMergeTree(version)
+PARTITION BY toYYYYMM(start_time)
+ORDER BY match_id
+SETTINGS columns_identical_across_versions = 'start_time, game_mode';
+```
+
+The setting is not verified against the data. If the versions of a row differ in a declared column, queries with `FINAL` can return an outdated version of the row or skip the row.
+
 For further details on `FINAL`, including how to optimize `FINAL` performance, we recommend reading our [detailed guide on ReplacingMergeTree](/concepts/features/operations/update/replacing-merge-tree).
 )DOCS_MD",
         .syntax = "ENGINE = ReplacingMergeTree([ver [, is_deleted]]) ORDER BY expr",

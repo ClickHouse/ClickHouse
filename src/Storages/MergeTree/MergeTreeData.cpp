@@ -91,6 +91,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
@@ -330,6 +331,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold_for_remote_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
+    extern const MergeTreeSettingsString columns_identical_across_versions;
+    extern const MergeTreeSettingsString columns_varying_across_versions;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
@@ -1068,6 +1071,10 @@ MergeTreeData::MergeTreeData(
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(*settings, metadata_, sanity_checks);
+
+    /// The listed columns are checked only on table creation, so that an existing table keeps loading.
+    if (sanity_checks)
+        checkColumnsIdenticalAcrossVersions(*settings, metadata_);
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
@@ -2664,6 +2671,141 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
         checkDimensionsAreInSortingKey(metadata);
 
     /// TODO Checks for Graphite mode.
+}
+
+namespace
+{
+
+bool typeContainsFloat(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & node) { return isFloat(node); });
+}
+
+/// Only these engines keep the values of the other columns of a row as they are when merging its versions.
+bool supportsColumnsIdenticalAcrossVersions(MergeTreeData::MergingParams::Mode mode)
+{
+    return mode == MergeTreeData::MergingParams::Replacing
+        || mode == MergeTreeData::MergingParams::Collapsing
+        || mode == MergeTreeData::MergingParams::VersionedCollapsing;
+}
+
+/// The version, sign and `is_deleted` columns differ between the versions of a row by design.
+bool isMergingParamsColumn(const MergeTreeData::MergingParams & merging_params, const String & column_name)
+{
+    return column_name == merging_params.version_column
+        || column_name == merging_params.sign_column
+        || column_name == merging_params.is_deleted_column;
+}
+
+}
+
+NameSet MergeTreeData::getSortingKeyColumnsSafeBeforeFinal(const KeyDescription & sorting_key)
+{
+    NameSet names;
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        if (!typeContainsFloat(*sorting_key.data_types[i]))
+            names.insert(sorting_key.column_names[i]);
+    return names;
+}
+
+NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata & metadata) const
+{
+    const auto & sorting_key = metadata.getSortingKey();
+
+    /// `Graphite` merges adjacent rows of one path into one row with a rounded time.
+    /// A condition on another column can make rows adjacent unless the path is the first sorting key column.
+    if (merging_params.mode == MergingParams::Graphite)
+    {
+        const auto & path = merging_params.graphite_params.path_column_name;
+        if (sorting_key.column_names.empty() || sorting_key.column_names.front() != path)
+            return {};
+        return {path};
+    }
+
+    NameSet names = getSortingKeyColumnsSafeBeforeFinal(sorting_key);
+    if (!supportsColumnsIdenticalAcrossVersions(merging_params.mode))
+        return names;
+
+    const auto settings = getSettings();
+    const String & identical_columns = (*settings)[MergeTreeSetting::columns_identical_across_versions];
+    const String & varying_columns = (*settings)[MergeTreeSetting::columns_varying_across_versions];
+    if (identical_columns.empty() && varying_columns.empty())
+        return names;
+
+    const auto & columns = metadata.getColumns();
+    auto add_column = [&](const NameAndTypePair & column)
+    {
+        if (isMergingParamsColumn(merging_params, column.name) || typeContainsFloat(*column.type))
+            return;
+        names.insert(column.name);
+        for (const auto & subcolumn : columns.getSubcolumns(column.name))
+            names.insert(subcolumn.name);
+    };
+
+    const auto & query_settings = getContext()->getSettingsRef();
+    if (!identical_columns.empty())
+    {
+        /// A name that does not denote a physical column is rejected by `checkColumnsIdenticalAcrossVersions`,
+        /// but a table attached with such metadata must still be readable.
+        for (const auto & name : parseIdentifiersOrStringLiterals(identical_columns, query_settings))
+            if (auto column = columns.tryGetPhysical(name))
+                add_column(*column);
+    }
+    else
+    {
+        auto varying = parseIdentifiersOrStringLiteralsToSet(varying_columns, query_settings);
+        for (const auto & column : columns.getAllPhysical())
+            if (!varying.contains(column.name))
+                add_column(column);
+    }
+
+    return names;
+}
+
+void MergeTreeData::checkColumnsIdenticalAcrossVersions(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
+{
+    const String & identical_columns = settings[MergeTreeSetting::columns_identical_across_versions];
+    const String & varying_columns = settings[MergeTreeSetting::columns_varying_across_versions];
+    if (identical_columns.empty() && varying_columns.empty())
+        return;
+
+    if (!identical_columns.empty() && !varying_columns.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The settings `columns_identical_across_versions` and `columns_varying_across_versions` cannot be set together");
+
+    const char * setting_name = identical_columns.empty() ? "columns_varying_across_versions" : "columns_identical_across_versions";
+
+    if (!supportsColumnsIdenticalAcrossVersions(merging_params.mode))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The setting `{}` is supported only by ReplacingMergeTree, CollapsingMergeTree and VersionedCollapsingMergeTree, "
+            "but the table engine is {}MergeTree",
+            setting_name, merging_params.getModeName());
+
+    const auto & columns = metadata.getColumns();
+    for (const auto & name : parseIdentifiersOrStringLiterals(identical_columns.empty() ? varying_columns : identical_columns, getContext()->getSettingsRef()))
+    {
+        auto column = columns.tryGetPhysical(name);
+        if (!column)
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Column {} listed in the setting `{}` is not a physical column of the table. "
+                "To drop or rename a listed column, remove it from the setting first",
+                backQuoteIfNeed(name), setting_name);
+
+        if (identical_columns.empty())
+            continue;
+
+        if (isMergingParamsColumn(merging_params, name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column {} listed in the setting `columns_identical_across_versions` is the version, sign or is_deleted column "
+                "of the table, which differs between the versions of a row",
+                backQuoteIfNeed(name));
+
+        if (typeContainsFloat(*column->type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column {} listed in the setting `columns_identical_across_versions` has type {} with floating-point values: "
+                "values that compare equal (-0.0 and 0.0, NaN with different payloads) can be told apart by a condition",
+                backQuoteIfNeed(name), column->type->getName());
+    }
 }
 
 const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
@@ -7126,6 +7268,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
     const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
+
+    /// Also rejects dropping or renaming a column listed in the setting, because the setting would refer to a missing column.
+    if (!is_secondary_replay)
+        checkColumnsIdenticalAcrossVersions(*alter_effective_settings, new_metadata);
 
     /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
     /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a

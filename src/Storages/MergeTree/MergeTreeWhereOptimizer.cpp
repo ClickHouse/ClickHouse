@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -110,53 +109,33 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
     return table_columns;
 }
 
-bool typeContainsFloat(const DataTypePtr & type)
+/// The columns that are equal in all rows merged into one by FINAL, so that a condition over them
+/// can be evaluated before the merge without changing which rows survive it
+NameSet getColumnsSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
 {
-    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
-}
-
-/// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
-/// over a float sorting key column can tell apart rows of one dedup group and drop its winner
-NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
-{
-    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
-
-    /// `Graphite` merges adjacent rows of one path into one row with a rounded time.
-    /// A path filter can make rows adjacent unless the path is the first sorting key column.
-    const auto * data = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
-    if (data && data->merging_params.mode == MergeTreeData::MergingParams::Graphite)
-    {
-        const auto & path = data->merging_params.graphite_params.path_column_name;
-        if (sorting_key.column_names.empty() || sorting_key.column_names.front() != path)
-            return {};
-        return {path};
-    }
-
-    NameSet names;
-    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
-        if (!typeContainsFloat(sorting_key.data_types[i]))
-            names.insert(sorting_key.column_names[i]);
-    return names;
+    if (const auto * data = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+        return data->getColumnsSafeBeforeFinal(*storage_snapshot->metadata);
+    return MergeTreeData::getSortingKeyColumnsSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
 }
 
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot_,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     bool supported_columns_include_subcolumns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns(getTableColumns(storage_snapshot, queried_columns_))
+    , table_columns(getTableColumns(storage_snapshot_, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
-    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot)}
-    , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
-    , storage_metadata(storage_snapshot->metadata)
+    , primary_key_names_positions(fillNamesPositions(storage_snapshot_->metadata->getPrimaryKey().column_names))
+    , storage_snapshot(storage_snapshot_)
+    , storage_metadata(storage_snapshot_->metadata)
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -186,6 +165,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
+    if (is_final)
+        columns_safe_before_final = getColumnsSafeBeforeFinal(storage_snapshot);
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
     /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
     /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
@@ -455,9 +436,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Condition depends on some column. Constant expressions are not moved.
             && !info.columns.empty()
             && !cannotBeMoved(conjunct, where_optimizer_context)
-            /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
-            /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+            /// With FINAL, only a condition that gives the same result for all versions of a row can be evaluated
+            /// before the merge: otherwise it can drop the latest version and let an outdated one survive the merge.
+            && (!where_optimizer_context.is_final || isDeterministicExpressionSafeBeforeFinal(conjunct, where_optimizer_context.context))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns,
@@ -633,7 +614,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 !has_invalid_column
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
-                && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+                && (!where_optimizer_context.is_final || isDeterministicExpressionSafeBeforeFinal(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
                 && (columns.size() < queried_columns.size()
                     || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
@@ -952,7 +933,7 @@ static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNo
     return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
 }
 
-bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
+bool MergeTreeWhereOptimizer::isDeterministicExpressionSafeBeforeFinal(const RPNBuilderTreeNode & node, const ContextPtr & context) const
 {
     if (node.isFunction())
     {
@@ -978,22 +959,22 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
                 continue;
             }
 
-            if (sorting_key_names.contains(argument_column_name))
+            if (columns_safe_before_final.contains(argument_column_name))
                 continue;
 
-            if (!isDeterministicExpressionOverSortingKey(argument, context))
+            if (!isDeterministicExpressionSafeBeforeFinal(argument, context))
                 return false;
         }
 
         return true;
     }
 
-    return node.isConstant() || sorting_key_names.contains(node.getColumnName());
+    return node.isConstant() || columns_safe_before_final.contains(node.getColumnName());
 }
 
-bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
+bool MergeTreeWhereOptimizer::isSafeBeforeFinal(const String & column_name) const
 {
-    return sorting_key_names.contains(column_name);
+    return columns_safe_before_final.contains(column_name);
 }
 
 bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & columns) const
@@ -1038,7 +1019,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (where_optimizer_context.array_joined_names.contains(column_name) ||
             where_optimizer_context.array_joined_names.contains(Nested::extractTableName(column_name)) ||
-            (table_columns.contains(column_name) && where_optimizer_context.is_final && !isSortingKey(column_name)))
+            (table_columns.contains(column_name) && where_optimizer_context.is_final && !isSafeBeforeFinal(column_name)))
             return true;
     }
 

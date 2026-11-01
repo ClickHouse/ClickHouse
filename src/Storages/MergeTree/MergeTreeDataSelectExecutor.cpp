@@ -1238,7 +1238,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 const auto l_size = idx_sizes[l];
                 const auto r_size = idx_sizes[r];
 
-                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
+                /// With FINAL, the indexes that are safe before FINAL go first, see `apply_safe_indexes_first` below.
+                const bool l_unsafe_before_final = !useful_indices[l].safe_before_final;
+                const bool r_unsafe_before_final = !useful_indices[r].safe_before_final;
+
+                return std::tie(l_unsafe_before_final, l_index_priority, neg_l_granularity, l_size)
+                    < std::tie(r_unsafe_before_final, r_index_priority, neg_r_granularity, r_size);
             });
 
             {
@@ -1379,7 +1384,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             if (is_final_query && use_skip_indexes_if_final_exact_mode_)
             {
-                ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
+                ranges.ranges_before_unsafe_skip_indexes = ranges.ranges;
             }
 
             /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
@@ -1435,15 +1440,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     partial_eval_results.resize(
                         ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
+                /// With FINAL, a granule dropped by an index that is safe before FINAL holds no row that FINAL needs. These indexes
+                /// are applied first (see the order above), and the ranges left by them are the candidates for `findPKRangesForFinalAfterSkipIndex`.
+                /// The partial results for disjunctions are combined only after all indexes, then the candidates are the ranges
+                /// selected by the primary key.
+                const bool apply_safe_indexes_first = is_final_query && use_skip_indexes_if_final_exact_mode_ && !rpn_template_for_part;
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
                     if (ranges.ranges.empty())
                         break;
 
-                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
                     const auto index_idx = index_order_at(part_index, idx);
                     const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
+
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
                     auto index_stat_idx = idx;
                     if (settings[Setting::per_part_index_stats])
@@ -1484,6 +1494,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
+
+                    if (apply_safe_indexes_first && index_and_condition.safe_before_final)
+                        ranges.ranges_before_unsafe_skip_indexes = ranges.ranges;
                 }
 
                 if (rpn_template_for_part)
@@ -1869,6 +1882,7 @@ static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
+    bool filter_safe_before_final,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_top_k_prewhere_query_condition_cache,
@@ -1901,7 +1915,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || !settings[Setting::apply_deleted_mask]
             || (!prewhere_info_for_cache && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
-            || select_query_info.isFinal()
+            /// With FINAL, skipping a granule is correct only if it holds no version of a row that FINAL returns,
+            /// see `ReadFromMergeTree::isFilterSafeBeforeFinal`.
+            || (select_query_info.isFinal() && !filter_safe_before_final)
             /// A pending `ALTER MODIFY COLUMN` (an alter mutation) or `DROP COLUMN` / `RENAME COLUMN`
             /// (a metadata mutation) changes the values a read returns for a column name without
             /// changing the part name, so an entry recorded before the change would drop marks that

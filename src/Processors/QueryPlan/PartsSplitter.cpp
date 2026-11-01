@@ -986,10 +986,10 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
         for (auto & all_part_range : all_part_ranges)
         {
-            if (!all_part_range.ranges_snapshot_after_pk_analysis)
+            if (!all_part_range.ranges_before_unsafe_skip_indexes)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
                         all_part_range.data_part->name);
-            all_part_range.ranges = *all_part_range.ranges_snapshot_after_pk_analysis;
+            all_part_range.ranges = *all_part_range.ranges_before_unsafe_skip_indexes;
         }
         std::erase_if(all_part_ranges, [](const auto & part) { return part.ranges.empty(); });
         return all_part_ranges;
@@ -1064,11 +1064,11 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     /// already rejected by the primary key and don't need to be checked again for intersection.
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
-        if (!ranges_in_data_parts[part_index].ranges_snapshot_after_pk_analysis)
+        if (!ranges_in_data_parts[part_index].ranges_before_unsafe_skip_indexes)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
                     ranges_in_data_parts[part_index].data_part->name);
 
-        const auto & candidate_ranges = *ranges_in_data_parts[part_index].ranges_snapshot_after_pk_analysis;
+        const auto & candidate_ranges = *ranges_in_data_parts[part_index].ranges_before_unsafe_skip_indexes;
         if (candidate_ranges.empty())
             continue;
 

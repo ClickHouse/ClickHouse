@@ -284,6 +284,8 @@ public:
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
+        /// For a query with FINAL, whether `ReadFromMergeTree::isFilterSafeBeforeFinal` holds; the cache is not used otherwise.
+        bool filter_safe_before_final,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const std::optional<TopKFilterInfo> & top_k_filter_info,
         bool allow_top_k_prewhere_query_condition_cache,

@@ -173,7 +173,8 @@ private:
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
-    bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
+    /// Whether the expression is deterministic and uses only the columns from `columns_safe_before_final`.
+    bool isDeterministicExpressionSafeBeforeFinal(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
 
     /// Whether the condition is a substring search on a String column that can be used as
     /// a string value filter during the scan when `apply_string_filters_during_scan` is enabled
@@ -181,7 +182,7 @@ private:
     /// it involves all queried columns: the reader then skips copying the non-matching values.
     bool isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
-    bool isSortingKey(const String & column_name) const;
+    bool isSafeBeforeFinal(const String & column_name) const;
 
     bool isSubsetOfTableColumns(const NameSet & columns) const;
 
@@ -202,8 +203,10 @@ private:
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
     const bool supported_columns_include_subcolumns;
-    const NameSet sorting_key_names;
+    /// See `MergeTreeData::getColumnsSafeBeforeFinal`, filled only for a query with FINAL.
+    NameSet columns_safe_before_final;
     const NameToIndexMap primary_key_names_positions;
+    StorageSnapshotPtr storage_snapshot;
     StorageMetadataPtr storage_metadata;
     LoggerPtr log;
     std::unordered_map<std::string, UInt64> column_sizes;
