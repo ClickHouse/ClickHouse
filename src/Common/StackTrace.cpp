@@ -80,8 +80,10 @@ std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr
     if (reinterpret_cast<uintptr_t>(addr) < 4096)
         return StackTrace::ResolvedAddress{.address = addr, .object = {}, .kind = StackTrace::AddressKind::Unsupported};
 
+    /// Where the address cannot be resolved into an object (e.g. on macOS and FreeBSD),
+    /// `tryResolveAddress` returns the runtime address unchanged, so it must not be shown either.
     auto resolved = StackTrace::tryResolveAddress(addr);
-    if (!resolved.address)
+    if (!resolved.address || resolved.kind == StackTrace::AddressKind::Unsupported)
         return {};
     return resolved;
 }
@@ -114,7 +116,9 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
         if (info.si_addr == nullptr)
             address = "NULL pointer";
         else if (const auto resolved = resolveFaultAddress(info.si_addr))
-            address = resolved->object.empty() ? fmt::format("{}", resolved->address) : fmt::format("{} in {}", resolved->address, resolved->object);
+            address = resolved->object.empty()
+                ? fmt::format("{:#x}", reinterpret_cast<uintptr_t>(resolved->address))
+                : fmt::format("{:#x} in {}", reinterpret_cast<uintptr_t>(resolved->address), resolved->object);
         std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";
@@ -945,7 +949,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
         if (frame.virtual_addr && shouldShowAddress(frame.virtual_addr))
-            callback(fmt::format("{}. {}", frame_index++, frame.virtual_addr));
+            callback(fmt::format("{}. {:#x}", frame_index++, reinterpret_cast<uintptr_t>(frame.virtual_addr)));
     };
 #endif
 
