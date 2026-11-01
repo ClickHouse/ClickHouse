@@ -1,0 +1,115 @@
+-- Test exact rate, increase, and delta calculation without boundary extrapolation:
+-- the optional fifth parameter `exact_rate` of timeSeriesRateToGrid, timeSeriesIncreaseToGrid and timeSeriesDeltaToGrid.
+-- The PromQL side (setting `promql_exact_rate`) is tested in 05231_promql_exact_rate_translation.
+SET enable_time_series_aggregate_functions = 1;
+
+SELECT '--- Default extrapolation ---';
+SELECT timeSeriesDeltaToGrid(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 0)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+
+SELECT '--- Exact mode ---';
+SELECT timeSeriesDeltaToGrid(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, true)([100, 120]::Array(UInt32), [10, 20]::Array(Float64));
+
+SELECT '--- Single sample returns NULL ---';
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100]::Array(UInt32), [10]::Array(Float64));
+
+SELECT '--- Counter reset ---';
+SELECT timeSeriesDeltaToGrid(120, 120, 1, 40, 1)([90, 100, 120]::Array(UInt32), [15, 5, 20]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([90, 100, 120]::Array(UInt32), [15, 5, 20]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([90, 100, 120]::Array(UInt32), [15, 5, 20]::Array(Float64));
+
+SELECT '--- Sliding window carries the previous sample ---';
+SELECT timeSeriesIncreaseToGrid(100, 120, 10, 10, 1)([100, 110, 120]::Array(UInt32), [10, 20, 30]::Array(Float64));
+SELECT timeSeriesDeltaToGrid(100, 120, 10, 10, 1)([100, 110, 120]::Array(UInt32), [10, 20, 30]::Array(Float64));
+
+SELECT '--- Counter reset across window boundaries ---';
+SELECT timeSeriesIncreaseToGrid(100, 120, 10, 10, 1)([100, 110, 120]::Array(UInt32), [100, 10, 25]::Array(Float64));
+
+SELECT '--- A big or infinite value does not cancel out the change from the sample before the window ---';
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([70, 100, 120]::Array(UInt32), [1e18, 1, 2]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 100, 120]::Array(UInt32), [1e18, 1, 2]::Array(Float64));
+SELECT timeSeriesDeltaToGrid(120, 120, 1, 40, 1)([70, 100, 120]::Array(UInt32), [10, inf, 20]::Array(Float64));
+
+SELECT '--- A big reset leaving the window does not wipe out the smaller resets ---';
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([70, 100, 110, 120]::Array(UInt32), [1e18, 2, 1, 2]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 100, 110, 120]::Array(UInt32), [1e18, 2, 1, 2]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(130, 170, 40, 40, 1)([100, 110, 120, 130, 150, 160]::Array(UInt32), [1e18, 2, 1, 2, 3, 4]::Array(Float64));
+
+SELECT '--- An infinite or overflowed reset leaving the window does not spoil the later windows ---';
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([45, 60, 70, 100, 120]::Array(UInt32), [inf, 1, 2, 3, 4]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(120, 200, 20, 40, 1)([45, 60, 70, 100, 120, 140, 160, 180, 200]::Array(UInt32), [inf, 1, 2, 3, 4, 5, 6, 7, 8]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(120, 200, 20, 40, 1)([45, 50, 55, 60, 100, 120, 140, 160, 180, 200]::Array(UInt32), [1e308, 1, 1e308, 2, 3, 4, 5, 6, 7, 8]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 200, 20, 40, 1)([45, 50, 55, 60, 100, 120, 140, 160, 180, 200]::Array(UInt32), [1e308, 1, 1e308, 2, 3, 4, 5, 6, 7, 8]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(50, 130, 40, 40, 1)([45, 50, 60, 100, 120]::Array(UInt32), [inf, 1, 2, 3, 4]::Array(Float64));
+
+SELECT '--- Big finite resets leaving the window do not erase the small resets still in it ---';
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Array(UInt32), [1e36, 1e18, 2, 1, 2]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Array(UInt32), [1e36, 1e18, 2, 1, 2]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(120, 200, 20, 40, 1)([70, 75, 100, 110, 120, 140, 160, 180, 200]::Array(UInt32), [1e36, 1e18, 2, 1, 2, 3, 4, 5, 6]::Array(Float64));
+
+SELECT '--- The sample before the window of the first grid point: used only in the exact mode ---';
+SELECT timeSeriesRateToGrid(120, 120, 1, 40)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));
+
+SELECT '--- The sample before the window when the step is greater than the window ---';
+SELECT timeSeriesIncreaseToGrid(100, 200, 50, 20, 1)([100, 125, 150, 200]::Array(UInt32), [10, 25, 40, 60]::Array(Float64));
+
+SELECT '--- DateTime64 timestamps ---';
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(DateTime64(3)), [10, 20]::Array(Float64));
+
+SELECT '--- The setting promql_exact_rate does not affect the aggregate functions used directly ---';
+SELECT timeSeriesRateToGrid(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) SETTINGS promql_exact_rate = 1;
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) SETTINGS promql_exact_rate = 0;
+SELECT toTypeName(timeSeriesRateToGridState(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64))) SETTINGS promql_exact_rate = 1;
+SELECT toTypeName(timeSeriesRateToGridState(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)));
+
+SELECT '--- Invalid parameters ---';
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 'yes')([100, 120]::Array(UInt32), [10, 20]::Array(Float64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '--- States keep the mode in their type: stored, detached, attached and merged ---';
+DROP TABLE IF EXISTS t_promql_exact_rate_state;
+CREATE TABLE t_promql_exact_rate_state
+(
+    id UInt8,
+    exact_state AggregateFunction(timeSeriesRateToGrid(100, 120, 10, 20, 1), UInt32, Float64),
+    default_state AggregateFunction(timeSeriesRateToGrid(100, 120, 10, 20), UInt32, Float64)
+)
+ENGINE = AggregatingMergeTree ORDER BY id;
+
+-- Two parts, so OPTIMIZE has to merge the states.
+INSERT INTO t_promql_exact_rate_state
+SELECT 1, timeSeriesRateToGridState(100, 120, 10, 20, 1)(ts, val), timeSeriesRateToGridState(100, 120, 10, 20)(ts, val)
+FROM values('ts UInt32, val Float64', (90, 0), (100, 10), (110, 20));
+INSERT INTO t_promql_exact_rate_state
+SELECT 1, timeSeriesRateToGridState(100, 120, 10, 20, 1)(ts, val), timeSeriesRateToGridState(100, 120, 10, 20)(ts, val)
+FROM values('ts UInt32, val Float64', (115, 25), (120, 40));
+
+SELECT finalizeAggregation(exact_state), finalizeAggregation(default_state) FROM t_promql_exact_rate_state ORDER BY _part;
+SELECT timeSeriesRateToGridMerge(100, 120, 10, 20, 1)(exact_state), timeSeriesRateToGridMerge(100, 120, 10, 20)(default_state) FROM t_promql_exact_rate_state;
+
+DETACH TABLE t_promql_exact_rate_state;
+ATTACH TABLE t_promql_exact_rate_state;
+OPTIMIZE TABLE t_promql_exact_rate_state FINAL;
+
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_promql_exact_rate_state' AND active;
+SELECT finalizeAggregation(exact_state), finalizeAggregation(default_state) FROM t_promql_exact_rate_state SETTINGS promql_exact_rate = 1;
+SELECT finalizeAggregation(exact_state), finalizeAggregation(default_state) FROM t_promql_exact_rate_state SETTINGS promql_exact_rate = 0;
+
+-- A state of one mode is not accepted by the function of the other one.
+SELECT timeSeriesRateToGridMerge(100, 120, 10, 20)(exact_state) FROM t_promql_exact_rate_state; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT timeSeriesRateToGridMerge(100, 120, 10, 20, 0)(exact_state) FROM t_promql_exact_rate_state; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Other spellings of a mode (no parameter, 0 or false; any non-zero value) have the same state type.
+INSERT INTO t_promql_exact_rate_state
+SELECT 2, timeSeriesRateToGridState(100, 120, 10, 20, -1)(ts, val), timeSeriesRateToGridState(100, 120, 10, 20, 0)(ts, val)
+FROM values('ts UInt32, val Float64', (90, 0), (100, 10), (110, 20), (115, 25), (120, 40));
+SELECT id, timeSeriesRateToGridMerge(100, 120, 10, 20, true)(exact_state), timeSeriesRateToGridMerge(100, 120, 10, 20, false)(default_state)
+FROM t_promql_exact_rate_state GROUP BY id ORDER BY id;
+
+DROP TABLE t_promql_exact_rate_state;

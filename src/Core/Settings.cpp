@@ -11382,6 +11382,16 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(Bool, promql_exact_rate, false, R"(
+Calculate PromQL `rate`, `increase`, and `delta` functions without extrapolation to the boundaries of the range.
+
+The setting only affects the translation of PromQL queries (the `promql` dialect, the `prometheusQuery` and
+`prometheusQueryRange` table functions and the Prometheus HTTP API): the generated `timeSeriesRateToGrid`,
+`timeSeriesIncreaseToGrid` and `timeSeriesDeltaToGrid` get the fifth parameter `exact_rate = 1`.
+It does not affect these aggregate functions used directly in SQL, pass the fifth parameter to them explicitly.
+With this setting, a subquery as the argument of these functions is not supported, like the `anchored` modifier in Prometheus.
+)", IMPORTANT | SettingsTierType::PRIVATE_PREVIEW, \
+        {"26.11", false, false, "New setting to calculate PromQL rate, increase, and delta without boundary extrapolation."}) \
     DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
 Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
 )", PRIVATE_PREVIEW, \

@@ -23,6 +23,9 @@ struct ConverterContext
     DataTypePtr result_timestamp_type;
     UInt32 result_timestamp_scale;
 
+    /// See `PrometheusQueryEvaluationSettings::exact_rate`.
+    const bool exact_rate = false;
+
     const ResultType result_type;
     const NodeEvaluationRangeGetter node_range_getter;
     SQLSubqueries subqueries;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <utility>
 
 #include <base/Decimal.h>
@@ -77,15 +78,20 @@ public:
         }
     }
 
-    void removeBefore(GridScaleTimestampType cut_off)
+    /// Returns true if a value left the window.
+    bool removeBefore(GridScaleTimestampType cut_off)
     {
+        bool removed = false;
         if constexpr (is_invertible)
         {
             while (!window.empty() && window.front().first <= cut_off)
             {
-                const SummaryType leaving = std::move(window.front().second);
+                SummaryType leaving = std::move(window.front().second);
+                GridScaleTimestampType ts = window.front().first;
                 window.pop_front();
                 current_sum.unmerge(leaving, window.empty() ? nullptr : &window.front().second);
+                last_removed = {ts, std::move(leaving)};
+                removed = true;
             }
         }
         else if (use_two_stacks)
@@ -110,11 +116,11 @@ public:
                 if (front_stack.empty() || front_stack.back().last_timestamp > cut_off)
                     break;
                 front_stack.pop_back();
+                removed = true;
             }
         }
         else
         {
-            bool removed = false;
             while (!window.empty() && window.front().first <= cut_off)
             {
                 window.pop_front();
@@ -123,6 +129,15 @@ public:
             if (removed)
                 current_sum_valid = false;
         }
+        return removed;
+    }
+
+    /// Sums the in-window values again, for an invertible sum whose subtraction loses precision.
+    void recomputeCurrentSum() requires is_invertible
+    {
+        current_sum = SummaryType{};
+        for (const auto & timestamp_and_value : window)
+            current_sum.merge(timestamp_and_value.second);
     }
 
     /// The reference is valid until the next `add` or `removeBefore`.
@@ -155,6 +170,13 @@ public:
         }
     }
 
+    /// The value that last left the window, with its timestamp, for a rate that needs the sample
+    /// before the window to measure from. Empty until the window has dropped one.
+    const std::optional<std::pair<GridScaleTimestampType, SummaryType>> & getLastRemoved() const
+    {
+        return last_removed;
+    }
+
 private:
     struct StackEntry
     {
@@ -166,6 +188,7 @@ private:
     bool use_two_stacks;
     mutable SummaryType current_sum;
     mutable bool current_sum_valid;
+    std::optional<std::pair<GridScaleTimestampType, SummaryType>> last_removed;
     VectorWithMemoryTracking<StackEntry> back_stack;   /// two-stacks: newer values; pushed here
     VectorWithMemoryTracking<StackEntry> front_stack;  /// two-stacks: older values; popped here
     DequeWithMemoryTracking<std::pair<GridScaleTimestampType, SummaryType>> window;  /// invertible/recompute: in-window values in time order
