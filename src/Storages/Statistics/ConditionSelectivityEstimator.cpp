@@ -3,6 +3,8 @@
 #include <stack>
 #include <cmath>
 
+#include <Columns/ColumnConst.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -275,15 +277,93 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
     return parent_name;
 }
 
+/// No NaN and no composite values: `=` is reflexive and comparing `Field`s gives the order of the type.
+static bool isTotallyOrderedScalar(const WhichDataType & which)
+{
+    return which.isInteger() || which.isDecimal() || which.isEnum() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
+}
+
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals"
         || node.children.size() != 2 || node.children[0] != node.children[1])
         return false;
 
-    WhichDataType which(removeLowCardinality(node.children[0]->result_type));
-    return which.isInteger() || which.isDecimal() || which.isEnum() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
-        || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
+    return isTotallyOrderedScalar(WhichDataType(removeLowCardinality(node.children[0]->result_type)));
+}
+
+/// `materialize` stops constant folding: filter push-down gives a branch of UNION ALL `materialize(<constant>)` for a
+/// column the branch defines as a constant.
+static const ActionsDAG::Node * tryGetConstantBehindMaterialize(const ActionsDAG::Node * node, bool & through_materialize)
+{
+    node = node->getWithoutAlias();
+    while (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+           && node->function_base->getName() == "materialize" && node->children.size() == 1)
+    {
+        node = node->children.front()->getWithoutAlias();
+        through_materialize = true;
+    }
+
+    const auto * column = typeid_cast<const ColumnConst *>(node->column.get());
+    if (!column || column->getDataColumn().isDummy())
+        return nullptr;
+    return node;
+}
+
+/// The value of a comparison, `isNull` or `isNotNull` of constants, at least one of them behind `materialize`.
+/// Comparisons are decided only for values of one type or two integers, for which comparing `Field`s agrees with
+/// the comparison function.
+static std::optional<bool> tryDecideMaterializedConstantPredicate(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return {};
+
+    const String & name = node.function_base->getName();
+    bool through_materialize = false;
+
+    if (name == "isNull" || name == "isNotNull")
+    {
+        const auto * arg = node.children.size() == 1 ? tryGetConstantBehindMaterialize(node.children[0], through_materialize) : nullptr;
+        if (!arg || !through_materialize)
+            return {};
+        return arg->column->isNullAt(0) == (name == "isNull");
+    }
+
+    if (node.children.size() != 2
+        || (name != "equals" && name != "notEquals" && name != "less" && name != "greater" && name != "lessOrEquals"
+            && name != "greaterOrEquals"))
+        return {};
+
+    const auto * lhs = tryGetConstantBehindMaterialize(node.children[0], through_materialize);
+    const auto * rhs = tryGetConstantBehindMaterialize(node.children[1], through_materialize);
+    if (!lhs || !rhs || !through_materialize)
+        return {};
+
+    const DataTypePtr lhs_type = removeLowCardinalityAndNullable(lhs->result_type);
+    const DataTypePtr rhs_type = removeLowCardinalityAndNullable(rhs->result_type);
+    const WhichDataType lhs_which(lhs_type);
+    const WhichDataType rhs_which(rhs_type);
+    if (!(lhs_type->equals(*rhs_type) && isTotallyOrderedScalar(lhs_which)) && !(lhs_which.isInteger() && rhs_which.isInteger()))
+        return {};
+
+    const Field lhs_value = lhs->column->getField();
+    const Field rhs_value = rhs->column->getField();
+    /// NULL is neither TRUE nor FALSE: `ALWAYS_FALSE` would become `ALWAYS_TRUE` under `NOT`.
+    if (lhs_value.isNull() || rhs_value.isNull())
+        return {};
+
+    if (name == "equals")
+        return accurateEquals(lhs_value, rhs_value);
+    if (name == "notEquals")
+        return !accurateEquals(lhs_value, rhs_value);
+    if (name == "less")
+        return accurateLess(lhs_value, rhs_value);
+    if (name == "greater")
+        return accurateLess(rhs_value, lhs_value);
+    if (name == "lessOrEquals")
+        return accurateLessOrEqual(lhs_value, rhs_value);
+    return accurateLessOrEqual(rhs_value, lhs_value);
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -332,6 +412,12 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             out.finalized = true;
             return false;
+        }
+
+        if (auto decided = tryDecideMaterializedConstantPredicate(*func.getDAGNode()))
+        {
+            out.function = *decided ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
         }
 
         if (num_args == 1)
