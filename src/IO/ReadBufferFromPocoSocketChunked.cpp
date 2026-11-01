@@ -62,6 +62,7 @@ bool ReadBufferFromPocoSocketChunked::loadNextChunk(Position c_pos, bool cont)
         if (socketReceiveBytesImpl(reinterpret_cast<char *>(&next_chunk) + buffered, sizeof(next_chunk) - buffered) < static_cast<ssize_t>(sizeof(next_chunk) - buffered))
             return false;
     next_chunk = fromLittleEndian(next_chunk);
+    chunk_framing_bytes += sizeof(next_chunk);
 
     if (next_chunk)
     {
@@ -159,7 +160,14 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
         c_pos = buffer().begin();
     }
 
-    return processChunkLeft(c_pos);
+    if (!processChunkLeft(c_pos))
+        return false;
+
+    /// The new data may start in the middle of the buffer, after the bytes that were already consumed
+    /// and the chunk framing. `next` has already counted the consumed ones and `count` would count the
+    /// skipped prefix once more, so take it out to keep `count` equal to the bytes of the packets.
+    bytes -= nextimpl_working_buffer_offset;
+    return true;
 }
 
 }
