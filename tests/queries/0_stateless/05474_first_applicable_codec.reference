@@ -1,9 +1,11 @@
 -- column codecs
-CREATE TABLE default.t_first_applicable\n(\n    `i` UInt32 CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `f` Float64 CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `s` String CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `t` Tuple(\n        a Float32,\n        b UInt16,\n        c String) CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `a` Array(Int64) CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `n` Nullable(Float32) CODEC(firstapplicable(FPC, ZSTD(3))),\n    `d` UInt64 CODEC(Delta, FirstApplicable(FPC, LZ4))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, index_granularity = 8192
-10000	49995000	7142142.857142857	38890	16665000.00000003	4995000	10000	20000	3029696.999988973	149985000
+CREATE TABLE default.t_first_applicable\n(\n    `i` UInt32 CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `f` Float64 CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `s` String CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `t` Tuple(\n        a Float32,\n        b UInt16,\n        c String) CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `a` Array(Int64) CODEC(FirstApplicable(FPC, Multiple(T64, ZSTD(3)), ZSTD(3))),\n    `n` Nullable(Float32) CODEC(firstapplicable(FPC, ZSTD(3))),\n    `d` UInt64 CODEC(Delta, FirstApplicable(FPC, LZ4)),\n    `e` Array(Int64) CODEC(FirstApplicable(FPC, T64))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, index_granularity = 8192
+10000	49995000	7142142.857142857	38890	16665000.00000003	4995000	10000	20000	3029696.999988973	149985000	3333
 a	a	['T64, ZSTD(1)']
 a	a.size0	['ZSTD(1)']
 d	d	['Delta(1), LZ4']
+e	e	['T64']
+e	e.size0	['NONE']
 f	f	['FPC(12)']
 i	i	['T64, ZSTD(1)']
 n	n	['FPC(12)']
