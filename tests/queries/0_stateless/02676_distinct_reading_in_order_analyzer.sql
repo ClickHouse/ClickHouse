@@ -1,7 +1,9 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 drop table if exists t;
 
 create table t (a UInt64, b UInt64) engine=MergeTree() order by (a);
 insert into t select number % 2, number from numbers(10);
 
 set optimize_distinct_in_order=1;
-select trimBoth(explain) from (explain pipeline select distinct a from t settings enable_parallel_replicas = 0) where explain like '%InOrder%';
+select trimBoth(explain) from (explain pipeline select distinct a from t) where explain like '%InOrder%';

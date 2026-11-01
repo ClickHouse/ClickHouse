@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS tab;
 
@@ -19,6 +21,6 @@ WHERE database = currentDatabase() AND table = 'tab';
 
 SELECT '---';
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM tab WHERE has(foo, 'b') SETTINGS enable_parallel_replicas = 0;
+EXPLAIN indexes = 1, description = 0 SELECT * FROM tab WHERE has(foo, 'b');
 
 DROP TABLE tab;

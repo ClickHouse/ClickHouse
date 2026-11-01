@@ -1,4 +1,5 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 
 SET explain_query_plan_default = 'legacy';
 SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
@@ -10,7 +11,7 @@ DROP TABLE IF EXISTS prewhere_move;
 CREATE TABLE prewhere_move (x Int, y String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO prewhere_move SELECT number, toString(number) FROM numbers(1000);
 
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT * FROM prewhere_move WHERE x > 100) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter%' SETTINGS enable_parallel_replicas = 0;
+SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT * FROM prewhere_move WHERE x > 100) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter%';
 
 DROP TABLE prewhere_move;
 
@@ -19,6 +20,6 @@ INSERT INTO prewhere_move SELECT number, number, number, repeat('a', 1024) FROM 
 
 -- Not all conditions moved
 SET move_all_conditions_to_prewhere = 0;
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8|_String', '') FROM (EXPLAIN actions=1 SELECT * FROM prewhere_move WHERE x1 > 100 AND x2 > 100 AND x3 > 100 AND x4 > '100') WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter%' SETTINGS enable_parallel_replicas = 0;
+SELECT replaceRegexpAll(explain, '__table1\.|_UInt8|_String', '') FROM (EXPLAIN actions=1 SELECT * FROM prewhere_move WHERE x1 > 100 AND x2 > 100 AND x3 > 100 AND x4 > '100') WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter%';
 
 DROP TABLE prewhere_move;

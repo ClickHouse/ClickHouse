@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- Tests delayed materialization of statistics in merge instead of during insert (setting 'materialize_statistics_on_insert = 0').
 -- (The concrete statistics type, column data type and predicate type don't matter)
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)
@@ -22,18 +24,18 @@ SETTINGS min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0, defau
 
 INSERT INTO tab SELECT number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';
-SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Prewhere%'; -- checks b first, then a (statistics not used)
+SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks b first, then a (statistics not used)
 
 OPTIMIZE TABLE tab FINAL;
 SELECT 'After merge';
-SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
+SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
 
 TRUNCATE TABLE tab;
 SET mutations_sync = 2;
 INSERT INTO tab SELECT number, -number FROM system.numbers LIMIT 10000;
 ALTER TABLE tab MATERIALIZE STATISTICS a, b;
 SELECT 'After truncate, insert, and materialize';
-SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
+SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
 
 DROP TABLE tab;
 
