@@ -425,6 +425,34 @@ bool AggregateFunctionTuple::isAbleToParallelizeMerge() const
     return false;
 }
 
+size_t AggregateFunctionTuple::getEstimatedMergeWork(ConstAggregateDataPtr place) const
+{
+    size_t work = 0;
+    for (size_t i = 0; i < nested_functions.size(); ++i)
+        work += nested_functions[i]->getEstimatedMergeWork(place + state_offsets[i]);
+    return work;
+}
+
+size_t AggregateFunctionTuple::getStateBytesPerDistinctInput() const
+{
+    /// Every nested function receives each row once, and distinct tuples bound the distinct inputs
+    /// of each element from above, so the sum is a conservative estimate.
+    size_t bytes = 0;
+    for (const auto & func : nested_functions)
+        bytes += func->getStateBytesPerDistinctInput();
+    return bytes;
+}
+
+bool AggregateFunctionTuple::isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
+{
+    /// The whole tuple state is deferred as one unit (the deferred pointers are later passed to
+    /// `parallelizeMergeMulti` of this function), so it is large as soon as one nested pair is.
+    for (size_t i = 0; i < nested_functions.size(); ++i)
+        if (nested_functions[i]->isLargeMergePair(place + state_offsets[i], rhs + state_offsets[i]))
+            return true;
+    return false;
+}
+
 bool AggregateFunctionTuple::canOptimizeEqualKeysRanges() const
 {
     for (const auto & func : nested_functions)

@@ -1,12 +1,21 @@
 -- Checks that `parallel_replicas_for_queries_with_multiple_tables` reaches every place that plans a
--- part of a multi-table query, by looking for `ReadFromRemoteParallelReplicas` in the query plan.
+-- part of a multi-table query, by looking for the read from the other replicas in the query plan:
+-- `ReadFromRemoteParallelReplicas`, or `ReadFromParallelReplicas` with `parallel_replicas_plan_based`.
+-- Each probe prints whether there is one, not how many: the two implementations split the same query
+-- into a different number of reads.
 -- The probes that cannot be seen in `EXPLAIN` live in `05137_pr_disable_for_multiple_tables_execution`.
 
 drop table if exists X;
 drop table if exists Y;
+drop table if exists Z;
+drop table if exists W;
 
 create table X (id Int32, x_a String, x_b Nullable(Int32)) engine MergeTree order by id settings index_granularity=1;
 create table Y (id Int32, y_a String, y_b Nullable(String)) engine MergeTree order by id settings index_granularity=1;
+-- Copies of `X` for the `UNION` probes: plan-based parallel replicas leave local a union whose branches read
+-- the same table, so each branch reads its own.
+create table Z as X;
+create table W as X;
 
 insert into X (id, x_a, x_b) select number, toString(number), -number from numbers(100);
 insert into X (id, x_a, x_b) values (1, 'l1', 1), (2, 'l2', 2), (2, 'l3', 3), (3, 'l4', 4);
@@ -14,8 +23,10 @@ insert into X (id, x_a) values      (4, 'l5'), (4, 'l6'), (5, 'l7'), (8, 'l8'), 
 insert into X (id, x_a, x_b) select number, toString(number), toString(-number) from numbers(100);
 insert into Y (id, y_a) values      (1, 'r1'), (1, 'r2'), (2, 'r3'), (3, 'r4'), (3, 'r5');
 insert into Y (id, y_a, y_b) values (4, 'r6', 'nr6'), (6, 'r7', 'nr7'), (7, 'r8', 'nr8'), (9, 'r9', 'nr9');
+insert into Z select * from X;
+insert into W select * from X;
 
-set enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+set enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Pin the settings that the flaky/stress randomizer changes and that would otherwise alter the plan:
 -- with automatic_parallel_replicas_mode=2 only statistics are collected and parallel replicas are not
@@ -27,61 +38,63 @@ set automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 1, seri
 set parallel_replicas_for_non_replicated_merge_tree = 1;
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from (select X.*, Y.* from X inner join Y on X.id = Y.id)) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select X.*, Y.* from X inner join Y on X.id = Y.id)) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from (select X.*, Y.* from X inner join Y on X.id = Y.id)) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select X.*, Y.* from X inner join Y on X.id = Y.id)) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from (select * from X) as s inner join Y as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X) as s inner join Y as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from (select * from X) as s inner join Y as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X) as s inner join Y as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from X as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from X as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from X as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from X as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from (select * from X) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from (select * from X) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from (select * from X) as s inner join (select * from Y order by id) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X) as s inner join (select * from Y order by id) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from (select * from X) as s inner join (select * from Y order by id) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X) as s inner join (select * from Y order by id) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from (select * from X order by id) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X order by id) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from (select * from X order by id) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select * from X order by id) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 -- ARRAY JOIN over a single table is not a multi-table query, so parallel replicas must stay enabled
 -- regardless of the setting. The check must count actual joins, not the table expressions stack size,
 -- which also includes the ARRAY_JOIN node.
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select id, n from X array join [1, 2] as n) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select id, n from X array join [1, 2] as n) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select id, n from X array join [1, 2] as n) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select id, n from X array join [1, 2] as n) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 -- A `UNION` table expression nested under a `JOIN` is planned branch by branch, and every branch is
 -- planned by an independent `Planner` built from the branch's own context, so disabling the setting
 -- must reach the branch contexts as well, not only the `UnionNode` context.
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from (select id from X union all select id from X) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select id from X union all select id from Z) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from (select id from X union all select id from X) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select id from X union all select id from Z) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 -- The same for a `UNION` nested inside another `UNION`, which requires the descent to be recursive.
 set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() from (explain select * from (select id from X union all (select id from X union all select id from X)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select id from X union all (select id from Z union all select id from W)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select * from (select id from X union all (select id from X union all select id from X)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+select count() > 0 from (explain select * from (select id from X union all (select id from Z union all select id from W)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%' or explain ilike '%ReadFromParallelReplicas%';
 
 drop table X;
 drop table Y;
+drop table Z;
+drop table W;

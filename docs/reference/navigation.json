@@ -1004,6 +1004,7 @@
         },
         "reference/formats/Values",
         "reference/formats/Vertical",
+        "reference/formats/Vortex",
         "reference/formats/XML"
       ]
     },
@@ -1108,6 +1109,7 @@
         "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
+        "reference/system-tables/iceberg_metadata_log_entries",
         "reference/system-tables/information_schema",
         "reference/system-tables/instrumentation",
         "reference/system-tables/jemalloc_arena_bins",

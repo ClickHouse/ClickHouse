@@ -1,0 +1,136 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "bde61df3-08ec-4ba0-abad-2893768d9731",
+  "location" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_transforms",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1793282647614,
+  "last-column-id" : 7,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "n",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "d",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 5,
+      "name" : "ts",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 6,
+      "name" : "ts2",
+      "required" : false,
+      "type" : "timestamp"
+    }, {
+      "id" : 7,
+      "name" : "b",
+      "required" : false,
+      "type" : "boolean"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "id_bucket",
+      "transform" : "bucket[4]",
+      "source-id" : 1,
+      "field-id" : 1000
+    }, {
+      "name" : "s_trunc",
+      "transform" : "truncate[3]",
+      "source-id" : 2,
+      "field-id" : 1001
+    }, {
+      "name" : "n_trunc",
+      "transform" : "truncate[10]",
+      "source-id" : 3,
+      "field-id" : 1002
+    }, {
+      "name" : "d_year",
+      "transform" : "year",
+      "source-id" : 4,
+      "field-id" : 1003
+    }, {
+      "name" : "ts_hour",
+      "transform" : "hour",
+      "source-id" : 5,
+      "field-id" : 1004
+    }, {
+      "name" : "ts2_month",
+      "transform" : "month",
+      "source-id" : 6,
+      "field-id" : 1005
+    }, {
+      "name" : "b",
+      "transform" : "identity",
+      "source-id" : 7,
+      "field-id" : 1006
+    } ]
+  } ],
+  "last-partition-id" : 1006,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "nik",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 7458109426000010730,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7458109426000010730,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 7458109426000010730,
+    "timestamp-ms" : 1793282647614,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1793282579604",
+      "added-data-files" : "40",
+      "added-records" : "40",
+      "added-files-size" : "71014",
+      "changed-partition-count" : "40",
+      "total-records" : "40",
+      "total-files-size" : "71014",
+      "total-data-files" : "40",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_transforms/metadata/snap-7458109426000010730-1-9fbf4881-2eb8-459f-a84b-60525acca69c.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1793282647614,
+    "snapshot-id" : 7458109426000010730
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1793282639900,
+    "metadata-file" : "/home/nik/work/clickhouse-private1/.claude/worktrees/agent-a6fdc5f56a0fac63a/tmp/data-lake-corpus-work/iceberg/spark-3.5.5-iceberg-1.4.3/warehouse/db/ice143_v2_transforms/metadata/v1.metadata.json"
+  } ]
+}

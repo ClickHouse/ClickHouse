@@ -3,7 +3,6 @@
 -- The primary-key and set-index workloads live in
 -- 04490_join_runtime_filters_index_analysis to keep each test fast enough for slow builds.
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 -- The asserted granule-pruning counts depend on which side builds the runtime filter, so the

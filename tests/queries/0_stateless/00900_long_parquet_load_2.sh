@@ -68,6 +68,9 @@ EXCLUDE=(
     04065_optional_struct_nullable_leaf_under_list.parquet
     # Hand-crafted file with an inconsistent bloom filter size for the 04654 out-of-bounds test.
     04654_bloom_filter_bitset_out_of_bounds.parquet
+    # Fixtures for 05446 with long strings and no `size_statistics`; they blow up the output.
+    dictionary_short_strings_without_size_statistics.parquet
+    dictionary_strings_without_size_statistics.parquet
     # Hand-crafted DELTA_BYTE_ARRAY files for the 05035 malformed-input test. The first one is
     # malformed on purpose, so loading it here would print an exception.
     05035_delta_byte_array_zero_values.parquet
@@ -99,6 +102,10 @@ EXCLUDE=(
     05318_parquet_rle_boolean.parquet
     # File for the 05334 test of string filters with `DELTA_BYTE_ARRAY` pages.
     string_filters_delta_byte_array.parquet
+    # `INT96` timestamps outside the `DateTime64(9)` range (throws with the default `date_time_overflow_behavior`), tested by 05443.
+    05443_int96_out_of_range.parquet
+    # `INT96` timestamp on the lower boundary day of the `DateTime64(9)` range, tested by 05444.
+    05444_int96_lower_boundary.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

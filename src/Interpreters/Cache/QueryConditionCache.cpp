@@ -6,6 +6,8 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Storages/ColumnsDescription.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -54,6 +56,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsBool variant_throw_on_type_mismatch;
     extern const SettingsBool dynamic_throw_on_type_mismatch;
+    extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
     extern const SettingsBool allow_simdjson;
     extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
@@ -132,7 +135,7 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// how a JSON scalar is parsed into the result type and whether a duplicated or null typed path is skipped or
     /// throws, without changing the function name or the result type, so the DAG hash cannot tell two such
     /// predicates apart. (`cast_string_to_date_time_mode`, which `JSONOverloadResolver` latches into
-    /// `format_settings.date_time_input_format`, is already registered above. The JSONPath parser limits
+    /// `format_settings.date_time_input_format`, is already registered above, and so is `date_time_input_format`. The JSONPath parser limits
     /// `max_parser_depth` / `max_parser_backtracks` would not be needed for this family alone: the path is a
     /// constant, so exceeding them raises `TOO_DEEP_RECURSION` while it is parsed, before any mark is read. They
     /// are registered below for `formatQuery`, which parses a column value per row.)
@@ -151,6 +154,7 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::json_extract_named_tuples_as_objects].value);
     /// `toTime` builds a different function (and returns another type) depending on it.
     hash.update(settings[Setting::use_legacy_to_time].value);
+    hash.update(settings[Setting::json_extract_use_cast_string_to_date_time_mode].value);
     /// The conversion functions (`toString`, `toDateTime`, `toDecimal*`, `toIPv4`, `CAST`, ...) snapshot a whole
     /// `FormatSettings` and a few more settings in `FunctionConvertSettings` when they are built, and the text
     /// serializations they call for a `String` source or target read it: `toString(d)` of a `DateTime64(1)` column
@@ -250,6 +254,49 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     hash.update(part_name);
     hash.update(condition_hash);
     return hash.get128();
+}
+
+UUID QueryConditionCache::getTableIdForFileEntries(
+    const UUID & table_uuid,
+    std::string_view format,
+    std::string_view compression_method,
+    const ColumnsDescription & columns,
+    const ColumnMapper * column_mapper,
+    const FormatSettings * format_settings)
+{
+    if (table_uuid != UUIDHelpers::Nil)
+        return table_uuid;
+    /// Each string is preceded by its length, so the boundaries between them are unambiguous.
+    const String structure = columns.toString(/*include_comments=*/false);
+    SipHash hash;
+    hash.update(format.size());
+    hash.update(format);
+    hash.update(compression_method.size());
+    hash.update(compression_method);
+    hash.update(structure.size());
+    hash.update(structure);
+    if (column_mapper)
+    {
+        /// Sorted, because the order of an `unordered_map` is not stable.
+        const auto & encoding = column_mapper->getStorageColumnEncoding();
+        std::vector<std::pair<std::string_view, Int64>> sorted_encoding(encoding.begin(), encoding.end());
+        std::sort(sorted_encoding.begin(), sorted_encoding.end());
+        hash.update(sorted_encoding.size());
+        for (const auto & [name, field_id] : sorted_encoding)
+        {
+            hash.update(name.size());
+            hash.update(name);
+            hash.update(field_id);
+        }
+    }
+    hash.update(format_settings != nullptr);
+    if (format_settings)
+        hash.update(fileFormatPruningSettingsSalt(*format_settings));
+    UInt128 table_id = hash.get128();
+    /// A `Nil` id would disable the cache.
+    if (table_id == 0)
+        table_id = 1;
+    return UUID(table_id);
 }
 
 String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)
