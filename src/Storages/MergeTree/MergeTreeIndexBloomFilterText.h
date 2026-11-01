@@ -73,7 +73,8 @@ public:
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
             IsShadowingColumn is_column_shadowing_map_subcolumn_,
-            JSONIndexArgumentTypes json_argument_types_);
+            JSONIndexArgumentTypes json_argument_types_,
+            bool require_ready_sets_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -158,6 +159,7 @@ private:
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     IsShadowingColumn is_column_shadowing_map_subcolumn;
+    const bool require_ready_sets;
 
     RPN rpn;
 };
@@ -180,7 +182,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAG::Node * predicate, ContextPtr context) const override;
+            const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const override;
 
     BloomFilterParameters params;
     /// Function for selecting next token.
