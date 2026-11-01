@@ -38,4 +38,9 @@ INSERT INTO t_missing_marker_nested (id, a) VALUES (1, '{"x":[11,22]}');
 SELECT id, `a.x`, length(`a.x`) FROM t_missing_marker_nested;
 SELECT count() FROM t_missing_marker_nested WHERE length(`a.x`) = 0;
 SELECT countIf(length(`a.x`) = 0) FROM t_missing_marker_nested;
+-- The row keeps the frozen default recorded by the marker after the column's default changes.
+ALTER TABLE t_missing_marker_nested MODIFY COLUMN `a.x` DEFAULT [7];
+SELECT id, `a.x`, length(`a.x`) FROM t_missing_marker_nested;
+SELECT count() FROM t_missing_marker_nested WHERE length(`a.x`) = 0;
+SELECT countIf(length(`a.x`) = 0) FROM t_missing_marker_nested;
 DROP TABLE t_missing_marker_nested;

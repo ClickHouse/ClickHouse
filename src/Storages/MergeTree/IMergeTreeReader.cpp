@@ -305,7 +305,8 @@ void IMergeTreeReader::fillMissingColumns(
                         continue;
                     }
 
-                    if (const auto * missing_info = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part))
+                    const auto & infos = data_part_info_for_read->getSerializationInfos();
+                    if (const auto * missing_info = infos.getMissingColumnInfo(name_in_part))
                     {
                         missing_column_names.insert(column.getNameInStorage());
                         if (!res_columns[column_index] && !missing_info->type_name.empty())
@@ -315,6 +316,44 @@ void IMergeTreeReader::fillMissingColumns(
                             if (column.isSubcolumn())
                                 frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
                             res_columns[column_index] = std::move(frozen_column);
+                        }
+                    }
+                    else if (!res_columns[column_index] && column.isSubcolumn() && isNested(column.getTypeInStorage()))
+                    {
+                        /// A column `a.x` read as the subcolumn `x` of a `Nested` column `a` (see `Nested::convertToSubcolumns`)
+                        /// is recorded as missing under the name of the flattened column `a.x` (possibly followed by a subcolumn
+                        /// of its own, such as `a.x.size0`), not under the name of the `Nested` column. Its frozen default is
+                        /// filled here, rather than the current default of the column, which may have changed since.
+                        /// The marker names the column as it was named in the part, before a pending `RENAME COLUMN`.
+                        String flattened_name = Nested::concatenateName(column.getNameInStorage(), column.getSubcolumnName());
+                        std::vector<std::pair<String, String>> candidates{{flattened_name, ""}};
+                        for (const auto & [candidate_column, candidate_subcolumn] : Nested::getAllColumnAndSubcolumnPairs(flattened_name))
+                            if (candidate_column.size() > column.getNameInStorage().size())
+                                candidates.emplace_back(String(candidate_column), String(candidate_subcolumn));
+
+                        for (auto & [candidate_column, candidate_subcolumn] : candidates)
+                        {
+                            if (alter_conversions->isColumnRenamed(candidate_column))
+                                candidate_column = alter_conversions->getColumnOldName(candidate_column);
+
+                            const auto * marker_info = infos.getMissingColumnInfo(candidate_column);
+                            if (!marker_info)
+                                continue;
+
+                            ColumnPtr frozen_column;
+                            if (marker_info->type_name.empty())
+                            {
+                                frozen_column = column.type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                            }
+                            else
+                            {
+                                auto frozen_type = DataTypeFactory::instance().get(marker_info->type_name);
+                                frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                                if (!candidate_subcolumn.empty())
+                                    frozen_column = frozen_type->getSubcolumn(candidate_subcolumn, frozen_column);
+                            }
+                            res_columns[column_index] = std::move(frozen_column);
+                            break;
                         }
                     }
                     ++column_index;
