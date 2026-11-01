@@ -82,6 +82,10 @@ struct WriteOptions
     /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
     /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
     bool write_file_logical_type = false;
+
+    /// The value of `created_by` in the metadata of the file. If empty, it is the version and the build of ClickHouse.
+    /// A fixed value makes the file independent of the build, see `MergeTreeDataPartWriterParquet`.
+    String created_by;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:

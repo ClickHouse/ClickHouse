@@ -274,6 +274,9 @@ MergeTreeDataPartWriterParquet::MergeTreeDataPartWriterParquet(
     file_options.write_geometadata = false;
     /// Many parts are written in parallel, so don't accumulate the bloom filters in memory.
     file_options.bloom_filter_flush_threshold_bytes = 0;
+    /// The checksums of the parts are compared between replicas, which can run different builds of ClickHouse
+    /// (e.g. during an upgrade), so the content of the file must not depend on the build.
+    file_options.created_by = "ClickHouse";
 
     Poco::JSON::Array::Ptr columns_metadata = new Poco::JSON::Array;
 
