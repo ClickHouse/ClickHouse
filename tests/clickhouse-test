@@ -7560,7 +7560,8 @@ ORDER BY (test_name, callee_offset)
 
     blacklist_check.extend(try_get_skip_list(base_dir, "../analyzer_tech_debt.txt"))
 
-    if args.no_parallel_replicas is True:
+    # The list records the failures of query-based parallel replicas.
+    if args.no_parallel_replicas is True and not args.parallel_replicas_plan_based:
         blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
         blacklist_check.extend(blacklist)
 
@@ -8357,6 +8358,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Do not include tests that are not supported with parallel replicas feature",
+    )
+    parser.add_argument(
+        "--parallel-replicas-plan-based",
+        action="store_true",
+        default=False,
+        help="The server runs plan-based parallel replicas: do not apply parallel_replicas_blacklist.txt, which lists query-based failures",
     )
     parser.add_argument(
         "--no-async-insert",

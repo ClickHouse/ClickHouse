@@ -267,6 +267,7 @@ DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
+    "plan-based": "--parallel-replicas-plan-based",
     "AsyncInsert": " --no-async-insert",
     "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
