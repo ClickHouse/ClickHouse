@@ -8,7 +8,6 @@
 #include <limits>
 #include <memory>
 #include <utility>
-#include <vector>
 
 namespace DB
 {
@@ -36,31 +35,31 @@ bool hasNoPointsForConvexHull(const Geometry & geometry)
         return boost::geometry::is_empty(geometry);
 }
 
-/// The rectangle of the smallest area that contains a convex polygon, found with rotating calipers:
+/// Replaces a convex polygon with the rectangle of the smallest area that contains it, found with rotating calipers:
 /// one of its sides lies on an edge of the polygon, so it is enough to try every edge, and the vertices
 /// that are the farthest along and across an edge only move forward when going to the next edge.
+/// Each of the three vertices goes around the polygon once, so it is linear in the number of vertices.
+/// It works inside the ring of the polygon and allocates nothing beyond it.
 template <typename Point>
-Polygon<Point> minimumRotatedRectangle(const Polygon<Point> & convex_hull)
+void replaceWithMinimumRotatedRectangle(Polygon<Point> & convex_hull)
 {
     using boost::geometry::get;
     auto equals = [](const Point & a, const Point & b) { return get<0>(a) == get<0>(b) && get<1>(a) == get<1>(b); };
 
     /// The vertices without repetitions and without the closing point.
-    std::vector<Point> points;
-    for (const auto & point : convex_hull.outer())
-        if (points.empty() || !equals(point, points.back()))
-            points.push_back(point);
+    auto & points = convex_hull.outer();
+    points.erase(std::unique(points.begin(), points.end(), equals), points.end());
     if (points.size() > 1 && equals(points.front(), points.back()))
         points.pop_back();
 
     if (points.empty())
-        return convex_hull;
+        return;
 
-    Polygon<Point> rectangle;
     if (points.size() == 1)
     {
-        rectangle.outer().assign(5, points.front());
-        return rectangle;
+        const Point point = points.front();
+        points.assign(5, point);
+        return;
     }
 
     const size_t n = points.size();
@@ -77,7 +76,7 @@ Polygon<Point> minimumRotatedRectangle(const Polygon<Point> & convex_hull)
         std::reverse(points.begin(), points.end());
 
     Float64 min_area = std::numeric_limits<Float64>::infinity();
-    std::array<Point, 4> corners;
+    std::array<Point, 4> corners{};
     size_t right = 1; /// The farthest vertex along the edge.
     size_t top = 0; /// The farthest vertex across the edge.
     size_t left = 0; /// The farthest vertex back along the edge.
@@ -118,9 +117,8 @@ Polygon<Point> minimumRotatedRectangle(const Polygon<Point> & convex_hull)
 
     /// Start from the leftmost corner, as `boost::geometry::convex_hull` does.
     std::rotate(corners.begin(), std::ranges::min_element(corners, {}, [](const Point & p) { return std::pair(get<0>(p), get<1>(p)); }), corners.end());
-    rectangle.outer().assign(corners.begin(), corners.end());
-    rectangle.outer().push_back(corners.front());
-    return rectangle;
+    points.assign(corners.begin(), corners.end());
+    points.push_back(corners.front());
 }
 
 /// `polygonConvexHullCartesian`, or `polygonMinimumRotatedRectangleCartesian` if `minimum_rotated_rectangle` is true.
@@ -174,6 +172,9 @@ public:
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
+                /// Reused between rows to keep the memory of its ring.
+                Polygon<Point> result;
+
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     /// Scale by a power of two, which is exact, so that the products of coordinates
@@ -193,11 +194,11 @@ public:
                     };
                     boost::geometry::for_each_point(geometries[i], scale(-exponent));
 
-                    Polygon<Point> result{};
+                    result.clear();
                     if (!hasNoPointsForConvexHull(geometries[i]))
                         boost::geometry::convex_hull(geometries[i], result);
                     if constexpr (minimum_rotated_rectangle)
-                        result = minimumRotatedRectangle(result);
+                        replaceWithMinimumRotatedRectangle(result);
 
                     boost::geometry::for_each_point(result, scale(exponent));
                     serializer.add(result);
