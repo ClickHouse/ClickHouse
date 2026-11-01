@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 
 #include <Functions/FunctionsMiscellaneous.h>
@@ -516,8 +517,9 @@ static bool canMergeFilterIntoJoinGraph(const T & filter_step)
 /// can turn an equality into a hash join key and drop the comparison itself. That is wrong for a key type
 /// whose matching admits pairs `equals` rejects (`NULL` inside a `Variant` matches another `NULL`), and a
 /// `Dynamic` key is rejected by the join unless `allow_dynamic_type_in_join_keys` is set (declined here
-/// regardless of it), while the same comparison is valid in `WHERE`. Such a filter keeps its step, see
-/// `extractActionsForJoinCondition`.
+/// regardless of it), while the same comparison is valid in `WHERE`. Operands that `equals` can compare
+/// but that have no common supertype (`DateTime` and `UInt32`) cannot form a join key either. Such a
+/// filter keeps its step, see `extractActionsForJoinCondition`.
 static bool hasEqualityUnsafeAsJoinKey(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
@@ -527,6 +529,13 @@ static bool hasEqualityUnsafeAsJoinKey(const ActionsDAG & dag)
         for (const auto * argument : node.children)
         {
             if (JoinCommon::keyMatchesValuesEqualsRejects(argument->result_type) || hasDynamicType(argument->result_type))
+                return true;
+        }
+        if (node.children.size() == 2)
+        {
+            const auto & lhs_type = node.children[0]->result_type;
+            const auto & rhs_type = node.children[1]->result_type;
+            if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
                 return true;
         }
     }
@@ -646,11 +655,16 @@ static void mergeStepIntoQueryGraph(QueryGraphBuilder & child_graph, IQueryPlanS
     /// recursively, so that each atom becomes a separate join-graph edge with its own source
     /// relations. Keeping a composite `and` as a single edge would force the solvers to wait
     /// until all its relations are joined before applying any part of it.
+    /// The condition DAG can share nodes (`p1 = p0 AND p0`), so visit each atom once: walking every path
+    /// would produce exponentially many identical edges.
     std::vector<JoinActionRef> pending{JoinActionRef(condition_node, child_graph.expression_actions)};
+    std::unordered_set<const ActionsDAG::Node *> visited;
     while (!pending.empty())
     {
         auto condition = pending.back().resolveAliases();
         pending.pop_back();
+        if (!visited.insert(condition.getNode()).second)
+            continue;
         if (condition.isFunction(JoinConditionOperator::And))
         {
             pending.append_range(condition.getArguments());
