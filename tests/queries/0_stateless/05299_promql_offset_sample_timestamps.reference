@@ -1,0 +1,13 @@
+ts_of_last_over_time(lin[1m] offset 1m)	1000540
+ts_of_first_over_time(lin[1m] offset 1m)	1000495
+ts_of_max_over_time(lin[1m] offset 1m)	1000540
+ts_of_last_over_time(lin[1m] offset -1m)	1000660
+ts_of_last_over_time(lin[1m] offset 1m) range	[1000480,1000510,1000540]
+lin[1m] offset 1m	[(1000495,495),(1000510,510),(1000525,525),(1000540,540)]
+lin[30s] offset -1m	[(1000645,645),(1000660,660)]
+lin[1m] offset 500ms	[(1000540,540),(1000555,555),(1000570,570),(1000585,585)]
+lin[1m:15s] offset 1m	[(1000485,480),(1000500,495),(1000515,510),(1000530,525)]
+ts_of_last_over_time(lin[1m:15s] offset 1m)	1000530
+predict_linear(lin[2m] offset 1m, 60)	660
+predict_linear(lin[2m:15s] offset 1m, 60)	655
+predict_linear(lin[2m] offset 1m, 60) range	[600,630,660]
