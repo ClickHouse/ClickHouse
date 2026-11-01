@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-replicated-database
+# Tags: no-fasttest, no-parallel, no-replicated-database, no-object-storage
 # no-parallel: uses a server-wide failpoint that would fail a metadata commit of a concurrently running test.
+# no-object-storage: when the default disk is an object storage, every background write of the server commits
+# through the one-shot failpoint and consumes it, so the retries below take longer than the test time limit.
 
 # A `cache` disk over a `borrow_from_cache` disk writes its objects into the borrowed cache. When the
 # metadata commit of such a write fails, the rollback must release the borrowed segments, otherwise they
