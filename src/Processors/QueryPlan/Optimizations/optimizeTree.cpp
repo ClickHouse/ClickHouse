@@ -1013,6 +1013,14 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// Runs last: the aggregation copies its input as the passes above left it. The copy does not serialize, and the
+    /// multi-pass top-K aggregation reads the table locally in every pass.
+    if (optimization_settings.adaptive_aggregator_top_k && !optimization_settings.make_distributed_plan
+        && !optimization_settings.serialize_query_plan)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryEnableMultiPassTopKAggregation(frame_node); });
+    }
 }
 
 void addStepsToBuildSets(
