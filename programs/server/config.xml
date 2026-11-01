@@ -1421,7 +1421,9 @@
     </background_schedule_pool_log>
 
     <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
-         The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
+         The level of the messages that goes to the table can be limited (<level>). When <level> is set explicitly,
+         the root logger level is raised to at least this value, so the table can be more verbose than the log file.
+         If not specified, messages up to the most verbose level of the other log outputs will go to the table.
     -->
     <text_log>
         <!-- <database>system</database> -->
@@ -1860,6 +1862,7 @@
     <cpu_slot_preemption>true</cpu_slot_preemption>
     <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
     <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
+    <cpu_slot_parking>true</cpu_slot_parking>
     -->
 
     <!-- Settings to tune cpu and memory overload warnings for system.warnings.

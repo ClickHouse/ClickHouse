@@ -1,0 +1,12 @@
+-- vortex_first, max_threads = 1
+2000	1999000	999
+1000	1000
+-- vortex_first, max_threads = 4
+2000	1999000	999
+1000	1000
+-- parquet_first, max_threads = 1
+2000	1999000	999
+1000	1000
+-- parquet_first, max_threads = 4
+2000	1999000	999
+1000	1000

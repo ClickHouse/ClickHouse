@@ -69,6 +69,7 @@ option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 add_contrib (flatbuffers-cmake flatbuffers) # builds `flatc`, which generates the Arrow IPC bindings
 add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
+add_contrib (optimized-routines-cmake optimized-routines)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()
@@ -96,6 +97,7 @@ add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (libdeflate-cmake libdeflate)
+add_contrib (gdeflate-cmake gdeflate)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
 add_contrib (capnproto-cmake capnproto)
@@ -168,7 +170,6 @@ add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
-add_contrib (cassandra-cmake cassandra) # requires: libuv
 add_contrib (azure-cmake azure)
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)

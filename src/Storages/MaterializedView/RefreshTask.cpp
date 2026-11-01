@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <limits>
 #include <thread>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -1729,6 +1731,15 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
     }
 }
 
+/// The retry instant is widened s -> ms -> us -> ns, so it must fit every unit. 9e11 s (year ~30489)
+/// also keeps CalendarTimeInterval::floor within std::chrono::year, which holds a short.
+static constexpr std::chrono::seconds::rep max_last_attempt_seconds = 900'000'000'000;
+static constexpr std::chrono::milliseconds::rep max_delay_ms = 3'000'000'000'000;
+static constexpr std::chrono::milliseconds::rep max_when_ms = max_last_attempt_seconds * 1000 + max_delay_ms;
+static_assert(max_when_ms <= std::numeric_limits<std::chrono::milliseconds::rep>::max() / 1000);
+static_assert(max_when_ms * 1000 <= std::numeric_limits<std::chrono::system_clock::rep>::max());
+static_assert(max_delay_ms * 1'000'000 <= std::numeric_limits<std::chrono::nanoseconds::rep>::max());
+
 bool RefreshTask::retriesExhausted(const CoordinationZnode & znode) const
 {
     Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
@@ -1744,7 +1755,8 @@ static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings 
         delay_ms = refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] * multiplier;
     else
         delay_ms = refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms];
-    return std::chrono::milliseconds(delay_ms);
+    /// Either branch can return an arbitrary setting value; clamp while it is still unsigned.
+    return std::chrono::milliseconds(std::min(delay_ms, UInt64(max_delay_ms)));
 }
 
 std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, RefreshTask::CoordinationZnode>
@@ -1752,6 +1764,9 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 {
     chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
+    /// last_attempt_time comes from Keeper unvalidated.
+    znode.last_attempt_time = std::chrono::sys_seconds(std::chrono::seconds(std::clamp(
+        znode.last_attempt_time.time_since_epoch().count(), -max_last_attempt_seconds, max_last_attempt_seconds)));
     if (retriesExhausted(znode))
     {
         /// Skip to the next scheduled refresh, as if a refresh succeeded.
