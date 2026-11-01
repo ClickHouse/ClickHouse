@@ -1395,6 +1395,15 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
+    /// Finds a part among `src_parts` (parts of the source table of ATTACH/REPLACE PARTITION FROM or
+    /// MOVE PARTITION TO TABLE) that has files of an index that the destination table (`my_snapshot`)
+    /// declares but the source table (`src_snapshot`) does not. Returns the index name and the part.
+    static std::optional<std::pair<String, DataPartPtr>> findSourcePartWithFilesOfDestinationOnlyIndex(
+        const DataPartsVector & src_parts, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot);
+    /// The same, but throws `BAD_ARGUMENTS` if there is such a part.
+    static void checkSourcePartsHaveNoFilesOfDestinationOnlyIndices(
+        const DataPartsVector & src_parts, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot);
+
     /// Level for a part adopted from `source_data` (ATTACH/REPLACE PARTITION FROM, CLONE AS,
     /// MOVE PARTITION TO TABLE). Preserve the source level only when this table merges parts
     /// identically; otherwise reset to 0 so FINAL/OPTIMIZE re-merge the lone part instead of
