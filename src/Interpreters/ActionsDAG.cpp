@@ -2689,6 +2689,56 @@ bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, const std::functio
     return false;
 }
 
+std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers)
+{
+    return getInputsReadByRepresentation(NodeRawConstPtrs{&root}, outermost_readers);
+}
+
+std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers)
+{
+    /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
+    static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
+    auto call_reads_representation = [](const Node * node)
+    {
+        if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
+            return true;
+        for (const auto * argument : node->children)
+            if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
+                return true;
+        return false;
+    };
+
+    std::unordered_set<const Node *> result;
+    std::vector<std::pair<const Node *, bool>> to_visit;
+    for (const auto * root : roots)
+        to_visit.emplace_back(root, false);
+    std::unordered_set<const Node *> visited_reading_value;
+    std::unordered_set<const Node *> visited_reading_representation;
+    std::unordered_set<const Node *> readers_seen;
+    while (!to_visit.empty())
+    {
+        auto [node, reads_representation] = to_visit.back();
+        to_visit.pop_back();
+
+        if (!reads_representation && (!node->isDeterministic() || call_reads_representation(node)))
+        {
+            reads_representation = true;
+            if (outermost_readers && readers_seen.insert(node).second)
+                outermost_readers->push_back(node);
+        }
+        auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
+        if (!visited.insert(node).second)
+            continue;
+
+        if (reads_representation && node->type == ActionType::INPUT)
+            result.insert(node);
+
+        for (const auto * child : node->children)
+            to_visit.emplace_back(child, reads_representation);
+    }
+    return result;
+}
+
 bool ActionsDAG::hasInputNameShadowedByComputedNode() const
 {
     std::unordered_set<std::string_view> input_names;
@@ -4209,38 +4259,11 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     if (!cross_type_allowed_nodes.empty())
     {
-        /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
-        static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
-        auto call_reads_representation = [](const Node * node)
-        {
-            if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
-                return true;
-            for (const auto * argument : node->children)
-                if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
-                    return true;
-            return false;
-        };
         auto reads_replaced_input_representation = [&](const Node * conjunct)
         {
-            std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
-            std::unordered_set<const Node *> visited_reading_value;
-            std::unordered_set<const Node *> visited_reading_representation;
-            while (!to_visit.empty())
-            {
-                auto [node, reads_representation] = to_visit.back();
-                to_visit.pop_back();
-
-                reads_representation |= !node->isDeterministic() || call_reads_representation(node);
-                auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
-                if (!visited.insert(node).second)
-                    continue;
-
-                if (reads_representation && node->type == ActionType::INPUT && cross_type_allowed_nodes.contains(node))
+            for (const auto * input : getInputsReadByRepresentation(*conjunct))
+                if (cross_type_allowed_nodes.contains(input))
                     return true;
-
-                for (const auto * child : node->children)
-                    to_visit.emplace_back(child, reads_representation);
-            }
             return false;
         };
 
