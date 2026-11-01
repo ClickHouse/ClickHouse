@@ -1087,8 +1087,9 @@ do
         # raw file from a failed rerun could otherwise demote the queries that
         # did rerun, contradicting "the whole test keeps its original verdict".
         # timeout: a rerun must not run past the deadline (a cut rerun fails like any other).
+        # --foreground keeps perf.py in our process group, so a caller's group kill still reaches it.
         # shellcheck disable=SC2086
-        if timeout -k 10 "$confirm_time_left" "$perf_py" "$confirm_test_file" \
+        if timeout --foreground -k 10 "$confirm_time_left" "$perf_py" "$confirm_test_file" \
             --host localhost localhost \
             --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
             --binary left/clickhouse right/clickhouse \
