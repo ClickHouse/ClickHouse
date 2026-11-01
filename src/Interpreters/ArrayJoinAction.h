@@ -18,6 +18,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class DataTypeArray;
 class ColumnArray;
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type);
+/// The column of FixedArray is replaced with the column of Array of the same elements, which the functions above expect.
+/// The result must be kept alive while the pointer returned by getArrayJoinColumnRawPtr is used.
+ColumnPtr convertFixedArrayForArrayJoin(const ColumnPtr & column);
 const ColumnArray * getArrayJoinColumnRawPtr(const ColumnPtr & column);
 
 /// If input array join column has map type, convert it to array type.

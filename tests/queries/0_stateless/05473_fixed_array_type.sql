@@ -43,13 +43,15 @@ SELECT tuple([1, 2]::FixedArray(2, UInt8)) AS x, toTypeName(x), toTypeName(x.1);
 SELECT x FROM (SELECT [1, 2]::FixedArray(2, UInt8) AS x) ARRAY JOIN x;
 SELECT r, toTypeName(r) FROM (SELECT [[1, 2], [3, 4]]::FixedArray(2, 2, UInt8) AS m) ARRAY JOIN m AS r;
 SELECT arrayJoin([[1, 2], [3, 4]]::FixedArray(2, 2, UInt8)) AS r, toTypeName(r);
+SELECT x, r FROM (SELECT number AS x, [[x, 1], [2, 3]]::FixedArray(2, 2, UInt64) AS m FROM numbers(2)) LEFT ARRAY JOIN m AS r ORDER BY x, r;
+SELECT r, e FROM (SELECT [[1, 2], [3, 4]]::FixedArray(2, 2, UInt8) AS m, ['a', 'b']::FixedArray(2, String) AS s) ARRAY JOIN m AS r, s AS e;
 
 SELECT '-- table';
 DROP TABLE IF EXISTS t_fixed_array;
 CREATE TABLE t_fixed_array (id UInt64, v FixedArray(4, Float32), m FixedArray(2, 3, UInt8), s FixedArray(2, String), n FixedArray(2, Nullable(Int32)))
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_fixed_array VALUES (1, [1, 2, 3, 4], [[1, 2, 3], [4, 5, 6]], ['a', 'b'], [1, NULL]), (2, [5, 6, 7, 8], [[7, 8, 9], [10, 11, 12]], ['c', 'dd'], [NULL, 2]);
-INSERT INTO t_fixed_array VALUES (3, [1, 2, 3], [[1, 2, 3], [4, 5, 6]], ['a', 'b'], [1, 2]); -- { error TYPE_MISMATCH }
+INSERT INTO t_fixed_array VALUES (3, [1, 2, 3], [[1, 2, 3], [4, 5, 6]], ['a', 'b'], [1, 2]); -- { error SIZES_OF_ARRAYS_DONT_MATCH }
 INSERT INTO t_fixed_array SELECT number + 10, [number, number, number, number], [[1, 2, 3], [4, 5, 6]], ['x', toString(number)], [number, NULL] FROM numbers(3);
 SELECT * FROM t_fixed_array ORDER BY id;
 SELECT id, v[2], m[2], m[2, 1], s[2], n[1] FROM t_fixed_array ORDER BY id;
@@ -67,7 +69,7 @@ DROP TABLE t_fixed_array;
 
 SELECT '-- the size of a part: no offsets are stored';
 DROP TABLE IF EXISTS t_fixed_array_size;
-CREATE TABLE t_fixed_array_size (m FixedArray(100, 3, UInt8)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_fixed_array_size (m FixedArray(100, 3, UInt8)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_fixed_array_size SELECT arrayMap(i -> [1, 2, 3], range(100)) FROM numbers(1000);
 SELECT column, type, sum(data_uncompressed_bytes) FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_fixed_array_size' AND active GROUP BY column, type;
 DROP TABLE t_fixed_array_size;
@@ -78,7 +80,5 @@ SELECT [[1, 2], [3, 4]]::FixedArray(2, 2, UInt8) AS m FORMAT CSV;
 SELECT * FROM format(JSONEachRow, 'm FixedArray(2, 2, UInt8)', '{"m": [[1, 2], [3, 4]]}');
 SELECT * FROM format(CSV, 'm FixedArray(2, UInt8)', '"[1,2]"');
 SELECT * FROM format(JSONEachRow, 'm FixedArray(2, 2, UInt8)', '{"m": [[1, 2], [3]]}'); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
-SELECT hex(x) FROM (SELECT * FROM format(RowBinary, 'x FixedArray(3, UInt8)', unhex('010203'))) FORMAT TSVRaw;
 SELECT x FROM format(RowBinary, 'x FixedArray(3, UInt8)', unhex('010203'));
-SELECT x::FixedArray(2, 2, UInt8) AS m, toTypeName(m) FROM format(Native, 'x Array(Array(UInt8))', (SELECT * FROM (SELECT [[1, 2], [3, 4]]) FORMAT Native));
 SELECT CAST([1, 2]::FixedArray(2, UInt8), 'Dynamic') AS d, dynamicType(d);

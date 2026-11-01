@@ -64,15 +64,16 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override { return n * nested->getMaximumSizeOfValueInMemory(); }
     size_t getSizeOfValueInMemory() const override { return n * nested->getSizeOfValueInMemory(); }
 
-    /// The value is `n` consecutive values of the nested type.
+    /// The value is `n` consecutive values of the nested type, available with `IColumn::getDataAt`.
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {
-        return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
+        /// A contiguous value of a nested FixedArray has the fixed size as well.
+        return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion()
+            || (nested->getTypeId() == TypeIndex::FixedArray && nested->isValueUnambiguouslyRepresentedInContiguousMemoryRegion());
     }
-    bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const override
-    {
-        return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
-    }
+    /// Not the fixed size region: the keys of such types are packed by reading the column as `ColumnFixedSizeHelper`,
+    /// but the values of `ColumnFixedArray` are in its nested column.
+    bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const override { return false; }
 
     void updateHashImpl(SipHash & hash) const override;
 

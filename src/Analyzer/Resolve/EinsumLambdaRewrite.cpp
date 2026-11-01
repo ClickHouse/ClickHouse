@@ -74,7 +74,7 @@ QueryTreeNodePtr makeFunction(const String & name, QueryTreeNodes arguments)
 /** Applies the subscripts to the array, where `nullptr` means all elements of a dimension, like `arr[][1]` does.
   * The trailing `nullptr` subscripts are omitted: arr[1][][] is arr[1].
   */
-QueryTreeNodePtr applySubscripts(QueryTreeNodePtr array, std::span<const QueryTreeNodePtr> subscripts)
+QueryTreeNodePtr applySubscripts(QueryTreeNodePtr array, std::span<const QueryTreeNodePtr> subscripts, size_t depth = 0)
 {
     for (size_t i = 0; i < subscripts.size(); ++i)
     {
@@ -92,9 +92,11 @@ QueryTreeNodePtr applySubscripts(QueryTreeNodePtr array, std::span<const QueryTr
         for (const auto & subscript : rest)
             if (subscript)
                 collectIdentifierNames(*subscript, used_names);
-        String name = getUnusedName("x", used_names);
+        /// Different names for the nested lambdas, so that they are readable.
+        static constexpr std::array<std::string_view, 4> names{"x", "y", "z", "w"};
+        String name = getUnusedName(String(names[depth % names.size()]), used_names);
 
-        auto body = applySubscripts(std::make_shared<IdentifierNode>(Identifier{name}), rest);
+        auto body = applySubscripts(std::make_shared<IdentifierNode>(Identifier{name}), rest, depth + 1);
         auto lambda = std::make_shared<LambdaNode>(std::make_shared<LambdaArgumentsNode>(Names{name}), std::move(body), /*is_operator=*/ true);
         return makeFunction("arrayMap", {std::move(lambda), std::move(array)});
     }

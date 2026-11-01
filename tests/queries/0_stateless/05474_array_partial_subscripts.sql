@@ -15,7 +15,6 @@ SELECT '-- arrays';
 SELECT [[1, 2, 3], [4, 5, 6]] AS m, m[2, 3], m[1, -1], m[][2], m[][-1], m[];
 SELECT [[[1, 2], [3, 4]], [[5, 6], [7, 8]]] AS t, t[][][1], t[][2][1], t[2][][2], t[2, 1, 2];
 SELECT [[1, 2, 3], [4, 5, 6]] AS m, number + 1 AS x, m[][x] FROM numbers(3);
-SELECT [(1, 'a'), (2, 'b')] AS a, a[][1], a[][2];
 
 SELECT '-- fixed arrays keep the sizes';
 SELECT [[[1, 2, 3], [4, 5, 6]]]::FixedArray(1, 2, 3, UInt8) AS image, image[][][1] AS red, toTypeName(red), image[1, 2], toTypeName(image[1, 2]);

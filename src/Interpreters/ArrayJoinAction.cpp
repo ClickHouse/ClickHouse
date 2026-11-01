@@ -46,14 +46,22 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
     return nullptr;
 }
 
+ColumnPtr convertFixedArrayForArrayJoin(const ColumnPtr & column)
+{
+    if (const auto * fixed_array = typeid_cast<const ColumnFixedArray *>(column.get()))
+        return fixed_array->convertToArray();
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+        if (const auto * fixed_array = typeid_cast<const ColumnFixedArray *>(replicated->getNestedColumn().get()))
+            return ColumnReplicated::create(fixed_array->convertToArray(), replicated->getIndexesColumn());
+    return column;
+}
+
 static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
     if (typeid_cast<const ColumnArray *>(column.get()))
         return column;
     if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
         return map->getNestedColumnPtr();
-    if (const auto * fixed_array = typeid_cast<const ColumnFixedArray *>(column.get()))
-        return fixed_array->convertToArray();
     /// Keep replicated arrays lazy, only unwrap maps.
     if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
     {
@@ -62,8 +70,6 @@ static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
             return column;
         if (const auto * map = typeid_cast<const ColumnMap *>(nested.get()))
             return ColumnReplicated::create(map->getNestedColumnPtr(), replicated->getIndexesColumn());
-        if (const auto * fixed_array = typeid_cast<const ColumnFixedArray *>(nested.get()))
-            return ColumnReplicated::create(fixed_array->convertToArray(), replicated->getIndexesColumn());
     }
     return nullptr;
 }
@@ -80,7 +86,7 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     ColumnWithTypeAndName array_col;
     array_col.name = src_col.name;
     array_col.type = getArrayJoinDataType(src_col.type);
-    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
+    array_col.column = getArrayJoinColumn(convertFixedArrayForArrayJoin(src_col.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()));
     return array_col;
 }
 
@@ -174,7 +180,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
     const auto & function_array_resize = array_join->function_array_resize;
     const auto & function_builder = array_join->function_builder;
 
-    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
+    any_array_map_ptr = convertFixedArrayForArrayJoin(block.getByName(*columns.begin()).column->convertToFullColumnIfConst());
     initAnyArray();
 
     if (is_unaligned)
@@ -206,7 +212,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
             src_col = std::move(array_col);
         }
 
-        any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
+        any_array_map_ptr = convertFixedArrayForArrayJoin(block.getByName(*columns.begin()).column->convertToFullColumnIfConst());
         initAnyArray();
     }
     else if (is_left)
@@ -215,12 +221,12 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
         {
             const auto & src_col = block.getByName(name);
             /// emptyArrayToSingle is fine with a replicated input, no need to materialize it.
-            ColumnWithTypeAndName array_col{getArrayJoinColumn(src_col.column->convertToFullColumnIfConst()), getArrayJoinDataType(src_col.type), src_col.name};
+            ColumnWithTypeAndName array_col{getArrayJoinColumn(convertFixedArrayForArrayJoin(src_col.column->convertToFullColumnIfConst())), getArrayJoinDataType(src_col.type), src_col.name};
             ColumnsWithTypeAndName tmp_block{array_col};
             non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size(), /* dry_run = */ false);
         }
 
-        any_array_map_ptr = non_empty_array_columns.at(*columns.begin())->convertToFullColumnIfConst();
+        any_array_map_ptr = convertFixedArrayForArrayJoin(non_empty_array_columns.at(*columns.begin())->convertToFullColumnIfConst());
         initAnyArray();
     }
 }
@@ -268,7 +274,7 @@ ColumnPtr ArrayJoinResultIterator::cutArrayJoinColumn(const String & name, const
 
     ColumnPtr array_ptr = (array_join->is_left && !array_join->is_unaligned)
         ? non_empty_array_columns.at(name)->cut(current_row, window_rows)
-        : getArrayJoinColumn(column->cut(current_row, window_rows)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
+        : getArrayJoinColumn(convertFixedArrayForArrayJoin(column->cut(current_row, window_rows)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()));
     return array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
 }
 

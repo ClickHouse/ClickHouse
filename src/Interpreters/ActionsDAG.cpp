@@ -1871,7 +1871,7 @@ static ColumnWithTypeAndName executeActionForPartialResult(
             if (input_rows_count > 0)
                 break;
 
-            key.column = key.column->convertToFullColumnIfConst();
+            key.column = convertFixedArrayForArrayJoin(key.column->convertToFullColumnIfConst());
 
             const auto * array = getArrayJoinColumnRawPtr(key.column);
             if (!array)

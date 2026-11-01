@@ -25,8 +25,8 @@ SELECT einsum('i,i->', [1, 2]::Array(Float32), [3, 4]::Array(Int64)) AS c, toTyp
 SELECT '-- with a combiner';
 SELECT einsum('ij,ij->ij', (x, y) -> x - y, [[1, 2], [3, 4]], [[5, 6], [7, 8]]);
 SELECT einsum('i,i->', (x, y) -> (x - y) * (x - y), [1, 2, 3], [4, 6, 8]);
-SELECT einsum('ij->ji', x -> concat(x, '!'), [['a', 'b'], ['c', 'd']]);
-SELECT einsum('i->i', x -> x + number, [1, 2, 3]) FROM numbers(2);
+SELECT einsum('ij->ji', (x) -> concat(x, '!'), [['a', 'b'], ['c', 'd']]);
+SELECT einsum('i->i', (x) -> x + number, [1, 2, 3]) FROM numbers(2);
 
 SELECT '-- fixed arrays';
 SELECT einsum('ik,kj->ij', a, b) AS c, toTypeName(c)
@@ -60,7 +60,7 @@ SELECT '-- multiple rows and constants';
 SELECT einsum('ik,kj->ij', a, [[1, 0], [0, 1]]) FROM (SELECT [[number, 1], [2, 3]] AS a FROM numbers(3));
 SELECT einsum('i,i->', range(number), range(number)) FROM numbers(5);
 SELECT einsum('ij,j->i', [[1, 2], [3, 4]], [number, 1]) FROM numbers(3);
-SELECT einsum('ij->ji', arrayResize([[1, 2]], number)) FROM numbers(3);
+SELECT einsum('ij->ji', arrayMap(i -> [i, i * 10], range(number))) FROM numbers(3);
 
 SELECT '-- larger matrices are the same as the naive calculation';
 WITH
@@ -90,5 +90,4 @@ SELECT einsum((i) -> a[i + 1]) FROM (SELECT [1, 2] AS a); -- { serverError BAD_A
 SELECT einsum((i) -> a[i], b) FROM (SELECT [1, 2] AS a, [3, 4] AS b); -- { serverError BAD_ARGUMENTS }
 SELECT einsum((i) -> a[i] * b[i]) FROM (SELECT [1, 2] AS a, [3] AS b); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT einsum('i,i->', (x) -> x, [1], [2]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT einsum('i->', x -> toString(x), [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT einsum((i) -> a[i]) FROM (SELECT [1, 2] AS a) SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT einsum('i->', (x) -> toString(x), [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

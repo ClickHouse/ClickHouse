@@ -1560,7 +1560,8 @@ static void collectIdentifierNames(const IAST * node, std::unordered_set<String>
 }
 
 /// `subscripts` are in the order of application, `nullptr` stands for the empty subscript.
-static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts)
+/// `depth` is the number of enclosing lambdas created here, so that their parameters have different names.
+static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts, size_t depth = 0)
 {
     for (size_t i = 0; i < subscripts.size(); ++i)
     {
@@ -1580,12 +1581,18 @@ static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts)
             if (subscript)
                 collectIdentifierNames(subscript.get(), used_names);
 
-        String name = "x";
+        static constexpr std::array<std::string_view, 4> names{"x", "y", "z", "w"};
+        String prefix(names[depth % names.size()]);
+        String name = depth < names.size() ? prefix : prefix + std::to_string(depth / names.size());
         for (size_t suffix = 1; used_names.contains(name); ++suffix)
-            name = "x" + std::to_string(suffix);
+            name = prefix + std::to_string(suffix);
 
-        auto body = applySubscripts(make_intrusive<ASTIdentifier>(name), rest);
-        return makeASTFunction("arrayMap", makeASTLambda({name}, std::move(body)), std::move(base));
+        auto body = applySubscripts(make_intrusive<ASTIdentifier>(name), rest, depth + 1);
+        auto lambda = makeASTLambda({name}, std::move(body));
+        lambda->setIsOperator(true);
+        lambda->setIsLambdaFunction(true);
+        lambda->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
+        return makeASTFunction("arrayMap", std::move(lambda), std::move(base));
     }
     return base;
 }
@@ -1593,10 +1600,7 @@ static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts)
 static void expandSubscripts(ASTPtr & node)
 {
     auto * function = node->as<ASTFunction>();
-    if (!function)
-        return;
-
-    if (function->name != "arrayElement" || !function->arguments || function->arguments->children.size() != 2)
+    if (!function || function->name != "arrayElement" || !function->arguments || function->arguments->children.size() != 2)
     {
         for (auto & child : node->children)
             expandSubscripts(child);
