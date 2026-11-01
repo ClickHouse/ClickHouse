@@ -6,6 +6,7 @@ from pathlib import Path
 from ci.jobs.scripts.log_cluster import (
     BUILD_PROFILE_USER,
     LogClusterBuildProfileQueries,
+    LogClusterUnavailable,
 )
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -232,19 +233,23 @@ def _upload_profile_artifacts(build_type, start_time, artifacts):
     raises when missing or empty - fail-close, so a broken producer cannot
     turn into a false-green "no data" downstream. Optional artifacts are
     skipped. Upload failures are NOT swallowed either: an INSERT rejection
-    propagates so the lost telemetry stays visible and the hook fails loudly.
-    Both of those stop the upload where they happen, which is why the order is
-    not the caller's to choose (see _UPLOAD_ORDER).
+    propagates so the lost telemetry stays visible and the hook fails loudly
+    (an endpoint that never answered is reported as a warning by check()).
+    Every required artifact is checked before the first upload, and an upload
+    failure stops the upload where it happens, which is why the order is not
+    the caller's to choose (see _UPLOAD_ORDER).
     """
     required = _REQUIRED_ARTIFACTS.get(build_type, ())
-    for insert, file in _in_upload_order(artifacts):
+    artifacts = _in_upload_order(artifacts)
+    for _, file in artifacts:
+        if Path(file).name in required and not _has_data(file):
+            raise RuntimeError(
+                f"Build [{build_type}] produced no profile data in [{file}], "
+                "but this artifact is required for it (see _REQUIRED_ARTIFACTS): "
+                "the profile producer is broken"
+            )
+    for insert, file in artifacts:
         if not _has_data(file):
-            if Path(file).name in required:
-                raise RuntimeError(
-                    f"Build [{build_type}] produced no profile data in [{file}], "
-                    "but this artifact is required for it (see _REQUIRED_ARTIFACTS): "
-                    "the profile producer is broken"
-                )
             print(f"No build profile data in [{file}], skipping upload")
             continue
         insert(build_name=build_type, start_time=start_time, file=file)
@@ -310,9 +315,18 @@ def check():
             artifacts.append((queries.insert_binary_symbol_data, binary_symbol_file))
         artifacts.append((queries.insert_build_size_data, build_size_file))
         _upload_profile_artifacts(build_type, check_start_time, artifacts)
+    except LogClusterUnavailable as e:
+        # The completion marker is uploaded last (_UPLOAD_ORDER), so a commit
+        # whose upload stopped here never becomes a baseline.
+        print(
+            f"WARNING: Build profile not uploaded, the CI logs cluster did not answer: {e}"
+        )
+        Info().add_workflow_warning(
+            "Build profile not uploaded: the CI logs cluster did not answer"
+        )
     except Exception:
-        # Fail loudly on any error producing, assembling, or uploading the
-        # profile data: never let the post-hook pass silently.
+        # Fail loudly on any other error producing, assembling, or uploading
+        # the profile data: never let the post-hook pass silently.
         print("ERROR: Failed to collect build profile data:")
         traceback.print_exc()
         sys.exit(1)
