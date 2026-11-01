@@ -61,7 +61,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
             "Buffer has gone, cannot extract information about what has been parsed.");
 
     const auto saved_buffer = in->buffer();
-    const auto saved_position = in->position();
+    auto * const saved_position = in->position();
     SCOPE_EXIT({
         if (restore_after_eof)
         {
