@@ -33,9 +33,7 @@
 
     <!-- Regular aggregate, predominantly exercising unequal-time row additions. -->
     <query>
-        SELECT exponentialTimeDecayingValueAt(
-            exponentialTimeDecayedSum(60)(value, time),
-            toFloat64(29999999))
+        SELECT exponentialTimeDecayedSum(60)(value, time)
         FROM exponential_time_decay_perf
         FORMAT Null
         SETTINGS
@@ -45,9 +43,7 @@
 
     <!-- Equal-anchor rows exercise the no-decay fast path in add(). -->
     <query>
-        SELECT exponentialTimeDecayingValueAt(
-            exponentialTimeDecayedSum(60)(value, toFloat64(0)),
-            toFloat64(0))
+        SELECT exponentialTimeDecayedSum(60)(value, toFloat64(0))
         FROM exponential_time_decay_perf
         FORMAT Null
         SETTINGS
@@ -57,9 +53,7 @@
 
     <!-- Build independent batch states and merge them, matching incremental aggregation. -->
     <query>
-        SELECT exponentialTimeDecayingValueAt(
-            exponentialTimeDecayedSumMerge(60)(state),
-            toFloat64(29999999))
+        SELECT exponentialTimeDecayedSumMerge(60)(state)
         FROM
         (
             SELECT exponentialTimeDecayedSumState(60)(value, time) AS state
