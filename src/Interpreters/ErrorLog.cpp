@@ -106,8 +106,7 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
-                "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse "
-                "server process."
+                "are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."
             },
         {
                 "last_error_symbols",
@@ -141,7 +140,11 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(last_error_message);
     columns[column_idx++]->insert(last_error_query_id);
 
-    columns[column_idx++]->insert(Array(last_error_trace.begin(), last_error_trace.end()));
+    Array trace_array;
+    trace_array.reserve(last_error_trace.size());
+    for (UInt64 addr : last_error_trace)
+        trace_array.emplace_back(StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(addr)));
+    columns[column_idx++]->insert(std::move(trace_array));
 
     IColumn & symbols_column = *columns[column_idx++];
     IColumn & lines_column = *columns[column_idx++];
@@ -209,7 +212,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
         std::vector<UInt64> addrs;
         addrs.reserve(trace.size());
         for (auto * ptr : trace)
-            addrs.push_back(StackTrace::resolveAddressForStorage(ptr));
+            addrs.push_back(reinterpret_cast<UInt64>(ptr));
         return addrs;
     };
 

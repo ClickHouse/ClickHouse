@@ -730,6 +730,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
+    /// Like the check above, but a full-definition `ATTACH` is exempt too, so an existing table with such a column stays loadable.
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
+        MergeTreeData::checkLossyCodecOnLowCardinality(columns);
+
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 

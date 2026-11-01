@@ -1,0 +1,19 @@
+-- query-based
+1	1	1
+-- plan-based
+1	1	1
+-- mixed
+-- without parallel replicas
+200000
+1000
+200000
+200000
+1000
+19999900000
+19999900000
+-- distributed insert
+1000
+2000
+-- whole query
+200000
+200000

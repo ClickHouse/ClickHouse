@@ -38,35 +38,6 @@ char asciiToLower(char c)
     return (c >= 'A' && c <= 'Z') ? static_cast<char>(c | 0x20) : c;
 }
 
-/// Decode a query-string component (a parameter name or value) the same way the server interprets it:
-/// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX'). A name is classified on
-/// this decoded form, otherwise an encoded name like "pass%77ord" (which the server accepts as
-/// "password") would slip past the match and leak its value. Tolerant by design: a malformed escape
-/// is copied through verbatim and nothing throws, since the result is only matched against, never logged.
-std::string decodeQueryComponent(std::string_view name)
-{
-    std::string decoded;
-    decoded.reserve(name.size());
-    for (size_t i = 0; i < name.size(); ++i)
-    {
-        char c = name[i];
-        if (c == '+')
-        {
-            decoded.push_back(' ');
-        }
-        else if (c == '%' && i + 2 < name.size() && isHexDigit(name[i + 1]) && isHexDigit(name[i + 2]))
-        {
-            decoded.push_back(static_cast<char>(unhex2(name.data() + i + 1)));
-            i += 2;
-        }
-        else
-        {
-            decoded.push_back(c);
-        }
-    }
-    return decoded;
-}
-
 /// The name as a peer interprets it: percent-decoded and in lower case.
 std::string normalizeParameterName(std::string_view raw_name)
 {
@@ -94,6 +65,30 @@ bool isSensitiveParameterName(std::string_view raw_name)
     return false;
 }
 
+}
+
+std::string decodeQueryComponent(std::string_view name)
+{
+    std::string decoded;
+    decoded.reserve(name.size());
+    for (size_t i = 0; i < name.size(); ++i)
+    {
+        char c = name[i];
+        if (c == '+')
+        {
+            decoded.push_back(' ');
+        }
+        else if (c == '%' && i + 2 < name.size() && isHexDigit(name[i + 1]) && isHexDigit(name[i + 2]))
+        {
+            decoded.push_back(static_cast<char>(unhex2(name.data() + i + 1)));
+            i += 2;
+        }
+        else
+        {
+            decoded.push_back(c);
+        }
+    }
+    return decoded;
 }
 
 std::string maskSensitiveQueryParametersInURI(const std::string & uri)
@@ -146,10 +141,25 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
     return result;
 }
 
+/// The query parameters of an S3 or GCS presigned URL. The prefixes are header names, so any case: SigV2 sends
+/// `x-amz-security-token`. `presignedURLCredentials` reads the secret ones among them, so extend both together.
+constexpr std::array<std::string_view, 4> presigned_url_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId"};
+constexpr std::array<std::string_view, 2> presigned_url_prefixes = {"X-Amz-", "X-Goog-"};
+
+bool isPresignedURLParameterName(std::string_view name)
+{
+    return std::ranges::find(presigned_url_names, name) != presigned_url_names.end()
+        || std::ranges::any_of(
+               presigned_url_prefixes,
+               [&](std::string_view prefix) { return equalsCaseInsensitive(name.substr(0, prefix.length()), prefix); });
+}
+
 std::vector<std::string> presignedURLCredentials(std::string_view uri)
 {
-    static constexpr std::array<std::string_view, 5> credential_names{
-        "x-amz-signature", "x-amz-security-token", "x-amz-s3session-token", "signature", "awsaccesskeyid"};
+    /// `sig` is the signature of an Azure SAS.
+    static constexpr std::array<std::string_view, 8> credential_names{
+        "x-amz-signature", "x-amz-security-token", "x-amz-s3session-token", "signature", "awsaccesskeyid",
+        "x-goog-signature", "googleaccessid", "sig"};
 
     std::vector<std::string> credentials;
     const size_t question = uri.find('?');
@@ -186,7 +196,7 @@ std::vector<std::string> presignedURLCredentials(std::string_view uri)
                 add(std::string(value));
             add(std::move(decoded));
         }
-        else if (name == "x-amz-credential")
+        else if (name == "x-amz-credential" || name == "x-goog-credential")
         {
             /// `<access key id>/<scope>`: the scope is not a secret, and the key id is echoed on its own.
             std::string decoded = decodeQueryComponent(value);

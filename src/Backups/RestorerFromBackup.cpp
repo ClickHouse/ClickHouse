@@ -26,7 +26,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
-#include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
@@ -306,6 +305,7 @@ void RestorerFromBackup::loadSystemAccessTables()
 void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 {
     AccessRightsElements required_access;
+    AccessRights required_access_rights;
 
     {
         std::lock_guard lock{mutex};
@@ -422,15 +422,12 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             required_access.emplace_back(flags, table_name.database, table_name.table);
         }
 
+        required_access_rights = AccessRights{required_access};
+        /// Partial revokes in restored grants must not remove the rights required to restore other objects.
         if (access_restorer)
-            insertAtEnd(required_access, access_restorer->getRequiredAccess());
+            required_access_rights.makeUnion(access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights to check if we have the rights contained in our current access.
-    /// This handles the situation when restoring partial revoked grants:
-    /// GRANT SELECT ON *.*
-    /// REVOKE SELECT FROM systems.*
-    const auto & required_access_rights = AccessRights{required_access};
     const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
     if (current_user_access_rights->contains(required_access_rights))
         return;
