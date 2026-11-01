@@ -199,13 +199,13 @@ def test_federate_requires_select_on_source_table(federate_users):
         errors = []
         for table in ("prometheus", "no_such_table"):
             response = federate_as("fed_target_only", "/dynamic_table/federate", {"table": table, "match[]": match})
-            assert response.status_code == 400, response.text
+            assert response.status_code == 403, response.text
             error = response.json()["error"]
             assert "Not enough privileges" in error, error
             errors.append(error.replace(table, "<table>"))
         assert errors[0] == errors[1]
         response = federate_as("fed_target_only", "/federate", {"match[]": match})
-        assert response.status_code == 400 and response.json()["error"].replace("prometheus", "<table>") == errors[0]
+        assert response.status_code == 403 and response.json()["error"].replace("prometheus", "<table>") == errors[0]
 
 
 def test_federate_with_select_on_source_table(federate_users):
