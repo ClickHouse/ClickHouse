@@ -137,7 +137,9 @@ if __name__ == "__main__":
         key_file.flush()
 
         server = http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(cert_file.name, key_file.name)
-        server.socket = context.wrap_socket(server.socket, server_side=True)
+        # `plain` serves HTTP for delta-kernel, whose object store does not accept the self-signed certificate.
+        if sys.argv[2:] != ["plain"]:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(cert_file.name, key_file.name)
+            server.socket = context.wrap_socket(server.socket, server_side=True)
         server.serve_forever()

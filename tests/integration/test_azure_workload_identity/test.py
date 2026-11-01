@@ -26,50 +26,64 @@ node = cluster.add_instance(
         "AZURE_AUTHORITY_HOST": f"https://127.0.0.1:{TOKEN_PORT}/",
     },
 )
+# delta-kernel fetches tokens and blobs through its own object store, which rejects the self-signed certificate of
+# the mock, so this node talks to a plain HTTP mock.
+delta_node = cluster.add_instance(
+    "delta_node",
+    env_variables={
+        "AZURE_TENANT_ID": TENANT_ID,
+        "AZURE_CLIENT_ID": CLIENT_ID,
+        "AZURE_FEDERATED_TOKEN_FILE": "/tmp/azure_federated_token",
+        "AZURE_AUTHORITY_HOST": f"http://127.0.0.1:{TOKEN_PORT}/",
+    },
+)
+
+
+def start_mock_server(instance_name, plain):
+    container_id = cluster.get_container_id(instance_name)
+    cluster.copy_file_to_container(
+        container_id,
+        os.path.join(SCRIPT_DIR, "mock_token_server.py"),
+        "mock_token_server.py",
+    )
+    cluster.exec_in_container(
+        container_id,
+        [
+            "bash",
+            "-c",
+            f"echo -n {FEDERATED_TOKEN} > /tmp/azure_federated_token",
+        ],
+    )
+    cluster.exec_in_container(
+        container_id,
+        [
+            "bash",
+            "-c",
+            f"python3 mock_token_server.py {TOKEN_PORT} {'plain' if plain else ''} "
+            "> /var/log/clickhouse-server/mock_token_server.log 2>&1",
+        ],
+        detach=True,
+    )
+
+    scheme = "http" if plain else "https"
+    for _ in range(60):
+        ping = cluster.exec_in_container(
+            container_id,
+            ["curl", "-sk", f"{scheme}://127.0.0.1:{TOKEN_PORT}/"],
+            nothrow=True,
+        )
+        if ping == "OK":
+            return
+        time.sleep(1)
+    raise Exception(f"Mock token server did not start on {instance_name}")
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-
-        container_id = cluster.get_container_id("node")
-        cluster.copy_file_to_container(
-            container_id,
-            os.path.join(SCRIPT_DIR, "mock_token_server.py"),
-            "mock_token_server.py",
-        )
-        cluster.exec_in_container(
-            container_id,
-            [
-                "bash",
-                "-c",
-                f"echo -n {FEDERATED_TOKEN} > /tmp/azure_federated_token",
-            ],
-        )
-        cluster.exec_in_container(
-            container_id,
-            [
-                "bash",
-                "-c",
-                f"python3 mock_token_server.py {TOKEN_PORT} "
-                "> /var/log/clickhouse-server/mock_token_server.log 2>&1",
-            ],
-            detach=True,
-        )
-
-        for _ in range(60):
-            ping = cluster.exec_in_container(
-                container_id,
-                ["curl", "-sk", f"https://127.0.0.1:{TOKEN_PORT}/"],
-                nothrow=True,
-            )
-            if ping == "OK":
-                break
-            time.sleep(1)
-        else:
-            raise Exception("Mock token server did not start")
-
+        start_mock_server("node", plain=False)
+        start_mock_server("delta_node", plain=True)
         yield cluster
     finally:
         cluster.shutdown()
@@ -134,6 +148,46 @@ def test_table_created_with_opt_in_serves_no_restricted_session(started_cluster)
     assert any(hit["authorization"] for hit in allowed_hits)
 
     node.query("DROP TABLE t_opt_in SYNC")
+
+
+def get_delta_node_hits(started_cluster, kind):
+    node_ip = started_cluster.get_instance_ip("delta_node")
+    return json.loads(requests.get(f"http://{node_ip}:{TOKEN_PORT}/{kind}").text)
+
+
+def test_delta_lake_follows_the_session(started_cluster):
+    """delta-kernel builds its object store from the params of the accessing session, not from a copy taken when
+    the table's metadata was created: after an opted-in session read the table, a restricted session is refused
+    without a token request, and the opt-in still signs its requests."""
+
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+    kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
+    delta_node.query("DROP TABLE IF EXISTS t_delta SYNC")
+    # `ATTACH` loads the table lazily, so nothing is read before the first query and no Delta log is needed.
+    delta_node.query(
+        f"ATTACH TABLE t_delta (c UInt64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'table/')",
+        settings=allow,
+    )
+
+    # The opted-in session creates the metadata and signs its requests; the read fails, as the mock has no Delta log.
+    before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
+    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
+    delta_node.query_and_get_error("SELECT * FROM t_delta", settings={**allow, **kernel})
+    assert len(get_delta_node_hits(started_cluster, "hits")) > before_tokens
+    assert any(hit["authorization"] for hit in get_delta_node_hits(started_cluster, "storage_hits")[before_storage:])
+
+    before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
+    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
+    error = delta_node.query_and_get_error("SELECT * FROM t_delta", settings=kernel)
+    assert "ACCESS_DENIED" in error
+    assert get_delta_node_hits(started_cluster, "hits")[before_tokens:] == []
+    assert get_delta_node_hits(started_cluster, "storage_hits")[before_storage:] == []
+
+    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
+    delta_node.query_and_get_error("SELECT * FROM t_delta", settings={**allow, **kernel})
+    assert any(hit["authorization"] for hit in get_delta_node_hits(started_cluster, "storage_hits")[before_storage:])
+
+    delta_node.query("DROP TABLE t_delta SYNC")
 
 
 def test_truncate_follows_the_session(started_cluster):

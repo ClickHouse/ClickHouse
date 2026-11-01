@@ -426,16 +426,25 @@ class AzureKernelHelper final : public IKernelHelper
 {
 public:
     AzureKernelHelper(
-        const DB::AzureBlobStorage::ConnectionParams & connection_params_,
+        DB::ObjectStoragePtr object_storage_,
         const std::string & blob_path_)
-        : connection_params(connection_params_)
-        , table_location(buildTableLocation(connection_params_, blob_path_))
+        : object_storage(std::move(object_storage_))
+        , table_location(buildTableLocation(*object_storage->getAzureBlobStorageConnectionParams(), blob_path_))
         , data_path(normalizeBlobPath(blob_path_))
     {}
 
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return data_path; }
+
+    DB::UInt128 getCredentialsFingerprint() const override
+    {
+        /// A storage that uses the server's identity follows the restriction of the accessing session
+        /// (see `AzureObjectStorage::applyNewSettings`), so a cached engine is rebuilt when it changes.
+        SipHash hash;
+        hash.update(object_storage->getAzureBlobStorageConnectionParams()->forbid_implicit_credentials);
+        return hash.get128();
+    }
 
     ffi::EngineBuilder * createBuilder() const override
     {
@@ -446,19 +455,21 @@ public:
             "get_engine_builder");
         BuilderGuard guard(builder);
 
-        for (const auto & [name, value] : getAzureBuilderOptions(connection_params))
+        /// Read the *current* params, which follow the restriction of the accessing session, not a copy from table creation.
+        const auto connection_params = object_storage->getAzureBlobStorageConnectionParams();
+        for (const auto & [name, value] : getAzureBuilderOptions(*connection_params))
             setBuilderOption(builder, name, value);
 
         LOG_TRACE(
             log,
             "Using azure container: {}, data_path: {}",
-            connection_params.endpoint.container_name, data_path);
+            connection_params->endpoint.container_name, data_path);
 
         return guard.release();
     }
 
 private:
-    const DB::AzureBlobStorage::ConnectionParams connection_params;
+    const DB::ObjectStoragePtr object_storage;
     const std::string table_location;
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
@@ -553,7 +564,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Azure:
         {
             return std::make_shared<DeltaLake::AzureKernelHelper>(
-                *object_storage->getAzureBlobStorageConnectionParams(),
+                object_storage,
                 configuration->getRawPath().path);
         }
 #endif
