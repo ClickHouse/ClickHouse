@@ -1276,6 +1276,9 @@ Do you want to output it anyway? [y/N] )", current_format);
 }
 catch (...)
 {
+    /// The format refers to the buffers reset below.
+    output_format.reset();
+
     if (out_file_buf)
         out_file_buf->cancel();
     out_file_buf.reset();
@@ -2709,7 +2712,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    /// `FROM INFILE` names the data source, so stdin is not read for it. Do not even check stdin then: the check waits
+    /// for data or EOF, so an open pipe would block the query.
+    bool have_data_in_stdin = !parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
     if (need_render_progress)
     {
@@ -2814,16 +2819,13 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 std::move(pipe),
                 parsed_query,
-                have_data_in_stdin);
+                /*have_more_data=*/ false);
         }
         catch (Exception & e)
         {
             e.addMessage("data for INSERT was parsed from file");
             throw;
         }
-
-        if (have_data_in_stdin && !cancelled)
-            sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
     {
