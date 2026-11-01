@@ -189,7 +189,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     const auto stage_misses = [&]
     {
         accountStagedBatch(
-            columns, adaptive, appendDelayedRecords<RecordKey>(aggregate_instructions, adaptive, local_find_state, scratch_pool));
+            columns, adaptive, appendDelayedRecords<SharedMethod>(aggregate_instructions, adaptive, local_find_state, scratch_pool));
     };
 
     if (all_keys_are_const)
@@ -458,7 +458,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     const auto stage_misses = [&]
     {
         accountStagedBatch(
-            columns, adaptive, appendDelayedRecords<RecordKey>(aggregate_instructions, adaptive, local_find_state, scratch_pool));
+            columns, adaptive, appendDelayedRecords<SharedMethod>(aggregate_instructions, adaptive, local_find_state, scratch_pool));
     };
 
     if (all_keys_are_const)
@@ -609,13 +609,15 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     }
 }
 
-template <typename RecordKey, typename State>
+template <typename Method, typename State>
 AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     const AggregateFunctionInstruction * aggregate_instructions,
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
     Arena & scratch_pool) const
 {
+    using RecordKey = AdaptiveRecordKey<Method>;
+
     const auto & misses = adaptive.misses;
     const size_t total = misses.size();
     if (!total)
@@ -635,12 +637,13 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     {
         return keys_are_const ? 0 : source_rows[record];
     };
+    /// The size of a byte-staged key, or 0 for a fixed-width key, whose formats know its stored width.
     const auto key_size_of = [&](size_t record) -> size_t
     {
         if constexpr (adaptive_key_stages_bytes<RecordKey>)
             return staged_key_sizes[record];
         else
-            return sizeof(RecordKey);
+            return 0;
     };
 
     /// The appends go to random partitions, so the loops below prefetch the append position of
@@ -652,7 +655,9 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     };
 
     /// The records are written in staging order, so they take the key bytes that the batch kept in their order, and the
-    /// records of a constant key all take its one copy.
+    /// records of a constant key all take its one copy. A fixed-width key is copied whole, though its record may store
+    /// fewer of its bytes (see `StagedFixedKey`): the bytes past the stored ones land where the record's later fields,
+    /// the next record or the chunk's padding go, as the overflow of `copyPaddedKeyBytes` does.
     const auto batch_keeps_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     const char * kept_key_bytes = staged_keys;
     const auto write_key = [&](size_t record, size_t key_size, char * to)
@@ -672,10 +677,20 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             memcpy(to, staged_keys + record * sizeof(RecordKey), sizeof(RecordKey));
     };
 
+    /// The merge reads back the routing hash of a byte-staged key and the whole value of a fixed-width key from the
+    /// bytes that the record stores.
+    const auto check_record = [&](const auto & format, const char * record, size_t i, UInt64 hash)
+    {
+        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+            chassert(format.routingHash(record) == hash);
+        else
+            chassert(format.readKey(record, hash) == unalignedLoad<RecordKey>(staged_keys + i * sizeof(RecordKey)));
+    };
+
     size_t key_bytes = 0;
     size_t record_bytes = 0;
 
-    const auto append_key_records = [&]<typename Record>(Record) ALWAYS_INLINE
+    const auto append_key_records = [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         for (size_t i = 0; i < total; ++i)
         {
@@ -683,17 +698,33 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             const UInt64 hash = hashes[i];
             const size_t partition = layout.partitionOf(hash);
             const size_t key_size = key_size_of(i);
-            const size_t bytes = Record::bytesForKey(key_size);
+            const size_t bytes = format.bytesForKey(key_size);
+            UInt32 rest = Record::with_count ? misses.getMultiplicities()[i] : 0;
+            auto count = static_cast<UInt8>(std::min<UInt32>(rest, std::numeric_limits<UInt8>::max()));
             char * record = partitions.append(partition, bytes);
-            Record::writeHeader(record, hash, Record::with_count ? misses.getMultiplicities()[i] : 0, key_size);
-            write_key(i, key_size, record + Record::key_offset);
-            zeroStagedRecordPadding(record + Record::key_offset + key_size);
-            key_bytes += key_size;
+            char * const stored_key = format.writeHeader(record, hash, key_size, count);
+            write_key(i, key_size, stored_key);
+            const size_t stored_key_size = format.keyBytes(key_size);
+            check_record(format, record, i, hash);
+            key_bytes += stored_key_size;
             record_bytes += bytes;
+
+            /// A count past `UInt8` continues in further records of the key.
+            if constexpr (Record::with_count)
+            {
+                for (rest -= count; rest; rest -= count)
+                {
+                    count = static_cast<UInt8>(std::min<UInt32>(rest, std::numeric_limits<UInt8>::max()));
+                    char * extra = partitions.append(partition, bytes);
+                    memcpy(format.writeHeader(extra, hash, key_size, count), stored_key, stored_key_size);
+                    key_bytes += stored_key_size;
+                    record_bytes += bytes;
+                }
+            }
         }
     };
 
-    const auto append_argument_records = [&]<typename Record>(Record format) ALWAYS_INLINE
+    const auto append_argument_records = [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         const auto & argument_layout = *adaptive_argument_layout;
 
@@ -764,54 +795,18 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())
         {
             const size_t batch_end = std::min(total, batch_begin + argument_rows.size());
-            if constexpr (std::is_same_v<Record, StagedFixedArgumentRecord<RecordKey>>)
+            for (size_t i = batch_begin; i < batch_end; ++i)
             {
-                for (size_t i = batch_begin; i < batch_end; ++i)
-                {
-                    prefetch_append(i);
-                    const size_t partition = layout.partitionOf(hashes[i]);
-                    char * record = partitions.append(partition, format.stride);
-                    write_key(i, sizeof(RecordKey), record + Record::key_offset);
-                    argument_rows[i - batch_begin] = record + Record::fixed_arguments_offset;
-                }
-                key_bytes += (batch_end - batch_begin) * sizeof(RecordKey);
-                record_bytes += (batch_end - batch_begin) * format.stride;
-            }
-            else if constexpr (std::is_same_v<Record, StagedStringArgumentRecord<RecordKey>>)
-            {
-                /// The format is chosen only when every variable-size argument is staged as a `String`.
-                chassert(argument_layout.variable_fields_are_strings);
-                for (size_t i = batch_begin; i < batch_end; ++i)
-                {
-                    prefetch_append(i);
-                    const size_t partition = layout.partitionOf(hashes[i]);
-                    size_t variable_bytes = 0;
-                    for (size_t j = 0; j < string_sources.size(); ++j)
-                        variable_bytes += stagedStringBytes(string_sources[j]->getDataAt(variable_sources[j].rows[i]));
+                prefetch_append(i);
+                const UInt64 hash = hashes[i];
+                const size_t partition = layout.partitionOf(hash);
+                const size_t key_size = key_size_of(i);
 
-                    const size_t bytes = format.key_offset + sizeof(RecordKey) + variable_bytes;
-                    char * record = partitions.append(partition, bytes);
-                    argument_rows[i - batch_begin] = record + Record::fixed_arguments_offset;
-                    write_key(i, sizeof(RecordKey), record + format.key_offset);
-                    char * variable = record + format.key_offset + sizeof(RecordKey);
-                    for (size_t j = 0; j < string_sources.size(); ++j)
-                        variable = writeStagedString(variable, string_sources[j]->getDataAt(variable_sources[j].rows[i]));
-                    record_bytes += bytes;
-                }
-                key_bytes += (batch_end - batch_begin) * sizeof(RecordKey);
-            }
-            else
-            {
-                for (size_t i = batch_begin; i < batch_end; ++i)
+                size_t variable_bytes = 0;
+                const char * scratch_begin = nullptr;
+                size_t scratch_bytes = 0;
+                if constexpr (Record::with_variable_arguments)
                 {
-                    prefetch_append(i);
-                    const UInt64 hash = hashes[i];
-                    const size_t partition = layout.partitionOf(hash);
-                    const size_t key_size = key_size_of(i);
-
-                    size_t variable_bytes = 0;
-                    const char * scratch_begin = nullptr;
-                    size_t scratch_bytes = 0;
                     for (size_t j = 0; j < variable_sources.size(); ++j)
                     {
                         const auto & [column, rows] = variable_sources[j];
@@ -838,18 +833,21 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                             scratch_bytes += size_of_value;
                         }
                     }
+                }
 
-                    const size_t bytes = alignStagedRecord(format.key_offset + key_size + variable_bytes);
-                    char * record = partitions.append(partition, bytes);
-                    Record::writeHeader(record, hash, bytes, key_size);
-                    argument_rows[i - batch_begin] = record + Record::fixed_arguments_offset;
+                const size_t bytes = format.bytesFor(key_size, variable_bytes);
+                char * record = partitions.append(partition, bytes);
+                argument_rows[i - batch_begin] = record;
 
-                    /// The key goes before the variable-size arguments, which overwrite whatever its copy
-                    /// scribbled past it.
-                    char * key = record + format.key_offset;
-                    write_key(i, key_size, key);
+                /// The key goes before the variable-size arguments, which overwrite whatever its copy scribbled past
+                /// it.
+                char * key = format.writeHeader(record, hash, key_size, bytes);
+                write_key(i, key_size, key);
+                const size_t stored_key_size = format.keyBytes(key_size);
 
-                    char * variable = key + key_size;
+                if constexpr (Record::with_variable_arguments)
+                {
+                    char * variable = key + stored_key_size;
                     const char * scratch = scratch_begin;
                     for (size_t j = 0; j < variable_sources.size(); ++j)
                     {
@@ -865,13 +863,14 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                         else
                             variable = column->serializeValueIntoMemory(rows[i], variable, &serialization_settings);
                     }
-                    zeroStagedRecordPadding(variable);
+                    chassert(variable == record + bytes);
                     if (scratch_bytes)
                         argument_scratch->rollback(scratch_bytes);
-
-                    key_bytes += key_size;
-                    record_bytes += bytes;
                 }
+                check_record(format, record, i, hash);
+
+                key_bytes += stored_key_size;
+                record_bytes += bytes;
             }
 
             const size_t batch_rows = batch_end - batch_begin;
@@ -887,13 +886,17 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         }
     };
 
-    visitStagedRecordFormat<RecordKey>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
-    {
-        if constexpr (Record::with_arguments)
-            append_argument_records(format);
-        else
-            append_key_records(format);
-    });
+    visitStagedRecordFormat<Method>(
+        adaptive_argument_layout.get(),
+        is_simple_count,
+        adaptive_packed_key_bytes,
+        [&]<typename Record>(const Record & format) ALWAYS_INLINE
+        {
+            if constexpr (Record::with_arguments)
+                append_argument_records(format);
+            else
+                append_key_records(format);
+        });
     /// The kernel and the writer decide on keeping the key bytes from the same state, and every kept byte belongs to
     /// exactly one record, or to all the records of a constant key.
     chassert(!batch_keeps_key_bytes

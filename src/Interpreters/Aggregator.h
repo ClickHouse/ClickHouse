@@ -685,6 +685,9 @@ private:
     /// The record layout of the staged aggregate arguments; set when the adaptive aggregation is engaged and the
     /// query has aggregate functions.
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
+    /// The sum of `key_sizes`, from which the staged records take the stored width of a packed key (see
+    /// `stagedFixedKeyBytes`).
+    size_t adaptive_packed_key_bytes = 0;
     /// Per-query aggregate metadata used to estimate the cost of retaining states and merging them.
     size_t adaptive_state_bytes_per_distinct_input = 0;
     /// The only aggregate whose state grows per distinct input; its arguments are sampled when
@@ -1039,13 +1042,13 @@ private:
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
 
-    /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat` selects. Each
-    /// record carries a key and either a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or
-    /// the row's aggregate arguments laid out by `adaptive_argument_layout`, read from the argument columns of the
-    /// block's `aggregate_instructions`. Variable-size records also carry a hash and lengths; fixed-size records
-    /// recover the hash from the key when drained. Returns what it staged for the accounting of the batch (see
-    /// `accountStagedBatch`).
-    template <typename RecordKey, typename State>
+    /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects
+    /// for `Method`, the two-level twin of the producer's table. Each record carries a key and either a multiplicity
+    /// (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate arguments laid out by
+    /// `adaptive_argument_layout`, read from the argument columns of the block's `aggregate_instructions`. The records
+    /// of byte-staged keys also carry a hash and lengths; those of fixed-width keys recover the hash from the key when
+    /// drained. Returns what it staged for the accounting of the batch (see `accountStagedBatch`).
+    template <typename Method, typename State>
     AdaptiveStagedBytes appendDelayedRecords(
         const AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
