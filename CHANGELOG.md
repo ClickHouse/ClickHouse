@@ -24,6 +24,70 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release c189bd99fbda59c78489a6734c49397533bdd591 (c189bd99fbd) FIXME as compared to 9f79cc172306dbf177534ef194cafc034a598a33 (9f79cc17230)
+
+#### Backward Incompatible Change
+* `INSERT ... FROM INFILE` in `clickhouse-client` and `clickhouse-local` inserts only the data from the file and no longer also inserts the data piped to stdin. This also fixes the query waiting for an open stdin pipe to close. [#126564](https://github.com/ClickHouse/ClickHouse/pull/126564) ([Jay Pokale](https://github.com/JayPokale)).
+
+#### Performance Improvement
+* `ORDER BY <String column> LIMIT n` over `Parquet` files skips row groups by the min/max statistics of the sort column, as it already did for numeric keys, without the per-row filter that `use_top_k_dynamic_filtering_for_variable_length_types` controls: `SELECT Title FROM file('hits.parquet') ORDER BY Title DESC LIMIT 10` skips 203 of its 226 row groups and is about 10 times faster at 4 threads. Closes [#124560](https://github.com/ClickHouse/ClickHouse/issues/124560). [#124827](https://github.com/ClickHouse/ClickHouse/pull/124827) ([Groene AI](https://github.com/groeneai)).
+* The per-row transform of the `add*`/`subtract*` interval functions over `DateTime64` and `Time64` is always inlined and uses a single inline division instead of `std::div`, so it no longer depends on inliner heuristics that varied between builds. [#127213](https://github.com/ClickHouse/ClickHouse/pull/127213) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Faster planning of queries with many `sum`, `count` or `avg` over the same column, such as ClickBench Q30: `optimize_syntax_fuse_functions` now builds the replacement of each function once and copies it to the other equal aggregates. `EXPLAIN PLAN` of Q30 executes 3.9% fewer instructions and 4.3% fewer CPU cycles. [#128371](https://github.com/ClickHouse/ClickHouse/pull/128371) ([Groene AI](https://github.com/groeneai)).
+
+#### Improvement
+* Add AI function request time, retry backoff time, and prompt-cache token counts to `ProfileEvents`. Include cached Anthropic input tokens in total input usage and query quotas. [#122559](https://github.com/ClickHouse/ClickHouse/pull/122559) ([Ravi Kumar L](https://github.com/upman)).
+* The Prometheus HTTP API endpoint `/api/v1/query_range` now rejects a query if `(end - start) / step` is greater than the new setting `promql_max_points_per_series` (default 11000), as Prometheus does. Only the HTTP `query_range` endpoint is limited; the `prometheusQueryRange` table function is not. Set the setting to 0 to lift the limit. [#122812](https://github.com/ClickHouse/ClickHouse/pull/122812) ([Valery Petrov](https://github.com/valerypetrov)).
+* Errors that the Prometheus query API raises before running the query, such as an unknown or malformed setting, failed authentication or an unknown role, are now returned as a Prometheus JSON error whose `errorType` matches the HTTP status, instead of plain text. [#122898](https://github.com/ClickHouse/ClickHouse/pull/122898) ([Valery Petrov](https://github.com/valerypetrov)).
+* Requests to an AWS Glue catalog are now retried when Glue answers with a transient HTTP status (for example `InternalServiceException`, HTTP 500), so a single transient Glue failure no longer fails `SHOW TABLES` or other queries on a `DataLakeCatalog` database. [#124132](https://github.com/ClickHouse/ClickHouse/pull/124132) ([Groene AI](https://github.com/groeneai)).
+* Added setting `use_skip_indexes_for_disjunctions_max_rpn_elements` to control the maximum size of filters with mixed `AND` and `OR` conditions evaluated with skip indexes. The default limit is raised from 32 to 128 elements, e.g. from 16 to 64 conditions on different columns connected by `OR`. [#124454](https://github.com/ClickHouse/ClickHouse/pull/124454) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* ... [#125615](https://github.com/ClickHouse/ClickHouse/pull/125615) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* Add upper bound to snapshot message transfer. [#126480](https://github.com/ClickHouse/ClickHouse/pull/126480) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* A query that reads with parallel replicas now uses one implementation throughout: a subquery whose `SETTINGS` set `parallel_replicas_plan_based` differently from the query is rejected, instead of silently reading that subquery without parallel replicas. [#127038](https://github.com/ClickHouse/ClickHouse/pull/127038) ([Igor Nikonov](https://github.com/devcrafter)).
+* Queries using `additional_table_filters` no longer lose parallel replicas when `parallel_replicas_plan_based` is enabled. [#127058](https://github.com/ClickHouse/ClickHouse/pull/127058) ([Igor Nikonov](https://github.com/devcrafter)).
+* The MySQL compatibility interface now reports the source database, table and column of each result column, and the display width of its type, in the column metadata. `COM_STMT_PREPARE` now returns the column definitions of the result, and `COM_STMT_RESET` is supported. This lets MySQL clients and connectors that read column metadata from the protocol see the columns of ClickHouse tables. [#127661](https://github.com/ClickHouse/ClickHouse/pull/127661) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Support the `bzip2` and `xz` codecs in the `Avro` format, both for reading and for writing (`output_format_avro_codec`). [#127774](https://github.com/ClickHouse/ClickHouse/pull/127774) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* A sparse column whose values are truncated in data sent over the native protocol is now rejected with `INCORRECT_DATA` instead of `LOGICAL_ERROR`. [#128363](https://github.com/ClickHouse/ClickHouse/pull/128363) ([Groene AI](https://github.com/groeneai)).
+* Reading a malformed `LowCardinality` column (for example from `Native` input) whose dictionary declares more keys than the data contains now fails with `CANNOT_READ_ALL_DATA` instead of a `LOGICAL_ERROR` or an attempt to allocate terabytes of memory. [#128366](https://github.com/ClickHouse/ClickHouse/pull/128366) ([Groene AI](https://github.com/groeneai)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Access entities stored on local disk (users, roles, grants, quotas, row policies, settings profiles created via SQL) are now fsync'd when `fsync_metadata` is enabled, so an acknowledged `CREATE`/`ALTER`/`DROP USER` (and `GRANT`/`REVOKE`) is no longer silently lost on power loss. Previously `DiskAccessStorage` wrote and removed the `.sql` entity files without any fsync. [#111346](https://github.com/ClickHouse/ClickHouse/pull/111346) ([Groene AI](https://github.com/groeneai)).
+* `ALTER TABLE ... FETCH PARTITION`/`FETCH PART` no longer produces a copy that silently lacks the acknowledged lightweight `UPDATE`s of the source: it refuses a source partition with unapplied patch parts and asks for `APPLY PATCHES`, as the other part-relocation commands already do. [#119181](https://github.com/ClickHouse/ClickHouse/pull/119181) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fixed reading a `TimeSeries` target table through the `timeSeriesSamples`, `timeSeriesTags` and `timeSeriesMetricFamilies` table functions with parallel replicas, which returned every row once per replica. [#119350](https://github.com/ClickHouse/ClickHouse/pull/119350) ([Nikita Taranov](https://github.com/nickitat)).
+* Fixed the `Function node ... is not resolved` exception for a `JOIN USING` key taken from a projection alias over an `ALIAS` column with `analyzer_compatibility_join_using_top_level_identifier = 1`, a regression in 26.10. Closes [#124842](https://github.com/ClickHouse/ClickHouse/issues/124842). [#125818](https://github.com/ClickHouse/ClickHouse/pull/125818) ([Groene AI](https://github.com/groeneai)).
+* Allow SQL-standard `FETCH FIRST/NEXT ... ROWS ONLY` without `ORDER BY`. [#126340](https://github.com/ClickHouse/ClickHouse/pull/126340) ([Minh Vu](https://github.com/fallintoplace)).
+* Fixed `JSONExtract*` on native `JSON` values ignoring `json_type_escape_dots_in_keys` when building a path. A literal dotted key now resolves to its own value instead of silently returning the value of a nested path with the same name. [#126365](https://github.com/ClickHouse/ClickHouse/pull/126365) ([Henry Su](https://github.com/hsusul)).
+* Fixed `Field ... not found in Avro schema` on every query reading a column of an `Avro` Iceberg table after an `INSERT` was committed while `ALTER TABLE ... ADD COLUMN` added that column. A column whose Iceberg field id is not in an `Avro` data file is now read as `NULL`, as the Iceberg spec requires. [#126879](https://github.com/ClickHouse/ClickHouse/pull/126879) ([Groene AI](https://github.com/groeneai)).
+* Fix int96 overflow in parquet reader. [#127401](https://github.com/ClickHouse/ClickHouse/pull/127401) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* `MaterializedPostgreSQL` no longer retries a failing synchronization in a tight loop, which could make `DETACH TABLE` hang for minutes. [#127678](https://github.com/ClickHouse/ClickHouse/pull/127678) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fixed a server crash in a distributed query (`remote`, `Distributed`) with `ARRAY JOIN` over an `AggregateFunction` column with an older state version, e.g. a `uniq` state column of a table created before 26.10. [#127876](https://github.com/ClickHouse/ClickHouse/pull/127876) ([Groene AI](https://github.com/groeneai)).
+* Fix a regression in 26.8: with `compatibility` set to a version before 26.5 and `date_time_input_format = 'best_effort'`, `JSONExtract` silently returned `1970-01-01 00:00:00` for ISO 8601 `DateTime` values. `compatibility` with versions before 26.8 now restores the old behavior, controlled by the new setting `json_extract_use_cast_string_to_date_time_mode`. [#128048](https://github.com/ClickHouse/ClickHouse/pull/128048) ([Nikita Fomichev](https://github.com/fm4v)).
+
+#### Build/Testing/Packaging Improvement
+* Update `croaring` from v5.3.2 to v5.4.0. [#128289](https://github.com/ClickHouse/ClickHouse/pull/128289) ([Actuele AI](https://github.com/actueleai)).
+* Update `snappy` from 1.2.2 to 1.3.1. [#128311](https://github.com/ClickHouse/ClickHouse/pull/128311) ([Actuele AI](https://github.com/actueleai)).
+* Update `simdutf` from v9.1.1 to v9.3.3. [#128312](https://github.com/ClickHouse/ClickHouse/pull/128312) ([Actuele AI](https://github.com/actueleai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Tag functional tests averaging over 60s under MSan with `no-msan`. [#115050](https://github.com/ClickHouse/ClickHouse/pull/115050) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Make the codec, binary type and WASM fuzzer dictionaries loadable by libFuzzer. [#123674](https://github.com/ClickHouse/ClickHouse/pull/123674) ([Groene AI](https://github.com/groeneai)).
+* Iceberg REST Catalog: Implement namespace properties update. [#125708](https://github.com/ClickHouse/ClickHouse/pull/125708) ([Asya Shneerson](https://github.com/asya-ch)).
+* Fix flaky `test_rabbitmq_reconnect_drops_stale_deliveries`: do not wait 300 s for a hung `rabbitmqctl` call. [#126746](https://github.com/ClickHouse/ClickHouse/pull/126746) ([Groene AI](https://github.com/groeneai)).
+* Fix stack-use-after-scope in `MergeTreeData::loadStatisticsOfPartsInParallel` when scheduling a loader job throws. [#127911](https://github.com/ClickHouse/ClickHouse/pull/127911) ([Groene AI](https://github.com/groeneai)).
+* Fix a data race on the exit code of the embedded client in the SSH server. [#127990](https://github.com/ClickHouse/ClickHouse/pull/127990) ([Groene AI](https://github.com/groeneai)).
+* Make `03354_pr_disable_for_multiple_tables_query` work with plan-based parallel replicas. [#128142](https://github.com/ClickHouse/ClickHouse/pull/128142) ([Igor Nikonov](https://github.com/devcrafter)).
+* Fix `StringValueFilter` turning itself off when several threads update its statistics at once. [#128277](https://github.com/ClickHouse/ClickHouse/pull/128277) ([Groene AI](https://github.com/groeneai)).
+* Build profile diff: celebrate a significantly smaller binary. [#128288](https://github.com/ClickHouse/ClickHouse/pull/128288) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Add upgrade and mixed-version tests for data lake objects. [#128294](https://github.com/ClickHouse/ClickHouse/pull/128294) ([Nikita Fomichev](https://github.com/fm4v)).
+* Add a corpus of Parquet files and Iceberg tables from many writers. [#128305](https://github.com/ClickHouse/ClickHouse/pull/128305) ([Nikita Fomichev](https://github.com/fm4v)).
+* Not required: changes only the agent instructions in `.claude/`. [#128365](https://github.com/ClickHouse/ClickHouse/pull/128365) ([Groene AI](https://github.com/groeneai)).
+* Read the input of the `Variant` and `Dynamic` serialization fuzzers as untrusted `Native` data. [#128367](https://github.com/ClickHouse/ClickHouse/pull/128367) ([Groene AI](https://github.com/groeneai)).
+* `clickhouse_fuzzer` no longer reports a false timeout after printing the runner thread's stack while no input is running. [#128377](https://github.com/ClickHouse/ClickHouse/pull/128377) ([Groene AI](https://github.com/groeneai)).
+* The `prewhere_subcolumns` performance test now gives every server the same part layout, so its `where n.null` query no longer reports a false regression. [#128387](https://github.com/ClickHouse/ClickHouse/pull/128387) ([Groene AI](https://github.com/groeneai)).
+* Add CLAUDE.md guidance on attributing issues to the causing PR or affected versions. [#128390](https://github.com/ClickHouse/ClickHouse/pull/128390) ([Nikita Fomichev](https://github.com/fm4v)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
