@@ -44,6 +44,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -2463,12 +2464,81 @@ static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metad
         boost::algorithm::join(offending_columns, ", "));
 }
 
-/// In AggregatingMergeTree, background merges aggregate the `SimpleAggregateFunction` columns that are not columns of the sorting
-/// key themselves, so a key computed from such a column no longer matches a merged row: the rows of the part are not sorted by the
-/// sorting key any more, and the row can stay in a partition that its new value does not belong to, so the primary key and
-/// partition pruning skip matching rows (and a merge of such a part is a logical error in debug builds). Returns such columns, each
-/// with the key it is used in.
-static Names getAggregatedColumnsInKeys(const StorageInMemoryMetadata & metadata)
+/// Whether merges of `AggregatingMergeTree` aggregate the values of this type: a `SimpleAggregateFunction` or an `AggregateFunction`,
+/// and with `allow_tuple_element_aggregation` a tuple with such an element.
+static bool isAggregatedType(const DataTypePtr & type, bool allow_tuple_element_aggregation)
+{
+    if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName())
+        || typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+        return true;
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()); tuple && allow_tuple_element_aggregation)
+        return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return isAggregatedType(element, true); });
+    return false;
+}
+
+using ActionsDAGParents = std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>>;
+
+/// Whether the key reads aggregated values of the node `node` of a tuple type with an aggregated element. A key can read only its
+/// other elements, such as `metrics.1` (`tupleElement(metrics, 1)`), which merges do not aggregate.
+static bool keyReadsAggregatedTupleElements(const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node)
+{
+    if (!typeid_cast<const DataTypeTuple *>(node.result_type.get()))
+        return isAggregatedType(node.result_type, true);
+    if (!isAggregatedType(node.result_type, true))
+        return false;
+    /// The expression also returns its inputs, so only a column of the key counts as read as a whole.
+    if (std::ranges::find(key.column_names, node.result_name) != key.column_names.end())
+        return true;
+
+    auto it = parents.find(&node);
+    if (it == parents.end())
+        return false;
+    for (const auto * parent : it->second)
+    {
+        const bool is_element = parent->type == ActionsDAG::ActionType::FUNCTION && parent->function_base
+            && parent->function_base->getName() == "tupleElement" && parent->children.size() == 2 && parent->children[0] == &node
+            && parent->children[1]->type == ActionsDAG::ActionType::COLUMN;
+        const bool is_alias = parent->type == ActionsDAG::ActionType::ALIAS;
+        if (!is_element && !is_alias)
+            return true;
+        if (keyReadsAggregatedTupleElements(key, parents, *parent))
+            return true;
+    }
+    return false;
+}
+
+/// Whether a key that reads the column or subcolumn `column` (the input `input` of its expression) reads aggregated values: the
+/// column, a subcolumn of an aggregated value such as `a.size0`, or with `allow_tuple_element_aggregation` an aggregated element of
+/// a tuple such as `x.v` or `x.1`, or a subcolumn of it such as `x.v.size0`.
+static bool keyReadsAggregatedValues(
+    const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & input, const NameAndTypePair & column,
+    bool allow_tuple_element_aggregation)
+{
+    if (column.isSubcolumn())
+    {
+        const auto & type_in_storage = column.getTypeInStorage();
+        if (isAggregatedType(type_in_storage, false))
+            return true;
+        if (!allow_tuple_element_aggregation)
+            return false;
+
+        const String subcolumn_name = column.getSubcolumnName();
+        for (size_t pos = subcolumn_name.find('.'); pos != String::npos; pos = subcolumn_name.find('.', pos + 1))
+            if (auto type = type_in_storage->tryGetSubcolumnType(std::string_view(subcolumn_name).substr(0, pos)); type && isAggregatedType(type, false))
+                return true;
+    }
+
+    if (allow_tuple_element_aggregation && typeid_cast<const DataTypeTuple *>(column.type.get()))
+        return keyReadsAggregatedTupleElements(key, parents, input);
+    return isAggregatedType(column.type, false);
+}
+
+/// In AggregatingMergeTree, background merges aggregate the `SimpleAggregateFunction` and `AggregateFunction` columns that are not
+/// columns of the sorting key themselves, so a key computed from such a column, from a subcolumn of it or from an aggregated tuple
+/// element, no longer matches a merged row: the rows of the part are not sorted by the sorting key any more, and the row can stay in
+/// a partition that its new value does not belong to, so the primary key and partition pruning skip matching rows (and a merge of
+/// such a part is a logical error in debug builds). Returns such columns, each with the key it is used in.
+static Names getAggregatedColumnsInKeys(const StorageInMemoryMetadata & metadata, bool allow_tuple_element_aggregation)
 {
     /// A column of the sorting key is not aggregated (`allow_suspicious_primary_key` allows a `SimpleAggregateFunction` one).
     NameSet sorting_key_columns;
@@ -2478,12 +2548,19 @@ static Names getAggregatedColumnsInKeys(const StorageInMemoryMetadata & metadata
     Names result;
     auto add_columns = [&](const KeyDescription & key, std::string_view key_name)
     {
-        for (const auto & name : key.expression->getRequiredColumns())
+        const auto & dag = key.expression->getActionsDAG();
+        ActionsDAGParents parents;
+        for (const auto & node : dag.getNodes())
+            for (const auto * child : node.children)
+                parents[child].push_back(&node);
+
+        for (const auto * input : dag.getInputs())
         {
+            const auto & name = input->result_name;
             if (sorting_key_columns.contains(name))
                 continue;
-            const auto * column = metadata.getColumns().tryGet(name);
-            if (column && typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column->type->getCustomName()))
+            const auto column = metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+            if (column && keyReadsAggregatedValues(key, parents, *input, *column, allow_tuple_element_aggregation))
                 result.push_back(fmt::format("{} ({} key)", backQuoteIfNeed(name), key_name));
         }
     };
@@ -2495,13 +2572,14 @@ static Names getAggregatedColumnsInKeys(const StorageInMemoryMetadata & metadata
     return result;
 }
 
-/// Rejects such columns, unless the `allow_aggregating_columns_in_partition_or_order_key` setting is enabled. For an ALTER, only the
-/// columns that it adds are rejected, so a table created with the setting still accepts the other ALTERs.
-static void checkAggregatedColumnsAreNotInKeys(const StorageInMemoryMetadata & metadata, const StorageInMemoryMetadata * old_metadata)
+/// Rejects such columns. For an ALTER, only the columns that it adds are rejected, so a table created with the
+/// `allow_aggregating_columns_in_partition_or_order_key` setting still accepts the other ALTERs.
+void MergeTreeData::checkAggregatedColumnsAreNotInKeys(
+    const StorageInMemoryMetadata & metadata, const StorageInMemoryMetadata * old_metadata, bool allow_tuple_element_aggregation)
 {
-    Names columns = getAggregatedColumnsInKeys(metadata);
+    Names columns = getAggregatedColumnsInKeys(metadata, allow_tuple_element_aggregation);
     if (old_metadata)
-        std::erase_if(columns, [old_columns = getAggregatedColumnsInKeys(*old_metadata)](const String & column)
+        std::erase_if(columns, [old_columns = getAggregatedColumnsInKeys(*old_metadata, allow_tuple_element_aggregation)](const String & column)
         {
             return std::ranges::find(old_columns, column) != old_columns.end();
         });
@@ -2511,8 +2589,8 @@ static void checkAggregatedColumnsAreNotInKeys(const StorageInMemoryMetadata & m
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
-        "SimpleAggregateFunction column(s) {} of the AggregatingMergeTree table are used in the key. Background merges aggregate "
-        "them, so the key would not match the merged rows. Use other columns in the key, or set "
+        "Aggregated column(s) {} of the AggregatingMergeTree table (SimpleAggregateFunction or AggregateFunction values) are used in "
+        "the key. Background merges aggregate them, so the key would not match the merged rows. Use other columns in the key, or set "
         "'allow_aggregating_columns_in_partition_or_order_key = 1' if this is intentional.",
         boost::algorithm::join(columns, ", "));
 }
@@ -2716,10 +2794,6 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     if (mode == MergingParams::Aggregating && sanity_checks && !allow_tuple_element_aggregation
         && !settings[MergeTreeSetting::allow_dimensions_outside_sorting_key])
         checkDimensionsAreInSortingKey(metadata);
-
-    /// Only on table creation, so existing tables keep loading.
-    if (mode == MergingParams::Aggregating && sanity_checks && !settings[MergeTreeSetting::allow_aggregating_columns_in_partition_or_order_key])
-        checkAggregatedColumnsAreNotInKeys(metadata, nullptr);
 
     /// TODO Checks for Graphite mode.
 }
@@ -7234,7 +7308,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Both a changed key and a changed type of a column can use an aggregated column in the key.
     if (!is_secondary_replay && merging_params.mode == MergingParams::Aggregating
         && !(*alter_effective_settings)[MergeTreeSetting::allow_aggregating_columns_in_partition_or_order_key])
-        checkAggregatedColumnsAreNotInKeys(new_metadata, &old_metadata);
+        checkAggregatedColumnsAreNotInKeys(new_metadata, &old_metadata, merging_params.allow_tuple_element_aggregation);
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);

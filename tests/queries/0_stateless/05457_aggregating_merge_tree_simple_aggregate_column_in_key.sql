@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/78795
--- In AggregatingMergeTree, merges aggregate a SimpleAggregateFunction column, so a sorting or partition key computed from it
+-- In AggregatingMergeTree, merges aggregate a SimpleAggregateFunction or AggregateFunction column, so a sorting or partition key computed from it
 -- does not match the merged rows, and the primary key and partition pruning skip matching rows. Such a key is rejected at table
 -- creation and by an ALTER that makes a key use such a column, unless `allow_aggregating_columns_in_partition_or_order_key` is set.
 
@@ -10,9 +10,25 @@ DROP TABLE IF EXISTS t_other_key;
 DROP TABLE IF EXISTS t_in_sorting_key;
 DROP TABLE IF EXISTS t_modify_column;
 DROP TABLE IF EXISTS t_plain;
+DROP TABLE IF EXISTS t_tuple_other_element;
+DROP TABLE IF EXISTS t_tuple_alter;
 
 CREATE TABLE t_sorting (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree ORDER BY intDiv(c0, 55); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_partition (k UInt8, c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree PARTITION BY c0 % 2 ORDER BY k; -- { serverError BAD_ARGUMENTS }
+-- A regular aggregate state is aggregated too.
+CREATE TABLE t_state (c AggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree ORDER BY intDiv(finalizeAggregation(c), 55); -- { serverError BAD_ARGUMENTS }
+-- So is the value under a subcolumn of an aggregated column, and an aggregated element of a tuple.
+CREATE TABLE t_size (k UInt8, a SimpleAggregateFunction(groupArrayArray, Array(UInt64))) ENGINE = AggregatingMergeTree PARTITION BY a.size0 ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_tuple_element (k UInt8, x Tuple(v SimpleAggregateFunction(sum, UInt64), w UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY x.v % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_tuple_position (x Tuple(UInt64, SimpleAggregateFunction(sum, UInt64))) ENGINE = AggregatingMergeTree
+PARTITION BY x.2 % 2 ORDER BY x.1 SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_tuple_other_element (k UInt8, x Tuple(v SimpleAggregateFunction(sum, UInt64), w UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY x.w % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+SELECT 'other tuple element created';
+CREATE TABLE t_tuple_alter (k UInt8, x Tuple(v UInt64)) ENGINE = AggregatingMergeTree PARTITION BY x.v % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1;
+ALTER TABLE t_tuple_alter MODIFY COLUMN x Tuple(v SimpleAggregateFunction(sum, UInt64)); -- { serverError BAD_ARGUMENTS }
 
 -- The setting allows it. No rows are inserted: a merge of such a table breaks the sort order of the part, which is a logical
 -- error in debug builds.
@@ -62,3 +78,5 @@ DROP TABLE t_other_key;
 DROP TABLE t_in_sorting_key;
 DROP TABLE t_modify_column;
 DROP TABLE t_plain;
+DROP TABLE t_tuple_other_element;
+DROP TABLE t_tuple_alter;

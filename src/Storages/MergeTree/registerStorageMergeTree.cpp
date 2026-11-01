@@ -66,6 +66,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
+    extern const MergeTreeSettingsBool allow_aggregating_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
@@ -1246,6 +1247,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         merging_params.allow_tuple_element_aggregation = false;
     }
+
+    /// Only a fresh definition: a table created by an earlier version, or re-derived from metadata stored in Keeper (as
+    /// `SYSTEM DROP DATABASE REPLICA ... WITH TABLES` does), keeps loading.
+    if (merging_params.mode == MergeTreeData::MergingParams::Aggregating && args.mode <= LoadingStrictnessLevel::CREATE
+        && !is_ddl_replay && !is_stored_definition
+        && !(*storage_settings)[MergeTreeSetting::allow_aggregating_columns_in_partition_or_order_key])
+        MergeTreeData::checkAggregatedColumnsAreNotInKeys(metadata, nullptr, merging_params.allow_tuple_element_aggregation);
 
     if (replicated)
     {
