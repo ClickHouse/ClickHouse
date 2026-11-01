@@ -180,19 +180,19 @@ SELECT [1, 2, 3]::FixedArray(3, UInt8) AS x, toTypeName(x);
 ```
 
 ```text
-┌─x───────┬─toTypeName(x)──────────┐
-│ [1,2,3] │ FixedArray(3, UInt8)   │
-└─────────┴────────────────────────┘
+┌─x───────┬─toTypeName(x)────────┐
+│ [1,2,3] │ FixedArray(3, UInt8) │
+└─────────┴──────────────────────┘
 ```
 
 ```sql
-SELECT [[1, 2, 3], [4, 5, 6]]::FixedArray(2, 3, Float32) AS m, m[2, 3], m[2][3], m[2];
+SELECT [[1, 2, 3], [4, 5, 6]]::FixedArray(2, 3, Float32) AS m, m[2, 3] AS a, m[2][3] AS b, m[2] AS c, toTypeName(c);
 ```
 
 ```text
-┌─m─────────────────┬─arrayElement(arrayElement(m, 2), 3)─┬─arrayElement(arrayElement(m, 2), 3)─┬─arrayElement(m, 2)─┐
-│ [[1,2,3],[4,5,6]] │                                   6 │                                   6 │ [4,5,6]            │
-└───────────────────┴─────────────────────────────────────┴─────────────────────────────────────┴────────────────────┘
+┌─m─────────────────┬─a─┬─b─┬─c───────┬─toTypeName(c)──────────┐
+│ [[1,2,3],[4,5,6]] │ 6 │ 6 │ [4,5,6] │ FixedArray(3, Float32) │
+└───────────────────┴───┴───┴─────────┴────────────────────────┘
 ```
 
 Converting an array of a different size to `FixedArray` throws an exception.
