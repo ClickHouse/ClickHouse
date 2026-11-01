@@ -70,7 +70,7 @@ fi
 echo '--- a dump does not record a missing metadata file of the default database ---'
 rm -rf "$work/nodefault"
 $CLICKHOUSE_LOCAL --path "$work/nodefault" -n -q "CREATE DATABASE d; CREATE TABLE d.t (a UInt8) ENGINE = Memory;"
-rm "$work/nodefault/metadata/default.sql"
+rm -f "$work/nodefault/metadata/default.sql"
 before=$(snapshot "$work/nodefault")
 $CLICKHOUSE_LOCAL --path "$work/nodefault" --dump-schema=d > /dev/null 2>&1
 after=$(snapshot "$work/nodefault")
