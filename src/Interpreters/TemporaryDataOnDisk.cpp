@@ -24,6 +24,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromEmptyFile.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
@@ -62,6 +63,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_USE_DISTRIBUTED_CACHE;
     extern const int INVALID_STATE;
     extern const int LOGICAL_ERROR;
@@ -98,6 +100,44 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
         "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
         reserve_size, fmt::join(disks_info, ", "));
 }
+
+/// Reads the bytes of `file` from `offset` up to `end`, at most a buffer at a time, through a reader that other
+/// threads share (see `SeekableReadBuffer::readBigAt`).
+class ReadBufferFromSharedFileRange : public BufferWithOwnMemory<ReadBuffer>
+{
+public:
+    ReadBufferFromSharedFileRange(const SeekableReadBuffer & reader_, const TemporaryDataBuffer & file_, size_t offset_, size_t end_)
+        : BufferWithOwnMemory<ReadBuffer>(std::min<size_t>(end_ - offset_, DBMS_DEFAULT_BUFFER_SIZE))
+        , reader(reader_)
+        , file(file_)
+        , offset(offset_)
+        , end(end_)
+    {
+    }
+
+private:
+    bool nextImpl() override
+    {
+        if (offset == end)
+            return false;
+
+        const size_t bytes = std::min(internalBuffer().size(), end - offset);
+        const size_t bytes_read = reader.readBigAt(internalBuffer().begin(), bytes, offset, /*progress_callback=*/nullptr);
+        if (bytes_read != bytes)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all data of temporary file {}. Bytes read: {}. Bytes expected: {}",
+                file.describeFilePath(), bytes_read, bytes);
+
+        working_buffer = Buffer(internalBuffer().begin(), internalBuffer().begin() + bytes);
+        offset += bytes;
+        return true;
+    }
+
+    const SeekableReadBuffer & reader;
+    const TemporaryDataBuffer & file;
+    size_t offset;
+    const size_t end;
+};
 
 }
 
@@ -143,7 +183,7 @@ public:
 
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
-        return std::make_unique<ReadBufferFromFile>(segment_holder->front().getPath(), /* buf_size = */ buffer_size_);
+        return std::make_unique<ReadBufferFromFilePRead>(segment_holder->front().getPath(), /* buf_size = */ buffer_size_);
     }
 
     String describeFilePath() const override
@@ -528,6 +568,17 @@ std::unique_ptr<ReadBuffer> TemporaryDataBuffer::readFromPosition(size_t positio
 std::unique_ptr<ReadBuffer> TemporaryDataBuffer::readRange(size_t begin, size_t end)
 {
     chassert(begin < end);
+    std::call_once(range_reader_created, [this]
+    {
+        /// `readBigAt` does not read through the buffer, which takes the size of the writer's buffer.
+        auto in = readRaw(parent->getSettings().buffer_size);
+        if (in->supportsReadAt())
+            range_reader = std::move(in);
+    });
+
+    if (range_reader)
+        return std::make_unique<TemporaryDataReadBuffer>(std::make_unique<ReadBufferFromSharedFileRange>(*range_reader, *this, begin, end));
+
     auto in = readRaw(std::min<size_t>(end - begin, DBMS_DEFAULT_BUFFER_SIZE));
     /// Without the bound, a remote file requests the rest of the file, which the destruction of the reader cancels.
     in->setReadUntilPosition(end);

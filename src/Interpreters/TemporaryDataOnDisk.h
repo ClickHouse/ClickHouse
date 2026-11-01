@@ -243,6 +243,7 @@ public:
     /// Reads the data from `position` returned by `startNewBlock`, finishes writing if needed.
     std::unique_ptr<ReadBuffer> readFromPosition(size_t position);
     /// Reads the data written between two positions returned by `startNewBlock`, finishes writing if needed.
+    /// Can be called from several threads at once.
     std::unique_ptr<ReadBuffer> readRange(size_t begin, size_t end);
 
     CompressedWriteBuffer & getCompressedWriteBuffer();
@@ -264,6 +265,10 @@ private:
     std::unique_ptr<TemporaryFileHolder> file_holder;
     WrapperGuard<CompressedWriteBuffer, WriteBuffer> out_compressed_buf;
     std::once_flag write_finished;
+
+    /// The reader of the file that `readRange` shares, if the file can be read at an offset concurrently.
+    std::once_flag range_reader_created;
+    std::unique_ptr<SeekableReadBuffer> range_reader;
 
     Stat stat;
     TemporaryDataMetrics metrics;

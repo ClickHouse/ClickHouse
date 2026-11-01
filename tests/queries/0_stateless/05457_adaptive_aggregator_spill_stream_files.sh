@@ -6,7 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The staged spill of the adaptive aggregator writes at most one temporary file per producer, whatever the number of
 # partitions: one per bucket in the first and third shapes, two per bucket in the second, whose threshold leaves room
-# for them. The third spills about a hundred blocks per partition, more than a partition indexes in memory.
+# for them. The third spills about a hundred blocks per partition, more than a partition indexes in memory. The merge
+# reads the blocks of a file through one reader, so the process opens a few dozen files, not one per block.
 # Each shape compares its result with the same query with the feature off and no spilling. The thresholds are pinned
 # because the runner randomizes them, and each shape runs in its own clickhouse-local process, so the counters in
 # `system.events` belong to it alone.
@@ -26,6 +27,7 @@ function run_shape()
     SELECT 'staged records spilled', (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationSpills') > 0;
     SELECT 'at most one file per producer',
         (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'ExternalAggregationWritePart') BETWEEN 1 AND 4;
+    SELECT 'no file opened per block read', (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'FileOpen') < 100;
     "
 }
 
