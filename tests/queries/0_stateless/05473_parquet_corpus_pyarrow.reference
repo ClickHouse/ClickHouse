@@ -1,0 +1,1962 @@
+parquet/pyarrow-12.0.1/all_nulls.parquet WHERE `i32` = 1	ok
+parquet/pyarrow-12.0.1/all_nulls.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-12.0.1/all_nulls.parquet content	100	ok
+parquet/pyarrow-12.0.1/all_nulls.parquet stress	ok
+parquet/pyarrow-12.0.1/all_nulls.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Tuple(a Nullable(Int32), b Nullable(String))
+parquet/pyarrow-12.0.1/decimals.parquet WHERE `id` < 30	ok
+parquet/pyarrow-12.0.1/decimals.parquet content	120	ok
+parquet/pyarrow-12.0.1/decimals.parquet stress	ok
+parquet/pyarrow-12.0.1/decimals.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-12.0.1/empty.parquet content	0	ok
+parquet/pyarrow-12.0.1/empty.parquet stress	ok
+parquet/pyarrow-12.0.1/empty.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet content	120	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet stress	ok
+parquet/pyarrow-12.0.1/flat.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `id` < 13	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `id` = 17	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet content	120	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet stress	ok
+parquet/pyarrow-12.0.1/flat.int96.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `id` < 13	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `id` = 17	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet content	120	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet stress	ok
+parquet/pyarrow-12.0.1/flat.no_dict.gzip.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-12.0.1/flat.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `id` < 13	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `id` = 17	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-12.0.1/flat.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-12.0.1/flat.parquet content	120	ok
+parquet/pyarrow-12.0.1/flat.parquet stress	ok
+parquet/pyarrow-12.0.1/flat.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `id` < 13	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `id` = 17	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet content	120	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet stress	ok
+parquet/pyarrow-12.0.1/flat.v1.0.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-12.0.1/nested.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `id`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_m`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_s`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_st`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `m`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `st_l`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `st`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet content	100	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet stress	ok
+parquet/pyarrow-12.0.1/nested.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet WHERE `id` = 7	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `id`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_i32`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_i32`.size0	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_m`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_m`.size0	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_s`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_s`.size0	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_st`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_st`.`x`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_st`.`y`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `l_st`.size0	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `ll_i64`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `ll_i64`.size0	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `m_i_l`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `m`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `st_l`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `st_l`.`arr`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `st_l`.`mm`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `st`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `st`.`a`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `st`.`b`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet `st`.`c`	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet content	100	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet stress	ok
+parquet/pyarrow-12.0.1/nested.legacy_list_names.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-12.0.1/nested.parquet WHERE `id` = 7	ok
+parquet/pyarrow-12.0.1/nested.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-12.0.1/nested.parquet `id`	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_i32`	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_i32`.size0	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_m`	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_m`.size0	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_s`	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_s`.size0	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_st`	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_st`.`x`	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_st`.`y`	ok
+parquet/pyarrow-12.0.1/nested.parquet `l_st`.size0	ok
+parquet/pyarrow-12.0.1/nested.parquet `ll_i64`	ok
+parquet/pyarrow-12.0.1/nested.parquet `ll_i64`.size0	ok
+parquet/pyarrow-12.0.1/nested.parquet `m_i_l`	ok
+parquet/pyarrow-12.0.1/nested.parquet `m`	ok
+parquet/pyarrow-12.0.1/nested.parquet `st_l`	ok
+parquet/pyarrow-12.0.1/nested.parquet `st_l`.`arr`	ok
+parquet/pyarrow-12.0.1/nested.parquet `st_l`.`mm`	ok
+parquet/pyarrow-12.0.1/nested.parquet `st`	ok
+parquet/pyarrow-12.0.1/nested.parquet `st`.`a`	ok
+parquet/pyarrow-12.0.1/nested.parquet `st`.`b`	ok
+parquet/pyarrow-12.0.1/nested.parquet `st`.`c`	ok
+parquet/pyarrow-12.0.1/nested.parquet content	100	ok
+parquet/pyarrow-12.0.1/nested.parquet stress	ok
+parquet/pyarrow-12.0.1/nested.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-12.0.1/numbers.bss.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet content	500	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet stress	ok
+parquet/pyarrow-12.0.1/numbers.bss.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-12.0.1/numbers.delta.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet content	500	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet stress	ok
+parquet/pyarrow-12.0.1/numbers.delta.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-12.0.1/strings.parquet WHERE `id` < 80	ok
+parquet/pyarrow-12.0.1/strings.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-12.0.1/strings.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-12.0.1/strings.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-12.0.1/strings.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-12.0.1/strings.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-12.0.1/strings.parquet content	400	ok
+parquet/pyarrow-12.0.1/strings.parquet stress	ok
+parquet/pyarrow-12.0.1/strings.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet content	400	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet stress	ok
+parquet/pyarrow-12.0.1/strings.plain.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-17.0.0/all_nulls.parquet WHERE `i32` = 1	ok
+parquet/pyarrow-17.0.0/all_nulls.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-17.0.0/all_nulls.parquet content	100	ok
+parquet/pyarrow-17.0.0/all_nulls.parquet stress	ok
+parquet/pyarrow-17.0.0/all_nulls.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Tuple(a Nullable(Int32), b Nullable(String))
+parquet/pyarrow-17.0.0/decimals.parquet WHERE `id` < 30	ok
+parquet/pyarrow-17.0.0/decimals.parquet content	120	ok
+parquet/pyarrow-17.0.0/decimals.parquet stress	ok
+parquet/pyarrow-17.0.0/decimals.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-17.0.0/empty.parquet content	0	ok
+parquet/pyarrow-17.0.0/empty.parquet stress	ok
+parquet/pyarrow-17.0.0/empty.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet content	120	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet stress	ok
+parquet/pyarrow-17.0.0/flat.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `id` < 13	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `id` = 17	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet content	120	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet stress	ok
+parquet/pyarrow-17.0.0/flat.int96.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `id` < 13	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `id` = 17	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet content	120	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet stress	ok
+parquet/pyarrow-17.0.0/flat.no_dict.gzip.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-17.0.0/flat.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `id` < 13	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `id` = 17	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-17.0.0/flat.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-17.0.0/flat.parquet content	120	ok
+parquet/pyarrow-17.0.0/flat.parquet stress	ok
+parquet/pyarrow-17.0.0/flat.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `id` < 13	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `id` = 17	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet content	120	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet stress	ok
+parquet/pyarrow-17.0.0/flat.v1.0.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-17.0.0/nested.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `id`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_m`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_s`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_st`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `m`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `st_l`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `st`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet content	100	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet stress	ok
+parquet/pyarrow-17.0.0/nested.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet WHERE `id` = 7	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `id`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_i32`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_i32`.size0	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_m`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_m`.size0	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_s`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_s`.size0	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_st`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_st`.`x`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_st`.`y`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `l_st`.size0	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `ll_i64`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `ll_i64`.size0	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `m_i_l`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `m`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `st_l`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `st_l`.`arr`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `st_l`.`mm`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `st`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `st`.`a`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `st`.`b`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet `st`.`c`	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet content	100	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet stress	ok
+parquet/pyarrow-17.0.0/nested.legacy_list_names.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-17.0.0/nested.parquet WHERE `id` = 7	ok
+parquet/pyarrow-17.0.0/nested.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-17.0.0/nested.parquet `id`	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_i32`	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_i32`.size0	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_m`	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_m`.size0	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_s`	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_s`.size0	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_st`	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_st`.`x`	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_st`.`y`	ok
+parquet/pyarrow-17.0.0/nested.parquet `l_st`.size0	ok
+parquet/pyarrow-17.0.0/nested.parquet `ll_i64`	ok
+parquet/pyarrow-17.0.0/nested.parquet `ll_i64`.size0	ok
+parquet/pyarrow-17.0.0/nested.parquet `m_i_l`	ok
+parquet/pyarrow-17.0.0/nested.parquet `m`	ok
+parquet/pyarrow-17.0.0/nested.parquet `st_l`	ok
+parquet/pyarrow-17.0.0/nested.parquet `st_l`.`arr`	ok
+parquet/pyarrow-17.0.0/nested.parquet `st_l`.`mm`	ok
+parquet/pyarrow-17.0.0/nested.parquet `st`	ok
+parquet/pyarrow-17.0.0/nested.parquet `st`.`a`	ok
+parquet/pyarrow-17.0.0/nested.parquet `st`.`b`	ok
+parquet/pyarrow-17.0.0/nested.parquet `st`.`c`	ok
+parquet/pyarrow-17.0.0/nested.parquet content	100	ok
+parquet/pyarrow-17.0.0/nested.parquet stress	ok
+parquet/pyarrow-17.0.0/nested.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-17.0.0/numbers.bss.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet content	500	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet stress	ok
+parquet/pyarrow-17.0.0/numbers.bss.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-17.0.0/numbers.delta.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet content	500	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet stress	ok
+parquet/pyarrow-17.0.0/numbers.delta.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-17.0.0/strings.parquet WHERE `id` < 80	ok
+parquet/pyarrow-17.0.0/strings.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-17.0.0/strings.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-17.0.0/strings.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-17.0.0/strings.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-17.0.0/strings.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-17.0.0/strings.parquet content	400	ok
+parquet/pyarrow-17.0.0/strings.parquet stress	ok
+parquet/pyarrow-17.0.0/strings.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet content	400	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet stress	ok
+parquet/pyarrow-17.0.0/strings.plain.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-2.0.0/all_nulls.parquet WHERE `i32` = 1	ok
+parquet/pyarrow-2.0.0/all_nulls.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-2.0.0/all_nulls.parquet content	100	ok
+parquet/pyarrow-2.0.0/all_nulls.parquet stress	ok
+parquet/pyarrow-2.0.0/all_nulls.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Tuple(a Nullable(Int32), b Nullable(String))
+parquet/pyarrow-2.0.0/decimals.parquet WHERE `id` < 30	ok
+parquet/pyarrow-2.0.0/decimals.parquet content	120	ok
+parquet/pyarrow-2.0.0/decimals.parquet stress	ok
+parquet/pyarrow-2.0.0/decimals.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-2.0.0/empty.parquet content	0	ok
+parquet/pyarrow-2.0.0/empty.parquet stress	ok
+parquet/pyarrow-2.0.0/empty.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet content	120	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet stress	ok
+parquet/pyarrow-2.0.0/flat.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `id` < 13	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `id` = 17	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet content	120	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet stress	ok
+parquet/pyarrow-2.0.0/flat.int96.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `id` < 13	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `id` = 17	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet content	120	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet stress	ok
+parquet/pyarrow-2.0.0/flat.no_dict.gzip.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-2.0.0/flat.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `id` < 13	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `id` = 17	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-2.0.0/flat.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-2.0.0/flat.parquet content	120	ok
+parquet/pyarrow-2.0.0/flat.parquet stress	ok
+parquet/pyarrow-2.0.0/flat.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `id` < 13	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `id` = 17	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet content	120	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet stress	ok
+parquet/pyarrow-2.0.0/flat.v1.0.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-2.0.0/nested.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `id`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_m`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_s`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_st`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `m`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `st_l`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `st`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet content	100	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet stress	ok
+parquet/pyarrow-2.0.0/nested.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-2.0.0/nested.parquet WHERE `id` = 7	ok
+parquet/pyarrow-2.0.0/nested.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-2.0.0/nested.parquet `id`	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_i32`	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_i32`.size0	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_m`	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_m`.size0	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_s`	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_s`.size0	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_st`	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_st`.`x`	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_st`.`y`	ok
+parquet/pyarrow-2.0.0/nested.parquet `l_st`.size0	ok
+parquet/pyarrow-2.0.0/nested.parquet `ll_i64`	ok
+parquet/pyarrow-2.0.0/nested.parquet `ll_i64`.size0	ok
+parquet/pyarrow-2.0.0/nested.parquet `m_i_l`	ok
+parquet/pyarrow-2.0.0/nested.parquet `m`	ok
+parquet/pyarrow-2.0.0/nested.parquet `st_l`	ok
+parquet/pyarrow-2.0.0/nested.parquet `st_l`.`arr`	ok
+parquet/pyarrow-2.0.0/nested.parquet `st_l`.`mm`	ok
+parquet/pyarrow-2.0.0/nested.parquet `st`	ok
+parquet/pyarrow-2.0.0/nested.parquet `st`.`a`	ok
+parquet/pyarrow-2.0.0/nested.parquet `st`.`b`	ok
+parquet/pyarrow-2.0.0/nested.parquet `st`.`c`	ok
+parquet/pyarrow-2.0.0/nested.parquet content	100	ok
+parquet/pyarrow-2.0.0/nested.parquet stress	ok
+parquet/pyarrow-2.0.0/nested.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-2.0.0/numbers.bss.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet content	500	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet stress	ok
+parquet/pyarrow-2.0.0/numbers.bss.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-2.0.0/strings.parquet WHERE `id` < 80	ok
+parquet/pyarrow-2.0.0/strings.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-2.0.0/strings.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-2.0.0/strings.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-2.0.0/strings.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-2.0.0/strings.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-2.0.0/strings.parquet content	400	ok
+parquet/pyarrow-2.0.0/strings.parquet stress	ok
+parquet/pyarrow-2.0.0/strings.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet content	400	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet stress	ok
+parquet/pyarrow-2.0.0/strings.plain.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/all_nulls.dpv2.no_dict.parquet WHERE `i32` = 1	ok
+parquet/pyarrow-26.0.0/all_nulls.dpv2.no_dict.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/all_nulls.dpv2.no_dict.parquet content	100	ok
+parquet/pyarrow-26.0.0/all_nulls.dpv2.no_dict.parquet stress	ok
+parquet/pyarrow-26.0.0/all_nulls.dpv2.no_dict.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Tuple(a Nullable(Int32), b Nullable(String))
+parquet/pyarrow-26.0.0/all_nulls.parquet WHERE `i32` = 1	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `b`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `bin`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `d`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `dec18`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `dec38`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `dec9`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `f32`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `f64`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `fixed`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `i16`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `i32`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `i64`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `i8`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `id`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `s_dict`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `s`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `st`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `ts_ms`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `ts_ns`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `ts_us_utc`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `ts_us`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `u16`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `u32`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `u64`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet `u8`	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet content	100	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet stress	ok
+parquet/pyarrow-26.0.0/all_nulls.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Tuple(a Nullable(Int32), b Nullable(String))
+parquet/pyarrow-26.0.0/decimals.as_int.delta.parquet WHERE `id` < 30	ok
+parquet/pyarrow-26.0.0/decimals.as_int.delta.parquet content	120	ok
+parquet/pyarrow-26.0.0/decimals.as_int.delta.parquet stress	ok
+parquet/pyarrow-26.0.0/decimals.as_int.delta.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-26.0.0/decimals.as_int.parquet WHERE `id` < 30	ok
+parquet/pyarrow-26.0.0/decimals.as_int.parquet content	120	ok
+parquet/pyarrow-26.0.0/decimals.as_int.parquet stress	ok
+parquet/pyarrow-26.0.0/decimals.as_int.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-26.0.0/decimals.bss.parquet WHERE `id` < 30	ok
+parquet/pyarrow-26.0.0/decimals.bss.parquet content	120	ok
+parquet/pyarrow-26.0.0/decimals.bss.parquet stress	ok
+parquet/pyarrow-26.0.0/decimals.bss.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-26.0.0/decimals.flba.parquet WHERE `id` < 30	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_10_3`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_18_0`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_18_18`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_19_5`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_1_0`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_25_10`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_38_0`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_38_38`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_4_2`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_9_0`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `dec_9_9`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet `id`	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet content	120	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet stress	ok
+parquet/pyarrow-26.0.0/decimals.flba.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-26.0.0/empty.no_row_groups.parquet content	0	ok
+parquet/pyarrow-26.0.0/empty.no_row_groups.parquet stress	ok
+parquet/pyarrow-26.0.0/empty.no_row_groups.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/empty.parquet `b`	ok
+parquet/pyarrow-26.0.0/empty.parquet `bin`	ok
+parquet/pyarrow-26.0.0/empty.parquet `d`	ok
+parquet/pyarrow-26.0.0/empty.parquet `dec18`	ok
+parquet/pyarrow-26.0.0/empty.parquet `dec38`	ok
+parquet/pyarrow-26.0.0/empty.parquet `dec9`	ok
+parquet/pyarrow-26.0.0/empty.parquet `f32`	ok
+parquet/pyarrow-26.0.0/empty.parquet `f64`	ok
+parquet/pyarrow-26.0.0/empty.parquet `fixed`	ok
+parquet/pyarrow-26.0.0/empty.parquet `i16`	ok
+parquet/pyarrow-26.0.0/empty.parquet `i32`	ok
+parquet/pyarrow-26.0.0/empty.parquet `i64`	ok
+parquet/pyarrow-26.0.0/empty.parquet `i8`	ok
+parquet/pyarrow-26.0.0/empty.parquet `id`	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/empty.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/empty.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/empty.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/empty.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/empty.parquet `m`	ok
+parquet/pyarrow-26.0.0/empty.parquet `s_dict`	ok
+parquet/pyarrow-26.0.0/empty.parquet `s`	ok
+parquet/pyarrow-26.0.0/empty.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/empty.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/empty.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/empty.parquet `st`	ok
+parquet/pyarrow-26.0.0/empty.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/empty.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/empty.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/empty.parquet `ts_ms`	ok
+parquet/pyarrow-26.0.0/empty.parquet `ts_ns`	ok
+parquet/pyarrow-26.0.0/empty.parquet `ts_us_utc`	ok
+parquet/pyarrow-26.0.0/empty.parquet `ts_us`	ok
+parquet/pyarrow-26.0.0/empty.parquet `u16`	ok
+parquet/pyarrow-26.0.0/empty.parquet `u32`	ok
+parquet/pyarrow-26.0.0/empty.parquet `u64`	ok
+parquet/pyarrow-26.0.0/empty.parquet `u8`	ok
+parquet/pyarrow-26.0.0/empty.parquet content	0	ok
+parquet/pyarrow-26.0.0/empty.parquet stress	ok
+parquet/pyarrow-26.0.0/empty.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.adjusted_utc.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.brotli.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.coerce_ms.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(3, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.decimal_as_int.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.dict_fallback.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.empty_row_groups.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.encrypted.parquet read	CANNOT_EXTRACT_TABLE_STRUCTURE
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.gzip.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.gzip9.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.int96.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.lz4.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.no_arrow_schema.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.no_dict.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.no_stats.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.none.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.none.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.none.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.none.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.page_index_checksum.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.rle_bool.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.row_group_17.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.rows_per_page_7.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.snappy.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.sorted.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.tiny_pages.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv1.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.v1.0.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv1.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.v2.4.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv1.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.v2.6.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.zstd.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet content	120	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/flat.zstd22.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `date64`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `dec76`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `dict_s`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `f16`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `fsl`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `id`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `large_bin`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `large_l`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `large_l`.size0	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `large_s`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `t32_ms`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `t64_us`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet `uuid`	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet content	50	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet stress	ok
+parquet/pyarrow-26.0.0/logical.dpv2.no_dict.parquet types	Nullable(Int64), Nullable(Float32), Nullable(UUID), Nullable(Time64(3)), Nullable(Time64(6)), Nullable(String), Nullable(String), Nullable(String), Nullable(Decimal(76, 20)), Array(Nullable(Int16)), Array(Nullable(Int8)), Nullable(Date32)
+parquet/pyarrow-26.0.0/logical.parquet `date64`	ok
+parquet/pyarrow-26.0.0/logical.parquet `dec76`	ok
+parquet/pyarrow-26.0.0/logical.parquet `dict_s`	ok
+parquet/pyarrow-26.0.0/logical.parquet `f16`	ok
+parquet/pyarrow-26.0.0/logical.parquet `fsl`	ok
+parquet/pyarrow-26.0.0/logical.parquet `id`	ok
+parquet/pyarrow-26.0.0/logical.parquet `large_bin`	ok
+parquet/pyarrow-26.0.0/logical.parquet `large_l`	ok
+parquet/pyarrow-26.0.0/logical.parquet `large_l`.size0	ok
+parquet/pyarrow-26.0.0/logical.parquet `large_s`	ok
+parquet/pyarrow-26.0.0/logical.parquet `t32_ms`	ok
+parquet/pyarrow-26.0.0/logical.parquet `t64_us`	ok
+parquet/pyarrow-26.0.0/logical.parquet `uuid`	ok
+parquet/pyarrow-26.0.0/logical.parquet content	50	ok
+parquet/pyarrow-26.0.0/logical.parquet stress	ok
+parquet/pyarrow-26.0.0/logical.parquet types	Nullable(Int64), Nullable(Float32), Nullable(UUID), Nullable(Time64(3)), Nullable(Time64(6)), Nullable(String), Nullable(String), Nullable(String), Nullable(Decimal(76, 20)), Array(Nullable(Int16)), Array(Nullable(Int8)), Nullable(Date32)
+parquet/pyarrow-26.0.0/names.parquet WHERE `id` < 5	ok
+parquet/pyarrow-26.0.0/names.parquet `/`backtick/``	ok
+parquet/pyarrow-26.0.0/names.parquet `Mixed Case Name`	ok
+parquet/pyarrow-26.0.0/names.parquet `dots.in.name`	ok
+parquet/pyarrow-26.0.0/names.parquet `id`	ok
+parquet/pyarrow-26.0.0/names.parquet `select`	ok
+parquet/pyarrow-26.0.0/names.parquet `with-dash and space`	ok
+parquet/pyarrow-26.0.0/names.parquet `ünïcødé_列`	ok
+parquet/pyarrow-26.0.0/names.parquet content	10	ok
+parquet/pyarrow-26.0.0/names.parquet stress	ok
+parquet/pyarrow-26.0.0/names.parquet types	Nullable(Int64), Nullable(Int32), Nullable(String), Nullable(Float64), Nullable(Bool), Nullable(Int16), Nullable(String)
+parquet/pyarrow-26.0.0/names.row_group_1.parquet WHERE `id` < 5	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet `/`backtick/``	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet `Mixed Case Name`	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet `dots.in.name`	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet `id`	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet `select`	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet `with-dash and space`	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet `ünïcødé_列`	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet content	10	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet stress	ok
+parquet/pyarrow-26.0.0/names.row_group_1.parquet types	Nullable(Int64), Nullable(Int32), Nullable(String), Nullable(Float64), Nullable(Bool), Nullable(Int16), Nullable(String)
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.legacy_list_names.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.no_arrow_schema.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.no_dict.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.no_dict.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.row_group_13.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.rows_per_page_3.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet known issue empty data page v2 in a nested column	INCORRECT_DATA
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv1.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.v1.0.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv1.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.v2.4.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv1.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `id`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_m`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_s`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_st`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `m`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `st_l`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `st`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet content	100	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/nested.v2.6.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv1.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.bss.dpv2.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv1.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.delta.dpv2.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.delta.tiny_pages.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.delta.zstd_bss.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv1.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.dict.dpv2.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv1.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet content	500	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/numbers.plain.dpv2.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv1.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.bss_fixed.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv1.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.delta_byte_array.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv1.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.delta_length.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv1.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.dict.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv1.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.dict_fallback.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv1.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet content	400	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet stress	ok
+parquet/pyarrow-26.0.0/strings.plain.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-26.0.0/wide.dpv2.zstd.parquet content	5	ok
+parquet/pyarrow-26.0.0/wide.dpv2.zstd.parquet stress	ok
+parquet/pyarrow-26.0.0/wide.dpv2.zstd.parquet types	201 columns, types hash 59DEF499CAD5C6B2
+parquet/pyarrow-26.0.0/wide.parquet content	5	ok
+parquet/pyarrow-26.0.0/wide.parquet stress	ok
+parquet/pyarrow-26.0.0/wide.parquet types	201 columns, types hash 59DEF499CAD5C6B2
+parquet/pyarrow-8.0.0/all_nulls.parquet WHERE `i32` = 1	ok
+parquet/pyarrow-8.0.0/all_nulls.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-8.0.0/all_nulls.parquet content	100	ok
+parquet/pyarrow-8.0.0/all_nulls.parquet stress	ok
+parquet/pyarrow-8.0.0/all_nulls.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Tuple(a Nullable(Int32), b Nullable(String))
+parquet/pyarrow-8.0.0/decimals.parquet WHERE `id` < 30	ok
+parquet/pyarrow-8.0.0/decimals.parquet content	120	ok
+parquet/pyarrow-8.0.0/decimals.parquet stress	ok
+parquet/pyarrow-8.0.0/decimals.parquet types	Nullable(Int64), Nullable(Decimal(1, 0)), Nullable(Decimal(4, 2)), Nullable(Decimal(9, 0)), Nullable(Decimal(9, 9)), Nullable(Decimal(10, 3)), Nullable(Decimal(18, 0)), Nullable(Decimal(18, 18)), Nullable(Decimal(19, 5)), Nullable(Decimal(25, 10)), Nullable(Decimal(38, 0)), Nullable(Decimal(38, 38))
+parquet/pyarrow-8.0.0/empty.parquet content	0	ok
+parquet/pyarrow-8.0.0/empty.parquet stress	ok
+parquet/pyarrow-8.0.0/empty.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10)), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `id` < 13	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `id` = 17	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet content	120	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet stress	ok
+parquet/pyarrow-8.0.0/flat.dpv2.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `id` < 13	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `id` = 17	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet content	120	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet stress	ok
+parquet/pyarrow-8.0.0/flat.int96.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `id` < 13	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `id` = 17	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet content	120	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet stress	ok
+parquet/pyarrow-8.0.0/flat.no_dict.gzip.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-8.0.0/flat.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `id` < 13	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `id` = 17	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-8.0.0/flat.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-8.0.0/flat.parquet content	120	ok
+parquet/pyarrow-8.0.0/flat.parquet stress	ok
+parquet/pyarrow-8.0.0/flat.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `d` >= "2000-01-01"	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `i64` < 0	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `id` < 13	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `id` = 17	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `id` >= 84	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `id` IN (3, 100, 9999)	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `s_dict` = "beta"	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `s` = "alpha"	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `s` = "zz-not-present"	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `s` >= "m"	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `s` IS NULL	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet WHERE `u64` > 9223372036854775807	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet content	120	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet stress	ok
+parquet/pyarrow-8.0.0/flat.v1.0.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(Decimal(9, 2)), Nullable(Decimal(18, 4)), Nullable(Decimal(38, 10))
+parquet/pyarrow-8.0.0/nested.dpv2.parquet WHERE `id` = 7	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `id`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_i32`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_i32`.size0	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_m`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_m`.size0	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_s`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_s`.size0	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_st`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_st`.`x`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_st`.`y`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `l_st`.size0	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `ll_i64`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `ll_i64`.size0	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `m_i_l`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `m`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `st_l`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `st_l`.`arr`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `st_l`.`mm`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `st`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `st`.`a`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `st`.`b`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet `st`.`c`	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet content	100	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet stress	ok
+parquet/pyarrow-8.0.0/nested.dpv2.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet WHERE `id` = 7	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `id`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_i32`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_i32`.size0	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_m`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_m`.size0	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_s`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_s`.size0	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_st`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_st`.`x`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_st`.`y`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `l_st`.size0	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `ll_i64`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `ll_i64`.size0	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `m_i_l`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `m`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `st_l`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `st_l`.`arr`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `st_l`.`mm`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `st`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `st`.`a`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `st`.`b`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet `st`.`c`	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet content	100	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet stress	ok
+parquet/pyarrow-8.0.0/nested.legacy_list_names.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-8.0.0/nested.parquet WHERE `id` = 7	ok
+parquet/pyarrow-8.0.0/nested.parquet WHERE `id` >= 70	ok
+parquet/pyarrow-8.0.0/nested.parquet `id`	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_i32`	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_i32`.size0	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_m`	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_m`.size0	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_s`	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_s`.size0	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_st`	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_st`.`x`	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_st`.`y`	ok
+parquet/pyarrow-8.0.0/nested.parquet `l_st`.size0	ok
+parquet/pyarrow-8.0.0/nested.parquet `ll_i64`	ok
+parquet/pyarrow-8.0.0/nested.parquet `ll_i64`.size0	ok
+parquet/pyarrow-8.0.0/nested.parquet `m_i_l`	ok
+parquet/pyarrow-8.0.0/nested.parquet `m`	ok
+parquet/pyarrow-8.0.0/nested.parquet `st_l`	ok
+parquet/pyarrow-8.0.0/nested.parquet `st_l`.`arr`	ok
+parquet/pyarrow-8.0.0/nested.parquet `st_l`.`mm`	ok
+parquet/pyarrow-8.0.0/nested.parquet `st`	ok
+parquet/pyarrow-8.0.0/nested.parquet `st`.`a`	ok
+parquet/pyarrow-8.0.0/nested.parquet `st`.`b`	ok
+parquet/pyarrow-8.0.0/nested.parquet `st`.`c`	ok
+parquet/pyarrow-8.0.0/nested.parquet content	100	ok
+parquet/pyarrow-8.0.0/nested.parquet stress	ok
+parquet/pyarrow-8.0.0/nested.parquet types	Nullable(Int64), Array(Nullable(Int32)), Array(Nullable(String)), Array(Array(Nullable(Int64))), Tuple(a Nullable(Int32), b Nullable(String), c Tuple(d Nullable(Float64))), Map(String, Nullable(Int32)), Map(Int32, Array(Nullable(String))), Array(Tuple(x Nullable(Int32), y Nullable(String))), Tuple(arr Array(Nullable(Int32)), mm Map(String, Nullable(String))), Array(Map(String, Nullable(Int32)))
+parquet/pyarrow-8.0.0/numbers.bss.parquet WHERE `d` < "1990-01-01"	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet WHERE `f64` > 0.0	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet WHERE `i32_small` = 3	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet WHERE `i64_mono` < -1099511000000	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet WHERE `id` >= 400	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet WHERE `u64_rand` > 9223372036854775807	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet content	500	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet stress	ok
+parquet/pyarrow-8.0.0/numbers.bss.parquet types	Nullable(Int64), Nullable(Int32), Nullable(Int64), Nullable(Int64), Nullable(Int32), Nullable(Int32), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(Decimal(18, 3)), Nullable(Date32), Nullable(DateTime64(6, \'UTC\'))
+parquet/pyarrow-8.0.0/strings.parquet WHERE `id` < 80	ok
+parquet/pyarrow-8.0.0/strings.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-8.0.0/strings.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-8.0.0/strings.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-8.0.0/strings.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-8.0.0/strings.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-8.0.0/strings.parquet content	400	ok
+parquet/pyarrow-8.0.0/strings.parquet stress	ok
+parquet/pyarrow-8.0.0/strings.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet WHERE `id` < 80	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet WHERE `s_low_card` = "alpha"	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet WHERE `s_nulls` IS NULL	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` = "zz-not-present"	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet WHERE `s_prefix` >= "https://github"	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet WHERE `s` = "omega"	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet content	400	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet stress	ok
+parquet/pyarrow-8.0.0/strings.plain.dpv2.parquet types	Nullable(Int64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(FixedString(8))
