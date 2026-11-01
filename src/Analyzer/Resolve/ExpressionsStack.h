@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ranges>
+#include <unordered_set>
 #include <IO/Operators.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>
@@ -96,6 +97,36 @@ public:
         return expression_it->second.front();
     }
 
+    /// Remember that `node` is the expression of an alias which was reached through an identifier, and not a subexpression
+    /// written in place. It distinguishes `SELECT x + 1 AS y, y + 1 AS x` from `SELECT ((x + 1) AS y) + 1 AS x`.
+    void registerAliasLookup(const QueryTreeNodePtr & node)
+    {
+        alias_lookup_expressions.insert(node);
+    }
+
+    /** Returns the aliases on the way from the outermost expression with `alias` to the top of the stack.
+      * The result starts with `alias`, and the rest are the aliases which were reached through an identifier.
+      */
+    Strings getAliasLookupPath(const std::string & alias) const
+    {
+        Strings result;
+
+        for (const auto & expression : expressions)
+        {
+            if (result.empty())
+            {
+                if (expression->getAlias() == alias)
+                    result.push_back(alias);
+            }
+            else if (expression->hasAlias() && alias_lookup_expressions.contains(expression))
+            {
+                result.push_back(expression->getAlias());
+            }
+        }
+
+        return result;
+    }
+
     bool has(const IQueryTreeNode * node) const
     {
         return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });
@@ -151,6 +182,7 @@ private:
     QueryTreeNodes expressions;
     size_t aggregate_or_grouping_functions_counter = 0;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
+    std::unordered_set<QueryTreeNodePtr> alias_lookup_expressions;
 };
 
 }

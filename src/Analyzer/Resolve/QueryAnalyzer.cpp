@@ -85,6 +85,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
+#include <algorithm>
 #include <ranges>
 
 namespace DB
@@ -137,6 +138,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
+    extern const int CYCLIC_ALIASES;
     extern const int TYPE_MISMATCH;
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int INVALID_LIMIT_EXPRESSION;
@@ -284,6 +286,55 @@ struct HiddenExpressionArguments
 
     std::vector<std::pair<IdentifierResolveScope *, std::string>> hidden_arguments;
 };
+
+/** Returns the cycle of aliases which prevented `name` from being resolved, starting and ending with the same alias,
+  * or an empty result if there is no such cycle.
+  *
+  * The aliases are taken from the expressions being resolved. An alias of a plain identifier is resolved and removed
+  * from the stack before the failure is reported, so a chain of such aliases is followed from `name` to the stack.
+  * Example: SELECT b AS a, a AS b
+  *
+  * An expression which refers only to its own alias is not a cycle, because such a name may refer to a column.
+  * Example: SELECT unknown_column + 1 AS unknown_column
+  */
+Strings findAliasCycle(const std::string & name, const IdentifierResolveScope & scope)
+{
+    for (const auto * current_scope = &scope; current_scope != nullptr; current_scope = current_scope->parent_scope)
+    {
+        const auto & stack = current_scope->expressions_in_resolve_process_stack;
+        const auto & aliases = current_scope->aliases.alias_name_to_expression_node;
+
+        Strings chain;
+        std::string current_name = name;
+
+        while (stack.getExpressionWithAlias(current_name) == nullptr)
+        {
+            if (std::ranges::contains(chain, current_name))
+                break;
+
+            auto it = aliases.find(current_name);
+            const auto * identifier_node = it != aliases.end() ? it->second->as<IdentifierNode>() : nullptr;
+            if (!identifier_node)
+                break;
+
+            chain.push_back(current_name);
+            current_name = identifier_node->getIdentifier().getFullName();
+        }
+
+        if (stack.getExpressionWithAlias(current_name) == nullptr)
+            continue;
+
+        Strings cycle = stack.getAliasLookupPath(current_name);
+        cycle.insert(cycle.end(), chain.begin(), chain.end());
+        if (cycle.size() < 2)
+            continue;
+
+        cycle.push_back(std::move(current_name));
+        return cycle;
+    }
+
+    return {};
+}
 
 /// Returns true if `name` binds to something other than a lambda argument in `scope` itself.
 /// A non-lambda scope owning `name` as an expression argument counts as such a binding.
@@ -1397,7 +1448,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
   * 2. If alias is registered in current expressions that are in resolve process and if top expression is not part of bottom expression with the same alias subtree
   * it may be cyclic aliases.
   * In that case return nullptr and allow to continue identifier resolution in other places.
-  * TODO: If following identifier resolution fails throw an CYCLIC_ALIASES exception.
+  * If following identifier resolution fails, `resolveExpressionNode` throws a `CYCLIC_ALIASES` exception.
   *
   * This is special scenario where identifier has name the same as alias name in one of its parent expressions including itself.
   * In such case we cannot resolve identifier from aliases because of recursion. It is client responsibility to register and deregister alias
@@ -1411,8 +1462,8 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
   * SELECT (1 + (1 + id)) AS id FROM test_table;
   *
   * Below cases should throw cyclic aliases exception:
-  * SELECT (id + b) AS id, id as b FROM test_table;
-  * SELECT (1 + b + 1 + id) AS id, b as c, id as b FROM test_table;
+  * SELECT x + 1 AS y, y + 1 AS x;
+  * SELECT b AS a, a AS b;
   *
   * 3. Depending on IdentifierLookupContext select IdentifierResolveScope to resolve aliased expression.
   * 4. Clone query tree of aliased expression (do not clone table expression from join tree).
@@ -1471,6 +1522,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     {
         alias_node = alias_node->clone();
         scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+        scope_to_resolve_alias_expression->expressions_in_resolve_process_stack.registerAliasLookup(alias_node);
     }
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
@@ -4122,6 +4174,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 scope.scope_node->formatASTForErrorMessage());
                         }
                     }
+                }
+
+                if (const auto alias_cycle = findAliasCycle(unresolved_identifier.getFullName(), scope); !alias_cycle.empty())
+                {
+                    throw Exception(ErrorCodes::CYCLIC_ALIASES,
+                        "Cyclic aliases: {}. In scope {}",
+                        fmt::join(alias_cycle | std::views::transform([](const String & alias) { return backQuote(alias); }), " -> "),
+                        scope.scope_node->formatASTForErrorMessage());
                 }
 
                 std::string message_clarification;

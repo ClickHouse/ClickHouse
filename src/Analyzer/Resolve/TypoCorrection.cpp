@@ -218,8 +218,12 @@ VectorWithMemoryTracking<String> TypoCorrection::collectIdentifierTypoHints(cons
     VectorWithMemoryTracking<String> prompting_strings;
     prompting_strings.reserve(valid_identifiers.size());
 
+    /// The name itself is in the set if it is an alias which cannot be used at this place. It is not a useful hint.
     for (const auto & valid_identifier : valid_identifiers)
-        prompting_strings.push_back(valid_identifier.getFullName());
+    {
+        if (valid_identifier != unresolved_identifier)
+            prompting_strings.push_back(valid_identifier.getFullName());
+    }
 
     return NamePrompter<1>::getHints(unresolved_identifier.getFullName(), prompting_strings);
 }
