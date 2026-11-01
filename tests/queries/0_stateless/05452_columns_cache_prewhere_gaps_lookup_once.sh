@@ -9,7 +9,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # per gap. Every third granule passes here: a lookup per gap would be about 330 of them, against a
 # few with one lookup per range. The rows served after a re-entry must be right.
 
-SETTINGS="use_columns_cache = 1, enable_reads_from_columns_cache = 1, max_threads = 1, use_query_condition_cache = 0"
+# Parallel replicas split the part into many small mark ranges, each with its own lookup.
+SETTINGS="use_columns_cache = 1, enable_reads_from_columns_cache = 1, max_threads = 1, use_query_condition_cache = 0, enable_parallel_replicas = 0"
 
 # Wide and compact parts.
 for min_bytes_for_wide_part in 0 1000000000
