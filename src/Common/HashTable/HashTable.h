@@ -547,6 +547,9 @@ protected:
     using HashValue = size_t;
     using Self = HashTable;
 
+    /// For `TwoLevelHashTable`, which places the buffers of its buckets in one shared memory area.
+    Allocator & getAllocator() { return *this; }
+
     size_t m_size = 0;        /// Amount of elements
     Cell * buf;               /// A piece of memory for all elements except the element with zero key.
     Grower grower;
@@ -1130,6 +1133,7 @@ protected:
 public:
     using key_type = Key;
     using grower_type = Grower;
+    using allocator_type = Allocator;
     using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
     using cell_type = Cell;

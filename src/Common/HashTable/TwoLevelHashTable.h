@@ -1,9 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <type_traits>
 #include <vector>
 #include <base/defines.h>
 #include <Common/HashTable/HashTable.h>
+#include <Common/HashTable/TwoLevelHashTableBucketAllocator.h>
+#include <base/arithmeticOverflow.h>
 
 
 /** Two-level hash table.
@@ -21,6 +24,10 @@
   *
   * Buckets share no state.
   * Threads may fill different buckets at the same time when every bucket is written under its own lock.
+  *
+  * Experiment: with `CLICKHOUSE_TWO_LEVEL_GROUPED=1` the buckets whose allocator is `TwoLevelHashTableBucketAllocator`
+  * are placed in one memory area and grow together, see `growAllBuckets`. Then the area can be backed by huge pages,
+  * but the resizes are not amortized anymore, and threads must not fill different buckets at the same time.
   */
 
 /// The buckets grow by 4 times while they are small, and switch to the Robin Hood mode when they become large,
@@ -37,7 +44,7 @@ template
     typename Hash,
     typename Grower,
     typename Allocator,
-    typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
+    typename ImplTable = HashTable<Key, Cell, Hash, Grower, TwoLevelHashTableBucketAllocator<Allocator>>,
     size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET
 >
 class TwoLevelHashTable :
@@ -102,11 +109,94 @@ public:
     /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.
     std::vector<size_t> bucket_cells_prefix;
 
+protected:
+    using BucketAllocator = typename Impl::allocator_type;
+    using BucketGrower = typename Impl::grower_type;
+    static constexpr bool supports_grouped_growth = NUM_BUCKETS > 1 && is_two_level_hash_table_bucket_allocator<BucketAllocator>;
 
+    /// Whether the buckets grow together, see `growAllBuckets`.
+    bool grouped_growth = supports_grouped_growth && twoLevelHashTableGroupedGrowthEnabled();
+
+    bool isBucketInArena(size_t bucket) { return impls[bucket].getAllocator().inArena(); }
+
+    /// Called before an insert into `bucket`. Grows all buckets at once, so that `bucket` does not grow on its own.
+    void ALWAYS_INLINE prepareInsertIntoBucket(size_t bucket)
+    {
+        if constexpr (supports_grouped_growth)
+        {
+            Impl & impl = impls[bucket];
+            if (grouped_growth && unlikely(impl.grower.overflow(impl.m_size + 1)))
+                growAllBuckets(bucket);
+        }
+    }
+
+    /// Move every bucket into one new memory area with the same size of every bucket, large enough for
+    /// one more element in `bucket` (or `NUM_BUCKETS` if it is called not for an insert).
+    /// The memory area is allocated at once, so it is large enough for huge pages, see `HashTableAllocator`.
+    NO_INLINE void growAllBuckets(size_t bucket, std::optional<BucketGrower> min_grower = {})
+    {
+        BucketGrower new_grower = min_grower ? *min_grower : impls[bucket < NUM_BUCKETS ? bucket : 0].grower;
+        if (!min_grower)
+            new_grower.increaseSize();
+
+        auto fits = [&]
+        {
+            for (size_t i = 0; i < NUM_BUCKETS; ++i)
+                if (new_grower.bufSize() < impls[i].grower.bufSize() || new_grower.overflow(impls[i].m_size + (i == bucket)))
+                    return false;
+            return true;
+        };
+        while (!fits())
+            new_grower.increaseSize();
+
+        const size_t cells_per_bucket = new_grower.bufSize();
+        const size_t bytes_per_bucket = Impl::allocCheckOverflow(cells_per_bucket);
+        size_t total_bytes = 0;
+        if (common::mulOverflow(bytes_per_bucket, static_cast<size_t>(NUM_BUCKETS), total_bytes))
+            throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Integer overflow trying to allocate memory for TwoLevelHashTable");
+
+        TwoLevelHashTableArena * arena = BucketAllocator::createArena(total_bytes);
+        Cell * arena_cells = reinterpret_cast<Cell *>(arena->data);
+
+        /// Nothing below throws.
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        {
+            Impl & impl = impls[i];
+            Cell * old_buf = impl.buf;
+            const size_t old_cells = impl.grower.bufSize();
+            const size_t old_bytes = impl.getBufferSizeInBytes();
+
+            impl.buf = arena_cells + i * cells_per_bucket;
+            impl.grower = new_grower;
+            impl.m_size = impl.hasZero() ? 1 : 0;
+
+            for (size_t j = 0; j < old_cells; ++j)
+                if (!old_buf[j].isZero(impl))
+                    impl.insertUniqueNonZero(&old_buf[j], old_buf[j].getHash(impl));
+
+            /// The old buffer is either private or the bucket's share of the previous arena.
+            impl.getAllocator().free(old_buf, old_bytes);
+            impl.getAllocator().adoptArena(arena);
+        }
+    }
+
+public:
     TwoLevelHashTable() = default;
 
     explicit TwoLevelHashTable(size_t size_hint)
     {
+        if constexpr (supports_grouped_growth)
+        {
+            if (grouped_growth)
+            {
+                BucketGrower grower = impls[0].grower;
+                grower.set(size_hint / NUM_BUCKETS);
+                if (grower.bufSize() > impls[0].grower.bufSize())
+                    growAllBuckets(NUM_BUCKETS, grower);
+                return;
+            }
+        }
+
         for (auto & impl : impls)
             impl.reserve(size_hint / NUM_BUCKETS);
     }
@@ -131,6 +221,7 @@ public:
             const Cell * cell = it.getPtr();
             size_t hash_value = cell->getHash(src);
             size_t buck = getBucketFromHash(hash_value);
+            prepareInsertIntoBucket(buck);
             impls[buck].insertUniqueNonZero(cell, hash_value);
         }
     }
@@ -327,6 +418,7 @@ public:
                                   bool & inserted, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
+        prepareInsertIntoBucket(buck);
         impls[buck].emplace(key_holder, it, inserted, hash_value);
     }
 
