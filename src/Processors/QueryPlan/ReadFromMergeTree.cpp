@@ -1312,7 +1312,8 @@ Pipe ReadFromMergeTree::read(
     ReadType read_type,
     size_t max_streams,
     size_t min_marks_for_concurrent_read,
-    bool use_uncompressed_cache)
+    bool use_uncompressed_cache,
+    bool align_tasks_to_columns_cache_stripes)
 {
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
@@ -1330,6 +1331,7 @@ Pipe ReadFromMergeTree::read(
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
         .use_columns_cache = settings[Setting::use_columns_cache],
+        .align_tasks_to_columns_cache_stripes = align_tasks_to_columns_cache_stripes,
         .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = total_query_nodes,
     };
@@ -1958,6 +1960,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     if (0 == info.sum_marks)
         return {};
 
+    bool align_tasks_to_columns_cache_stripes = true;
+
     if (num_streams > 1)
     {
         const size_t initial_num_streams = num_streams;
@@ -1996,8 +2000,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
 
         /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
         /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
-        /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
-        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
+        /// (adaptive granularity, local prefetched pool not allowed), and only if it does not round them up to whole
+        /// stripes of the columns cache: a stripe can be larger than such a small read, so the spread read does not
+        /// align its tasks to the stripes. The columns cache merges the entries written by the reads of parts of a stripe.
+        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity()
             && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
             && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
         {
@@ -2012,6 +2018,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             {
                 num_streams = std::min(tasks, initial_num_streams);
                 info.min_marks_for_concurrent_read = task_marks;
+                align_tasks_to_columns_cache_stripes = false;
             }
         }
 
@@ -2087,7 +2094,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             read_type,
             num_streams,
             info.min_marks_for_concurrent_read,
-            info.use_uncompressed_cache);
+            info.use_uncompressed_cache,
+            align_tasks_to_columns_cache_stripes);
 
         if (merging_pipes.empty())
             return non_intersecting_parts_ranges_read_pipe;
@@ -2117,7 +2125,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         read_type,
         num_streams,
         info.min_marks_for_concurrent_read,
-        info.use_uncompressed_cache);
+        info.use_uncompressed_cache,
+        align_tasks_to_columns_cache_stripes);
 }
 
 static ActionsDAG createProjection(const Block & header)

@@ -1,0 +1,6 @@
+2	51200	202
+MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+655334400	51200
+655334400	51200
+218427734	17066

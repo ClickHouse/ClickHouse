@@ -826,7 +826,8 @@ private:
         ReadType read_type,
         size_t max_streams,
         size_t min_marks_for_concurrent_read,
-        bool use_uncompressed_cache);
+        bool use_uncompressed_cache,
+        bool align_tasks_to_columns_cache_stripes = true);
 
     Pipe readFromPool(
         RangesInDataParts parts_with_range,

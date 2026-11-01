@@ -29,6 +29,8 @@ public:
 
         bool use_uncompressed_cache = false;
         bool use_columns_cache = false;
+        /// Whether `MergeTreeReadPool` rounds its tasks to whole stripes of the columns cache.
+        bool align_tasks_to_columns_cache_stripes = true;
         bool do_not_steal_tasks = false;
         bool use_const_size_tasks_for_remote_reading = false;
 
