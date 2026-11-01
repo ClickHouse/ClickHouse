@@ -229,7 +229,7 @@ static Int32 parseMetadataVersion(const String & version_str, const String & fil
     return version;
 }
 
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))
@@ -774,7 +774,15 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+            if (isBool(type))
+                return {Iceberg::f_boolean, true};
+            [[fallthrough]];
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::UInt16:
         case TypeIndex::Int32:
+            /// Iceberg has no 8- or 16-bit integers.
             return {"int", true};
         case TypeIndex::UInt32:
         case TypeIndex::Int64:
@@ -878,6 +886,9 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
+            if (isBool(type))
+                return "boolean";
+            [[fallthrough]];
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
@@ -1357,7 +1368,39 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
+    setFormatVersion1SchemaAndPartitionSpec(new_metadata_file_content);
+
     return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
+}
+
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
+{
+    if (metadata->getValue<Int32>(f_format_version) != 1)
+        return;
+
+    metadata->set(f_schema, deepCopy(parseTableSchemaV2Method(metadata).first));
+
+    for (const auto * field : {f_default_spec_id, f_partition_specs})
+        if (!metadata->has(field))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot write Iceberg table metadata: '{}' field is missing", field);
+
+    const auto default_spec_id = metadata->getValue<Int32>(f_default_spec_id);
+    const auto partition_specs = metadata->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 i = 0; i < partition_specs->size(); ++i)
+    {
+        const auto spec = partition_specs->getObject(i);
+        if (spec->getValue<Int32>(f_spec_id) == default_spec_id)
+        {
+            metadata->set(f_partition_spec, deepCopy(spec->get(f_fields).extract<Poco::JSON::Array::Ptr>()));
+            return;
+        }
+    }
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot write Iceberg table metadata: there is no partition spec with '{}' {}",
+        f_spec_id,
+        default_spec_id);
 }
 
 /**
@@ -2083,6 +2126,10 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
     if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
         return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    /// ClickHouse used to write a `boolean` partition value as an Avro `int`.
+    if (value.getType() == Field::Types::Int64 && isBool(value_type))
+        return Field(static_cast<UInt64>(value.safeGet<Int64>() != 0));
 
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
