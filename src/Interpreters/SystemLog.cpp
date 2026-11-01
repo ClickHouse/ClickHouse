@@ -928,18 +928,13 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepare_table_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
 
-        // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context::createCopy(context);
-        insert_context->makeQueryContext();
-        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
-
         /// With its own thread group, the flush (also in pool threads that inherit the group) asks the overcommit tracker
         /// to stop another query when the server memory limit is reached, instead of failing. It is not in `ProcessList`,
-        /// so it is never stopped itself. The group uses the query context of the `INSERT`: the global context cannot be one.
+        /// so it is never stopped itself.
         ThreadGroupPtr flush_thread_group;
         if (flush_overcommit_wait_time_microseconds != 0)
         {
-            flush_thread_group = std::make_shared<ThreadGroup>(insert_context, /*os_threads_nice_value_=*/ 0);
+            flush_thread_group = ThreadGroup::createWithoutQueryContext(getContext());
             flush_thread_group->memory_tracker.setDescription("System log flush");
             flush_thread_group->memory_tracker.setOvercommitWaitingTime(flush_overcommit_wait_time_microseconds);
         }
@@ -979,6 +974,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert->columns = std::move(columns_ast);
 
         ASTPtr query_ptr = std::move(insert);
+
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context::createCopy(context);
+        insert_context->makeQueryContext();
+        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
         InterpreterInsertQuery interpreter(
             query_ptr,

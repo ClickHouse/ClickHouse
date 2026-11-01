@@ -151,3 +151,13 @@ def test_system_log_flush_waits_for_memory_overcommit():
 
     # Without overcommit, the flush fails right away and nothing waits.
     assert overcommit_wait_time() > wait_time_before
+
+    # The flush is not profiled like a query: the profile of a `trace_log` flush would be written to `trace_log` itself.
+    node.query("SYSTEM FLUSH LOGS trace_log", settings=NO_OVERCOMMIT)
+    assert (
+        node.query(
+            "SELECT count() FROM system.trace_log "
+            "WHERE thread_name = 'SystemLogFlush' AND trace_type IN ('Real', 'CPU', 'Memory', 'MemorySample')"
+        ).strip()
+        == "0"
+    )
