@@ -144,6 +144,24 @@
 [('__name__','up'),('instance','host10'),('zone','z')]	2023-11-14 22:13:20.000	10
 [('__name__','up'),('instance','host2'),('zone','z')]	2023-11-14 22:13:20.000	2
 [('__name__','up'),('instance','host1'),('zone','z')]	2023-11-14 22:13:20.000	1
+-- sort_by_label({__name__=~'pa|pb'}, 'instance'): the sort starts from the order by full tags, as in Prometheus 3.5
+[('__name__','pb'),('instance','host01')]	2023-11-14 22:13:20.000	62
+[('__name__','pa'),('instance','host1')]	2023-11-14 22:13:20.000	61
+-- sort_by_label(abs({__name__=~'pa|pb'}), 'instance'): abs() drops the metric name but the sort starts from the same order
+[('instance','host01')]	2023-11-14 22:13:20.000	62
+[('instance','host1')]	2023-11-14 22:13:20.000	61
+-- sort_by_label_desc({__name__=~'pa|pb'}, 'instance'): the order of Prometheus 3.5
+[('__name__','pa'),('instance','host1')]	2023-11-14 22:13:20.000	61
+[('__name__','pb'),('instance','host01')]	2023-11-14 22:13:20.000	62
+-- sort_by_label_desc(abs({__name__=~'pa|pb'}), 'instance'): the same as without abs()
+[('instance','host1')]	2023-11-14 22:13:20.000	61
+[('instance','host01')]	2023-11-14 22:13:20.000	62
+-- sort_by_label({__name__=~'pa|pb'} * on() group_left() pc, 'instance'): the binary operator drops the metric name, the sort starts from the order of the left side
+[('instance','host01')]	2023-11-14 22:13:20.000	124
+[('instance','host1')]	2023-11-14 22:13:20.000	122
+-- sort_by_label_desc({__name__=~'pa|pb'} * on() group_left() pc, 'instance'): the order of Prometheus 3.5
+[('instance','host1')]	2023-11-14 22:13:20.000	122
+[('instance','host01')]	2023-11-14 22:13:20.000	124
 -- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map
 [('instance','host1')]	2023-11-14 22:13:20.000	1
 [('instance','host10')]	2023-11-14 22:13:20.000	10

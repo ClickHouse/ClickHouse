@@ -451,7 +451,15 @@ namespace
         res.step = left_argument.step;
 
         /// Prometheus keeps the order of the left side, or of the right side for group_right.
-        String sort_rank_subquery = operator_node->group_right ? right_argument.sort_rank_subquery : left_argument.sort_rank_subquery;
+        /// Without an order fixed by an inner sort*() call, an outer sort_by_label() starts from the order of that side
+        /// before its labels are projected.
+        SQLQueryPiece & sort_argument = operator_node->group_right ? right_argument : left_argument;
+        if (sort_argument.sort_rank_subquery.empty() && isUnderSortByLabel(operator_node, context))
+        {
+            sort_argument = toVectorGrid(std::move(sort_argument), context);
+            setImplicitSortRank(sort_argument, context);
+        }
+        String sort_rank_subquery = sort_argument.sort_rank_subquery;
         size_t sort_side_index = operator_node->group_right ? 1 : 0;
 
         /// Both arguments are stored as vector grids in subqueries, the properties of the sides are calculated from them.

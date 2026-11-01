@@ -57,6 +57,9 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             /// That's why we need the function timeSeriesThrowDuplicateSeriesIf() to detect such cases and throw an exception.
 
             /// An order fixed by an inner sort*() call is kept through the series each row comes from.
+            /// Without one, an outer sort_by_label() starts from the order of the series before the metric name is dropped.
+            if (query_piece.sort_rank_subquery.empty() && query_piece.node && isUnderSortByLabel(query_piece.node, context))
+                setImplicitSortRank(query_piece, context);
             String source_rank_subquery = query_piece.sort_rank_subquery;
 
             /// Step 1:

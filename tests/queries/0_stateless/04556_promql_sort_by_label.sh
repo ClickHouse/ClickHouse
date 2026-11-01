@@ -55,6 +55,14 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
     ('lz', {'instance':'host01'}, [(toDateTime64(1700000000, 3, 'UTC'), 51)]),
     ('lz', {'instance':'host1'}, [(toDateTime64(1700000000, 3, 'UTC'), 52)]),
     ('lz', {'instance':'host001'}, [(toDateTime64(1700000000, 3, 'UTC'), 53)]);
+
+-- 'pa' and 'pb' have different metric names and equal numbers written with different leading zeros: the order by full tags
+-- (pa, pb) differs from the order by labels without the metric name (host01, host1), and Prometheus's comparator makes
+-- the sort result depend on its input order. 'pc' is a single series to match with.
+INSERT INTO ts (metric_name, tags, samples) VALUES
+    ('pa', {'instance':'host1'}, [(toDateTime64(1700000000, 3, 'UTC'), 61)]),
+    ('pb', {'instance':'host01'}, [(toDateTime64(1700000000, 3, 'UTC'), 62)]),
+    ('pc', {'job':'x'}, [(toDateTime64(1700000000, 3, 'UTC'), 2)]);
 "
 
 promql_client()
@@ -157,6 +165,24 @@ promql_client -q "abs(sort_by_label(mem, 'host'))"
 
 echo "-- label_replace(sort_by_label_desc(up, 'instance'), ...): label changes keep the order"
 promql_client -q "label_replace(sort_by_label_desc(up, 'instance'), 'zone', 'z', 'instance', '.*')"
+
+echo "-- sort_by_label({__name__=~'pa|pb'}, 'instance'): the sort starts from the order by full tags, as in Prometheus 3.5"
+promql_client -q 'sort_by_label({__name__=~"pa|pb"}, "instance")'
+
+echo "-- sort_by_label(abs({__name__=~'pa|pb'}), 'instance'): abs() drops the metric name but the sort starts from the same order"
+promql_client -q 'sort_by_label(abs({__name__=~"pa|pb"}), "instance")'
+
+echo "-- sort_by_label_desc({__name__=~'pa|pb'}, 'instance'): the order of Prometheus 3.5"
+promql_client -q 'sort_by_label_desc({__name__=~"pa|pb"}, "instance")'
+
+echo "-- sort_by_label_desc(abs({__name__=~'pa|pb'}), 'instance'): the same as without abs()"
+promql_client -q 'sort_by_label_desc(abs({__name__=~"pa|pb"}), "instance")'
+
+echo "-- sort_by_label({__name__=~'pa|pb'} * on() group_left() pc, 'instance'): the binary operator drops the metric name, the sort starts from the order of the left side"
+promql_client -q 'sort_by_label({__name__=~"pa|pb"} * on() group_left() pc, "instance")'
+
+echo "-- sort_by_label_desc({__name__=~'pa|pb'} * on() group_left() pc, 'instance'): the order of Prometheus 3.5"
+promql_client -q 'sort_by_label_desc({__name__=~"pa|pb"} * on() group_left() pc, "instance")'
 
 echo "-- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map"
 promql_client -q "sum by (instance) (sort(up))" | LC_ALL=C sort
