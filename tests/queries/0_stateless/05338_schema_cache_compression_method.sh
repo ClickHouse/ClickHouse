@@ -173,9 +173,9 @@ $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_hdr_canon', '
 # Case M: Secret header redaction in schema inference cache
 echo "Case M: Secret header redaction"
 url_secret="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_secret"
-$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_secret', 'CSV', 'x UInt64', 'none', headers('Authorization' = 'Bearer secret-key-value-12345'))"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_secret', 'CSV', 'x UInt64', 'none', headers('X-API-Key' = 'secret-key-value-12345'))"
 $CLICKHOUSE_CLIENT -q "
-SELECT storage, format, headers LIKE '%secret-key-value%', headers LIKE 'authorization:hash:%'
+SELECT storage, format, headers LIKE '%secret-key-value%', headers LIKE 'x-api-key:hash:%'
 FROM system.schema_inference_cache
 WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_secret%'
 SETTINGS schema_inference_use_cache_for_url=0
