@@ -562,6 +562,14 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         auto current_field = schema_fields->getObject(i);
         if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
+            /// Tables written before `DateTime` and `DateTime64` were declared as `timestamptz` have
+            /// `timestamp` columns, and `timestamp` cannot be promoted to `timestamptz`. Keep the existing
+            /// type, so that a `MODIFY COLUMN` that only changes nullability still works on such tables.
+            const auto & old_type_var = current_field->get(Iceberg::f_type);
+            if (old_type_var.isString() && new_type.first.isString() && old_type_var.extract<String>() == Iceberg::f_timestamp
+                && new_type.first.extract<String>() == Iceberg::f_timestamptz)
+                new_type.first = old_type_var;
+
             if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
 
