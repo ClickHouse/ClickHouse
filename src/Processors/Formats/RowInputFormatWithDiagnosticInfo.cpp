@@ -1,6 +1,7 @@
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Formats/verbosePrintString.h>
 #include <IO/Operators.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/scope_guard.h>
 #include <DataTypes/IDataType.h>
@@ -45,42 +46,55 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
     /// A failed EOF probe empties the working buffer and increments count(), although
     /// the last buffer's contents may still be retained for diagnostics.
     const bool at_eof = in->eof();
-    const bool restore_after_eof =
+    const size_t expected_buffer_start =
+        offset_of_prev_row == std::numeric_limits<size_t>::max()
+        ? bytes_read_at_start_of_buffer_on_current_row
+        : bytes_read_at_start_of_buffer_on_prev_row;
+    bool restore_after_eof =
         at_eof
         && in->buffer().empty()
         && buffer_begin_on_current_row
         && in->internalBuffer().begin() == buffer_begin_on_current_row
         && in->internalBuffer().size() >= buffer_size_on_current_row
         && in->position() == buffer_begin_on_current_row + buffer_size_on_current_row
-        && bytes_read_at_start_of_buffer_on_current_row == bytes_read_at_start_of_buffer_on_prev_row
+        && bytes_read_at_start_of_buffer_on_current_row == expected_buffer_start
         && in->count() == bytes_read_at_start_of_buffer_on_current_row + buffer_size_on_current_row;
+
+    const auto saved_buffer = in->buffer();
+    auto * const saved_position = in->position();
+    auto * peekable = restore_after_eof ? dynamic_cast<PeekableReadBuffer *>(in) : nullptr;
+    if (peekable && !peekable->beginDiagnosticReplay(buffer_begin_on_current_row, buffer_size_on_current_row))
+        restore_after_eof = false;
 
     if (at_eof && !restore_after_eof)
         return std::make_pair(
             "Buffer has gone, cannot extract information about what has been parsed.",
             "Buffer has gone, cannot extract information about what has been parsed.");
 
-    const auto saved_buffer = in->buffer();
-    auto * const saved_position = in->position();
     SCOPE_EXIT({
         if (restore_after_eof)
         {
+            if (peekable)
+                peekable->endDiagnosticReplay();
             in->buffer() = saved_buffer;
             in->position() = saved_position;
         }
     });
 
     if (restore_after_eof)
-        in->buffer() = ReadBuffer::Buffer(buffer_begin_on_current_row, buffer_begin_on_current_row + buffer_size_on_current_row);
+    {
+        auto * replay_begin = in->internalBuffer().begin();
+        in->buffer() = ReadBuffer::Buffer(replay_begin, replay_begin + buffer_size_on_current_row);
+    }
 
     const auto & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns(serializations);
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
     size_t bytes_read_at_start_of_buffer = restore_after_eof
-        ? bytes_read_at_start_of_buffer_on_prev_row
+        ? expected_buffer_start
         : in->count() - in->offset();
-    if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
+    if (bytes_read_at_start_of_buffer != expected_buffer_start)
     {
         out_diag << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
         out_data << "Could not collect raw data because two last rows aren't in buffer (rare case)\n";

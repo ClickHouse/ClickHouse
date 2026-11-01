@@ -164,6 +164,11 @@ TEST(RowInputFormatDiagnostics, InvalidLastRowWithoutTrailingNewline)
 
                 auto check_payload = [&](ReadBuffer & buf)
                 {
+                    SCOPED_TRACE(::testing::Message()
+                        << (csv ? "CSV" : "TSV")
+                        << " preceding_row=" << preceding_row
+                        << " trailing_newline=" << trailing_newline
+                        << " buffer_size=" << buf.buffer().size());
                     auto check_diagnostic = [&](auto & format)
                     {
                         try

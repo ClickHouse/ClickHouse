@@ -94,6 +94,62 @@ bool PeekableReadBuffer::peekNext()
     return sub_buf->next();
 }
 
+bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
+{
+    if (peeked_size)
+        return currentlyReadFromOwnMemory();
+
+    if (checkpoint || !size || diagnostic_saved_working_buffer
+        || sub_buf->internalBuffer().begin() != begin
+        || sub_buf->internalBuffer().size() < size)
+        return false;
+
+    const Buffer saved_working_buffer = working_buffer;
+    const Buffer saved_internal_buffer = internal_buffer;
+    const Position saved_position = pos;
+
+    /// After a failed EOF probe the source window is empty, but its old storage
+    /// can still be retained. Copy it before replay so checkpoints remain valid.
+    BufferBase::set(sub_buf->buffer().begin(), sub_buf->buffer().size(), sub_buf->offset());
+    try
+    {
+        resizeOwnMemoryIfNecessary(size);
+    }
+    catch (...)
+    {
+        working_buffer = saved_working_buffer;
+        internal_buffer = saved_internal_buffer;
+        pos = saved_position;
+        throw;
+    }
+
+    memcpy(getMemoryData(), begin, size);
+    peeked_size = size;
+    BufferBase::set(getMemoryData(), size, size);
+
+    diagnostic_saved_working_buffer.emplace(saved_working_buffer);
+    diagnostic_saved_internal_buffer.emplace(saved_internal_buffer);
+    diagnostic_saved_position = saved_position;
+    diagnostic_saved_bytes = bytes;
+    return true;
+}
+
+void PeekableReadBuffer::endDiagnosticReplay()
+{
+    if (!diagnostic_saved_working_buffer)
+        return;
+
+    chassert(!checkpoint);
+    peeked_size = 0;
+    checkpoint_in_own_memory = false;
+    working_buffer = *diagnostic_saved_working_buffer;
+    internal_buffer = *diagnostic_saved_internal_buffer;
+    pos = diagnostic_saved_position;
+    bytes = diagnostic_saved_bytes;
+    diagnostic_saved_working_buffer.reset();
+    diagnostic_saved_internal_buffer.reset();
+}
+
 void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 {
     checkStateCorrect();
