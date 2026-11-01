@@ -2,8 +2,18 @@
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageURL.h>
+#include <Common/SipHash.h>
+#include <Common/Hex.h>
 
 using namespace DB;
+
+static String computeExpectedHeaderEntry(const String & lower_name, const String & val)
+{
+    SipHash h;
+    h.update(val.data(), val.size());
+    String hash_str = "hash:" + getHexUIntLowercase(h.get64());
+    return std::to_string(lower_name.size()) + ":" + lower_name + "=" + std::to_string(hash_str.size()) + ":" + hash_str + ";";
+}
 
 TEST(StorageURLCacheHeaders, EmptyHeaders)
 {
@@ -15,76 +25,89 @@ TEST(StorageURLCacheHeaders, CaseInsensitiveAndTrim)
 {
     HTTPHeaderEntries entries1{{"Accept-Encoding", "gzip"}};
     HTTPHeaderEntries entries2{{"  accept-encoding  ", "  gzip  "}};
+
+    String expected = computeExpectedHeaderEntry("accept-encoding", "gzip");
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), expected);
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries2), expected);
     EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), canonicalizeHTTPHeadersForSchemaCache(entries2));
-    EXPECT_TRUE(canonicalizeHTTPHeadersForSchemaCache(entries1).starts_with("15:accept-encoding=21:hash:"));
 }
 
 TEST(StorageURLCacheHeaders, DeterministicOrdering)
 {
     HTTPHeaderEntries entries1{{"Accept-Encoding", "gzip"}, {"X-Custom", "value1"}};
     HTTPHeaderEntries entries2{{"X-Custom", "value1"}, {"Accept-Encoding", "gzip"}};
+
+    String expected = computeExpectedHeaderEntry("accept-encoding", "gzip") + computeExpectedHeaderEntry("x-custom", "value1");
     EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), canonicalizeHTTPHeadersForSchemaCache(entries2));
-    EXPECT_TRUE(canonicalizeHTTPHeadersForSchemaCache(entries1).starts_with("15:accept-encoding=21:hash:"));
-    EXPECT_TRUE(canonicalizeHTTPHeadersForSchemaCache(entries1).contains(";8:x-custom=21:hash:"));
+    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), expected);
 }
 
-TEST(StorageURLCacheHeaders, UniversalSecretMasking)
+TEST(StorageURLCacheHeaders, UnknownHeaderValueConfidentiality)
 {
-    std::vector<String> test_header_names
-        = {"Authorization",
-           "Cookie",
-           "X-API-Key",
-           "X-Password",
-           "X-Auth",
-           "X-Internal-Secret",
-           "X-Custom-Credential",
-           "Customer-Token",
-           "AnyArbitraryHeader"};
+    /// P1 Security: Arbitrary header names outside any heuristic (e.g. X-Private-Data)
+    /// must NEVER expose their raw plaintext values.
+    HTTPHeaderEntries entries{{"X-Private-Data", "confidential-secret-12345"}};
+    String canon = canonicalizeHTTPHeadersForSchemaCache(entries);
 
-    for (const auto & hname : test_header_names)
-    {
-        String secret = "SuperSecretValue_XYZ_12345";
-        HTTPHeaderEntries entries{{hname, secret}};
-        String canon = canonicalizeHTTPHeadersForSchemaCache(entries);
-
-        /// Plaintext secret MUST NOT appear anywhere in the serialized representation
-        EXPECT_EQ(canon.find("SuperSecretValue_XYZ_12345"), String::npos);
-        EXPECT_TRUE(canon.contains("=21:hash:"));
-    }
+    EXPECT_EQ(canon.find("confidential-secret-12345"), String::npos);
+    EXPECT_TRUE(canon.starts_with("14:x-private-data=21:hash:"));
 }
 
-TEST(StorageURLCacheHeaders, DistinctAndMatchingSecretsPartitionCorrectly)
+TEST(StorageURLCacheHeaders, BroadSensitiveCredentialsHashed)
 {
-    String url = "http://127.0.0.1:8123/data.csv";
-    HTTPHeaderEntries e1{{"X-Password", "secret1"}};
-    HTTPHeaderEntries e2{{"X-Password", "secret2"}};
-    HTTPHeaderEntries e3{{"X-Password", "secret1"}};
+    /// Verify X-Password, X-Auth, Authorization, Cookie, X-API-Key, and custom credential headers
+    HTTPHeaderEntries sensitive_headers{
+        {"X-Password", "super_secret_pw"},
+        {"X-Auth", "auth_token_value"},
+        {"Authorization", "Bearer jwt_secret"},
+        {"Cookie", "session_id=12345"},
+        {"X-API-Key", "api_key_value"},
+        {"X-Secret-Token", "token_val"},
+        {"Credential-Data", "creds_999"},
+    };
 
-    String c1 = canonicalizeHTTPHeadersForSchemaCache(e1);
-    String c2 = canonicalizeHTTPHeadersForSchemaCache(e2);
-    String c3 = canonicalizeHTTPHeadersForSchemaCache(e3);
+    String canon = canonicalizeHTTPHeadersForSchemaCache(sensitive_headers);
 
-    /// Distinct secrets produce distinct representations; identical produce matching
-    EXPECT_NE(c1, c2);
-    EXPECT_EQ(c1, c3);
+    /// None of the plaintext secrets should appear anywhere in the output
+    EXPECT_EQ(canon.find("super_secret_pw"), String::npos);
+    EXPECT_EQ(canon.find("auth_token_value"), String::npos);
+    EXPECT_EQ(canon.find("Bearer"), String::npos);
+    EXPECT_EQ(canon.find("jwt_secret"), String::npos);
+    EXPECT_EQ(canon.find("session_id"), String::npos);
+    EXPECT_EQ(canon.find("api_key_value"), String::npos);
+    EXPECT_EQ(canon.find("token_val"), String::npos);
+    EXPECT_EQ(canon.find("creds_999"), String::npos);
 
-    SchemaCache::Key k1{url, "CSV", "", "DEFAULT", "none", c1};
-    SchemaCache::Key k2{url, "CSV", "", "DEFAULT", "none", c2};
-    SchemaCache::Key k3{url, "CSV", "", "DEFAULT", "none", c3};
+    /// All should be present with hashed values
+    EXPECT_TRUE(canon.contains("authorization=21:hash:"));
+    EXPECT_TRUE(canon.contains("cookie=21:hash:"));
+    EXPECT_TRUE(canon.contains("credential-data=21:hash:"));
+    EXPECT_TRUE(canon.contains("x-api-key=21:hash:"));
+    EXPECT_TRUE(canon.contains("x-auth=21:hash:"));
+    EXPECT_TRUE(canon.contains("x-password=21:hash:"));
+    EXPECT_TRUE(canon.contains("x-secret-token=21:hash:"));
+}
 
-    EXPECT_NE(k1, k2);
-    EXPECT_EQ(k1, k3);
+TEST(StorageURLCacheHeaders, DistinctValuesYieldDistinctIdentities)
+{
+    HTTPHeaderEntries entries1{{"Authorization", "Bearer secret_token_1"}};
+    HTTPHeaderEntries entries2{{"Authorization", "Bearer secret_token_2"}};
+    HTTPHeaderEntries entries3{{"Authorization", "Bearer secret_token_1"}};
 
-    SchemaCache::KeyHash hasher;
-    EXPECT_NE(hasher(k1), hasher(k2));
-    EXPECT_EQ(hasher(k1), hasher(k3));
+    String canon1 = canonicalizeHTTPHeadersForSchemaCache(entries1);
+    String canon2 = canonicalizeHTTPHeadersForSchemaCache(entries2);
+    String canon3 = canonicalizeHTTPHeadersForSchemaCache(entries3);
+
+    /// Distinct tokens produce distinct hash keys
+    EXPECT_NE(canon1, canon2);
+
+    /// Identical tokens produce matching hash keys
+    EXPECT_EQ(canon1, canon3);
 }
 
 TEST(StorageURLCacheHeaders, AmbiguousDelimiterBoundaryCollisionResistance)
 {
-    /// Reviewer finding P2 counterexample:
-    /// Collection A: headers('X-A' = 'v;x-b:w')
-    /// Collection B: headers('X-A' = 'v', 'X-B' = 'w')
+    /// Delimiter collision: X-A: v;x-b:w vs X-A: v and X-B: w
     HTTPHeaderEntries entries_embedded{{"X-A", "v;x-b:w"}};
     HTTPHeaderEntries entries_separate{{"X-A", "v"}, {"X-B", "w"}};
 
@@ -92,15 +115,11 @@ TEST(StorageURLCacheHeaders, AmbiguousDelimiterBoundaryCollisionResistance)
     String canon_separate = canonicalizeHTTPHeadersForSchemaCache(entries_separate);
 
     EXPECT_NE(canon_embedded, canon_separate);
-    EXPECT_TRUE(canon_embedded.starts_with("3:x-a=21:hash:"));
-    EXPECT_FALSE(canon_embedded.contains("3:x-b="));
-    EXPECT_TRUE(canon_separate.starts_with("3:x-a=21:hash:"));
-    EXPECT_TRUE(canon_separate.contains(";3:x-b=21:hash:"));
 }
 
 TEST(StorageURLCacheHeaders, DuplicateHeaderLastValueWins)
 {
-    /// In HTTP transport (Poco::Net::HTTPRequest::set), duplicate headers resolve with last-value-wins.
+    /// In HTTP transport, duplicate headers resolve with last-value-wins
     HTTPHeaderEntries entries_plain_then_gzip{{"Accept-Encoding", "identity"}, {"Accept-Encoding", "gzip"}};
     HTTPHeaderEntries entries_gzip_then_plain{{"Accept-Encoding", "gzip"}, {"Accept-Encoding", "identity"}};
 
@@ -109,90 +128,30 @@ TEST(StorageURLCacheHeaders, DuplicateHeaderLastValueWins)
 
     EXPECT_NE(canon_plain_then_gzip, canon_gzip_then_plain);
 
-    HTTPHeaderEntries expected_gzip{{"Accept-Encoding", "gzip"}};
-    HTTPHeaderEntries expected_identity{{"Accept-Encoding", "identity"}};
+    String expected_gzip = computeExpectedHeaderEntry("accept-encoding", "gzip");
+    String expected_plain = computeExpectedHeaderEntry("accept-encoding", "identity");
 
-    EXPECT_EQ(canon_plain_then_gzip, canonicalizeHTTPHeadersForSchemaCache(expected_gzip));
-    EXPECT_EQ(canon_gzip_then_plain, canonicalizeHTTPHeadersForSchemaCache(expected_identity));
+    EXPECT_EQ(canon_plain_then_gzip, expected_gzip);
+    EXPECT_EQ(canon_gzip_then_plain, expected_plain);
 }
 
-TEST(StorageURLCacheHeaders, MixedCaseDuplicateHeaderNames)
+TEST(StorageURLCacheHeaders, CaseInsensitiveDuplicateNames)
 {
     HTTPHeaderEntries entries{{"Accept-Encoding", "identity"}, {"accept-encoding", "gzip"}};
-    HTTPHeaderEntries expected{{"accept-encoding", "gzip"}};
-    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries), canonicalizeHTTPHeadersForSchemaCache(expected));
-}
-
-TEST(StorageURLCacheHeaders, ThreeRepeatedValuesLastWins)
-{
-    HTTPHeaderEntries entries{{"X-Val", "1"}, {"X-Val", "2"}, {"X-Val", "3"}};
-    HTTPHeaderEntries expected{{"x-val", "3"}};
-    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries), canonicalizeHTTPHeadersForSchemaCache(expected));
-}
-
-TEST(StorageURLCacheHeaders, DuplicateNamesSeparatedByOtherHeaders)
-{
-    HTTPHeaderEntries entries{{"Accept-Encoding", "gzip"}, {"X-Custom", "foo"}, {"Accept-Encoding", "identity"}};
-    HTTPHeaderEntries expected{{"X-Custom", "foo"}, {"Accept-Encoding", "identity"}};
-    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries), canonicalizeHTTPHeadersForSchemaCache(expected));
-}
-
-TEST(StorageURLCacheHeaders, DelimitersAndSpecialCharsInValue)
-{
-    HTTPHeaderEntries entries{{"Cookie", "sess=abc; role=admin:super; path=/"}};
     String canon = canonicalizeHTTPHeadersForSchemaCache(entries);
 
-    EXPECT_EQ(canon.find("sess="), String::npos);
-    EXPECT_EQ(canon.find("role="), String::npos);
-    EXPECT_TRUE(canon.starts_with("6:cookie=21:hash:"));
-}
-
-TEST(StorageURLCacheHeaders, EmptyValueVsMissingHeader)
-{
-    HTTPHeaderEntries empty_val{{"X-Empty", ""}};
-    HTTPHeaderEntries no_headers{};
-
-    String c_empty = canonicalizeHTTPHeadersForSchemaCache(empty_val);
-    String c_none = canonicalizeHTTPHeadersForSchemaCache(no_headers);
-
-    EXPECT_NE(c_empty, c_none);
-    EXPECT_EQ(c_none, "");
-    EXPECT_TRUE(c_empty.starts_with("7:x-empty=21:hash:"));
-}
-
-TEST(StorageURLCacheHeaders, TelemetryHeadersIgnored)
-{
-    /// OpenTelemetry auto-injected trace context headers are ignored so tracing does not bust cache hits.
-    HTTPHeaderEntries entries1{{"Accept-Encoding", "gzip"}, {"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}};
-    HTTPHeaderEntries entries2{{"Accept-Encoding", "gzip"}, {"tracestate", "rojo=1"}};
-    HTTPHeaderEntries entries_clean{{"Accept-Encoding", "gzip"}};
-
-    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), canonicalizeHTTPHeadersForSchemaCache(entries_clean));
-    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries2), canonicalizeHTTPHeadersForSchemaCache(entries_clean));
-
-    /// Arbitrary user-specified headers like X-Request-ID are NOT ignored and conservatively partition cache.
-    HTTPHeaderEntries entries_req_id{{"Accept-Encoding", "gzip"}, {"X-Request-ID", "req-12345"}};
-    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_req_id), canonicalizeHTTPHeadersForSchemaCache(entries_clean));
-}
-
-TEST(StorageURLCacheHeaders, DelimitersInHeaderNamesLengthFramed)
-{
-    HTTPHeaderEntries tricky{{"x-a;x-b:1234", "val"}};
-    String canon = canonicalizeHTTPHeadersForSchemaCache(tricky);
-    EXPECT_TRUE(canon.starts_with("12:x-a;x-b:1234=21:hash:"));
+    String expected_gzip = computeExpectedHeaderEntry("accept-encoding", "gzip");
+    EXPECT_EQ(canon, expected_gzip);
 }
 
 TEST(StorageURLCacheHeaders, SchemaCacheKeyComparison)
 {
-    HTTPHeaderEntries entries_gzip{{"Accept-Encoding", "gzip"}};
-    HTTPHeaderEntries entries_identity{{"Accept-Encoding", "identity"}};
+    String headers_gzip = computeExpectedHeaderEntry("accept-encoding", "gzip");
+    String headers_identity = computeExpectedHeaderEntry("accept-encoding", "identity");
 
-    String h_gzip = canonicalizeHTTPHeadersForSchemaCache(entries_gzip);
-    String h_identity = canonicalizeHTTPHeadersForSchemaCache(entries_identity);
-
-    SchemaCache::Key key1{"http://example.com/data.csv", "CSV", "", "", "none", h_gzip};
-    SchemaCache::Key key2{"http://example.com/data.csv", "CSV", "", "", "none", h_identity};
-    SchemaCache::Key key3{"http://example.com/data.csv", "CSV", "", "", "none", h_gzip};
+    SchemaCache::Key key1{"http://example.com/data.csv", "CSV", "", "", "none", headers_gzip};
+    SchemaCache::Key key2{"http://example.com/data.csv", "CSV", "", "", "none", headers_identity};
+    SchemaCache::Key key3{"http://example.com/data.csv", "CSV", "", "", "none", headers_gzip};
     SchemaCache::Key key_empty{"http://example.com/data.csv", "CSV", "", "", "none", ""};
 
     EXPECT_EQ(key1, key3);

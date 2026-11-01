@@ -194,12 +194,6 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
     if (headers.empty())
         return "";
 
-    auto is_ignorable = [](std::string_view name) -> bool
-    {
-        /// Ignore OpenTelemetry trace context headers auto-injected by ClickHouse downstream.
-        return name == "traceparent" || name == "tracestate";
-    };
-
     auto trim = [](std::string_view s) -> std::string_view
     {
         while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
@@ -209,9 +203,8 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
         return s;
     };
 
-    /// In Poco::Net::HTTPRequest::set (inherited from NameValueCollection::set), headers are
-    /// set with case-insensitive name matching where the LAST value for a given name wins.
-    /// We iterate in original appearance order and retain the last effective value for each normalized name.
+    /// Use a map to enforce case-insensitive deduplication and last-value-wins
+    /// matching HTTP request transport semantics.
     std::unordered_map<String, String> unique_headers;
 
     for (const auto & entry : headers)
@@ -225,13 +218,12 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
         for (char c : trimmed_name)
             lower_name.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
 
-        if (is_ignorable(lower_name))
-            continue;
-
         auto trimmed_val = trim(entry.value);
 
-        /// Every header value is unconditionally hashed using SipHash-64 to prevent any credential disclosure.
-        /// Plaintext credentials never appear in system.schema_inference_cache or internal cache keys.
+        /// Never expose raw user-supplied header values in memory or system tables.
+        /// Hash every header value with SipHash to provide unconditional confidentiality
+        /// for all credentials (including custom/unknown headers) while preserving
+        /// distinct internal cache identities.
         SipHash h;
         h.update(trimmed_val.data(), trimmed_val.size());
         UInt64 hash_val = h.get64();
@@ -241,7 +233,6 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
     if (unique_headers.empty())
         return "";
 
-    /// Sort unique header names lexicographically to ensure ordering invariance for distinct headers.
     std::vector<std::pair<String, String>> normalized(unique_headers.begin(), unique_headers.end());
     std::sort(normalized.begin(), normalized.end(), [](const auto & a, const auto & b)
     {
@@ -249,7 +240,7 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
     });
 
     /// Unambiguous length-delimited serialization: len(name):name=len(val):val;
-    /// Prevents delimiter injection collisions when names or values contain delimiters.
+    /// Prevents delimiter injection collisions when values contain semicolons, colons, or equal signs.
     String result;
     for (const auto & [name, val] : normalized)
     {
