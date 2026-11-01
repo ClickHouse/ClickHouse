@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -10,7 +11,6 @@
 namespace DB
 {
 
-class ActionsDAG;
 class AggregatingStep;
 struct AggregateDescription;
 
@@ -83,6 +83,10 @@ enum class FilterResult
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
 /// many times and on which rows it was evaluated.
 [[nodiscard]] bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
+
+/// Whether another node of `dag` has the result name of `node`. The reader and the PREWHERE read steps find columns by
+/// name, so another node under the same name would be taken for this one.
+[[nodiscard]] bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node);
 
 /// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
