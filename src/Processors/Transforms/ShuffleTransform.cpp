@@ -26,6 +26,11 @@ namespace ErrorCodes
 namespace
 {
 
+/// The maximum number of buckets to scatter the rows into.
+/// Every bucket has at least about `max_block_size` rows, so a bucket fits in the CPU cache in most cases,
+/// and the number of small pieces created while scattering is bounded.
+constexpr size_t max_num_buckets = 256;
+
 bool isKeyUInt32(const Block & header, size_t key_position)
 {
     if (key_position >= header.columns())
@@ -48,6 +53,16 @@ inline UInt64 randomBelow(pcg64 & rng, UInt64 n)
     return static_cast<UInt64>((static_cast<unsigned __int128>(rng()) * n) >> 64);
 }
 
+/// A uniformly random permutation of [0, n): the Fisher-Yates shuffle.
+IColumn::Permutation randomPermutation(pcg64 & rng, size_t n)
+{
+    IColumn::Permutation permutation(n);
+    std::iota(permutation.begin(), permutation.end(), 0);
+    for (size_t i = n; i > 1; --i)
+        std::swap(permutation[i - 1], permutation[randomBelow(rng, i)]);
+    return permutation;
+}
+
 }
 
 PartialShuffleTransform::PartialShuffleTransform(
@@ -55,22 +70,37 @@ PartialShuffleTransform::PartialShuffleTransform(
     size_t key_position_,
     int direction_,
     UInt64 limit_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t range_index_,
+    size_t num_ranges_)
     : IAccumulatingTransform(header, header)
     , key_position(key_position_)
     , direction(direction_)
     , limit(limit_)
     , max_block_size(std::max<size_t>(max_block_size_, 1))
+    , range_index(range_index_)
+    , num_ranges(std::max<size_t>(num_ranges_, 1))
     , is_key_uint32(isKeyUInt32(*header, key_position_))
     , rng(randomSeed())
     , threshold(std::numeric_limits<UInt64>::max())
 {
-    accumulated_columns.resize(header->columns());
+    empty_columns.resize(header->columns());
     for (size_t i = 0; i < header->columns(); ++i)
     {
         const auto & column = header->getByPosition(i).column;
         if (i != key_position && !isColumnConst(*column))
-            accumulated_columns[i] = removeSpecialRepresentations(column)->cloneEmpty();
+            empty_columns[i] = removeSpecialRepresentations(column)->cloneEmpty();
+    }
+
+    if (limit && num_ranges != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shuffle with limit cannot use ranges of keys");
+
+    if (limit)
+    {
+        accumulated_columns.resize(empty_columns.size());
+        for (size_t i = 0; i < empty_columns.size(); ++i)
+            if (empty_columns[i])
+                accumulated_columns[i] = empty_columns[i]->cloneEmpty();
     }
 }
 
@@ -84,8 +114,12 @@ void PartialShuffleTransform::consume(Chunk chunk)
     Columns columns = chunk.detachColumns();
 
     for (size_t i = 0; i < columns.size(); ++i)
-        if (accumulated_columns[i])
+    {
+        if (empty_columns[i])
             columns[i] = columns[i]->convertToFullColumnIfConst();
+        else
+            columns[i] = nullptr;
+    }
 
     if (limit)
     {
@@ -93,10 +127,7 @@ void PartialShuffleTransform::consume(Chunk chunk)
         return;
     }
 
-    for (size_t i = 0; i < columns.size(); ++i)
-        if (accumulated_columns[i])
-            accumulated_columns[i]->insertRangeFrom(*columns[i], 0, num_rows);
-
+    chunks.push_back(std::move(columns));
     accumulated_rows += num_rows;
 }
 
@@ -191,43 +222,152 @@ void PartialShuffleTransform::prepareResult()
     result_prepared = true;
 
     if (limit)
-        pruneReservoir();
+        prepareResultWithLimit();
+    else
+        scatterIntoBuckets();
+}
 
-    const size_t num_rows = accumulated_rows;
+void PartialShuffleTransform::prepareResultWithLimit()
+{
+    pruneReservoir();
 
-    result_columns.resize(accumulated_columns.size());
+    /// The keys of the selected rows matter (they are compared with the keys of other streams when merging),
+    /// so the rows are ordered by their keys. The number of rows is at most `limit`.
+    IColumn::Permutation permutation(accumulated_rows);
+    std::iota(permutation.begin(), permutation.end(), 0);
+    ::sort(permutation.begin(), permutation.end(),
+        [&](size_t lhs, size_t rhs) { return reservoir_keys[lhs] < reservoir_keys[rhs]; });
+
+    part_keys.resize(accumulated_rows);
+    for (size_t i = 0; i < accumulated_rows; ++i)
+        part_keys[i] = reservoir_keys[permutation[i]];
+    Keys().swap(reservoir_keys);
+
+    part_columns.resize(accumulated_columns.size());
     for (size_t i = 0; i < accumulated_columns.size(); ++i)
         if (accumulated_columns[i])
-            result_columns[i] = std::move(accumulated_columns[i]);
+            part_columns[i] = accumulated_columns[i]->permute(permutation, 0);
     accumulated_columns.clear();
+}
 
-    result_permutation.resize(num_rows);
-    std::iota(result_permutation.begin(), result_permutation.end(), 0);
-
-    if (limit)
-    {
-        /// The keys of the selected rows matter (they are compared with the keys of other streams when merging),
-        /// so the rows are ordered by their keys. The number of rows is at most `limit`.
-        ::sort(result_permutation.begin(), result_permutation.end(),
-            [&](size_t lhs, size_t rhs) { return reservoir_keys[lhs] < reservoir_keys[rhs]; });
-
-        result_keys.resize(num_rows);
-        for (size_t i = 0; i < num_rows; ++i)
-            result_keys[i] = reservoir_keys[result_permutation[i]];
-
-        Keys().swap(reservoir_keys);
+void PartialShuffleTransform::scatterIntoBuckets()
+{
+    if (accumulated_rows == 0)
         return;
+
+    const size_t num_buckets = std::clamp<size_t>(accumulated_rows / max_block_size, 1, max_num_buckets);
+
+    buckets.resize(num_buckets);
+    for (auto & bucket : buckets)
+    {
+        bucket.resize(empty_columns.size());
+        for (size_t i = 0; i < empty_columns.size(); ++i)
+            if (empty_columns[i])
+                bucket[i] = empty_columns[i]->cloneEmpty();
     }
+    bucket_rows.assign(num_buckets, 0);
 
-    /// The Fisher-Yates shuffle: a uniformly random permutation in O(n).
-    for (size_t i = num_rows; i > 1; --i)
-        std::swap(result_permutation[i - 1], result_permutation[randomBelow(rng, i)]);
+    IColumn::Selector selector;
+    for (auto & columns : chunks)
+    {
+        size_t num_rows = 0;
+        for (const auto & column : columns)
+            if (column)
+                num_rows = column->size();
 
-    /// Independent random keys in sorted order: radix sort is O(n).
-    result_keys.resize(num_rows);
-    for (auto & key : result_keys)
-        key = rng();
-    RadixSort<RadixSortUIntTraits<UInt64>>::executeLSD(result_keys.data(), result_keys.size());
+        if (num_buckets == 1)
+        {
+            for (size_t i = 0; i < columns.size(); ++i)
+                if (columns[i])
+                    buckets[0][i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+            columns.clear();
+            continue;
+        }
+
+        if (num_rows == 0)
+        {
+            /// There are no accumulated columns, only the number of rows matters.
+            columns.clear();
+            continue;
+        }
+
+        /// Every row goes into a random bucket.
+        selector.resize(num_rows);
+        for (auto & bucket : selector)
+        {
+            bucket = randomBelow(rng, num_buckets);
+            ++bucket_rows[bucket];
+        }
+
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            if (!columns[i])
+                continue;
+
+            auto parts = columns[i]->scatter(num_buckets, selector);
+            for (size_t bucket = 0; bucket < num_buckets; ++bucket)
+                buckets[bucket][i]->insertRangeFrom(*parts[bucket], 0, parts[bucket]->size());
+        }
+
+        /// Release the memory of the chunk.
+        columns.clear();
+    }
+    chunks.clear();
+
+    if (num_buckets == 1)
+    {
+        bucket_rows[0] = accumulated_rows;
+    }
+    else if (std::all_of(empty_columns.begin(), empty_columns.end(), [](const auto & column) { return !column; }))
+    {
+        /// No accumulated columns: distribute the number of rows among the buckets.
+        for (size_t row = 0; row < accumulated_rows; ++row)
+            ++bucket_rows[randomBelow(rng, num_buckets)];
+    }
+}
+
+bool PartialShuffleTransform::prepareNextBucket()
+{
+    const size_t num_buckets = buckets.size();
+    while (next_bucket < num_buckets && bucket_rows[next_bucket] == 0)
+        ++next_bucket;
+
+    if (next_bucket >= num_buckets)
+        return false;
+
+    const size_t bucket = next_bucket;
+    ++next_bucket;
+
+    const size_t num_rows = bucket_rows[bucket];
+    const auto permutation = randomPermutation(rng, num_rows);
+
+    part_columns.assign(empty_columns.size(), nullptr);
+    for (size_t i = 0; i < empty_columns.size(); ++i)
+        if (buckets[bucket][i])
+            part_columns[i] = buckets[bucket][i]->permute(permutation, 0);
+    MutableColumns().swap(buckets[bucket]);
+
+    /// The range and the bucket number are the high part of the key: the keys of the bucket are in [begin, end).
+    part_keys.resize(num_rows);
+    const unsigned __int128 total_buckets = static_cast<unsigned __int128>(num_ranges) * num_buckets;
+    if (total_buckets == 1)
+    {
+        for (auto & key : part_keys)
+            key = rng();
+    }
+    else
+    {
+        const unsigned __int128 global_bucket = static_cast<unsigned __int128>(range_index) * num_buckets + bucket;
+        const UInt64 begin = static_cast<UInt64>((global_bucket << 64) / total_buckets);
+        const UInt64 end = static_cast<UInt64>(((global_bucket + 1) << 64) / total_buckets);
+        const UInt64 width = end - begin; /// `end` is zero (2^64 wraps) for the last bucket, and the subtraction is still correct.
+        for (auto & key : part_keys)
+            key = begin + randomBelow(rng, width);
+    }
+    RadixSort<RadixSortUIntTraits<UInt64>>::executeLSD(part_keys.data(), part_keys.size());
+
+    part_offset = 0;
+    return true;
 }
 
 ColumnPtr PartialShuffleTransform::makeKeyColumn(size_t offset, size_t length) const
@@ -241,7 +381,7 @@ ColumnPtr PartialShuffleTransform::makeKeyColumn(size_t offset, size_t length) c
         constexpr size_t shift = (sizeof(UInt64) - sizeof(T)) * 8;
         for (size_t i = 0; i < length; ++i)
         {
-            T value = static_cast<T>(result_keys[offset + i] >> shift);
+            T value = static_cast<T>(part_keys[offset + i] >> shift);
             data[i] = direction < 0 ? static_cast<T>(~value) : value;
         }
         return column;
@@ -257,39 +397,33 @@ Chunk PartialShuffleTransform::generate()
     if (!result_prepared)
         prepareResult();
 
-    const size_t num_rows = result_permutation.size();
-    if (output_offset >= num_rows)
-        return {};
+    if (part_offset >= part_keys.size())
+    {
+        if (limit || !prepareNextBucket())
+        {
+            part_columns.clear();
+            Keys().swap(part_keys);
+            return {};
+        }
+    }
 
-    const size_t length = std::min(max_block_size, num_rows - output_offset);
-
-    auto indexes = ColumnUInt64::create(length);
-    auto & indexes_data = indexes->getData();
-    for (size_t i = 0; i < length; ++i)
-        indexes_data[i] = result_permutation[output_offset + i];
+    const size_t num_rows = part_keys.size();
+    const size_t length = std::min(max_block_size, num_rows - part_offset);
+    const bool whole_part = part_offset == 0 && length == num_rows;
 
     const auto & header = getOutputPort().getHeader();
     Columns columns(header.columns());
     for (size_t i = 0; i < columns.size(); ++i)
     {
         if (i == key_position)
-            columns[i] = makeKeyColumn(output_offset, length);
-        else if (result_columns[i])
-            columns[i] = result_columns[i]->index(*indexes, 0);
+            columns[i] = makeKeyColumn(part_offset, length);
+        else if (part_columns[i])
+            columns[i] = whole_part ? std::move(part_columns[i]) : part_columns[i]->cut(part_offset, length);
         else
             columns[i] = header.getByPosition(i).column->cloneResized(length);
     }
 
-    output_offset += length;
-
-    /// Release the memory as soon as possible.
-    if (output_offset == num_rows)
-    {
-        result_columns.clear();
-        IColumn::Permutation().swap(result_permutation);
-        Keys().swap(result_keys);
-    }
-
+    part_offset += length;
     return Chunk(std::move(columns), length);
 }
 

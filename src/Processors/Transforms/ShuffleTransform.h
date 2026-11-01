@@ -15,8 +15,7 @@ namespace DB
   *
   * The output is sorted by a key column. The values of this column are independent uniformly distributed
   * random numbers assigned to the rows in sorted order, while the rows themselves are put in a uniformly random
-  * order by the Fisher-Yates shuffle. This has exactly the same distribution as generating a random key for every
-  * row and sorting the rows by it.
+  * order. This has exactly the same distribution as generating a random key for every row and sorting the rows by it.
   *
   * Because of that:
   * - streams shuffled this way (including the streams from remote servers) are merged by `MergingSortedTransform`
@@ -25,6 +24,14 @@ namespace DB
   *   (its values are replaced by the new keys, which have the same distribution).
   *
   * The key column must be of type `UInt64` or `UInt32` (as for `rand64` and `rand`), and its input values are ignored.
+  *
+  * Without a limit, the rows are scattered into buckets by a random bucket number (the high part of the key),
+  * then every bucket is shuffled by the Fisher-Yates algorithm and gets random keys (the low part of the key) in sorted
+  * order. The buckets are small enough to be shuffled in the CPU cache, and the memory usage is about the size of the data.
+  *
+  * To shuffle several streams in parallel without merging them, the rows are first scattered into `num_ranges` streams
+  * at random, and the stream number `range_index` gets the keys from the `range_index`-th of `num_ranges` equal ranges.
+  * Then the concatenation of the streams in the order of `range_index` is sorted by the key.
   *
   * If `limit` is not zero, only the rows with the `limit` smallest keys are kept, using O(limit) memory
   * (reservoir sampling). Merging such streams with the same limit returns a uniformly random sample of `limit` rows
@@ -39,7 +46,9 @@ public:
         size_t key_position_,
         int direction_,
         UInt64 limit_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t range_index_ = 0,
+        size_t num_ranges_ = 1);
 
     String getName() const override { return "PartialShuffleTransform"; }
 
@@ -52,32 +61,45 @@ private:
 
     void consumeWithLimit(const Columns & columns, size_t num_rows);
     void pruneReservoir();
+
     void prepareResult();
+    void prepareResultWithLimit();
+    void scatterIntoBuckets();
+    bool prepareNextBucket();
+
     ColumnPtr makeKeyColumn(size_t offset, size_t length) const;
 
     const size_t key_position;
     const int direction;
     const UInt64 limit;
     const size_t max_block_size;
+    const size_t range_index;
+    const size_t num_ranges;
     const bool is_key_uint32;
 
     pcg64 rng;
 
-    /// The accumulated rows. The key column and constant columns are not accumulated (they are nullptr).
-    MutableColumns accumulated_columns;
+    /// The template of the accumulated columns. The key column and constant columns are not accumulated (they are nullptr).
+    Columns empty_columns;
     size_t accumulated_rows = 0;
 
-    /// Only with limit: the internal random key of every accumulated row, and the threshold:
+    /// Without limit: the input chunks, which are scattered into buckets at the end.
+    std::vector<Columns> chunks;
+    std::vector<MutableColumns> buckets;
+    std::vector<size_t> bucket_rows;
+    size_t next_bucket = 0;
+
+    /// With limit: the accumulated rows, the internal random key of every row, and the threshold:
     /// a row with a key not less than the threshold cannot be among the rows with the `limit` smallest keys.
+    MutableColumns accumulated_columns;
     Keys reservoir_keys;
     UInt64 threshold;
 
-    /// The prepared result: the accumulated columns, the order of rows to output, and the sorted internal keys.
+    /// The rows which are being returned: shuffled columns and their sorted internal keys.
     bool result_prepared = false;
-    Columns result_columns;
-    IColumn::Permutation result_permutation;
-    Keys result_keys;
-    size_t output_offset = 0;
+    Columns part_columns;
+    Keys part_keys;
+    size_t part_offset = 0;
 };
 
 }

@@ -1,10 +1,12 @@
 #include <Processors/QueryPlan/ShuffleStep.h>
 
 #include <IO/Operators.h>
+#include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/ShuffleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
 
 
@@ -50,6 +52,30 @@ SortDescription ShuffleStep::getKeySortDescription() const
 void ShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const size_t key_position = pipeline.getHeader().getPositionByName(key_column_name);
+    const size_t num_threads = pipeline.getNumThreads();
+
+    /// Without a limit, all rows have to be returned, and a merge of the shuffled streams would be done in one thread.
+    /// Instead, the rows are scattered into `num_threads` streams at random (by the hash of the random key),
+    /// every stream is shuffled in parallel with its own range of keys, and the streams are concatenated in the order of the ranges.
+    /// The scatter creates (num_threads * num_streams) connections, which is bounded as for `SortingStep`.
+    const size_t max_scatter_connections = 1000000;
+    if (!limit && num_threads > 1 && num_threads * pipeline.getNumStreams() <= max_scatter_connections)
+    {
+        scatterByPartition(pipeline, num_threads, ColumnNumbers{key_position});
+
+        size_t range_index = 0;
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+                return std::make_shared<PartialShuffleTransform>(
+                    header, key_position, direction, limit, max_block_size, range_index++, num_threads);
+            });
+
+        pipeline.addTransform(std::make_shared<ConcatProcessor>(pipeline.getSharedHeader(), pipeline.getNumStreams()));
+        return;
+    }
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -61,6 +87,7 @@ void ShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     /// Merging of shuffled streams: every stream is sorted by the key column, and the keys are independent
     /// uniformly distributed random numbers, so the merge is a uniformly random interleaving of the streams.
+    /// With a limit, every stream has at most `limit` rows.
     if (pipeline.getNumStreams() > 1)
     {
         auto transform = std::make_shared<MergingSortedTransform>(
