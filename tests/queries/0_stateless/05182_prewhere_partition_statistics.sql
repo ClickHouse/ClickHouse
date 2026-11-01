@@ -1,6 +1,6 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 -- A scalar predicate on the partition key must restrict PREWHERE statistics to its parts.
-SET enable_analyzer = 1, use_statistics_cache = 0, use_statistics_for_part_pruning = 0;
+SET use_statistics_for_part_pruning = 0;
 SET optimize_move_to_prewhere = 1;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1, max_threads = 1;
@@ -14,7 +14,7 @@ CREATE TABLE prewhere_partition_statistics
 ENGINE = MergeTree
 PARTITION BY (team_id, toYYYYMM(ts))
 ORDER BY (team_id, ts)
-SETTINGS auto_statistics_types = 'basic, uniq_v2', refresh_statistics_interval = 0,
+SETTINGS auto_statistics_types = 'basic, uniq_v2',
     min_bytes_for_full_part_storage = '5G';
 
 -- One insert creates exactly one part per partition; no merges need to be stopped.
@@ -48,16 +48,17 @@ SETTINGS use_statistics = 0, use_partition_pruning = 0, log_comment = '05182_bot
 
 SYSTEM FLUSH LOGS query_log;
 
--- Each uncached part-statistics load takes one shared parts lock. Subtract the
--- identical query with statistics disabled to exclude locks for the actual read.
+-- `LoadedStatistics` is incremented once for every part whose statistics are collected, from the
+-- statistics cache or from the part. Statistics are collected only for the parts left after
+-- partition and primary-key pruning.
 SELECT
-    maxIf(locks, log_comment = '05182_selected_on') - maxIf(locks, log_comment = '05182_selected_off') = 1,
-    maxIf(locks, log_comment = '05182_all_on') - maxIf(locks, log_comment = '05182_all_off') = 32,
-    maxIf(locks, log_comment = '05182_pruning_off') - maxIf(locks, log_comment = '05182_both_off') = 32,
+    maxIf(stats, log_comment = '05182_selected_on') = 1,
+    maxIf(stats, log_comment = '05182_all_on') = 32,
+    maxIf(stats, log_comment = '05182_pruning_off') = 32,
     countIf(log_comment = '05182_absent' AND ProfileEvents['LoadedStatisticsMicroseconds'] = 0) = 1
 FROM
 (
-    SELECT log_comment, ProfileEvents, toInt64(ProfileEvents['SharedPartsLocks']) AS locks
+    SELECT log_comment, ProfileEvents, toInt64(ProfileEvents['LoadedStatistics']) AS stats
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '05182_')

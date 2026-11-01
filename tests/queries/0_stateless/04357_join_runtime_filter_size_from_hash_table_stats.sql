@@ -1,7 +1,6 @@
 -- Verifies that `join_runtime_filter_size_from_hash_table_stats` grows an otherwise too-small
 -- JOIN runtime bloom filter so that it stays active and filters.
 
-SET enable_analyzer = 1;
 SET max_threads = 8;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;

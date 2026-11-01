@@ -319,6 +319,8 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 
 이 설정은 사용자의 `SHOW NAMED COLLECTIONS SECRETS` 권한을 활성화하거나 비활성화합니다. 이 권한이 있으면 사용자는 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)에 저장된 값을 예를 들어 [`system.named_collections`](/ko/reference/system-tables/named_collections) 테이블에서 확인할 수 있습니다.
 
+또한 컬렉션을 사용할 때 명명된 컬렉션에 저장된 키를 재정의하려면 이 권한이 필요합니다. 예를 들어 `s3(my_collection, url = '...')`의 `url`, 테이블 엔진의 `SETTINGS` 절, 딕셔너리 소스의 키를 재정의하는 경우가 이에 해당합니다. 컬렉션에 저장되어 있지 않은 키를 추가할 때는 이 권한이 필요하지 않습니다.
+
 기본적으로 비활성화되어 있습니다. 명명된 컬렉션을 관리할 수 있다고 해서 그 안에 이미 저장된 자격 증명을 다시 읽을 수 있는 것은 아니기 때문입니다.
 
 이 설정은 `named_collection_control`과 함께 사용할 때만 효과가 있습니다. `named_collection_control`이 비활성화되어 있으면 `SHOW NAMED COLLECTIONS SECRETS`를 포함한 모든 명명된 컬렉션 권한이 어차피 취소되기 때문입니다.

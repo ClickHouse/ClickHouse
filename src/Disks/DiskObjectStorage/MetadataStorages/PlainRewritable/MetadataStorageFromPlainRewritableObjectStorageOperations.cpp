@@ -18,7 +18,6 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SharedLockGuard.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -35,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int CORRUPTED_DATA;
 };
 
 namespace FailPoints
@@ -45,6 +45,70 @@ namespace FailPoints
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
     extern const char plain_object_storage_fail_after_copy_on_file_move[];
+    extern const char plain_object_storage_pause_on_file_copy[];
+    extern const char plain_object_storage_pause_before_unlink_file_finalize[];
+    extern const char plain_object_storage_pause_before_remove_recursive_finalize[];
+    extern const char plain_object_storage_pause_before_remove_recursive_metadata[];
+    extern const char plain_object_storage_fail_on_finalize[];
+}
+
+namespace
+{
+
+/// A name of the shape of `generateRemovedName` is garbage only if it is marked as such: the marker object is
+/// written before the removal is committed and deleted only after all the objects of the removal are gone.
+/// The shape of the name decides nothing by itself, because an older version, which reserved nothing, could
+/// have created a name of this shape as ordinary data.
+///
+/// A marker written with `pending_original_path` belongs to a removal that is not committed yet, see
+/// `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`.
+void writeTombstoneMarkerContent(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const std::string & content)
+{
+    StoredObject marker_object(layout.constructTombstoneMarkerKey(removed_name));
+    auto buf = object_storage.writeObject(
+        marker_object,
+        WriteMode::Rewrite,
+        /*object_attributes*/ std::nullopt,
+        /*buf_size*/ 128,
+        /*settings*/ getWriteSettingsForMetadata());
+
+    writeString(content, *buf);
+    buf->finalize();
+}
+
+void writeTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const std::optional<std::string> & pending_original_path = std::nullopt)
+{
+    writeTombstoneMarkerContent(
+        object_storage,
+        layout,
+        removed_name,
+        pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(*pending_original_path)
+                              : PlainRewritableLayout::makeCommittedTombstoneContent(removed_name));
+}
+
+/// See `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`.
+void writePendingReplaceTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const PlainRewritableLayout::PendingReplace & pending_replace)
+{
+    writeTombstoneMarkerContent(object_storage, layout, removed_name, PlainRewritableLayout::makePendingReplaceTombstoneContent(pending_replace));
+}
+
+void removeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritableLayout & layout, const std::string & removed_name)
+{
+    object_storage.removeObjectIfExists(StoredObject(layout.constructTombstoneMarkerKey(removed_name)));
+}
+
 }
 
 namespace
@@ -104,6 +168,38 @@ std::optional<StoredObject> removeLinkAndGetBlobToRemove(
     return std::nullopt;
 }
 
+/// A listed blob that is missing means metadata and object storage diverged before this transaction.
+void copyBlobOfListedFile(
+    IObjectStorage & object_storage,
+    const std::filesystem::path & path,
+    const std::filesystem::path & remote_path,
+    const std::filesystem::path & remote_path_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
+{
+    try
+    {
+        object_storage.copyObject(StoredObject(remote_path), StoredObject(remote_path_to), read_settings, write_settings);
+    }
+    catch (...)
+    {
+        /// Some object storages (Azure) throw their own exception types.
+        if (!object_storage.exists(StoredObject(remote_path)))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "The metadata lists the file '{}', but its blob '{}' does not exist: metadata and object storage diverged "
+                "before this transaction. Copying the blob to '{}' failed with: {}",
+                path,
+                remote_path,
+                remote_path_to,
+                getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+
+        if (auto * e = current_exception_cast<Exception *>())
+            e->addMessage(fmt::format("While copying the blob '{}' of the file '{}' to '{}'", remote_path, path, remote_path_to));
+        throw;
+    }
+}
+
 }
 
 bool isMetadataOnlyMove(
@@ -132,6 +228,40 @@ MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataSto
 void MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::execute()
 {
     preconditions->runChecks(fs_tree);
+}
+
+MetadataStorageFromPlainObjectStoragePublishOperation::MetadataStorageFromPlainObjectStoragePublishOperation(
+    std::shared_ptr<FsSnapshot> fs_tree_,
+    FsMetadata & fs_,
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableLayout> layout_,
+    StoredObjects & removed_objects_)
+    : fs_tree(std::move(fs_tree_))
+    , fs(fs_)
+    , object_storage(std::move(object_storage_))
+    , layout(std::move(layout_))
+    , removed_objects(removed_objects_)
+{
+}
+
+void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
+{
+    /// A transaction that removes a link to a shared blob does not exclude the transactions removing the other links
+    /// to it, because they lock only the paths of their own files. Each of them may see the other link left and keep
+    /// the blob, so the last link is found only here, where the publications are serialized.
+    for (const auto & blob_key : fs.applyJournal(fs_tree->getJournal()))
+        unlinked_blobs.emplace_back(layout->constructBlobObjectKey(blob_key));
+}
+
+void MetadataStorageFromPlainObjectStoragePublishOperation::finalize()
+{
+    if (unlinked_blobs.empty())
+        return;
+
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStoragePublishOperation"),
+        "Removing {} blobs whose last links were removed by concurrent transactions", unlinked_blobs.size());
+    object_storage->removeObjectsIfExist(unlinked_blobs);
+    removed_objects.append_range(unlinked_blobs);
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -556,11 +686,17 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     }
 
     remote_source_path = layout->constructBlobObjectKey(blob_key);
-    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_name = PlainRewritableLayout::generateRemovedName();
+    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name);
 
-    blob_removal_attempted = true;
+    copy_attempted = true;
 
-    object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
+    /// The marker has to be there before the backup copy exists, so that a load never sees the copy unmarked.
+    writeTombstoneMarker(*object_storage, *layout, tmp_name);
+
+    copyBlobOfListedFile(*object_storage, path, remote_source_path, remote_tmp_path, getReadSettings(), getWriteSettings());
+
+    remove_attempted = true;
     object_storage->removeObjectIfExists(StoredObject(remote_source_path));
 
     fs_tree->removeFile(path);
@@ -578,37 +714,49 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
         return;
     }
 
-    if (!blob_removal_attempted)
+    if (!copy_attempted)
         return;
 
     auto log = getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation");
 
     /// The temporary copy is dropped in a later stage, so a failure never strands the restore.
-    undoWithRetries(log, fmt::format("restore the blob of the file '{}'", path), [&]
+    if (remove_attempted)
     {
-        if (object_storage->exists(StoredObject(remote_source_path)))
-            return;
+        undoWithRetries(log, fmt::format("restore the blob of the file '{}'", path), [&]
+        {
+            if (object_storage->exists(StoredObject(remote_source_path)))
+                return;
 
-        if (!object_storage->exists(StoredObject(remote_tmp_path)))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
-                "temporary key '{}' the removal copied it to",
-                path,
-                remote_source_path,
-                remote_tmp_path);
+            if (!object_storage->exists(StoredObject(remote_tmp_path)))
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
+                    "temporary key '{}' the removal copied it to",
+                    path,
+                    remote_source_path,
+                    remote_tmp_path);
 
-        object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
-    });
+            object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
+        });
+    }
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the file '{}'", path), [&]
     {
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
     });
+
+    /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
+    /// leaves either nothing or a marked leftover, never an unmarked one.
+    undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the file '{}'", path), [&]
+    {
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
+    });
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_unlink_file_finalize);
+
     if (blob_to_remove)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), "Removing the blob '{}' of the unlinked file '{}'", blob_to_remove->remote_path, path);
@@ -616,10 +764,17 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
         removed_objects.push_back(*blob_to_remove);
     }
 
-    if (blob_removal_attempted)
+    if (copy_attempted)
     {
+        fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the removal of '{}'", path);
+        });
+
         removed_objects.push_back(StoredObject(remote_source_path));
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+        /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
+        /// leaves either nothing or a marked leftover, never an unmarked one.
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
     }
 }
 
@@ -678,8 +833,10 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const std::string new_blob_key = blob_key.empty() ? default_blob_key : blob_key;
     remote_path_to = layout->constructBlobObjectKey(new_blob_key);
 
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_on_file_copy);
+
     copy_attempted = true;
-    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+    copyBlobOfListedFile(*object_storage, path_from, remote_path_from, remote_path_to, getReadSettings(), getWriteSettings());
     fs_tree->recordFile(path_to, FileRemoteInfo{.bytes_size = file_info_from.bytes_size, .last_modified = file_info_from.last_modified, .blob_key = new_blob_key});
 
     /// A blob at the default location of an implicit directory is found by listing, so it needs no explicit file list.
@@ -862,8 +1019,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     remote_path_from = layout->constructFileObjectKey(directory_info_from.remote_path, normalized_path_from.filename());
     remote_path_to = layout->constructFileObjectKey(directory_info_to.remote_path, normalized_path_to.filename());
-    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
-    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_name_from = PlainRewritableLayout::generateRemovedName();
+    tmp_name_to = PlainRewritableLayout::generateRemovedName();
+    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name_from);
+    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, tmp_name_to);
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
 
@@ -871,7 +1030,16 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
     if (had_existing_target && !replaceable)
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
-    blob_move_attempted = true;
+    /// Save the source before touching the target.
+    source_copy_attempted = true;
+    {
+        fiu_do_on(FailPoints::plain_object_storage_copy_temp_source_file_fail_on_file_move, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
+        });
+
+        writeTombstoneMarker(*object_storage, *layout, tmp_name_from);
+        copyBlobOfListedFile(*object_storage, path_from, remote_path_from, tmp_remote_path_from, read_settings, write_settings);
+    }
 
     if (had_existing_target)
     {
@@ -879,32 +1047,25 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_to),
-            /*object_to=*/StoredObject(tmp_remote_path_to),
-            read_settings,
-            write_settings);
+        /// The target is deleted below and replaced only later, so until then the backup is its only copy: the marker
+        /// says the replacement is pending, which makes a load restore the backup rather than reclaim it.
+        pending_replace = PlainRewritableLayout::PendingReplace{
+            .directory_remote_path = directory_info_to.remote_path,
+            .file_name = normalized_path_to.filename().string(),
+            .size = fs_tree->getFileRemoteInfo(path_to).value().bytes_size,
+        };
+        writePendingReplaceTombstoneMarker(*object_storage, *layout, tmp_name_to, *pending_replace);
+        copyBlobOfListedFile(*object_storage, path_to, remote_path_to, tmp_remote_path_to, read_settings, write_settings);
 
         fs_tree->removeFile(path_to);
         fs_tree->recordFile(path_to, file_from_remote_info.value());
 
+        target_remove_attempted = true;
         object_storage->removeObjectIfExists(StoredObject(remote_path_to));
     }
     else
     {
         fs_tree->recordFile(path_to, file_from_remote_info.value());
-    }
-
-    {
-        fiu_do_on(FailPoints::plain_object_storage_copy_temp_source_file_fail_on_file_move, {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
-        });
-
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_from),
-            /*object_to=*/StoredObject(tmp_remote_path_from),
-            read_settings,
-            write_settings);
     }
 
     {
@@ -919,6 +1080,12 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after moving from '{}' to '{}'", path_from, path_to);
         });
 
+        /// The replacement is in place, and the source is deleted only after this, so the move is complete as seen
+        /// from the object storage: from now on the backup of the target is garbage.
+        if (had_existing_target)
+            writeTombstoneMarker(*object_storage, *layout, tmp_name_to);
+
+        source_remove_attempted = true;
         object_storage->removeObjectIfExists(StoredObject(remote_path_from));
     }
 
@@ -950,7 +1117,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         return;
     }
 
-    if (!blob_move_attempted)
+    if (!source_copy_attempted)
         return;
 
     const auto read_settings = getReadSettings();
@@ -961,26 +1128,42 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
     /// Each stage says where one key has to end up and asks object storage whether it is already there, so it holds
     /// whether the matching step of `execute` never ran, ran, or ran and lost its answer.
-    undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
+    if (source_remove_attempted)
     {
-        if (object_storage->exists(StoredObject(remote_path_from)))
-            return;
+        undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
+        {
+            if (object_storage->exists(StoredObject(remote_path_from)))
+                return;
 
-        if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
-                "temporary key '{}' the move copied it to",
-                path_from,
-                remote_path_from,
-                tmp_remote_path_from);
+            /// Stops the reversal: with both keys gone, `remote_path_to` may hold the last copy of the source, which the
+            /// stages below would overwrite or remove.
+            if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
+                    "temporary key '{}' the move copied it to",
+                    path_from,
+                    remote_path_from,
+                    tmp_remote_path_from);
 
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_from),
-            /*object_to=*/StoredObject(remote_path_from),
-            read_settings,
-            write_settings);
-    });
+            object_storage->copyObject(
+                /*object_from=*/StoredObject(tmp_remote_path_from),
+                /*object_to=*/StoredObject(remote_path_from),
+                read_settings,
+                write_settings);
+        });
+    }
+
+    /// The source is back under its own key, so rolling the target back completes the rollback. The marker may already
+    /// say that the replacement is committed, so a process that dies in the middle of this has to find it pending
+    /// again, to restore the target from the backup rather than reclaim the backup.
+    if (pending_replace)
+    {
+        undoWithRetries(log, fmt::format("mark the replacement of '{}' as pending", path_to), [&]
+        {
+            writePendingReplaceTombstoneMarker(*object_storage, *layout, tmp_name_to, *pending_replace);
+        });
+    }
 
     undoWithRetries(log, fmt::format("restore the blob of the target file '{}'", path_to), [&]
     {
@@ -991,26 +1174,47 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             return;
         }
 
-        if (object_storage->exists(StoredObject(tmp_remote_path_to)))
-            object_storage->copyObject(
-                /*object_from=*/StoredObject(tmp_remote_path_to),
-                /*object_to=*/StoredObject(remote_path_to),
-                read_settings,
-                write_settings);
+        /// The target is untouched until its removal is attempted, and by then its backup has completed.
+        if (!target_remove_attempted)
+            return;
 
-        /// Otherwise there is nothing to restore: the copy above comes before anything overwrites or removes the
-        /// target, so either it succeeded and its result is here, or it threw and the target was never touched.
+        if (!object_storage->exists(StoredObject(tmp_remote_path_to)))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Cannot restore the blob of the file '{}': its temporary copy '{}' is gone, and the move may have removed "
+                "or overwritten its own key '{}'",
+                path_to,
+                tmp_remote_path_to,
+                remote_path_to);
+
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(tmp_remote_path_to),
+            /*object_to=*/StoredObject(remote_path_to),
+            read_settings,
+            write_settings);
     });
 
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.
+    /// Each marker outlives the copy it marks, so that a process that dies in the middle of this always leaves
+    /// either nothing or a marked leftover, never an unmarked one.
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the source file '{}'", path_from), [&]
     {
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
     });
 
+    undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the source file '{}'", path_from), [&]
+    {
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_from);
+    });
+
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the target file '{}'", path_to), [&]
     {
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+    });
+
+    undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the target file '{}'", path_to), [&]
+    {
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_to);
     });
 }
 
@@ -1030,10 +1234,18 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
 
     removed_objects.push_back(StoredObject(remote_path_from));
 
-    if (blob_move_attempted)
+    if (source_copy_attempted)
     {
+        fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the move from '{}' to '{}'", path_from, path_to);
+        });
+
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        /// The markers outlive the objects they mark, so that a process that dies in the middle of this always
+        /// leaves either nothing or a marked leftover, never an unmarked one.
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_from);
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_to);
     }
 }
 
@@ -1053,7 +1265,10 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
     chassert(metrics);
-    tmp_path = getRandomASCIIString(16);
+    /// The subtree is moved under a reserved name, so that a concurrent load does not resurrect it under the original path,
+    /// and so that the objects can be reclaimed on the next load if the process dies before `finalize` deletes them.
+    tmp_name = PlainRewritableLayout::generateRemovedName();
+    tmp_path = tmp_name;
     move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", fs_tree, object_storage, layout, metrics);
 }
 
@@ -1067,8 +1282,18 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
 
     if (fs_tree->existsDirectory(path))
     {
+        /// The marker has to be there before the subtree is moved under the reserved name, so that a load
+        /// never sees the moved subtree unmarked, which would make it look like ordinary data.
+        /// The move rewrites the directories one at a time, so until it is complete the marker says that the
+        /// removal is pending: a load that finds it moves whatever is under the reserved name back.
+        writeTombstoneMarker(*object_storage, *layout, tmp_name, (path / "").string());
+        marker_written = true;
+
         move_tried = true;
         move_to_tmp_op->execute();
+
+        /// Only now the whole subtree is under the reserved name, and the removal can be reclaimed instead.
+        writeTombstoneMarker(*object_storage, *layout, tmp_name);
 
         for (const auto & [subdir, remote_info] : fs_tree->getSubtreeRemoteInfo(tmp_path))
         {
@@ -1083,7 +1308,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
             LOG_TRACE(log, "Removing directory '{}'", subdir_path);
 
             auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info->remote_path);
-            objects_to_remove.emplace_back(metadata_object_key, path);
+            metadata_objects_to_remove.emplace_back(metadata_object_key, path);
 
             /// We also need to remove all files inside each of the subdirectories, but only the blobs that are not shared with files outside.
             for (const auto & [filename, file_info] : remote_info->files)
@@ -1094,7 +1319,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
                 if (fs_tree->getBlobLinkCount(blob_key) == 1)
                 {
                     LOG_TRACE(log, "Removing file '{}'", file_path);
-                    objects_to_remove.emplace_back(layout->constructBlobObjectKey(blob_key), file_path);
+                    data_objects_to_remove.emplace_back(layout->constructBlobObjectKey(blob_key), file_path);
                 }
                 else
                 {
@@ -1112,8 +1337,19 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
 {
     if (move_tried)
     {
+        /// The marker may already say that the removal is committed. Moving the subtree back rewrites the
+        /// directories one at a time again, so a process that dies in the middle of it must find the removal
+        /// pending, to finish moving the subtree back rather than reclaim what is still under the reserved name.
+        undoWithRetries(log, fmt::format("mark the removal of '{}' as pending", path), [&]
+        {
+            writeTombstoneMarker(*object_storage, *layout, tmp_name, (path / "").string());
+        });
+
         move_to_tmp_op->undo();
     }
+
+    if (marker_written)
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
@@ -1121,8 +1357,30 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
     if (!move_tried)
         return;
 
-    object_storage->removeObjectsIfExist(objects_to_remove);
-    removed_objects.append_range(objects_to_remove);
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_finalize);
+
+    fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the removal of '{}'", path);
+    });
+
+    /// The `prefix.path` object of a directory is the only thing that lets the next load find the objects of this
+    /// subtree, so it has to outlive them: the data objects are deleted first, and the `prefix.path` objects only
+    /// once all of them are gone. A single pass would not do, because the multi-object delete of S3 and Azure
+    /// gives no ordering guarantees within a request: a directory could lose its `prefix.path` while still having
+    /// data objects, and if the process died at that moment, they would become unreachable forever.
+    /// The objects were chosen by `execute`, which keeps the blobs shared with the files outside of the subtree.
+    object_storage->removeObjectsIfExist(data_objects_to_remove);
+
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_metadata);
+
+    object_storage->removeObjectsIfExist(metadata_objects_to_remove);
+
+    /// The marker is deleted last: it is what tells the next load that the leftovers of this removal are
+    /// garbage, so it has to outlive every object it covers.
+    removeTombstoneMarker(*object_storage, *layout, tmp_name);
+
+    removed_objects.append_range(data_objects_to_remove);
+    removed_objects.append_range(metadata_objects_to_remove);
 }
 
 }

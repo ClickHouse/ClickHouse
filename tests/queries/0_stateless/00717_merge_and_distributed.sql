@@ -1,6 +1,5 @@
 -- Tags: distributed
 
-SET enable_analyzer = 1;
 SET send_logs_level = 'fatal';
 DROP TABLE IF EXISTS test_local_1;
 DROP TABLE IF EXISTS test_local_2;

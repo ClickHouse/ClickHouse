@@ -6,7 +6,6 @@ SET mutations_sync = 2, alter_sync = 2, materialize_statistics_on_insert = 1;
 SET use_statistics = 1, use_statistics_for_part_pruning = 1, use_statistics_for_min_max_aggregation = 1;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0, aggregate_functions_null_for_empty = 0;
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0;
 
