@@ -84,7 +84,6 @@ public:
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
     /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
-    /// Computed on the first call: a reader is reused by the consecutive read tasks of a part.
     bool mayEvaluateMissingDefaults() const;
 
     /// If part metadata is not equal to storage metadata,
