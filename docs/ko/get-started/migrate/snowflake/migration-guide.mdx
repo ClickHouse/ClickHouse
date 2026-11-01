@@ -18,9 +18,7 @@ Snowflake의 `COPY INTO` 명령과 ClickHouse의 `INSERT INTO SELECT`
 명령을 사용합니다.
 
 <Steps>
-  <Step>
-    ## Snowflake에서 데이터 내보내기
-
+  <Step title="Snowflake에서 데이터 내보내기" id="1-exporting-data-from-snowflake">
     <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Snowflake에서 ClickHouse로 마이그레이션" />
 
     Snowflake에서 데이터를 내보내려면 위 다이어그램에 표시된 것처럼 외부 스테이지를 사용해야 합니다.
@@ -57,9 +55,7 @@ Snowflake의 `COPY INTO` 명령과 ClickHouse의 `INSERT INTO SELECT`
     약 5TB 규모의 데이터셋에서 최대 파일 크기를 150MB로 설정하고, 동일한 AWS `us-east-1` Region에 위치한 2X-Large Snowflake warehouse를 사용하는 경우 데이터를 S3 버킷으로 복사하는 데 약 30분이 걸립니다.
   </Step>
 
-  <Step>
-    ## ClickHouse로 가져오기
-
+  <Step title="ClickHouse로 가져오기" id="2-importing-to-clickhouse">
     데이터가 중간 객체 스토리지에 스테이징되면 아래와 같이 [s3 테이블 함수](/ko/reference/functions/table-functions/s3)와 같은 ClickHouse 함수를 사용해 데이터를 테이블에 삽입할 수 있습니다.
 
     이 예시에서는 AWS S3용 [s3 테이블 함수](/ko/reference/functions/table-functions/s3)를 사용하지만, Google Cloud Storage에는 [gcs 테이블 함수](/ko/reference/functions/table-functions/gcs)를 사용할 수 있고 Azure Blob Storage에는 [azureBlobStorage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)를 사용할 수 있습니다.
@@ -107,9 +103,7 @@ Snowflake의 `COPY INTO` 명령과 ClickHouse의 `INSERT INTO SELECT`
     </Info>
   </Step>
 
-  <Step>
-    ## 데이터 내보내기 성공 여부 테스트
-
+  <Step title="데이터 내보내기 성공 여부 테스트" id="3-testing-successful-data-export">
     데이터가 올바르게 삽입되었는지 확인하려면 새 테이블에서 `SELECT` 쿼리를 실행하면 됩니다.
 
     ```sql

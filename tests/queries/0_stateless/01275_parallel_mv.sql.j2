@@ -28,7 +28,7 @@ create materialized view testXC engine=MergeTree order by tuple() as select slee
 {% set count = namespace(value=0) %}
 
 -- { echoOn }
-{% for max_insert_threads in [0, 5] %}
+{% for max_insert_threads in [1, 5] %}
 {% for parallel_view_processing in [0, 1] %}
 {% for optimize_trivial_insert_select in [0, 1] %}
 

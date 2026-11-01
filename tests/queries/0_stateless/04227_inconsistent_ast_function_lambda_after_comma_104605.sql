@@ -17,7 +17,7 @@
 
 -- Original reproducer from the issue. We don't care which error fires, only
 -- that the server does not abort with LOGICAL_ERROR. The error code depends
--- on the analyzer: the new analyzer resolves the lambda first and rejects
+-- on the analyzer: it resolves the lambda first and rejects
 -- the duplicate parameter names (x and x) as BAD_ARGUMENTS; the old analyzer
 -- rejects lambda-as-substring-argument before resolving the lambda, so the
 -- duplicate-name check never fires and ILLEGAL_TYPE_OF_ARGUMENT is reported.

@@ -1,6 +1,5 @@
 #pragma once
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/StorageID.h>
@@ -17,6 +16,9 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
+
+struct FileBucketInfo;
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
 struct ObjectInfo
 {
@@ -46,12 +48,24 @@ struct ObjectInfo
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
+    /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
+    /// Whether `file_bucket_info` only leaves out row groups the query condition cache proved to have no
+    /// match, rather than splitting the file between readers: only then does reading the buckets tell
+    /// which row groups of the whole file match.
+    bool file_bucket_info_from_query_condition_cache = false;
+
+    /// Lazy materialization: if set, read only these rows of the file.
+    /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
+    std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
+    std::optional<size_t> archive_entry_index;
 
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
@@ -87,7 +101,7 @@ public:
         const DB::ActionsDAG & filter_,
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_partition_columns_,
-        const std::string & object_namespace_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const ContextPtr & context_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -103,7 +117,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    const std::string object_namespace;
+    const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;

@@ -1,0 +1,6 @@
+default, small probe	0
+default, large probe	1
+min=0, small probe	1
+min=50, 50-row probe	0
+chain default	0
+chain min=0	3

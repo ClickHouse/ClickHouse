@@ -2,7 +2,6 @@
 
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -12,6 +11,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/SwapHelper.h>
+#include <mutex>
 
 
 namespace CurrentMetrics
@@ -42,7 +42,8 @@ public:
         bool use_external_buffer_,
         std::optional<size_t> read_until_position_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
-        ThrottlerPtr local_throttler_ = nullptr);
+        ThrottlerPtr local_throttler_ = nullptr,
+        const IOSchedulingSettings & io_scheduling_ = {});
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -61,6 +62,8 @@ public:
     void setReadUntilPosition(size_t position) override;
 
     void setReadUntilEnd() override;
+
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
 
     String getFileName() const override { return info.source_file_path; }
 
@@ -122,12 +125,16 @@ public:
         const size_t local_fs_buffer_size;
         /// Throttler for local filesystem reads (cache file reads).
         const ThrottlerPtr local_throttler;
+        /// IO scheduling links of the remote reads.
+        IOSchedulingSettings io_scheduling;
 
         /// Non-included range end offset.
         size_t read_until_position = 0;
         /// List of file segments which we need to read
         /// given initial [start_offset, read_until_position).
         FileSegmentsHolderPtr file_segments;
+        /// Kept across file segments and setReadUntilPosition(), reset on seek.
+        FileCacheReserveAhead reserve_ahead;
 
         void reset();
     };
@@ -243,7 +250,6 @@ private:
     const bool allow_seeks_after_first_read;
     const bool use_external_buffer;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
-    const FileCacheQueryLimit::QueryContextHolderPtr query_context_holder;
 
     bool initialized = false;
     size_t file_offset_of_buffer_end = 0;
@@ -251,6 +257,10 @@ private:
 
     ReadFromFileSegmentStatePtr state;
     ReadInfo info;
+
+    /// Guards the lazily initialized file_size: tryGetFileSize may be called from readBigAt
+    /// concurrently with the sequential read path.
+    mutable std::mutex file_size_mutex;
 
     size_t first_offset = 0;
     String nextimpl_step_log_info;

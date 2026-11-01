@@ -30,15 +30,11 @@ Positions: 0
               ReadFromMemoryStorage
           Expression (Right Pre Join Actions)
           Actions: INPUT :: 0 -> exists(__table2).__table1.uid Int16 : 0
-                   INPUT :: 1 -> exists(__table2) UInt8 : 1
-          Positions: 0 1
+          Positions: 0
             Expression (Create result for always true EXISTS expression)
             Actions: INPUT : 0 -> __table1.uid Int16 : 0
-                     COLUMN Const(UInt8) -> exists(__table2) UInt8 : 1
-                     ALIAS __table1.uid :: 0 -> exists(__table2).__table1.uid Int16 : 2
-                     FUNCTION materialize(exists(__table2) :: 1) -> materialize(exists(__table2)) UInt8 : 0
-                     ALIAS materialize(exists(__table2)) :: 0 -> exists(__table2) UInt8 : 1
-            Positions: 2 1
+                     ALIAS __table1.uid :: 0 -> exists(__table2).__table1.uid Int16 : 1
+            Positions: 1
               Filter (WHERE)
               Filter column: notEquals(__table1.uid, __table4.uid) (removed)
               Actions: INPUT : 0 -> __table4.uid Int16 : 0
@@ -52,15 +48,20 @@ Positions: 0
                   Join (JOIN FillRightFirst)
                   Type: CROSS
                   Strictness: ALL
-                  Algorithm: HashJoin
+                  Algorithm: ConstantJoin
                     Expression (Left Pre Join Actions)
                     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
                     Positions: 0
-                      Expression (Change column names to column identifiers)
-                      Actions: INPUT : 0 -> uid Int16 : 0
-                               ALIAS uid :: 0 -> __table1.uid Int16 : 1
-                      Positions: 1
-                        ReadFromMemoryStorage
+                      Distinct
+                      Columns: __table1.uid
+                        Expression (Project only used columns)
+                        Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+                        Positions: 0
+                          Expression (Change column names to column identifiers)
+                          Actions: INPUT : 0 -> uid Int16 : 0
+                                   ALIAS uid :: 0 -> __table1.uid Int16 : 1
+                          Positions: 1
+                            ReadFromMemoryStorage
                     Expression (Right Pre Join Actions)
                     Actions: INPUT :: 0 -> __table4.uid Int16 : 0
                     Positions: 0
@@ -101,15 +102,11 @@ Positions: 0
               ReadFromMemoryStorage
           Expression (Right Pre Join Actions)
           Actions: INPUT :: 0 -> exists(__table2).__table1.uid Int16 : 0
-                   INPUT :: 1 -> exists(__table2) UInt8 : 1
-          Positions: 0 1
+          Positions: 0
             Expression (Create result for always true EXISTS expression)
             Actions: INPUT : 0 -> __table1.uid Int16 : 0
-                     COLUMN Const(UInt8) -> exists(__table2) UInt8 : 1
-                     ALIAS __table1.uid :: 0 -> exists(__table2).__table1.uid Int16 : 2
-                     FUNCTION materialize(exists(__table2) :: 1) -> materialize(exists(__table2)) UInt8 : 0
-                     ALIAS materialize(exists(__table2)) :: 0 -> exists(__table2) UInt8 : 1
-            Positions: 2 1
+                     ALIAS __table1.uid :: 0 -> exists(__table2).__table1.uid Int16 : 1
+            Positions: 1
               Filter (WHERE)
               Filter column: notEquals(__table1.uid, __table4.uid) (removed)
               Actions: INPUT : 0 -> __table4.uid Int16 : 0
@@ -123,15 +120,20 @@ Positions: 0
                   Join (JOIN FillRightFirst)
                   Type: CROSS
                   Strictness: ALL
-                  Algorithm: HashJoin
+                  Algorithm: ConstantJoin
                     Expression (Left Pre Join Actions)
                     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
                     Positions: 0
-                      Expression (Change column names to column identifiers)
-                      Actions: INPUT : 0 -> uid Int16 : 0
-                               ALIAS uid :: 0 -> __table1.uid Int16 : 1
-                      Positions: 1
-                        ReadFromMemoryStorage
+                      Distinct
+                      Columns: __table1.uid
+                        Expression (Project only used columns)
+                        Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+                        Positions: 0
+                          Expression (Change column names to column identifiers)
+                          Actions: INPUT : 0 -> uid Int16 : 0
+                                   ALIAS uid :: 0 -> __table1.uid Int16 : 1
+                          Positions: 1
+                            ReadFromMemoryStorage
                     Expression (Right Pre Join Actions)
                     Actions: INPUT :: 0 -> __table4.uid Int16 : 0
                     Positions: 0

@@ -41,18 +41,14 @@ Para obtener más información sobre session replay y cómo encaja en ClickStack
 </div>
 
 <Steps>
-  <Step>
-    ### Clona el repositorio de la extensión
-
+  <Step title="Clona el repositorio de la extensión" id="clone-extension">
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step>
-    ### Instala la extensión
-
+  <Step title="Instala la extensión" id="install-extension">
     1. Abre Chrome y ve a `chrome://extensions`.
     2. Activa **Developer mode** (arriba a la derecha).
     3. Haz clic en **Load unpacked**.
@@ -61,9 +57,7 @@ Para obtener más información sobre session replay y cómo encaja en ClickStack
     La extensión aparecerá en tu barra de herramientas como **HyperDX Browser Extension**.
   </Step>
 
-  <Step>
-    ### Inicia ClickStack
-
+  <Step title="Inicia ClickStack" id="start-clickstack">
     Si ya tienes un endpoint de ingestión de ClickStack o HyperDX, pasa a [Configurar la extensión](#configure-extension).
 
     Para una instalación local de ClickStack, inicia el collector de OpenTelemetry. Sustituye `{{CLICKHOUSE_ENDPOINT}}` y `{{CLICKHOUSE_PASSWORD}}` por los datos de conexión de ClickHouse:
@@ -87,17 +81,13 @@ Para obtener más información sobre session replay y cómo encaja en ClickStack
     Para una implementación local completa con ClickHouse y la UI de HyperDX, consulta [Primeros pasos con ClickStack](/es/clickstack/getting-started/oss).
   </Step>
 
-  <Step>
-    ### Obtén tu API key
-
+  <Step title="Obtén tu API key" id="get-api-key">
     En ClickStack local, puede que no se requiera una API key; deja el campo vacío en la extensión al ingestar telemetry en un collector self-hosted en `http://localhost:4318`.
 
     Para la ingestión en ClickStack Cloud o HyperDX Cloud, abre HyperDX, ve a **Team Settings → API Keys** y copia tu **API key de ingesta**.
   </Step>
 
-  <Step>
-    ### Configura la extensión
-
+  <Step title="Configura la extensión" id="configure-extension">
     Haz clic en el icono de **HyperDX Browser Extension** en la barra de herramientas de Chrome y completa la configuración:
 
     | Campo                            | Ejemplo de ClickStack local           | Notas                                                                                              |
@@ -116,20 +106,16 @@ Para obtener más información sobre session replay y cómo encaja en ClickStack
 
     <Image img="/images/clickstack/chrome-extension/extension-config.png" alt="Ventana emergente de configuración de la extensión de Chrome de HyperDX con ajustes locales de ClickStack" size="sm" />
 
-    La captura de pantalla anterior muestra una configuración local típica: monitoring activado, nombre del servicio definido, collector apuntando a `http://localhost:4318` y propagación de trace limitada a las URL de API y localhost.
+    La captura de pantalla anterior muestra una configuración local típica: monitorización activada, nombre del servicio definido, collector apuntando a `http://localhost:4318` y propagación de trace limitada a las URL de API y localhost.
   </Step>
 
-  <Step>
-    ### Navega por un sitio y genera una sesión
-
+  <Step title="Navega por un sitio y genera una sesión" id="browse-site">
     Abre cualquier sitio web o aplicación local en Chrome; por ejemplo, [http://localhost:3000](http://localhost:3000) para un servidor frontend de desarrollo.
 
-    Interactúa con la página con normalidad: haz clic en enlaces, envía formularios, provoca errores y navega entre vistas. La extensión inyecta automáticamente el Browser SDK en cada carga de página cuando la configuración es válida.
+    Interactúa con la página con normalidad: haz clic en enlaces, envía formularios, provoca errores y navega entre vistas. La extensión inyecta automáticamente el SDK para navegador en cada carga de página cuando la configuración es válida.
   </Step>
 
-  <Step>
-    ### Ve tu session replay
-
+  <Step title="Ve tu session replay" id="view-session-replay">
     Vuelve a HyperDX en [http://localhost:8080](http://localhost:8080) y ve a **Client Sessions** en la barra lateral izquierda.
 
     Deberías ver tu sesión en la lista con su duración y número de eventos. Haz clic en el botón ▶️ para reproducirla.

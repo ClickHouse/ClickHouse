@@ -30,6 +30,9 @@ There are a variety of ways to store dictionaries in memory, each with CPU and R
 | [direct](/reference/statements/create/dictionary/layouts/direct) | No in-memory storage — queries the source directly for each request. |
 | [complex_key_direct](/reference/statements/create/dictionary/layouts/direct#complex_key_direct) | Like `direct`, for composite keys. |
 | [ip_trie](/reference/statements/create/dictionary/layouts/ip-trie) | Trie structure for fast IP prefix lookups (CIDR-based). |
+| [hierarchical](/reference/statements/create/dictionary/layouts/hierarchical) | Support for hierarchies with a numeric key describing parent-child relationships. |
+| [polygon](/reference/statements/create/dictionary/layouts/polygon) | Efficient point-in-polygon lookups (reverse geocoding). |
+| [regexp_tree](/reference/statements/create/dictionary/layouts/regexp-tree) | Matches keys against a tree of regular expressions. |
 
 <Tip>
 **Recommended layouts**
@@ -37,6 +40,10 @@ There are a variety of ways to store dictionaries in memory, each with CPU and R
 [flat](/reference/statements/create/dictionary/layouts/flat), [hashed](/reference/statements/create/dictionary/layouts/hashed), and [complex_key_hashed](/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) provide the best query performance.
 Caching layouts are not recommended due to potentially poor performance and difficulty tuning parameters — see [cache](/reference/statements/create/dictionary/layouts/cache) for details.
 </Tip>
+
+<Note>
+Cache-based layouts are unsuitable for reliable insert-time enrichment because their warmed entries are local to each server and are lost when a server restarts or is replaced. ClickHouse Cloud autoscaling and managed node replacement make this condition more likely. Use a fully loaded layout instead; see [Cache dictionaries in ingestion paths](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
 
 ## Specify dictionary layout {#specify-dictionary-layout}
 

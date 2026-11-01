@@ -10,7 +10,7 @@ integration:
   - category: 'data_visualization'
 ---
 
-import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -21,9 +21,7 @@ Querio는 AI 기반 분석 및 비즈니스 인텔리전스 워크스페이스�
 </div>
 
 <Steps>
-  <Step>
-    ### 전용 사용자 생성
-
+  <Step title="전용 사용자 생성" id="create-dedicated-user">
     보안 모범 사례에 따라, Querio 전용 사용자 계정을 만들고 필요한 최소 권한만 부여하십시오:
 
     ```sql
@@ -35,9 +33,7 @@ Querio는 AI 기반 분석 및 비즈니스 인텔리전스 워크스페이스�
     </Tip>
   </Step>
 
-  <Step>
-    ### 읽기 전용 데이터베이스 액세스 권한 부여
-
+  <Step title="읽기 전용 데이터베이스 액세스 권한 부여" id="grant-read-only-access">
     Querio에 필요한 데이터베이스와 테이블에만 쿼리 권한을 부여하도록 제한하십시오:
 
     ```sql
@@ -53,9 +49,7 @@ Querio는 AI 기반 분석 및 비즈니스 인텔리전스 워크스페이스�
     Querio가 액세스해야 하는 각 데이터베이스에 대해 이 과정을 반복하십시오.
   </Step>
 
-  <Step>
-    ### 연결 정보 수집
-
+  <Step title="연결 정보 수집" id="gather-connection-details">
     Querio를 ClickHouse에 연결하려면 다음 연결 정보가 필요합니다:
 
     | 매개변수       | 설명                                   |
@@ -67,7 +61,7 @@ Querio는 AI 기반 분석 및 비즈니스 인텔리전스 워크스페이스�
     | `PASSWORD` | 사용자 계정의 비밀번호                         |
 
     <Note>
-      * ClickHouse Cloud의 경우 연결 정보는 Cloud Console에서 확인할 수 있습니다
+      * ClickHouse Cloud의 경우 연결 정보는 cloud console에서 확인할 수 있습니다
       * 자가 관리형 인스턴스의 경우 ClickHouse가 다른 포트를 사용하면 서버 구성을 확인하십시오
       * 포트 9440은 보안 네이티브 프로토콜 연결의 기본값입니다
     </Note>
@@ -98,5 +92,5 @@ Querio를 ClickHouse에 연결하면 플랫폼 어디에서나 데이터를 탐�
   ## 추가 자료
 </div>
 
-* [Querio 문서](https://docs.querio.ai/integrations/clickhouse)
+* [Querio 문서](https://docs.querio.ai/)
 * [Querio 시작하기 가이드 및 튜토리얼](https://www.querio.ai)

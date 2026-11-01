@@ -20,7 +20,7 @@ import CommunityMonitoring from '/snippets/zh/_community_monitoring.mdx';
 
 ClickHouse Cloud 通过 Monitoring 部分中内置的仪表板界面提供全面的监控能力。这些仪表板可实时展示系统和性能指标，无需额外配置，是 ClickHouse Cloud 中进行生产环境实时监控的主要工具。
 
-* **高级仪表板**：这是可通过 Monitoring → Advanced dashboard 访问的主仪表板界面，可实时查看查询速率、资源使用情况、系统健康状态和存储性能。此仪表板无需单独身份验证，不会阻止实例进入空闲状态，也不会给生产系统带来额外的查询负载。每个可视化均由可自定义的 SQL 查询提供支持，开箱即用的图表按 ClickHouse 特定指标、系统健康指标和 Cloud 特定指标分组。你还可以直接在 SQL 控制台中创建自定义查询，以扩展监控能力。
+* **高级仪表板**：这是可通过 Monitoring → Advanced dashboard 访问的主仪表板界面，可实时查看查询速率、资源使用情况、系统健康状态和存储性能。此仪表板无需单独身份验证，不会阻止实例进入空闲状态，也不会给生产系统带来额外的查询负载。每个可视化均由可自定义的 SQL 查询提供支持，开箱即用的图表按 ClickHouse 特有指标、系统健康指标和 Cloud 特有指标分组。你还可以直接在 SQL 控制台中创建自定义查询，以扩展监控能力。
 
 <Note>
   访问这些指标不会向底层服务发起查询，也不会唤醒空闲服务。
@@ -34,7 +34,7 @@ ClickHouse Cloud 通过 Monitoring 部分中内置的仪表板界面提供全面
 
 <Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="高级仪表板" />
 
-这两个仪表板都能在不依赖外部工具的情况下立即提供服务健康状态和性能的可见性，这也是它们区别于 ClickStack 这类更侧重调试的外部工具之处。
+这两个仪表板都能在不依赖外部依赖项的情况下立即提供服务健康状态和性能的可见性，这也是它们区别于 ClickStack 这类更侧重调试的外部工具之处。
 
 有关仪表板功能详情和可用指标，请参阅[高级仪表板文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
 

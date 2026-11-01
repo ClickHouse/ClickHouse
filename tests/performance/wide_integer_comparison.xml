@@ -34,7 +34,12 @@
     <query>SELECT count() FROM cmp128 WHERE small_u1 &lt; small_u2</query>
     <query>SELECT count() FROM cmp128 WHERE mixed_u1 &lt; mixed_u2</query>
     <query>SELECT count() FROM cmp128 WHERE u1 &gt; u2</query>
+    <query>SELECT count() FROM cmp128 WHERE u1 &lt;= u2</query>
+    <query>SELECT count() FROM cmp128 WHERE i1 &lt;= i2</query>
+    <query>SELECT count() FROM cmp128 WHERE mixed_u1 &lt;= mixed_u2</query>
+    <query>SELECT count() FROM cmp128 WHERE u1 &gt;= u2</query>
     <query>SELECT count() FROM cmp128 WHERE i1 &gt;= i2</query>
+    <query>SELECT count() FROM cmp128 WHERE mixed_u1 &gt;= mixed_u2</query>
     <query>SELECT count() FROM cmp128 WHERE u1 &lt; bitShiftLeft(toUInt128(1), 127)</query>
     <query>SELECT i1 FROM cmp128 ORDER BY i1 LIMIT 10</query>
     <query>SELECT u1 FROM cmp128 ORDER BY u1 DESC LIMIT 10</query>

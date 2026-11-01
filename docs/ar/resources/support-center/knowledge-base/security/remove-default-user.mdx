@@ -1,26 +1,22 @@
 ---
 date: 2025-01-16
-title: كيف أحذف المستخدم default؟
-description: "تعرّف على كيفية حذف المستخدم default عند تشغيل ClickHouse Server."
+title: كيف أزيل المستخدم default؟
+description: "تعرّف على كيفية إزالة المستخدم default عند تشغيل خادم ClickHouse."
 tags: ['مسؤول الخادم']
-words: ['حذف المستخدم default', 'ClickHouse Server']
+words: ['إزالة المستخدم default', 'خادم ClickHouse']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="removing-the-default-user">
-  ## إزالة المستخدم default
+  ## إزالة المستخدم `default`
 </div>
 
 <Note>
-  هذا الدليل غير قابل للتطبيق على ClickHouse Cloud.
+  لا ينطبق هذا الدليل على ClickHouse Cloud.
 </Note>
 
-في هذا الدليل، سنتعلّم كيفية إزالة المستخدم `default` من ClickHouse Server.
+في هذا الدليل، سنتعلّم كيفية إزالة المستخدم `default` من خادم ClickHouse.
 
-يمكننا القيام بذلك من خلال إنشاء ملف YAML (لنُسمِّه `remove_default_user.yaml`) يتضمن المحتوى التالي
+يمكننا القيام بذلك من خلال إنشاء ملف YAML (لنسمّه `remove_default_user.yaml`) بالمحتوى التالي
 
 ```yaml
 users:
@@ -28,13 +24,13 @@ users:
     "@remove": remove
 ```
 
-يعتمد موقع هذا الملف على طريقة تثبيت ClickHouse.
+يعتمد موقع هذا الملف على الطريقة التي ثبّتْنا بها ClickHouse.
 
 <div id="running-the-executable-directly">
-  ## تشغيل البرنامج التنفيذي مباشرةً
+  ## تشغيل الملف التنفيذي مباشرةً
 </div>
 
-إذا كنا نشغّل ClickHouse مباشرةً (`clickhouse server`)، فعلينا وضع الملف ضمن الدليل `config.d`.
+إذا كنّا نشغّل ClickHouse مباشرةً (`clickhouse server`)، فعلينا وضع الملف في الدليل `config.d`.
 
 عند تشغيل خادم ClickHouse:
 
@@ -42,13 +38,13 @@ users:
 clickhouse server
 ```
 
-سيظهر السطر التالي في السجلات:
+سنرى السطر التالي في السجلات:
 
 ```
 {} <Debug> ConfigProcessor: Merging configuration file 'config.d/remove_default_user.yaml'.
 ```
 
-ولن نتمكن من الاتصال باستخدام `clickhouse client`:
+ولن نتمكن من إجراء اتصال باستخدام `clickhouse client`:
 
 ```
 ClickHouse client version 24.11.1.2557 (official build).
@@ -62,7 +58,7 @@ Code: 516. DB::Exception: Received from localhost:9000. DB::Exception: default: 
   ## Docker أو التثبيت المحلي
 </div>
 
-إذا كنا نشغّل ClickHouse عبر Docker أو كان مثبّتًا على جهازنا، فعلينا وضع الملف بدلًا من ذلك في الدليل `/etc/clickhouse-server/users.d`.
+إذا كنا نشغّل ClickHouse عبر Docker أو كان مُثبّتًا على جهازنا، فنحتاج بدلًا من ذلك إلى وضع الملف ضمن الدليل `/etc/clickhouse-server/users.d`.
 
 لذا، إذا كنا نشغّله باستخدام Docker، يمكننا ربط الدليل `config.d` الذي أنشأناه سابقًا بـ `/etc/clickhouse-server/users.d`:
 
@@ -79,7 +75,7 @@ Logging trace to /var/log/clickhouse-server/clickhouse-server.log
 Logging errors to /var/log/clickhouse-server/clickhouse-server.err.log
 ```
 
-يمكننا بعد ذلك البحث في سجلات الخادم للتأكد من أنه قد تم رصده:
+يمكننا بعد ذلك البحث في سجلات الخادم للتأكد من أنه قد جرى رصده:
 
 ```bash
 docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Command}}"
@@ -94,7 +90,7 @@ CONTAINER ID   IMAGE                                NAMES               COMMAND
 docker exec -it trusting_rosalind grep "users\.d" /var/log/clickhouse-server/clickhouse-server.log
 ```
 
-يجب أن يظهر السطر التالي:
+يُفترض أن يظهر السطر التالي:
 
 ```text
 {} <Debug> ConfigProcessor: Merging configuration file '/etc/clickhouse-server/users.d/remove_default_user.yaml'.

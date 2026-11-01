@@ -15,6 +15,7 @@
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
@@ -77,29 +78,12 @@ public:
 
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const bool is_year_month_variant = (arguments.size() == 3);
-
-        if (is_year_month_variant)
-        {
-            FunctionArgumentDescriptors args{
-                {mandatory_argument_names_year_month_day[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-                {mandatory_argument_names_year_month_day[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-                {mandatory_argument_names_year_month_day[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
-            };
-            validateFunctionArguments(*this, arguments, args);
-        }
-        else
-        {
-            FunctionArgumentDescriptors args{
-                {mandatory_argument_names_year_dayofyear[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-                {mandatory_argument_names_year_dayofyear[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
-            };
-            validateFunctionArguments(*this, arguments, args);
-        }
-
-        return std::make_shared<typename Traits::ReturnDataType>();
+        const String to = typename Traits::ReturnDataType{}.getName();
+        return
+            "(Number, Number) -> " + to
+            + " OR (Number, Number, Number) -> " + to;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -156,12 +140,17 @@ public:
 
                 Int32 day_num = 0;
 
-                if (year >= Traits::MIN_YEAR && year <= Traits::MAX_YEAR &&
-                    dayofyear >= 1 && dayofyear <= 365)
+                if (year >= Traits::MIN_YEAR && year <= Traits::MAX_YEAR && dayofyear >= 1)
                 {
-                    Int32 days_since_epoch = date_lut.makeDayNum(static_cast<Int16>(year), 1, 1) + static_cast<Int32>(dayofyear) - 1;
-                    if (days_since_epoch <= max_days_since_epoch)
-                        day_num = days_since_epoch;
+                    const auto year_int = static_cast<Int16>(year);
+                    const auto days_in_year = date_lut.calc_days_in_year(year_int) + (year_int == 0 ? 1 : 0);
+
+                    if (dayofyear <= static_cast<Float32>(days_in_year))
+                    {
+                        Int32 days_since_epoch = date_lut.makeDayNum(year_int, 1, 1) + static_cast<Int32>(dayofyear) - 1;
+                        if (days_since_epoch <= max_days_since_epoch)
+                            day_num = days_since_epoch;
+                    }
                 }
 
                 result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
@@ -188,15 +177,10 @@ public:
 
     size_t getNumberOfArguments() const override { return mandatory_argument_names.size(); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
-        };
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<typename Traits::ReturnDataType>();
+        const String to = typename Traits::ReturnDataType{}.getName();
+        return "(Number) -> " + to;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -257,8 +241,8 @@ struct Date32Traits
     static constexpr auto YYYYMMDDName = "YYYYMMDDToDate32";
     using ReturnDataType = DataTypeDate32;
 
-    static constexpr auto MIN_YEAR = 1900;
-    static constexpr auto MAX_YEAR = 2299;
+    static constexpr auto MIN_YEAR = 0;
+    static constexpr auto MAX_YEAR = 9999;
     static constexpr std::array MAX_DATE = {MAX_YEAR, 12, 31};
 };
 
@@ -289,12 +273,14 @@ protected:
 
     static Int64 minDateTime(const DateLUTImpl & lut)
     {
-        return lut.makeDateTime(DATE_LUT_MIN_YEAR - 1, 1, 1, 0, 0, 0);
+        /// DateLUTImpl::makeDateTime no longer clamps out-of-range years (DateTime64 supports the extended range),
+        /// so pin the clamp sentinels to explicit in-range dates to keep makeDateTime / makeDateTime64 behaviour.
+        return lut.makeDateTime(DATE_LUT_MIN_YEAR, 1, 1, 0, 0, 0);
     }
 
     static Int64 maxDateTime(const DateLUTImpl & lut)
     {
-        return lut.makeDateTime(DATE_LUT_MAX_YEAR + 1, 1, 1, 23, 59, 59);
+        return lut.makeDateTime(DATE_LUT_MAX_YEAR, 12, 31, 23, 59, 59);
     }
 
     std::string extractTimezone(const ColumnWithTypeAndName & timezone_argument) const
@@ -314,7 +300,12 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument 'precision' for function {} must be constant number", getName());
 
-        Int64 precision = precision_argument.column->getInt(0);
+        /// Read the precision as its logical numeric value, exactly as the declarative signature's
+        /// `DateTime64(precision)` type function does (via `FieldVisitorConvertToNumber`). A bare
+        /// `column->getInt(0)` returns the raw underlying integer of a `Decimal` column instead of
+        /// its value (e.g. `0.001 :: Decimal(18, 3)` reads back as `1`, not `0`), which would make
+        /// the produced `DateTime64` scale disagree with the one inferred for the result type.
+        Int64 precision = applyVisitor(FieldVisitorConvertToNumber<Int64>(), (*precision_argument.column)[0]);
 
         if (precision < 0 || precision > 9)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
@@ -334,7 +325,6 @@ protected:
 class FunctionMakeDateTime final : public FunctionMakeDateTimeBase
 {
 private:
-    static constexpr std::array optional_argument_names = {"timezone"};
 
 public:
     static constexpr auto name = "makeDateTime";
@@ -343,29 +333,11 @@ public:
 
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[3], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[4], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[5], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        /// Optional timezone argument
-        std::string timezone;
-        if (arguments.size() == mandatory_argument_names.size() + 1)
-            timezone = extractTimezone(arguments.back());
-
-        return std::make_shared<DataTypeDateTime>(timezone);
+        return
+            "(Number, Number, Number, Number, Number, Number) -> DateTime"
+            " OR (Number, Number, Number, Number, Number, Number, const tz StringOrFixedString) -> DateTime(tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -415,7 +387,6 @@ public:
 class FunctionMakeDateTime64 final : public FunctionMakeDateTimeBase
 {
 private:
-    static constexpr std::array optional_argument_names = {"fraction", "precision", "timezone"};
 
 public:
     static constexpr auto name = "makeDateTime64";
@@ -424,44 +395,13 @@ public:
 
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[3], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[4], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {mandatory_argument_names[5], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "const Number"},
-            {optional_argument_names[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), isColumnConst, "const Number"},
-            {optional_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
-        };
-
-            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        if (arguments.size() >= mandatory_argument_names.size() + 1)
-        {
-            const auto& fraction_argument = arguments[mandatory_argument_names.size()];
-            if (!isNumber(fraction_argument.type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument 'fraction' for function {} must be a number", getName());
-        }
-
-        /// Optional precision argument
-        Int64 precision = DEFAULT_PRECISION;
-        if (arguments.size() >= mandatory_argument_names.size() + 2)
-            precision = extractPrecision(arguments[mandatory_argument_names.size() + 1]);
-
-        /// Optional timezone argument
-        std::string timezone;
-        if (arguments.size() == mandatory_argument_names.size() + 3)
-            timezone = extractTimezone(arguments.back());
-
-        return std::make_shared<DataTypeDateTime64>(precision, timezone);
+        return
+            "(Number, Number, Number, Number, Number, Number) -> DateTime64(3)"
+            " OR (Number, Number, Number, Number, Number, Number, Number) -> DateTime64(3)"
+            " OR (Number, Number, Number, Number, Number, Number, Number, const precision Number) -> DateTime64(precision)"
+            " OR (Number, Number, Number, Number, Number, Number, Number, const precision Number, const tz StringOrFixedString) -> DateTime64(precision, tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -554,7 +494,6 @@ protected:
 class FunctionYYYYMMDDhhmmssToDateTime final : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
-    static constexpr std::array optional_argument_names = { "timezone" };
 
 public:
     static constexpr auto name = "YYYYMMDDhhmmssToDateTime";
@@ -563,24 +502,11 @@ public:
 
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        /// Optional timezone argument
-        std::string timezone;
-        if (arguments.size() == mandatory_argument_names.size() + 1)
-            timezone = extractTimezone(arguments.back());
-
-        return std::make_shared<DataTypeDateTime>(timezone);
+        return
+            "(Number) -> DateTime"
+            " OR (Number, const tz StringOrFixedString) -> DateTime(tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -633,7 +559,6 @@ public:
 class FunctionYYYYMMDDhhmmssToDateTime64 final : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
-    static constexpr std::array optional_argument_names = { "precision", "timezone" };
 
 public:
     static constexpr auto name = "YYYYMMDDhhmmssToDateTime64";
@@ -642,30 +567,12 @@ public:
 
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), isColumnConst, "const Number"},
-            {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        /// Optional precision argument
-        auto precision = DEFAULT_PRECISION;
-        if (arguments.size() >= mandatory_argument_names.size() + 1)
-            precision = extractPrecision(arguments[mandatory_argument_names.size()]);
-
-        /// Optional timezone argument
-        std::string timezone;
-        if (arguments.size() == mandatory_argument_names.size() + 2)
-            timezone = extractTimezone(arguments.back());
-
-        return std::make_shared<DataTypeDateTime64>(precision, timezone);
+        return
+            "(Number) -> DateTime64(3)"
+            " OR (Number, const precision Number) -> DateTime64(precision)"
+            " OR (Number, const precision Number, const tz StringOrFixedString) -> DateTime64(precision, tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -714,7 +621,7 @@ public:
 
             auto fraction = std::llround(decimal * fraction_pow);
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
+            result_data[i] = DecimalUtils::dateTimeFromComponents(date_time, fraction, precision);
         }
 
         return res_column;
@@ -739,7 +646,7 @@ makeDate(year, day_of_year)
         {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
         {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
         {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
+        {"day_of_year", "Day of the year (1-365, or 366 in leap years).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate = {"Returns a `Date` value constructed from the provided arguments", {"Date"}};
     FunctionDocumentation::Examples examples_makeDate = {
@@ -780,7 +687,7 @@ makeDate32(year, day_of_year)
         {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
         {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
         {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
+        {"day_of_year", "Day of the year (1-365, or 366 in leap years).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate32 = {"Returns a `Date32` value constructed from the provided arguments", {"Date32"}};
     FunctionDocumentation::Examples examples_makeDate32 = {
@@ -876,7 +783,7 @@ SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
 
     FunctionDocumentation::Description description_yyyymmddtodate = R"(
 Converts a number containing the year, month and day number to a `Date`.
-This function is the opposite of function [`toYYYYMMDD()`](/sql-reference/functions/date-time-functions#toYYYYMMDD).
+This function is the opposite of function [`toYYYYMMDD()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDD).
 The output is undefined if the input does not encode a valid Date value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddtodate = R"(
@@ -892,9 +799,9 @@ YYYYMMDDToDate(YYYYMMDD)
 SELECT YYYYMMDDToDate(20230911);
         )",
         R"(
-┌─toYYYYMMDD(20230911)─┐
-│           2023-09-11 │
-└──────────────────────┘
+┌─YYYYMMDDToDate(20230911)─┐
+│               2023-09-11 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddtodate = {23, 9};
@@ -905,7 +812,7 @@ SELECT YYYYMMDDToDate(20230911);
 
     FunctionDocumentation::Description description_yyyymmddtodate32 = R"(
 Converts a number containing the year, month and day number to a `Date32`.
-This function is the opposite of function [`toYYYYMMDD()`](/sql-reference/functions/date-time-functions#toYYYYMMDD).
+This function is the opposite of function [`toYYYYMMDD()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDD).
 The output is undefined if the input does not encode a valid `Date32` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddtodate32 = R"(
@@ -933,7 +840,7 @@ SELECT YYYYMMDDToDate32(20000507);
 
     FunctionDocumentation::Description description_yyyymmddhhmmsstodatetime = R"(
 Converts a number containing the year, month, day, hour, minute, and second to a `DateTime`.
-This function is the opposite of function [`toYYYYMMDDhhmmss()`](/sql-reference/functions/date-time-functions#toYYYYMMDDhhmmss).
+This function is the opposite of function [`toYYYYMMDDhhmmss()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDDhhmmss).
 The output is undefined if the input does not encode a valid `DateTime` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime = R"(
@@ -947,12 +854,12 @@ YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
     FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime = {"Returns a `DateTime` value from the provided arguments", {"DateTime"}};
     FunctionDocumentation::Examples examples_yyyymmddhhmmsstodatetime = {
         {"Example", R"(
-SELECT YYYYMMDDToDateTime(20230911131415);
+SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
         )",
         R"(
-┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                           2023-09-11 13:14:15 │
-└───────────────────────────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                      2023-09-11 13:14:15 │
+└──────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime = {23, 9};
@@ -963,7 +870,7 @@ SELECT YYYYMMDDToDateTime(20230911131415);
 
     FunctionDocumentation::Description description_yyyymmddhhmmsstodatetime64 = R"(
 Converts a number containing the year, month, day, hour, minute, and second to a `DateTime64`.
-This function is the opposite of function [`toYYYYMMDDhhmmss()`](/sql-reference/functions/date-time-functions#toYYYYMMDDhhmmss).
+This function is the opposite of function [`toYYYYMMDDhhmmss()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDDhhmmss).
 The output is undefined if the input does not encode a valid `DateTime64` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime64 = R"(
@@ -981,9 +888,9 @@ YYYYMMDDhhmmssToDateTime64(YYYYMMDDhhmmss[, precision[, timezone]])
 SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
         )",
         R"(
-┌─YYYYMMDDhhmm⋯/Istanbul')─┐
-│  2023-09-11 13:14:15.000 │
-└──────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
+│                                        2023-09-11 13:14:15.000 │
+└────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime64 = {23, 9};

@@ -23,7 +23,8 @@ If you use AWS NLB with the MySQL interface, you have to ask AWS support to enab
 > I would like to be able to configure our NLB proxy protocol v2 as below `proxy_protocol_v2.client_to_server.header_placement,Value=on_first_ack`.
 </Note>
 
-## 1. Create SSL user certificates {#1-create-ssl-user-certificates}
+<Steps>
+<Step title="Create SSL user certificates" id="1-create-ssl-user-certificates">
 
 <Note>
 This example uses self-signed certificates with a self-signed CA. For production environments, create a CSR and submit to your PKI team or certificate provider to obtain a proper certificate.
@@ -50,7 +51,8 @@ This example uses self-signed certificates with a self-signed CA. For production
     openssl x509 -req -in chnode1_cert_user.csr -out chnode1_cert_user.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365
     ```
 
-## 2. Create a SQL user and grant permissions {#2-create-a-sql-user-and-grant-permissions}
+</Step>
+<Step title="Create a SQL user and grant permissions" id="2-create-a-sql-user-and-grant-permissions">
 
 <Note>
 For details on how to enable SQL users and set roles, refer to [Defining SQL Users and Roles](/concepts/features/security/access-rights) user guide.
@@ -88,7 +90,8 @@ For details on how to enable SQL users and set roles, refer to [Defining SQL Use
     ```
 </Note>
 
-## 3. Testing {#3-testing}
+</Step>
+<Step title="Testing" id="3-testing">
 
 1. Copy the user certificate, user key and CA certificate to a remote node.
 
@@ -112,7 +115,8 @@ For details on how to enable SQL users and set roles, refer to [Defining SQL Use
     Note that the password passed to clickhouse-client is ignored when a certificate is specified in the config.
 </Note>
 
-## 4. Testing HTTP {#4-testing-http}
+</Step>
+<Step title="Testing HTTP" id="4-testing-http">
 
 1. Copy the user certificate, user key and CA certificate to a remote node.
 
@@ -134,6 +138,9 @@ For details on how to enable SQL users and set roles, refer to [Defining SQL Use
 <Note>
     Notice that no password was specified, the certificate is used in lieu of a password and is how ClickHouse will authenticate the user.
 </Note>
+
+</Step>
+</Steps>
 
 ## Summary {#summary}
 

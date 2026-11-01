@@ -14,27 +14,23 @@ Dans certains cas, il peut être utile de resynchroniser des tables spécifiques
 
 Bien que la resynchronisation de tables individuelles en un clic soit encore en cours de développement, ce guide explique les étapes à suivre pour le faire dès aujourd’hui avec le Postgres ClickPipe.
 
-<div id="removing-table">
-  ### 1. Supprimer la table du pipeline
-</div>
+<Steps>
+  <Step title="Supprimer la table du pipeline" id="removing-table">
+    Pour cela, vous pouvez suivre le [guide de suppression de table](/fr/integrations/clickpipes/postgres/remove-table).
+  </Step>
 
-Pour cela, suivez le [guide de suppression de la table](/fr/integrations/clickpipes/postgres/remove-table).
+  <Step title="Tronquer ou supprimer la table dans ClickHouse" id="truncate-drop-table">
+    Cette étape permet d’éviter les doublons de données lorsque nous ajouterons à nouveau cette table à l’étape suivante. Pour cela, accédez à l’onglet **SQL Console** dans ClickHouse Cloud et exécutez une requête.
+    Notez que nous avons une validation qui bloque l’ajout d’une table si celle-ci existe déjà dans ClickHouse et n’est pas vide.
 
-<div id="truncate-drop-table">
-  ### 2. TRUNCATE ou supprimez la table dans ClickHouse
-</div>
+    Sinon, si vous devez conserver l’ancienne table, vous pouvez simplement la renommer. Cela est également utile lorsque la table est très volumineuse et que l’opération de suppression peut prendre un certain temps.
 
-Cette étape permet d’éviter les doublons de données lorsque nous ajouterons de nouveau cette table à l’étape suivante. Pour ce faire, accédez à l’onglet **SQL Console** dans ClickHouse Cloud et exécutez une requête.
-Notez qu’une validation empêche l’ajout de la table si elle existe déjà dans ClickHouse et n’est pas vide.
+    ```sql
+    RENAME TABLE table_A TO table_A_bak;
+    ```
+  </Step>
 
-Sinon, si vous devez conserver l’ancienne table, vous pouvez simplement la renommer. Cela peut également être utile lorsque la table est très volumineuse et que l’opération de suppression risque de prendre un certain temps.
-
-```sql
-RENAME TABLE table_A TO table_A_bak;
-```
-
-<div id="add-table-again">
-  ### 3. Ajouter à nouveau la table au ClickPipe
-</div>
-
-Pour ce faire, suivez le [guide d&#39;ajout d&#39;une table](/fr/integrations/clickpipes/postgres/add-table).
+  <Step title="Ajouter de nouveau la table au ClickPipe" id="add-table-again">
+    Pour cela, vous pouvez suivre le [guide d’ajout de table](/fr/integrations/clickpipes/postgres/add-table).
+  </Step>
+</Steps>

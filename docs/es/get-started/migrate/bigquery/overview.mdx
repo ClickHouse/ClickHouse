@@ -10,11 +10,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-<div id="resource-organization">
-  ## Organización de los recursos
-</div>
+## Organización de los recursos {#resource-organization}
 
-La manera en que se organizan los recursos en ClickHouse Cloud es similar a la [jerarquía de recursos de BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). A continuación, describimos las diferencias específicas según el siguiente diagrama, que muestra la jerarquía de recursos de ClickHouse Cloud:
+La manera en que se organizan los recursos en ClickHouse Cloud es similar a la [jerarquía de recursos de BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). A continuación, describimos las diferencias específicas basándonos en el siguiente diagrama, que muestra la jerarquía de recursos de ClickHouse Cloud:
 
 <Image img="/images/migrations/bigquery-1.webp" size="md" alt="Organización de los recursos" />
 
@@ -62,7 +60,7 @@ Por último, la programación de E/S te permite restringir los accesos a disco l
   ### Permisos
 </div>
 
-ClickHouse Cloud controla el acceso de los usuarios en dos ámbitos: mediante la [consola de ClickHouse Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) y mediante la [base de datos](/es/products/cloud/guides/security/cloud-access-management/manage-database-users). El acceso a la consola se gestiona a través de la interfaz de usuario de [clickhouse.cloud](https://console.clickhouse.cloud). El acceso a la base de datos se gestiona mediante cuentas de usuario de base de datos y roles. Además, a los usuarios de la consola se les pueden conceder roles dentro de la base de datos para que puedan interactuar con ella a través de nuestra [consola SQL](/es/integrations/connectors/sql-clients/sql-console).
+ClickHouse Cloud controla el acceso de los usuarios en dos ámbitos: mediante la [consola de ClickHouse Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users) y mediante la [base de datos](/es/products/cloud/guides/security/cloud-access-management/manage-database-users). El acceso a la consola se gestiona a través de la interfaz de usuario de [clickhouse.cloud](https://console.clickhouse.cloud). El acceso a la base de datos se gestiona mediante cuentas de usuario de base de datos y roles. Además, a los usuarios de la consola se les pueden conceder roles dentro de la base de datos para que puedan interactuar con ella a través de nuestra [consola SQL](/es/integrations/connectors/sql-clients/sql-console).
 
 <div id="data-types">
   ## Tipos de datos

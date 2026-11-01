@@ -75,7 +75,7 @@ The required volume of RAM generally depends on:
 - The amount of data that is processed in queries.
 
 In general, however, the more memory you have, the faster your queries will run. 
-If your use case is sensitive to price, lower amounts of memory will work as it is possible to enable settings ([`max_bytes_before_external_group_by`](/reference/settings/session-settings#max_bytes_before_external_group_by) and [`max_bytes_before_external_sort`](/reference/settings/session-settings#max_bytes_before_external_sort)) to allow spilling data to disk, but note that this may significantly affect query performance.
+If your use case is sensitive to price, lower amounts of memory will work as it is possible to enable settings ([`max_bytes_before_external_group_by`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) and [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) to allow spilling data to disk, but note that this may significantly affect query performance.
 
 ### What should the memory-to-storage ratio be? {#what-should-the-memory-to-storage-ratio-be}
 
@@ -225,7 +225,7 @@ Below are published blog posts on architectures from companies using open-source
 
 - [Cloudflare](https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/?utm_source=linkedin&utm_medium=social&utm_campaign=blog)
 - [eBay](https://innovation.ebayinc.com/tech/engineering/ou-online-analytical-processing/)
-- [GitLab](https://handbook.gitlab.com/handbook/engineering/development/ops/monitor/observability/#clickhouse-datastore)
+- [GitLab](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/clickhouse_usage/)
 - [Lyft](https://eng.lyft.com/druid-deprecation-and-clickhouse-adoption-at-lyft-120af37651fd)
 - [MessageBird](https://clickhouse.com/blog/how-messagebird-uses-clickhouse-to-monitor-the-delivery-of-billions-of-messages)
 - [Microsoft](https://clickhouse.com/blog/self-service-data-analytics-for-microsofts-biggest-web-properties)

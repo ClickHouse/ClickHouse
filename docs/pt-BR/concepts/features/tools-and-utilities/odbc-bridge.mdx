@@ -1,34 +1,34 @@
 ---
-description: 'Documentação do ODBC Bridge'
+description: 'Documentação do Odbc Bridge'
 slug: /operations/utilities/odbc-bridge
 title: 'clickhouse-odbc-bridge'
 doc_type: 'reference'
 ---
 
-Servidor HTTP simples que atua como proxy para o ODBC Driver. A principal motivação
-foi a possibilidade de falhas de segmentação ou outros erros em implementações ODBC, que podem
+Servidor HTTP simples que funciona como proxy para o driver ODBC. A principal motivação
+foram possíveis segfaults ou outras falhas nas implementações de ODBC, que podem
 derrubar todo o processo do clickhouse-server.
 
-Esta ferramenta funciona via HTTP, não por pipes, memória compartilhada ou TCP, porque:
+Esta ferramenta funciona via HTTP, e não por pipes, memória compartilhada ou TCP, porque:
 
 * É mais simples de implementar
 * É mais simples de depurar
-* jdbc-bridge pode ser implementado da mesma forma
+* O jdbc-bridge pode ser implementado da mesma forma
 
 <div id="usage">
   ## Uso
 </div>
 
-`clickhouse-server` usa esta ferramenta dentro da função de tabela odbc e do StorageODBC.
-No entanto, ela também pode ser usada como uma ferramenta autônoma pela linha de comando com os seguintes
+`clickhouse-server` usa esta ferramenta na table function odbc e no StorageODBC.
+No entanto, ela também pode ser usada como uma ferramenta independente a partir da linha de comando, com os seguintes
 parâmetros na URL da requisição POST:
 
 * `connection_string` -- string de conexão ODBC.
-* `sample_block` -- descrição das colunas no formato ClickHouse NamesAndTypesList, com o nome entre crases
-  e o tipo como string. Nome e tipo são separados por espaço, e as linhas, por
+* `sample_block` -- descrição das colunas no formato ClickHouse NamesAndTypesList, nome entre backticks,
+  tipo como String. Nome e tipo são separados por espaço, e as linhas por
   quebra de linha.
-* `max_block_size` -- parâmetro opcional, define o tamanho máximo de um único bloco.
-  A consulta é enviada no corpo da requisição POST. A resposta é retornada no formato RowBinary.
+* `max_block_size` -- parâmetro opcional que define o tamanho máximo de um único bloco.
+  A consulta é enviada no corpo do POST. A resposta é retornada no formato RowBinary.
 
 <div id="example">
   ## Exemplo:

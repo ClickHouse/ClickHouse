@@ -33,15 +33,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 可访问 Kafka 的日志文件 (`server.log`、`controller.log` 等)
 
 <Steps>
-  <Step>
-    #### 验证 Kafka 日志配置
-
+  <Step title="验证 Kafka 日志配置" id="verify-kafka">
     Kafka 使用 Log4j，并将日志写入由系统属性 `kafka.logs.dir` 或环境变量 `LOG_DIR` 指定的目录。请检查日志文件的位置：
 
     ```bash
-    # 默认位置
-    ls $KAFKA_HOME/logs/      # 标准 Apache Kafka（默认路径为 <install-dir>/logs/）
-    ls /var/log/kafka/        # RPM/DEB 软件包安装
+    # Default locations
+    ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+    ls /var/log/kafka/        # RPM/DEB package installations
     ```
 
     Kafka 的关键日志文件：
@@ -61,9 +59,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 为 Kafka 创建自定义 OTel collector 配置
-
+  <Step title="为 Kafka 创建自定义 OTel collector 配置" id="custom-otel">
     ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。该自定义配置会与由 HyperDX 通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `kafka-logs-monitoring.yaml` 的文件，内容如下：
@@ -73,8 +69,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       filelog/kafka:
         include:
           - /var/log/kafka/server.log
-          - /var/log/kafka/controller.log  # 可选，仅在 log4j 配置了独立文件 appender 时存在
-          - /var/log/kafka/state-change.log  # 可选，同上
+          - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+          - /var/log/kafka/state-change.log  # optional, same as above
         start_at: beginning
         multiline:
           line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
@@ -120,9 +116,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 ClickStack 以加载自定义配置
-
+  <Step title="配置 ClickStack 以加载自定义配置" id="load-custom">
     要在现有的 ClickStack 部署中启用自定义 collector 配置，您需要：
 
     1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
@@ -166,9 +160,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
     配置完成后，登录 HyperDX，确认日志已开始流入：
 
     <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="搜索视图" />
@@ -181,12 +173,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 演示数据集
 </div>
 
-在配置生产系统之前，先用预生成的样本数据集测试 Kafka 日志集成。
+在配置生产系统之前，先使用预生成的样本数据集测试 Kafka 日志集成。
 
 <Steps>
-  <Step>
-    #### 下载样本数据集
-
+  <Step title="下载样本数据集" id="download-sample">
     下载样本日志文件：
 
     ```bash
@@ -194,9 +184,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建测试用 collector 配置
-
+  <Step title="创建测试用 collector 配置" id="test-config">
     创建一个名为 `kafka-logs-demo.yaml` 的文件，内容如下：
 
     ```yaml
@@ -245,9 +233,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用演示配置运行 ClickStack
-
+  <Step title="使用演示配置运行 ClickStack" id="run-demo">
     使用演示日志和配置运行 ClickStack：
 
     ```bash
@@ -263,7 +249,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     ClickStack 运行后：
 
-    1. 打开 [HyperDX](http://localhost:8080/) 并登录账户 (你可能需要先创建一个账户)
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户 (你可能需要先创建一个账户)
     2. 进入搜索视图，并将数据源设为 `Logs`
     3. 将时间范围设置为包含 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
@@ -278,13 +264,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预构建仪表盘
-
+  <Step title="导入预置仪表盘" id="import-dashboard">
     1. 打开 HyperDX，进入“仪表盘”部分。
     2. 点击右上角省略号下方的“导入仪表盘”。
 
@@ -295,9 +279,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="完成导入 Kafka 日志仪表盘" />
   </Step>
 
-  <Step>
-    #### 仪表盘创建后，所有可视化均已预先配置
-
+  <Step title="仪表盘将创建完成，且所有可视化均已预先配置" id="created-dashboard">
     对于演示数据集，请将时间范围设置为 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**。
 
     <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Kafka 日志示例仪表盘" />
@@ -337,7 +319,7 @@ tail -1 /var/log/kafka/server.log
 * 针对特定场景 (controller 事件、分区重新分配) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
 <div id="going-to-production">
-  ## 进入生产环境
+  ## 投入生产环境
 </div>
 
-本指南是在 ClickStack 内置的 OpenTelemetry Collector 基础上进行扩展，以便快速完成设置。对于生产部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南使用 ClickStack 内置的 OpenTelemetry Collector 进行快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

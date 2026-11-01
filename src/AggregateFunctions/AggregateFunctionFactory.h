@@ -31,6 +31,8 @@ class ASTFunction;
  * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
  * Parameters are for "parametric" aggregate functions.
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
+ * `Settings` is null when the function is constructed outside a query, e.g. while a background
+ * thread parses an `AggregateFunction(...)` type name.
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
 
@@ -119,6 +121,11 @@ private:
     /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
     std::optional<AggregateFunctionWithProperties> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
+    /// Name-only variant: the registered name that `name` resolves to under `action` (see the definition).
+    String getAssociatedNameByNullsAction(const String & name, NullsAction action) const;
+    /// Helper for the above: adjusts a name that still carries combinator suffixes (strip the suffix,
+    /// adjust the nested name for `action`, re-append). Returns nothing for base function names.
+    std::optional<String> getAssociatedNameUnderCombinatorSuffix(const String & name, NullsAction action) const;
 
     /// Case insensitive aggregate functions will be additionally added here with lowercased name.
     AggregateFunctions case_insensitive_aggregate_functions;

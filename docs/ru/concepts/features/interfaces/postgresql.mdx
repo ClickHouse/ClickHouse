@@ -6,17 +6,17 @@ title: 'Интерфейс PostgreSQL'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
 <Tip>
-  Ознакомьтесь с нашим сервисом [Managed Postgres](/ru/products/managed-postgres/overview). Благодаря NVMe-хранилищу, физически расположенному рядом с вычислительными ресурсами, он обеспечивает до 10 раз более высокую производительность для рабочих нагрузок, ограниченных дисковой подсистемой, по сравнению с альтернативами, использующими сетевые хранилища, такие как EBS, и позволяет реплицировать данные Postgres в ClickHouse с помощью коннектора Postgres CDC в ClickPipes.
+  Ознакомьтесь с нашим сервисом [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview). Благодаря NVMe-хранилищу, физически расположенному рядом с вычислительными ресурсами, он обеспечивает до 10 раз более высокую производительность для рабочих нагрузок, ограниченных дисковой подсистемой, по сравнению с альтернативами, использующими сетевые хранилища, такие как EBS, и позволяет реплицировать данные Postgres в ClickHouse с помощью коннектора Postgres CDC в ClickPipes.
 </Tip>
 
 ClickHouse поддерживает wire protocol PostgreSQL, что позволяет использовать клиенты Postgres для подключения к ClickHouse. В определённом смысле ClickHouse может выступать как экземпляр PostgreSQL, позволяя подключать к нему клиентские приложения PostgreSQL, которые ClickHouse пока не поддерживает напрямую (например, Amazon Redshift).
 
-Чтобы включить wire protocol PostgreSQL, добавьте параметр [postgresql&#95;port](/ru/reference/settings/server-settings/settings#postgresql_port) в конфигурационный файл сервера. Например, можно указать порт в новом XML-файле в папке `config.d`:
+Чтобы включить wire protocol PostgreSQL, добавьте параметр [postgresql&#95;port](/ru/reference/settings/server-settings/settings/postgresql#postgresql_port) в конфигурационный файл сервера. Например, можно указать порт в новом XML-файле в папке `config.d`:
 
 ```xml
 <clickhouse>

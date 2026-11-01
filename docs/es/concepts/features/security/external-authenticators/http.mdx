@@ -64,9 +64,7 @@ Reenviar encabezados:
 
 Esta parte define qué encabezados se reenviarán desde los encabezados de la solicitud del cliente al autenticador HTTP externo. Ten en cuenta que los encabezados se compararán con los configurados sin distinguir entre mayúsculas y minúsculas, pero se reenviarán tal cual, es decir, sin modificarlos.
 
-<div id="enabling-http-auth-in-users-xml">
-  ### Habilitar la autenticación HTTP en `users.xml`
-</div>
+### Habilitar la autenticación HTTP en `users.xml` {#enabling-http-auth-in-users-xml}
 
 Para habilitar la autenticación HTTP para el usuario, especifique la sección `http_authentication` en lugar de `password` o de secciones similares en la definición del usuario.
 
@@ -86,7 +84,7 @@ Ejemplo (va en `users.xml`):
             <server>basic_server</server>
             <scheme>basic</scheme>
         </http_authentication>
-    </test_user_2>
+    </my_user>
 </clickhouse>
 ```
 

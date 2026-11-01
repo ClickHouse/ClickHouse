@@ -24,8 +24,6 @@
 namespace DB
 {
 
-using namespace Paimon;
-
 class PaimonMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
@@ -92,14 +90,6 @@ public:
     /// Check if incremental read mode is enabled
     bool isIncrementalReadEnabled() const;
 
-    /// Get the last committed snapshot ID from Keeper (for incremental read)
-    std::optional<Int64> getCommittedSnapshotId() const;
-
-    /// Commit snapshot after successful processing (for incremental read)
-    /// Note: in normal incremental mode, committed_snapshot is already advanced
-    /// inside iterate(). This method exists for manual overrides only.
-    void commitSnapshot(Int64 snapshot_id);
-
 private:
     enum class ManifestKind : UInt8
     {
@@ -111,15 +101,22 @@ private:
     Strings collectDataFilesFromManifests(
         const std::vector<PaimonTableStatePtr> & snapshots,
         ManifestKind kind,
-        const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<Paimon::PartitionPruner> & partition_pruner,
         bool deduplicate,
-        bool track_deletes) const;
+        bool track_deletes,
+        std::optional<Int64> incremental_cursor = {}) const;
 
     /// Lock-free read of current state
     PaimonTableStatePtr getCurrentState() const;
 
     /// Load latest state from object storage (I/O outside of any lock)
     PaimonTableStatePtr loadLatestState() const;
+
+    /// Validate that the underlying Paimon table still has the same identity.
+    void validateTableIdentity() const;
+
+    /// Throws if the snapshot's index manifest lists deletion vectors. Pass the cursor of an incremental read for its recovery hint.
+    void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
@@ -130,42 +127,53 @@ private:
     /// (used by incremental read to avoid re-processing compacted data).
     /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
     /// (including skipped compact / missing ones), so the caller can advance the watermark
-    /// past gaps that produced no data files.
+    /// past gaps that produced no data files. last_scanned_state is its state, or nullptr
+    /// when that id was expired.
     std::vector<PaimonTableStatePtr> getSnapshotsBetween(
         Int64 from_snapshot_id,
         Int64 to_snapshot_id,
         UInt64 max_snapshots_to_load,
         bool skip_compact,
-        std::optional<Int64> & last_scanned_snapshot_id) const;
+        std::optional<Int64> & last_scanned_snapshot_id,
+        PaimonTableStatePtr & last_scanned_state) const;
 
     /// Extract table state from storage_metadata
     static PaimonTableStatePtr extractTableState(StorageMetadataPtr storage_metadata);
 
     /// Get or load manifest file list (uses cache)
-    std::vector<PaimonManifestFileMeta> getManifestList(const String & manifest_list_path) const;
+    ManifestListConstPtr getManifestList(const String & manifest_list_path) const;
 
     /// Get or load manifest content (uses cache)
-    PaimonManifest getManifest(const String & manifest_path, Int64 schema_id) const;
+    ManifestConstPtr getManifest(const String & manifest_path, Int64 schema_id) const;
+
+    /// Get or load index manifest content (uses cache)
+    PaimonIndexManifest getIndexManifest(const String & index_manifest_path) const;
 
     /// Validate configuration
     void checkSupportedConfiguration() const;
 
-    /// Collect data files for incremental read (from committed snapshot to current)
+    /// Collect data files for incremental read (from committed snapshot to current).
+    /// `committed` is the watermark observed under the processing lock.
     Strings collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
-        const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<Paimon::PartitionPruner> & partition_pruner,
         UInt64 max_consume_snapshots,
-        std::optional<Int64> & last_consumed_snapshot_id) const;
+        const PaimonCommittedSnapshot & committed,
+        std::optional<Int64> & last_consumed_snapshot_id,
+        std::optional<PaimonSnapshotIdentity> & last_consumed_identity) const;
+
+    /// Throws INVALID_STATE if the warehouse's snapshot `snapshot_id` is not the one the cursor consumed.
+    void checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)
     Strings collectDeltaFilesForSnapshot(
         const PaimonTableStatePtr & state,
-        const std::optional<PartitionPruner> & partition_pruner) const;
+        const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Collect data files for full scan
     Strings collectFullScanDataFiles(
         const PaimonTableStatePtr & state,
-        const std::optional<PartitionPruner> & partition_pruner) const;
+        const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Background refresh task entry
     void scheduleBackgroundRefresh();

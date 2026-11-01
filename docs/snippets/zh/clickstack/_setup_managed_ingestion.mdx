@@ -2,6 +2,8 @@
 title: 设置托管摄取
 ---
 
+import ManagedIngestionExampleOtelConfig from '/snippets/zh/clickstack/_config_example_otel.mdx';
+
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
 选择“开始摄取”后，系统会提示你选择摄取源。托管 ClickStack 主要支持 OpenTelemetry 和 [Vector](https://vector.dev/) 作为摄取源。不过，用户也可以借助任意 [ClickHouse Cloud 支持的集成](/zh/integrations/home)，按自己的 schema 将数据直接发送到 ClickHouse。
@@ -51,7 +53,7 @@ title: 设置托管摄取
 
     为此，我们提供了一个 OpenTelemetry Collector 配置示例。该示例使用经过适当设置的 ClickHouse exporter，并开放 OTLP receiver。此配置与 ClickStack 发行版所期望的接口和行为一致。
 
-    <ExampleOTelConfig />
+    <ManagedIngestionExampleOtelConfig />
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 

@@ -1,0 +1,332 @@
+---
+sidebarTitle: 'aprovisionamiento SCIM con Entra ID'
+slug: /cloud/security/scim-setup-entra
+title: 'aprovisionamiento SCIM con Microsoft Entra ID'
+description: 'Cómo configurar el aprovisionamiento SCIM entre Microsoft Entra ID y ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SCIM', 'aprovisionamiento', 'Entra ID', 'Azure AD', 'Microsoft', 'SSO', 'SAML', 'proveedor de identidad', 'IdP', 'gestión de usuarios']
+---
+
+import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<EnterprisePlanFeatureBadge feature="SCIM" />
+
+ClickHouse Cloud admite SCIM 2.0 (System for Cross-domain Identity Management) para la gestión automatizada del ciclo de vida de usuarios y grupos. Una vez conectado a su proveedor de identidad, cada usuario que asigne a la aplicación de ClickHouse Cloud se crea automáticamente en su organización con el rol adecuado, las actualizaciones de perfil se sincronizan automáticamente y, al eliminar un usuario de su IdP, se revoca su acceso, sin invitaciones manuales ni cuentas huérfanas.
+
+Esta guía explica cómo configurar el aprovisionamiento SCIM de principio a fin con **Microsoft Entra ID** (anteriormente Azure Active Directory). El endpoint de SCIM de ClickHouse Cloud cumple con SCIM 2.0 (RFC 7644). Entra ID se autentica en el endpoint mediante un token Bearer de larga duración, que se genera a partir de la clave y el secreto de SCIM creados en la ClickHouse Cloud Console.
+
+<Tip>
+  **¿Usa Okta?**
+
+  Si su proveedor de identidad es Okta, siga la guía [SCIM provisioning with Okta](/es/products/cloud/guides/security/cloud-access-management/scim-setup). La configuración en ClickHouse Cloud es idéntica; solo difiere la configuración del IdP.
+</Tip>
+
+<div id="before-you-begin">
+  ## Antes de empezar
+</div>
+
+Necesitarás:
+
+* El rol **Admin** en tu organización de ClickHouse Cloud.
+* [SAML SSO](/es/products/cloud/guides/security/cloud-access-management/saml-sso-setup) ya configurado entre Entra ID y ClickHouse Cloud. SCIM crea las cuentas de usuario; estas inician sesión mediante SAML, por lo que SSO debe funcionar previamente.
+* Acceso al **centro de administración de Microsoft Entra** con, como mínimo, el rol de **Administrador de aplicaciones** (o **Administrador de aplicaciones en la nube**) y permiso para configurar el aprovisionamiento en la aplicación empresarial.
+* Una lista de los roles que quieres asignar mediante SCIM (por ejemplo: Admin, Desarrolladores, Solo lectura). Decide esto de antemano: crearás los grupos correspondientes en Entra ID.
+
+<div id="how-scim-works">
+  ## Cómo funciona SCIM con ClickHouse Cloud
+</div>
+
+1. Un administrador de Entra ID asigna un usuario, directamente o mediante un grupo, a la aplicación empresarial de ClickHouse Cloud.
+2. El servicio de aprovisionamiento de Entra ID llama al endpoint SCIM de ClickHouse Cloud a través de HTTPS y se autentica con un token Bearer que usted genera.
+3. ClickHouse Cloud crea el usuario en su organización y asigna roles según su pertenencia a grupos de Entra ID.
+4. El usuario inicia sesión en ClickHouse Cloud mediante su flujo de SAML SSO existente.
+5. Los cambios de perfil y de grupo, así como la desactivación en Entra ID, se propagan automáticamente a ClickHouse Cloud.
+
+<div id="configure-clickhouse-cloud">
+  ## Configura SCIM en tu organización de ClickHouse Cloud
+</div>
+
+<Steps>
+  <Step title="Enable SCIM" id="enable-scim-provisioning">
+    Inicia sesión en **ClickHouse Cloud Console** como administrador de la organización y abre **Configuración de la organización → Configuración de SAML y SCIM → Configuración de SCIM**.
+
+    Haz clic en `Enable SCIM`. SCIM se desbloquea cuando se conecta SAML SSO; si la opción aparece atenuada, primero completa la configuración de SAML.
+
+    Se genera una **URL de endpoint de SCIM** con el formato:
+
+    ```plaintext
+    https://api.clickhouse.cloud/v1/organizations/<your-org-id>/scim
+    ```
+
+    Cópiala; más adelante la pegarás en Entra ID como la **URL del inquilino**.
+  </Step>
+
+  <Step title="Genera un token de acceso de SCIM" id="generate-scim-token">
+    Busca la sección `Generate new key` y elige una fecha de vencimiento.
+
+    <Tip>
+      **Planifica la rotación**
+
+      Recomendamos establecer una caducidad de 12 meses y añadir un recordatorio en el calendario. ClickHouse Cloud admite hasta dos tokens de SCIM activos simultáneamente, por lo que puedes realizar la rotación sin tiempo de inactividad: genera el token nuevo, actualízalo en Entra ID, confirma que el aprovisionamiento sigue funcionando y, a continuación, revoca el token anterior.
+    </Tip>
+
+    Haz clic en `Generate new key`. El token se muestra **una sola vez**, como una clave (con el prefijo `scim_`) y un secreto. Copia ambos de inmediato y guárdalos en un gestor de secretos seguro; no podrás recuperarlos más adelante. Si los pierdes, revoca el token y genera uno nuevo.
+
+    Combinarás la clave y el secreto en un único token Bearer para Entra ID con el formato:
+
+    ```plaintext
+    <scim-key>:<scim-secret>
+    ```
+
+    En concreto, la **clave** del token (que empieza por `scim_`), seguida de dos puntos y del **secreto** del token, sin espacios. Entra ID envía este valor como encabezado `Authorization: Bearer` en cada solicitud.
+  </Step>
+
+  <Step title="Define la asignación de roles" id="define-role-mapping">
+    En el panel Configuración de SCIM, haz clic en **Map roles in &quot;Users and roles&quot;** (o navega directamente mediante **Users and roles → Roles**).
+
+    Los grupos de SCIM se vinculan a los roles de ClickHouse Cloud por nombre. Ten en cuenta las siguientes reglas:
+
+    * **No puedes asignar un grupo de SCIM a un rol de sistema predefinido.** Las asignaciones de SCIM solo se aplican a roles personalizados. Si necesitas exponer una capacidad de nivel de sistema mediante SCIM, crea un rol personalizado que incluya los permisos que deseas.
+    * **Los nombres coincidentes se vinculan automáticamente.** Si un rol personalizado tiene el mismo nombre que el grupo de SCIM entrante, ClickHouse Cloud los vincula automáticamente; no se necesita ninguna asignación manual.
+    * **Para usar un nombre de rol diferente del nombre del grupo**, crea el rol personalizado con el nombre que desees y, a continuación, establece su campo **SCIM group** con el nombre del grupo de SCIM al que debe vincularse.
+    * **Los grupos sin asignar crean roles nuevos.** Si Entra ID envía un grupo cuyo nombre no coincide con ningún rol existente y no aparece en el campo `SCIM group` de ningún rol, ClickHouse Cloud crea un nuevo rol personalizado con el nombre de ese grupo. Después, puedes otorgarle los permisos que desees.
+  </Step>
+</Steps>
+
+<div id="configure-entra">
+  ## Configurar el aprovisionamiento en Microsoft Entra ID
+</div>
+
+<Steps>
+  <Step title="Abra su aplicación Enterprise de ClickHouse Cloud" id="open-clickhouse-cloud-app">
+    Abra la vista **Overview** de **Microsoft Entra ID** y, en **Manage** del menú de la izquierda, seleccione **Enterprise applications**. Abra la aplicación que creó al configurar SAML SSO para ClickHouse Cloud.
+
+    Si aún no ha creado la aplicación empresarial, siga primero la [guía de configuración de SAML SSO](/es/products/cloud/guides/security/cloud-access-management/saml-sso-setup#azure-enterprise-app): con SSO basado en SAML, se utiliza la misma aplicación empresarial tanto para el inicio de sesión único como para el aprovisionamiento de SCIM.
+  </Step>
+
+  <Step title="Configure el modo de aprovisionamiento y las credenciales" id="connect-entra-scim">
+    En la barra lateral izquierda de la aplicación, seleccione **Provisioning** y, a continuación, haga clic en `Get started` (o en `Provisioning` → `Edit provisioning`).
+
+    Configure **Provisioning Mode** como `Automatic`. En **Admin Credentials**, complete lo siguiente:
+
+    * **Tenant URL** — la URL del endpoint de SCIM de ClickHouse Cloud Console (la URL `.../scim`).
+    * **Secret Token** — sus credenciales de SCIM separadas por dos puntos, con el formato `<scim-key>:<scim-secret>`. Entra ID las envía en un encabezado `Authorization: Bearer`.
+
+    Haga clic en `Test Connection`. Entra ID realiza una llamada de prueba al endpoint de SCIM; debería ver una notificación de éxito. Si falla, vaya a [Troubleshooting](#troubleshooting).
+
+    Haga clic en `Save`.
+  </Step>
+
+  <Step title="Configure la correspondencia de atributos" id="map-user-attributes">
+    Después de guardar las credenciales, expanda la sección **Correspondencias**. Entra ID muestra dos conjuntos de correspondencias:
+
+    * **Aprovisionar usuarios de Microsoft Entra ID**
+    * **Aprovisionar grupos de Microsoft Entra ID**
+
+    Abra **Aprovisionar usuarios de Microsoft Entra ID** y confirme que las correspondencias de atributos coincidan con lo que espera ClickHouse Cloud.
+
+    De forma predeterminada, Entra ID asigna `userName` desde `userPrincipalName`. **Lo importante es que `userName` proceda del atributo que contenga la misma dirección de correo electrónico que usa su SAML SSO para iniciar sesión**, no de un nombre de atributo específico. En algunos tenants, `userPrincipalName` ya contiene ese correo electrónico y no es necesario realizar cambios; en otros, el correo electrónico se encuentra en `mail`, por lo que debe editar la correspondencia para que `userName` proceda de `mail`. Para cambiar el origen, haga clic en la fila `userName`, establezca el **Atributo de origen** correcto y guarde los cambios.
+
+    Establezca la **Precedencia de coincidencia** para que `userName` sea el atributo de coincidencia principal. Puede eliminar las correspondencias no compatibles; todo lo que quede fuera del conjunto estándar de SCIM se ignora en ClickHouse Cloud.
+
+    <Warning>
+      **Haga coincidir el correo electrónico utilizado para SAML SSO**
+
+      El valor que se asigna a `userName` **debe** coincidir con la dirección de correo electrónico con la que cada usuario inicia sesión mediante SAML SSO. SCIM crea la cuenta y SAML la autentica; por lo tanto, si el `userName` de SCIM y el correo electrónico de la aserción SAML no coinciden, SAML crea un usuario nuevo independiente al iniciar sesión que no está administrado por SCIM, lo que deja una cuenta duplicada sin administrar. Asigne `userName` desde el atributo (`userPrincipalName`, `mail` u otro) que contenga el mismo correo electrónico que envía su configuración de SAML.
+    </Warning>
+
+    Las filas restantes se asignan de forma predeterminada; compruebe que cada una esté configurada:
+
+    | Atributo de Microsoft Entra ID | Atributo de ClickHouse Cloud (SCIM) | Obligatorio                                        |
+    | ------------------------------ | ----------------------------------- | -------------------------------------------------- |
+    | `mail`                         | `emails[type eq "work"].value`      | **Sí** — debe coincidir con `userName`             |
+    | `givenName`                    | `name.givenName`                    | Recomendado                                        |
+    | `surname`                      | `name.familyName`                   | Recomendado                                        |
+    | `displayName`                  | `displayName`                       | Recomendado — se muestra en la ClickHouse Cloud UI |
+    | `Switch([IsSoftDeleted], ...)` | `active`                            | **Sí** — controla la desactivación                 |
+
+    Abra **Aprovisionar grupos de Microsoft Entra ID** y confirme que `displayName` se asigna a `displayName` y que `members` se asigna a `members`; el nombre para mostrar del grupo es el que se vincula a su Role de ClickHouse Cloud.
+
+    <Warning>
+      **Las mayúsculas y minúsculas del correo electrónico importan**
+
+      Asegúrese de que el valor asignado a `userName` y el valor asignado al correo electrónico principal usen las mismas mayúsculas y minúsculas. ClickHouse Cloud normaliza los correos electrónicos a minúsculas; las discrepancias entre ambos campos pueden provocar errores de aprovisionamiento.
+    </Warning>
+  </Step>
+
+  <Step title="Configure el ámbito de aprovisionamiento" id="configure-provisioning-behavior">
+    Expanda la sección **Settings**:
+
+    * Configure **Scope** como `Sync only assigned users and groups`. Esto limita el aprovisionamiento a los usuarios y grupos que asigne explícitamente a la aplicación en el siguiente paso.
+    * Por ahora, deje **Provisioning Status** en `Off`; lo activará después de asignar a los usuarios de prueba.
+
+    Haga clic en `Save`.
+  </Step>
+
+  <Step title="Asignar grupos y usuarios" id="push-groups-and-assign-users">
+    Aquí es donde los roles se asignan automáticamente.
+
+    **Cree grupos en Entra ID.** Para cada asignación de roles que configuró anteriormente, cree o identifique un grupo de Entra ID con el **mismo nombre para mostrar exacto**. Por ejemplo, si su asignación indica `ClickHouse-Admins → Admin`, cree un grupo llamado `ClickHouse-Admins` en Entra ID.
+
+    **Asigne grupos a la aplicación.** En la aplicación empresarial, vaya a **Usuarios y grupos → Agregar usuario/grupo**, seleccione su grupo de roles y asígnelo. Repita el proceso para cada grupo de roles. Dado que el ámbito de aprovisionamiento de la aplicación está establecido en *usuarios y grupos asignados*, solo se aprovisionan estos grupos (y sus miembros).
+
+    <Note>
+      **El aprovisionamiento de grupos requiere la licencia adecuada de Entra ID**
+
+      Para aprovisionar grupos (no solo a sus miembros), se requiere Microsoft Entra ID P1 o una versión superior. Con el aprovisionamiento de grupos, el grupo se crea en ClickHouse Cloud y se vincula al rol correspondiente mediante su nombre para mostrar.
+    </Note>
+
+    **Asigne usuarios.** Tiene dos opciones:
+
+    * **Mediante grupos (recomendado).** Agregue usuarios a los grupos de Entra ID que asignó a la aplicación. Se aprovisionarán en ClickHouse Cloud y se les asignará automáticamente el rol correspondiente.
+    * **Directamente.** Asigne usuarios individuales a la aplicación en **Usuarios y grupos**. Se aprovisionarán con el **rol predeterminado**, a menos que también pertenezcan a un grupo asignado.
+
+    La asignación basada en grupos simplifica la administración continua: cuando alguien cambia de rol, solo debe actualizar la pertenencia al grupo.
+  </Step>
+
+  <Step title="Activar el aprovisionamiento" id="turn-on-provisioning">
+    Vuelva a **Provisioning**, establezca **Provisioning Status** en `On` y haga clic en `Save`.
+
+    Entra ID ejecuta el aprovisionamiento de forma periódica (aproximadamente cada 40 minutos). Para aprovisionar de inmediato a un usuario específico —algo útil para realizar pruebas—, use **Provisioning → Provision on demand**, busque al usuario y ejecute una única operación de aprovisionamiento.
+  </Step>
+</Steps>
+
+<div id="test-the-integration">
+  ## Pruebe la integración
+</div>
+
+Una vez activado el aprovisionamiento, use **Provision on demand** para aprovisionar de inmediato uno o dos usuarios de prueba, en lugar de esperar al siguiente ciclo. A continuación, vuelva a **Settings → Users and roles** en la ClickHouse Cloud Console para confirmar que los usuarios sincronizados aparecen con los roles esperados.
+
+Siga este breve plan de pruebas con uno o dos usuarios de prueba **antes** de asignar a todo el equipo. Si algún paso no surte efecto, use **Provision on demand** para forzar una sincronización y, después, consulte la sección [Troubleshooting](#troubleshooting).
+
+| # | Acción en Entra ID                                                                         | Resultado esperado en ClickHouse Cloud                                                      |
+| - | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| 1 | Añada un usuario de prueba al grupo `ClickHouse-Admins` y ejecute **Provision on demand**  | El usuario aparece en **Settings → Members** con el rol **Admin**                           |
+| 2 | El usuario de prueba inicia sesión en ClickHouse Cloud mediante SSO                        | Accede al dashboard con permisos de administrador                                           |
+| 3 | Actualice el nombre del usuario en Entra ID y vuelva a aprovisionarlo                      | El nombre actualizado aparece en **Members**                                                |
+| 4 | Mueva al usuario de `ClickHouse-Admins` a `ClickHouse-Read-only` y vuelva a aprovisionarlo | Su rol cambia a **Read-only**                                                               |
+| 5 | Cancele la asignación del usuario de la aplicación (o deshabilite la cuenta en Entra ID)   | El usuario se elimina de la organización; los intentos posteriores de iniciar sesión fallan |
+
+Si algún paso falla, corrija el problema subyacente antes de continuar: los síntomas suelen agravarse.
+
+<Tip>
+  **Dónde buscar errores de SCIM en Entra ID**
+
+  Los errores de SCIM aparecen en la pantalla **Provisioning → View provisioning logs** de la aplicación (también disponible en **Identity → Monitoring &amp; health → Provisioning logs**). Cada entrada muestra la solicitud, el destino y el error devuelto literalmente por ClickHouse Cloud; empiece por ahí.
+</Tip>
+
+<div id="best-practices">
+  ## Buenas prácticas para producción
+</div>
+
+<div id="rotate-tokens">
+  ### Rote los tokens periódicamente
+</div>
+
+Configure un recordatorio en el calendario para rotar los tokens de SCIM. Cadencia recomendada: cada 12 meses o inmediatamente si un administrador que conocía el token deja la empresa. ClickHouse Cloud permite tener dos tokens activos por organización precisamente para poder realizar la rotación sin interrumpir el aprovisionamiento: genere el nuevo token, actualice el **Token secreto** en Entra ID, confirme con **Probar conexión** y, a continuación, revoque el token anterior.
+
+<div id="use-groups">
+  ### Use grupos, no asignaciones directas
+</div>
+
+La asignación directa de usuarios a la aplicación funciona, pero enseguida se vuelve difícil de auditar. Gestionar las asignaciones mediante grupos de Entra ID permite centralizar las revisiones de acceso y los cambios de roles.
+
+<div id="review-audit-log">
+  ### Revise el registro de auditoría
+</div>
+
+Todas las acciones de SCIM — creación de usuarios, desactivación de usuarios, actualización de perfiles — se registran en el registro de auditoría de ClickHouse Cloud. Consulte [Registro de auditoría](/es/products/cloud/reference/security/audit-logging). Revise el registro periódicamente, especialmente después de grandes oleadas de aprovisionamiento.
+
+<div id="default-role">
+  ### Establece un rol predeterminado adecuado
+</div>
+
+Si se asigna un usuario de Entra ID a la aplicación, pero no pertenece a ningún grupo asignado, se crea con el **rol predeterminado**. Elige el rol más restrictivo que aun así permita al usuario hacer *algo*, de modo que los errores de configuración fallen de forma segura.
+
+<div id="avoid-manual-invites">
+  ### Evita usar SCIM y las invitaciones manuales al mismo tiempo
+</div>
+
+Una vez activado SCIM, gestiona la pertenencia mediante Entra ID; no envíes además invitaciones manuales a los mismos usuarios. Combinar ambas vías genera confusión sobre cuál es la fuente de referencia y puede dar lugar a duplicados.
+
+<div id="account-for-provisioning-cycle">
+  ### Tenga en cuenta el ciclo de aprovisionamiento
+</div>
+
+Entra ID se sincroniza periódicamente (aproximadamente cada 40 minutos), por lo que los cambios habituales no se aplican de inmediato. Use **Provision on demand** cuando necesite aplicar un cambio de inmediato y supervise los **Provisioning logs** para detectar errores persistentes.
+
+<div id="troubleshooting">
+  ## Solución de problemas
+</div>
+
+<AccordionGroup>
+  <Accordion title="Error en &#x22;Probar conexión&#x22; en Entra ID" id="test-credentials-fails">
+    * Confirme que SCIM esté **habilitado** en la ClickHouse Cloud Console.
+    * Confirme que la **URL del inquilino** de Entra ID coincida exactamente con la URL del endpoint de SCIM que se muestra en la ClickHouse Cloud Console; el ID de la organización debe ser correcto.
+    * Confirme que el **token secreto** tenga el formato `<scim-key>:<scim-secret>`: la clave (que comienza con `scim_`), dos puntos y, a continuación, el secreto. No incluya espacios en blanco al principio ni al final, ni el prefijo `Bearer` (Entra ID lo añade automáticamente).
+    * Si ha rotado los tokens, asegúrese de usar la clave y el secreto **nuevos**, no el par anterior.
+  </Accordion>
+
+  <Accordion title="Los usuarios se crean, pero no tienen permisos" id="users-no-permissions">
+    * Compruebe que haya añadido una fila en **Map roles in &quot;Users and roles&quot;** para el rol esperado.
+    * Compruebe que el nombre del grupo de Entra ID coincida **exactamente** con el nombre del grupo de SCIM en la correspondencia, incluidas las mayúsculas y los guiones.
+    * Si su diseño aprovisiona intencionadamente algunos usuarios sin grupo, confirme que esté configurado el **rol predeterminado**.
+  </Accordion>
+
+  <Accordion title="Los usuarios o grupos no se aprovisionan" id="nothing-provisioning">
+    * Confirme que el **estado de aprovisionamiento** sea `On`.
+    * Confirme que el **ámbito** esté establecido en `Sync only assigned users and groups` y que los usuarios o grupos estén realmente asignados a la aplicación en **Users and groups**.
+    * Recuerde que el ciclo se ejecuta aproximadamente cada 40 minutos; use **Provision on demand** para probar de inmediato con un solo usuario.
+    * El aprovisionamiento de grupos (no solo de sus miembros) requiere Microsoft Entra ID P1 o una versión superior.
+  </Accordion>
+
+  <Accordion title="Usuario duplicado en la lista de miembros" id="duplicate-user">
+    Suele deberse a diferencias en el uso de mayúsculas y minúsculas en la dirección de correo electrónico entre Entra ID y una invitación manual anterior. Elimine el duplicado de la lista de Members y, después, desasigne y reasigne al usuario en Entra ID (o vuelva a ejecutar **Provision on demand**) para volver a aprovisionarlo.
+  </Accordion>
+
+  <Accordion title="El aprovisionamiento de grupos falla por una discrepancia en el nombre" id="group-display-name">
+    El nombre para mostrar del grupo en Entra ID no coincide con una correspondencia configurada en ClickHouse Cloud. Cambie el nombre del grupo de Entra ID o añada una correspondencia en **Map roles in &quot;Users and roles&quot;** desde el panel Configuración de SCIM (o mediante **Users and roles → Roles**).
+  </Accordion>
+
+  <Accordion title="Los usuarios desactivados siguen apareciendo como miembros" id="deactivated-users-remaining">
+    La desactivación se propaga en el siguiente ciclo de aprovisionamiento. Para forzarla de inmediato, use **Provision on demand** para ese usuario. Si el usuario sigue apareciendo como miembro después, consulte **Provisioning → View provisioning logs** para comprobar si hay un error en la operación de deshabilitación.
+  </Accordion>
+
+  <Accordion title="Roté el token de SCIM y ahora Entra ID falla" id="token-rotation-issue">
+    Compruebe que haya actualizado el **token secreto** en la aplicación empresarial correcta de Entra ID, con el formato `<scim-key>:<scim-secret>`. Después de actualizarlo, haga clic en `Probar conexión` para confirmarlo. Cuando el aprovisionamiento vuelva a funcionar correctamente, revoque el token anterior en la ClickHouse Cloud Console.
+  </Accordion>
+
+  <Accordion title="Perdí el token de SCIM" id="lost-token">
+    Los tokens no se pueden recuperar. En **Configuración de la organización → SAML and SCIM settings → Configuración de SCIM** de la ClickHouse Cloud Console, revoque el token perdido y genere uno nuevo; después, actualice el **token secreto** en Entra ID.
+  </Accordion>
+</AccordionGroup>
+
+<div id="faq">
+  ## Preguntas frecuentes
+</div>
+
+<AccordionGroup>
+  <Accordion title="¿Necesito SAML SSO antes de poder usar SCIM?">
+    Sí. SCIM crea las cuentas de usuario, pero ClickHouse Cloud las autentica mediante SAML. Primero configure [SAML SSO](/es/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+  </Accordion>
+
+  <Accordion title="¿Puedo usar la misma aplicación empresarial para SAML y SCIM?">
+    Sí. Con el inicio de sesión único basado en SAML, una sola aplicación empresarial de Entra ID gestiona tanto el inicio de sesión único como el aprovisionamiento de SCIM.
+  </Accordion>
+
+  <Accordion title="¿Por qué el token secreto tiene el formato clave:secreto?">
+    Entra ID autentica enviando el token secreto en un encabezado `Authorization: Bearer`. El endpoint de SCIM de ClickHouse Cloud espera que el valor del token bearer sea la clave y el secreto del token, separados por dos puntos.
+  </Accordion>
+
+  <Accordion title="¿Cuánto tardan en reflejarse los cambios de Entra ID en ClickHouse Cloud?">
+    Entra ID realiza el aprovisionamiento en ciclos recurrentes de aproximadamente 40 minutos. Para actualizar un usuario de inmediato, use **Provision on demand**.
+  </Accordion>
+
+  <Accordion title="¿Dónde puedo obtener ayuda si tengo problemas?">
+    Abra un ticket de soporte desde ClickHouse Cloud Console (**Help → Contact support**) e incluya:
+
+    * el ID de su organización,
+    * el nombre (y el ID de objeto) de su aplicación empresarial de Entra ID, y
+    * una captura de pantalla de la entrada con error en **Provisioning → View provisioning logs**.
+  </Accordion>
+</AccordionGroup>

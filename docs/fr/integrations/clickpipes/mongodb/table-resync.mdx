@@ -14,21 +14,17 @@ Dans certains cas, il peut être utile de resynchroniser certaines tables d’un
 
 Bien que la resynchronisation de tables individuelles par un simple clic soit encore en cours de développement, ce guide explique comment y parvenir dès aujourd’hui dans le ClickPipe MongoDB.
 
-<div id="removing-table">
-  ### 1. Supprimer la table du pipe
-</div>
+<Steps>
+  <Step title="Supprimer la table du pipe" id="removing-table">
+    Pour cela, suivez le [guide de suppression de table](/fr/integrations/clickpipes/mongodb/remove-table).
+  </Step>
 
-Pour ce faire, suivez le [guide de suppression de table](/fr/integrations/clickpipes/mongodb/remove-table).
+  <Step title="Tronquer ou supprimer la table dans ClickHouse" id="truncate-drop-table">
+    Cette étape permet d’éviter la duplication des données lorsque nous ajouterons à nouveau cette table à l’étape suivante. Pour ce faire, accédez à l’onglet **SQL Console** dans ClickHouse Cloud et exécutez une requête.
+    Notez que nous avons une validation qui bloque l’ajout de la table si elle existe déjà dans ClickHouse et n’est pas vide.
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. TRUNCATE ou supprimer la table dans ClickHouse
-</div>
-
-Cette étape permet d’éviter les doublons de données lorsque nous ajouterons de nouveau cette table à l’étape suivante. Pour ce faire, accédez à l’onglet **SQL Console** de ClickHouse Cloud et exécutez une requête.
-Notez qu’un mécanisme de validation bloque l’ajout de la table si elle existe déjà dans ClickHouse et qu’elle n’est pas vide.
-
-<div id="add-table-again">
-  ### 3. Ajoutez à nouveau la table à ClickPipe
-</div>
-
-Pour cela, vous pouvez suivre le [guide d’ajout d’une table](/fr/integrations/clickpipes/mongodb/add-table).
+  <Step title="Ajouter à nouveau la table au ClickPipe" id="add-table-again">
+    Pour cela, suivez le [guide d’ajout de table](/fr/integrations/clickpipes/mongodb/add-table).
+  </Step>
+</Steps>

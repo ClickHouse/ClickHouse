@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -82,8 +83,6 @@ public:
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
 
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
     const String data_part_name;
@@ -106,7 +105,9 @@ protected:
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
-using ColumnPositions = std::unordered_map<std::string, size_t>;
+/// The same map as `SharedPartColumns::NameToNumber`: the keys view into the column names of the
+/// data part's shared metadata bundle, which outlives the writer.
+using ColumnPositions = std::unordered_map<std::string_view, size_t>;
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,

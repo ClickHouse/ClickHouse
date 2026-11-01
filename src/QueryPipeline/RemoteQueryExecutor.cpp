@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/DistributedTopKCoordinator.h>
@@ -23,6 +24,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProcessList.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -31,6 +33,8 @@
 #include <Storages/StorageMemory.h>
 
 #include <Columns/ColumnBLOB.h>
+
+#include <base/scope_guard.h>
 
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -57,6 +61,8 @@ namespace Setting
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
     extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
+    extern const SettingsUInt64 max_network_bandwidth;
+    extern const SettingsUInt64 max_network_bytes;
 }
 
 namespace ErrorCodes
@@ -72,7 +78,34 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
+    extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
+    extern const char remote_query_executor_cancel_in_finish_drain[];
 }
+
+ThrottlerPtr getThrottler(const ContextPtr & context)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    ThrottlerPtr user_level_throttler;
+    if (auto process_list_element = context->getProcessListElement())
+        user_level_throttler = process_list_element->getUserNetworkThrottler();
+
+    /// Network bandwidth limit, if needed.
+    ThrottlerPtr throttler;
+    if (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes])
+    {
+        throttler = std::make_shared<Throttler>(
+            settings[Setting::max_network_bandwidth],
+            settings[Setting::max_network_bytes],
+            "Limit for bytes to send or receive over network exceeded.",
+            user_level_throttler);
+    }
+    else
+        throttler = user_level_throttler;
+
+    return throttler;
+}
+
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
@@ -141,12 +174,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             auto table_name = main_table.getQualifiedName();
 
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, &table_name);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
         else
         {
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, nullptr);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
 
         ConnectionPoolEntries connection_entries;
@@ -156,13 +189,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             const auto protocol_version = result.entry->getServerRevision(ConnectionTimeouts{});
             const auto parallel_replicas_version = result.entry->getParallelReplicasProtocolVersion();
+            const auto query_plan_serialization_version = result.entry->getQueryPlanSerializationVersion();
 
             if (extension_ && extension_->parallel_reading_coordinator)
             {
                 // consider only replicas with support of stream id, otherwise we can get incorrect result
                 // replicas with older version considered as unavailable
                 if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
-                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
+                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID
+                    && (!query_plan || query_plan_serialization_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS))
                 {
                     ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
 
@@ -172,12 +207,16 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 {
                     LOG_DEBUG(
                         log,
-                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
-                        "no stream_id support (requires parallel_replicas_version >= {})",
+                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}, "
+                        "query_plan_serialization_version={}): "
+                        "remote replica doesn't support stream id (requires parallel_replicas_version >= {}) or query plan serialization "
+                        "for parallel replicas (requires query_plan_serialization_version >= {})",
                         result.entry->getDescription(),
                         protocol_version,
                         parallel_replicas_version,
-                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID);
+                        query_plan_serialization_version,
+                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID,
+                        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
                     result.entry->disconnect();
                 }
             }
@@ -274,7 +313,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         if (current_settings[Setting::use_hedged_requests])
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
@@ -339,7 +378,10 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     if (read_context && !established)
     {
         /// Set was_cancelled, so the query won't be sent after creating connections.
-        was_cancelled = true;
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            was_cancelled = true;
+        }
 
         /// Cancellation may throw (i.e. some timeout), and in case of pipeline
         /// had not been properly created properly (EXCEPTION_BEFORE_START)
@@ -351,6 +393,11 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
+            /// A cancel that fails is this fragment's failure.
+            {
+                LockAndBlocker lock(was_cancelled_mutex);
+                finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            }
             tryLogCurrentException(log);
         }
     }
@@ -359,7 +406,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * all connections, then read and skip the remaining packets to make sure
       * these connections did not remain hanging in the out-of-sync state.
       */
-    if (established || (isQueryPending() && connections))
+    if (established || ((isQueryPending() || drain_was_skipped) && connections))
     {
         /// May also throw (so as cancel() above)
         try
@@ -370,6 +417,13 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         {
             tryLogCurrentException(log);
         }
+    }
+
+    /// Backstop for the fragment span: an executor destroyed without reaching `EndOfStream`, a
+    /// failure or a cancel is a fragment cancelled by teardown. No-op when the span is finished.
+    {
+        LockAndBlocker lock(was_cancelled_mutex);
+        finishFragmentSpanCancelled("destroyed");
     }
 }
 
@@ -433,6 +487,83 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
+OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() const
+{
+    /// Keys follow the conventions of the spans of `DistributedSink`.
+    OpenTelemetry::SpanAttributes attributes;
+    if (!shard_scope.cluster.empty())
+        attributes.emplace_back("clickhouse.cluster", shard_scope.cluster);
+    if (shard_scope.shard_num != 0)
+        attributes.emplace_back("clickhouse.shard_num", static_cast<UInt64>(shard_scope.shard_num));
+    if (shard_scope.replica_num)
+        attributes.emplace_back("clickhouse.replica_num", static_cast<UInt64>(*shard_scope.replica_num));
+    /// `clickhouse.processed_stage` is deliberately absent here: before the query is sent, `stage`
+    /// can still be downgraded to `query_plan_fallback_stage`, so the attribute is added only once the final stage is known.
+    const auto & client_info = context->getClientInfo();
+    if (!client_info.current_query_id.empty())
+        attributes.emplace_back("clickhouse.query_id", client_info.current_query_id);
+    if (!client_info.initial_query_id.empty())
+        attributes.emplace_back("clickhouse.initial_query_id", client_info.initial_query_id);
+    return attributes;
+}
+
+void RemoteQueryExecutor::openFragmentSpan()
+{
+    const auto & trace_context = OpenTelemetry::CurrentContext();
+    if (fragment_span || !trace_context.isTraceEnabled())
+        return;
+
+    /// A `ManualSpan` rather than a `SpanHolder`: the span is finished by whichever thread ends the
+    /// fragment (a pipeline thread, `finish`, `cancel` or the destructor), not necessarily the one that opened it.
+    fragment_span.emplace("RemoteQueryExecutor::execute");
+    for (auto & attribute : getFragmentSpanAttributes())
+        fragment_span->addAttribute(std::move(attribute));
+
+    /// The read context fiber is seeded with this context, so the spans it opens nest under the fragment span.
+    fragment_trace_context = trace_context;
+    fragment_trace_context.span_id = fragment_span->getSpanId();
+}
+
+void RemoteQueryExecutor::addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
+{
+    if (fragment_span)
+        fragment_span->addAttribute(std::move(attribute));
+}
+
+void RemoteQueryExecutor::finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message) noexcept
+{
+    if (fragment_span)
+        fragment_span->finish(status, std::move(status_message));
+}
+
+void RemoteQueryExecutor::finishFragmentSpanCancelled(std::string_view reason) noexcept
+{
+    /// Neither a success nor a failure: the status stays UNSET and the attributes say why.
+    addFragmentSpanAttribute({"clickhouse.cancelled", 1});
+    addFragmentSpanAttribute({"clickhouse.cancel_reason", reason});
+    finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
+}
+
+void RemoteQueryExecutor::finishFragmentSpanForSkippedShard(String status_message) noexcept
+{
+    /// `skip_unavailable_shards` lets the query tolerate this failure, but the fragment itself failed: record it as ERROR.
+    addFragmentSpanAttribute({"clickhouse.shard_skipped", 1});
+    finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, std::move(status_message));
+}
+
+void RemoteQueryExecutor::finishFragmentSpanForUnavailableReplica() noexcept
+{
+    /// Nothing was delivered and nothing failed: the coordinator reassigns this replica's work.
+    addFragmentSpanAttribute({"clickhouse.replica_unavailable", 1});
+    finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
+}
+
+void RemoteQueryExecutor::failFragmentSpan() noexcept
+{
+    LockAndBlocker lock(was_cancelled_mutex);
+    finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR);
+}
+
 void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
     /// Query cannot be canceled in the middle of the send query,
@@ -444,6 +575,8 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     ///
     ///     Unexpected packet Data received from client
     ///
+    /// A failure to establish the connections or to send the query is this fragment's failure.
+    SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
     try
     {
@@ -465,11 +598,42 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (sent_query || was_cancelled)
         return;
 
+    /// On the asynchronous sending path the fragment span is already open and this code runs inside
+    /// it (in the read context fiber); on the synchronous path it is opened here.
+    openFragmentSpan();
+
+    /// Make the fragment span the current parent for the send, so the CLIENT span descends from it.
+    /// Inside the fiber this already holds; on the synchronous path the thread's context still
+    /// points at the query span.
+    OpenTelemetry::ParentSpanGuard fragment_parent_guard(fragment_span ? fragment_span->getSpanId() : 0);
+
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
+    /// Plan-level execution limits are serialized beginning with version 10. Before that version,
+    /// sending a plan would silently lose them. Use the original SQL request for old replicas: it
+    /// carries the query settings and lets the remote server build a plan with the same limits.
+    /// This keeps `serialize_query_plan` usable while a cluster is being upgraded.
+    if (query_plan
+        && (query_plan->getMaxThreads() || query_plan->getConcurrencyControl())
+        && !connections->supportsQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS))
+    {
+        LOG_DEBUG(
+            log,
+            "Sending query as SQL because a replica does not support query-plan serialization version {} required for execution limits",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+        query_plan.reset();
+        stage = query_plan_fallback_stage;
+    }
+
+    /// Only now is the stage final (the branch above may have downgraded it), so this is the
+    /// earliest point where the span attribute cannot lie about what is sent to the shard.
+    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+        addFragmentSpanAttribute({"clickhouse.processed_stage", QueryProcessingStage::toString(stage)});
+
     const auto & settings = context->getSettingsRef();
-    if (isReplicaUnavailable() || needToSkipUnavailableShard())
+    const bool replica_unavailable = isReplicaUnavailable();
+    if (replica_unavailable || shouldSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -484,17 +648,62 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         }
         markDistributedTopKParticipantUnsupported();
 
+        /// An unavailable parallel replica is not a failed fragment: the coordinator reassigns
+        /// its work and no data is lost. It delivered nothing either, so it is not OK.
+        if (replica_unavailable)
+            finishFragmentSpanForUnavailableReplica();
+        else
+        {
+            finishFragmentSpanForSkippedShard("Shard is unavailable: no replicas to connect to (skipped because of `skip_unavailable_shards`)");
+            reportShardSkipped();
+        }
         return;
     }
 
     established = true;
 
+    /// The target addresses become known only once the connections are established.
+    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+        addFragmentSpanAttribute({"clickhouse.target_host", connections->dumpAddresses()});
+
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
-    if (extension)
-        modified_client_info.collaborate_with_initiator = true;
+    /// A distributed query must carry a known initiator version: the receiving server uses it for
+    /// version-gated compatibility decisions.
+    /// A zero version means the initiating query context was not populated as an initial query
+    /// (a real client always reports its version, and a server that (re-)initiates a query fills it
+    /// with its own version). Sending zero silently triggers wrong compatibility downgrades on the
+    /// remote, so fail loudly instead.
+    /// A context that this server builds for its own query fills it with `Context::setInitiatorVersionIfUnset`.
+    /// Do not fill it here instead: this check exists to catch a context that lost it.
+    if (modified_client_info.client_version_major == 0
+        && modified_client_info.client_version_minor == 0
+        && modified_client_info.client_version_patch == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Sending a distributed query with unknown (zero) client version. "
+            "The query context was not initialized as an initial query");
+
+    /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
+    /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    modified_client_info.current_roles.reset();
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
+        && modified_client_info.initial_user == modified_client_info.current_user)
+    {
+        const auto & access_control = context->getAccessControl();
+        Strings current_role_names;
+        for (const auto & role_id : context->getCurrentRoles())
+        {
+            /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
+            if (auto name = access_control.tryReadName(role_id))
+                current_role_names.push_back(*name);
+        }
+        modified_client_info.current_roles = std::move(current_role_names);
+    }
+
+    /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.
+    modified_client_info.collaborate_with_initiator = extension.has_value();
 
     // Collect all roles granted on this node and pass those to the remote node
     Strings local_granted_roles;
@@ -535,33 +744,7 @@ int RemoteQueryExecutor::sendQueryAsync()
 {
     try
     {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return -1;
-
-        if (!read_context)
-            read_context = std::make_unique<ReadContext>(
-                *this,
-                /*suspend_when_query_sent*/ true,
-                read_packet_type_separately);
-
-        /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
-        /// because we can still be in process of sending scalars or external tables.
-        if (read_context->isQuerySent())
-            return -1;
-
-        read_context->resume();
-
-        if (read_context->isQuerySent())
-            return -1;
-
-        ProfileEvents::increment(ProfileEvents::SuspendSendingQueryToShard); /// Mostly for testing purposes.
-        return read_context->getFileDescriptor();
-#else
-        sendQuery();
-        return -1;
-#endif
+        return sendQueryAsyncImpl();
     }
     catch (...)
     {
@@ -569,6 +752,42 @@ int RemoteQueryExecutor::sendQueryAsync()
             extension->distributed_top_k_coordinator->cancel(std::current_exception());
         throw;
     }
+}
+
+int RemoteQueryExecutor::sendQueryAsyncImpl()
+{
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// Failing to build the read context, or a failure inside the fiber while establishing the
+    /// connections or sending the query (rethrown by `resume` on this thread), is this fragment's failure.
+    SCOPE_FAIL({ failFragmentSpan(); });
+    LockAndBlocker lock(was_cancelled_mutex);
+    if (was_cancelled)
+        return -1;
+
+    if (!read_context)
+    {
+        /// The fragment span is opened before the read context: its fiber runs inside the span.
+        openFragmentSpan();
+        read_context = std::make_unique<ReadContext>(
+            *this, /*suspend_when_query_sent*/ true, read_packet_type_separately, fragment_trace_context);
+    }
+
+    /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
+    /// because we can still be in process of sending scalars or external tables.
+    if (read_context->isQuerySent())
+        return -1;
+
+    read_context->resume();
+
+    if (read_context->isQuerySent())
+        return -1;
+
+    ProfileEvents::increment(ProfileEvents::SuspendSendingQueryToShard); /// Mostly for testing purposes.
+    return read_context->getFileDescriptor();
+#else
+    sendQuery();
+    return -1;
+#endif
 }
 
 Block RemoteQueryExecutor::readBlock()
@@ -587,42 +806,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 {
     try
     {
-        if (!sent_query)
-        {
-            sendQuery();
-
-            /// `connections` stays null if sendQuery() was cancelled before sending,
-            /// so guard the dereference below (as every other use of it does).
-            {
-                LockAndBlocker lock(was_cancelled_mutex);
-                if (was_cancelled)
-                    return ReadResult(Block());
-            }
-
-            if (needToSkipUnavailableShard())
-                return ReadResult(Block());
-        }
-
-        while (true)
-        {
-            if (query_coordination_response_pending)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Query coordination requires asynchronous remote reading");
-
-            auto anything = [&]
-            {
-                LockAndBlocker lock(was_cancelled_mutex);
-                if (was_cancelled)
-                    return ReadResult(Block());
-
-                auto packet = connections->receivePacket();
-                return processPacket(std::move(packet));
-            }();
-
-            if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::AsyncControlPacket)
-                return anything;
-        }
+        return readImpl();
     }
     catch (...)
     {
@@ -632,127 +816,64 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     }
 }
 
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readImpl()
 {
-    try
+    /// A local failure while reading the fragment's data (e.g. a network error in `receivePacket`, or an unknown packet)
+    /// is this fragment's failure: record it on the span instead of letting a later backstop mark it cancelled.
+    SCOPE_FAIL({ failFragmentSpan(); });
+
+    if (!sent_query)
     {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        if (!read_context)
+        sendQuery();
+
+        /// `connections` stays null if sendQuery() was cancelled before sending,
+        /// so guard the dereference below (as every other use of it does).
         {
             LockAndBlocker lock(was_cancelled_mutex);
             if (was_cancelled)
                 return ReadResult(Block());
-
-            read_context = std::make_unique<ReadContext>(
-                *this,
-                /*suspend_when_query_sent*/ false,
-                read_packet_type_separately);
         }
 
-        while (true)
+        if (needToSkipUnavailableShard())
+            return ReadResult(Block());
+    }
+
+    while (true)
+    {
+        if (query_coordination_response_pending)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Query coordination requires asynchronous remote reading");
+
         {
-            std::optional<QueryCoordinationRequest> query_coordination_request;
-            {
-                LockAndBlocker lock(was_cancelled_mutex);
-                if (was_cancelled)
-                    return ReadResult(Block());
-
-                if (async_packet_in_progress)
-                {
-                    chassert(read_context->readPacketTypeSeparately());
-                    chassert(read_context->hasReadTillPacketType());
-
-                    /// packet type is handled already, read and parse packet itself
-                    if (!read_context->hasReadPacket() && !read_context->read())
-                        return ReadResult(read_context->getFileDescriptor());
-
-                    async_packet_in_progress = false;
-                    auto packet = read_context->getPacket();
-                    if (packet.type == Protocol::Server::QueryCoordinationRequest)
-                    {
-                        if (!packet.query_coordination_request)
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Query coordination request payload is not initialized");
-                        query_coordination_request = std::move(*packet.query_coordination_request);
-                    }
-                    else
-                    {
-                        auto read_result = processPacket(std::move(packet));
-                        if (read_result.getType() == ReadResult::Type::Data
-                            || read_result.getType() == ReadResult::Type::AsyncControlPacket
-                            || read_result.getType() == ReadResult::Type::FileDescriptor)
-                            return read_result;
-                    }
-                }
-
-                if (!query_coordination_request)
-                {
-                    read_context->resume();
-
-                    if (isReplicaUnavailable() || needToSkipUnavailableShard())
-                    {
-                        /// We need to tell the coordinator not to wait for this replica.
-                        /// But at this point it may lead to an incomplete result set, because
-                        /// this replica committed to read some part of there data and then died.
-                        if (extension && extension->parallel_reading_coordinator)
-                        {
-                            chassert(extension->parallel_reading_coordinator);
-                            extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
-                        }
-                        markDistributedTopKParticipantUnsupported();
-
-                        return ReadResult(Block());
-                    }
-
-                    /// Check if packet is not ready yet.
-                    if (read_context->isInProgress())
-                        return ReadResult(read_context->getFileDescriptor());
-
-                    /// if reading separately packet header and body enabled, try to read packet itself this time
-                    if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
-                        return ReadResult(read_context->getFileDescriptor());
-
-                    auto packet = read_context->getPacket();
-                    if (packet.type == Protocol::Server::QueryCoordinationRequest)
-                    {
-                        if (!packet.query_coordination_request)
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Query coordination request payload is not initialized");
-                        query_coordination_request = std::move(*packet.query_coordination_request);
-                    }
-                    else
-                    {
-                        auto read_result = processPacket(std::move(packet));
-                        if (read_result.getType() == ReadResult::Type::Data
-                            || read_result.getType() == ReadResult::Type::AsyncControlPacket
-                            || read_result.getType() == ReadResult::Type::FileDescriptor)
-                            return read_result;
-                    }
-                }
-            }
-
-            if (query_coordination_request)
-            {
-                /// Selection may block, so cancellation must be able to acquire `was_cancelled_mutex`.
-                auto read_result = processQueryCoordinationRequest(
-                    std::move(*query_coordination_request), /*defer_response_send=*/true);
-                {
-                    LockAndBlocker lock(was_cancelled_mutex);
-                    if (was_cancelled)
-                        return ReadResult(Block());
-                    if (read_result.getType() == ReadResult::Type::Nothing)
-                        sendPendingQueryCoordinationResponse();
-                }
-
-                if (read_result.getType() == ReadResult::Type::FileDescriptor)
-                    return read_result;
-            }
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
         }
-#else
-        return read();
-#endif
+
+        /// `was_cancelled` was checked and `was_cancelled_mutex` released above, so a parallel
+        /// `onUpdatePorts` -> `finish` can cancel and drain these connections before `receivePacket`
+        /// below runs. `finish()` takes that mutex itself, which is not held at this point.
+        fiu_do_on(FailPoints::remote_query_executor_cancel_and_drain_in_receive_window, { finish(); });
+
+        auto packet = connections->receivePacket();
+
+        LockAndBlocker lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return ReadResult(Block());
+
+        auto anything = processPacket(std::move(packet));
+
+        if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::AsyncControlPacket)
+            return anything;
+    }
+}
+
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
+{
+    try
+    {
+        return readAsyncImpl();
     }
     catch (...)
     {
@@ -760,6 +881,142 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             extension->distributed_top_k_coordinator->cancel(std::current_exception());
         throw;
     }
+}
+
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsyncImpl()
+{
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// Failing to build the read context, or a local failure while processing this fragment's packets
+    /// on the consumer thread, is this fragment's failure: record it on the span instead of letting
+    /// the destructor mark it cancelled.
+    SCOPE_FAIL({ failFragmentSpan(); });
+
+    if (!read_context)
+    {
+        LockAndBlocker lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return ReadResult(Block());
+
+        /// The query was sent synchronously (async_query_sending_for_remote = 0), so the fragment
+        /// span is already open: the read context fiber runs inside it.
+        read_context = std::make_unique<ReadContext>(
+            *this, /*suspend_when_query_sent*/ false, read_packet_type_separately, fragment_trace_context);
+    }
+
+    while (true)
+    {
+        std::optional<QueryCoordinationRequest> query_coordination_request;
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
+
+            if (async_packet_in_progress)
+            {
+                chassert(read_context->readPacketTypeSeparately());
+                chassert(read_context->hasReadTillPacketType());
+
+                /// packet type is handled already, read and parse packet itself
+                if (!read_context->hasReadPacket() && !read_context->read())
+                    return ReadResult(read_context->getFileDescriptor());
+
+                async_packet_in_progress = false;
+                auto packet = read_context->getPacket();
+                if (packet.type == Protocol::Server::QueryCoordinationRequest)
+                {
+                    if (!packet.query_coordination_request)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Query coordination request payload is not initialized");
+                    query_coordination_request = std::move(*packet.query_coordination_request);
+                }
+                else
+                {
+                    auto read_result = processPacket(std::move(packet));
+                    if (read_result.getType() == ReadResult::Type::Data
+                        || read_result.getType() == ReadResult::Type::AsyncControlPacket
+                        || read_result.getType() == ReadResult::Type::FileDescriptor)
+                        return read_result;
+                }
+            }
+
+            if (!query_coordination_request)
+            {
+                read_context->resume();
+
+                const bool replica_unavailable = isReplicaUnavailable();
+                if (replica_unavailable || shouldSkipUnavailableShard())
+                {
+                    /// We need to tell the coordinator not to wait for this replica.
+                    /// But at this point it may lead to an incomplete result set, because
+                    /// this replica committed to read some part of there data and then died.
+                    if (extension && extension->parallel_reading_coordinator)
+                    {
+                        chassert(extension->parallel_reading_coordinator);
+                        extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
+                    }
+                    markDistributedTopKParticipantUnsupported();
+
+                    /// Same split as in sendQueryUnlocked: only the `skip_unavailable_shards` case is
+                    /// a tolerated fragment failure; an unavailable parallel replica is reassigned.
+                    if (replica_unavailable)
+                        finishFragmentSpanForUnavailableReplica();
+                    else
+                    {
+                        finishFragmentSpanForSkippedShard("Shard is unavailable: lost all replica connections (skipped because of `skip_unavailable_shards`)");
+                        reportShardSkipped();
+                    }
+                    return ReadResult(Block());
+                }
+
+                /// Check if packet is not ready yet.
+                if (read_context->isInProgress())
+                    return ReadResult(read_context->getFileDescriptor());
+
+                /// if reading separately packet header and body enabled, try to read packet itself this time
+                if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
+                    return ReadResult(read_context->getFileDescriptor());
+
+                auto packet = read_context->getPacket();
+                if (packet.type == Protocol::Server::QueryCoordinationRequest)
+                {
+                    if (!packet.query_coordination_request)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Query coordination request payload is not initialized");
+                    query_coordination_request = std::move(*packet.query_coordination_request);
+                }
+                else
+                {
+                    auto read_result = processPacket(std::move(packet));
+                    if (read_result.getType() == ReadResult::Type::Data
+                        || read_result.getType() == ReadResult::Type::AsyncControlPacket
+                        || read_result.getType() == ReadResult::Type::FileDescriptor)
+                        return read_result;
+                }
+            }
+        }
+
+        if (query_coordination_request)
+        {
+            /// Selection may block, so cancellation must be able to acquire `was_cancelled_mutex`.
+            auto read_result = processQueryCoordinationRequest(
+                std::move(*query_coordination_request), /*defer_response_send=*/true);
+            {
+                LockAndBlocker lock(was_cancelled_mutex);
+                if (was_cancelled)
+                    return ReadResult(Block());
+                if (read_result.getType() == ReadResult::Type::Nothing)
+                    sendPendingQueryCoordinationResponse();
+            }
+
+            if (read_result.getType() == ReadResult::Type::FileDescriptor)
+                return read_result;
+        }
+    }
+#else
+    return read();
+#endif
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -830,14 +1087,15 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                         connections->dumpAddresses(),
                         packet.exception->displayText());
 
-                reportShardSkipped();
-
                 /// The server terminated the query with this exception and will not send `EndOfStream`,
                 /// so mark the executor finished to signal end of data.
                 finished = true;
+                finishFragmentSpanForSkippedShard(packet.exception->message());
+                reportShardSkipped();
                 return ReadResult(Block{});
             }
 
+            finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, packet.exception->message());
             try
             {
                 packet.exception->rethrow();
@@ -855,6 +1113,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!connections->hasActiveConnections())
             {
                 finished = true;
+                finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
                 /// TODO: Replace with Type::Finished
                 return ReadResult(Block{});
             }
@@ -976,9 +1235,11 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     /// Followers only block on the response when they actually need it (in-order modes pin
-    /// per-split parts via the response). In `Default` mode the caller discards the response,
-    /// so the round-trip would be pure overhead — skip it on both sides.
-    const bool send_response = announcement.mode != CoordinationMode::Default;
+    /// per-split parts via the response). In `Default` mode the caller needs it only when it asks
+    /// for the analyzed ranges, otherwise the round-trip would be pure overhead — skip it on both sides.
+    const bool send_response = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
+
+    announcement_received = true;
 
     auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
     if (send_response)
@@ -1046,8 +1307,28 @@ void RemoteQueryExecutor::markDistributedTopKParticipantUnsupported()
 
 void RemoteQueryExecutor::finish()
 {
+    {
+        std::lock_guard gate(finish_gate_mutex);
+        ++finish_in_progress;
+    }
+    /// Declared before `guard` so the decrement runs after `was_cancelled_mutex` is released: the gate
+    /// must never be taken while that mutex is held.
+    SCOPE_EXIT({ std::lock_guard gate(finish_gate_mutex); --finish_in_progress; });
+
+    /// An exception thrown while cancelling or draining the connections is this fragment's failure.
+    SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
 
+    finishUnlocked();
+
+    /// The executor is done with the fragment. A full delivery was already recorded as OK at
+    /// `EndOfStream` (and a failure as ERROR), so a span still open here belongs to a fragment the
+    /// initiator stopped reading from before its end, e.g. once a `LIMIT` was satisfied.
+    finishFragmentSpanCancelled("limit");
+}
+
+void RemoteQueryExecutor::finishUnlocked()
+{
     /** If one of:
       * - nothing started to do;
       * - received all packets before EndOfStream;
@@ -1061,10 +1342,20 @@ void RemoteQueryExecutor::finish()
         /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
         /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
         /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
-        /// never becomes true. On Linux the async startup path always sends the query before this
-        /// point, so only the synchronous (non-Linux) send path is affected.
+        /// never becomes true.
         if (!sent_query)
         {
+            /// Also mark the executor cancelled, not just finished. `RemoteSource::work()` may
+            /// already be queued for execution (its `prepare()` ran before the output port was
+            /// closed), and both `sendQuery` and `sendQueryAsync` gate only on `was_cancelled` -
+            /// never on `finished`. Without this the query is still sent after we declared the
+            /// executor finished, and nothing releases it afterwards: `finish()` returns early
+            /// from here on, and the destructor's `isQueryPending()` is false because `finished`
+            /// is set, so the connection is returned to the pool without a `Cancel` packet and
+            /// without a disconnect. A parallel-replicas follower is then left blocked in
+            /// `receivePartitionMergeTreeReadTaskResponse` for the whole `receive_timeout`,
+            /// holding the table's shared lock and stalling a subsequent `DROP TABLE` (#109265).
+            was_cancelled = true;
             finished = true;
         }
         else if (was_cancelled && !finished && connections)
@@ -1102,6 +1393,23 @@ void RemoteQueryExecutor::finish()
     if (!connections || !sent_query || finished)
         return;
 
+    /// `tryCancel` above may have torn the read side down without draining the packet that was in
+    /// flight. The loop below reads from those same connections, and reading from a canceled buffer
+    /// aborts ("ReadBuffer is canceled. Can't read from it."). Disconnect instead of draining, exactly
+    /// as the already-cancelled branch above does and for the same reasons: the read side may be gone
+    /// (#95466), and an out-of-sync connection must not go back to the pool (#93018). `SCOPE_EXIT`
+    /// marks the executor finished on the way out.
+    if (drain_was_skipped)
+    {
+        connections->disconnect();
+        return;
+    }
+
+    /// This thread holds `was_cancelled_mutex` across the blocking drain below, which is the state in
+    /// which `cancel` must return instead of waiting for that mutex. Injected on this thread rather
+    /// than parking it for an outside cancel: `finish` runs from `RemoteSource::work`.
+    fiu_do_on(FailPoints::remote_query_executor_cancel_in_finish_drain, { cancel(); });
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1127,10 +1435,11 @@ void RemoteQueryExecutor::finish()
                             connections->dumpAddresses(),
                             packet.exception->displayText());
 
-                    reportShardSkipped();
-
-                    /// Stop draining: the server terminated the query with this exception.
+                    /// The server terminated the query with this exception.
+                    /// Record it before `finish` closes the span as cancelled: the first outcome wins.
                     finished = true;
+                    finishFragmentSpanForSkippedShard(packet.exception->message());
+                    reportShardSkipped();
                     break;
                 }
 
@@ -1169,7 +1478,20 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
+    /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
+    /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
+    /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.
+    UniqueLock gate(finish_gate_mutex);
+    if (finish_in_progress)
+        return;
+
+    /// Failing to deliver the cancel (e.g. over a broken connection) ends the fragment
+    /// abnormally: record it as ERROR instead of leaving it as a benign cancel.
+    SCOPE_FAIL({ failFragmentSpan(); });
     LockAndBlocker guard(was_cancelled_mutex);
+    /// Released before `cancelUnlocked`, whose `tryCancel` does socket writes: holding the gate across
+    /// them would make every concurrent `finish` wait for that I/O here instead.
+    gate.unlock();
     cancelUnlocked();
 }
 
@@ -1187,10 +1509,11 @@ void RemoteQueryExecutor::cancelUnlocked()
                 elem->is_cancelled = true;
     }
 
-    if (!isQueryPending() || hasThrownException())
+    if (finished || hasThrownException())
         return;
 
     tryCancel("Cancelling query");
+    finishFragmentSpanCancelled("initiator");
 }
 
 void RemoteQueryExecutor::sendScalars()
@@ -1278,8 +1601,25 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
 
     was_cancelled = true;
 
+    /// A parallel-replicas follower that has not announced yet is still planning, and the only packet
+    /// it owes us is the announcement itself - which is worthless once we are cancelling, because it
+    /// exists to let the coordinator assign ranges we are no longer going to assign. Waiting for it
+    /// means waiting out that replica's whole planning phase (measured at ~290 ms on TPC-H q22 at
+    /// sf=100). Replicas that already announced are drained as before: they may be mid-block.
+    ///
+    /// Only for a query that reads with parallel replicas. `announcement_received` can only ever be set
+    /// by `processMergeTreeInitialReadAnnouncement`, so without this guard every ordinary distributed
+    /// query - which never announces - would skip the drain too, including on the normal completion path
+    /// through `finish()`, and hand a connection back to the pool part-way through a packet.
+    const bool skip_drain = extension && extension->parallel_reading_coordinator && !announcement_received;
+
     if (read_context)
+    {
+        if (skip_drain)
+            read_context->skipDrainOnCancel();
+
         read_context->cancel();
+    }
 
     /// Query could be cancelled during connection creation, query sending or data receiving.
     /// We should send cancel request if connections were already created, query were sent
@@ -1289,6 +1629,12 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
         connections->sendCancel();
         LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
+
+    /// Skipping the drain leaves the socket part-way through a packet, so it must never go back to the
+    /// pool. The destructor only disconnects while the query is still pending, and `finish()` marks it
+    /// finished right after calling this - so record it and disconnect there unconditionally.
+    if (skip_drain)
+        drain_was_skipped = true;
 }
 
 bool RemoteQueryExecutor::isQueryPending() const
@@ -1341,15 +1687,19 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
+bool RemoteQueryExecutor::shouldSkipUnavailableShard() const
+{
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
+}
+
 bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        markDistributedTopKParticipantUnsupported();
-        reportShardSkipped();
-        return true;
-    }
-    return false;
+    if (!shouldSkipUnavailableShard())
+        return false;
+
+    markDistributedTopKParticipantUnsupported();
+    reportShardSkipped();
+    return true;
 }
 
 void RemoteQueryExecutor::reportShardSkipped()
@@ -1364,54 +1714,14 @@ void RemoteQueryExecutor::reportShardSkipped()
     /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
     /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
     if (unavailable_shard_tracker)
-        unavailable_shard_tracker->onShardSkipped();
+        unavailable_shard_tracker->onShardSkipped(got_data_from_replica);
 }
 
 bool RemoteQueryExecutor::processAsyncControlPacketIfAny()
 {
     try
     {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-
-        if (query_coordination_response_pending)
-        {
-            LockAndBlocker lock(was_cancelled_mutex);
-            if (was_cancelled)
-                return false;
-            sendPendingQueryCoordinationResponse();
-            return true;
-        }
-
-        if (!read_context->readPacketTypeSeparately())
-            return false;
-
-        OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processAsyncControlPacketIfAny"};
-
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return false;
-
-        // try to read packet type if hasn't read it yet
-        if (!read_context->hasReadTillPacketType() && !read_context->read())
-            return false;
-
-        async_packet_in_progress = true;
-
-        const auto packet_type = read_context->getPacketType();
-        if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
-        {
-            // try to read packet if hasn't read it yet
-            if (!read_context->hasReadPacket() && !read_context->read())
-                return false;
-
-            async_packet_in_progress = false;
-            processPacket(read_context->getPacket());
-            return true;
-        }
-
-#endif
-
-        return false;
+        return processAsyncControlPacketIfAnyImpl();
     }
     catch (...)
     {
@@ -1419,5 +1729,53 @@ bool RemoteQueryExecutor::processAsyncControlPacketIfAny()
             extension->distributed_top_k_coordinator->cancel(std::current_exception());
         throw;
     }
+}
+
+bool RemoteQueryExecutor::processAsyncControlPacketIfAnyImpl()
+{
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
+    if (query_coordination_response_pending)
+    {
+        LockAndBlocker lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return false;
+        sendPendingQueryCoordinationResponse();
+        return true;
+    }
+
+    if (!read_context->readPacketTypeSeparately())
+        return false;
+
+    OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processAsyncControlPacketIfAny"};
+
+    /// Same as in `read` and `readAsync`: a local packet-processing failure on the consumer
+    /// thread is this fragment's failure.
+    SCOPE_FAIL({ failFragmentSpan(); });
+    LockAndBlocker lock(was_cancelled_mutex);
+    if (was_cancelled)
+        return false;
+
+    // try to read packet type if hasn't read it yet
+    if (!read_context->hasReadTillPacketType() && !read_context->read())
+        return false;
+
+    async_packet_in_progress = true;
+
+    const auto packet_type = read_context->getPacketType();
+    if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
+    {
+        // try to read packet if hasn't read it yet
+        if (!read_context->hasReadPacket() && !read_context->read())
+            return false;
+
+        async_packet_in_progress = false;
+        processPacket(read_context->getPacket());
+        return true;
+    }
+
+#endif
+
+    return false;
 }
 }

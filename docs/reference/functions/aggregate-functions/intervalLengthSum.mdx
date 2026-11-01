@@ -14,10 +14,10 @@ Introduced in: v21.7.0
 
 Takes multiple numeric ranges and calculates the total length when all overlapping parts are combined into a single unified range.
 
-:::note
+<Note>
 Arguments must be of the same data type.
 Otherwise, an exception will be thrown.
-:::
+</Note>
     
 
 **Syntax**
@@ -48,7 +48,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
 
 ```response title=Response
 ┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                           3.1 │ Float64                                   │
+│ a  │            3.0999999046325684 │ Float64                                   │
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
 ```
 

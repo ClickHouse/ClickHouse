@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Other tests can enable failpoints and interfere with this test
 
 -- Basic: table exists and returns rows

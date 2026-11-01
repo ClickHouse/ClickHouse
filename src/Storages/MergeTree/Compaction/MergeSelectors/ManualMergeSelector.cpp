@@ -82,16 +82,52 @@ PartsRanges ManualMergeSelector::select(
     const RangeFilter & range_filter) const
 {
     auto [info, lock] = getTableInfo(storage_id);
-    if (info->queue.empty())
-        return {};
+
+    /// A scheduled merge must not be removed from the queue at the moment it is selected:
+    /// selection does not guarantee execution. The selected merge may fail to be scheduled
+    /// (the background pool queue is full and `trySchedule` returns false) or fail during
+    /// execution, in which case the entry has to remain in the queue and be retried. Dropping
+    /// it here would break the chain of dependent merges and make `SYSTEM SYNC MERGES` hang
+    /// until it times out.
+    ///
+    /// Instead, an entry is removed only once its merge has actually been performed, which is
+    /// detected by the merge result being present among the available parts. The parts of a
+    /// merge that is currently running are excluded from `parts_ranges` (the parts collector
+    /// drops parts that cannot be used in merges), so an in-flight merge is never re-selected;
+    /// a merge that did not happen has all of its source parts back in `parts_ranges` and is
+    /// selected again on the next call.
+    ActiveDataPartSet available_parts(MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+    for (const auto & range : parts_ranges)
+        for (const auto & part : range)
+            available_parts.add(part.info, part.name);
+
+    /// Drop already performed merges from the front of the queue. A scheduled merge is
+    /// considered done when its first part is no longer active on its own but is contained
+    /// in a bigger (merged) part. A dependent merge becomes selectable only after the merge
+    /// it depends on has committed its result, so the containing part is always available
+    /// (not in-flight) by the time we observe completion here.
+    while (!info->queue.empty())
+    {
+        const Names & front = info->queue.front();
+        chassert(!front.empty());
+
+        const auto front_info = MergeTreePartInfo::fromPartName(front.front(), MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        const std::string containing = available_parts.getContainingPart(front_info);
+
+        if (!containing.empty() && containing != front_info.getPartNameV1())
+            info->queue.pop_front();
+        else
+            break;
+    }
 
     PartsRanges ranges;
+    size_t queue_pos = 0;
     for (const auto & constraint : merge_constraints)
     {
-        if (info->queue.empty())
+        if (queue_pos >= info->queue.size())
             break;
 
-        auto range = lookupRange(parts_ranges, info->queue.front());
+        auto range = lookupRange(parts_ranges, info->queue[queue_pos]);
         if (!range)
             break;
 
@@ -101,8 +137,8 @@ PartsRanges ManualMergeSelector::select(
         if (range_filter && !range_filter(range.value()))
             break;
 
-        info->queue.pop_front();
         ranges.push_back(std::move(range.value()));
+        ++queue_pos;
     }
 
     return ranges;

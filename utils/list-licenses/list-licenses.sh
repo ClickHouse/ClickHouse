@@ -99,11 +99,6 @@ process_library() {
          ${GREP_CMD} -q -i -F 'distribution of the software without specific, written prior permission' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'makes no representations about the suitability of this software' "$LIB_LICENSE" &&
          echo "HPND") ||
-        (${GREP_CMD} -q -F 'Permission is hereby granted to use, copy, modify, and distribute' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -F 'The origin of this software must not be misrepresented' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -F 'This Copyright notice may not be removed or altered' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -F 'PNG Reference Library Authors' "$LIB_LICENSE" &&
-         echo "libpng") ||
         (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and/or distribute this software' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'with or without fee is hereby granted' "$LIB_LICENSE" &&
          echo "ISC") ||
@@ -183,6 +178,7 @@ process_rust_crate() {
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Zlib OR MIT OR Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||

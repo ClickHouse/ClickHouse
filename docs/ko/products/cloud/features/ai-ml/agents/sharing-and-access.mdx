@@ -7,7 +7,7 @@ keywords: ['AI', 'ClickHouse Cloud', '에이전트', '공유', '액세스 제어
 doc_type: 'reference'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge />
@@ -53,7 +53,7 @@ ClickHouse Agents는 계층형 권한 모델을 사용합니다. 역할은 사�
   ## 에이전트 공유하기
 </div>
 
-Agent Builder 하단의 **공유** 아이콘을 클릭합니다. 아이콘의 배지에는 현재 액세스할 수 있는 사용자 또는 그룹 수가 표시됩니다.
+Agent Builder 하단의 **공유** 아이콘을 클릭합니다. 아이콘의 배지에는 현재 액세스 권한이 있는 사용자 또는 그룹 수가 표시됩니다.
 
 <Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="공유 아이콘이 강조 표시되어 있고 하나의 공유된 주체를 나타내는 배지가 표시된 Agent Builder 패널 하단" size="sm" />
 
@@ -61,7 +61,7 @@ Agent Builder 하단의 **공유** 아이콘을 클릭합니다. 아이콘의 �
 
 <Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="사용자 및 그룹 권한 섹션, 검색 입력란, Owner 역할이 있는 기존 사용자, Share with everyone in ClickHouse 토글, Cancel 및 Save Changes 버튼이 있는 공유 모달" size="md" />
 
-공유받은 사용자는 다음에 새로 고침할 때 사용 가능한 에이전트 목록에서 해당 에이전트를 볼 수 있습니다. 액세스를 취소하려면 같은 모달에서 해당 행을 제거합니다. 액세스 권한은 즉시 사라지지만, 진행 중인 대화는 마무리되며 새 대화는 열 수 없습니다.
+공유받은 사용자는 다음에 새로 고침할 때 사용 가능한 에이전트 목록에서 해당 에이전트를 볼 수 있습니다. 액세스 권한을 취소하려면 같은 모달에서 해당 행을 제거합니다. 액세스 권한은 즉시 사라지지만, 진행 중인 대화는 마무리되며 새 대화는 열 수 없습니다.
 
 <div id="default-agent">
   ## 기본 에이전트

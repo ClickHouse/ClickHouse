@@ -29,6 +29,19 @@
     return BASE + localized;
   }
 
+  // Prefer Mintlify's router; a real anchor click is the fallback.
+  function followLink(href) {
+    if (window.mintlify && typeof window.mintlify.navigate === 'function') {
+      window.mintlify.navigate(href);
+      return;
+    }
+    var a = document.createElement('a');
+    a.href = href;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   function patchTabButtons() {
     // Only run on desktop
     if (window.innerWidth < 1024) return;
@@ -53,7 +66,7 @@
       labelDiv.style.cursor = 'pointer';
       labelDiv.addEventListener('click', function (e) {
         e.stopPropagation();
-        window.location.href = localizeUrl(url);
+        followLink(localizeUrl(url));
       });
     });
   }
@@ -99,8 +112,11 @@
   // ── Homepage sidebar hiding ───────────────────────────────────────────────
   // Each locale has its own homepage at /<locale> (e.g. /es, /ja); treat those
   // the same as the English homepage at /.
+  // Mintlify can update the URL before the new page renders; only advance on mintlify:navigate.
+  var renderedPath = window.location.pathname;
+
   function isHomePath() {
-    var path = stripBase(window.location.pathname).replace(/\/+$/, '') || '/';
+    var path = stripBase(renderedPath).replace(/\/+$/, '') || '/';
     return path === '/' || LOCALES.indexOf(path.slice(1)) !== -1;
   }
 
@@ -115,14 +131,22 @@
   // ── Homepage: inject logo + theme toggle into navbar ──────────────────────
   var LOGO_ID = 'ch-homepage-logo';
   var TOGGLE_ID = 'ch-homepage-toggle';
+  var toggleOrigin = null;
 
   function findSidebarThemeToggle() {
+    // Current Mintlify builds render a segmented control: a
+    //   <div role="group" aria-label="Theme preference">
+    // wrapping three buttons (system / light / dark). We relocate the whole
+    // group so all three options move together.
+    var group = document.querySelector('#sidebar [role="group"][aria-label="Theme preference"]');
+    if (group) return group;
+    // Older builds rendered a single <button aria-label="Toggle dark mode">.
     var btn = document.querySelector('#sidebar button[aria-label="Toggle dark mode"]');
     if (btn) return btn;
     // Localized UIs translate the aria-label (e.g. "다크 모드 전환"), so fall
-    // back to the toggle's shape: the only sidebar pill button holding the
-    // sun + moon icons.
-    var candidates = document.querySelectorAll('#sidebar button');
+    // back to the control's shape: the only sidebar pill (rounded-full) holding
+    // the theme icons — matches both the segmented group and the legacy button.
+    var candidates = document.querySelectorAll('#sidebar [role="group"], #sidebar button');
     for (var i = 0; i < candidates.length; i++) {
       if (/rounded-full/.test(candidates[i].className)
           && candidates[i].querySelectorAll('svg').length >= 2) {
@@ -141,9 +165,16 @@
       // Restore theme toggle to sidebar before removing wrapper
       var toggleWrapper = document.getElementById(TOGGLE_ID);
       if (toggleWrapper) {
-        var btn = toggleWrapper.querySelector('button');
-        var sidebar = document.getElementById('sidebar');
-        if (btn && sidebar) sidebar.appendChild(btn);
+        // Move the whole control back — it may be a segmented group (a div with
+        // several buttons), not a single button, so restore firstElementChild.
+        var control = toggleWrapper.firstElementChild;
+        // Sidebar re-rendered meanwhile; React already rendered a fresh toggle.
+        var origin = toggleOrigin;
+        toggleOrigin = null;
+        if (control && origin && origin.parent.isConnected) {
+          var next = origin.next && origin.next.parentNode === origin.parent ? origin.next : null;
+          origin.parent.insertBefore(control, next);
+        }
         toggleWrapper.parentNode.removeChild(toggleWrapper);
       }
       var logo = document.getElementById(LOGO_ID);
@@ -173,6 +204,7 @@
         var wrapper = document.createElement('div');
         wrapper.id = TOGGLE_ID;
         wrapper.style.cssText = 'display:flex;align-items:center;flex-shrink:0;margin-left:0.75rem;margin-right:auto;';
+        toggleOrigin = { parent: sidebarToggle.parentNode, next: sidebarToggle.nextSibling };
         sidebarToggle.parentNode.removeChild(sidebarToggle);
         wrapper.appendChild(sidebarToggle);
         // Insert as second child (right after the logo)
@@ -232,9 +264,11 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     window.addEventListener('resize', patchTabButtons);
-    window.addEventListener('popstate', function () {
+    window.addEventListener('mintlify:navigate', function () {
+      renderedPath = window.location.pathname;
       applyHomepageClass();
       setupHomepageNavbar();
+      markNavbarReady();
     });
 
     // Failsafe: never leave the navbar hidden. If an injection never completes

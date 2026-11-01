@@ -5,6 +5,7 @@ add_library (mysqlxx
     ResultBase.cpp
     UseQueryResult.cpp
     Row.cpp
+    SSLParams.cpp
     Value.cpp
     Pool.cpp
     PoolFactory.cpp

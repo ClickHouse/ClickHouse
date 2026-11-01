@@ -23,10 +23,10 @@ Test dictionary_block_frontcoding_compression argument.
 -- dictionary_block_frontcoding_compression must be 0 or 1.
 Test posting_list_codec argument.
 -- posting_list_codec must be a string.
--- posting_list_codec must be none or bitpacking.
-Test positions argument.
--- positions argument is experimental
--- positions argument is must be 0 or 1
+-- posting_list_codec must be none, bitpacking or pfor.
+Test support_phrase_search argument.
+-- support_phrase_search argument is experimental
+-- support_phrase_search argument is must be 0 or 1
 Types are incorrect.
 Same argument appears >1 times.
 Non-existing argument.

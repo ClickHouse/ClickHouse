@@ -17,8 +17,7 @@ To follow this guide, you will need:
 - A running ClickHouse Cloud service
 
 <Steps>
-<Step>
-## Navigate to data sources {#navigate-to-data-sources}
+<Step title="Navigate to data sources" id="navigate-to-data-sources">
 
 From the home page of your service, click **Data sources** in the left hand menu.
 Expand the **ClickPipes** dropdown and click **Create ClickPipe**
@@ -27,15 +26,13 @@ Expand the **ClickPipes** dropdown and click **Create ClickPipe**
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="Create ClickPipe" size="md"/>
 </Step>
-<Step>
-## Select the data source {#select-data-source}
+<Step title="Select the data source" id="select-data-source">
 
 Select **Azure Blob Storage** as data type
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="Select Azure Blob Storage" size="md"/>
 </Step>
-<Step>
-## Setup your ClickPipe connection {#setup-connection}
+<Step title="Setup your ClickPipe connection" id="setup-connection">
 
 1. Give your ClickPipe a descriptive name
 2. Select **Connection String** from the authentication method dropdown
@@ -49,8 +46,7 @@ Finally, click **Incoming data**
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="Configuration Details" size="md"/>
 </Step>
-<Step>
-## Select data format {#select-data-format}
+<Step title="Select data format" id="select-data-format">
 
 1. Select file type
 2. File compression (`detect automatically`, `none`, `gzip`, `brotli`, `xz` or `zstd`)
@@ -59,8 +55,7 @@ Finally, click **Incoming data**
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="Choose Data Format" size="md"/>
 </Step>
-<Step>
-## Configure table, schema and settings {#configure-table-schema}
+<Step title="Configure table, schema and settings" id="configure-table-schema">
 
 Now you need to create a new table or select an existing one where the incoming data can be stored.
 
@@ -74,8 +69,7 @@ Now you need to create a new table or select an existing one where the incoming 
 
 When you have finished configuring your table, schema and settings, click **Details and settings**
 </Step>
-<Step>
-## Configure permissions {#configure-permissions}
+<Step title="Configure permissions" id="configure-permissions">
 
 ClickPipes will set up a dedicated database user for data writing.
 You can select a role for this user.
@@ -83,8 +77,7 @@ For materialized views or dictionary access from the destination table, opt for 
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="Configure Permissions" size="md"/>
 </Step>
-<Step>
-## Complete setup {#complete-setup}
+<Step title="Complete setup" id="complete-setup">
 
 Click **Create ClickPipe** to complete setup
 

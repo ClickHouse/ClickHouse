@@ -15,8 +15,8 @@ using namespace DB;
 
 int mainEntryExampleExecutableUdf(int argc, char **argv)
 {
-    (void)(argc);
-    (void)(argv);
+    (void)argc;
+    (void)argv;
 
     std::string buffer;
 

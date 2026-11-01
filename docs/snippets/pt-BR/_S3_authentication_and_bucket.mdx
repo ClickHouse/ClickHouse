@@ -4,37 +4,57 @@ title: Autenticação e bucket do S3
 
 <Accordion title="Crie buckets do S3 e um usuário do IAM">
   Este artigo demonstra os conceitos básicos de como configurar um usuário do IAM da AWS, criar um bucket do S3 e configurar o ClickHouse para usar o bucket como um S3 disk.
-  Trabalhe com sua equipe de segurança para determinar as permissões a serem utilizadas e considere estas como ponto de partida.
+  Recomenda-se trabalhar com sua equipe de segurança para determinar as permissões a serem utilizadas, considerando estas como ponto de partida.
 
   ### Criar um usuário do IAM da AWS
 
-  Nos passos a seguir, você criará um usuário de service account (e não um usuário de login).
+  Nas etapas a seguir, você criará um usuário de conta de serviço (não um usuário de logon).
 
   1. Faça login no Console de Gerenciamento do AWS IAM.
 
-  2. No menu `Users`, selecione `Create user`
+  2. No menu `Usuários`, selecione `Criar usuário`
 
-  <Image size="md" img="/images/_snippets/s3/s3-1.webp" alt="Console de Gerenciamento do AWS IAM - Adicionar um novo usuário" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-1.webp" alt="Console de Gerenciamento do AWS IAM - Adicionar um novo usuário" />
+    </Frame>
+  </div>
 
-  3. Insira o nome de usuário, defina o tipo de credencial como `Access key - Programmatic access` e selecione `Next: Permissions`
+  3. Digite o nome de usuário, defina o tipo de credencial como `Access key - Programmatic access` e selecione `Next: Permissions`
 
-  <Image size="md" img="/images/_snippets/s3/s3-2.webp" alt="Definir nome de usuário e tipo de acesso para usuário do IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-2.webp" alt="Definindo o nome de usuário e o tipo de acesso para o usuário do IAM" />
+    </Frame>
+  </div>
 
-  4. Não adicione o usuário a nenhum grupo; selecione `Next: Tags`
+  4. Não adicione o usuário a nenhum grupo; clique em `Next: Tags`
 
-  <Image size="md" img="/images/_snippets/s3/s3-3.webp" alt="Ignorar a atribuição de grupo para o usuário do IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-3.webp" alt="Pulando a atribuição de grupo ao usuário do IAM" />
+    </Frame>
+  </div>
 
-  5. A menos que precise adicionar tags, selecione `Next: Review`
+  5. A menos que você precise adicionar alguma tag, selecione `Next: Review`
 
-  <Image size="md" img="/images/_snippets/s3/s3-4.webp" alt="Ignorar a atribuição de tag ao usuário do IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-4.webp" alt="Omitindo a atribuição de tag para usuário do IAM" />
+    </Frame>
+  </div>
 
   6. Selecione `Create User`
 
   <Note>
-    A mensagem de aviso informando que o usuário não tem permissões pode ser ignorada; as permissões para o usuário serão concedidas no bucket na próxima seção
+    A mensagem de aviso indicando que o usuário não tem permissões pode ser ignorada; as permissões para o usuário serão concedidas no bucket na próxima seção
   </Note>
 
-  <Image size="md" img="/images/_snippets/s3/s3-5.webp" alt="Aviso sobre a criação do usuário do IAM sem permissões" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-5.webp" alt="Criando o usuário do IAM sem o aviso de permissões insuficientes" />
+    </Frame>
+  </div>
 
   7. O usuário foi criado; clique em `show` e copie a chave de acesso e a chave secreta.
 
@@ -42,63 +62,111 @@ title: Autenticação e bucket do S3
     Guarde as chaves em outro lugar; esta é a única vez em que a chave de acesso secreta estará disponível.
   </Note>
 
-  <Image size="md" img="/images/_snippets/s3/s3-6.webp" alt="Visualizar e copiar as chaves de acesso do usuário do IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-6.webp" alt="Visualizando e copiando as chaves de acesso do usuário do IAM" />
+    </Frame>
+  </div>
 
   8. Clique em Fechar e, em seguida, localize o usuário na tela de usuários.
 
-  <Image size="md" img="/images/_snippets/s3/s3-7.webp" alt="Encontrar o usuário do IAM recém-criado na lista de usuários" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-7.webp" alt="Localizando o usuário do IAM recém-criado na lista de usuários" />
+    </Frame>
+  </div>
 
-  9. Copie o ARN (Amazon Resource Name) e salve-o para usar na configuração da política de acesso do bucket.
+  9. Copie o ARN (Amazon Resource Name) e salve-o para usar ao configurar a política de acesso do bucket.
 
-  <Image size="md" img="/images/_snippets/s3/s3-8.webp" alt="Copiar o ARN do usuário do IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-8.webp" alt="Copiando o ARN do usuário do IAM" />
+    </Frame>
+  </div>
 
   ### Criar um bucket do S3
 
   1. Na seção bucket do S3, selecione `Create bucket`
 
-  <Image size="md" img="/images/_snippets/s3/s3-9.webp" alt="Iniciando a criação do bucket do S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-9.webp" alt="Iniciando o processo de criação do bucket do S3" />
+    </Frame>
+  </div>
 
   2. Insira um nome para o bucket e deixe as outras opções com os valores padrão
 
   <Note>
-    O nome do bucket deve ser único em toda a AWS, não apenas na organização, ou gerará um erro.
+    O nome do bucket deve ser único em toda a AWS, não apenas na organização, ou será gerado um error.
   </Note>
 
-  3. Deixe `Block all Public Access` ativado; o acesso público não é necessário.
+  3. Deixe `Block all Public Access` habilitado; o acesso público não é necessário.
 
-  <Image size="md" img="/images/_snippets/s3/s3-a.webp" alt="Configurando as opções do bucket do S3 com o acesso público bloqueado" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-a.webp" alt="Configuração do bucket do S3 com acesso público bloqueado" />
+    </Frame>
+  </div>
 
-  4. Selecione `Create Bucket` no final da página
+  4. Selecione `Create Bucket` na parte inferior da página
 
-  <Image size="md" img="/images/_snippets/s3/s3-b.webp" alt="Concluindo a criação do bucket do S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-b.webp" alt="Concluindo a criação do bucket do S3" />
+    </Frame>
+  </div>
 
-  5. Selecione o link, copie o ARN e salve-o para usá-lo ao configurar a política de acesso do bucket.
+  5. Clique no link, copie o ARN e salve-o para usar ao configurar a política de acesso do bucket.
 
-  6. Depois que o bucket for criado, localize o novo bucket do S3 na lista de buckets do S3 e selecione o link
+  6. Depois que o bucket for criado, localize o novo bucket do S3 na lista de buckets do S3 e clique no link
 
-  <Image size="md" img="/images/_snippets/s3/s3-c.webp" alt="Encontrando o bucket do S3 recém-criado na lista de buckets" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-c.webp" alt="Localizando o bucket do S3 recém-criado na lista de buckets" />
+    </Frame>
+  </div>
 
   7. Selecione `Create folder`
 
-  <Image size="md" img="/images/_snippets/s3/s3-d.webp" alt="Criando uma nova pasta no bucket do S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-d.webp" alt="Criando uma nova pasta no bucket do S3" />
+    </Frame>
+  </div>
 
-  8. Digite um nome para a pasta que será o destino do disco S3 do ClickHouse e selecione `Create folder`
+  8. Informe o nome de uma pasta que será o destino do disco S3 do ClickHouse e selecione `Create folder`
 
-  <Image size="md" img="/images/_snippets/s3/s3-e.webp" alt="Definir o nome da pasta para uso do disco S3 do ClickHouse" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-e.webp" alt="Definindo o nome da pasta para o uso do disco S3 do ClickHouse" />
+    </Frame>
+  </div>
 
   9. A pasta agora deve aparecer na lista de buckets
 
-  <Image size="md" img="/images/_snippets/s3/s3-f.webp" alt="Visualizar a pasta recém-criada no bucket do S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-f.webp" alt="Visualização da pasta recém-criada no bucket do S3" />
+    </Frame>
+  </div>
 
-  10. Selecione a caixa de seleção da nova pasta e clique em `Copy URL`. Salve a URL copiada para usá-la na configuração de armazenamento do ClickHouse na próxima seção.
+  10. Marque a caixa de seleção da nova pasta e clique em `Copy URL`. Salve a URL copiada para usá-la na configuração de armazenamento do ClickHouse na próxima seção.
 
-  <Image size="md" img="/images/_snippets/s3/s3-g.webp" alt="Copiar a URL da pasta do S3 para a configuração do ClickHouse" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-g.webp" alt="Copiando a URL da pasta no S3 para a configuração do ClickHouse" />
+    </Frame>
+  </div>
 
   11. Selecione a aba `Permissions` e clique no botão `Edit` na seção `Bucket Policy`
 
-  <Image size="md" img="/images/_snippets/s3/s3-h.webp" alt="Acessar a configuração da política do bucket do S3" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-h.webp" alt="Acessando a configuração da política do bucket do S3" />
+    </Frame>
+  </div>
 
-  12. Adicione uma política de bucket, conforme o exemplo abaixo:
+  12. Adicione uma política para o bucket, conforme o exemplo abaixo:
 
   ```json
   {
@@ -122,18 +190,18 @@ title: Autenticação e bucket do S3
   ```
 
   ```response
-  |Parâmetro | Descrição | Valor de Exemplo |
+  |Parameter | Description | Example Value |
   |----------|-------------|----------------|
-  |Version | Versão do interpretador de política, deixe como está | 2012-10-17 |
-  |Sid | ID de política definido pelo usuário | abc123 |
-  |Effect | Se as solicitações do usuário serão permitidas ou negadas | Allow |
-  |Principal | As contas ou o usuário que terão acesso permitido | arn:aws:iam::921234567898:user/mars-s3-user |
-  |Action | Quais operações são permitidas no bucket| s3:*|
-  |Resource | Em quais recursos do bucket as operações serão permitidas | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
+  |Version | Version of the policy interpreter, leave as-is | 2012-10-17 |
+  |Sid | User-defined policy id | abc123 |
+  |Effect | Whether user requests will be allowed or denied | Allow |
+  |Principal | The accounts or user that will be allowed | arn:aws:iam::921234567898:user/mars-s3-user |
+  |Action | What operations are allowed on the bucket| s3:*|
+  |Resource | Which resources in the bucket will operations be allowed in | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
   ```
 
   <Note>
-    Você deve trabalhar com sua equipe de segurança para determinar as permissões a serem usadas; considere-as como um ponto de partida.
+    Você deve trabalhar com sua equipe de segurança para determinar quais permissões usar; considere estas como um ponto de partida.
     Para mais informações sobre políticas e configurações, consulte a documentação da AWS:
     https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
   </Note>

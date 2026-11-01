@@ -1,4 +1,5 @@
 #include <Server/WebUIRequestHandler.h>
+#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Common/re2.h>
@@ -8,8 +9,10 @@
 #include <Interpreters/Context.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <ClickStackResources.generated.h>
+#include <SQLConsoleResources.generated.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 
@@ -102,9 +105,42 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto buf = responseWriteBuffer(request, response);
+    buf.get()->write(html.data(), html.size());
+    buf.get()->finalize();
+}
+
+template <typename EmbeddedResources>
+const typename EmbeddedResources::value_type * findEmbeddedResource(const EmbeddedResources & resources, const std::string & resource_path)
+{
+    auto it = std::lower_bound(
+        resources.begin(),
+        resources.end(),
+        resource_path,
+        [](const auto & resource, const std::string & path)
+        {
+            return resource.path < path;
+        });
+
+    if (it == resources.end() || it->path != resource_path)
+        return nullptr;
+
+    return &*it;
+}
+
+template <typename EmbeddedResource>
+void handleCompressedEmbeddedResource(
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    const EmbeddedResource & resource,
+    const std::unordered_map<String, String> & http_response_headers_override)
+{
+    response.setContentType(std::string(resource.mime_type));
+
+    auto headers_with_encoding = http_response_headers_override;
+    headers_with_encoding["Content-Encoding"] = "gzip";
+
+    handle(request, response, {reinterpret_cast<const char *>(resource.data), resource.size}, headers_with_encoding);
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -210,7 +246,7 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     handle(request, response, html, http_response_headers_override);
 }
 
-std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
+std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
 {
     std::string_view path = uri;
     if (path.starts_with("/clickstack"))
@@ -232,49 +268,166 @@ std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri)
     if (!path.empty() && path.back() == '/')
         path.remove_suffix(1);
 
+    /// `Poco::URI::decode` throws `Poco::URISyntaxException` on malformed
+    /// percent-encoding (e.g. lone `%`, `%X`, `%ZZ`). Without this catch the
+    /// exception would unwind into the server error handler and produce a 500
+    /// for any client that sends a malformed URI; returning std::nullopt lets
+    /// the request handler answer with a deterministic 400.
+    std::string decoded;
+    try
+    {
+        Poco::URI::decode(std::string(path), decoded);
+    }
+    catch (const Poco::URISyntaxException &)
+    {
+        return std::nullopt;
+    }
+
     // Handle clean URLs - map page routes to .html files
     // If path is empty or just "/", serve index.html
-    if (path.empty())
-        return "index.html";
+    if (decoded.empty())
+        return std::string("index.html");
 
-    std::string path_str(path);
-    if (path_str.find('.') != std::string::npos)
-        return path_str;
+    if (decoded.contains('.'))
+        return decoded;
 
     // assuming a path with no "." is an html page
-    return path_str + ".html";
+    return decoded + ".html";
+}
+
+namespace
+{
+
+/// Resolve a page request against Next.js-style dynamic routes.
+/// Example: /trace/abc -> /trace/[traceId].html
+const ClickStack::EmbeddedResource * resolveDynamicRoute(const std::string & resource_path)
+{
+    static constexpr std::string_view html_suffix = ".html";
+    static constexpr std::string_view dynamic_tail_suffix = "].html";
+
+    if (!std::string_view{resource_path}.ends_with(html_suffix))
+        return nullptr;
+
+    size_t last_slash = resource_path.rfind('/');
+    std::string_view prefix = last_slash == std::string::npos
+        ? std::string_view{}
+        : std::string_view{resource_path}.substr(0, last_slash + 1);
+
+    for (const auto & candidate : ClickStack::embedded_resources)
+    {
+        std::string_view candidate_path{candidate.path};
+        if (!candidate_path.starts_with(prefix))
+            continue;
+
+        std::string_view tail = candidate_path.substr(prefix.size());
+        if (tail.empty() || tail.front() != '[')
+            continue;
+        if (!tail.ends_with(dynamic_tail_suffix))
+            continue;
+        if (tail.contains('/'))
+            continue;
+
+        return &candidate;
+    }
+
+    return nullptr;
+}
+
 }
 
 void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    // Get the resource path from URI
-    std::string resource_path = getResourcePath(request.getURI());
+    auto resource_path_opt = getResourcePath(request.getURI());
+    if (!resource_path_opt)
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+        *response.send() << "Malformed URL.\n";
+        return;
+    }
+    const std::string & resource_path = *resource_path_opt;
 
-    // Binary search in the sorted embedded_resources array
-    auto it = std::lower_bound(
-        ClickStack::embedded_resources.begin(),
-        ClickStack::embedded_resources.end(),
-        resource_path,
-        [](const ClickStack::EmbeddedResource & resource, const std::string & path)
-        {
-            return resource.path < path;
-        });
+    const auto * resource = findEmbeddedResource(ClickStack::embedded_resources, resource_path);
+
+    /// If the literal lookup missed and the request is for a page, try to
+    /// resolve it against a Next.js dynamic-route export (`foo/[id].html`).
+    /// This is what makes URLs like `/clickstack/trace/<trace-id>` serve the
+    /// `trace/[traceId].html` redirect page instead of 404ing.
+    if (!resource)
+        resource = resolveDynamicRoute(resource_path);
 
     // Check if resource was found
-    if (it == ClickStack::embedded_resources.end() || it->path != resource_path)
+    if (!resource)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
         *response.send() << "Not found.\n";
         return;
     }
 
-    response.setContentType(std::string(it->mime_type));
+    handleCompressedEmbeddedResource(request, response, *resource, http_response_headers_override);
+}
 
-    // Add Content-Encoding header since all clickstack resources are pre-gzipped
-    auto headers_with_encoding = http_response_headers_override;
-    headers_with_encoding["Content-Encoding"] = "gzip";
+std::string SQLConsoleUIRequestHandler::getResourcePath(const std::string & uri) const
+{
+    constexpr std::string_view sql_console_path = "/ui";
+    std::string_view path = uri;
+    if (path.starts_with(sql_console_path))
+        path.remove_prefix(sql_console_path.size());
 
-    handle(request, response, {reinterpret_cast<const char *>(it->data), it->size}, headers_with_encoding);
+    if (!path.empty() && path[0] == '/')
+        path.remove_prefix(1);
+
+    auto query_pos = path.find('?');
+    if (query_pos != std::string_view::npos)
+        path = path.substr(0, query_pos);
+
+    auto fragment_pos = path.find('#');
+    if (fragment_pos != std::string_view::npos)
+        path = path.substr(0, fragment_pos);
+
+    if (!path.empty() && path.back() == '/')
+        path.remove_suffix(1);
+
+    if (path.empty())
+        return "index.html";
+
+    return std::string(path);
+}
+
+namespace
+{
+
+/// Missing hashed/root assets must 404; other unmatched paths are SPA routes (quoted identifiers may contain '.').
+bool isSQLConsoleStaticAsset(std::string_view resource_path)
+{
+    if (resource_path.starts_with("assets/") || resource_path.starts_with("monacoeditorwork/"))
+        return true;
+
+    return resource_path == "env.js" || resource_path == "index.html";
+}
+
+}
+
+void SQLConsoleUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    std::string resource_path = getResourcePath(request.getURI());
+
+    if (const auto * resource = findEmbeddedResource(SQLConsole::embedded_resources, resource_path))
+    {
+        handleCompressedEmbeddedResource(request, response, *resource, http_response_headers_override);
+        return;
+    }
+
+    if (!isSQLConsoleStaticAsset(resource_path))
+    {
+        if (const auto * resource = findEmbeddedResource(SQLConsole::embedded_resources, "index.html"))
+        {
+            handleCompressedEmbeddedResource(request, response, *resource, http_response_headers_override);
+            return;
+        }
+    }
+
+    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+    *response.send() << "Not found.\n";
 }
 
 }

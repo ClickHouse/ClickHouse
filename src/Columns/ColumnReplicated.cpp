@@ -1,6 +1,9 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
@@ -15,6 +18,84 @@ namespace ErrorCodes
 }
 
 std::atomic<UInt64> ColumnReplicated::global_id_counter = 0;
+
+struct ColumnReplicated::InsertionCache
+{
+    using Rows = HashMap<UInt128, UInt64>;
+
+    /// A lookup in `rows` costs about as much as copying a value of this size, and it saves memory only
+    /// when copies of a row meet in the same destination, so smaller values are copied instead.
+    static constexpr size_t MIN_VALUE_SIZE_TO_DEDUPLICATE = 1024;
+
+    /// Returns the destination row for row `src_row` of the nested column of `src`. A new row is mapped
+    /// to `new_row` and sets `inserted`: the caller must copy the value there.
+    UInt64 findOrAdd(const ColumnReplicated & src, UInt64 src_row, UInt64 new_row, bool & inserted)
+    {
+        const UInt128 key = (static_cast<UInt128>(src.id) << 64) | src_row;
+        if (has_last_key && key == last_key)
+        {
+            inserted = false;
+            return last_row;
+        }
+
+        if (deduplicates(src))
+        {
+            if (!rows)
+                rows.emplace();
+
+            Rows::LookupResult it = nullptr;
+            rows->emplace(key, it, inserted);
+            if (inserted)
+                it->getMapped() = new_row;
+            last_row = it->getMapped();
+        }
+        else
+        {
+            inserted = true;
+            last_row = new_row;
+        }
+
+        has_last_key = true;
+        last_key = key;
+        return last_row;
+    }
+
+    /// Whether rows of `src` go through `rows`. The sources of one destination can hold values of very
+    /// different sizes, so this is decided for each source.
+    bool deduplicates(const ColumnReplicated & src)
+    {
+        if (has_last_source && src.id == last_source_id)
+            return last_source_deduplicates;
+
+        HashMap<UInt64, bool>::LookupResult it = nullptr;
+        bool inserted = false;
+        source_deduplicates.emplace(src.id, it, inserted);
+        if (inserted)
+        {
+            const size_t src_rows = src.nested_column->size();
+            it->getMapped() = src_rows && src.nested_column->byteSize() / src_rows >= MIN_VALUE_SIZE_TO_DEDUPLICATE;
+        }
+
+        has_last_source = true;
+        last_source_id = src.id;
+        last_source_deduplicates = it->getMapped();
+        return last_source_deduplicates;
+    }
+
+    /// (source column id, row of its nested column) -> row of the destination nested column holding its copy.
+    /// Created for the first source with large values; other sources only deduplicate consecutive inserts of a row.
+    std::optional<Rows> rows;
+    /// The last looked up key, so runs of the same source row skip the hash table.
+    bool has_last_key = false;
+    UInt128 last_key = 0;
+    UInt64 last_row = 0;
+
+    /// Source column id -> whether its rows go through `rows`.
+    HashMap<UInt64, bool> source_deduplicates;
+    bool has_last_source = false;
+    UInt64 last_source_id = 0;
+    bool last_source_deduplicates = false;
+};
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
     : nested_column(std::move(nested_column_)), id(global_id_counter.fetch_add(1))
@@ -36,6 +117,50 @@ ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_, ColumnInd
 {
 }
 
+ColumnReplicated::ColumnReplicated(const ColumnReplicated & other)
+    : Base(other)
+    , nested_column(other.nested_column)
+    , indexes(other.indexes)
+    , id(global_id_counter.fetch_add(1))
+{
+}
+
+ColumnReplicated::~ColumnReplicated() = default;
+
+ColumnReplicated::InsertionCache & ColumnReplicated::getInsertionCache()
+{
+    if (!insertion_cache)
+        insertion_cache = std::make_unique<InsertionCache>();
+    return *insertion_cache;
+}
+
+void ColumnReplicated::dropInsertionCache()
+{
+    insertion_cache.reset();
+}
+
+size_t ColumnReplicated::getOrInsertSourceRow(const ColumnReplicated & src, size_t src_row)
+{
+    auto & cache = getInsertionCache();
+    bool inserted = false;
+    size_t row = cache.findOrAdd(src, src_row, nested_column->size(), inserted);
+    if (inserted)
+    {
+        try
+        {
+            nested_column->insertFrom(*src.nested_column, src_row);
+        }
+        catch (...)
+        {
+            /// The cache already maps the row that was not copied.
+            dropInsertionCache();
+            throw;
+        }
+    }
+
+    return row;
+}
+
 MutableColumnPtr ColumnReplicated::cloneResized(size_t new_size) const
 {
     if (new_size == 0)
@@ -54,9 +179,10 @@ MutableColumnPtr ColumnReplicated::cloneResized(size_t new_size) const
         return create(std::move(new_nested_column), std::move(new_indexes));
     }
 
-    auto res = create(nested_column->cloneEmpty());
-    res->insertRangeFrom(*this, 0, new_size);
-    return res;
+    /// Keep only the nested rows that the remaining indexes refer to.
+    ColumnIndex res_indexes(indexes.getIndexes()->cut(0, new_size));
+    auto compact = res_indexes.buildCompactIndexedColumns({nested_column});
+    return create(mutate(std::move(compact.compact_indexed_columns[0])), mutate(std::move(compact.compact_indexes)));
 }
 
 MutableColumnPtr ColumnReplicated::cloneEmpty() const
@@ -124,8 +250,75 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
     return nested_column->getDataAt(indexes.getIndexAt(n));
 }
 
+namespace
+{
+
+/// Used on ColumnReplicated::convertToFullColumnIfReplicated to check whether the fast path is worth
+/// Break-even is around 8 elements per row
+constexpr uint8_t ELEMENTS_PER_ROW_THRESHOLD = 8;
+
+/// Materializes Replicated(Array) into a full ColumnArray: Each array row is appended as one contiguous element range
+/// via a single insertRangeFrom, instead of gathering the nested data element by element as the generic path
+template <typename T>
+ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
+{
+    const auto & src_offsets = src.getOffsets();
+    const IColumn & src_data = src.getData();
+    size_t num_rows = row_indexes.size();
+
+    auto res_offsets_column = ColumnArray::ColumnOffsets::create(num_rows);
+    auto & res_offsets = res_offsets_column->getData();
+
+     size_t total_elements = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        ssize_t row = row_indexes[i];
+        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row -1] == ColumnArray::OffsetAt(row)
+        total_elements += src_offsets[row] - src_offsets[row - 1];
+        res_offsets[i] = total_elements;
+    }
+    auto res_data = src_data.cloneEmpty();
+    res_data->reserve(total_elements);
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        ssize_t row = row_indexes[i];
+        res_data->insertRangeFrom(src_data,/*start*/src_offsets[row - 1], /*length*/src_offsets[row] - src_offsets[row - 1]);
+    }
+
+    return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+}
+
+
+ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_indexes)
+{
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint8->getData());
+    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint16->getData());
+    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint32->getData());
+    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&row_indexes))
+        return convertToFullColumnArrayImpl(src, indexes_uint64->getData());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", row_indexes.getName());
+}
+
+}
+
+/// The generic index path (nested_column->index()) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
+/// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
+/// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
+    if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
+    {
+        /// Per-array materialization
+        size_t src_rows_count = src_array->size();
+        size_t src_elements = src_array->getOffsets().back();
+        if (src_rows_count != 0 && src_elements >= src_rows_count * ELEMENTS_PER_ROW_THRESHOLD)
+            return convertToFullColumnArray(*src_array, *indexes.getIndexes());
+    }
+    /// Per-element materialization
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 
@@ -156,11 +349,6 @@ void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-void ColumnReplicated::skipSerializedInArena(ReadBuffer & in) const
-{
-    nested_column->skipSerializedInArena(in);
-}
-
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnReplicated::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
@@ -185,21 +373,23 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
         {
             /// Use insertion_cache to avoid copying of values from source nested column if
             /// we already inserted them earlier and can use indexes of already inserted values.
-            auto & indexes_match = insertion_cache[src_replicated->id];
-
-            auto insert = [&](size_t, size_t src_index)
+            auto insert_rows = [&]<typename IndexType>(const PaddedPODArray<IndexType> & src_indexes)
             {
-                auto it = indexes_match.find(src_index);
-                if (it == indexes_match.end())
-                {
-                    nested_column->insertFrom(*src_replicated->nested_column, src_index);
-                    it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
-                }
-
-                indexes.insertIndex(it->second);
+                for (size_t i = start; i != start + length; ++i)
+                    indexes.insertIndex(getOrInsertSourceRow(*src_replicated, src_indexes[i]));
             };
 
-            src_replicated->indexes.callForIndexes(std::move(insert), start, start + length);
+            const IColumn & src_indexes = *src_replicated->getIndexesColumn();
+            if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&src_indexes))
+                insert_rows(indexes_uint8->getData());
+            else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&src_indexes))
+                insert_rows(indexes_uint16->getData());
+            else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&src_indexes))
+                insert_rows(indexes_uint32->getData());
+            else if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&src_indexes))
+                insert_rows(indexes_uint64->getData());
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", src_indexes.getName());
         }
     }
     else
@@ -237,16 +427,7 @@ void ColumnReplicated::doInsertFrom(const IColumn & src, size_t n)
     {
         /// Use insertion_cache to avoid copying of values from source nested column if
         /// we already inserted them earlier and can use indexes of already inserted values.
-        auto & indexes_match = insertion_cache[src_replicated->id];
-        auto src_index = src_replicated->indexes.getIndexAt(n);
-        auto it = indexes_match.find(src_index);
-        if (it == indexes_match.end())
-        {
-            nested_column->insertFrom(*src_replicated->nested_column, src_index);
-            it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
-        }
-
-        indexes.insertIndex(it->second);
+        indexes.insertIndex(getOrInsertSourceRow(*src_replicated, src_replicated->indexes.getIndexAt(n)));
     }
     else
     {
@@ -265,16 +446,7 @@ void ColumnReplicated::doInsertManyFrom(const IColumn & src, size_t n, size_t le
     {
         /// Use insertion_cache to avoid copying of values from source nested column if
         /// we already inserted them earlier and can use indexes of already inserted values.
-        auto & indexes_match = insertion_cache[src_replicated->id];
-        auto src_index = src_replicated->indexes.getIndexAt(n);
-        auto it = indexes_match.find(src_index);
-        if (it == indexes_match.end())
-        {
-            nested_column->insertFrom(*src_replicated->nested_column, src_index);
-            it = indexes_match.emplace(src_index, nested_column->size() - 1).first;
-        }
-
-        indexes.insertManyIndexes(it->second, length);
+        indexes.insertManyIndexes(getOrInsertSourceRow(*src_replicated, src_replicated->indexes.getIndexAt(n)), length);
     }
     else
     {
@@ -315,7 +487,7 @@ void ColumnReplicated::filter(const Filter & filt)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
 
     indexes.getIndexesPtr()->filter(filt);
-    insertion_cache.clear();
+    dropInsertionCache();
 }
 
 void ColumnReplicated::expand(const Filter & mask, bool inverted)
@@ -325,9 +497,11 @@ void ColumnReplicated::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnReplicated::permute(const Permutation & perm, size_t limit) const
 {
-    if (size() != perm.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), size());
-
+    /// Do not require perm.size() == size(): the general IColumn::permute contract
+    /// (see getLimitForPermutation) allows a shorter permutation when limit is set.
+    /// The indexes column has the same size as this column, so its permute below
+    /// performs the correct contract check and throws SIZES_OF_COLUMNS_DOESNT_MATCH
+    /// when the permutation is actually too short.
     auto permuted_indexes = ColumnIndex(indexes.getIndexes()->permute(perm, limit));
     return create(nested_column, std::move(permuted_indexes));
 }
@@ -602,7 +776,7 @@ void ColumnReplicated::rollback(const ColumnCheckpoint & checkpoint)
     indexes.resizeAssumeReserve(with_nested.size);
     /// The cache maps source ids to absolute indexes in nested_column; rolling nested_column back
     /// invalidates them, so it must be cleared (same as filter() does when it mutates the indexes).
-    insertion_cache.clear();
+    dropInsertionCache();
 }
 
 void ColumnReplicated::forEachMutableSubcolumn(MutableColumnCallback callback)
@@ -755,14 +929,44 @@ void transformColumnsWithSharedIndex(
         positions);
 }
 
+namespace
+{
+
+/// An upper bound of the nested rows the indexes refer to.
+size_t getReferencedRowsBound(const ColumnReplicated & column)
+{
+    if (column.empty())
+        return 0;
+    Field min;
+    Field max;
+    column.getIndexesColumn()->getExtremes(min, max, 0, column.size());
+    size_t span = max.safeGet<UInt64>() - min.safeGet<UInt64>() + 1;
+    if (span < column.size())
+        return span;
+
+    /// the runs of equal indexes are exact for sorted indexes, as after a filtered ARRAY JOIN
+    const auto & indexes = column.getIndexes();
+    size_t runs = 1;
+    for (size_t row = 1, previous = indexes.getIndexAt(0); row < column.size() && runs < span; ++row)
+    {
+        size_t index = indexes.getIndexAt(row);
+        runs += index != previous;
+        previous = index;
+    }
+    return runs;
+}
+
+}
+
 ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)
 {
     if (!column->isReplicated())
         return column;
 
     const auto & replicated = typeid_cast<const ColumnReplicated &>(*column);
-    /// Materialize if the type doesn't benefit from lazy replication, or if nested data isn't smaller than output.
-    if (!isLazyReplicationUseful(replicated.getNestedColumn()) || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size()))
+    /// Materialize if the type doesn't benefit from lazy replication, or if the referenced nested data isn't smaller than output.
+    if (!isLazyReplicationUseful(replicated.getNestedColumn())
+        || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size() && getReferencedRowsBound(replicated) >= replicated.size()))
         return replicated.convertToFullColumnIfReplicated();
 
     return column;
@@ -815,5 +1019,46 @@ void compactReplicatedColumns(Columns & columns)
                     result.compact_indexed_columns[j], result.compact_indexes);
         }
     }
+}
+
+namespace
+{
+
+bool isIdentityIndexes(const IColumn & indexes)
+{
+    auto check = [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
+    {
+        for (size_t i = 0; i != data.size(); ++i)
+        {
+            if (static_cast<UInt64>(data[i]) != i)
+                return false;
+        }
+        return true;
+    };
+
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
+        return check(indexes_uint8->getData());
+    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
+        return check(indexes_uint16->getData());
+    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
+        return check(indexes_uint32->getData());
+    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&indexes))
+        return check(indexes_uint64->getData());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", indexes.getName());
+}
+
+}
+
+void finishMergedReplicatedColumn(MutableColumnPtr & column)
+{
+    auto * replicated = typeid_cast<ColumnReplicated *>(column.get());
+    if (!replicated)
+        return;
+
+    replicated->dropInsertionCache();
+
+    if (replicated->getNestedColumn()->size() == replicated->size() && isIdentityIndexes(*replicated->getIndexesColumn()))
+        column = IColumn::mutate(std::move(replicated->getNestedColumn()).detach());
 }
 }

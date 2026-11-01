@@ -11,7 +11,9 @@ ClickHouse exécute un profiler d&#39;échantillonnage qui permet d&#39;analyser
 Vous pouvez suivre le temps CPU et le temps réel écoulé, y compris le temps d&#39;inactivité.
 
 Le profiler de requêtes est automatiquement activé dans ClickHouse Cloud.
-La requête d&#39;exemple suivante trouve les traces de pile les plus fréquentes pour une requête profilée, avec les noms de fonction et les emplacements dans le code source résolus :
+La requête d&#39;exemple suivante trouve les traces de pile les plus fréquentes pour une requête profilée, avec les noms de fonction et les emplacements dans le code source résolus.
+
+Par défaut, le profiler symbolise les traces de pile au moment de leur collecte et stocke les résultats dans les colonnes `symbols` et `lines` de [`system.trace_log`](/fr/reference/system-tables/trace_log), de sorte que les exemples ci-dessous lisent directement ces colonnes et ne nécessitent pas de fonctions d&#39;introspection. La symbolisation est contrôlée par le paramètre `symbolize` dans la section de configuration du serveur `trace_log` (activée par défaut) et est prise en charge sur les plateformes ELF (telles que Linux) et macOS ; sur FreeBSD, les colonnes `symbols` et `lines` sont toujours vides. Les noms de fonction dans `symbols` proviennent de la table des symboles du binaire et sont disponibles par défaut. Les emplacements dans le code source dans `lines` sont fournis dans la mesure du possible : ils nécessitent des informations de débogage (sur macOS, un bundle `.dSYM` à côté du binaire) et, sur les plateformes ELF, seules les frames à l&#39;intérieur du binaire principal ClickHouse sont résolues. Les entrées correspondant aux frames qui ne peuvent pas être résolues (par exemple, dans les bibliothèques partagées) restent donc vides. Si la symbolisation est désactivée, utilisez les [fonctions d&#39;introspection](/fr/reference/functions/regular-functions/introspection) `addressToSymbol`, `demangle` et `addressToLine` pour résoudre à la place les adresses brutes de la colonne `trace`. Ces fonctions sont disponibles sur les mêmes plateformes que la symbolisation (les plateformes ELF telles que Linux et macOS) ; sur FreeBSD, elles ne sont pas compilées non plus, les adresses dans `trace` doivent donc être résolues en dehors du serveur.
 
 <Tip>
   Remplacez la valeur `query_id` par l&#39;ID de la requête que vous souhaitez profiler.
@@ -26,13 +28,12 @@ La requête d&#39;exemple suivante trouve les traces de pile les plus fréquente
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM clusterAllReplicas(default, system.trace_log)
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 
@@ -40,13 +41,12 @@ La requête d&#39;exemple suivante trouve les traces de pile les plus fréquente
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM system.trace_log
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 </Tabs>
@@ -58,9 +58,7 @@ La requête d&#39;exemple suivante trouve les traces de pile les plus fréquente
 Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suivez les étapes ci-dessous :
 
 <Steps>
-  <Step>
-    ### Installer ClickHouse avec les informations de débogage
-
+  <Step title="Installer ClickHouse avec les informations de débogage" id="debug-info">
     Installez le package `clickhouse-common-static-dbg` :
 
     1. Suivez les instructions de l’étape [« Configurer le dépôt Debian »](/fr/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -69,14 +67,12 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
     4. Exécutez `clickhouse-client`. Les symboles de débogage de `clickhouse-common-static-dbg` seront automatiquement pris en compte par le serveur ; vous n’avez rien de particulier à faire pour les activer
   </Step>
 
-  <Step>
-    ### Vérifier la configuration du serveur
-
-    Assurez-vous que la section [`trace_log`](/fr/reference/settings/server-settings/settings#trace_log) de votre [fichier de configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) est configurée. Elle est activée par défaut :
+  <Step title="Vérifier la configuration du serveur" id="server-config">
+    Assurez-vous que la section [`trace_log`](/fr/reference/settings/server-settings/settings/other#trace_log) de votre [fichier de configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) est configurée. Elle est activée par défaut :
 
     ```xml
-    <!-- Journal des traces. Stocke les traces de pile collectées par les profilers de requêtes.
-         Voir les paramètres query_profiler_real_time_period_ns et query_profiler_cpu_time_period_ns. -->
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>
@@ -86,21 +82,25 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <!-- Indique si les journaux doivent être écrits sur le disque en cas de crash -->
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
         <symbolize>true</symbolize>
     </trace_log>
     ```
 
     Cette section configure la table système [trace&#95;log](/fr/reference/system-tables/trace_log), qui contient les résultats du profiler.
-    N’oubliez pas que les données de cette table ne sont valides que tant que le serveur est en cours d’exécution.
-    Après le redémarrage du serveur, ClickHouse ne nettoie pas la table, et toutes les adresses de mémoire virtuelle stockées peuvent devenir invalides.
+    L’option `symbolize` (activée par défaut) permet à ClickHouse de résoudre chaque frame de pile lors de la collecte et de stocker les noms de fonctions démanglés et les emplacements dans le code source dans les colonnes `symbols` et `lines`.
+    Les noms de fonctions dans `symbols` proviennent de la table des symboles et sont disponibles par défaut, tandis que les emplacements dans le code source dans `lines` nécessitent des informations de débogage (un bundle `.dSYM` sur macOS) et, sur les plateformes ELF, ne sont résolus que pour les frames du binaire ClickHouse principal ; les frames non résolues ont des entrées `lines` vides.
+
+    Notez que les adresses brutes de la colonne `trace` sont moins stables entre les redémarrages et les mises à niveau que les colonnes pré-symbolisées.
+    Sur les plateformes ELF, à l’exception de FreeBSD, les frames du binaire ClickHouse principal sont stockées sous forme de décalages physiques dans le fichier, de sorte qu’elles restent résolubles entre les redémarrages tant que le binaire est inchangé ; sur macOS et FreeBSD, elles sont stockées sous forme d’adresses virtuelles d’exécution qui peuvent devenir invalides après un redémarrage.
+    Les frames situées en dehors du binaire principal (par exemple, dans des bibliothèques partagées) sont toujours stockées sous forme d’adresses virtuelles d’exécution qui peuvent devenir invalides après un redémarrage, et toute adresse brute devient impossible à résoudre après une mise à niveau du binaire, car l’organisation du code change.
+    ClickHouse ne nettoie pas la table lors d’un redémarrage ; des adresses brutes obsolètes peuvent donc subsister.
+    En revanche, les colonnes `symbols` et `lines` pré-symbolisées restent valides entre les redémarrages et les mises à niveau ; privilégiez-les donc lors de l’analyse des données historiques.
   </Step>
 
-  <Step>
-    ### Configurer les temporisateurs de profilage
-
-    Configurez les paramètres [`query_profiler_cpu_time_period_ns`](/fr/reference/settings/session-settings#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/fr/reference/settings/session-settings#query_profiler_real_time_period_ns).
+  <Step title="Configurer les temporisateurs de profilage" id="configure-profile-timers">
+    Configurez les paramètres [`query_profiler_cpu_time_period_ns`](/fr/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/fr/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
     Les deux paramètres peuvent être utilisés simultanément.
 
     Ces paramètres vous permettent de configurer les temporisateurs du profiler.
@@ -111,10 +111,13 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
     Si vous devez profiler chaque requête individuellement, utilisez une fréquence d’échantillonnage plus élevée.
   </Step>
 
-  <Step>
-    ### Analyser la table système `trace_log`
+  <Step title={<>Analyser la table système <code>trace_log</code></>} id="analyze-trace-log-system-table">
+    Pour obtenir un profil pour une requête donnée, vous devez agréger les données de la table `trace_log`.
+    Vous pouvez agréger les données par fonction individuelle ou par trace de pile complète.
 
-    Pour analyser la table système `trace_log`, activez les fonctions d’introspection avec le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings#allow_introspection_functions) :
+    Lorsque la symbolisation est activée (par défaut), les noms de fonctions démanglés et les emplacements dans le code source sont déjà disponibles dans les colonnes `symbols` et `lines`, aucune configuration supplémentaire n’est donc requise. La symbolisation n’est pas prise en charge sur FreeBSD, où ces colonnes sont toujours vides. Les entrées `lines` peuvent être vides pour les cadres de pile dépourvus d’informations de débogage ou situés en dehors du binaire ClickHouse principal (voir [ci-dessus](#server-config)).
+
+    Si la symbolisation est désactivée, ou si vous souhaitez résoudre à la volée les adresses brutes de la colonne `trace` (par exemple, pour développer les cadres intégrés), activez les fonctions d’introspection avec le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions) :
 
     ```sql
     SET allow_introspection_functions=1
@@ -124,9 +127,7 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
       Pour des raisons de sécurité, les fonctions d’introspection sont désactivées par défaut
     </Note>
 
-    Utilisez les [fonctions d’introspection](/fr/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` et `demangle` pour obtenir les noms des fonctions et leur position dans le code de ClickHouse.
-    Pour obtenir un profil pour une requête donnée, vous devez agréger les données de la table `trace_log`.
-    Vous pouvez agréger les données par fonction individuelle ou par trace de pile complète.
+    Utilisez les [fonctions d’introspection](/fr/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` et `demangle` pour obtenir les noms des fonctions et leur position dans le code de ClickHouse. Comme la symbolisation, ces fonctions sont disponibles sur les plateformes ELF (telles que Linux) et macOS, mais pas sur FreeBSD.
 
     <Tip>
       Si vous devez visualiser les informations de `trace_log`, essayez [flamegraph](/fr/integrations/connectors/tools/gui#clickhouse-flamegraph) et [speedscope](https://www.speedscope.app).
@@ -316,16 +317,16 @@ clickhouse client --allow_introspection_functions=1 \
 
 L’extrait de code ci-dessous :
 
-* Filtre les données `trace_log` selon un identifiant de requête et la date du jour.
-* Agrège par trace de pile.
-* Utilise des fonctions d’introspection pour obtenir un rapport indiquant :
-  * Les noms des symboles et les fonctions du code source correspondantes.
+* Filtre les données de `trace_log` par identifiant de requête et par date courante.
+* Lit les colonnes `symbols` et `lines` déjà symbolisées afin de générer un rapport contenant :
+  * Les noms des symboles et les fonctions correspondantes du code source.
   * Les emplacements de ces fonctions dans le code source.
+* Agrège par trace de pile brute (la colonne `trace`), en utilisant les colonnes symbolisées uniquement pour l’affichage, afin que des traces de pile distinctes ne soient jamais fusionnées du fait d’une symbolisation approximative.
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
 GROUP BY trace

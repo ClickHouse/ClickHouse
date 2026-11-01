@@ -21,20 +21,15 @@ ClickHouse Cloud supports secure role-based access to Iceberg data stored in obj
 ## Obtain the ClickHouse service role ID (ARN) {#obtaining-the-clickhouse-service-iam-role-arn}
 
 <Steps>
-<Step>
-### 1. Login to your ClickHouse Cloud account. {#login}
+<Step title="1. Login to your ClickHouse Cloud account." id="login">
 </Step>
-<Step>
-### 2. Select the ClickHouse service where you want to query Iceberg data. {#select-service}
+<Step title="2. Select the ClickHouse service where you want to query Iceberg data." id="select-service">
 </Step>
-<Step>
-### 3. Go to the **Settings** tab. {#settings-tab}
+<Step title={<>3. Go to the <strong>Settings</strong> tab.</>} id="settings-tab">
 </Step>
-<Step>
-### 4. Scroll to **Network security information**. {#network-security-information}
+<Step title={<>4. Scroll to <strong>Network security information</strong>.</>} id="network-security-information">
 </Step>
-<Step>
-### 5. Copy the **Service role ID (IAM)** value. {#service-role-iam-value}
+<Step title={<>5. Copy the <strong>Service role ID (IAM)</strong> value.</>} id="service-role-iam-value">
 This ARN is required for the trust policy on the AWS IAM role that will access your Iceberg data.
 
 <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtaining ClickHouse service IAM Role ARN" border />
@@ -44,16 +39,13 @@ This ARN is required for the trust policy on the AWS IAM role that will access y
 ## Set up IAM assume role {#setting-up-iam-assume-role}
 
 <Steps>
-<Step>
-### 1. Login to AWS and go to the IAM service. {#aws-iam-service}
+<Step title="1. Login to AWS and go to the IAM service." id="aws-iam-service">
 </Step>
-<Step>
-### 2. Select Roles then Create role. {#create-role}
+<Step title="2. Select Roles then Create role." id="create-role">
 
 Select `Trusted entity type` as `Custom trust policy` and enter values based on step 3.
 </Step>
-<Step>
-### 3. Add the Trust and IAM policies. {#add-trust-iam-policies}
+<Step title="3. Add the Trust and IAM policies." id="add-trust-iam-policies">
 
 Replace `{service-role-id}` with the Service Role ID (IAM) from your ClickHouse instance. 
 
@@ -108,8 +100,7 @@ For read/write workloads, the IAM policy must include `s3:PutObject`, `s3:Delete
 If you need stronger isolation, require requests to originate from ClickHouse Cloud VPC endpoints. For more information on this option, review [Secure S3 advanced action control](/products/cloud/guides/data-sources/accessing-s3-data-securely#advanced-action-control).
 </Note>
 </Step>
-<Step>
-### 4. Finish role creation. {#finish-role-creation}
+<Step title="4. Finish role creation." id="finish-role-creation">
 
 a. Click Next, then Next again through the permission assignment screen.
 
@@ -121,8 +112,7 @@ d. Review the policies.
 
 e. Select `Create role`.
 </Step>
-<Step>
-### 5. Copy the new **IAM Role Arn** after creation. {#copy-role-arn}
+<Step title={<>5. Copy the new <strong>IAM Role Arn</strong> after creation.</>} id="copy-role-arn">
 </Step>
 </Steps>
 

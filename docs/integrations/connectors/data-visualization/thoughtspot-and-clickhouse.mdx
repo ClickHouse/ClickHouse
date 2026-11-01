@@ -1,0 +1,43 @@
+---
+sidebarTitle: 'ThoughtSpot'
+slug: /integrations/thoughtspot
+keywords: ['clickhouse', 'ThoughtSpot', 'connect', 'integrate', 'ui']
+description: 'ThoughtSpot is an AI-powered analytics platform that lets you search, explore, and visualize your data in real time.'
+title: 'ThoughtSpot'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
+import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge/>
+
+ThoughtSpot can connect to ClickHouse Cloud or on-premise deployment via its native ClickHouse connector.
+
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
+
+<ConnectionDetails />
+
+</Step>
+<Step title="Create a ClickHouse connection in ThoughtSpot" id="2-create-a-clickhouse-connection-in-thoughtspot">
+
+1. Navigate to **Data workspace** > **Connections**.
+2. Click **+ Create connection**, select the **ClickHouse** tile, then click **Next**.
+3. Enter a name for your connection, an optional description, and the ClickHouse connection details you gathered in the previous step, then click **Next**. For details on each attribute, see the [ClickHouse connection reference](https://docs.thoughtspot.com/cloud/latest/connections-clickhouse-reference) in the ThoughtSpot documentation.
+4. (Optional) To configure a query-level timeout, open the **Advanced Config** menu. For **Key**, enter `queryTimeoutSeconds`. For **Value**, enter the timeout in seconds. A maximum of 10 minutes is recommended.
+5. (Optional) To provide additional key-value pairs, open the **Advanced Config** menu and enter a **Key** and **Value**. Click the plus sign (**+**) to add more pairs.
+
+   <Note>
+   Any key-value pairs that you enter must be defined in your ClickHouse data source. Key-value pairs are case-sensitive.
+   </Note>
+
+6. Select the tables and columns you want to use, then click **Create connection**. A message confirms the number of tables and columns added.
+
+The connection now appears on the **Data workspace** > **Connections** page. You can search your ClickHouse data and run live queries on the linked tables in ThoughtSpot.
+</Step>
+</Steps>

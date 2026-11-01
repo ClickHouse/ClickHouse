@@ -10,6 +10,7 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+class ReadBuffer;
 class SeekableReadBuffer;
 class ReadBufferFromFileBase;
 class WriteBuffer;
@@ -36,6 +37,14 @@ public:
     virtual void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                 DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) = 0;
 
+    /// Copies exactly `[offset, offset + size)` of `path_in_backup`, whose full size is `file_size`.
+    /// Separate from copyFileToDisk() because the whole-object fast paths (a server-side copy, fs::copy) carry
+    /// no byte range and would copy the entire file. `file_size` lets an implementation choose a route the
+    /// storage allows for that source (see copyS3FileRange) without an extra metadata request.
+    virtual void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                                     bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                     WriteMode write_mode) = 0;
+
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;
     virtual size_t getWriteBufferSize() const = 0;
@@ -54,8 +63,26 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
     virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) = 0;
+    virtual std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) = 0;
 
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
+    /// Object-storage writers override this to create a file atomically without replacing an existing one.
+    virtual std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name);
+
+    /// Whether `writeFileIfNotExists` is a real conditional create: it either creates the file or fails,
+    /// and it never replaces a file somebody else created. The default implementation falls back to
+    /// `writeFile`, which overwrites, so only writers that override both may answer `true`. Callers that
+    /// take the destination with a lock file rely on this: with an overwriting writer, finding one's own
+    /// contents in the lock proves nothing, because the write could have destroyed a foreign lock.
+    virtual bool supportsAtomicCreateIfNotExists() const { return false; }
+
+    /// Whether `writeFileIfNotExists` creates the file exclusively already when it returns the buffer, before
+    /// any of its contents are written (an `O_EXCL` open). If the write fails afterwards, the file left in the
+    /// destination was created by this caller, even though it does not hold the contents the caller meant to
+    /// write. It is not proof that the file is still the caller's: another writer reaching the same path in
+    /// rewrite mode can have written over it since. Object-storage writers create the object only when the
+    /// buffer is finalized, so they answer `false`.
+    virtual bool createsFileOnOpenIfNotExists() const { return false; }
 
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
@@ -77,6 +104,14 @@ public:
 
     /// Removes the backup folder if it's empty or contains empty subfolders.
     virtual void removeEmptyDirectories() = 0;
+
+    /// fsync one already-written file and remember its parent directories for
+    /// `syncDirectoriesToDisk`. No-op where a completed upload is already durable.
+    virtual void syncFileToDisk(const String & /* file_name */) {}
+
+    /// fsync the directories recorded by `syncFileToDisk`: a created file is durable only once
+    /// its parent directory entry is persisted. Called once after all files are synced.
+    virtual void syncDirectoriesToDisk() {}
 
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;

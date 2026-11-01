@@ -1,0 +1,48 @@
+-- non-parallel
+2000	1999000	1498500
+-- parallel_replicas_allow_merge_tables = 0
+0	0
+2000	1999000	1498500
+-- parallel_replicas_allow_merge_tables = 1
+1	1
+2000	1999000	1498500
+-- merge() table function
+2000	1999000	1498500
+1
+-- filter on the _table virtual column
+1000	1499500	499500
+1
+-- plain SELECT without aggregation
+1	2
+999	1998
+1000	0
+1999	999
+-- ORDER BY with LIMIT
+0	0
+1	2
+2	4
+3	6
+4	8
+1
+-- FINAL over a Merge table
+2000	1999000	1498500
+0
+-- FINAL over the merge() table function
+2000	1999000	1498500
+-- Merge over a non-MergeTree table
+0	0
+2100	2203950	1503450
+-- Merge over a View
+0	1
+2100	2303950	1503450
+2100	2303950	1503450
+-- Merge over non-replicated tables which may not be read remotely
+0	1
+2000	1999000	1498500
+-- a union which reads a child of the Merge again
+0	1
+3000	2498500
+3000	2498500
+-- Merge over no tables
+0	0
+0	0	0

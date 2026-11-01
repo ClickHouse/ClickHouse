@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadFromRemotePlanStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
 namespace DB
@@ -104,7 +105,7 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
         placeholder.getMainTable(),
         placeholder.getTableFunctionPtr(),
         remote_context,
-        ClusterProxy::getThrottler(remote_context),
+        getThrottler(remote_context),
         std::move(scalars),
         std::move(external_tables),
         placeholder.getLog(),

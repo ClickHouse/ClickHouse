@@ -18,7 +18,7 @@ import AddARemoteSystem from '/snippets/ar/_add_remote_ip_access_list_detail.mdx
 [محرك تكامل](/ar/reference/engines/table-engines/index#integration-engines) توفّره ClickHouse أو [دالة جدول](/ar/reference/functions/table-functions/index)، بحسب الحالة،
 أو JDBC driver أو ODBC driver يوفّره مورّد النظام.
 
-نُطلق أحيانًا على طريقة الترحيل هذه اسم طريقة &quot;pivot&quot;، لأنها تستخدم نقطة ارتكاز أو محطة وسيطة لنقل البيانات من قاعدة البيانات المصدر إلى قاعدة البيانات الوجهة. على سبيل المثال، قد تكون هذه الطريقة مطلوبة إذا كانت الاتصالات الصادرة فقط مسموحًا بها من داخل شبكة خاصة أو داخلية بسبب متطلبات الأمان، وبالتالي تحتاج إلى سحب البيانات من قاعدة البيانات المصدر باستخدام clickhouse-local، ثم دفع البيانات إلى قاعدة بيانات ClickHouse الوجهة، بحيث يعمل clickhouse-local كنقطة ارتكاز.
+نُطلق أحيانًا على طريقة الترحيل هذه اسم طريقة &quot;pivot&quot;، لأنها تستخدم نقطة ارتكاز أو محطة وسيطة لنقل البيانات من قاعدة البيانات المصدر إلى قاعدة البيانات الهدف. على سبيل المثال، قد تكون هذه الطريقة مطلوبة إذا كانت الاتصالات الصادرة فقط مسموحًا بها من داخل شبكة خاصة أو داخلية بسبب متطلبات الأمان، وبالتالي تحتاج إلى سحب البيانات من قاعدة البيانات المصدر باستخدام clickhouse-local، ثم دفع البيانات إلى قاعدة بيانات ClickHouse الهدف، بحيث يعمل clickhouse-local كنقطة ارتكاز.
 
 يوفّر ClickHouse محركات تكامل ودوال جداول (تنشئ محركات تكامل ديناميكيًا) لـ [MySQL](/ar/reference/engines/table-engines/integrations/mysql)، و[PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)، و[MongoDB](/ar/reference/engines/table-engines/integrations/mongodb)، و[SQLite](/ar/reference/engines/table-engines/integrations/sqlite).
 أما بالنسبة إلى جميع أنظمة قواعد البيانات الشائعة الأخرى، فتتوفّر JDBC driver أو ODBC driver من مورّد النظام.

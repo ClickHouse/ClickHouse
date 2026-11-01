@@ -25,7 +25,7 @@ profiles:
 
 # Users and ACL.
 users:
-    # If user name was not specified, 'default' user is used.
+    # If user name was not specified, the user from the 'default_session_user' server setting is used ('default' unless configured otherwise).
     default:
         # Password could be specified in plaintext or in SHA256 (in hex format).
         #

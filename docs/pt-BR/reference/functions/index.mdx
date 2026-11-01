@@ -1,14 +1,34 @@
 ---
-description: 'Documentação sobre índice'
+description: 'Documentação do Index'
 sidebar: 'sqlreference'
 slug: /sql-reference/functions
 title: 'Visão geral das funções'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Página                                                                              | Descrição                                                                                   |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [Funções regulares](/pt-BR/reference/functions/regular-functions/regular-functions-index) | Funções cujo resultado para cada linha é independente de todas as outras linhas.            |
-| [Funções de agregação](/pt-BR/reference/functions/aggregate-functions/index)              | Funções que acumulam um conjunto de valores ao longo das linhas.                            |
-| [Funções de tabela](/pt-BR/reference/functions/table-functions/index)                     | Métodos para construir tabelas.                                                             |
-| [Funções de janela](/pt-BR/reference/functions/window-functions/index)                    | Funções que permitem realizar cálculos em um conjunto de linhas relacionadas à linha atual. |
+<CardGroup cols={2}>
+  <Card title="Funções regulares" icon="function" href="/pt-BR/reference/functions/regular-functions/overview">
+    Funções cujo resultado para cada linha é independente de todas as outras linhas.
+  </Card>
+
+  <Card title="Funções de agregação" icon="calculator" href="/pt-BR/reference/functions/aggregate-functions/index">
+    Funções que acumulam um conjunto de valores entre linhas.
+  </Card>
+
+  <Card title="Funções de tabela" icon="table" href="/pt-BR/reference/functions/table-functions/index">
+    Métodos para criar tabelas.
+  </Card>
+
+  <Card title="Funções de janela" icon="chart-column" href="/pt-BR/reference/functions/window-functions/index">
+    Funções que permitem realizar cálculos em um conjunto de linhas relacionadas à linha atual.
+  </Card>
+
+  <Card title="Funções definidas pelo usuário" icon="code" href="/pt-BR/reference/functions/regular-functions/udf">
+    Funções executáveis personalizadas definidas pelo usuário.
+  </Card>
+
+  <Card title="WebAssembly UDF" icon="cube" href="/pt-BR/reference/functions/regular-functions/wasm_udf">
+    Funções definidas pelo usuário implementadas em WebAssembly.
+  </Card>
+</CardGroup>

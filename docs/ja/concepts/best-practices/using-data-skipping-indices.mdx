@@ -147,7 +147,7 @@ LIMIT 1
 SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
 ```
 
-したがって、これはデータスキッピングインデックスとして自然な選択です。数値型であることを踏まえると、minmax 索引が適しています。索引は次の `ALTER TABLE` コマンドで追加します。最初に追加し、その後「マテリアライズ」します。
+したがって、これはデータスキップ索引として自然な選択です。数値型であることを踏まえると、minmax 索引が適しています。索引は次の `ALTER TABLE` コマンドで追加します。最初に追加し、その後「マテリアライズ」します。
 
 ```sql
 ALTER TABLE stackoverflow.posts
@@ -183,16 +183,16 @@ CREATE TABLE stackoverflow.posts
   `ParentId` String,
   `CommunityOwnedDate` DateTime64(3, 'UTC'),
   `ClosedDate` DateTime64(3, 'UTC'),
-  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --ここにインデックス
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --index here
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
 ORDER BY (PostTypeId, toDate(CreationDate))
 ```
 
-次のアニメーションは、例のテーブルに対して minmax スキッピング索引がどのように構築されるかを示したもので、テーブル内の各行ブロック (granule) ごとに `ViewCount` の最小値と最大値を追跡しています。
+次のアニメーションは、例のテーブルに対して minmax スキップ索引がどのように構築されるかを示したもので、テーブル内の各行ブロック (granule) ごとに `ViewCount` の最小値と最大値を追跡しています。
 
-<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="スキッピング索引の構築" />
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="スキップ索引の構築" />
 
 先ほどのクエリを再度実行すると、パフォーマンスが大幅に改善されていることがわかります。スキャンされた行数が減っている点に注目してください。
 
@@ -255,9 +255,9 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 29 rows in set. Elapsed: 0.211 sec.
 ```
 
-この例のクエリにある `ViewCount` &gt; 10,000,000 という述語に一致し得ないすべての行ブロックを、minmaxスキッピング索引がどのように除外するかを示すアニメーションも掲載しています。
+この例のクエリにある `ViewCount` &gt; 10,000,000 という述語に一致し得ないすべての行ブロックを、minmaxスキップ索引がどのように除外するかを示すアニメーションも掲載しています。
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="スキッピング索引の使用" />
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="スキップ索引の使用" />
 
 <div id="related-docs">
   ## 関連ドキュメント

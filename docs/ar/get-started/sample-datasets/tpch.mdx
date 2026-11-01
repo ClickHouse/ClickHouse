@@ -1,15 +1,13 @@
 ---
-description: 'مجموعة بيانات TPC-H القياسية واستعلاماتها.'
-sidebarTitle: 'TPC-H'
-slug: /getting-started/example-datasets/tpch
-title: 'TPC-H (1999)'
-doc_type: 'guide'
-keywords: ['مجموعة بيانات تجريبية', 'tpch', 'اختبار أداء', 'بيانات عينة', 'اختبار الأداء']
+title: "TPC-H (1999)"
+description: "مجموعة بيانات TPC-H اختبار الأداء واستعلاماتها."
+sidebarTitle: "TPC-H"
+slug: "/getting-started/example-datasets/tpch"
+doc_type: "guide"
+keywords: ["مجموعة بيانات تجريبية", "tpch", "اختبار الأداء", "بيانات عينة", "اختبار الأداء"]
 ---
 
-معيار أداء شائع يُحاكي مستودع البيانات الداخلي لمورّد جملة.
-تُخزَّن البيانات وفق تمثيل الصيغة العادية الثالثة، مما يتطلب عددًا كبيرًا من عمليات `JOIN` عند تنفيذ الاستعلامات.
-ورغم قِدمه وافتراضه غير الواقعي بأن البيانات موزعة توزيعًا منتظمًا ومستقلًا، لا يزال TPC-H حتى اليوم أكثر اختبارات OLAP شيوعًا.
+اختبار أداء شائع يُحاكي مستودع البيانات الداخلي لمورّد جملة. تُخزَّن البيانات وفق تمثيل الصيغة العادية الثالثة، مما يتطلب عددًا كبيرًا من عمليات `JOIN` عند تنفيذ الاستعلامات. ورغم قِدمه وافتراضه غير الواقعي بأن البيانات موزعة توزيعًا منتظمًا ومستقلًا، لا يزال TPC-H حتى اليوم أكثر اختبارات الأداء OLAP شيوعًا.
 
 **مراجع**
 
@@ -117,10 +115,14 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 
 يمكن العثور على استعلامات TPC-H الـ22 [هنا](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-h/queries) في مستودع ClickHouse.
 
-للحصول على سلوك متوافق مع معيار SQL ونتائج مطابقة للمتوقع، طبّق الإعدادات من [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json).
-راجع [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) للاطلاع على المشكلات المعروفة والملاحظات الخاصة ببعض الاستعلامات.
+للحصول على سلوك متوافق مع معيار SQL ونتائج مطابقة للمتوقع، طبّق الإعدادات من [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json). راجع [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) للاطلاع على المشكلات المعروفة والملاحظات الخاصة ببعض الاستعلامات.
 
 **صحة النتائج**
 
-تتوافق نتائج الاستعلامات مع النتائج الرسمية ما لم يُذكر خلاف ذلك. للتحقق، أنشئ قاعدة بيانات TPC-H بعامل
-القياس = 1 (`dbgen`، انظر أعلاه)، ثم قارنها مع [النتائج المتوقعة في tpch-kit](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers).
+تتوافق نتائج الاستعلامات مع النتائج الرسمية ما لم يُذكر خلاف ذلك. للتحقق، أنشئ قاعدة بيانات TPC-H بعامل القياس = 1 (`dbgen`، انظر أعلاه)، ثم قارنها مع [النتائج المتوقعة في tpch-kit](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers).
+
+<div id="performance-benchmark">
+  ## اختبار الأداء
+</div>
+
+يتتبّع ClickHouse أداء استعلامات TPC-H في كل إصدار منشور. يمكنك استكشاف أزمنة تشغيل استعلامات TPC-H الـ22 جميعها (عامل القياس 40) في صفحة [اختبار إصدارات ClickHouse للأداء](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ph\&metric=hot\&queries=-) لمعرفة كيف تطوّر الأداء بمرور الوقت.

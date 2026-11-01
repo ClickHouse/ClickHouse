@@ -64,6 +64,16 @@ struct MergeTreeDataPartTTLInfos
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;
 
+    /// Has any row TTL (table, `WHERE` or `GROUP BY`) which is not calculated on a completely expired part.
+    bool hasAnyNonFinishedRowTTLs() const;
+
+    /// Has any column TTL which is not calculated on a completely expired part. A column TTL can only
+    /// be honoured by rewriting the part, never by dropping it, so it is tracked separately.
+    bool hasAnyNonFinishedColumnTTLs() const;
+
+    /// The earliest time at which a column TTL becomes due. Zero if there is no unfinished column TTL.
+    time_t getMinimalNonFinishedColumnTTL() const;
+
     void updatePartMinMaxTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
         if (ttl_info.finished())
@@ -85,5 +95,9 @@ struct MergeTreeDataPartTTLInfos
 
 /// Selects the most appropriate TTLDescription using TTL info and current time.
 std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max);
+
+/// True if a `RECOMPRESS` TTL entry from `recompression_ttl_entries` is due at `current_time` and its codec is not `Default` (=is explicit).
+bool isExplicitRecompression(
+    const TTLDescriptions & recompression_ttl_entries, const TTLInfoMap & recompression_ttl_info, time_t current_time);
 
 }

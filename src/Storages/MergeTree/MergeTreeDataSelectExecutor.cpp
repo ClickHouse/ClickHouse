@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <optional>
+#include <numeric>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -8,9 +9,11 @@
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/GenericExclusionSearch.h>
@@ -19,18 +22,25 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/Statistics/StatisticsPartPruner.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Access/ContextAccess.h>
+#include <Access/EnabledMaskingPolicies.h>
+#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -40,6 +50,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -47,6 +58,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
@@ -54,7 +67,10 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <base/sleep.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -77,7 +93,11 @@ extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event IndexGenericExclusionSearchStepLimitReached;
+extern const Event TextIndexGenericExclusionSearchAlgorithm;
+extern const Event TextIndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -85,11 +105,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsString force_data_skipping_indices;
+    extern const SettingsBool apply_deleted_mask;
+    extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
-    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -102,15 +122,24 @@ namespace Setting
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
+    extern const SettingsUInt64 use_skip_indexes_for_disjunctions_max_rpn_elements;
+    extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool secondary_indices_enable_bulk_filtering;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
+    extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+}
+
+namespace FailPoints
+{
+    extern const char slowdown_index_analysis_per_part[];
 }
 
 namespace ErrorCodes
@@ -134,18 +163,10 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
-    /// Reading a projection part bypasses the parent table's delete-bitmap filter, so
-    /// logically-deleted rows would resurface. This is the single point every projection
-    /// read passes through (optimizer estimate/read and the explicit projection table
-    /// function), so fail closed here regardless of how the combination came to exist
-    /// (CREATE/ALTER reject it, but SECONDARY_CREATE/ATTACH still load it).
-    if (projection)
-    {
-        auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
-        if (metadata_snapshot->hasUniqueKey())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "UNIQUE KEY tables do not support reading via projections");
-    }
+    /// TODO(unique-key): support reading via projections.
+    if (projection && data.hasUniqueKey())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "UNIQUE KEY tables do not support reading via projections");
 }
 
 /// Maps each primary-key column position to the slot of the matching column in a part's partition
@@ -160,6 +181,12 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
     {
+        /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
+        /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
+        /// column falls back to the whole universe.
+        if (i < primary_key.data_types.size() && KeyCondition::typeMayHideNaN(primary_key.data_types[i]))
+            continue;
+
         auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
         if (it != minmax_names.end())
             mapping[i] = static_cast<size_t>(it - minmax_names.begin());
@@ -265,28 +292,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    std::optional<ASTSampleRatio::Rational> sample_size_ratio;
-    std::optional<ASTSampleRatio::Rational> sample_offset_ratio;
-
-    if (select_query_info.table_expression_modifiers)
-    {
-        const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
-        sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
-        sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
-    }
-    else
-    {
-        auto & select = select_query_info.query->as<ASTSelectQuery &>();
-
-        auto select_sample_size = select.sampleSize();
-        auto select_sample_offset = select.sampleOffset();
-
-        if (select_sample_size)
-            sample_size_ratio = select_sample_size->as<ASTSampleRatio &>().ratio;
-
-        if (select_sample_offset)
-            sample_offset_ratio = select_sample_offset->as<ASTSampleRatio &>().ratio;
-    }
+    std::optional<ASTSampleRatio::Rational> sample_size_ratio = select_query_info.getSampleSizeRatio();
+    std::optional<ASTSampleRatio::Rational> sample_offset_ratio = select_query_info.getSampleOffsetRatio();
 
     if (sample_size_ratio)
     {
@@ -362,7 +369,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         */
 
     const bool can_use_sampling_key_parallel_replicas =
-        settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        context->isParallelReplicasEnabled()
         && settings[Setting::max_parallel_replicas] > 1
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY;
 
@@ -671,6 +678,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     auto start_time = std::chrono::steady_clock::now();
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
+
+    /// The surviving parts are identified by name, so a physical column named `_part` shadowing the
+    /// virtual one - which leaves it out of the block - makes this filtering unavailable. Keep every
+    /// part; the predicate is still applied to the rows themselves.
+    if (!virtual_columns_block.has("_part"))
+        return {};
+
     VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
     auto result = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
@@ -678,6 +692,24 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     ProfileEvents::increment(ProfileEvents::FilterPartsByVirtualColumnsMicroseconds, elapsed_us);
 
     return result;
+}
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
+    const RangesInDataParts & parts,
+    const ReadFromMergeTree::Indexes & indexes,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData & data,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    auto res = filterPartsByPartition(
+        parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
+        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
+    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -690,7 +722,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats)
+    ReadFromMergeTree::IndexStats & index_stats,
+    bool check_index_usage)
 {
     RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
@@ -699,7 +732,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     if (minmax_idx_condition)
         minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
-    if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
+    if (check_index_usage && metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
         && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
         && (!partition_pruner || partition_pruner->isUseless()))
     {
@@ -752,6 +785,35 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     }
 
     return res;
+}
+
+bool MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(
+    const MergeTreeData::DataPartPtr & part,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    if (!mutations_snapshot || (!mutations_snapshot->hasAlterMutations() && !mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+    {
+        if (AlterConversions::isSupportedAlterMutation(command.type) || AlterConversions::isSupportedMetadataMutation(command.type))
+            return true;
+    }
+
+    return false;
+}
+
+bool MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(
+    const RangesInDataParts & parts,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    if (!mutations_snapshot || (!mutations_snapshot->hasAlterMutations() && !mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    return std::any_of(parts.begin(), parts.end(), [&](const auto & part)
+    {
+        return partHasPendingAlterOrMetadataMutations(part.data_part, mutations_snapshot);
+    });
 }
 
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
@@ -809,10 +871,31 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// Disable statistics-based pruning when:
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
-    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data).
+    ///    `hasAlterMutations` covers a pending `ALTER MODIFY COLUMN`, which is a `READ_COLUMN` alter
+    ///    mutation rather than a data mutation: a read already returns the converted values while the
+    ///    statistics still describe the values as they were written, so pruning a part against them
+    ///    drops rows the query has to see. `hasMetadataMutations` covers a pending `DROP COLUMN` or
+    ///    `RENAME COLUMN`: the statistics are loaded under the names the columns have in the part,
+    ///    so once a column with the same name is added again (or another column is renamed onto the
+    ///    dropped name), a read returns the new column while the stale statistics of the dropped one
+    ///    would prune the part. The neighbouring gate for the top-k minmax index
+    ///    (`partHasStaleTopKIndex`) fences the same mutation kinds. The alter and metadata mutations
+    ///    are checked per part below: the snapshot also holds finished ones, which must not disable
+    ///    the pruning of the parts they were already applied to.
+    /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
+    ///    the on-the-fly mutations above) no longer describe the values the query sees.
+    /// 5. A row policy applies: the statistics describe all rows of a part, including the ones the
+    ///    policy hides, so the number of rows left to read after pruning by the query's predicate,
+    ///    which is reported to the client, reveals the values of the hidden rows. The policy is
+    ///    either pushed into this read (possibly from a wrapper such as `Alias`) or belongs to
+    ///    this table and is applied above the read (e.g. for a child of `Merge`).
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context))
+        || query_info.row_level_filter
+        || (!parts.empty() && getEffectiveRowPolicyFilter(parts.front().data_part->storage, context)))
     {
         return parts;
     }
@@ -828,26 +911,91 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
+    const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
-    for (const auto & part : parts)
+    /// The current types of the required columns, resolved once for all parts (`nullptr` if absent).
+    std::vector<std::pair<String, DataTypePtr>> required_column_types;
+    required_column_types.reserve(required_columns.size());
+    const auto & metadata_columns = metadata_snapshot->getColumns();
+    for (const auto & column_name : required_columns)
     {
-        try
-        {
-            auto estimates = part.data_part->getEstimates();
-            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
-            {
-                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                continue;
-            }
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Failed to use statistics for part {}, skipping statistics pruning for this part",
-                part.data_part->name), LogsLevel::debug);
-        }
-        res_parts.push_back(part);
+        auto metadata_column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        required_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
     }
+
+    /// A part with a pending alter or metadata mutation is not pruned by statistics, so its statistics are not loaded.
+    std::vector<char> part_has_pending_mutations(parts.size());
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        part_has_pending_mutations[part_index] = partHasPendingAlterOrMetadataMutations(parts[part_index].data_part, mutations_snapshot);
+
+    std::vector<Estimates> parts_estimates(parts.size());
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [&](size_t part_index)
+        {
+            if (part_has_pending_mutations[part_index])
+                return true;
+
+            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory(required_columns);
+            if (!estimates)
+                return false;
+            parts_estimates[part_index] = std::move(*estimates);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            if (part_has_pending_mutations[part_index])
+                return;
+
+            parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+        },
+        [&](size_t part_index)
+        {
+            const auto & part = parts[part_index];
+            if (part_has_pending_mutations[part_index])
+            {
+                res_parts.push_back(part);
+                return;
+            }
+
+            Estimates estimates = std::move(parts_estimates[part_index]);
+
+            /// The statistics describe the values as they are stored in the part. When the part stores a
+            /// column with a type different from the current metadata, a read converts the values to the
+            /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
+            /// describe what the query sees, unless the conversion keeps the representation (e.g. an
+            /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
+            /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
+            /// `KILL MUTATION` it is gone, while the conversion on read still happens.
+            /// Only the required columns are checked: the estimates may hold every column of the part.
+            for (const auto & [column_name, metadata_type] : required_column_types)
+            {
+                auto it = estimates.find(column_name);
+                if (it == estimates.end())
+                    continue;
+
+                auto part_column = part.data_part->tryGetColumn(column_name);
+                if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+                    estimates.erase(it);
+            }
+
+            try
+            {
+                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+                {
+                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                    return;
+                }
+            }
+            catch (const Exception &)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                    part.data_part->name), LogsLevel::debug);
+            }
+            res_parts.push_back(part);
+        });
 
     if (res_parts.size() < total_parts_before)
     {
@@ -876,7 +1024,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 ///  - a lightweight update / patch part rewrites the indexed column, but the minmax still
 ///    advertises the pre-update values;
 ///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
-///    serialized with the old type, which order differently under the new type.
+///    serialized with the old type, which order differently under the new type;
+///  - a DROP COLUMN or RENAME COLUMN followed by adding a column with the same name (and an index
+///    with the same name on it) makes a read return the new column, but the part still holds the
+///    index file built over the old column's values.
 /// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
 /// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
 /// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
@@ -893,12 +1044,34 @@ static bool partHasStaleTopKIndex(
     if (part->hasLightweightDelete())
         return true;
 
+    /// A Cloud masking policy rewrites the indexed column on read but is not part of the mutation
+    /// snapshot: getAlterConversionsForPart appends it as an UPDATE command independently of the flags
+    /// checked below. A table with only a masking policy therefore has none of hasDataMutations,
+    /// hasAlterMutations or hasPatchParts set, so without this gate it would skip the canUseIndex check
+    /// and let top-k rank/prune by the unmasked minmax. Include enabled masking policies for this part's
+    /// table in the gate so such parts reach the overlap check.
+#if CLICKHOUSE_CLOUD
+    const auto enabled_masking_policies = context->getAccess()->getEnabledMaskingPolicies();
+    const auto & storage_id = part->storage.getStorageID();
+    const bool has_masking_policies = enabled_masking_policies
+        && !enabled_masking_policies->getPolicies(storage_id.database_name, storage_id.table_name).empty();
+#else
+    const bool has_masking_policies = false;
+#endif
+
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
-    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch);
+    /// hasMetadataMutations() covers DROP COLUMN and RENAME COLUMN.
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()
+            || has_masking_policies))
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                    , enabled_masking_policies
+#endif
+                );
 
         /// A pending delete hides rows of any value -> the index is stale. This covers both a
         /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
@@ -906,10 +1079,11 @@ static bool partHasStaleTopKIndex(
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
-        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
-        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        /// A pending update / patch / MODIFY COLUMN that touches the indexed column, or a pending
+        /// DROP COLUMN / RENAME COLUMN of its name, makes its minmax stale. Reuse the same overlap check
+        /// the regular skip-index path uses (canUseIndex), so the top-k path is consistent with it.
+        /// Changes to other columns leave the index valid.
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getColumnsInvalidatingIndexes()))
             return true;
     }
 
@@ -943,9 +1117,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
-    if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
+    if (use_skip_indexes && settings[Setting::force_data_skipping_indexes].changed)
     {
-        const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
+        const auto & indices_str = settings[Setting::force_data_skipping_indexes].toString();
         auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
 
         if (forced_indices.empty())
@@ -987,6 +1161,100 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
+    /// Part filtering precedes this stage. Compute costs only for the surviving parts,
+    /// and only when there is an index order to choose. The result is memoized per part, so
+    /// repeated analyses of the same read step (estimation, parallel replicas, then the executed
+    /// read) walk the skip-index metadata once.
+    std::vector<SkipIndexOrder> per_part_index_orders;
+    if (skip_indexes.useful_indices.size() > 1)
+    {
+        auto & order_cache = *filter_context.indexes.skip_index_orders;
+        per_part_index_orders.reserve(parts_with_ranges.size());
+
+        std::vector<size_t> index_sizes;
+        index_sizes.reserve(skip_indexes.useful_indices.size());
+
+        for (const auto & part : parts_with_ranges)
+        {
+            const auto cache_key = SkipIndexOrderCache::makeKey(*part.data_part);
+
+            {
+                std::lock_guard lock(order_cache.mutex);
+                auto it = order_cache.orders.find(cache_key);
+                if (it != order_cache.orders.end())
+                {
+                    per_part_index_orders.emplace_back(it->second);
+                    continue;
+                }
+            }
+
+            auto index_order = std::make_shared<std::vector<size_t>>(skip_indexes.useful_indices.size());
+            std::iota(index_order->begin(), index_order->end(), 0);
+
+            index_sizes.clear();
+
+            for (const auto & idx : skip_indexes.useful_indices)
+            {
+                size_t index_size = 0;
+                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
+
+                for (const auto & substream : format.substreams)
+                {
+                    String stream_name = idx.index->getFileName() + substream.suffix;
+                    /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
+                    /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
+                    /// reordering accounts for them instead of treating them as free.
+                    index_size += part.data_part->getFileSizeOrZeroResolved(stream_name, substream.extension);
+                }
+
+                index_sizes.emplace_back(index_size);
+            }
+
+            // Move minmax indices to first positions, so they will be applied first as cheapest ones
+            ::stableSort(index_order->begin(), index_order->end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            {
+                const auto l_index = useful_indices[l].index;
+                const auto r_index = useful_indices[r].index;
+
+                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
+                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
+
+                auto l_index_priority = l_is_minmax ? 1 : 2;
+                auto r_index_priority = r_is_minmax ? 1 : 2;
+
+#if USE_USEARCH
+                // A vector similarity index (if present) is the most selective, hence move it to front
+                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
+                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
+                if (l_is_vectorsimilarity)
+                    l_index_priority = 0;
+                if (r_is_vectorsimilarity)
+                    r_index_priority = 0;
+#endif
+                // negated since we want to prioritize coarser indexes
+                const auto neg_l_granularity = -l_index->getGranularity();
+                const auto neg_r_granularity = -r_index->getGranularity();
+
+                const auto l_size = idx_sizes[l];
+                const auto r_size = idx_sizes[r];
+
+                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
+            });
+
+            {
+                std::lock_guard lock(order_cache.mutex);
+                order_cache.orders.emplace(cache_key, index_order);
+            }
+
+            per_part_index_orders.emplace_back(std::move(index_order));
+        }
+    }
+
+    auto index_order_at = [&per_part_index_orders](size_t part_index, size_t idx) -> size_t
+    {
+        return per_part_index_orders.empty() ? idx : (*per_part_index_orders[part_index])[idx];
+    };
+
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> top_k_elapsed_us = 0;
@@ -998,8 +1266,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
-    /// Perform top-K optimization during index analysis itself?
-    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
+    /// Perform top-K optimization during index analysis itself? Not with sampling: its filter runs after the read and
+    /// can discard every row of the granules selected here.
+    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering
+        && !top_k_filter_info->where_clause && !result.sampling.use_sampling;
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
@@ -1012,11 +1282,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// because key_condition_rpn_template is the RPN used in mergePartialResultsForDisjunctions
     /// and in the callback that writes to the partial_disjunction_result bitset.
     /// When use_primary_key = false, key_condition has skip_analysis_ = true and its RPN
-    /// has only 1 element, but the template has the full RPN which can exceed 32 elements.
+    /// has only 1 element, but the template has the full RPN.
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !use_skip_indexes_on_data_read_
                                 && key_condition_rpn_template != nullptr
-                                && key_condition_rpn_template->generateUnsubstituted().getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                && isRPNSizeAllowedForSkipIndexesForDisjunctions(
+                                    key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
@@ -1026,6 +1297,23 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         return use_skip_indexes_on_data_read_;
     };
+
+    /// Whether the read drops lightweight-deleted rows: by the deleted mask or by an explicit filter on `_row_exists`.
+    bool query_hides_lightweight_deleted_rows = settings[Setting::apply_deleted_mask];
+    if (!query_hides_lightweight_deleted_rows)
+    {
+        auto dag_reads_row_exists = [](const ActionsDAG & dag)
+        {
+            for (const auto * input : dag.getInputs())
+                if (input->result_name == RowExistsColumn::name)
+                    return true;
+            return false;
+        };
+
+        query_hides_lightweight_deleted_rows = (query_info.filter_actions_dag && dag_reads_row_exists(*query_info.filter_actions_dag))
+            || (query_info.prewhere_info && dag_reads_row_exists(query_info.prewhere_info->prewhere_actions))
+            || (query_info.row_level_filter && dag_reads_row_exists(query_info.row_level_filter->actions));
+    }
 
     /// Let's find what range to read from each part.
     {
@@ -1038,7 +1326,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         // These limits are checked per part so that we can fail very quickly
         // if we hit row limits on large datasets. Row counts use an atomic
         // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = getRowLimits(settings, query_info);
+        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(*context, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
         /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
@@ -1050,6 +1338,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         auto process_part = [&](size_t part_index)
         {
+            fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
+
             if (query_status)
                 query_status->checkTimeLimit();
 
@@ -1067,9 +1357,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPartition(ranges.data_part->partition),
-                    part_offset_condition ? &part_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
-                    total_offset_condition ? &total_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
+                    key_condition->generateForPart(ranges.data_part),
+                    part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
+                    total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
@@ -1092,7 +1382,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
             }
 
-            if (!skip_indexes.empty())
+            /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
+            if (!skip_indexes.empty() && !ranges.ranges.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
@@ -1100,7 +1391,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto all_updated_columns = alter_conversions->getColumnsInvalidatingIndexes();
+                auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
@@ -1111,14 +1403,37 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             "Index {} is not used for part {}. Reason: {}",
                             index->index.name, ranges.data_part->name, check_result.error().text));
                     }
+
+                    /// A vector similarity index returns exactly as many candidates as the `LIMIT` asks for. A delete
+                    /// that the index does not know about (a lightweight delete, materialized or in a patch part, or a
+                    /// pending `ALTER DELETE` applied on the fly) does not shrink that shortlist: the deleted candidates
+                    /// are dropped after the read with nothing to take their place, and the query returns fewer rows
+                    /// than its `LIMIT`. Read such a part in full until a merge or a mutation rebuilds the index.
+                    /// With `apply_deleted_mask = 0` lightweight-deleted rows are returned and the read sees exactly
+                    /// the rows the index was built on, unless the query filters by `_row_exists` explicitly, which
+                    /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
+                    const bool has_deleted_rows = (query_hides_lightweight_deleted_rows
+                            && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
+                        || alter_conversions->hasDeleteMutation();
+                    if (index->isVectorSimilarityIndex() && has_deleted_rows)
+                    {
+                        return std::unexpected(PreformattedMessage::create(
+                            "Index {} is not used for part {}. Reason: the part has deleted rows that the index still returns",
+                            index->index.name, ranges.data_part->name));
+                    }
                     return {};
                 };
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
+                /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
+                const KeyCondition * rpn_template_for_part
+                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->generateForPart(ranges.data_part) : nullptr;
+
                 PartialDisjunctionResult partial_eval_results;
-                if (use_skip_indexes_for_disjunctions)
-                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+                if (rpn_template_for_part)
+                    partial_eval_results.resize(
+                        ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -1127,7 +1442,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                    const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
+                    const auto index_idx = index_order_at(part_index, idx);
                     const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
 
                     auto index_stat_idx = idx;
@@ -1150,9 +1465,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition_template->generateForPartition(ranges.data_part->partition),
-                            key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
-                            ranges.data_part,
+                            index_and_condition.condition_template->generateForPart(ranges.data_part),
+                            rpn_template_for_part,
+                            part_info_for_reader,
                             ranges.ranges,
                             ranges.read_hints,
                             reader_settings,
@@ -1171,10 +1486,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template != nullptr)
+                if (rpn_template_for_part)
                 {
-                    ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
-                                        ranges.ranges, key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
+                    ranges.ranges = mergePartialResultsForDisjunctions(*part_info_for_reader,
+                                        ranges.ranges, *rpn_template_for_part,
                                         partial_eval_results, reader_settings, log);
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1188,7 +1503,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                auto min_max_granules = getMinMaxIndexGranules(ranges.data_part,
+                auto min_max_granules = getMinMaxIndexGranules(std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, std::make_shared<AlterConversions>()),
                                             skip_indexes.skip_index_for_top_k_filtering,
                                             ranges.ranges,
                                             top_k_filter_info->direction,
@@ -1244,6 +1559,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
         else
         {
+            /// Outlives `pool`, whose destructor joins the jobs that still read it when scheduling throws.
+            std::atomic<size_t> next_part_index = 0;
+
             /// Parallel loading and filtering of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
@@ -1251,24 +1569,27 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
-
-            /// Instances of ThreadPool "borrow" threads from the global thread pool.
-            /// We intentionally use scheduleOrThrow here to avoid a deadlock.
-            /// For example, queries can already be running with threads from the
-            /// global pool, and if we saturate max_thread_pool_size whilst requesting
-            /// more in this loop, queries will block infinitely.
-            /// So we wait until lock_acquire_timeout, and then raise an exception.
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+            const size_t num_jobs = std::min(num_threads, parts_with_ranges.size());
+            for (size_t job = 0; job < num_jobs; ++job)
             {
-                pool.scheduleOrThrow(
-                    [&, part_index, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrowOnError(
+                    [&, thread_group = CurrentThread::getGroup(), component_name = Coordination::getCurrentComponent()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                        /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
+                        /// explicitly: skip-index analysis below may read from a Keeper-backed disk.
+                        auto local_component_guard = Coordination::setCurrentComponent(component_name);
 
-                        process_part(part_index);
-                    },
-                    Priority{},
-                    context->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+                        /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
+                        while (!pool.isFinished())
+                        {
+                            const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+                            if (part_index >= parts_with_ranges.size())
+                                break;
+
+                            process_part(part_index);
+                        }
+                    });
             }
 
             pool.wait();
@@ -1329,7 +1650,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
         {
             const auto & stat = useful_indices_stat[part_index * num_indices + idx];
-            const auto & index_and_condition = skip_indexes.useful_indices[skip_indexes.per_part_index_orders[part_index][idx]];
+            const auto & index_and_condition = skip_indexes.useful_indices[index_order_at(part_index, idx)];
             const auto & index_name = index_and_condition.index->index.name;
             LOG_DEBUG(
                 log,
@@ -1349,7 +1670,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition_template->generateForPartition(parts_with_ranges[part_index].data_part->partition)->getDescription(),
+                    .condition = index_and_condition.condition_template->generateForPart(parts_with_ranges[part_index].data_part)->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1411,9 +1732,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 }
 
 MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits(
-    const Settings & settings,
+    const Context & context,
     const SelectQueryInfo & query_info)
 {
+    const auto & settings = context.getSettingsRef();
     RowLimits row_limits;
 
     /// Do not check number of read rows if we are
@@ -1427,7 +1749,8 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
         && !query_info.input_order_info)
         row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+    if (context.getClientInfo().distributed_depth > 0
+        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
         && settings[Setting::max_rows_to_read_leaf]
         && !query_info.input_order_info)
         row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
@@ -1435,25 +1758,188 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
     return row_limits;
 }
 
+UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(
+    UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes, bool distributed_index_analysis)
+{
+    /// Without an effective skip index no exclusion depends on the index profile, so the bare key is
+    /// sound. Not under distributed_index_analysis: replicas may prune with skip indexes this set lacks.
+    if (indexes.skip_indexes.empty() && !distributed_index_analysis)
+        return condition_hash;
+
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(indexes.use_skip_indexes);
+
+    /// Salt with the identity of the skip indexes that index analysis actually used. This set is
+    /// already the effective one: buildIndexes removes indexes disabled via ignore_data_skipping_indices,
+    /// drops indexes no longer present in metadata, and leaves it empty when use_skip_indexes = 0. So
+    /// any change to the running set (a different ignore list, an index dropped/added/redefined, skip
+    /// indexes off) changes the key, and a query that did not run an index never reads a verdict
+    /// produced by it. Each index contributes a stable identity: its name, its granularity, and the
+    /// tree hash of its definition AST (type, expression, arguments). name and granularity are plain
+    /// members of ASTIndexDeclaration and are not part of its tree hash, so they are folded in
+    /// separately; otherwise two indexes with the same expression and type but a different name or
+    /// granularity would share a key (the partially-materialized case: a verdict produced while one
+    /// index ran could be served to a query running only the other). The name is length-prefixed so
+    /// distinct (name, granularity) pairs cannot collide by concatenation. Index names are unique
+    /// within a table, so sorting by name is a deterministic, order-independent ordering.
+    std::vector<std::tuple<String, UInt64, IASTHash>> index_identities;
+    index_identities.reserve(indexes.skip_indexes.useful_indices.size());
+    for (const auto & useful_index : indexes.skip_indexes.useful_indices)
+        index_identities.emplace_back(
+            useful_index.index->index.name,
+            useful_index.index->index.granularity,
+            useful_index.index->index.definition_ast->getTreeHash(/*ignore_aliases=*/true));
+    std::sort(index_identities.begin(), index_identities.end(), [](const auto & l, const auto & r) { return std::get<0>(l) < std::get<0>(r); });
+
+    hash.update(index_identities.size());
+    for (const auto & [name, granularity, definition_hash] : index_identities)
+    {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(granularity);
+        hash.update(definition_hash.low64);
+        hash.update(definition_hash.high64);
+    }
+
+    /// use_skip_indexes_for_disjunctions changes the exclusions produced by the same indexes for OR
+    /// predicates, so two queries with different effective modes must not share a key.
+    hash.update(indexes.use_skip_indexes_for_disjunctions);
+
+    return hash.get64();
+}
+
+static bool isTopKFilterFunction(const ActionsDAG::Node * node)
+{
+    return node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base
+        && node->function_base->getName() == "__topKFilter";
+}
+
+/// Plain `SELECT ... WHERE <predicate>` (or `PREWHERE <predicate>`) entries are keyed on `<predicate>`
+/// alone, so strip internal TopK nodes before probing reuse. In the WHERE DAG, `__topKFilter` no longer
+/// originates from the optimizer (it is merged into the PREWHERE after the pass that builds that DAG);
+/// in the PREWHERE, `buildTopKDynamicFilterPrewhere` produces `and(__topKFilter(...), <user PREWHERE>)`.
+/// Returns the predicate-only node; the caller turns it into a cache key (which, for a condition
+/// involving the current time, is the hash of the derived deterministic condition, not the node's
+/// own hash). The returned node may be owned by `scratch`, which must outlive its use.
+static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::Node * node, ActionsDAG & scratch)
+{
+    if (!node)
+        return nullptr;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base && node->function_base->getName() == "and")
+    {
+        std::vector<const ActionsDAG::Node *> where_children;
+        where_children.reserve(node->children.size());
+        for (const auto * child : node->children)
+        {
+            if (!isTopKFilterFunction(child))
+                where_children.push_back(child);
+        }
+
+        if (where_children.empty())
+            return nullptr;
+
+        if (where_children.size() == node->children.size())
+            return node;
+
+        /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
+        /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly
+        /// one child whose hash reproduces the key a plain `SELECT ... WHERE <predicate>` wrote.
+        if (where_children.size() == 1)
+            return where_children.front();
+
+        /// The top-level `and` can also be flattened (`buildTopKDynamicFilterPrewhere` turns an explicit
+        /// `PREWHERE a AND b` into `and(__topKFilter(...), a, b)`). A plain read keys its entries on its
+        /// own `and(a, b)` node, so rebuild that node from the remaining children. It gets the default
+        /// name `and(a, b)`, built from the names of the children, like the plain read's conjunction.
+        FunctionOverloadResolverPtr func_builder_and
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        return &scratch.addFunction(func_builder_and, std::move(where_children), {});
+    }
+
+    if (isTopKFilterFunction(node))
+        return nullptr;
+
+    return node;
+}
+
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
+    bool allow_top_k_prewhere_query_condition_cache,
+    bool use_sampling,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
     LoggerPtr log)
 {
+    /// A TopK-salted entry records granules that hold no row of the top N of the whole table, but
+    /// `SAMPLE` computes the threshold from a subset of the rows, whose top N can lie in exactly those
+    /// granules. So a sampled read consults only plain entries, which stay sound: a granule without a
+    /// row matching the condition has none in any sample. The writers skip sampled reads altogether.
+    const bool consult_top_k_entries = top_k_filter_info && !use_sampling;
+
+    /// A TopK read analyzed before `installTopKDynamicFilter` has run (projection candidate analysis
+    /// does that) does not have `__topKFilter` in its PREWHERE yet, but the executed read writes its
+    /// entries under the PREWHERE with it. Consult under that one, or a warm query never hits them.
+    PrewhereInfoPtr prewhere_info_for_cache = select_query_info.prewhere_info;
+    if (consult_top_k_entries && top_k_filter_info->dynamic_filter_pending && !select_query_info.input_order_info)
+    {
+        if (auto with_top_k_filter = QueryPlanOptimizations::buildTopKDynamicFilterPrewhere(prewhere_info_for_cache, *top_k_filter_info))
+            prewhere_info_for_cache = std::move(with_top_k_filter);
+    }
+
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
-            || !settings[Setting::allow_experimental_analyzer]
-            || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
+            /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
+            /// by normal reads: those may exclude a granule whose only matching rows are deleted.
+            || !settings[Setting::apply_deleted_mask]
+            || (!prewhere_info_for_cache && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            /// A pending `ALTER MODIFY COLUMN` (an alter mutation) or `DROP COLUMN` / `RENAME COLUMN`
+            /// (a metadata mutation) changes the values a read returns for a column name without
+            /// changing the part name, so an entry recorded before the change would drop marks that
+            /// match now. Only the mutations still applicable to the parts count: the snapshot also
+            /// holds finished ones. The write sides are gated symmetrically (see `ReadFromMergeTree`).
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+            || hasPendingAlterOrMetadataMutations(parts_with_ranges, mutations_snapshot))
+        return;
+
+    /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
+    /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
+    /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
+    /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
+    /// The write sides are gated symmetrically (see updateQueryConditionCache, setTopKColumn and
+    /// selectRangesToRead), so with the gate off a TopK read neither reads nor writes the cache.
+    if (top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k])
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
+
+    /// Each condition is looked up under two keys (see the write sides):
+    ///   * the bare condition hash, holding row-level exclusions (FilterTransform,
+    ///     MergeTreeSelectProcessor, object storage) which are always sound; and
+    ///   * a hash salted with the effective skip-index profile that index analysis ran
+    ///     (getSkipIndexProfiledConditionHash), holding the skip-index-analysis exclusions
+    ///     written by ReadFromMergeTree.
+    /// Skip-index exclusions can legitimately diverge from the row-level predicate (e.g. a text
+    /// index with a preprocessor), so they must only be consulted by a query that ran the same set
+    /// of indexes; salting the key with the running index set (and disjunction mode) guarantees a
+    /// query that ran a different set (use_skip_indexes = 0, an index dropped/ignored, or a
+    /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
+    /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
+    /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
+    /// skip-index poisoning of issue #108519. TopK reads (which only get here when
+    /// `use_query_condition_cache_for_top_k` is on, see the gate above) consult TopK-salted keys
+    /// and also the `topk_reuse_predicate_only_hash` so plain `SELECT ... WHERE` entries can be
+    /// reused; TopK-salted entries are not read otherwise.
 
     struct Stats
     {
@@ -1461,22 +1947,103 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
+    const UInt64 settings_salt = queryConditionCacheSettingsSalt(context->getSettingsRef());
+
+    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt, bool prewhere_top_k_salt)
     {
+        /// A condition involving the current time (e.g. `time >= now() - INTERVAL 10 DAY`) is
+        /// non-deterministic and its own hash changes with every query, so probing it would always
+        /// miss. Probe the deterministic condition derived from it instead (issue #115504). Since
+        /// this is the consult side, the derivation must *weaken* the condition: "no rows of this
+        /// granule match the weakened condition" implies "no rows match the actual condition", so
+        /// skipping the granule is sound. The write sides store entries under the strengthened
+        /// variant, which coincides with the weakened one for grid-aligned constants and equals the
+        /// weakened variant of the next grid cell otherwise.
+        const time_t current_time = time(nullptr);
+        auto derive = [&](const ActionsDAG::Node * node) -> std::optional<DeterministicTimeCondition>
+        {
+            if (!settings[Setting::use_query_condition_cache_for_time_conditions])
+                return std::nullopt;
+            return deriveDeterministicTimeCondition(
+                node,
+                TimeConditionRounding::Weaken,
+                static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
+                current_time);
+        };
+
+        /// The WHERE writers of a TopK read never store entries under a derived condition (see
+        /// `deriveDeterministicTimeCondition`), so the TopK-salted WHERE key is not derived either;
+        /// such a read only reuses plain entries through the predicate-only hash below. The TopK-salted
+        /// PREWHERE key is derived like its writer in `MergeTreeSelectProcessor` does.
+        const bool is_top_k_where_key = apply_top_k_salt && !prewhere_top_k_salt && top_k_filter_info;
+        std::optional<DeterministicTimeCondition> derived = is_top_k_where_key ? std::nullopt : derive(dag);
+
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = dag->getHash();
+        size_t condition_hash = queryConditionCacheHash(derived ? derived->hash : dag->getHash(), settings_salt);
+        size_t topk_reuse_predicate_only_hash = 0;
+        bool has_topk_reuse_predicate_only_hash = false;
+        /// The same applies to a TopK-salted PREWHERE: `buildTopKDynamicFilterPrewhere` rewrites an explicit
+        /// user PREWHERE to `and(__topKFilter(...), <user predicate>)`, while a plain read of the same
+        /// PREWHERE records its entries under `<user predicate>` alone.
+        if (apply_top_k_salt && top_k_filter_info && (prewhere_top_k_salt || top_k_filter_info->where_clause))
+        {
+            /// Only reuse when stripping actually recovered a predicate-only hash. Otherwise the hash
+            /// would still carry `__topKFilter` (matching neither a plain `WHERE` entry nor the salted
+            /// TopK entry), so probing it would just be wasted cache lookups per part.
+            ActionsDAG scratch;
+            if (const auto * stripped = getTopKReusePredicateOnlyNode(dag, scratch))
+            {
+                /// Key the stripped predicate the same way a plain `SELECT ... WHERE` would: through
+                /// the derived deterministic condition when it involves the current time.
+                auto stripped_derived = derive(stripped);
+                topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped_derived ? stripped_derived->hash : stripped->getHash(), settings_salt);
+                has_topk_reuse_predicate_only_hash = true;
+            }
+        }
 
-        /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
-        /// read goes through a TopK filter, the cached granule decisions are valid only for the same
-        /// TopK plan, so the WHERE cache key must be partitioned by the TopK parameters. The PREWHERE
-        /// write path in `MergeTreeSelectProcessor::read` does not (yet) apply this salt, so we must
-        /// not apply it on the PREWHERE read path either — otherwise the keys diverge and the lookup
-        /// always misses.
+        /// Mirror the salting done by the write paths. The WHERE writer
+        /// (`updateQueryConditionCache`) folds only the TopK plan hash into the WHERE condition hash.
+        /// The PREWHERE writer (`MergeTreeSelectProcessor::read`) instead folds a pre-combined salt
+        /// of the TopK plan and post-PREWHERE filter hash into the PREWHERE condition hash. Preserve
+        /// that nesting: `boost::hash_combine` is order-sensitive and non-associative.
         if (apply_top_k_salt && top_k_filter_info)
-            boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
+        {
+            size_t top_k_salt = top_k_filter_info->condition_hash;
+            if (prewhere_top_k_salt && select_query_info.filter_actions_dag)
+                boost::hash_combine(top_k_salt, select_query_info.filter_actions_dag->getOutputs().front()->getHash());
+            boost::hash_combine(condition_hash, top_k_salt);
+        }
+
+        /// The skip-index-analysis exclusions written by ReadFromMergeTree are stored under a key
+        /// salted with the effective skip-index profile, computed from the same (top-k-salted)
+        /// condition hash the write side used, so only a query that ran the same set of indexes
+        /// consults them. See getSkipIndexProfiledConditionHash and issue #108519.
+        UInt64 profiled_condition_hash
+            = getSkipIndexProfiledConditionHash(condition_hash, indexes, settings[Setting::distributed_index_analysis]);
+        const bool probe_profiled_condition_hash = profiled_condition_hash != condition_hash;
+        const bool also_probe_topk_reuse_predicate_only_hash = has_topk_reuse_predicate_only_hash;
+        const UInt64 topk_reuse_predicate_only_profiled_hash = also_probe_topk_reuse_predicate_only_hash
+            ? getSkipIndexProfiledConditionHash(
+                topk_reuse_predicate_only_hash, indexes, settings[Setting::distributed_index_analysis])
+            : 0;
+        const bool probe_topk_reuse_predicate_only_profiled_hash
+            = also_probe_topk_reuse_predicate_only_hash
+            && topk_reuse_predicate_only_profiled_hash != topk_reuse_predicate_only_hash;
 
         Stats stats;
+
+        auto merge_opt_marks = [](QueryConditionCache::MatchingMarks & matching_marks, const std::optional<QueryConditionCache::MatchingMarks> & marks_opt)
+        {
+            if (!marks_opt)
+                return;
+            if (matching_marks.empty())
+                matching_marks = *marks_opt;
+            else if (matching_marks.size() == marks_opt->size())
+                for (size_t i = 0; i < matching_marks.size(); ++i)
+                    matching_marks[i] = matching_marks[i] && (*marks_opt)[i];
+        };
+
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
             auto & part_with_ranges = *it;
@@ -1484,14 +2051,43 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!matching_marks_opt)
+            String part_name = data_part->isProjectionPart()
+                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                : data_part->name;
+            /// Row-level entries are sound under any profile; skip-index entries only under the
+            /// matching profile. Merge the two verdicts: a mark must be read iff both say so.
+            /// This is one logical cache consultation, so it must emit at most one
+            /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
+            /// the hit/miss ourselves and suppress the per-read events on every lookup.
+            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, condition_hash, /*increment_profile_events=*/false);
+            std::optional<QueryConditionCache::MatchingMarks> skip_index_marks_opt;
+            if (probe_profiled_condition_hash)
+                skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, profiled_condition_hash, /*increment_profile_events=*/false);
+            std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_row_level_marks_opt;
+            std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_skip_index_marks_opt;
+            if (also_probe_topk_reuse_predicate_only_hash)
             {
+                topk_reuse_predicate_only_row_level_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_hash, /*increment_profile_events=*/false);
+                if (probe_topk_reuse_predicate_only_profiled_hash)
+                    topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false);
+            }
+            if (!row_level_marks_opt && !skip_index_marks_opt
+                && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt)
+            {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
-            auto & matching_marks = *matching_marks_opt;
+            QueryConditionCache::MatchingMarks matching_marks;
+            merge_opt_marks(matching_marks, row_level_marks_opt);
+            merge_opt_marks(matching_marks, skip_index_marks_opt);
+            /// TopK WHERE reads may also hit predicate-only entries written by plain
+            /// `SELECT ... WHERE`; AND-merge them with the TopK-salted verdicts above.
+            merge_opt_marks(matching_marks, topk_reuse_predicate_only_row_level_marks_opt);
+            merge_opt_marks(matching_marks, topk_reuse_predicate_only_skip_index_marks_opt);
+
             MarkRanges ranges;
             const auto & part = it->data_part;
             size_t min_marks_for_seek = roundRowsOrBytesToMarks(
@@ -1562,13 +2158,47 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return stats;
     };
 
-    if (const auto & prewhere_info = select_query_info.prewhere_info)
+    if (const auto & prewhere_info = prewhere_info_for_cache)
     {
         for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
         {
             if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs, /*apply_top_k_salt=*/ false);
+                /// Salt exactly when the PREWHERE write path does (see `MergeTreeSelectProcessor::read`):
+                /// a PREWHERE containing the dynamic `__topKFilter` records its granule drops under a
+                /// key salted with the TopK plan parameters, while a deterministic user PREWHERE on a
+                /// TopK-stamped read keeps writing plain entries shared with non-TopK queries.
+                const bool apply_top_k_salt = top_k_filter_info && !VirtualColumnUtils::isDeterministic(outputs);
+                /// The threshold is derived from rows passing the post-PREWHERE filter. It cannot
+                /// be reused when that filter is non-deterministic, even if its structural hash is
+                /// unchanged between executions.
+                bool consult_salted = apply_top_k_salt;
+                if (apply_top_k_salt && (!allow_top_k_prewhere_query_condition_cache
+                    || (select_query_info.filter_actions_dag
+                    && !VirtualColumnUtils::isDeterministicAllowingTopKFilter(select_query_info.filter_actions_dag->getOutputs().front()))
+                    ))
+                    consult_salted = false;
+                /// The dynamic `TopK` threshold is computed after row policies are applied, but these
+                /// `PREWHERE` cache entries are shared across users. The write path already avoids
+                /// recording row-policy-filtered marks; also avoid reusing marks recorded by an
+                /// unrestricted user before a restrictive policy gets a chance to filter rows.
+                if (apply_top_k_salt && select_query_info.row_level_filter)
+                    consult_salted = false;
+                if (apply_top_k_salt && !consult_top_k_entries)
+                    consult_salted = false;
+
+                /// Entries written by plain reads of the user PREWHERE predicate (without `__topKFilter`)
+                /// only record granules with no row matching that predicate, so they stay sound for any
+                /// TopK read, also when the TopK-salted entries above cannot be consulted.
+                const ActionsDAG::Node * prewhere_node = outputs;
+                ActionsDAG scratch;
+                if (apply_top_k_salt && !consult_salted)
+                {
+                    prewhere_node = getTopKReusePredicateOnlyNode(outputs, scratch);
+                    if (!prewhere_node)
+                        break;
+                }
+                auto stats = drop_mark_ranges(prewhere_node, consult_salted, /*prewhere_top_k_salt=*/consult_salted);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -1579,10 +2209,15 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         }
     }
 
+    /// A row policy needs no extra guard here: `optimizePrimaryKeyConditionAndLimit` ANDs it into
+    /// `filter_actions_dag`, so a restricted read keys on a different condition than an unrestricted one.
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
+        /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on
+        /// (the gate returns early above otherwise), so the WHERE consult key is always partitioned
+        /// by the TopK plan (with the predicate-only reuse path) for TopK reads, unless they sample.
+        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/!use_sampling, /*prewhere_top_k_salt=*/false);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
@@ -1597,9 +2232,12 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     ContextPtr context,
     size_t num_streams,
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read) const
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read,
+    bool use_query_condition_cache,
+    bool allow_top_k_prewhere_query_condition_cache) const
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
@@ -1610,7 +2248,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         parts,
         mutations_snapshot,
         std::nullopt,
-        std::nullopt,
+        top_k_filter_info,
         metadata_snapshot,
         query_info,
         context,
@@ -1623,8 +2261,10 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         indexes,
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
-        /*use_query_condition_cache*/true,
-        /*supports_skip_indexes_on_data_read*/false);
+        use_query_condition_cache,
+        allow_top_k_prewhere_query_condition_cache,
+        /*supports_skip_indexes_on_data_read*/false,
+        /*check_row_limits=*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -1647,7 +2287,6 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
     {
         if (!query_info.isStream())
@@ -1657,6 +2296,21 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     }
     else if (parts->empty() && !query_info.isStream())
         return {};
+
+    std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
+    std::optional<MergeTreeReadTaskCallback> read_task_callback;
+    if (extension_)
+    {
+        all_ranges_callback = extension_->getAllRangesCallback();
+        read_task_callback = extension_->getReadTaskCallback();
+    }
+    else if (enable_parallel_reading)
+    {
+        /// A coordinated read reaching here without an extension is one this replica executes itself, so
+        /// the coordinator callbacks are the ones the protocol handler put in the query context.
+        all_ranges_callback = context->getMergeTreeAllRangesCallback();
+        read_task_callback = context->getMergeTreeReadTaskCallback();
+    }
 
     return std::make_unique<ReadFromMergeTree>(
         parts,
@@ -1673,8 +2327,8 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         log,
         merge_tree_select_result_ptr,
         enable_parallel_reading,
-        extension_ ? std::optional(extension_->getAllRangesCallback()) : std::nullopt,
-        extension_ ? std::optional(extension_->getReadTaskCallback()) : std::nullopt,
+        std::move(all_ranges_callback),
+        std::move(read_task_callback),
         extension_ ? std::optional(extension_->getNumberOfCurrentReplica()) : std::nullopt);
 }
 
@@ -1687,11 +2341,12 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
+    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
@@ -1730,7 +2385,33 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const Settings & settings,
     LoggerPtr log)
 {
-    const auto & part = part_with_ranges.data_part;
+    return markRangesFromPKRange(
+        part_with_ranges.data_part,
+        part_with_ranges.ranges,
+        part_with_ranges.part_starting_offset_in_query,
+        metadata_snapshot,
+        key_condition,
+        part_offset_condition,
+        total_offset_condition,
+        exact_ranges,
+        pk_to_minmax_slot,
+        settings,
+        log);
+}
+
+MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
+    const MergeTreeData::DataPartPtr & part,
+    const MarkRanges & part_ranges,
+    size_t part_starting_offset_in_query,
+    const StorageMetadataPtr & metadata_snapshot,
+    const KeyCondition & key_condition,
+    const KeyCondition * part_offset_condition,
+    const KeyCondition * total_offset_condition,
+    MarkRanges * exact_ranges,
+    const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+    const Settings & settings,
+    LoggerPtr log)
+{
     MarkRanges res;
 
     size_t marks_count = part->index_granularity->getMarksCount();
@@ -1743,7 +2424,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     /// If index is not used.
     if (!key_condition_useful && !part_offset_condition_useful && !total_offset_condition_useful)
-        return part_with_ranges.ranges;
+        return part_ranges;
 
     /// If conditions are relaxed, don't fill exact ranges.
     if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
@@ -1751,9 +2432,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    const auto & sorting_key = metadata_snapshot->getSortingKey();
+    /// The columns are unnamed, because `KeyCondition` names the function results it caches in this block.
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
-    std::vector<bool> reverse_flags;
+
+    /// Which key columns are reverse-sorted.
+    const KeyOrder & key_order = key_condition.getKeyOrder();
+    chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
     const auto index = part->getIndex();
     const bool use_sparse_pk_representation
@@ -1762,6 +2446,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
     /// There is no need to process later key columns.
     const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
+
+    /// Whether every key column the filter references has per-mark values in the in-memory primary index.
+    /// A part may hold only a prefix of the key in memory (see the `MergeTree` setting
+    /// `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). The key columns beyond that
+    /// prefix are analysed as constant coordinates over the whole universe, or over the part's partition
+    /// minmax bound, instead of the actual per-mark values, which relaxes the analysis: a granule that the
+    /// index cannot distinguish may still contain rows the filter rejects. The exact-range invariant below
+    /// therefore only holds when the index resolves the whole used prefix.
+    /// Only consulted by the debug-only consistency check on the exact ranges.
+    [[maybe_unused]] const bool used_key_prefix_loaded_in_memory = used_key_prefix_size <= index->size();
 
     /// Do not touch the part's minmax index unless some key column the filter uses has a partition-minmax
     /// bound to consume: `getMinMaxIndex` may lazy-load `minmax_*.idx` from disk, and a bound at a key
@@ -1838,8 +2532,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             chassert(i < index->size());
             chassert(index->at(i));
-            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-            reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
+            index_columns->emplace_back(index->at(i), primary_key.data_types[i], "");
         }
 
         /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
@@ -1890,16 +2583,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < num_analyzed_key_columns; ++i)
             {
                 if (i < index->size())
-                {
-                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                    reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
-                }
+                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], "");
                 else
-                {
                     /// The column of the primary key was not loaded in memory - we'll skip it.
                     index_columns->emplace_back();
-                    reverse_flags.push_back(false);
-                }
 
                 key_types.emplace_back(primary_key.data_types[i]);
             }
@@ -1935,13 +2622,48 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
+    /// A key value that holds a NULL nested in a `Tuple` is not comparable in `Field` order the way the
+    /// key column is stored: the key stores a nested NULL above every value of its element (the same
+    /// `+inf` a flat `Nullable` NULL is mapped to), while `Field` orders `Null` below every value. Such a
+    /// bound therefore comes out in `Field` order below where the key stores it. For the lower bound in
+    /// value space this only widens the range. The upper bound is widened to `+inf` by `KeyCondition`
+    /// where it is compared in `Field` order (a set is compared in the key's own order and needs no
+    /// widening). That is not enough where a granule spans the boundary between non-NULL and NULL
+    /// values: the upper bound then comes out below the lower one, and the range of the granule looks
+    /// empty before any comparison is made. Only such a pair is replaced - by the extremes of its own
+    /// sides, which claim nothing about the column. Returns whether the pair was replaced: a replaced
+    /// pair no longer stands for the equal boundaries `equal_boundaries_mask` reports.
+    /// Set once an upper bound holds a nested NULL: the mark ranges then no longer follow the
+    /// condition's own continuity, because a granule the condition describes as wholly matching may
+    /// hold rows the filter rejects. Only the exactness of the analysis is affected - a widened bound
+    /// claims nothing about the column, so it can only widen `can_be_true`.
+    bool boundary_pair_inexact = false;
+
+    auto repair_boundary_pair = [&key_order, &boundary_pair_inexact](size_t column, FieldRef & left, FieldRef & right)
+    {
+        /// Boundaries follow the storage order of the column: values ascend unless the column does not.
+        const bool reversed = key_order.isReversed(column);
+        if (!KeyCondition::fieldHasNullInside(reversed ? left : right))
+            return false;
+
+        boundary_pair_inexact = true;
+
+        const bool ordered = reversed ? !(left < right) : !(right < left);
+        if (ordered)
+            return false;
+
+        left = key_order.physicalStartExtreme(column);
+        right = key_order.physicalEndExtreme(column);
+        return true;
+    };
+
     /// For index columns that are also covered by the part's partition minmax index, use minmax bounds
     /// instead of (-inf, +inf). The same bounds are consulted by the full and the sparse key representation.
     /// Indexed by full primary key position (not by sparse position), so the sparse path can look up the
     /// bound of a key column by its key index. For key columns without per-mark values (not loaded in the
     /// in-memory index) these bounds are the only information: `KeyCondition` analyses them as constant
     /// coordinates whose range is the bound.
-    /// Partition minmax index is always stored in value-ascending order, so we do not need to consider reverse_flags here.
+    /// Partition minmax index is always stored in value-ascending order, so key column direction does not matter here.
     Hyperrectangle index_bounds;
     index_bounds.reserve(num_analyzed_key_columns);
     for (size_t i = 0; i < num_analyzed_key_columns; ++i)
@@ -1965,6 +2687,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
+    /// The conditions that `check_in_range` evaluates. The generic exclusion search may replace them, see below.
+    const KeyCondition * checked_key_condition = &key_condition;
+    const KeyCondition * checked_part_offset_condition = part_offset_condition;
+    const KeyCondition * checked_total_offset_condition = total_offset_condition;
+
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -1980,27 +2707,28 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 if (range.end == marks_count)
                 {
-                    /// Last mark: the right boundary of every loaded key column is +inf. The left and right
-                    /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
-                    /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
-                    /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
+                    /// Last mark: the boundary at the unknown physical end of the part is the column's
+                    /// directional extreme. The boundaries are known to be equal only when the range
+                    /// starts with a NULL and NULLs are stored physically last on the column — then the
+                    /// column is NULL up to the end of the part (NULL's value-space stand-in, +inf,
+                    /// equals the extreme). A non-nullable column is never NULL, so its boundaries are
+                    /// never known to be equal.
                     for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
-                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                        equal_boundaries_mask[i] = col->isNullAt(range.begin) && key_order.nullsAreStoredLast(i);
                     }
 
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-
-                        right = POSITIVE_INFINITY;
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
+                        /// On a descending column the upper bound is the left one, which can hold a nested NULL.
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
                 else
@@ -2021,16 +2749,15 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-                        create_field_ref(range.end, key_col, right);
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
+                        if (unlikely(repair_boundary_pair(key_col, sparse_key_left[sparse_pos], sparse_key_right[sparse_pos]))
+                            && key_col < equal_boundaries_mask.size())
+                            equal_boundaries_mask[key_col] = false;
                     }
                 }
 
-                return key_condition.checkInRange(
+                return checked_key_condition->checkInRange(
                     used_key_indices,
                     sparse_key_left.data(),
                     sparse_key_right.data(),
@@ -2044,35 +2771,42 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
+                    {
+                        create_field_ref(range.begin, i, index_left[i]);
+                        /// The value at the unknown physical end of the part is the directional extreme.
+                        index_right[i] = key_order.physicalEndExtreme(i);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
+                    }
                     else
-                        left = index_bounds[i].left;
-
-                    right = index_bounds[i].right;
+                    {
+                        /// Key column not loaded in the in-memory index: unknown at both boundaries.
+                        /// The (start, end) extreme pair makes the decomposition take the whole
+                        /// universe at this column, a safe over-approximation.
+                        index_left[i] = key_order.physicalStartExtreme(i);
+                        index_right[i] = key_order.physicalEndExtreme(i);
+                    }
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
+                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.end, i, index_right[i]);
+                        repair_boundary_pair(i, index_left[i], index_right[i]);
                     }
                     else
                     {
-                        left = index_bounds[i].left;
-                        right = index_bounds[i].right;
+                        index_left[i] = key_order.physicalStartExtreme(i);
+                        index_right[i] = key_order.physicalEndExtreme(i);
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            return checked_key_condition->checkInRange(
+                used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()
@@ -2091,7 +2825,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part_offset_left[1] = part->name;
             part_offset_right[1] = part->name;
 
-            return part_offset_condition->checkInRange(
+            return checked_part_offset_condition->checkInRange(
                 2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
@@ -2105,9 +2839,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 return BoolMask(false, true);
             }
 
-            part_offset_left[0] = begin + part_with_ranges.part_starting_offset_in_query;
-            part_offset_right[0] = end + part_with_ranges.part_starting_offset_in_query;
-            return total_offset_condition->checkInRange(
+            part_offset_left[0] = begin + part_starting_offset_in_query;
+            part_offset_right[0] = end + part_starting_offset_in_query;
+            return checked_total_offset_condition->checkInRange(
                 1, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
@@ -2150,16 +2884,49 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             .min_marks_for_seek = min_marks_for_seek,
         };
 
-        auto search_result = genericExclusionSearch(
-            part_with_ranges.ranges,
-            [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
-            search_settings,
-            exact_ranges != nullptr);
+        GenericExclusionSearchResult search_result;
+        std::list<KeyCondition> substituted_conditions;
+
+        if (exact_ranges)
+        {
+            search_result = genericExclusionSearch(
+                part_ranges,
+                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                search_settings,
+                /*collect_exact_ranges=*/ true);
+
+            *exact_ranges = std::move(search_result.exact_ranges);
+        }
+        else
+        {
+            /// Without exact ranges only `can_be_true` matters, so the atoms that cannot be evaluated may be assumed true.
+            /// Then a range where no subrange can be excluded is certainly true, and the search does not split it.
+            if (checked_key_condition && checked_key_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_key_condition->createWithUnknownAtomsAssumedTrue();
+                checked_key_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            if (checked_part_offset_condition && checked_part_offset_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_part_offset_condition->createWithUnknownAtomsAssumedTrue();
+                checked_part_offset_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            if (checked_total_offset_condition && checked_total_offset_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_total_offset_condition->createWithUnknownAtomsAssumedTrue();
+                checked_total_offset_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            search_result = genericExclusionSearch(
+                part_ranges,
+                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                search_settings,
+                /*collect_exact_ranges=*/ false);
+        }
 
         res = std::move(search_result.ranges);
-        if (exact_ranges)
-            *exact_ranges = std::move(search_result.exact_ranges);
-
         res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
         ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
         if (search_result.reached_step_limit)
@@ -2180,11 +2947,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         res.search_algorithm = MarkRanges::SearchAlgorithm::BinarySearch;
         ProfileEvents::increment(ProfileEvents::IndexBinarySearchAlgorithm);
-        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
+        LOG_TEST(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
 
         size_t steps = 0;
 
-        for (const auto & part_range : part_with_ranges.ranges)
+        for (const auto & part_range : part_ranges)
         {
             MarkRange result_range{};
 
@@ -2208,7 +2975,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 ++steps;
             }
             result_range.begin = searched_left;
-            LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+            LOG_TEST(log, "Found (LEFT) boundary mark: {}", searched_left);
 
             /// Invariant:  check_in_range(searched_left..part_range.end).can_be_true
             ///            !check_in_range(searched_right..part_range.end).can_be_true
@@ -2225,7 +2992,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 ++steps;
             }
             result_range.end = searched_right;
-            LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+            LOG_TEST(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
             if (result_range.begin < result_range.end)
             {
@@ -2244,7 +3011,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
-                        if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
+                        const size_t num_unevaluable_before = KeyCondition::getNumUnevaluableChainApplications();
+                        const bool exact_range_can_be_false
+                            = check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false;
+                        /// A monotonic function chain that could not be evaluated on the range answers "unknown":
+                        /// an over-approximation that supports no exactness claim and contradicts none either.
+                        const bool exact_range_unevaluable
+                            = KeyCondition::getNumUnevaluableChainApplications() != num_unevaluable_before;
+
+                        if (exact_range_unevaluable)
+                        {
+                            /// Neither an exact range nor an inconsistency.
+                        }
+                        else if (exact_range_can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
                             /// range doesn't seem to be continuous. Something's broken - most likely a
@@ -2259,33 +3038,47 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                             /// The thrown message is deliberately kept constant: CI derives the failure's name
                             /// from the exception's format string, so the details go to the log instead of the
                             /// message to keep failures grouped under a single stable name.
+                            ///
+                            /// The check only means something when the in-memory index resolves every key column
+                            /// the filter uses. Otherwise the unloaded columns were analysed as constant
+                            /// coordinates, so an interior granule can legitimately hold rows the filter rejects
+                            /// even though the condition itself describes one continuous key range - the exact
+                            /// range is then simply dropped, the same as in a release build.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+                            /// An upper bound holding a nested NULL breaks the same assumption in its own
+                            /// way: it is widened to `+inf`, so an interior granule of a continuous range
+                            /// is no longer claimed to match wholly.
 #ifndef NDEBUG
-                            auto describe_condition = [](const KeyCondition & condition)
+                            if (used_key_prefix_loaded_in_memory && !boundary_pair_inexact)
                             {
-                                return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
-                            };
+                                auto describe_condition = [](const KeyCondition & condition)
+                                {
+                                    return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
+                                };
 
-                            String conditions_description = fmt::format(
-                                "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
-                            if (part_offset_condition_useful)
-                                conditions_description += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
-                            if (total_offset_condition_useful)
-                                conditions_description += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
+                                String conditions_description = fmt::format(
+                                    "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
+                                if (part_offset_condition_useful)
+                                    conditions_description
+                                        += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
+                                if (total_offset_condition_useful)
+                                    conditions_description
+                                        += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
 
-                            LOG_ERROR(
-                                log,
-                                "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
-                                "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
-                                "not exactly continuous. This is most likely caused by a function reporting inaccurate "
-                                "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
-                                "Participating conditions: {}",
-                                result_range.begin, result_range.end,
-                                result_exact_range.begin, result_exact_range.end,
-                                part_name,
-                                conditions_description);
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
+                                LOG_ERROR(
+                                    log,
+                                    "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
+                                    "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
+                                    "not exactly continuous. This is most likely caused by a function reporting inaccurate "
+                                    "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
+                                    "Participating conditions: {}",
+                                    result_range.begin, result_range.end,
+                                    result_exact_range.begin, result_exact_range.end,
+                                    part_name,
+                                    conditions_description);
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
+                            }
 #endif
                         }
                         else
@@ -2307,8 +3100,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
-    const std::optional<KeyCondition> & key_condition_rpn_template,
-    MergeTreeData::DataPartPtr part,
+    const KeyCondition * key_condition_rpn_template,
+    const MergeTreeDataPartInfoForReaderPtr & part_info,
     const MarkRanges & ranges,
     const RangesInDataPartReadHints & in_read_hints,
     const MergeTreeReaderSettings & reader_settings,
@@ -2319,10 +3112,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName(), &part->getDataPartStorage()))
+    if (!index_helper->getDeserializedFormat(*part_info, index_helper->getFileName()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
-            (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
+            (fs::path(part_info->getDataPartStorage()->getFullPath()) / index_helper->getFileName()).string());
         return {ranges, in_read_hints};
     }
 
@@ -2330,13 +3123,15 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
 
     auto skip_index_granularity = index_helper->index.granularity;
-    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    const auto & index_granularity = part_info->getIndexGranularity();
+    size_t marks_count = index_granularity.getMarksCountWithoutFinal();
 
+    const auto & index_granularity_info = part_info->getIndexGranularityInfo();
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         reader_settings.merge_tree_min_rows_for_seek,
         reader_settings.merge_tree_min_bytes_for_seek,
-        part->index_granularity_info.fixed_index_granularity,
-        part->index_granularity_info.index_granularity_bytes);
+        index_granularity_info.fixed_index_granularity,
+        index_granularity_info.index_granularity_bytes);
 
     /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
     /// (the vector index is built on the entire part).
@@ -2356,32 +3151,36 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     MergeTreeIndexReader reader(
-        index_helper, part,
-        part->index_granularity->getMarksCountForSkipIndex(skip_index_granularity),
+        index_helper, part_info,
+        index_granularity.getMarksCountForSkipIndex(skip_index_granularity),
         index_ranges,
         mark_cache,
         uncompressed_cache,
         vector_similarity_index_cache,
-        reader_settings);
+        reader_settings,
+        /*interruptible_marks_read=*/ true);
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
     RangesInDataPartReadHints read_hints = in_read_hints;
+    if (index_helper->isVectorSimilarityIndex())
+        read_hints.vector_search_results.reset();
 
     auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
     {
         if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
         {
-            const size_t max_position = std::min(key_condition_rpn_template->getRPN().size(), MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT);
-            return [range_begin, max_position, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            /// One bit per element of the RPN template per mark.
+            const size_t rpn_size = key_condition_rpn_template->getRPN().size();
+            return [range_begin, rpn_size, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
             {
                 /// Index conditions may have extra condition-local RPN nodes after rewrites.
                 /// `mergePartialResultsForDisjunctions` reads only positions from
                 /// `key_condition_rpn_template`, so leave extra positions at the default.
-                if (is_unknown || position >= max_position)
+                if (is_unknown || position >= rpn_size)
                     return;
 
-                const auto bit_index = (range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position;
+                const auto bit_index = (range_begin * rpn_size) + position;
                 if (bit_index >= partial_disjunction_result.size())
                 {
                     throw Exception(
@@ -2402,27 +3201,70 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
-        for (const auto & range : ranges)
+        auto may_be_true_on_range = [&](size_t mark_begin, size_t mark_end, auto && disjunction_result_fn) -> bool
         {
-            for (size_t mark = range.begin; mark < range.end; ++mark)
+            size_t row_begin = index_granularity.getMarkStartingRow(mark_begin);
+            size_t row_end = index_granularity.getMarkStartingRow(mark_end);
+
+            if (row_begin == row_end)
+                return false;
+
+            granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
+            return condition->mayBeTrueOnGranule(granule, disjunction_result_fn);
+        };
+
+        if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
+        {
+            /// The disjunction analysis needs partial results for every mark, so check all marks one by one.
+            for (const auto & range : ranges)
             {
-                size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
-                size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
-
-                if (row_begin == row_end)
-                    continue;
-
-                granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
-                bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(mark));
-
-                if (may_be_true)
+                for (size_t mark = range.begin; mark < range.end; ++mark)
                 {
-                    if (res.empty() || mark - res.back().end > min_marks_for_seek)
-                        res.push_back(MarkRange(mark, mark + 1));
-                    else
-                        res.back().end = mark + 1;
+                    if (may_be_true_on_range(mark, mark + 1, create_update_partial_disjunction_result_fn(mark)))
+                    {
+                        if (res.empty() || mark - res.back().end > min_marks_for_seek)
+                            res.push_back(MarkRange(mark, mark + 1));
+                        else
+                            res.back().end = mark + 1;
+                    }
                 }
             }
+        }
+        else
+        {
+            /// The per-query checks in mayBeTrueOnGranule are monotone with respect to the row range:
+            /// if the condition cannot be true on a range, it cannot be true on any of its subranges.
+            /// So run an exclusion search like for the primary key: it drops a whole range as soon
+            /// as the check proves that the range has no matches and descends into subranges otherwise.
+
+            if (reader_settings.merge_tree_coarse_index_granularity <= 1)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Setting merge_tree_coarse_index_granularity should be greater than 1");
+
+            GenericExclusionSearchSettings search_settings
+            {
+                .coarse_index_granularity = reader_settings.merge_tree_coarse_index_granularity,
+                .max_steps = reader_settings.merge_tree_generic_exclusion_search_max_steps,
+                .min_marks_for_seek = min_marks_for_seek,
+            };
+
+            auto check_in_range = [&may_be_true_on_range](const MarkRange & mark_range)
+            {
+                return BoolMask(may_be_true_on_range(mark_range.begin, mark_range.end, nullptr), true);
+            };
+
+            auto search_result = genericExclusionSearch(ranges, check_in_range, search_settings, /*collect_exact_ranges=*/ false);
+            res = std::move(search_result.ranges);
+
+            ProfileEvents::increment(ProfileEvents::TextIndexGenericExclusionSearchAlgorithm);
+            if (search_result.reached_step_limit)
+                ProfileEvents::increment(ProfileEvents::TextIndexGenericExclusionSearchStepLimitReached);
+
+            LOG_TRACE(
+                log,
+                "Used generic exclusion search over text index for part {} with {} steps{}",
+                part_info->getPartName(),
+                search_result.num_steps,
+                search_result.reached_step_limit ? " (step limit reached, remaining ranges were accepted without further splitting)" : "");
         }
 
         read_hints.index_granules[index_helper->index.name] = std::move(granule);
@@ -2498,10 +3340,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
+                    auto vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
                     /// We need to sort the result ranges ascendingly
-                    auto rows = read_hints.vector_search_results.value().rows;
+                    auto rows = vector_search_results.rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
@@ -2509,12 +3351,37 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!(read_hints.vector_search_results.value().distances.has_value()))
+                    if (!vector_search_results.distances.has_value())
+                    {
                         read_hints = {};
+                    }
+                    else
+                    {
+                        const auto & distances = vector_search_results.distances.value();
+                        if (vector_search_results.rows.size() != distances.size())
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Vector search read hints size mismatch: {} row offsets and {} distances",
+                                vector_search_results.rows.size(),
+                                distances.size());
+
+                        auto & accumulated_results = read_hints.vector_search_results;
+                        if (!accumulated_results.has_value())
+                            accumulated_results.emplace();
+                        if (!accumulated_results->distances.has_value())
+                            accumulated_results->distances.emplace();
+
+                        const size_t first_row_in_index_granule = index_granularity.getMarkStartingRow(index_mark * skip_index_granularity);
+                        for (size_t result_pos = 0; result_pos < vector_search_results.rows.size(); ++result_pos)
+                        {
+                            accumulated_results->rows.push_back(first_row_in_index_granule + vector_search_results.rows[result_pos]);
+                            accumulated_results->distances->push_back(distances[result_pos]);
+                        }
+                    }
 
                     for (auto row : rows)
                     {
-                        size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
+                        size_t num_marks = index_granularity.countMarksForRows(index_mark * skip_index_granularity, row);
 
                         MarkRange data_range(
                             std::max(ranges[i].begin, (index_mark * skip_index_granularity) + num_marks),
@@ -2594,7 +3461,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part_or_projection).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -2616,7 +3483,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
 
 /// Read and return index granules from a minmax index.
 MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
-    MergeTreeData::DataPartPtr part,
+    const MergeTreeDataPartInfoForReaderPtr & part_info,
     MergeTreeIndexPtr skip_index_minmax,
     const MarkRanges & ranges,
     int direction,
@@ -2626,13 +3493,14 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
-    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName(), &part->getDataPartStorage()))
+    if (!skip_index_minmax->getDeserializedFormat(*part_info, skip_index_minmax->getFileName()))
     {
         return nullptr;
     }
 
     auto skip_index_granularity = skip_index_minmax->index.granularity;
-    auto part_marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    const auto & index_granularity = part_info->getIndexGranularity();
+    auto part_marks_count = index_granularity.getMarksCountWithoutFinal();
 
     MarkRanges index_ranges;
     for (const auto & range : ranges)
@@ -2645,13 +3513,14 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
 
     MergeTreeIndexReader reader(
             skip_index_minmax,
-            part,
-            part->index_granularity->getMarksCountForSkipIndex(skip_index_granularity),
+            part_info,
+            index_granularity.getMarksCountForSkipIndex(skip_index_granularity),
             index_ranges,
             mark_cache,
             uncompressed_cache,
             vector_similarity_index_cache,
-            reader_settings);
+            reader_settings,
+            /*interruptible_marks_read=*/ true);
 
     auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
                                     skip_index_minmax->index.sample_block, skip_index_granularity, direction,
@@ -2668,6 +3537,12 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     return min_max_granules;
 }
 
+bool MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(size_t rpn_size, const Settings & settings)
+{
+    const UInt64 max_rpn_elements = settings[Setting::use_skip_indexes_for_disjunctions_max_rpn_elements];
+    return max_rpn_elements == 0 || rpn_size <= max_rpn_elements;
+}
+
 /// Evaluate the predicate condition using the saved partial results.
 /// e.g (A = 5 OR (B = 5 AND C = 5))
 /// For each range, we have saved the results of evaluation with
@@ -2676,7 +3551,7 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
 /// rpn_template_for_eval_result is a "template" only. Hence the code
 /// below only processes 5 specific RPNElement types.
 MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
-    MergeTreeData::DataPartPtr part,
+    const IMergeTreeDataPartInfoForReader & part_info,
     const MarkRanges & ranges,
     const KeyCondition & rpn_template_for_eval_result,
     const PartialDisjunctionResult & partial_eval_results,
@@ -2688,16 +3563,25 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
     auto rpn_template_for_eval_result_string = rpn_template_for_eval_result.toString();
 
     LOG_DEBUG(log, "Entered mergePartialResultsForDisjunctions for part {}, rpn = {}",
-              part->name, rpn_template_for_eval_result_string);
+              part_info.getPartName(), rpn_template_for_eval_result_string);
 
+    const auto & index_granularity_info = part_info.getIndexGranularityInfo();
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
                 reader_settings.merge_tree_min_rows_for_seek,
                 reader_settings.merge_tree_min_bytes_for_seek,
-                part->index_granularity_info.fixed_index_granularity,
-                part->index_granularity_info.index_granularity_bytes);
+                index_granularity_info.fixed_index_granularity,
+                index_granularity_info.index_granularity_bytes);
 
     /// Evaluate the RPN over all the ranges.
     auto rpn = rpn_template_for_eval_result.getRPN();
+
+    /// One bit per element of the RPN template per mark, see `filterPartsByPrimaryKeyAndSkipIndexes`.
+    const size_t marks_count = part_info.getIndexGranularity().getMarksCountWithoutFinal();
+    if (partial_eval_results.size() != marks_count * rpn.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Partial disjunction results have {} bits, expected {} marks * {} RPN elements, RPN = {}",
+            partial_eval_results.size(), marks_count, rpn.size(), rpn_template_for_eval_result_string);
+
     std::vector<bool> rpn_stack;
     for (auto range : ranges)
     {
@@ -2709,7 +3593,7 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
             {
                 if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
                 {
-                    rpn_stack.emplace_back(partial_eval_results[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position]);
+                    rpn_stack.emplace_back(partial_eval_results[(range_begin * rpn.size()) + position]);
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
                 {

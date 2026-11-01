@@ -2,6 +2,20 @@
 
 # This scripts transforms the output of clang's -ftime-trace JSON files into a format to upload to ClickHouse
 
+# Stop at the first extraction error. A partially extracted profile is worse
+# than no profile at all: the "Build profile diff" check would compare
+# truncated PR data against a complete master baseline and report the missing
+# translation units, objects or symbols as new, removed or unchanged instead of
+# failing the build. `pipefail` also propagates a failure of `jq` or `nm` from
+# the middle of a pipeline, and `xargs` turns a failing child into exit code
+# 123, which `set -e` then turns into a failure of the whole script.
+#
+# Stages that may legitimately select nothing - `grep` exits 1 when a build
+# compiled nothing, has no objects, or an object has no reportable symbols -
+# guard that single stage with `|| true`, so only real failures abort.
+set -e
+set -o pipefail
+
 # Example:
 #   mkdir time_trace
 #   utils/prepare-time-trace/prepare-time-trace.sh build time_trace
@@ -44,7 +58,15 @@ ORDER BY (date, file, name, args_name);
 INPUT_DIR=$1
 OUTPUT_DIR=$2
 
-find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace$' | xargs -P "$(nproc)" -I{} bash -c "
+# A build that was a complete compiler-cache hit compiles nothing and emits no
+# raw trace file at all - that is legitimate, unlike a failing extraction.
+TRACE_FILES=$(find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | { grep -P '\.(c|cpp|cc|cxx)\.json|\.time-trace$' || true; })
+
+if [[ -n "$TRACE_FILES" ]]
+then
+    echo "$TRACE_FILES" | xargs -P "$(nproc)" -I{} bash -c "
+    set -e
+    set -o pipefail
 
     ORIGINAL_FILENAME=\$(echo '{}' | sed -r -e 's!\.(json|time-trace)\$!!; s!/CMakeFiles/[^/]+\.dir!!')
     LIBRARY_NAME=\$(echo '{}' | sed -r -e 's!^.*/CMakeFiles/([^/]+)\.dir/.*\$!\1!')
@@ -52,6 +74,7 @@ find "$INPUT_DIR" -name '*.json' -or -name '*.time-trace' | grep -P '\.(c|cpp|cc
 
     jq -c '.traceEvents[] | [\"'\"\$ORIGINAL_FILENAME\"'\", \"'\"\$LIBRARY_NAME\"'\", '\$START_TIME', .pid, .tid, .ph, .ts, .dur, .cat, .name, .args.detail, .args.count, .args[\"avg ms\"], .args.name]' '{}' > \"${OUTPUT_DIR}/\$\$\"
 "
+fi
 
 # Now you can upload it as follows:
 
@@ -83,7 +106,7 @@ ORDER BY (date, file, pull_request_number, commit_sha, check_name);
 
 # xargs -r: with no matching objects (cross-arch/non-Linux builds) emit no row at
 # all, instead of GNU xargs running 'wc -c' once with no args and writing '0'.
-find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | grep -v cargo | xargs -r wc -c | grep -v 'total' > "${OUTPUT_DIR}/binary_sizes.txt"
+find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | { grep -v cargo || true; } | xargs -r wc -c | { grep -v 'total' || true; } > "${OUTPUT_DIR}/binary_sizes.txt"
 
 # Additionally, collect information about the symbols inside translation units
 true<<///
@@ -111,20 +134,43 @@ ENGINE = MergeTree
 ORDER BY (date, file, symbol, pull_request_number, commit_sha, check_name);
 ///
 
+# Find the best alternative of nm
+for name in llvm-nm-{30..18} llvm-nm nm
+do
+    # `|| true`: an absent candidate is expected, not an error.
+    NM=$(command -v ${name} || true)
+    [[ -n "${NM}" ]] && break
+done
+
 # nm does not work with LTO
 if ! grep -q -- '-flto' "$INPUT_DIR/compile_commands.json"
 then
-    # Find the best alternative of nm
-    for name in llvm-nm-{30..18} llvm-nm nm
-    do
-        NM=$(command -v ${name})
-        [[ -n "${NM}" ]] && break
-    done
-
-    find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | xargs -P $(nproc) -I {} bash -c "
-      ${NM} --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
+    find "$INPUT_DIR" -type f -name '*.o' | { grep -v cargo || true; } | xargs -r -P $(nproc) -I {} bash -c "
+      set -e
+      set -o pipefail
+      ${NM} --demangle --defined-only --print-size '{}' | { grep -v -P '[0-9a-zA-Z] r ' || true; } | sed 's@^@{} @' > '{}.symbols'
     "
 
     # xargs -r: with no '*.o.symbols' files emit nothing rather than running cat once.
     find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs -r cat > "${OUTPUT_DIR}/binary_symbols.txt"
+fi
+
+# Also collect the symbols of the final linked binaries. Unlike the per-object
+# pass above this works for (Thin)LTO builds too - the symbol table of the
+# linked binary is what the compiled code actually looks like after LTO - and
+# it attributes the size of the shipped binary to individual functions and
+# template instantiations.
+if [[ -n "${NM}" ]]
+then
+    for binary in programs/clickhouse programs/clickhouse-keeper
+    do
+        # Skip symlinks: clickhouse-keeper may be a symlink to clickhouse when
+        # it is not built standalone, and its symbols would be duplicates.
+        if [[ -f "$INPUT_DIR/$binary" && ! -L "$INPUT_DIR/$binary" ]]
+        then
+            ${NM} --demangle --defined-only --print-size "$INPUT_DIR/$binary" \
+                | { grep -v -P '[0-9a-zA-Z] r ' || true; } \
+                | sed "s@^@$INPUT_DIR/$binary @" >> "${OUTPUT_DIR}/binary_symbols.txt"
+        fi
+    done
 fi

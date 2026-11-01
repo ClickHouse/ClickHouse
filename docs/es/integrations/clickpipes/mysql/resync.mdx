@@ -32,10 +32,11 @@ Toda la configuración del ClickPipe original se conserva en el ClickPipe de res
 Estos son algunos escenarios:
 
 1. Puede que necesites hacer cambios importantes en el esquema de las tablas de origen que rompan el ClickPipe existente y obliguen a reiniciarlo. Solo tienes que hacer clic en Resync después de realizar los cambios.
-2. En ClickHouse en particular, puede que hayas tenido que cambiar las claves de ORDER BY de las tablas de destino. Puedes hacer Resync para volver a cargar los datos en la nueva tabla con la clave de ordenación correcta.
+2. En ClickHouse en particular, puede que hayas necesitado actualizar los valores de las columnas de ORDER BY de las tablas de destino. Puedes hacer Resync para volver a cargar los datos en la nueva tabla con la clave de ordenación correcta.
 
 <Note>
-  Puedes hacer Resync varias veces; sin embargo, ten en cuenta la carga en la base de datos de origen cuando lo hagas.
+  Puedes hacer Resync varias veces; sin embargo, ten en cuenta la carga en la base de datos de origen cuando lo hagas,
+  ya que cada vez implica una carga inicial con hilos paralelos.
 </Note>
 
 <div id="guide-mysql-resync">
@@ -51,6 +52,6 @@ Estos son algunos escenarios:
 4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic de nuevo en **Resync**.
 5. Ve a la pestaña **Metrics**.
 6. En unos 5 segundos (y también al actualizar la página), el estado del pipe debería ser **Setup** o **Snapshot**.
-7. La carga inicial del Resync puede supervisarse en la pestaña **Tables**, en la sección **Initial Load Stats**.
+7. La carga inicial del Resync puede supervisarse en la pestaña **Tables** - en la sección **Initial Load Stats**.
 8. Una vez completada la carga inicial, el pipe intercambiará de forma atómica las tablas `_resync` por las tablas originales. Durante el intercambio, el estado será **Resync**.
 9. Una vez completado el intercambio, el pipe pasará al estado **Running** y realizará CDC si está habilitado.

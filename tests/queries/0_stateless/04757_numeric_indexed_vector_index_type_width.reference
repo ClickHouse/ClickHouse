@@ -1,0 +1,5 @@
+1	1
+small	7	7
+promoted	7	7
+zero then non-zero, Int8	3	3
+zero then non-zero, UInt8	3	3

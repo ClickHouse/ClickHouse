@@ -8,6 +8,15 @@
 namespace DB
 {
 
+std::string toIcebergMetadataCompressionExtension(CompressionMethod method)
+{
+    /// Iceberg only defines gzip compression for metadata files, and its file
+    /// extension is "gz" (org.apache.iceberg.TableMetadataParser.Codec).
+    if (method == CompressionMethod::Gzip)
+        return "gz";
+    return toContentEncodingName(method);
+}
+
 FileNamesGenerator::FileNamesGenerator(
     const String & table_location_,
     bool use_uuid_in_metadata_,
@@ -69,7 +78,7 @@ Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateManifestListName(In
 
 GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
 {
-    auto compression_suffix = toContentEncodingName(compression_method);
+    auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
     auto used_version = initial_version++;

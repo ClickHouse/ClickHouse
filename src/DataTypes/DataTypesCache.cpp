@@ -1,8 +1,16 @@
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsTimezone session_timezone;
+}
 
 namespace ErrorCodes
 {
@@ -124,8 +132,48 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     return getCacheElement(type_name).serialization;
 }
 
-const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name)
+SerializationPtr DataTypesCache::getSerialization(const String & type_name, const DataTypePtr & type)
 {
+    /// Check the thread-local cache of simple types first.
+    if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
+        return elem->serialization;
+
+    return getCacheElement(type_name, &type).serialization;
+}
+
+void DataTypesCache::clearIfQueryContextChanged()
+{
+    ContextPtr current_query_context = CurrentThread::tryGetQueryContext();
+
+    /// Owner-based identity comparison. It does not lock the weak_ptr, and since we hold
+    /// the weak_ptr (keeping the control block alive), an expired context cannot be
+    /// confused with a new one allocated at the same address.
+    bool same_query_context = !query_context.owner_before(current_query_context) && !current_query_context.owner_before(query_context);
+
+    /// Context identity is not enough: clickhouse-client keeps one long-lived client context
+    /// (attached to the client thread by a single query scope) for the whole session and
+    /// mutates `session_timezone` in place between queries (see `ClientBase::onTimezoneUpdate`),
+    /// so also track the value of the setting the cached types may have captured.
+    const String * current_session_timezone
+        = current_query_context ? &current_query_context->getSettingsRef()[Setting::session_timezone].value : nullptr;
+    bool same_session_timezone
+        = current_session_timezone ? *current_session_timezone == session_timezone : session_timezone.empty();
+
+    if (same_query_context && same_session_timezone)
+        return;
+
+    /// The thread is now serving a different query, or `session_timezone` changed in place
+    /// on the same context. Cached types/serializations may depend on the previous query's
+    /// context (e.g. `session_timezone` captured by DateTime types), so they must not be reused.
+    cache.clear();
+    query_context = current_query_context;
+    session_timezone = current_session_timezone ? *current_session_timezone : String();
+}
+
+const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name, const DataTypePtr * known_type)
+{
+    clearIfQueryContextChanged();
+
     auto it = cache.find(type_name);
     if (it != cache.end())
         return it->second;
@@ -134,7 +182,7 @@ const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & t
     if (cache.size() >= MAX_ELEMENTS)
         cache.clear();
 
-    auto type = DataTypeFactory::instance().get(type_name);
+    auto type = known_type ? *known_type : DataTypeFactory::instance().get(type_name);
     it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
     return it->second;
 }

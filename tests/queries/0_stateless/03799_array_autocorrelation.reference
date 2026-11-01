@@ -165,3 +165,39 @@ SELECT arrayAutocorrelation([NULL, 1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMEN
 SELECT arrayAutocorrelation(CAST([1, 2, 3], 'Array(BFloat16)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayAutocorrelation(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT arrayAutocorrelation([1], 2, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '--- Non-empty Array(Nothing) ---';
+--- Non-empty Array(Nothing) ---
+SELECT arrayAutocorrelation([arrayMax([])]); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation([arrayMax([]), arrayMin([])]); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation(array(arrayMax([]))); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation([arrayMax(materialize([]))]); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation(materialize([arrayMax([])])); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation(if(1, [arrayMax([])], [arrayMax([])])); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation([arrayMax([])], 0); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation(a) FROM (SELECT [arrayMax([])] AS a); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation(a) FROM (SELECT [arrayMax([])] AS a FROM numbers(3)); -- { serverError ILLEGAL_COLUMN }
+-- Constant folding rejects it even when the query yields no rows
+SELECT arrayAutocorrelation([arrayMax([])]) FROM numbers(0); -- { serverError ILLEGAL_COLUMN }
+-- Non-const max_lag keeps the array constant, exercising the const path
+SELECT arrayAutocorrelation([arrayMax([])], materialize(1)); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation([arrayMax([]), arrayMin([])], materialize(5)); -- { serverError ILLEGAL_COLUMN }
+SELECT arrayAutocorrelation([arrayMax([])], materialize(0)); -- { serverError ILLEGAL_COLUMN }
+SELECT '--- Empty Array(Nothing) ---';
+--- Empty Array(Nothing) ---
+SELECT arrayAutocorrelation([], materialize(1));
+[]
+SELECT arrayAutocorrelation([], 5);
+[]
+SELECT arrayAutocorrelation(materialize([]));
+[]
+SELECT arrayAutocorrelation(materialize([]), materialize(2));
+[]
+SELECT arrayAutocorrelation(materialize([])) FROM numbers(3);
+[]
+[]
+[]
+SELECT arrayAutocorrelation(a) FROM (SELECT materialize([]) AS a FROM numbers(2));
+[]
+[]
+SELECT arrayAutocorrelation([NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayAutocorrelation([[arrayMax([])]]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

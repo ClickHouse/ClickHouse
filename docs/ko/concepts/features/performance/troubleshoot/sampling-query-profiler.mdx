@@ -11,7 +11,9 @@ ClickHouse는 쿼리 실행을 분석할 수 있는 샘플링 프로파일러를
 유휴 시간을 포함한 CPU 시간과 wall-clock time을 추적할 수 있습니다.
 
 ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니다.
-다음 예시 쿼리는 함수 이름과 소스 위치가 확인된 상태로, 프로파일링된 쿼리에서 가장 자주 나타나는 스택 트레이스를 찾습니다:
+다음 예시 쿼리는 함수 이름과 소스 위치가 확인된 상태로, 프로파일링된 쿼리에서 가장 자주 나타나는 스택 트레이스를 찾습니다.
+
+기본적으로 프로파일러는 수집 시점에 스택 트레이스를 심볼화하고 결과를 [`system.trace_log`](/ko/reference/system-tables/trace_log)의 `symbols` 및 `lines` 컬럼에 저장하므로, 아래 예시는 이 컬럼을 직접 읽으며 인트로스펙션 함수를 필요로 하지 않습니다. 심볼화는 `trace_log` 서버 구성 섹션의 `symbolize` 설정으로 제어되며(기본적으로 활성화됨), ELF 플랫폼(Linux 등)과 macOS에서 지원됩니다. FreeBSD에서는 `symbols` 및 `lines` 컬럼이 항상 비어 있습니다. `symbols`의 함수 이름은 바이너리의 심볼 테이블에서 가져오며 기본적으로 사용할 수 있습니다. `lines`의 소스 위치는 가능한 범위에서 제공됩니다. 이를 위해서는 디버그 정보가 필요하며(macOS에서는 바이너리 옆의 `.dSYM` 번들), ELF 플랫폼에서는 기본 ClickHouse 바이너리 내부의 프레임만 확인되므로 확인할 수 없는 프레임(예: 공유 라이브러리 내부)의 항목은 비어 있게 됩니다. 심볼화가 비활성화된 경우에는 `addressToSymbol`, `demangle`, `addressToLine` [인트로스펙션 함수](/ko/reference/functions/regular-functions/introspection)를 사용하여 대신 `trace` 컬럼의 원시 주소를 확인하십시오. 이 함수는 심볼화와 동일한 플랫폼(예: Linux의 ELF 플랫폼 및 macOS)에서 사용할 수 있습니다. FreeBSD에서는 이 함수들 또한 컴파일되지 않으므로 `trace`의 주소는 서버 외부에서 확인해야 합니다.
 
 <Tip>
   `query_id` 값을 프로파일링할 쿼리의 ID로 바꾸십시오.
@@ -26,13 +28,12 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM clusterAllReplicas(default, system.trace_log)
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 
@@ -40,13 +41,12 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM system.trace_log
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 </Tabs>
@@ -58,9 +58,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
 자가 관리형 배포에서 쿼리 프로파일러를 사용하려면 아래 단계를 따르십시오.
 
 <Steps>
-  <Step>
-    ### 디버그 정보와 함께 ClickHouse 설치
-
+  <Step title="디버그 정보와 함께 ClickHouse 설치" id="debug-info">
     `clickhouse-common-static-dbg` 패키지를 설치하십시오:
 
     1. [&quot;Debian 리포지토리 설정&quot;](/ko/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository) 단계의 지침을 따르십시오
@@ -69,14 +67,12 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     4. `clickhouse-client`를 실행하십시오. `clickhouse-common-static-dbg`의 디버그 심볼은 서버에서 자동으로 인식되므로 이를 활성화하기 위해 별도로 수행할 작업은 없습니다
   </Step>
 
-  <Step>
-    ### 서버 구성 확인
-
-    [서버 설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)의 [`trace_log`](/ko/reference/settings/server-settings/settings#trace_log) 섹션이 구성되어 있는지 확인하십시오. 기본적으로 활성화되어 있습니다:
+  <Step title="서버 구성 확인" id="server-config">
+    [서버 설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)의 [`trace_log`](/ko/reference/settings/server-settings/settings/other#trace_log) 섹션이 구성되어 있는지 확인하십시오. 기본적으로 활성화되어 있습니다:
 
     ```xml
-    <!-- Trace 로그. 쿼리 프로파일러가 수집한 스택 트레이스를 저장합니다.
-         query_profiler_real_time_period_ns 및 query_profiler_cpu_time_period_ns 설정을 참조하십시오. -->
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>
@@ -86,21 +82,25 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <!-- 충돌 발생 시 로그를 디스크에 덤프할지 여부를 나타냅니다 -->
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
         <symbolize>true</symbolize>
     </trace_log>
     ```
 
     이 섹션은 프로파일러 동작 결과를 포함하는 [trace&#95;log](/ko/reference/system-tables/trace_log) 시스템 테이블을 구성합니다.
-    이 테이블의 데이터는 서버가 실행 중일 때만 유효하다는 점에 유의하십시오.
-    서버를 재시작한 후에도 ClickHouse는 이 테이블을 정리하지 않으므로 저장된 모든 가상 메모리 주소가 유효하지 않게 될 수 있습니다.
+    기본적으로 활성화된 `symbolize` 옵션을 사용하면 ClickHouse가 수집 시점에 각 스택 프레임을 해석하고 디맹글된 함수 이름과 소스 위치를 `symbols` 및 `lines` 컬럼에 저장합니다.
+    `symbols`의 함수 이름은 심볼 테이블에서 가져오며 기본적으로 사용할 수 있지만, `lines`의 소스 위치를 확인하려면 디버그 정보(macOS에서는 `.dSYM` 번들)가 필요합니다. 또한 ELF 플랫폼에서는 기본 ClickHouse 바이너리 내부의 프레임에 대해서만 해석되며, 해석되지 않은 프레임의 `lines` 항목은 비어 있습니다.
+
+    `trace` 컬럼의 원시 주소는 사전 심볼화된 컬럼보다 재시작 및 업그레이드 간 안정성이 낮다는 점에 유의하십시오.
+    FreeBSD를 제외한 ELF 플랫폼에서는 기본 ClickHouse 바이너리의 프레임이 물리적 파일 오프셋으로 저장되므로 바이너리가 변경되지 않는 한 재시작 후에도 해석할 수 있습니다. macOS와 FreeBSD에서는 재시작 후 유효하지 않을 수 있는 런타임 가상 주소로 저장됩니다.
+    기본 바이너리 외부의 프레임(예: 공유 라이브러리 내부)은 항상 재시작 후 유효하지 않을 수 있는 런타임 가상 주소로 저장되며, 코드 레이아웃이 변경되므로 바이너리 업그레이드 후에는 모든 원시 주소를 해석할 수 없게 됩니다.
+    ClickHouse는 재시작 시 테이블을 정리하지 않으므로 오래된 원시 주소가 남아 있을 수 있습니다.
+    반면 사전 심볼화된 `symbols` 및 `lines` 컬럼은 재시작과 업그레이드 후에도 유효하게 유지되므로, 기록 데이터를 분석할 때 이를 우선적으로 사용하십시오.
   </Step>
 
-  <Step>
-    ### 프로파일 타이머 구성
-
-    [`query_profiler_cpu_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 또는 [`query_profiler_real_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_real_time_period_ns) 설정을 구성하십시오.
+  <Step title="프로파일 타이머 구성" id="configure-profile-timers">
+    [`query_profiler_cpu_time_period_ns`](/ko/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) 또는 [`query_profiler_real_time_period_ns`](/ko/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns) 설정을 구성하십시오.
     두 설정은 동시에 사용할 수 있습니다.
 
     이 설정을 사용하면 프로파일러 타이머를 구성할 수 있습니다.
@@ -111,10 +111,13 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     개별 쿼리마다 프로파일링해야 한다면 더 높은 샘플링 주기를 사용하십시오.
   </Step>
 
-  <Step>
-    ### `trace_log` 시스템 테이블 분석
+  <Step title={<>Analyze the <code>trace_log</code> system table</>} id="analyze-trace-log-system-table">
+    특정 쿼리의 프로파일을 얻으려면 `trace_log` 테이블의 데이터를 집계해야 합니다.
+    개별 함수별로 또는 전체 스택 트레이스별로 데이터를 집계할 수 있습니다.
 
-    `trace_log` 시스템 테이블을 분석하려면 [`allow_introspection_functions`](/ko/reference/settings/session-settings#allow_introspection_functions) 설정으로 인트로스펙션 함수를 허용하십시오:
+    심볼화가 활성화된 경우(기본값), 디맹글된 함수 이름과 소스 위치는 이미 `symbols` 및 `lines` 컬럼에서 사용할 수 있으므로 추가 설정이 필요하지 않습니다. FreeBSD에서는 심볼화가 지원되지 않으며, 이 컬럼들은 항상 비어 있습니다. 디버그 정보가 없거나 기본 ClickHouse 바이너리 범위 밖에 있는 프레임의 경우 `lines` 항목이 비어 있을 수 있습니다([위](#server-config) 참조).
+
+    심볼화가 비활성화되어 있거나 `trace` 컬럼의 원시 주소를 즉시 확인하려는 경우(예: 인라인 프레임 확장), [`allow_introspection_functions`](/ko/reference/settings/session-settings/allow#allow_introspection_functions) 설정으로 인트로스펙션 함수를 허용하십시오:
 
     ```sql
     SET allow_introspection_functions=1
@@ -124,9 +127,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
       보안상의 이유로 인트로스펙션 함수는 기본적으로 비활성화되어 있습니다
     </Note>
 
-    함수 이름과 ClickHouse 코드 내 위치를 확인하려면 `addressToLine`, `addressToLineWithInlines`, `addressToSymbol`, `demangle` [인트로스펙션 함수](/ko/reference/functions/regular-functions/introspection)를 사용하십시오.
-    특정 쿼리의 프로파일을 얻으려면 `trace_log` 테이블의 데이터를 집계해야 합니다.
-    개별 함수별로 또는 전체 스택 트레이스별로 데이터를 집계할 수 있습니다.
+    함수 이름과 ClickHouse 코드 내 위치를 확인하려면 `addressToLine`, `addressToLineWithInlines`, `addressToSymbol`, `demangle` [인트로스펙션 함수](/ko/reference/functions/regular-functions/introspection)를 사용하십시오. 심볼화와 마찬가지로 이 함수들은 ELF 플랫폼(예: Linux)과 macOS에서 사용할 수 있지만 FreeBSD에서는 사용할 수 없습니다.
 
     <Tip>
       `trace_log` 정보를 시각화해야 한다면 [flamegraph](/ko/integrations/connectors/tools/gui#clickhouse-flamegraph)와 [speedscope](https://www.speedscope.app)를 사용해 보십시오.
@@ -314,18 +315,18 @@ clickhouse client --allow_introspection_functions=1 \
   ## 예시
 </div>
 
-아래 코드 스니펫은 다음 작업을 수행합니다.
+아래 코드 조각은 다음을 수행합니다.
 
-* `trace_log` 데이터를 쿼리 식별자와 현재 날짜를 기준으로 필터링합니다.
-* 스택 트레이스별로 집계합니다.
-* 다음 보고서를 얻기 위해 인트로스펙션 함수를 사용합니다.
-  * 심볼 이름과 이에 대응하는 소스 코드 함수 이름
+* 쿼리 식별자와 현재 날짜를 기준으로 `trace_log` 데이터를 필터링합니다.
+* 미리 심볼화된 `symbols` 및 `lines` 컬럼을 읽어 다음 내용을 담은 보고서를 생성합니다.
+  * 심볼 이름과 해당 소스 코드 함수
   * 이러한 함수의 소스 코드 위치
+* 원시 스택 트레이스(`trace` 컬럼)를 기준으로 집계하고 심볼화된 컬럼은 표시용으로만 사용하므로, 최선의 노력으로 수행된 심볼화로 인해 서로 다른 스택 트레이스가 병합되지 않습니다.
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
 GROUP BY trace

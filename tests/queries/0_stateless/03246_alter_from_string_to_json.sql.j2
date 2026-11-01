@@ -1,5 +1,9 @@
--- Random settings limits: index_granularity=(100, 60000); index_granularity_bytes=(10000, None)
+-- Random settings limits: index_granularity=(8192, 60000); index_granularity_bytes=(102400, None)
 -- Tags: long
+-- After the ALTER the `json` column has ~97 substreams (typed paths plus every
+-- shared data bucket), and a compact part keeps one mark per granule per
+-- substream, so a tiny index_granularity multiplies the mark count by the
+-- substream count and makes this long test time out on sanitizer builds.
 
 SET enable_json_type = 1;
 set max_block_size = 20000;

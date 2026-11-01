@@ -50,9 +50,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
 </Note>
 
 <Steps>
-  <Step>
-    #### 获取 ClickStack API key
-
+  <Step title="获取 ClickStack API key" id="get-api-key">
     OpenTelemetry Collector 会将数据发送到 ClickStack 的 OTLP 端点，而该端点需要进行身份验证。
 
     1. 在你的 ClickStack URL 中打开 HyperDX (例如 `http://localhost:8080`)
@@ -69,21 +67,19 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     ```
   </Step>
 
-  <Step>
-    #### 配置 AWS 凭证
-
+  <Step title="配置 AWS 凭证" id="configure-aws">
     将 AWS 凭证导出为环境变量。具体方法取决于所使用的身份验证类型：
 
     **对于 AWS SSO 用户 (建议大多数组织使用) ：**
 
     ```bash
-    # 登录 SSO
+    # Login to SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # 将凭证导出为环境变量
+    # Export credentials to environment variables
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # 验证凭证是否有效
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -96,7 +92,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # 验证凭证是否有效
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -124,9 +120,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     将 `YOUR_ACCOUNT_ID` 替换为你的 AWS 账户 ID。
   </Step>
 
-  <Step>
-    #### 配置 CloudWatch receiver
-
+  <Step title="配置 CloudWatch receiver" id="configure-receiver">
     创建一个 `otel-collector-config.yaml` 文件，并添加 CloudWatch receiver 配置。
 
     <Accordion title="查看账户中可用的日志组">
@@ -258,9 +252,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     </Note>
   </Step>
 
-  <Step>
-    #### 启动 collector
-
+  <Step title="启动 collector" id="start-collector">
     创建 `docker-compose.yaml` 文件：
 
     ```yaml
@@ -294,9 +286,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verify-logs">
     collector 运行后：
 
     1. 打开 http://localhost:8080 中的 HyperDX (或你的 ClickStack URL)
@@ -324,9 +314,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
 对于希望在配置生产 AWS 环境之前先测试 CloudWatch 日志集成的用户，我们提供了一个示例数据集，其中包含预先生成的日志，展示了来自多个 AWS 服务的真实模式。
 
 <Steps>
-  <Step>
-    #### 下载示例数据集
-
+  <Step title="下载示例数据集" id="download-sample">
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
     ```
@@ -338,9 +326,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     * **Background jobs**：带有重试模式的批次处理
   </Step>
 
-  <Step>
-    #### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     如果你还没有运行 ClickStack：
 
     ```bash
@@ -352,9 +338,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     等待片刻，直到 ClickStack 完全启动。
   </Step>
 
-  <Step>
-    #### 导入演示数据集
-
+  <Step title="导入演示数据集" id="import-demo-data">
     ```bash
     docker exec -i clickstack clickhouse-client --query="
       INSERT INTO default.otel_logs FORMAT JSONEachRow
@@ -364,9 +348,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     这会将日志直接导入 ClickStack 的日志表。
   </Step>
 
-  <Step>
-    #### 验证演示数据
-
+  <Step title="验证演示数据" id="verify-demo-logs">
     导入完成后：
 
     1. 在 http://localhost:8080 打开 HyperDX 并登录 (如有需要请创建账户)
@@ -393,13 +375,11 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
 为帮助你使用 ClickStack 监控 CloudWatch 日志，我们提供了一个预构建的仪表盘，其中包含关键可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入仪表盘
-
+  <Step title="导入仪表盘" id="import-dashboard">
     1. 打开 HyperDX，进入 Dashboards 部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
@@ -410,9 +390,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="完成导入对话框" />
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
+  <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建后，所有可视化内容都将预先配置好：
 
     <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="CloudWatch 日志仪表盘" />
@@ -561,6 +539,6 @@ groups:
   ## 投入生产环境
 </div>
 
-本指南演示了如何使用 Docker Compose 在本地运行 OpenTelemetry Collector 进行测试。对于生产部署，请在具有 AWS 访问权限的基础设施上运行采集器 (例如带 IAM 角色的 EC2、带 IRSA 的 EKS，或带任务角色的 ECS) ，以免管理访问密钥。将采集器部署在与您的 CloudWatch 日志组相同的 AWS 区域中，以降低延迟和成本。
+本指南演示如何使用 Docker Compose 在本地运行 OpenTelemetry Collector 进行测试。对于生产环境部署，建议在具备 AWS 访问权限的基础设施上运行采集器 (例如具有 IAM 角色的 EC2、使用 IRSA 的 EKS，或使用任务角色的 ECS) ，以避免管理访问密钥。将采集器部署在与 CloudWatch 日志组相同的 AWS 区域，以降低延迟和成本。
 
-有关生产部署模式和采集器配置示例，请参阅 [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。
+有关生产环境部署模式和采集器配置示例，请参阅 [使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。

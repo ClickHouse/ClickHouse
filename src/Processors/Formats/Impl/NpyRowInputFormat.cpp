@@ -9,6 +9,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Common/FloatUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <base/unaligned.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +37,34 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A NumPy `<U<n>` (or `>U<n>`) value is fixed-width UTF-32, padded with trailing zero code points. Convert it to
+/// UTF-8, keeping zero code points inside the value as `np.load` does.
+String decodeNumpyUnicode(std::string_view data, NumpyDataType::Endianness endianness)
+{
+    auto code_point_at = [&](size_t i)
+    {
+        const char * address = data.data() + i * sizeof(UInt32);
+        return endianness == NumpyDataType::Endianness::BIG ? unalignedLoadBigEndian<UInt32>(address)
+                                                             : unalignedLoadLittleEndian<UInt32>(address);
+    };
+
+    size_t length = data.size() / sizeof(UInt32);
+    while (length > 0 && code_point_at(length - 1) == 0)
+        --length;
+
+    String result;
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i)
+    {
+        const UInt32 code_point = code_point_at(i);
+        if (code_point > 0x10FFFF || UTF8::isSurrogateCodePoint(code_point))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Numpy unicode string contains an invalid code point {:#x}", code_point);
+        char utf8[4];
+        result.append(utf8, UTF8::convertCodePointToUTF8(static_cast<int>(code_point), utf8, sizeof(utf8)));
+    }
+    return result;
+}
 
 DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & numpy_type)
 {
@@ -454,8 +484,12 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
 
         tmp.resize(size);
         in->readStrict(tmp.data(), size);
-        tmp.erase(std::remove(tmp.begin(), tmp.end(), '\0'), tmp.end());
-        column_string.insertData(tmp.c_str(), tmp.size());
+        if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
+            tmp = decodeNumpyUnicode(tmp, npy_type.getEndianness());
+        else
+            /// NumPy pads `|S<n>` byte strings with zero bytes; zero bytes inside the value are part of it.
+            tmp.erase(tmp.find_last_not_of('\0') + 1);
+        column_string.insertData(tmp.data(), tmp.size());
     }
 }
 
@@ -485,10 +519,13 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
     if (read_rows >= header.shape[0])
         return false;
 
-    /// For non-zero element sizes, check eof to detect truncated files.
-    /// For zero-size elements (|S0, <U0), the data section is empty and
-    /// eof is expected — rows are produced based on the row counter alone.
-    if (header.numpy_type->getSize() != 0 && in->eof())
+    /// Check eof only when the current row requires data bytes. Rows with zero-size
+    /// elements or a zero inner dimension are represented without a data section.
+    bool row_requires_data_bytes = header.numpy_type->getSize() != 0;
+    for (size_t i = 1; i != header.shape.size(); ++i)
+        row_requires_data_bytes = row_requires_data_bytes && header.shape[i] != 0;
+
+    if (row_requires_data_bytes && in->eof())
         return false;
 
     ++read_rows;
@@ -573,22 +610,22 @@ During import, ClickHouse treats the top level dimension as an array of rows wit
 
 The table below gives the supported Npy data types and their corresponding type in ClickHouse:
 
-## Data types matching {#data_types-matching}
+## Data types matching {#data-types-matching}
 
 | Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
 |--------------------------|-----------------------------------------------------------------|-------------------------|
-| `i1`                     | [Int8](/sql-reference/data-types/int-uint.md)           | `i1`                    |
-| `i2`                     | [Int16](/sql-reference/data-types/int-uint.md)          | `i2`                    |
-| `i4`                     | [Int32](/sql-reference/data-types/int-uint.md)          | `i4`                    |
-| `i8`                     | [Int64](/sql-reference/data-types/int-uint.md)          | `i8`                    |
-| `u1`, `b1`               | [UInt8](/sql-reference/data-types/int-uint.md)          | `u1`                    |
-| `u2`                     | [UInt16](/sql-reference/data-types/int-uint.md)         | `u2`                    |
-| `u4`                     | [UInt32](/sql-reference/data-types/int-uint.md)         | `u4`                    |
-| `u8`                     | [UInt64](/sql-reference/data-types/int-uint.md)         | `u8`                    |
-| `f2`, `f4`               | [Float32](/sql-reference/data-types/float.md)           | `f4`                    |
-| `f8`                     | [Float64](/sql-reference/data-types/float.md)           | `f8`                    |
-| `S`, `U`                 | [String](/sql-reference/data-types/string.md)           | `S`                     |
-|                          | [FixedString](/sql-reference/data-types/fixedstring.md) | `S`                     |
+| `i1`                     | [Int8](/reference/data-types/int-uint)           | `i1`                    |
+| `i2`                     | [Int16](/reference/data-types/int-uint)          | `i2`                    |
+| `i4`                     | [Int32](/reference/data-types/int-uint)          | `i4`                    |
+| `i8`                     | [Int64](/reference/data-types/int-uint)          | `i8`                    |
+| `u1`, `b1`               | [UInt8](/reference/data-types/int-uint)          | `u1`                    |
+| `u2`                     | [UInt16](/reference/data-types/int-uint)         | `u2`                    |
+| `u4`                     | [UInt32](/reference/data-types/int-uint)         | `u4`                    |
+| `u8`                     | [UInt64](/reference/data-types/int-uint)         | `u8`                    |
+| `f2`, `f4`               | [Float32](/reference/data-types/float)           | `f4`                    |
+| `f8`                     | [Float64](/reference/data-types/float)           | `f8`                    |
+| `S`, `U`                 | [String](/reference/data-types/string)           | `S`                     |
+|                          | [FixedString](/reference/data-types/fixedstring) | `S`                     |
 
 ## Example usage {#example-usage}
 

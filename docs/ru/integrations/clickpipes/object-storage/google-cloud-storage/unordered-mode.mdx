@@ -16,63 +16,65 @@ doc_type: 'guide'
   ## Как это работает
 </div>
 
-В этом режиме GCS ClickPipe выполняет начальную загрузку **всех файлов** по выбранному пути, а затем отслеживает уведомления об объектах через подписку Pub/Sub, соответствующие указанному пути. Любые сообщения о ранее обнаруженном файле, о файле, не соответствующем пути, или о событии другого типа будут **игнорироваться**. **Невозможно** начать ингестию с определённого файла или момента времени — ClickPipes всегда загружает все файлы по выбранному пути.
+В этом режиме GCS ClickPipe выполняет начальную загрузку **всех файлов** по выбранному пути, а затем отслеживает уведомления об объектах через подписку Pub/Sub, соответствующие указанному пути. Любые сообщения о ранее обнаруженном файле, о файле, не соответствующем пути, или о событии другого типа будут **игнорироваться**.
 
-При ингестии данных могут возникать различные сбои, что может приводить к частичным вставкам или дублированию данных. ClickPipes для объектного хранилища устойчивы к сбоям вставки и обеспечивают семантику «ровно один раз» с помощью временных staging-таблиц. Сначала данные вставляются в staging-таблицу; если что-то идёт не так, staging-таблица очищается, и вставка повторяется с чистого состояния. Только после успешного завершения вставки партиции перемещаются в целевую таблицу.
+Чтобы выполнять приём только файлов, поступающих через подписку, включите **Пропустить начальную загрузку**. Когда эта опция включена, ClickPipes пропускает первоначальное сканирование существующих файлов по выбранному пути и обрабатывает только файлы, поступающие через подписку Pub/Sub.
+
+При приёме данных могут возникать различные сбои, что может приводить к частичным вставкам или дублированию данных. ClickPipes для объектного хранилища устойчивы к сбоям вставки и обеспечивают семантику «ровно один раз» с помощью временных staging-таблиц. Сначала данные вставляются в staging-таблицу; если что-то идёт не так, staging-таблица очищается, и вставка повторяется с чистого состояния. Только после успешного завершения вставки партиции перемещаются в целевую таблицу.
 
 <Steps>
-  <Step>
-    ## Создайте топик Google Cloud Pub/Sub
-
+  <Step title="Создайте топик Google Cloud Pub/Sub" id="create-pubsub-topic">
     **1.** В Google Cloud Console перейдите в **Pub/Sub &gt; Topics &gt; Create topic**. Создайте новый топик с подпиской по умолчанию и запишите **Topic Name**.
+
+    <Warning>
+      **Одна подписка на ClickPipe**
+
+      Для каждого ClickPipe требуется собственная выделенная подписка Pub/Sub. В рамках одной подписки Pub/Sub доставляет каждое сообщение только одному подписчику: если одну и ту же подписку используют два или более ClickPipe (или любое другое приложение), каждое уведомление получает только один из них, а пайпы, которые его не получили, молча пропускают файлы. Это верно, даже если ClickPipes используют разные шаблоны путей: пайп, получивший уведомление о файле, не соответствующем шаблону, отбрасывает его, и ни один другой пайп его уже не увидит. Чтобы выполнять ингестию из одного и того же бакета с помощью нескольких ClickPipes, создайте для каждого ClickPipe отдельную подписку на топик.
+    </Warning>
 
     **2.** Настройте уведомление для бакета GCS, которое публикует [события `OBJECT_FINALIZE`](https://docs.cloud.google.com/storage/docs/pubsub-notifications) в созданный выше топик Pub/Sub.
 
     **2.1.** Этот шаг нельзя выполнить в Google Cloud Console, поэтому необходимо использовать клиент `gcloud` или предпочитаемый вами программный интерфейс для Google Cloud. Например, с помощью `gcloud`:
 
     ```bash
-    # Создайте уведомление Pub/Sub для новых объектов в бакете
+    # Create a Pub/Sub notification for new objects in the bucket
     gcloud storage buckets notifications create "gs://${YOUR_BUCKET_NAME}" \
       --topic="projects/${YOUR_PROJECT_ID}/topics/${YOUR_TOPIC_NAME}" \
       --event-types="OBJECT_FINALIZE" \
       --payload-format="json"
 
-    # Выведите список уведомлений Pub/Sub в бакете
+    # List the Pub/Sub notifications in the bucket
     gcloud storage buckets notifications describe
     ```
   </Step>
 
-  <Step>
-    ## Настройте сервисный аккаунт
-
+  <Step title="Настройте сервисный аккаунт" id="configure-service-account">
     **1.** Настройте [сервисный аккаунт](http://docs.cloud.google.com/iam/docs/keys-create-delete) с [необходимыми разрешениями](/ru/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions), чтобы ClickPipes мог получать список объектов и считывать объекты в указанном бакете, а также получать и отслеживать уведомления из подписки Pub/Sub.
 
     **1.1.** Этот шаг можно выполнить в Google Cloud Console, с помощью клиента `gcloud` или предпочитаемого вами программного интерфейса для Google Cloud. Например, с помощью `gcloud`:
 
     ```bash
-    # 1. Предоставьте доступ на чтение к бакету GCS
+    # 1. Grant read access to the GCS bucket
     gcloud storage buckets add-iam-policy-binding "gs://${YOUR_BUCKET_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/storage.objectViewer"
 
-    # 2. Предоставьте доступ на чтение к подписке Pub/Sub
+    # 2. Grant read access to the Pub/Sub subscription
     gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/pubsub.subscriber"
 
-    # 3. Предоставьте разрешение на получение метаданных подписки Pub/Sub
+    # 3. Grant permission to get the Pub/Sub subscription metadata
     gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/pubsub.viewer"
     ```
   </Step>
 
-  <Step>
-    ## Создайте ClickPipe с неупорядоченным режимом
-
+  <Step title="Создайте ClickPipe с неупорядоченным режимом" id="create-clickpipe">
     **1.** В консоли ClickHouse Cloud перейдите в **Data Sources &gt; Create ClickPipe** и выберите **Google Cloud Storage**. Введите данные для подключения к вашему бакету GCS. В разделе **Authentication method** выберите **Service Account** и укажите `.json`-ключ сервисного аккаунта.
 
-    **2.** Включите **Continuous ingestion**, затем выберите **Any order** в качестве режима ингестии и укажите имя **Pub/Sub subscription** для подписки, подключённой к вашему бакету. Имя подписки должно иметь следующий формат:
+    **2.** Включите **Continuous ingestion**, затем выберите **Any order** в качестве режима ингестии и укажите имя **подписки Pub/Sub** для подписки, подключённой к вашему бакету. Чтобы обрабатывать только файлы из подписки и пропустить начальное сканирование существующих файлов по выбранному пути, включите **Skip initial load**. Эта подписка должна использоваться исключительно этим ClickPipe — см. [Создайте топик Google Cloud Pub/Sub](#create-pubsub-topic). Имя подписки должно иметь следующий формат:
 
     ```text
     projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
@@ -80,6 +82,6 @@ doc_type: 'guide'
 
     **3.** Нажмите **Incoming data**. Задайте **Sorting key** для целевой таблицы. При необходимости внесите изменения в сопоставленную схему, затем настройте роль для пользователя базы данных ClickPipes.
 
-    **4.** Проверьте конфигурацию и нажмите **Create ClickPipe**. ClickPipes выполнит начальное сканирование вашего бакета, чтобы загрузить все существующие файлы, соответствующие указанному пути, а затем начнёт обрабатывать файлы по мере поступления в топик новых событий `OBJECT_FINALIZE`.
+    **4.** Проверьте конфигурацию и нажмите **Create ClickPipe**. Если не включён параметр **Skip initial load**, ClickPipes выполнит начальное сканирование вашего бакета, чтобы загрузить все существующие файлы, соответствующие указанному пути, а затем начнёт обрабатывать файлы по мере доставки из подписки соответствующих событий `OBJECT_FINALIZE`.
   </Step>
 </Steps>

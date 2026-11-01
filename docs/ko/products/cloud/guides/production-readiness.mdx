@@ -106,7 +106,7 @@ ClickHouse Cloud는 조직 수준 역할(Admin, Developer, Billing, Member)과 �
   ### 사용자 라이프사이클 관리의 제한 사항
 </div>
 
-ClickHouse Cloud는 Okta를 지원하는 [SCIM 프로비저닝](/ko/products/cloud/guides/security/cloud-access-management/scim-setup)을 비공개 프리뷰로 제공합니다. SCIM은 사용자와 그룹의 라이프사이클 관리를 자동화하므로, IdP(Identity Provider)에서 사용자를 할당하거나 할당 해제할 때 사용자가 자동으로 생성되거나 제거됩니다. SCIM을 사용하지 않는다면, IdP에서 사용자를 제거한 후 ClickHouse Cloud 콘솔에서도 해당 사용자를 수동으로 제거해야 합니다. 이 경우 수동 사용자 관리 절차를 마련해야 합니다.
+ClickHouse Cloud는 [Okta](/ko/products/cloud/guides/security/cloud-access-management/scim-setup) 및 [Microsoft Entra ID](/ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra)를 통한 SCIM 프로비저닝을 지원합니다. SCIM은 사용자와 그룹의 라이프사이클 관리를 자동화하므로, IdP(Identity Provider)에서 사용자를 할당하거나 할당 해제할 때 사용자가 자동으로 생성되거나 제거됩니다. SCIM을 사용하지 않는다면, IdP에서 사용자를 제거한 후 ClickHouse Cloud 콘솔에서도 해당 사용자를 수동으로 제거해야 합니다. 이 경우 수동 사용자 관리 절차를 마련해야 합니다.
 
 [Cloud 접근 관리](/ko/products/cloud/guides/security/cloud-access-management/index) 및 [SAML SSO 설정](/ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup)에 대해 자세히 알아보십시오.
 

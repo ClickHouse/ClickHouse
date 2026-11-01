@@ -1,0 +1,13 @@
+--- native writer: BFloat16 -> Arrow binary, read back ---
+String	0000
+String	0040
+String	4040
+String	803F
+--- pyarrow reader: field type and raw payload bytes ---
+b	binary
+0000
+803F
+0040
+4040
+--- with output_format_arrow_unsupported_types_as_binary = 0 the native writer rejects it ---
+NOT_IMPLEMENTED

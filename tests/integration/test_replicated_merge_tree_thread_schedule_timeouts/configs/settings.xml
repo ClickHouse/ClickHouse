@@ -8,4 +8,5 @@
          size) the global thread pool has too much headroom and the test cannot
          observe "Cannot schedule a task" exceptions. -->
     <background_schedule_pool_initial_size>128</background_schedule_pool_initial_size>
+    <background_streaming_schedule_pool_size>0</background_streaming_schedule_pool_size>
 </clickhouse>

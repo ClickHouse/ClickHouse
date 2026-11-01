@@ -41,9 +41,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 لمحاكاة حركة مرور التطبيق، يمكنك اختياريًا نشر النسخة المتفرعة الخاصة بـ ClickStack من [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). ويؤدي ذلك إلى إنشاء بيانات القياس عن بُعد، بما في ذلك السجلات والمقاييس والتتبعات. وإذا كانت لديك بالفعل أحمال عمل قيد التشغيل في عنقودك، فيمكنك تخطي هذه الخطوة ومراقبة الكبسولات والعُقد والحاويات الحالية.
 
 <Steps>
-  <Step>
-    ### تثبيت cert-manager (اختياري)
-
+  <Step title="تثبيت cert-manager (اختياري)" id="install-cert-manager">
     إذا كان إعدادك يتطلب شهادات TLS، فثبّت [cert-manager](https://cert-manager.io/) باستخدام Helm:
 
     ```shell
@@ -55,9 +53,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     ```
   </Step>
 
-  <Step>
-    ### نشر OpenTelemetry Demo (اختياري)
-
+  <Step title="نشر OpenTelemetry Demo (اختياري)" id="deploy-otel-demo">
     هذه **الخطوة اختيارية ومخصّصة للحالات التي لا توجد فيها أي وحدات pod حالية لمراقبتها**. ورغم أن المستخدمين الذين لديهم خدمات منشورة بالفعل في بيئة Kubernetes الخاصة بهم يمكنهم تخطيها، فإن هذا العرض التجريبي يتضمن خدمات مصغّرة مزوّدة بـinstrumentation تولّد بيانات trace وsession replay، مما يتيح للمستخدمين استكشاف جميع ميزات ClickStack.
 
     يقوم ما يلي بنشر نسخة ClickStack fork من حزمة تطبيق OpenTelemetry Demo داخل عنقود Kubernetes، والمخصّصة لاختبار observability واستعراض instrumentation. وهي تتضمن خدمات مصغّرة backend، ومولّدات حمل، وpipelines للـ telemetry، وبنية تحتية داعمة (مثل Kafka وRedis)، وعمليات تكامل SDK مع ClickStack.
@@ -107,9 +103,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     <DemoArchitecture />
   </Step>
 
-  <Step>
-    ### أضِف مستودع Helm chart الخاص بـ ClickStack
-
+  <Step title="أضِف مستودع Helm chart الخاص بـ ClickStack" id="add-helm-clickstack">
     لنشر ClickStack، نستخدم [Helm chart الرسمي](/ar/clickstack/deployment/helm).
 
     ويتطلب ذلك إضافة مستودع Helm الخاص بـ HyperDX:
@@ -120,9 +114,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     ```
   </Step>
 
-  <Step>
-    ### نشر ClickStack
-
+  <Step title="نشر ClickStack" id="deploy-clickstack">
     بعد تثبيت مخطط Helm، يمكنك نشر ClickStack في عنقودك. يمكنك إما تشغيل جميع المكوّنات، بما في ذلك ClickHouse وHyperDX، داخل بيئة Kubernetes لديك، أو الاكتفاء بنشر OTel collector والاعتماد على Managed ClickStack لكلٍّ من ClickHouse وواجهة HyperDX.
 
     <br />
@@ -188,9 +180,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     ```
   </Step>
 
-  <Step>
-    ### الوصول إلى واجهة HyperDX
-
+  <Step title="الوصول إلى واجهة HyperDX" id="access-the-hyperdx-ui">
     <Note>
       حتى عند استخدام Managed ClickStack، يظل مثيل HyperDX المحلي المنشور في Kubernetes cluster مطلوبًا. فهو يوفّر مفتاح استيعاب يديره OpAMP server المضمَّن مع HyperDX، ما يؤمّن استيعاب البيانات عبر OTel collector المنشور — وهي ميزة غير متاحة حاليًا في Managed ClickStack.
     </Note>
@@ -213,9 +203,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
   </Step>
 
-  <Step>
-    ### استرداد مفتاح API للإدخال
-
+  <Step title="استرداد مفتاح API للإدخال" id="retrieve-ingestion-api-key">
     تكون عملية إدخال البيانات إلى OTel collector الذي ينشره ClickStack collector مؤمّنة باستخدام مفتاح إدخال.
 
     انتقل إلى [`Team Settings`](http://localhost:8080/team) وانسخ `Ingestion API Key` من قسم `API Keys`. يضمن مفتاح API هذا أمان إدخال البيانات عبر OpenTelemetry collector.
@@ -223,9 +211,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     <Image img="/images/use-cases/observability/copy_api_key.webp" alt="نسخ مفتاح API" size="lg" />
   </Step>
 
-  <Step>
-    ### إنشاء سر Kubernetes لمفتاح API للإدخال
-
+  <Step title="إنشاء سر Kubernetes لمفتاح API" id="create-api-key-kubernetes-secret">
     أنشئ سر Kubernetes جديدًا يتضمن مفتاح API للإدخال وconfig map تحتوي على موقع OTel collector المنشور باستخدام مخطط Helm الخاص بـ ClickStack. ستستخدم المكونات اللاحقة ذلك للسماح بإدخال البيانات إلى الـ OTel collector المنشور باستخدام مخطط Helm الخاص بـ ClickStack:
 
     ```shell
@@ -238,7 +224,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
     ```
 
-    أعد تشغيل وحدات pod الخاصة بتطبيق OpenTelemetry demo application لأخذ مفتاح API للإدخال في الاعتبار.
+    أعد تشغيل وحدات pod الخاصة بتطبيق OpenTelemetry Demo لتطبيق مفتاح API للإدخال.
 
     ```shell
     kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=opentelemetry-demo
@@ -249,9 +235,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="بيانات HyperDX على Kubernetes" size="lg" />
   </Step>
 
-  <Step>
-    ### أضف مستودع Helm الخاص بـ OpenTelemetry
-
+  <Step title="أضف مستودع Helm الخاص بـ OpenTelemetry" id="add-otel-helm-repo">
     لجمع مقاييس Kubernetes، سنقوم بنشر OTel collector قياسي وتهيئته لإرسال البيانات بأمان إلى ClickStack collector الخاص بنا باستخدام مفتاح API الخاص بالاستيعاب المذكور أعلاه.
 
     يتطلب ذلك تثبيت مستودع Helm الخاص بـ OpenTelemetry:
@@ -262,9 +246,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     ```
   </Step>
 
-  <Step>
-    ### نشر مكوّنات الـ collector في Kubernetes
-
+  <Step title="نشر مكوّنات الـ collector في Kubernetes" id="deploy-kubernetes-collector-components">
     لجمع السجلات والمقاييس من كلٍّ من المجموعة نفسها وكل عقدة على حدة، سنحتاج إلى نشر مُجمِّعَي بيانات OpenTelemetry منفصلَين، لكلٍّ منهما ملف manifest خاص به. يعمل الملفان المُرفقان - `k8s_deployment.yaml` و`k8s_daemonset.yaml` - معًا لجمع بيانات القياس الشاملة من مجموعة Kubernetes الخاصة بك.
 
     * `k8s_deployment.yaml` ينشر **مثيلًا واحدًا من OpenTelemetry Collector** مسؤولًا عن جمع **الأحداث والبيانات الوصفية على مستوى العُنقود بأكمله**. ويجمع أحداث Kubernetes ومقاييس العُنقود، ويُثري بيانات الرصد بملصقات البودات وتعليقاتها التوضيحية. ويعمل هذا المجمِّع كعملية نشر مستقلة مع نسخة متماثلة واحدة لتجنّب تكرار البيانات.
@@ -345,7 +327,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
       ```
     </Accordion>
 
-    بعد ذلك، انشر المُجمِّع بوصفه مجموعة خدمات (DaemonSet) لجمع المقاييس والسجلات على مستوى العقدة والحاوية:
+    بعد ذلك، انشر المُجمِّع بوصفه DaemonSet لجمع المقاييس والسجلات على مستوى العقدة والبود:
 
     ```shell
     # download manifest file
@@ -460,9 +442,7 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     </Accordion>
   </Step>
 
-  <Step>
-    ### استكشف بيانات Kubernetes في HyperDX
-
+  <Step title="استكشف بيانات Kubernetes في HyperDX" id="explore-kubernetes-data-hyperdx">
     انتقل إلى واجهة مستخدم HyperDX الخاصة بك، سواء عبر المثيل المنشور على Kubernetes أو من خلال Managed ClickStack.
 
     <p />

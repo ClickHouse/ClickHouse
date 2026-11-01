@@ -6,6 +6,7 @@ import sqlite3
 import os
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -18,6 +19,10 @@ SELECT_FROM_SQLITE_TABLE = """SELECT sleepEachRow(0.0001), id, random_int, rando
 FROM test_sqlite.big_data_table
 SETTINGS max_block_size = 10000"""
 
+# Filled in by started_cluster: absolute path to the SQLite db file on the host,
+# used to take an exclusive lock and force SQLITE_BUSY on the reader.
+DB_FILE_ON_HOST = None
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -28,6 +33,9 @@ def started_cluster():
         host_db_path = os.path.join(instance_path, "database", "user_files")
         os.makedirs(host_db_path, exist_ok=True)
         db_file_on_host = os.path.join(host_db_path, SQLITE_DB_FILE_NAME)
+
+        global DB_FILE_ON_HOST
+        DB_FILE_ON_HOST = db_file_on_host
 
         conn = sqlite3.connect(db_file_on_host)
         cursor = conn.cursor()
@@ -133,3 +141,120 @@ def test_cancel_query(started_cluster):
 
     query_thread.join()
     assert node1.contains_in_log("QUERY_WAS_CANCELLED_BY_CLIENT")
+
+
+# How long to hold the exclusive lock while the read waits on SQLITE_BUSY.
+BUSY_WAIT_SECONDS = 3
+
+
+def test_kill_query_while_sqlite_busy(started_cluster):
+    # Take an exclusive lock on the SQLite database from a separate connection so that the read blocks with
+    # SQLITE_BUSY. Each read runs on its own fresh SQLite connection, so the first thing it does under the lock
+    # is sqlite3_prepare_v2, which needs a shared lock to read sqlite_master; both prepare (SQLiteSource) and
+    # sqlite3_step (SQLiteStatementReader) retry on SQLITE_BUSY. Before the fix the retry loop did a bare
+    # `continue`, busy-spinning a full CPU core. The fix sleeps briefly and checks isCancelled() between
+    # retries, so the read idles at ~0 CPU and stays cancellable.
+    #
+    # This test asserts BOTH properties:
+    #  1) no-busy-spin: the OS CPU time the query burns while blocked on the lock is a
+    #     small fraction of the wall-clock time it spends waiting. Without the sleep the
+    #     retry loop pins ~100% of a core (CPU ~= wall time); with the sleep it is ~0.
+    #     The test would still pass on `master` (which is already cancellable) if it only
+    #     checked cancellation, so this CPU bound is what actually protects the fix.
+    #  2) cancellable: KILL cancels the read promptly even while the lock is held.
+
+    conn = sqlite3.connect(DB_FILE_ON_HOST, isolation_level=None)
+    conn.execute("BEGIN EXCLUSIVE")
+    conn.execute(
+        "INSERT INTO big_data_table (random_int, random_string) VALUES (1, 'x')"
+    )
+    try:
+        query_id = str(uuid.uuid4())
+
+        def execute_query():
+            _, error = node1.query_and_get_answer_with_error(
+                SELECT_FROM_SQLITE_TABLE,
+                query_id=query_id,
+            )
+            assert "DB::Exception: Query was cancelled" in error
+
+        query_thread = threading.Thread(target=execute_query)
+        query_thread.start()
+
+        # Wait until the read is running and blocked on the lock. Poll system.processes
+        # rather than the server log: the read blocks silently inside the prepare/step
+        # retry loop while the lock is held, so a log tail would race.
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+
+        # Let the read sit blocked on SQLITE_BUSY for a fixed window. During this window
+        # the fixed server idles; a busy-spinning server would burn a full core.
+        time.sleep(BUSY_WAIT_SECONDS)
+
+        # The query is stuck retrying on SQLITE_BUSY (lock is still held), so it must
+        # not have finished on its own.
+        assert (
+            int(
+                node1.query(
+                    f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+                ).strip()
+            )
+            == 1
+        )
+
+        # KILL must cancel it promptly even though the lock is still held.
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
+        query_thread.join()
+
+        assert (
+            int(
+                node1.query(
+                    f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+                ).strip()
+            )
+            == 0
+        )
+    finally:
+        conn.rollback()
+        conn.close()
+
+    # Read the CPU the query consumed from query_log. OSCPUVirtualTimeMicroseconds is the
+    # OS-level CPU time for the query; while blocked on the lock the fix consumes almost
+    # none, whereas the old bare-continue loop consumes ~one core (CPU ~= wall time).
+    #
+    # The server sends the cancellation error to the client before it finalizes the query
+    # and pushes the query_log entry, so the row can still be missing right after the
+    # client thread joined. Flush and retry until it appears instead of reading once.
+    row = ""
+    for _ in range(60):
+        node1.query("SYSTEM FLUSH LOGS")
+        row = node1.query(
+            f"""SELECT
+                    ProfileEvents['OSCPUVirtualTimeMicroseconds'],
+                    query_duration_ms
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type != 'QueryStart'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1"""
+        ).strip()
+        if row:
+            break
+        time.sleep(0.5)
+
+    assert row, f"no query_log entry for the cancelled query {query_id}"
+    cpu_us, duration_ms = row.split("\t")
+    cpu_us = int(cpu_us)
+    duration_ms = int(duration_ms)
+    # The query waited on the lock for essentially its whole lifetime. If the retry loop
+    # busy-spun, cpu_us would be ~= duration_ms * 1000 (one full core). The fix keeps it
+    # far below; use half the wall-clock time as a generous, noise-tolerant bound.
+    assert duration_ms >= BUSY_WAIT_SECONDS * 1000 // 2
+    assert cpu_us < duration_ms * 1000 * 0.5, (
+        f"SQLiteSource busy-spun on SQLITE_BUSY: consumed {cpu_us} us CPU over "
+        f"{duration_ms} ms wall time"
+    )

@@ -1,0 +1,14 @@
+-- JSON, non-empty file: the second export is refused and the file is unchanged
+CANNOT_APPEND_TO_FILE
+CANNOT_APPEND_TO_FILE
+unchanged
+-- JSON, existing empty file: written as usual
+[0,1,2]
+-- CSVWithNames, non-empty file: rows are appended without a second header
+"id"
+0
+1
+2
+10
+11
+12

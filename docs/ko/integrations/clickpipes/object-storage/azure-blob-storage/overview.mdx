@@ -44,7 +44,7 @@ ABS ClickPipe는 지정된 컨테이너에서 패턴과 일치하는 모든 파�
 
 ABS ClickPipe는 파일이 컨테이너에 사전식 순서로 추가된다고 가정하고, 이 암묵적인 순서를 기준으로 파일을 순차적으로 수집합니다. 즉, 새 파일은 마지막으로 수집된 파일보다 사전식으로 **반드시** 더 뒤에 있어야 합니다. 예를 들어 `file1`, `file2`, `file3`라는 이름의 파일은 순차적으로 수집되지만, 컨테이너에 새 `file 0`이 추가되면 파일 이름이 마지막으로 수집된 파일보다 사전식으로 더 뒤에 있지 않으므로 **무시됩니다**.
 
-이 모드에서 ABS ClickPipe는 지정된 경로의 **모든 파일**을 초기 적재한 다음, 구성 가능한 인터벌(기본값: 30초)로 새 파일을 폴링합니다. 특정 파일이나 특정 시점부터 수집을 시작할 수는 **없습니다**. ClickPipes는 항상 지정된 경로의 모든 파일을 적재합니다.
+이 모드에서 ABS ClickPipe는 지정된 경로의 **모든 파일**을 초기 적재한 다음, 구성 가능한 인터벌(기본값: 30초)로 새 파일을 폴링합니다. 특정 파일 이후부터 지속적인 수집을 시작하려면 **Start after**를 구성하십시오. ClickPipes는 구성된 값보다 사전식으로 작거나 같은 파일을 건너뛰고, 해당 지점부터 더 새로운 파일을 계속 수집합니다.
 
 <div id="file-pattern-matching">
   ### 파일 패턴 매칭
@@ -152,7 +152,7 @@ ABS ClickPipes는 메타데이터 디스커버리와 데이터 수집에 서로 
   Azure Blob Storage 컨테이너가 ClickHouse Cloud 서비스와 동일한 Azure 리전에 있으면 IP 기반 액세스 제어는 **작동하지 않습니다**. 두 서비스가 동일한 리전에 있으면 트래픽은 퍼블릭 인터넷이 아니라 Azure 내부 네트워크를 통해 라우팅됩니다.
 </Warning>
 
-* **IP 기반 액세스 제어**의 경우, Azure Storage 방화벽의 [IP 네트워크 규칙](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security)에서 [여기](/ko/integrations/clickpipes/home#list-of-static-ips)에 나열된 ClickPipes 서비스 리전의 고정 IP와 ClickHouse Cloud 서비스의 [고정 IP](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 모두 허용해야 합니다. ClickHouse Cloud 리전의 고정 IP를 확인하려면 터미널을 열고 다음을 실행하십시오:
+* **IP 기반 액세스 제어**의 경우, Azure Storage 방화벽의 [IP 네트워크 규칙](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security)에서 [여기](/ko/integrations/clickpipes/networking/static-ips)에 나열된 ClickPipes 서비스 리전의 고정 IP와 ClickHouse Cloud 서비스의 [고정 IP](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 모두 허용해야 합니다. ClickHouse Cloud 리전의 고정 IP를 확인하려면 터미널을 열고 다음을 실행하십시오:
 
   ```bash
   # <your-region>을 ClickHouse Cloud 리전으로 대체합니다
@@ -165,18 +165,19 @@ ABS ClickPipes는 메타데이터 디스커버리와 데이터 수집에 서로 
 
 ClickPipes는 대부분의 사용 사례 요구 사항을 충족하는 적절한 기본값을 제공합니다. 사용 사례에 추가적인 세부 조정이 필요하다면 다음 설정을 조정할 수 있습니다.
 
-| Setting                              | Default value | Description                                                                                                              |
-| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `Max insert bytes`                   | 10GB          | 단일 삽입 배치에서 처리할 바이트 수입니다.                                                                                                 |
-| `Max file count`                     | 100           | 단일 삽입 배치에서 처리할 최대 파일 수입니다.                                                                                               |
-| `Max threads`                        | auto(3)       | 파일 처리를 위한 [최대 동시 스레드 수](/ko/reference/settings/session-settings#max_threads)입니다.                                            |
-| `Max insert threads`                 | 1             | 파일 처리를 위한 [최대 동시 삽입 스레드 수](/ko/reference/settings/session-settings#max_insert_threads)입니다.                                  |
-| `Min insert block size bytes`        | 1GB           | 테이블에 삽입할 수 있는 [블록의 최소 바이트 크기](/ko/reference/settings/session-settings#min_insert_block_size_bytes)입니다.                      |
-| `Max download threads`               | 4             | [최대 동시 다운로드 스레드 수](/ko/reference/settings/session-settings#max_download_threads)입니다.                                        |
-| `Object storage polling interval`    | 30s           | ClickHouse 클러스터에 데이터를 삽입하기 전까지의 최대 대기 주기를 설정합니다.                                                                         |
-| `Parallel distributed insert select` | 2             | [병렬 분산 insert select 설정](/ko/reference/settings/session-settings#parallel_distributed_insert_select)입니다.                    |
-| `Parallel view processing`           | false         | attached 상태인 뷰에 데이터를 푸시할 때 [순차 처리 대신 병렬 처리](/ko/reference/settings/session-settings#parallel_view_processing)를 활성화할지 여부입니다. |
-| `Use cluster function`               | true          | 여러 노드에서 파일을 병렬로 처리할지 여부입니다.                                                                                              |
+| Setting                              | Default value | Description                                                                                                                       |
+| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | 단일 삽입 배치에서 처리할 바이트 수입니다.                                                                                                          |
+| `Max file count`                     | 100           | 단일 삽입 배치에서 처리할 최대 파일 수입니다.                                                                                                        |
+| `Max threads`                        | auto(3)       | 파일 처리를 위한 [최대 동시 스레드 수](/ko/reference/settings/session-settings/max-threads#max_threads)입니다.                                         |
+| `Max insert threads`                 | 1             | 파일 처리를 위한 [최대 동시 삽입 스레드 수](/ko/reference/settings/session-settings/max-insert#max_insert_threads)입니다.                                |
+| `Min insert block size bytes`        | 1GB           | 테이블에 삽입할 수 있는 [블록의 최소 바이트 크기](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)입니다.                    |
+| `Max download threads`               | 4             | [최대 동시 다운로드 스레드 수](/ko/reference/settings/session-settings/max-download#max_download_threads)입니다.                                    |
+| `Object storage polling interval`    | 30s           | ClickHouse 클러스터에 데이터를 삽입하기 전까지의 최대 폴링 주기를 설정합니다.                                                                                  |
+| `Start after`                        | None          | 순서가 지정된 지속적인 수집에서 구성된 파일 이름 또는 경로보다 사전순으로 앞서거나 같은 파일을 건너뜁니다.                                                                      |
+| `Parallel distributed insert select` | 2             | [병렬 분산 insert select 설정](/ko/reference/settings/session-settings/parallel#parallel_distributed_insert_select)입니다.                    |
+| `Parallel view processing`           | false         | attached 상태인 뷰에 데이터를 푸시할 때 [순차 처리 대신 병렬 처리](/ko/reference/settings/session-settings/parallel#parallel_view_processing)를 활성화할지 여부입니다. |
+| `Use cluster function`               | true          | 여러 노드에서 파일을 병렬로 처리할지 여부입니다.                                                                                                       |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 고급 설정" size="lg" border />
 

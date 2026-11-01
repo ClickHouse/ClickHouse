@@ -8,6 +8,10 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <base/defines.h>
+
+#include <mutex>
+
 namespace DB
 {
 
@@ -17,6 +21,8 @@ class BlobKillerThread
 
     int64_t trigger();
     void waitRound(int64_t expected_round);
+    void activateTask();
+    void wakeUpIfPollingStopped();
 
 public:
     BlobKillerThread(
@@ -26,6 +32,8 @@ public:
         MetadataStoragePtr metadata_storage_,
         ObjectStorageRouterPtr object_storages_,
         std::shared_ptr<BlobKillerThread> wrapped_blob_killer_);
+
+    ~BlobKillerThread();
 
     void startup();
     void shutdown();
@@ -40,16 +48,30 @@ private:
     const std::shared_ptr<BlobKillerThread> wrapped_blob_killer;
     const LoggerPtr log;
 
+    BackgroundSchedulePoolTaskHolder task;
+
+    /// Whether the task stopped rescheduling itself because the metadata storage could not queue dead blobs.
+    /// Only then the metadata storage wakes it up when it queues blobs, see `wakeUpIfPollingStopped`.
+    std::mutex polling_mutex;
+    bool polling_stopped TSA_GUARDED_BY(polling_mutex) = false;
+
+    /// Runtime statistics
     std::atomic<bool> started{false};
     std::atomic<bool> enabled{true};
     std::atomic<int64_t> finished_rounds{0};
+
+    /// Runtime parameters
     std::atomic<int64_t> reschedule_interval_sec{0};
     std::atomic<int64_t> metadata_request_batch{0};
+    std::atomic<int64_t> max_metadata_request_batch{0};
+    std::atomic<int64_t> blobs_in_task{0};
     std::atomic<int64_t> max_blobs_in_task{0};
+    std::atomic<int64_t> threads_count{0};
+    std::atomic<int64_t> max_threads_count{0};
+
+    /// Workers pool
     ThreadPool remove_tasks_pool;
     ThreadPoolCallbackRunnerLocal<bool> remove_tasks_runner;
-
-    BackgroundSchedulePoolTaskHolder task;
 };
 
 using BlobKillerThreadPtr = std::shared_ptr<BlobKillerThread>;

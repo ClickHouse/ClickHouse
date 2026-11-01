@@ -4,21 +4,29 @@ title: UI에서 확인
 
 [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고, 왼쪽 메뉴에서 **ClickStack**을 선택한 다음 **Start Ingestion**을 클릭합니다.
 
-<Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="ClickStack 시작" border />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-cloud-first-time.webp" alt="ClickStack 시작" />
+</Frame>
 
 다음 단계는 이미 collector를 구성했으므로 건너뛰어도 됩니다. 계속하려면 **Launch ClickStack**을 클릭합니다.
 
 ClickStack이 새 탭에서 열리며 자동으로 **시작하기** 페이지로 이동합니다. 자동으로 이동하지 않으면 왼쪽 메뉴에서 **시작하기**를 선택한 다음 **Start Ingestion**, 이어서 **다음**을 클릭합니다.
 
-<Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-start-ingestion.webp" alt="ClickStack Start Ingestion" />
+</Frame>
 
 **시작하기** 페이지가 표시됩니다. 수집을 시작하라는 안내가 나타나면 Docker collector를 시작하도록 안내하는 온보딩 화면을 진행하십시오. 이미 해당 단계를 완료했으므로 각 화면을 클릭해 넘기기만 하면 됩니다. ClickStack이 텔레메트리 데이터와 테이블을 자동으로 감지한 후 **Start Exploring**을 선택하면 플랫폼 사용을 시작할 수 있습니다.
 
-<Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-start-exploring.webp" alt="ClickStack Start Exploring" />
+</Frame>
 
 소스를 `Logs`로 전환하고 시간 범위를 **최근 15분**으로 설정합니다. `telemetrygen`의 합성 로그가 몇 초 내에 표시됩니다.
 
-<Image img="/images/use-cases/observability/clickstack-search.webp" size="lg" alt="로그가 표시되는 ClickStack 검색 화면" />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-search.webp" alt="로그가 표시되는 ClickStack 검색 화면" />
+</Frame>
 
 아무것도 표시되지 않으면 다음을 확인하십시오.
 

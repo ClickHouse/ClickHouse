@@ -22,20 +22,16 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Setting up your OpenTelemetry Collector](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) 참조), Kubernetes에서 ClickStack collector 이미지와 upstream OpenTelemetry Helm 차트를 사용해 **Helm 릴리스**로 배포할 수도 있습니다([Deploying the collector](/ko/clickstack/ingesting-data/collector#configuring-the-collector) 참조). **해당 OTLP 엔드포인트**와 배포 시 설정한 `OTLP_AUTH_TOKEN`을 반드시 기록해 두십시오.
 
 <Steps>
-  <Step>
-    ## 사전 요구 사항을 준비합니다
-
+  <Step title="사전 요구 사항을 준비합니다" id="gather-prerequisites">
     다음이 필요합니다:
 
     * 하나 이상의 CloudWatch 로그 그룹과 아래에 명시된 IAM 권한이 있는 자격 증명을 갖춘 **AWS 계정**
-    * **Docker**가 설치되어 있고, AWS API에 액세스할 수 있으며, ClickStack collector로 나가는 네트워크 액세스가 가능한 호스트. 일반적으로 이는 로그 그룹과 동일한 AWS 계정 및 리전에 있는 EC2 인스턴스입니다.
+    * **Docker**가 설치되어 있고, AWS API에 액세스할 수 있으며, ClickStack collector로의 아웃바운드 네트워크 액세스가 가능한 호스트. 일반적으로 이는 로그 그룹과 동일한 AWS 계정 및 리전에 있는 EC2 인스턴스입니다.
     * 이 호스트에서 연결할 수 있는 ClickStack collector의 **OTLP endpoint**. 동일한 머신에서 Docker로 실행 중이라면 `http://host.docker.internal:4318`을 사용하십시오([CloudWatch receiver 구성](#configure-receiver)의 안내 참조). 원격 collector의 경우 전체 URL(예: `https://otel.example.com:4318`)을 사용하십시오.
     * ClickStack collector에 설정한 `OTLP_AUTH_TOKEN` 값. 보안 설정을 하지 않았다면 아래 구성에서 `authorization` 헤더를 제거할 수 있습니다.
   </Step>
 
-  <Step>
-    ## AWS 자격 증명 구성
-
+  <Step title="AWS 자격 증명 구성" id="configure-aws">
     수신기는 표준 환경 변수에서 AWS 자격 증명을 읽어옵니다. collector를 실행할 호스트에서 이를 export하십시오.
 
     **AWS SSO 사용자용:**
@@ -83,9 +79,7 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
     </Info>
   </Step>
 
-  <Step>
-    ## CloudWatch 수신기 구성
-
+  <Step title="CloudWatch 수신기 구성" id="configure-receiver">
     ClickStack collector 엔드포인트와 인증 토큰을 export한 다음 `otel-collector-config.yaml`을 생성합니다.
 
     <Info>
@@ -220,9 +214,7 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
     </Info>
   </Step>
 
-  <Step>
-    ## 수신기 collector 시작하기
-
+  <Step title="수신기 collector 시작하기" id="start-collector">
     `otel-collector-config.yaml`과 같은 위치에 `docker-compose.yaml`을 만드세요. `extra_hosts` 항목을 사용하면 컨테이너가 `host.docker.internal`을 통해 동일한 호스트에서 실행 중인 ClickStack collector에 연결할 수 있습니다. 또한 긴 형식의 bind 마운트는 구성 파일이 없을 때 빈 디렉터리를 조용히 생성하는 대신, 명시적으로 오류를 발생시킵니다:
 
     ```shell
@@ -262,9 +254,7 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
     ```
   </Step>
 
-  <Step>
-    ## ClickStack UI에서 확인
-
+  <Step title="ClickStack UI에서 확인" id="confirm-in-ui">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStack 실행" border />
@@ -296,9 +286,7 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
     * `OTLP_AUTH_TOKEN`이 ClickStack collector에 설정한 값과 일치하는지 확인합니다.
   </Step>
 
-  <Step>
-    ## CloudWatch 대시보드 가져오기(선택 사항)
-
+  <Step title="CloudWatch 대시보드 가져오기(선택 사항)" id="import-dashboard">
     로그 볼륨, 심각도별 분류, 오류 분포를 포함한 사전 구축된 대시보드를 다운로드할 수 있습니다.
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">`cloudwatch-logs-dashboard.json` 다운로드</TrackedLink>한 다음 ClickStack UI에서 **Dashboards**로 이동해 **Import**를 클릭합니다.
@@ -310,9 +298,7 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
     <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="가져오기 완료 대화 상자" />
   </Step>
 
-  <Step>
-    ## 추가 참고 자료
-
+  <Step title="추가 참고 자료" id="further-reading">
     * 데모 데이터세트, 전체 문제 해결 방법, 조정 옵션은 [AWS CloudWatch Logs 통합 참고](/ko/clickstack/integration-examples/cloudwatch)를 참조하십시오.
     * OTLP endpoint의 TLS와 최소 권한 수집 사용자를 통한 [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector).
     * collector에서 [이벤트 처리, 필터링 및 보강](/ko/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching).

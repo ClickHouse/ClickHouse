@@ -1,6 +1,8 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -10,12 +12,16 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Processors/Chunk.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
+#include <Common/assert_cast.h>
 
 namespace ProfileEvents
 {
@@ -29,6 +35,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
@@ -49,13 +56,12 @@ auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
     ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes);
 };
 
-Block FilterTransform::transformHeader(
-    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
+/// The part of transformHeader after the expression: validate the filter column type
+/// and remove the filter column if requested.
+static Block checkAndRemoveFilterColumn(Block result, const String & filter_column_name, bool remove_filter_column)
 {
-    Block result = expression ? expression->updateHeader(header) : header;
-
     auto filter_type = result.getByName(filter_column_name).type;
-    if (!canUseType(filter_type))
+    if (!FilterTransform::canUseType(filter_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be native integer or float type",
             filter_type->getName(), filter_column_name);
@@ -66,6 +72,52 @@ Block FilterTransform::transformHeader(
     return result;
 }
 
+/// constant folding in prepare misses an empty set behind a Nullable argument - no constness at 0 rows
+static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    const auto & function_name = node->function_base->getName();
+
+    if (function_name == "and")
+        return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
+
+    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
+    if (function_name != "in" && function_name != "globalIn")
+        return false;
+
+    const IColumn * set_column = node->children[1]->column.get();
+    if (!set_column)
+        return false;
+
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(set_column))
+        set_column = &const_column->getDataColumn();
+
+    const auto * column_set = typeid_cast<const ColumnSet *>(set_column);
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return false;
+
+    auto set = future_set->get();
+    return set && set->getTotalRowCount() == 0;
+}
+
+Block FilterTransform::transformHeader(
+    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
+{
+    /// updateHeader (dry-run evaluation) correctly handles constant propagation,
+    /// unlike expression->execute() which would fail with not-ready sets.
+    return checkAndRemoveFilterColumn(
+        expression ? expression->updateHeader(header) : header, filter_column_name, remove_filter_column);
+}
+
 FilterTransform::FilterTransform(
     SharedHeader header_,
     ExpressionActionsPtr expression_,
@@ -73,26 +125,48 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_)
+    std::optional<std::pair<UInt64, String>> condition_,
+    bool update_row_numbers_info_)
+    : FilterTransform(
+            header_,
+            std::make_shared<const Block>(expression_ ? expression_->getActionsDAG().updateHeader(*header_) : *header_),
+            expression_, /// Deliberately a copy, not a move: the previous argument reads expression_,
+                         /// and the evaluation order of arguments is unspecified.
+            std::move(filter_column_name_),
+            remove_filter_column_,
+            on_totals_,
+            std::move(rows_filtered_),
+            std::move(condition_),
+            update_row_numbers_info_)
+{
+}
+
+FilterTransform::FilterTransform(
+    SharedHeader header_,
+    SharedHeader transformed_header_,
+    ExpressionActionsPtr expression_,
+    String filter_column_name_,
+    bool remove_filter_column_,
+    bool on_totals_,
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
+    std::optional<std::pair<UInt64, String>> condition_,
+    bool update_row_numbers_info_)
     : ISimpleTransform(
             header_,
-            std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
+            std::make_shared<const Block>(checkAndRemoveFilterColumn(*transformed_header_, filter_column_name_, remove_filter_column_)),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
+    , update_row_numbers_info(update_row_numbers_info_)
     , rows_filtered(rows_filtered_)
     , condition(condition_)
+    , transformed_header(*transformed_header_)
 {
-    /// Use transformHeader (which calls ActionsDAG::updateHeader) to compute the header.
-    /// This correctly handles constant propagation through dry-run evaluation,
-    /// unlike expression->execute() which would fail with not-ready sets.
-    const auto * dag = expression ? &expression->getActionsDAG() : nullptr;
-    transformed_header = transformHeader(getInputPort().getHeader(), dag, filter_column_name, /*remove_filter_column=*/false);
-
     if (expression)
     {
+        set_spillables.add(expression->getActionsDAG());
         /// Special check to stop queries like "WHERE ignore(...)"
         const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
         while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -125,12 +199,15 @@ IProcessor::Status FilterTransform::prepare()
 
         if (!always_false && expression && !on_totals)
         {
-            auto header = expression->getActionsDAG().updateHeader(getInputPort().getHeader());
-            auto & column = header.getByPosition(filter_column_position).column;
-            if (column)
+            const auto & actions_dag = expression->getActionsDAG();
+            always_false = isAlwaysFalseByEmptySet(&actions_dag.findInOutputs(filter_column_name));
+
+            if (!always_false)
             {
-                ConstantFilterDescription constant_filter(*column);
-                always_false = constant_filter.always_false;
+                auto header = actions_dag.updateHeader(getInputPort().getHeader());
+                auto & column = header.getByPosition(filter_column_position).column;
+                if (column)
+                    always_false = ConstantFilterDescription(*column).always_false;
             }
         }
     }
@@ -144,7 +221,7 @@ IProcessor::Status FilterTransform::prepare()
 
     auto status = ISimpleTransform::prepare();
 
-    if (status == IProcessor::Status::Finished)
+    if (status == IProcessor::Status::Finished && !isCancelled())
         writeIntoQueryConditionCache({});
 
     return status;
@@ -157,12 +234,85 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
         columns.erase(columns.begin() + filter_column_position);
 }
 
+void FilterTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        const auto & nodes = expression->getNodes();
+        for (const auto & node : nodes)
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
+}
+
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
     doTransform(chunk);
     if (rows_filtered)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
+}
+
+namespace
+{
+
+/// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's
+/// `ChunkInfoRowNumbers.applied_filter`, mirroring `DeletionVectorTransform`, so physical row
+/// numbers survive filtering. No-op when the chunk carries no such info.
+void updateRowNumbersInfo(const Chunk & chunk, const IColumn::Filter & filter)
+{
+    auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+    if (!row_numbers_info)
+        return;
+
+    auto & applied_filter = row_numbers_info->applied_filter;
+    if (applied_filter.has_value())
+    {
+        /// The mask must have one element per set bit of the existing one. A mismatch means an
+        /// upstream row-changing transform already left the info stale, so it cannot be repaired
+        /// here; the callers that opt in are exactly those whose upstream transforms maintain it.
+        if (countBytesInFilter(*applied_filter) != filter.size())
+            return;
+
+        /// Walk the set bits of the existing mask and clear the ones this filter drops.
+        size_t idx_in_chunk = 0;
+        for (auto & passed : applied_filter.value())
+        {
+            if (passed)
+            {
+                if (!filter[idx_in_chunk])
+                    passed = 0;
+                ++idx_in_chunk;
+            }
+        }
+    }
+    else
+    {
+        /// First filtering on this chunk: the mask directly becomes the applied filter.
+        /// `IColumnFilter` (PaddedPODArray) is noncopyable, so copy explicitly via `assign`.
+        applied_filter.emplace();
+        applied_filter->assign(filter);
+    }
+}
+
+/// After this filter removes some rows, the rows of the chunk are no longer at the positions given by
+/// `MarkRangesInfo::rows_per_mark`, e.g. for the next filter of a split `AND` chain (`FilterStep`).
+void markRangesInfoPartiallyFiltered(Chunk & chunk)
+{
+    auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+    if (!mark_ranges_info || !mark_ranges_info->rows_per_mark)
+        return;
+
+    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased, so don't mutate in place.
+    auto updated_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    updated_info->rows_per_mark = 0;
+    chunk.getChunkInfos().extract<MarkRangesInfo>();
+    chunk.getChunkInfos().add(std::move(updated_info));
+}
+
 }
 
 void FilterTransform::doTransform(Chunk & chunk)
@@ -175,8 +325,20 @@ void FilterTransform::doTransform(Chunk & chunk)
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
+
         if (expression)
-            expression->execute(block, num_rows_before_filtration);
+            expression->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
+
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
 
         columns = block.getColumns();
         types = block.getDataTypes();
@@ -268,6 +430,12 @@ void FilterTransform::doTransform(Chunk & chunk)
         return;
     }
 
+    if (num_filtered_rows != num_rows_before_filtration)
+    {
+        writeMarksWithoutMatchesIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>(), *filter_description);
+        markRangesInfoPartiallyFiltered(chunk);
+    }
+
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
     {
@@ -275,6 +443,17 @@ void FilterTransform::doTransform(Chunk & chunk)
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
+    }
+
+    /// Rows are actually being dropped here. When enabled and the chunk carries `ChunkInfoRowNumbers`,
+    /// record the mask so downstream `_row_number` / positional-delete consumers keep the correct
+    /// physical row numbers. Opt-in (see `update_row_numbers_info`) and only worth building the dense
+    /// mask when the info is present, so guard on both.
+    if (update_row_numbers_info && chunk.getChunkInfos().get<ChunkInfoRowNumbers>())
+    {
+        auto mask_column = FilterDescription::preprocessFilterColumn(filter_column);
+        const IColumn::Filter & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+        updateRowNumbersInfo(chunk, mask);
     }
 
     /// Filter the rest of the columns.
@@ -298,9 +477,68 @@ void FilterTransform::doTransform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }
 
+void FilterTransform::writeMarksWithoutMatchesIntoQueryConditionCache(
+    const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description)
+{
+    if (!query_condition_cache || !mark_ranges_info || !mark_ranges_info->rows_per_mark || mark_ranges_info->has_dropped_rows)
+        return;
+
+    const auto * description = typeid_cast<const FilterDescription *>(&filter_description);
+    if (!description || !description->data)
+        return;
+
+    const auto & filter = *description->data;
+    const size_t rows_per_mark = mark_ranges_info->rows_per_mark;
+
+    /// Only the last mark can have fewer rows.
+    size_t num_marks = 0;
+    for (const auto & range : mark_ranges_info->mark_ranges)
+        num_marks += range.end - range.begin;
+    if (num_marks == 0 || filter.size() <= (num_marks - 1) * rows_per_mark || filter.size() > num_marks * rows_per_mark)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The chunk with {} rows does not consist of {} marks of {} rows for the query condition cache",
+            filter.size(), num_marks, rows_per_mark);
+
+    MarkRanges marks_without_matches;
+    size_t row = 0;
+    for (const auto & range : mark_ranges_info->mark_ranges)
+    {
+        for (size_t mark = range.begin; mark < range.end; ++mark)
+        {
+            const size_t end = std::min(row + rows_per_mark, filter.size());
+            if (memoryIsZero(filter.data(), row, end))
+            {
+                if (!marks_without_matches.empty() && marks_without_matches.back().end == mark)
+                    ++marks_without_matches.back().end;
+                else
+                    marks_without_matches.emplace_back(mark, mark + 1);
+            }
+            row = end;
+        }
+    }
+
+    if (!marks_without_matches.empty())
+        query_condition_cache->write(
+            mark_ranges_info->table_uuid,
+            mark_ranges_info->part_name,
+            condition->first,
+            condition->second,
+            marks_without_matches,
+            mark_ranges_info->marks_count,
+            /*has_final_mark=*/ false);
+}
+
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
 {
-    if (!query_condition_cache)
+    if (!query_condition_cache || isCancelled())
+        return;
+
+    /// A transform between the reading step and this filter (e.g. `FilterSortedStreamByRange`
+    /// when the read is split into layers for FINAL or for join-by-PK-ranges) already dropped
+    /// rows from the chunk. "No rows matched" then holds only for the surviving rows, not for
+    /// every row of the chunk's mark ranges: rows of the same granules in another layer may
+    /// still match. Writing such ranges would poison the cache for later queries.
+    if (mark_ranges_info && mark_ranges_info->has_dropped_rows)
         return;
 
     if (!mark_ranges_info)

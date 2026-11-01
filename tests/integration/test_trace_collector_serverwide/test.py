@@ -8,13 +8,24 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", main_configs=["configs/global_profiler.xml"])
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/global_profiler.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
         cluster.start()
+
+        if node1.is_built_with_memory_sanitizer():
+            pytest.skip("The sampling query profiler is unavailable under MemorySanitizer")
+
+        config_path = "/etc/clickhouse-server/config.d/global_profiler.xml"
+        node1.replace_in_config(config_path, ">0<", ">10000000<")
+        node1.restart_clickhouse()
 
         yield cluster
     finally:

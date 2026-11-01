@@ -68,7 +68,7 @@ namespace impl
 
 constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
 {
-    return haystack.find(needle) != std::string_view::npos;
+    return haystack.contains(needle);
 }
 
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \

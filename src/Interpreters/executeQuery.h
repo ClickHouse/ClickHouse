@@ -2,12 +2,14 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -23,6 +25,7 @@ class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
+struct Settings;
 
 struct QueryResultDetails
 {
@@ -33,6 +36,13 @@ struct QueryResultDetails
     std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_created_at = {};
     std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_expires_at = {};
     std::unordered_map<String, String> additional_headers = {};
+    /// Whether the response is a stream of packets produced by a framing format (see
+    /// `framing_output_format`). The HTTP handler uses it to fail closed: once such a response
+    /// has started closing, nothing may be appended to it (see `HTTPHandler::trySendExceptionToClient`).
+    bool framed = false;
+    /// The table columns the result columns come from, one per result column. Filled only for `SELECT` queries
+    /// executed with `QueryFlags::collect_result_column_origins`, and empty if they are unknown.
+    ResultColumnOrigins result_column_origins = {};
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
@@ -50,8 +60,15 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
-                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log.
+                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing).
+                                                   /// NOTE: For a framed response (`framing_output_format`) it is instead called after the QueryFinish
+                                                   /// entry: the stream must include the trailing `log` / `profile_events` packets emitted by the
+                                                   /// query-finish logging and end with the final `progress` packet, and closing the response stream
+                                                   /// must come after that. Consequently the network-send counters of the response tail (and, when the
+                                                   /// response is buffered, of the delayed-results push) are not part of the QueryFinish snapshot -
+                                                   /// the same semantics as the native protocol, which sends its trailing logs and profile events
+                                                   /// after the query log entry too.
     HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
@@ -63,8 +80,15 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
-                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log.
+                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing).
+                                                    /// NOTE: For a framed response (`framing_output_format`) it is instead called after the QueryFinish
+                                                    /// entry: the stream must include the trailing `log` / `profile_events` packets emitted by the
+                                                    /// query-finish logging and end with the final `progress` packet, and closing the response stream
+                                                    /// must come after that. Consequently the network-send counters of the response tail (and, when the
+                                                    /// response is buffered, of the delayed-results push) are not part of the QueryFinish snapshot -
+                                                    /// the same semantics as the native protocol, which sends its trailing logs and profile events
+                                                    /// after the query log entry too.
     HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
@@ -87,8 +111,13 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
-    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,    /// To which stage the query must be executed.
+    QueryResultDetails * result_details = nullptr    /// If not null, filled with the details of the result.
 );
+
+/// Schedules the query on the background query pool. The returned future becomes ready once the query
+/// passes all the checks and starts its execution, or holds the exception thrown before that.
+std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context);
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
@@ -99,6 +128,17 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
 /// which records QueryFinish and releases the memory reservation.
 /// If the callback throws, its exception is rethrown after io.onFinish().
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
+
+/// Rewrites `allow_experimental_analyzer = 0` (`enable_analyzer = 0`) to `1` in every SETTINGS clause
+/// and `SET` query anywhere in the AST. The setting is obsolete and frozen at `1`; a disabling value is
+/// accepted for backward compatibility and replaced by the only supported one, so that it is neither
+/// applied to a subquery context nor stored in the definition of a view. Applied to every query at the
+/// start of processing; also used for generated queries that bypass `executeQuery`, such as in the
+/// `eval` table function.
+void normalizeAnalyzerSettings(ASTPtr ast);
+
+/// Parses the query only to produce text with secrets hidden; returns an empty string if the query does not parse.
+String formatQueryForLogging(const String & query, const Settings & settings);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

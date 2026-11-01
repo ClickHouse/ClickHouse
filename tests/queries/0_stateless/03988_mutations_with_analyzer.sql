@@ -1,7 +1,5 @@
 -- Tags: no-replicated-database
--- Test that mutations work correctly with the new analyzer path.
-
-SET allow_experimental_analyzer = 1;
+-- Test that mutations work correctly with the analyzer path.
 
 -- Test 1: MergeTree engine - DELETE
 DROP TABLE IF EXISTS t_mutations_analyzer;

@@ -10,7 +10,7 @@ inline bool isBinaryOperatorUnless(std::string_view operator_name) { return oper
 
 /// Applies a prometheus operator "unless".
 SQLQueryPiece applyBinaryOperatorUnless(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
     ConverterContext & context);

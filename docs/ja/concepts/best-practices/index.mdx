@@ -1,14 +1,57 @@
 ---
 slug: /best-practices
-keywords: ['Cloud', '主キー', 'オーダリングキー', 'materialized view', 'ベストプラクティス', '一括挿入', '非同期挿入', 'mutation の使用を避ける', 'Nullable カラムを避ける', 'OPTIMIZE FINAL を避ける', 'パーティショニングキー']
+keywords: ['Cloud', '主キー', 'Ordering key', 'Materialized Views', 'Best Practices', 'Bulk Inserts', 'Asynchronous Inserts', 'Avoid Mutations', 'Avoid nullable Columns', 'Avoid Optimize Final', 'Partitioning Key']
 title: 'ClickHouse のベストプラクティス'
 hide_title: true
-description: 'ClickHouse のベストプラクティス セクションのトップページ'
+description: 'ClickHouse のベストプラクティスセクションのランディングページ'
 doc_type: 'landing-page'
+mode: wide
 ---
-
-import TableOfContents from '/snippets/ja/_table_of_contents.mdx';
 
 このセクションでは、ClickHouse を最大限に活用するためのベストプラクティスを紹介します。
 
-<TableOfContents />
+<CardGroup cols={2}>
+  <Card title="主キーの選び方" icon="key" href="/ja/concepts/best-practices/choosing-a-primary-key">
+    ClickHouse で主キーを選ぶ方法。
+  </Card>
+
+  <Card title="データ型の選択" icon="shapes" href="/ja/concepts/best-practices/select-data-type">
+    カラムに適したデータ型を選ぶ方法。
+  </Card>
+
+  <Card title="materialized view を使う" icon="layer-group" href="/ja/concepts/best-practices/use-materialized-views">
+    materialized view を使って、処理をクエリ時から挿入時へ移します。
+  </Card>
+
+  <Card title="JOIN を最小限に抑えて最適化する" icon="link" href="/ja/concepts/best-practices/minimize-optimize-joins">
+    ClickHouse で JOIN を使う際のベストプラクティス。
+  </Card>
+
+  <Card title="パーティションキーの選び方" icon="folder-tree" href="/ja/concepts/best-practices/partitioning-keys">
+    パーティションキーを選ぶ方法。
+  </Card>
+
+  <Card title="挿入戦略の選択" icon="file-import" href="/ja/concepts/best-practices/selecting-an-insert-strategy">
+    バルク挿入や非同期挿入を含む、挿入戦略の選び方。
+  </Card>
+
+  <Card title="必要に応じてデータスキッピングインデックスを使う" icon="filter" href="/ja/concepts/best-practices/using-data-skipping-indices">
+    データスキッピングインデックスの使い方と、使うべき場面。
+  </Card>
+
+  <Card title="mutations を避ける" icon="ban" href="/ja/concepts/best-practices/avoid-mutations">
+    ClickHouse で mutations を避けるべき理由。
+  </Card>
+
+  <Card title="OPTIMIZE FINAL を避ける" icon="triangle-exclamation" href="/ja/concepts/best-practices/avoid-optimize-final">
+    `OPTIMIZE TABLE ... FINAL` を避けるべき理由。
+  </Card>
+
+  <Card title="Nullable カラムを避ける" icon="circle-minus" href="/ja/concepts/best-practices/avoidnullablecolumns">
+    ClickHouse で Nullable カラムを避けるべき理由。
+  </Card>
+
+  <Card title="適切な場面で JSON を使う" icon="code" href="/ja/concepts/best-practices/json-type">
+    `JSON` データ型を使うべき場面。
+  </Card>
+</CardGroup>

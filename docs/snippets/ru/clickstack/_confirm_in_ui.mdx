@@ -4,21 +4,29 @@ title: Проверка в интерфейсе
 
 Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud), выберите **ClickStack** в левом меню, а затем **Start Ingestion**.
 
-<Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Запустить ClickStack" border />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-cloud-first-time.webp" alt="Запустить ClickStack" />
+</Frame>
 
 Следующий шаг можно пропустить, так как коллектор у вас уже настроен. Чтобы продолжить, нажмите **Launch ClickStack**.
 
 ClickStack откроется в новой вкладке, и вы должны автоматически попасть на страницу **Getting Started**. Если этого не произошло, выберите **Getting Started** в левом меню, затем нажмите **Start Ingestion**, а после этого **Next**.
 
-<Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-start-ingestion.webp" alt="ClickStack Start Ingestion" />
+</Frame>
 
 Вы попадёте на страницу **Getting Started**. Если вам будет предложено начать ингестию, пройдите экраны онбординга, которые показывают, как запустить Docker collector. Поскольку вы уже выполнили этот шаг, можете просто прокликать их. ClickStack автоматически обнаружит ваши телеметрические данные и таблицы, после чего вы сможете выбрать **Start Exploring** и начать работу с платформой.
 
-<Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-start-exploring.webp" alt="ClickStack Start Exploring" />
+</Frame>
 
 Переключите источник на `Logs` и установите диапазон времени **Last 15 minutes**. Синтетические журналы из `telemetrygen` должны появиться в течение нескольких секунд.
 
-<Image img="/images/use-cases/observability/clickstack-search.webp" size="lg" alt="Представление поиска ClickStack с появляющимися журналами" />
+<Frame>
+  <img src="/images/use-cases/observability/clickstack-search.webp" alt="Представление поиска ClickStack с появляющимися журналами" />
+</Frame>
 
 Если ничего не отображается:
 

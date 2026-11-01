@@ -11,8 +11,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-JoinLazyColumnsStep::JoinLazyColumnsStep(const SharedHeader & left_header_, const SharedHeader & right_header_, LazyMaterializingRowsPtr lazy_materializing_rows_)
+JoinLazyColumnsStep::JoinLazyColumnsStep(
+    const SharedHeader & left_header_,
+    const SharedHeader & right_header_,
+    ILazyMaterializingRowsPtr lazy_materializing_rows_,
+    String index_column_name_)
     : lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , index_column_name(std::move(index_column_name_))
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -24,7 +29,15 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinLazyColumnsStep must have two pipelines");
 
-    auto transform = std::make_shared<LazyMaterializingTransform>(input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater);
+    /// The transform joins exactly one main and one lazy stream. The main branch is not
+    /// necessarily single-stream (e.g. a limit without a sorting step above the reading).
+    if (pipelines[0]->getNumStreams() > 1)
+        pipelines[0]->resize(1);
+    if (pipelines[1]->getNumStreams() > 1)
+        pipelines[1]->resize(1);
+
+    auto transform = std::make_shared<LazyMaterializingTransform>(
+        input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater, index_column_name);
     transform->setPassThrough(pass_through);
     return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), transform, &processors);
 }
@@ -32,7 +45,7 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
 void JoinLazyColumnsStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(LazyMaterializingTransform::transformHeader(
-        *input_headers.front(), *input_headers.back()));
+        *input_headers.front(), *input_headers.back(), index_column_name));
 }
 
 void JoinLazyColumnsStep::setPassThrough(bool value)

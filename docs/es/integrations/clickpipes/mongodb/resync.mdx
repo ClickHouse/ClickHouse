@@ -13,26 +13,22 @@ integration:
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="what-mongodb-resync-do">
-  ### ¿Qué hace Resync?
+  ### ¿Qué hace la resincronización?
 </div>
 
-Resync implica las siguientes operaciones, en este orden:
+La resincronización implica las siguientes operaciones, en este orden:
 
-1. Se elimina el ClickPipe existente y se inicia un nuevo ClickPipe de &quot;resync&quot;. De este modo, cuando se realiza un resync, se detectan los cambios en las estructuras de las tablas de origen.
-2. El ClickPipe de resync crea (o reemplaza) un nuevo conjunto de tablas de destino con los mismos nombres que las tablas originales, salvo por el sufijo `_resync`.
+1. Se elimina el ClickPipe existente y se inicia un nuevo ClickPipe de &quot;resincronización&quot;. De este modo, cuando se realiza una resincronización, se detectan los cambios en las estructuras de las tablas de origen.
+2. El ClickPipe de resincronización crea (o reemplaza) un nuevo conjunto de tablas de destino con los mismos nombres que las tablas originales, salvo por el sufijo `_resync`.
 3. Se realiza la carga inicial en las tablas `_resync`.
 4. A continuación, las tablas `_resync` se intercambian con las tablas originales. Las filas con eliminación lógica se transfieren de las tablas originales a las tablas `_resync` antes del intercambio.
 
-Se conservan todos los ajustes del ClickPipe original en el ClickPipe de resync. Las estadísticas del ClickPipe original se borran en la UI.
+Se conservan todos los ajustes del ClickPipe original en el ClickPipe de resincronización. Las estadísticas del ClickPipe original se borran en la UI.
 
-<div id="use-cases-mongodb-resync">
-  ### Casos de uso para resincronizar un ClickPipe
-</div>
-
-Aquí tienes algunos escenarios:
-
-1. Puede que necesites realizar cambios importantes en el esquema de las tablas de origen que rompan el ClickPipe existente y te obliguen a reiniciarlo. Basta con hacer clic en Resync después de aplicar los cambios.
-2. En el caso concreto de ClickHouse, puede que necesites cambiar las claves de ORDER BY en las tablas de destino. Puedes usar Resync para volver a poblar la nueva tabla con los datos y la clave de ordenación correctos.
+<Note>
+  Puede resincronizar varias veces; no obstante, tenga en cuenta la carga en la base de datos de origen cuando resincronice,
+  ya que cada vez se lleva a cabo una carga inicial con hilos paralelos.
+</Note>
 
 <div id="guide-mongodb-resync">
   ### Guía para resincronizar ClickPipe

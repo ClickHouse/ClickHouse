@@ -7,22 +7,22 @@ Test select text + hasAnyTokens:	Alick a01
 Test hasToken and hasToken:	0
 Test hasAnyTokens or hasToken:	2
 Test NOT hasAllTokens:	1
-Added: [__text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_3064868a108351f77214bdde8fe5fde4], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_f9382267d4ac05648238a1fcb88f480c], Removed: [text]
-Added: [__text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97]
-Added: [__text_index_idx_hasAnyTokens_f9382267d4ac05648238a1fcb88f480c]
-Added: [__text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97, __text_index_idx_hasToken_e333eae7ebcce5db7ff3bfc355ea5644], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_08ba86dd30b46b1972011bb54e74e868, __text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_85143c8dacb6c12b5cdffb4d22ebb367], Removed: [text]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_5fa51b2c623f1a486d9249d7757ec915], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899], Removed: [text]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a]
+Added: [__text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899]
+Added: [__text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a, __text_index_idx_hasToken_d0c9a08c3b0871a03e9eec9b8f2d9b10], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_0c8fc52ed37da16d57305d1bb45c0abb, __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_062af83dff7b50ae332d4792a157bd19], Removed: [text]
 - Test direct read optimization with EXPLAIN
-Actions: INPUT : 0 -> __text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97 UInt8 : 0
-Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_3064868a108351f77214bdde8fe5fde4 UInt8 : 0
-Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_f9382267d4ac05648238a1fcb88f480c UInt8 : 0
-INPUT : 1 -> __text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97 UInt8 : 2
-Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_f9382267d4ac05648238a1fcb88f480c UInt8 : 0
-Actions: INPUT : 0 -> __text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97 UInt8 : 0
-INPUT : 1 -> __text_index_idx_hasToken_e333eae7ebcce5db7ff3bfc355ea5644 UInt8 : 1
-Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_08ba86dd30b46b1972011bb54e74e868 UInt8 : 0
-INPUT : 1 -> __text_index_idx_hasToken_05af67caeb1dac7fe8822d89615c3a97 UInt8 : 1
-Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_85143c8dacb6c12b5cdffb4d22ebb367 UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_5fa51b2c623f1a486d9249d7757ec915 UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899 UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 2
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_1f4e7655ba9b30e7a282c4ab86df4899 UInt8 : 0
+Actions: INPUT : 0 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_d0c9a08c3b0871a03e9eec9b8f2d9b10 UInt8 : 1
+Actions: INPUT : 0 -> __text_index_idx_hasAnyTokens_0c8fc52ed37da16d57305d1bb45c0abb UInt8 : 0
+INPUT : 1 -> __text_index_idx_hasToken_6162cbd2939ffaca63bd4e3b1c784a2a UInt8 : 1
+Actions: INPUT : 0 -> __text_index_idx_hasAllTokens_062af83dff7b50ae332d4792a157bd19 UInt8 : 0

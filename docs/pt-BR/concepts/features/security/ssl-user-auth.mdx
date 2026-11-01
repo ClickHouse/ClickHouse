@@ -23,130 +23,124 @@ Este guia apresenta configurações simples e mínas para configurar a autentica
   > Gostaria de poder configurar o protocolo proxy v2 do nosso NLB como abaixo `proxy_protocol_v2.client_to_server.header_placement,Value=on_first_ack`.
 </Note>
 
-<div id="1-create-ssl-user-certificates">
-  ## 1. Criar certificados SSL de usuário
-</div>
+<Steps>
+  <Step title="Criar certificados SSL de usuário" id="1-create-ssl-user-certificates">
+    <Note>
+      Este exemplo usa certificados autoassinados com uma CA autoassinada. Para ambientes de produção, crie uma CSR e envie-a para sua equipe de PKI ou para o provedor de certificados a fim de obter um certificado adequado.
+    </Note>
 
-<Note>
-  Este exemplo usa certificados autoassinados com uma CA autoassinada. Para ambientes de produção, crie uma CSR e envie-a para sua equipe de PKI ou para o provedor de certificados a fim de obter um certificado adequado.
-</Note>
+    1. Gere uma Certificate Signing Request (CSR) e uma chave. O formato básico é o seguinte:
+       ```bash
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=<my_host>:<my_user>"  -keyout <my_cert_name>.key -out <my_cert_name>.csr
+       ```
+       Neste exemplo, usaremos isto para o domínio e o usuário que serão usados neste ambiente de exemplo:
+       ```bash
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1.marsnet.local:cert_user"  -keyout chnode1_cert_user.key -out chnode1_cert_user.csr
+       ```
 
-1. Gere uma Certificate Signing Request (CSR) e uma chave. O formato básico é o seguinte:
-   ```bash
-   openssl req -newkey rsa:2048 -nodes -subj "/CN=<my_host>:<my_user>"  -keyout <my_cert_name>.key -out <my_cert_name>.csr
-   ```
-   Neste exemplo, usaremos isto para o domínio e o usuário que serão usados neste ambiente de exemplo:
-   ```bash
-   openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1.marsnet.local:cert_user"  -keyout chnode1_cert_user.key -out chnode1_cert_user.csr
-   ```
+    <Note>
+      O CN é arbitrário, e qualquer string pode ser usada como identificador do certificado. Ele é usado ao criar o usuário nas etapas a seguir.
+    </Note>
 
-<Note>
-  O CN é arbitrário, e qualquer string pode ser usada como identificador do certificado. Ele é usado ao criar o usuário nas etapas a seguir.
-</Note>
+    2. Gere e assine o novo certificado de usuário que será usado para autenticação. O formato básico é o seguinte:
+       ```bash
+       openssl x509 -req -in <my_cert_name>.csr -out <my_cert_name>.crt -CA <my_ca_cert>.crt -CAkey <my_ca_cert>.key -days 365
+       ```
+       Neste exemplo, usaremos isto para o domínio e o usuário que serão usados neste ambiente de exemplo:
+       ```bash
+       openssl x509 -req -in chnode1_cert_user.csr -out chnode1_cert_user.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365
+       ```
+  </Step>
 
-2. Gere e assine o novo certificado de usuário que será usado para autenticação. O formato básico é o seguinte:
-   ```bash
-   openssl x509 -req -in <my_cert_name>.csr -out <my_cert_name>.crt -CA <my_ca_cert>.crt -CAkey <my_ca_cert>.key -days 365
-   ```
-   Neste exemplo, usaremos isto para o domínio e o usuário que serão usados neste ambiente de exemplo:
-   ```bash
-   openssl x509 -req -in chnode1_cert_user.csr -out chnode1_cert_user.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365
-   ```
+  <Step title="Criar um usuário SQL e conceder permissões" id="2-create-a-sql-user-and-grant-permissions">
+    <Note>
+      Para obter detalhes sobre como habilitar usuários SQL e definir funções, consulte o guia [Definindo usuários e funções SQL](/pt-BR/concepts/features/security/access-rights).
+    </Note>
 
-<div id="2-create-a-sql-user-and-grant-permissions">
-  ## 2. Criar um usuário SQL e conceder permissões
-</div>
+    1. Crie um usuário SQL configurado para usar autenticação por certificado:
+       ```sql
+       CREATE USER cert_user IDENTIFIED WITH ssl_certificate CN 'chnode1.marsnet.local:cert_user';
+       ```
 
-<Note>
-  Para saber como habilitar usuários SQL e definir roles, consulte o guia [Defining SQL Users and Roles](/pt-BR/concepts/features/security/access-rights).
-</Note>
+    2. Conceda privilégios ao novo usuário com certificado:
+       ```sql
+       GRANT ALL ON *.* TO cert_user WITH GRANT OPTION;
+       ```
 
-1. Crie um usuário SQL configurado para usar autenticação por certificado:
-   ```sql
-   CREATE USER cert_user IDENTIFIED WITH ssl_certificate CN 'chnode1.marsnet.local:cert_user';
-   ```
+    <Note>
+      Neste exercício, o usuário recebe privilégios administrativos completos apenas para fins de demonstração. Consulte a [documentação de RBAC](/pt-BR/concepts/features/security/access-rights) do ClickHouse para ver as configurações de permissões.
+    </Note>
 
-2. Conceda privilégios ao novo usuário com certificado:
-   ```sql
-   GRANT ALL ON *.* TO cert_user WITH GRANT OPTION;
-   ```
+    <Note>
+      Recomendamos usar SQL para definir usuários e funções. No entanto, se você estiver definindo usuários e funções em arquivos de configuração, o usuário ficará assim:
 
-<Note>
-  Neste exercício, o usuário recebe privilégios administrativos totais apenas para fins de demonstração. Consulte a [documentação de RBAC](/pt-BR/concepts/features/security/access-rights) do ClickHouse para ver as configurações de permissões.
-</Note>
+      ```xml
+      <users>
+          <cert_user>
+              <ssl_certificates>
+                  <common_name>chnode1.marsnet.local:cert_user</common_name>
+              </ssl_certificates>
+              <networks>
+                  <ip>::/0</ip>
+              </networks>
+              <profile>default</profile>
+              <access_management>1</access_management>
+              {/* opções adicionais*/}
+          </cert_user>
+      </users>
+      ```
+    </Note>
+  </Step>
 
-<Note>
-  Recomendamos usar SQL para definir usuários e roles. No entanto, se você estiver definindo usuários e roles em arquivos de configuração, o usuário ficará assim:
+  <Step title="Verificação" id="3-testing">
+    1. Copie o certificado de usuário, a chave do usuário e o certificado da CA para um nó remoto.
 
-  ```xml
-  <users>
-      <cert_user>
-          <ssl_certificates>
-              <common_name>chnode1.marsnet.local:cert_user</common_name>
-          </ssl_certificates>
-          <networks>
-              <ip>::/0</ip>
-          </networks>
-          <profile>default</profile>
-          <access_management>1</access_management>
-          {/* opções adicionais*/}
-      </cert_user>
-  </users>
-  ```
-</Note>
+    2. Configure o OpenSSL na [configuração do cliente](/pt-BR/concepts/features/interfaces/client#configuration_files) do ClickHouse com o certificado e os caminhos.
 
-<div id="3-testing">
-  ## 3. Teste
-</div>
+       ```xml
+       <openSSL>
+           <client>
+               <certificateFile>my_cert_name.crt</certificateFile>
+               <privateKeyFile>my_cert_name.key</privateKeyFile>
+               <caConfig>my_ca_cert.crt</caConfig>
+           </client>
+       </openSSL>
+       ```
 
-1. Copie o certificado do usuário, a chave do usuário e o certificado da CA para um nó remoto.
+    3. Execute `clickhouse-client`.
+       ```bash
+       clickhouse-client --user <my_user> --query 'SHOW TABLES'
+       ```
 
-2. Configure o OpenSSL na [configuração do cliente](/pt-BR/concepts/features/interfaces/client#configuration_files) do ClickHouse com o certificado e os caminhos.
+    <Note>
+      Observe que a senha fornecida ao clickhouse-client é ignorada quando um certificado é especificado na configuração.
+    </Note>
+  </Step>
 
-   ```xml
-   <openSSL>
-       <client>
-           <certificateFile>my_cert_name.crt</certificateFile>
-           <privateKeyFile>my_cert_name.key</privateKeyFile>
-           <caConfig>my_ca_cert.crt</caConfig>
-       </client>
-   </openSSL>
-   ```
+  <Step title="Teste de HTTP" id="4-testing-http">
+    1. Copie o certificado de usuário, a chave do usuário e o certificado da CA para um nó remoto.
 
-3. Execute o `clickhouse-client`.
-   ```bash
-   clickhouse-client --user <my_user> --query 'SHOW TABLES'
-   ```
+    2. Use `curl` para testar um comando SQL de exemplo. O formato básico é o seguinte:
+       ```bash
+       echo 'SHOW TABLES' | curl 'https://<clickhouse_node>:8443' --cert <my_cert_name>.crt --key <my_cert_name>.key --cacert <my_ca_cert>.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: <my_user>" --data-binary @-
+       ```
+       Por exemplo:
+       ```bash
+       echo 'SHOW TABLES' | curl 'https://chnode1:8443' --cert chnode1_cert_user.crt --key chnode1_cert_user.key --cacert marsnet_ca.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: cert_user" --data-binary @-
+       ```
+       A saída será semelhante à seguinte:
+       ```response
+       INFORMATION_SCHEMA
+       default
+       information_schema
+       system
+       ```
 
-<Note>
-  Observe que a senha fornecida ao `clickhouse-client` é ignorada quando um certificado é especificado na configuração.
-</Note>
-
-<div id="4-testing-http">
-  ## 4. Testando HTTP
-</div>
-
-1. Copie o certificado do usuário, a chave do usuário e o certificado da CA para um nó remoto.
-
-2. Use o `curl` para testar um comando SQL de exemplo. O formato básico é:
-   ```bash
-   echo 'SHOW TABLES' | curl 'https://<clickhouse_node>:8443' --cert <my_cert_name>.crt --key <my_cert_name>.key --cacert <my_ca_cert>.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: <my_user>" --data-binary @-
-   ```
-   Por exemplo:
-   ```bash
-   echo 'SHOW TABLES' | curl 'https://chnode1:8443' --cert chnode1_cert_user.crt --key chnode1_cert_user.key --cacert marsnet_ca.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: cert_user" --data-binary @-
-   ```
-   A saída será semelhante à seguinte:
-   ```response
-   INFORMATION_SCHEMA
-   default
-   information_schema
-   system
-   ```
-
-<Note>
-  Observe que nenhuma senha foi especificada; o certificado é usado no lugar da senha e é assim que o ClickHouse autenticará o usuário.
-</Note>
+    <Note>
+      Observe que nenhuma senha foi especificada; o certificado é usado no lugar da senha e é assim que o ClickHouse autenticará o usuário.
+    </Note>
+  </Step>
+</Steps>
 
 <div id="summary">
   ## Resumo

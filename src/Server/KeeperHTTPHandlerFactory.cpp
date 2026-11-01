@@ -65,8 +65,18 @@ static void addDashboardHandlersToFactory(
     auto dashboard_ui_creator = []() -> std::unique_ptr<KeeperDashboardWebUIRequestHandler>
     { return std::make_unique<KeeperDashboardWebUIRequestHandler>(); };
 
+    auto dashboard_path_filter = [](const String & path)
+    {
+        return [path](const auto & request)
+        {
+            const auto & uri = request.getURI();
+            return uri == path
+                || (uri.size() > path.size() && uri.starts_with(path) && uri[path.size()] == '?');
+        };
+    };
+
     auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardWebUIRequestHandler>>(dashboard_ui_creator);
-    dashboard_handler->attachStrictPath("/dashboard");
+    dashboard_handler->addFilter(dashboard_path_filter("/dashboard"));
     dashboard_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
@@ -76,7 +86,7 @@ static void addDashboardHandlersToFactory(
 
     auto dashboard_content_handler
         = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardContentRequestHandler>>(dashboard_content_creator);
-    dashboard_content_handler->attachStrictPath("/dashboard/content");
+    dashboard_content_handler->addFilter(dashboard_path_filter("/dashboard/content"));
     dashboard_content_handler->allowGetAndHeadRequest();
     factory.addHandler(dashboard_content_handler);
 }

@@ -33,15 +33,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Доступ к файлам журналов Kafka (`server.log`, `controller.log` и т. д.)
 
 <Steps>
-  <Step>
-    #### Проверьте конфигурацию логирования Kafka
-
+  <Step title="Проверьте конфигурацию логирования Kafka" id="verify-kafka">
     Kafka использует Log4j и записывает журналы в каталог, указанный в системном свойстве `kafka.logs.dir` или переменной окружения `LOG_DIR`. Проверьте расположение файла журнала:
 
     ```bash
-    # Расположение по умолчанию
-    ls $KAFKA_HOME/logs/      # Стандартный Apache Kafka (по умолчанию <install-dir>/logs/)
-    ls /var/log/kafka/        # Установка из пакетов RPM/DEB
+    # Default locations
+    ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+    ls /var/log/kafka/        # RPM/DEB package installations
     ```
 
     Основные файлы журнала Kafka:
@@ -61,9 +59,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Создайте пользовательскую конфигурацию OTel collector для Kafka
-
+  <Step title="Создайте пользовательскую конфигурацию OTel collector для Kafka" id="custom-otel">
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, подключив пользовательский файл конфигурации и задав переменную окружения. Пользовательская конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
 
     Создайте файл с именем `kafka-logs-monitoring.yaml` со следующей конфигурацией:
@@ -73,8 +69,8 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       filelog/kafka:
         include:
           - /var/log/kafka/server.log
-          - /var/log/kafka/controller.log  # необязательно, существует только если log4j настроен с отдельными файловыми аппендерами
-          - /var/log/kafka/state-change.log  # необязательно, аналогично вышесказанному
+          - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+          - /var/log/kafka/state-change.log  # optional, same as above
         start_at: beginning
         multiline:
           line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
@@ -120,9 +116,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Настройка ClickStack для загрузки пользовательской конфигурации
-
+  <Step title="Настройка ClickStack для загрузки пользовательской конфигурации" id="load-custom">
     Чтобы включить пользовательскую конфигурацию коллектора в существующем развертывании ClickStack, необходимо:
 
     1. Смонтировать файл пользовательской конфигурации в `/etc/otelcol-contrib/custom.config.yaml`
@@ -136,14 +130,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
         ```yaml
         services:
           clickstack:
-            # ... существующая конфигурация ...
+            # ... existing configuration ...
             environment:
               - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-              # ... другие переменные окружения ...
+              # ... other environment variables ...
             volumes:
               - ./kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
               - /var/log/kafka:/var/log/kafka:ro
-              # ... другие тома ...
+              # ... other volumes ...
         ```
       </Tab>
 
@@ -166,9 +160,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Проверьте журналы в HyperDX
-
+  <Step title="Проверьте журналы в HyperDX" id="verifying-logs">
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
     <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Представление Search" />
@@ -184,9 +176,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Протестируйте интеграцию журналов Kafka на заранее подготовленном примере данных, прежде чем настраивать системы в продакшне.
 
 <Steps>
-  <Step>
-    #### Скачайте пример данных
-
+  <Step title="Скачать пример данных" id="download-sample">
     Скачайте пример файла журнала:
 
     ```bash
@@ -194,9 +184,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Создайте тестовую конфигурацию коллектора
-
+  <Step title="Создать тестовую конфигурацию коллектора" id="test-config">
     Создайте файл `kafka-logs-demo.yaml` со следующей конфигурацией:
 
     ```yaml
@@ -245,9 +233,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Запустите ClickStack с демо-конфигурацией
-
+  <Step title="Запустить ClickStack с демо-конфигурацией" id="run-demo">
     Запустите ClickStack с демо-журналами и этой конфигурацией:
 
     ```bash
@@ -278,14 +264,12 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Скачайте</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачайте конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Скачайте файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импорт преднастроенного дашборда
-
-    1. Откройте HyperDX и перейдите в раздел Dashboards.
+  <Step title="Импорт преднастроенной панели мониторинга" id="import-dashboard">
+    1. Откройте HyperDX и перейдите в раздел панелей мониторинга.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Импорт панели мониторинга" />
@@ -295,9 +279,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Завершение импорта панели мониторинга журналов Kafka" />
   </Step>
 
-  <Step>
-    #### Панель мониторинга будет создана со всеми преднастроенными визуализациями
-
+  <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями" id="created-dashboard">
     Для демо-набора данных установите временной диапазон, включающий **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Пример панели мониторинга журналов Kafka" />
@@ -340,4 +322,4 @@ tail -1 /var/log/kafka/server.log
   ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для настройки конфигурации продакшна.
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурация для продакшна описана в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

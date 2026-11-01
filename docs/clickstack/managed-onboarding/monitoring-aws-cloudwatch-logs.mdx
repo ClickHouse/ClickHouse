@@ -22,8 +22,7 @@ This guide assumes you've completed [Setting up your OpenTelemetry Collector](/c
 The ClickStack collector can be deployed either as a **Docker container** (see [Setting up your OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)) or as a **Helm release** in Kubernetes via the upstream OpenTelemetry Helm chart with the ClickStack collector image (see [Deploying the collector](/clickstack/ingesting-data/collector#configuring-the-collector)). **Ensure you have recorded its OTLP endpoint** and the `OTLP_AUTH_TOKEN` you set when deploying it.
 
 <Steps>
-<Step>
-## Gather your prerequisites {#gather-prerequisites}
+<Step title="Gather your prerequisites" id="gather-prerequisites">
 
 You'll need:
 
@@ -32,8 +31,7 @@ You'll need:
 - The **OTLP endpoint** of your ClickStack collector, reachable from this host. If it's running in Docker on the same machine, use `http://host.docker.internal:4318` (see the callout in [Configure the CloudWatch receiver](#configure-receiver)). For a remote collector, use its full URL, for example `https://otel.example.com:4318`.
 - The `OTLP_AUTH_TOKEN` value you set on your ClickStack collector. If you didn't secure it, you can drop the `authorization` header from the config below.
 </Step>
-<Step>
-## Configure AWS credentials {#configure-aws}
+<Step title="Configure AWS credentials" id="configure-aws">
 
 The receiver picks up AWS credentials from the standard environment variables. Export them on the host that will run the collector.
 
@@ -81,8 +79,7 @@ Replace `YOUR_ACCOUNT_ID` with your AWS account ID.
 For production, prefer instance-attached credentials over long-term keys: an IAM role on EC2, IRSA on EKS, or a task role on ECS. The same collector config below works without any credential env vars when the receiver can resolve credentials from the instance metadata service.
 </Info>
 </Step>
-<Step>
-## Configure the CloudWatch receiver {#configure-receiver}
+<Step title="Configure the CloudWatch receiver" id="configure-receiver">
 
 Export your ClickStack collector endpoint and auth token, then create an `otel-collector-config.yaml`.
 
@@ -217,8 +214,7 @@ For the full set of options, see the [CloudWatch receiver documentation](https:/
 On first run, the receiver checkpoints at the current time and only fetches logs from that point forward. Historical logs aren't backfilled.
 </Info>
 </Step>
-<Step>
-## Start the receiver collector {#start-collector}
+<Step title="Start the receiver collector" id="start-collector">
 
 Create a `docker-compose.yaml` alongside `otel-collector-config.yaml`. The `extra_hosts` entry lets the container reach a ClickStack collector running on the same host via `host.docker.internal`; the long-form bind mount errors explicitly if the config file is missing, rather than silently creating an empty directory:
 
@@ -258,8 +254,7 @@ Tail its logs to confirm it's polling CloudWatch and exporting to your ClickStac
 docker compose logs -f otel-collector
 ```
 </Step>
-<Step>
-## Confirm in the ClickStack UI {#confirm-in-ui}
+<Step title="Confirm in the ClickStack UI" id="confirm-in-ui">
 
 Open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud) and select **ClickStack** from the left menu.
 
@@ -291,8 +286,7 @@ If nothing shows up:
 - Verify `OTEL_COLLECTOR_ENDPOINT` is reachable from inside the container: `docker compose exec otel-collector wget -qO- ${OTEL_COLLECTOR_ENDPOINT}/v1/logs -S 2>&1 | head -5`.
 - Confirm `OTLP_AUTH_TOKEN` matches the value set on your ClickStack collector.
 </Step>
-<Step>
-## Import the CloudWatch dashboard (optional) {#import-dashboard}
+<Step title="Import the CloudWatch dashboard (optional)" id="import-dashboard">
 
 A pre-built dashboard with log volume, severity breakdown, and error distribution is available for download.
 
@@ -304,8 +298,7 @@ Upload the JSON file and click **Finish Import**.
 
 <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="Finish import dialog"/>
 </Step>
-<Step>
-## Further reading {#further-reading}
+<Step title="Further reading" id="further-reading">
 
 - [AWS CloudWatch logs integration reference](/clickstack/integration-examples/cloudwatch) for the demo dataset, full troubleshooting, and tuning options.
 - [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector) with TLS on the OTLP endpoint and least-privilege ingestion users.

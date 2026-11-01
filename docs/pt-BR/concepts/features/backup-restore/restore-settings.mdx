@@ -1,0 +1,100 @@
+---
+description: 'Configurações da consulta RESTORE que controlam quais categorias de objetos são restauradas de um backup.'
+sidebarTitle: 'Configurações de restauração'
+slug: /operations/backup/restore-settings
+title: 'Configurações de restauração'
+keywords: ['backup', 'restore', 'structure_only', 'restore_table_data', 'restore_access_entities', 'restore_functions']
+doc_type: 'reference'
+---
+
+A consulta [`RESTORE`](/pt-BR/concepts/features/backup-restore/overview#syntax) aceita
+configurações na cláusula `SETTINGS` que controlam quais categorias de objetos são lidas
+de um backup. Esta página documenta as configurações que determinam o que é restaurado: dados de tabelas,
+entidades de acesso e funções definidas pelo usuário.
+
+<div id="structure-only">
+  ## `structure_only`
+</div>
+
+Tipo: `Bool`. Padrão: `false`.
+
+Quando definido como `true`, apenas consultas `CREATE` são lidas do backup, sem o
+conteúdo dos objetos restaurados. É um atalho prático que define como `false` os
+valores padrão efetivos das três configurações de categoria abaixo:
+
+* `restore_table_data`
+* `restore_access_entities`
+* `restore_functions`
+
+<div id="restore-table-data">
+  ## `restore_table_data`
+</div>
+
+Tipo: `Bool`. Opcional; se não for definido, o padrão será `!structure_only` (ou seja, `true`
+a menos que `structure_only` esteja definido).
+
+Define se os dados das tabelas devem ser restaurados. Quando definido explicitamente, substitui
+`structure_only`: defina como `true` para restaurar os dados das tabelas mesmo quando
+`structure_only=true`, ou como `false` para ignorar os dados das tabelas mesmo quando `structure_only`
+não estiver definido.
+
+<div id="restore-access-entities">
+  ## `restore_access_entities`
+</div>
+
+Tipo: `Bool`. Opcional; se não for definido, o padrão será `!structure_only`.
+
+Indica se as entidades de acesso — usuários, funções, perfis de configurações, políticas de linha
+e cotas — devem ser restauradas. Quando definido explicitamente, substitui `structure_only`.
+
+<div id="restore-functions">
+  ## `restore_functions`
+</div>
+
+Tipo: `Bool`. Opcional; quando não definido, o padrão é `!structure_only`.
+
+Define se as funções definidas pelo usuário devem ser restauradas. Quando definido explicitamente, substitui
+`structure_only`.
+
+<div id="effective-behavior">
+  ## Comportamento efetivo
+</div>
+
+Cada categoria é restaurada quando a configuração correspondente é `true`. Quando uma configuração
+de categoria não é especificada, seu valor é derivado de `structure_only`: todas as três são
+`true` por padrão e todas se tornam `false` quando `structure_only=true`.
+
+| `structure_only` | `restore_*` não definido | `restore_* = true` | `restore_* = false` |
+| :--------------: | :----------------------: | :----------------: | :-----------------: |
+|      `false`     |        restaurado        |     restaurado     |       ignorado      |
+|      `true`      |         ignorado         |     restaurado     |       ignorado      |
+
+Isso é totalmente compatível com versões anteriores: uma consulta `RESTORE` que não define nenhuma das
+novas configurações se comporta exatamente como antes.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Restaure as definições das tabelas e as entidades de acesso, mas não os dados das tabelas — por exemplo,
+para configurar um ambiente de testes ou reproduzir consultas sem copiar os dados:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_access_entities = true
+```
+
+Restaure apenas os dados da tabela, sem recriar entidades de acesso nem funções
+definidas pelo usuário:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_table_data = true
+```
+
+Restaure tudo, exceto as funções definidas pelo usuário:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS restore_functions = false
+```

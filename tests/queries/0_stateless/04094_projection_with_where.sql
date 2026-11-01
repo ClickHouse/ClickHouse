@@ -2,6 +2,9 @@
 -- Verifies filtered projection creation, materialization, and correct query results.
 
 SET optimize_use_projections = 1;
+-- Read-in-order on the base table would decline the forced projections in this test
+-- (`PROJECTION_NOT_USED`), so disable it: plan shape is not this test's subject.
+SET optimize_read_in_order = 0;
 
 DROP TABLE IF EXISTS t_proj_where;
 

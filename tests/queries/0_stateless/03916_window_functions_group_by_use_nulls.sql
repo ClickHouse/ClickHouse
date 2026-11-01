@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/82499
 -- Window functions with `group_by_use_nulls = 1` and CUBE/ROLLUP/GROUPING SETS
@@ -28,7 +27,7 @@ SELECT any('test') OVER () FROM numbers(2) GROUP BY GROUPING SETS(('test', numbe
 
 SELECT '---';
 
-WITH 'x' AS v SELECT lag(v) OVER (ORDER BY v), lead(v) OVER (ORDER BY v) GROUP BY ROLLUP(v) ORDER BY 1 NULLS FIRST SETTINGS group_by_use_nulls = 1, enable_analyzer = 1; -- lag/lead require the analyzer
+WITH 'x' AS v SELECT lag(v) OVER (ORDER BY v), lead(v) OVER (ORDER BY v) GROUP BY ROLLUP(v) ORDER BY 1 NULLS FIRST SETTINGS group_by_use_nulls = 1; -- lag/lead require the analyzer
 
 SELECT '---';
 

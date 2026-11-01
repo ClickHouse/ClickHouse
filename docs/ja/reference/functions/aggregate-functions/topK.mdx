@@ -46,7 +46,7 @@ topK(N, load_factor, 'counts')(column)
 
 **戻り値**
 
-おおよその出現頻度の高い値を、近似頻度の降順でソートした配列を返します。[`Array`](/ja/reference/data-types/array)
+おおよその出現頻度の高い値を、おおよその出現頻度の降順でソートした配列を返します。[`Array`](/ja/reference/data-types/array)
 
 **例**
 
@@ -54,7 +54,7 @@ topK(N, load_factor, 'counts')(column)
 
 ```sql title=Query
 SELECT topK(3)(AirlineID) AS res
-FROM ontime;
+FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
 ```
 
 ```response title=Response

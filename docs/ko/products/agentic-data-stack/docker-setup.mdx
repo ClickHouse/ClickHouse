@@ -37,7 +37,7 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
     ./scripts/prepare-demo.sh
     ```
 
-    이 스크립트는 각 서비스의 자격 증명이 포함된 `.env` 파일을 생성한 다음, 선택한 provider의 API Key를 구성할 수 있는 대화형 메뉴를 표시합니다. 이 키는 `.env` 파일에 직접 설정할 수도 있습니다. 건너뛴 provider는 모두 `user_provided`로 유지되므로, 대신 LibreChat UI에서 직접 키를 추가할 수 있습니다.
+    이 스크립트는 각 서비스의 자격 증명이 포함된 `.env` 파일을 생성한 다음, 선택한 제공업체의 API Key를 구성할 수 있는 대화형 메뉴를 표시합니다. 이 키는 `.env` 파일에 직접 설정할 수도 있습니다. 건너뛴 제공업체는 모두 `user_provided`로 유지되므로, 대신 LibreChat UI에서 직접 키를 추가할 수 있습니다.
 
     처음 시작할 때 스택은 `.env`를 기반으로 관리자 사용자를 생성합니다. 기본 로그인 정보는 `admin@admin.com` / `password`입니다.
 
@@ -65,7 +65,7 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
 
     * **LibreChat** (채팅 UI) — [http://localhost:3080](http://localhost:3080)
     * **Langfuse** (관측성) — [http://localhost:3000](http://localhost:3000)
-    * **Admin Panel** (브라우저 기반 LibreChat 구성) — [http://localhost:3081](http://localhost:3081)
+    * **관리자 패널** (브라우저 기반 LibreChat 구성) — [http://localhost:3081](http://localhost:3081)
     * **MinIO console** (객체 스토리지, 자격 증명은 `.env`에 있음) — [http://localhost:9091](http://localhost:9091)
 
     `.env` 파일의 관리자 자격 증명을 사용해 LibreChat에 로그인하십시오.
@@ -76,10 +76,10 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
 
     <Image img="/images/agentic-data-stack/select-model.webp" alt="왼쪽 상단에 있는 LibreChat 모델 셀렉터에 기본 모델과 「Select a model」 툴팁이 표시된 모습" size="md" />
 
-    Setup 중에 provider 키를 설정하지 않았다면 UI에서 추가하십시오.
+    Setup 중에 제공업체 키를 설정하지 않았다면 UI에서 추가하십시오.
 
-    <Accordion title="UI에서 provider 키 설정">
-      모델 셀렉터를 열고 provider 옆의 **Set API Key**를 클릭하십시오.
+    <Accordion title="UI에서 제공업체 키 설정">
+      모델 셀렉터를 열고 제공업체 옆의 **Set API Key**를 클릭하십시오.
 
       <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Anthropic provider 옆에 Set API Key 버튼이 표시된 LibreChat 모델 셀렉터" size="md" />
 
