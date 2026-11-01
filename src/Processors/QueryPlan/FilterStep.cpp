@@ -5,6 +5,7 @@
 #include <optional>
 #include <ranges>
 #include <stack>
+#include <unordered_map>
 #include <unordered_set>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -237,6 +238,51 @@ FilterDAGOutputPruningResult FilterStep::pruneDAGOutputsByPosition(
     plan.applyToOutputs(dag, remove_filter_column);
     const bool removed_any_action = dag.removeUnusedActions();
     return plan.toResult(removed_any_action);
+}
+
+std::vector<size_t> FilterStep::getUnneededInputPositions(
+    const ActionsDAG & dag,
+    const String & filter_column_name,
+    bool remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & unneeded_output_positions)
+{
+    return analyzeUnneededColumns(dag, filter_column_name, remove_filter_column, input_header, unneeded_output_positions)
+        .unneededInputPositions();
+}
+
+std::vector<std::optional<size_t>> FilterStep::mapOutputsToInputs(
+    const ActionsDAG & dag, const String & filter_column_name, bool remove_filter_column, const Block & input_header)
+{
+    const auto & inputs = dag.getInputs();
+    const auto header_columns = mapHeaderColumnsToInputs(inputs, input_header);
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> header_position_of_input;
+    for (size_t position = 0; position < header_columns.size(); ++position)
+        if (!header_columns.passesThrough(position))
+            header_position_of_input.emplace(inputs[header_columns.read_by[position]], position);
+
+    /// The output header is the outputs of the DAG, without the first filter column if it is removed, then the columns
+    /// the filter passes through, in their order.
+    std::vector<std::optional<size_t>> result;
+    bool filter_column_erased = !remove_filter_column;
+    for (const auto * output : dag.getOutputs())
+    {
+        if (!filter_column_erased && output->result_name == filter_column_name)
+        {
+            filter_column_erased = true;
+            continue;
+        }
+
+        const auto it = header_position_of_input.find(output);
+        result.push_back(it == header_position_of_input.end() ? std::nullopt : std::optional<size_t>(it->second));
+    }
+
+    for (size_t position = 0; position < header_columns.size(); ++position)
+        if (header_columns.passesThrough(position))
+            result.push_back(position);
+
+    return result;
 }
 
 static bool isTrivialSubtree(const ActionsDAG::Node * node)

@@ -7,29 +7,12 @@
 -- feeds both the group-selecting aggregation and the value-masking join. Such subqueries must be marked
 -- AS MATERIALIZED and evaluated once, while subqueries referenced once must stay inlined and must not be materialized.
 
-DROP TABLE IF EXISTS tags_table;
-DROP TABLE IF EXISTS samples_table;
 DROP TABLE IF EXISTS prometheus;
 
 SET session_timezone = 'UTC';
 SET allow_experimental_time_series_table = 1;
 
-CREATE TABLE tags_table
-(
-    id UInt64,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String)
-) ENGINE = MergeTree() ORDER BY id;
-
-CREATE TABLE samples_table
-(
-    id UInt64,
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
-
-CREATE TABLE prometheus ENGINE = TimeSeries
-SAMPLES samples_table TAGS tags_table;
+CREATE TABLE prometheus ENGINE = TimeSeries;
 
 -- 4 series of the metric `m`: hosts h1, h2 in dc=a and hosts h3, h4 in dc=b,
 -- and 2 series of the metric `n`: host h5 in dc=a and host h6 in dc=b.
@@ -99,7 +82,7 @@ FROM prometheusQueryRange(
     100, 130, 10);
 
 SELECT '-- or: the left side is evaluated once: two samples reads in total (left materialized + right inlined)';
-SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
+SELECT countIf(explain LIKE '%ReadFromMergeTree%.inner_id.samples.%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
 
@@ -119,30 +102,28 @@ SELECT countIf(explain LIKE '%groupBitOrForEach%') > 0 AS uses_presence_mask,
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) unless last_over_time(n[10])', 100, 130, 10));
 
 SELECT '-- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized';
-SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
+SELECT countIf(explain LIKE '%ReadFromMergeTree%.inner_id.samples.%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'sum(rate(m[20]))', 100, 130, 10));
 
 SELECT '-- subqueries referenced once stay inlined: a binary operator reads each of its two operands once, nothing is materialized';
-SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
+SELECT countIf(explain LIKE '%ReadFromMergeTree%.inner_id.samples.%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQuery('prometheus', 'sum by (dc) (m) / on (dc) count by (dc) (m)', 130));
 
 -- The streaming topk plan reads its operand grid twice (the group-selecting aggregation and the join
 -- masking the non-selected values), so the grid is materialized and the samples table is read once.
 SELECT '-- topk: the operand grid is read by two steps, so it is materialized; one samples read';
-SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
+SELECT countIf(explain LIKE '%ReadFromMergeTree%.inner_id.samples.%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10));
 
 SELECT '-- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again';
 SET enable_materialized_cte = 0;
 SET send_logs_level = 'error';
-SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
+SELECT countIf(explain LIKE '%ReadFromMergeTree%.inner_id.samples.%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
 SET send_logs_level = 'warning';
 
 DROP TABLE prometheus;
-DROP TABLE tags_table;
-DROP TABLE samples_table;

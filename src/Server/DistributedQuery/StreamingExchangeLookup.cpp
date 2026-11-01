@@ -19,6 +19,8 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsString distributed_plan_exchange_compression_method;
+    extern const SettingsInt64 distributed_plan_exchange_zstd_compression_level;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -31,15 +33,21 @@ namespace ErrorCodes
 
 CompressionCodecPtr streamingExchangeCompressionCodec(const Settings & settings)
 {
-    const String method = Poco::toUpper(settings[Setting::network_compression_method].toString());
+    const bool use_network_method = settings[Setting::distributed_plan_exchange_compression_method].value.empty();
+    const std::string_view setting_name = use_network_method ? "network_compression_method" : "distributed_plan_exchange_compression_method";
+    const String method = Poco::toUpper(use_network_method
+        ? settings[Setting::network_compression_method].value
+        : settings[Setting::distributed_plan_exchange_compression_method].value);
     /// The factory also knows codecs such as `Delta` that work only on some column types. Only the
     /// general codecs can compress any data.
     if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting '{}' must be NONE, ZSTD, LZ4 or LZ4HC for the streaming exchange", setting_name);
 
     std::optional<int> level;
     if (method == "ZSTD")
-        level = static_cast<int>(settings[Setting::network_zstd_compression_level]);
+        level = static_cast<int>(use_network_method
+            ? settings[Setting::network_zstd_compression_level]
+            : settings[Setting::distributed_plan_exchange_zstd_compression_level]);
 
     CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(settings));
     return CompressionCodecFactory::instance().get(method, level);

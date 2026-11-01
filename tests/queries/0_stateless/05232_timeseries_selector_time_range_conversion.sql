@@ -19,41 +19,41 @@ CREATE TABLE ts_u32 (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries;
 INSERT INTO ts_dt (metric_name, tags, samples) VALUES ('up', {'job': 'j'}, [(toDateTime(0, 'UTC'), 0), (toDateTime(1000, 'UTC'), 1), (toDateTime(1001, 'UTC'), 2), (toDateTime(1002, 'UTC'), 3), (toDateTime(1003, 'UTC'), 4), (toDateTime(4294967295, 'UTC'), 5)]);
 INSERT INTO ts_u32 (metric_name, tags, samples) VALUES ('up', {'job': 'j'}, [(0, 0), (1000, 1), (1001, 2), (1002, 3), (1003, 4), (4294967295, 5)]);
 
-SELECT '-- The returned columns keep the types of the table';
-DESCRIBE timeSeriesSelector(ts_dt, 'up', 1000.5, 1002.5);
-DESCRIBE timeSeriesSelector(ts_u32, 'up', 1000.5, 1002.5);
+SELECT '-- The returned samples keep the types of the table';
+DESCRIBE timeSeriesSelector(ts_dt, 'up', 1000.5, 1002.5, 'samples');
+DESCRIBE timeSeriesSelector(ts_u32, 'up', 1000.5, 1002.5, 'samples');
 
 SELECT '-- [1000.5, 1002.5] selects the samples at 1001 and 1002';
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt, 'up', 1000.5, 1002.5) ORDER BY timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_dt, 'up', 1000.5, 1002.5, 'samples')) ORDER BY timestamp;
 
 SELECT '-- The bounds are inclusive at millisecond precision';
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt, 'up', 1001, 1002) ORDER BY timestamp;
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt, 'up', 1001.001, 1001.999) ORDER BY timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_dt, 'up', 1001, 1002, 'samples')) ORDER BY timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_dt, 'up', 1001.001, 1001.999, 'samples')) ORDER BY timestamp;
 
 SELECT '-- String arguments';
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt, 'up', '1970-01-01 00:16:40.5', '1970-01-01 00:16:42.5') ORDER BY timestamp;
-SELECT timestamp, value FROM timeSeriesSelector(ts_u32, 'up', '1000.5', '1002.5') ORDER BY timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_dt, 'up', '1970-01-01 00:16:40.5', '1970-01-01 00:16:42.5', 'samples')) ORDER BY timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_u32, 'up', '1000.5', '1002.5', 'samples')) ORDER BY timestamp;
 
 SELECT '-- The range is checked before the conversion to the scale of the table';
-SELECT count() FROM timeSeriesSelector(ts_dt, 'up', 1002.5, 1000.5); -- { serverError BAD_ARGUMENTS }
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_dt, 'up', 1002.5, 1000.5, 'samples'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- The time range is before 1970';
-SELECT count() FROM timeSeriesSelector(ts_dt, 'up', -100, -50);
-SELECT count() FROM timeSeriesSelector(ts_u32, 'up', -100, -0.001);
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_dt, 'up', -100, -50, 'samples');
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_u32, 'up', -100, -0.001, 'samples');
 
 SELECT '-- The time range starts before 1970 and reaches the samples at 0 and 1000';
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt, 'up', -100, 1000.5) ORDER BY timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_dt, 'up', -100, 1000.5, 'samples')) ORDER BY timestamp;
 
 SELECT '-- The time range is after 2106';
-SELECT count() FROM timeSeriesSelector(ts_dt, 'up', 4294967296, 5000000000);
-SELECT count() FROM timeSeriesSelector(ts_u32, 'up', 4294967295.001, 5000000000);
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_dt, 'up', 4294967296, 5000000000, 'samples');
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_u32, 'up', 4294967295.001, 5000000000, 'samples');
 
 SELECT '-- The time range ends after 2106 and reaches the samples at 1003 and 4294967295';
-SELECT timestamp, value FROM timeSeriesSelector(ts_dt, 'up', 1002.5, 5000000000) ORDER BY timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_dt, 'up', 1002.5, 5000000000, 'samples')) ORDER BY timestamp;
 
 SELECT '-- The time range covers the whole range of the type';
-SELECT count() FROM timeSeriesSelector(ts_dt, 'up', -5000000000, 5000000000);
-SELECT count() FROM timeSeriesSelector(ts_u32, 'up', -5000000000, 5000000000);
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_dt, 'up', -5000000000, 5000000000, 'samples');
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_u32, 'up', -5000000000, 5000000000, 'samples');
 
 DROP TABLE ts_dt;
 DROP TABLE ts_u32;

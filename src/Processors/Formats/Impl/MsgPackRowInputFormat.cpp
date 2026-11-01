@@ -760,10 +760,10 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object, siz
             msgpack::object_map object_map = object.via.map;
             if (object_map.size)
             {
-                auto key_type = removeNullable(getDataType(object_map.ptr[0].key, depth + 1));
+                auto key_type = getDataType(object_map.ptr[0].key, depth + 1);
                 auto value_type = getDataType(object_map.ptr[0].val, depth + 1);
                 if (key_type && value_type)
-                    return std::make_shared<DataTypeMap>(key_type, value_type);
+                    return std::make_shared<DataTypeMap>(removeNullable(key_type), value_type);
             }
             return nullptr;
         }

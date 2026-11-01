@@ -82,6 +82,7 @@ Setting fields:
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. Optional. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. Optional. |
+| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 | `ssl_ca`, `ssl_cert`, `ssl_key` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, or through a named collection defined there, see below. Optional. |
 
 <Note>

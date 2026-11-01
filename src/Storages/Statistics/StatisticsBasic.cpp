@@ -288,6 +288,14 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
         && has_default_count == other_basic->has_default_count;
 }
 
+void StatisticsBasic::copyStructureFrom(const IStatistics & other)
+{
+    const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
+    if (!other_basic)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy the structure of Basic statistics from a different type");
+    has_default_count = other_basic->has_default_count;
+}
+
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)
 {
     /// `basic` supports any column type: a default-value count (`getNumberOfDefaultRows`) is defined

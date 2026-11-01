@@ -6,6 +6,8 @@
 #include <Storages/StatisticsDescription.h>
 #include <boost/core/noncopyable.hpp>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -84,6 +86,9 @@ public:
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
+    /// Returns the exact number of bytes written by serialize(), if it can be computed
+    /// without serializing into a temporary buffer.
+    virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
@@ -110,6 +115,10 @@ public:
     /// shifts the aggregate-function state layout) should return false so that
     /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
     virtual bool isCompatibleWith(const IStatistics &) const { return true; }
+
+    /// Makes this empty statistics object compatible with `other` (see `isCompatibleWith`), e.g. adopts
+    /// the set of sub-statistics of `other` deserialized from an older format.
+    virtual void copyStructureFrom(const IStatistics &) {}
 
 protected:
     /// The memory allocated by a `Field` outside of the `Field` itself.
