@@ -26,6 +26,16 @@ GROUP BY k
 ORDER BY k;
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (4e-300, 0.), (3e-300, 1e-300)]::MultiPoint);
 
+-- A small coordinate next to a huge one is kept as it is.
+SELECT polygonConvexHullCartesian([(1e300, 0.), (0., 1e300), (-1e-20, 0.)]::MultiPoint);
+
+-- Edges so short that their products underflow still have a direction.
+SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1., 0.), (1e-170, 1e-170)]::MultiPoint);
+SELECT polygonMinimumRotatedRectangleCartesian([(0., 1.), (0., 0.), (1e-170, 0.), (1., 1.)]::MultiPoint);
+
+-- A short edge next to long ones does not stop the calipers, even if it changes nothing in the rounded distances.
+SELECT polygonAreaCartesian(polygonMinimumRotatedRectangleCartesian([(-7.679e18, 100559.99), (4.17e-16, 3.109e16), (3.8165e21, -0.45212), (-8.11e-10, 2.685e-19), (-0.006049, 4.88e-19)]::MultiPoint)) > 1e35;
+
 -- A square rotated by 45 degrees: the bounding box has twice its area.
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 1.), (1., 0.), (2., 1.), (1., 2.)]::Ring) AS r, polygonAreaCartesian(r);
 

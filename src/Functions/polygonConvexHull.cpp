@@ -35,11 +35,21 @@ bool hasNoPointsForConvexHull(const Geometry & geometry)
         return boost::geometry::is_empty(geometry);
 }
 
-/// Replaces a convex polygon with the rectangle of the smallest area that contains it, found with rotating calipers:
+/// Multiplies the coordinates by a power of two, which is exact.
+template <typename Point, typename Geometry>
+void scaleByPowerOfTwo(Geometry & geometry, int exponent)
+{
+    boost::geometry::for_each_point(geometry, [exponent](Point & point)
+    {
+        point = Point(std::ldexp(boost::geometry::get<0>(point), exponent), std::ldexp(boost::geometry::get<1>(point), exponent));
+    });
+}
+
+/// Replaces a clockwise convex polygon with the rectangle of the smallest area that contains it, found with rotating calipers:
 /// one of its sides lies on an edge of the polygon, so it is enough to try every edge, and the vertices
 /// that are the farthest along and across an edge only move forward when going to the next edge.
-/// Each of the three vertices goes around the polygon once, so it is linear in the number of vertices.
-/// It works inside the ring of the polygon and allocates nothing beyond it.
+/// None of them overtakes the current edge, so each makes at most two turns around the polygon, even with rounding errors,
+/// and it takes linear time. It works inside the ring of the polygon and allocates nothing beyond it.
 template <typename Point>
 void replaceWithMinimumRotatedRectangle(Polygon<Point> & convex_hull)
 {
@@ -62,18 +72,13 @@ void replaceWithMinimumRotatedRectangle(Polygon<Point> & convex_hull)
         return;
     }
 
+    /// The calipers go counterclockwise, so that the inside of the polygon is to the left of every edge.
+    std::reverse(points.begin(), points.end());
+
     const size_t n = points.size();
     auto next = [n](size_t i) { return i + 1 == n ? 0 : i + 1; };
     auto x = [&](size_t i) { return get<0>(points[i]); };
     auto y = [&](size_t i) { return get<1>(points[i]); };
-
-    /// The calipers go counterclockwise, so that the inside of the polygon is to the left of every edge.
-    /// The area is relative to the first vertex, so that it does not cancel out for coordinates far from the origin.
-    Float64 doubled_signed_area = 0;
-    for (size_t i = 0; i < n; ++i)
-        doubled_signed_area += (x(i) - x(0)) * (y(next(i)) - y(0)) - (x(next(i)) - x(0)) * (y(i) - y(0));
-    if (doubled_signed_area < 0)
-        std::reverse(points.begin(), points.end());
 
     Float64 min_area = std::numeric_limits<Float64>::infinity();
     std::array<Point, 4> corners{};
@@ -82,33 +87,43 @@ void replaceWithMinimumRotatedRectangle(Polygon<Point> & convex_hull)
     size_t left = 0; /// The farthest vertex back along the edge.
     for (size_t i = 0; i < n; ++i)
     {
-        /// The coordinates along and across the edge are in the units of its length, without a square root,
-        /// which keeps the rounding small.
-        const Float64 ex = x(next(i)) - x(i);
-        const Float64 ey = y(next(i)) - y(i);
+        /// Only the direction of the edge matters, so it is scaled exactly to a length around one,
+        /// which keeps the products with other short edges from underflowing.
+        const int edge_exponent = std::ilogb(std::max(std::abs(x(next(i)) - x(i)), std::abs(y(next(i)) - y(i))));
+        const Float64 ex = std::ldexp(x(next(i)) - x(i), -edge_exponent);
+        const Float64 ey = std::ldexp(y(next(i)) - y(i), -edge_exponent);
+        /// Everything along and across the edge is multiplied by its length, which needs no square root,
+        /// and that keeps the rounding small.
         const Float64 squared_length = ex * ex + ey * ey;
-        auto along = [&](size_t j) { return ((x(j) - x(i)) * ex + (y(j) - y(i)) * ey) / squared_length; };
-        auto across = [&](size_t j) { return ((y(j) - y(i)) * ex - (x(j) - x(i)) * ey) / squared_length; };
+        auto along = [&](Float64 dx, Float64 dy) { return dx * ex + dy * ey; };
+        auto across = [&](Float64 dx, Float64 dy) { return dy * ex - dx * ey; };
+        auto along_from_edge = [&](size_t j) { return along(x(j) - x(i), y(j) - y(i)); };
+        auto across_from_edge = [&](size_t j) { return across(x(j) - x(i), y(j) - y(i)); };
 
-        while (along(next(right)) > along(right))
+        /// Go until the next edge turns by 90, 180 and 270 degrees from the current one. The directions of the edges
+        /// are compared, not the positions of the vertices, because a short edge can round to no change of position.
+        if (right == i)
+            right = next(i);
+        while (right != i && along(x(next(right)) - x(right), y(next(right)) - y(right)) > 0)
             right = next(right);
         if (i == 0)
             top = right;
-        while (across(next(top)) > across(top))
+        if (top == i)
+            top = next(i);
+        while (top != i && across(x(next(top)) - x(top), y(next(top)) - y(top)) > 0)
             top = next(top);
         if (i == 0)
             left = top;
-        while (along(next(left)) < along(left))
+        while (left != i && along(x(next(left)) - x(left), y(next(left)) - y(left)) < 0)
             left = next(left);
 
-        const Float64 min_along = along(left);
-        const Float64 max_along = along(right);
-        const Float64 height = across(top);
-        const Float64 area = (max_along - min_along) * height * squared_length;
-        /// The first edge is taken even if the area overflows to infinity.
-        if (i == 0 || area < min_area)
+        const Float64 area = (along_from_edge(right) - along_from_edge(left)) / squared_length * across_from_edge(top);
+        if (area < min_area)
         {
             min_area = area;
+            const Float64 min_along = along_from_edge(left) / squared_length;
+            const Float64 max_along = along_from_edge(right) / squared_length;
+            const Float64 height = across_from_edge(top) / squared_length;
             auto corner = [&](Float64 a, Float64 c) { return Point(x(i) + a * ex - c * ey, y(i) + a * ey + c * ex); };
             /// Clockwise, as the rings made by `boost::geometry::convex_hull`.
             corners = {corner(min_along, 0), corner(min_along, height), corner(max_along, height), corner(max_along, 0)};
@@ -177,22 +192,18 @@ public:
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    /// Scale by a power of two, which is exact, so that the products of coordinates
+                    /// Bring the largest coordinate between 2^-400 and 2^400, where the products of coordinates
                     /// in the convex hull and in the rectangle neither overflow nor underflow.
+                    /// Other rows keep their coordinates as they are, even very small ones next to a large one.
                     Float64 max_abs = 0;
                     boost::geometry::for_each_point(geometries[i], [&](const Point & point)
                     {
                         max_abs = std::max({max_abs, std::abs(boost::geometry::get<0>(point)), std::abs(boost::geometry::get<1>(point))});
                     });
                     const int exponent = max_abs == 0 ? 0 : std::ilogb(max_abs);
-                    auto scale = [](int e)
-                    {
-                        return [e](Point & point)
-                        {
-                            point = Point(std::ldexp(boost::geometry::get<0>(point), e), std::ldexp(boost::geometry::get<1>(point), e));
-                        };
-                    };
-                    boost::geometry::for_each_point(geometries[i], scale(-exponent));
+                    const int scale = exponent - std::clamp(exponent, -400, 400);
+                    if (scale != 0)
+                        scaleByPowerOfTwo<Point>(geometries[i], -scale);
 
                     result.clear();
                     if (!hasNoPointsForConvexHull(geometries[i]))
@@ -200,7 +211,8 @@ public:
                     if constexpr (minimum_rotated_rectangle)
                         replaceWithMinimumRotatedRectangle(result);
 
-                    boost::geometry::for_each_point(result, scale(exponent));
+                    if (scale != 0)
+                        scaleByPowerOfTwo<Point>(result, scale);
                     serializer.add(result);
                 }
             }

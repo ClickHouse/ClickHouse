@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/geometry.h>
 
+#include <algorithm>
 #include <limits>
 #include <optional>
 
