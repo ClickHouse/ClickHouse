@@ -114,13 +114,20 @@ public:
 
     /// Prepare a standalone expression, e.g. a filter, to be interpreted with another current database:
     /// qualify the table names in it and replace `currentDatabase()` with the database.
-    void visitStandaloneExpression(ASTPtr & ast) const
+    void visitStandaloneExpression(ASTPtr & ast, const NameSet & column_names) const
     {
         /// In a select list the aliases defined in the expression are collected, so they are not taken for tables.
+        /// The columns the expression reads are listed there as well: the analyzer resolves them before a table.
         auto select = make_intrusive<ASTSelectQuery>();
         select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
         auto & expression_list = *select->select();
         expression_list.children.push_back(ast);
+        for (const auto & column_name : column_names)
+        {
+            auto column = make_intrusive<ASTIdentifier>(column_name);
+            column->setAlias(column_name);
+            expression_list.children.push_back(std::move(column));
+        }
         visitTableExpressions(*select);
         substituteCurrentDatabase(expression_list.children.at(0), expression_list);
         ast = expression_list.children.at(0);
@@ -251,7 +258,27 @@ private:
         }
 
         if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
+        {
+            /// The parameters of a lambda are not table names inside it.
+            if (function->name == "lambda" && !function->arguments->children.empty())
+            {
+                auto enclosing_with_expression_aliases = with_expression_aliases;
+                if (const auto * parameters = function->arguments->children[0]->as<ASTFunction>(); parameters && parameters->arguments)
+                {
+                    for (const auto & parameter : parameters->arguments->children)
+                        if (const auto * identifier = parameter->as<ASTIdentifier>())
+                            with_expression_aliases.insert(identifier->name());
+                }
+
+                for (auto & child : ast.children)
+                    visitTableExpressionsImpl(*child);
+
+                with_expression_aliases = std::move(enclosing_with_expression_aliases);
+                return;
+            }
+
             visitFunctionTableNameArguments(*function);
+        }
 
         for (auto & child : ast.children)
             visitTableExpressionsImpl(*child);
