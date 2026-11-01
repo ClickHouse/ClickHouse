@@ -7,3 +7,7 @@ ARRAY JOIN, 100 rows	0	1
 0
 10
 2000
+ARRAY JOIN, element filter	1	0	1
+ARRAY JOIN, filter step	1	0	1
+arrayJoin, filter	1	0	1
+ARRAY JOIN, element filter, empty input	1	0
