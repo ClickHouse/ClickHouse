@@ -721,7 +721,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         // std::cerr << ".. Main header " << reading_step->getOutputHeader()->dumpNames() << std::endl;
     }
 
-    std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
+    std::list<std::variant<ActionsDAG, std::pair<FilterDAGInfo, bool>>> main_steps;
     std::list<ActionsDAG> lazy_steps;
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
@@ -747,7 +747,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             auto split_result = splitFilterStep(*filter_step, step_to_split.required_positions, required_columns);
             // std::cerr << "fsplit_result l: " << split_result.main_filter_step.actions.dumpDAG() << std::endl;
             // std::cerr << "fsplit_result r: " << split_result.lazy_expression_step.dumpDAG() << std::endl;
-            main_steps.push_back(std::move(split_result.main_filter_step));
+            main_steps.push_back(std::pair{std::move(split_result.main_filter_step), filter_step->isRowLevelFilterAfterRead()});
             lazy_steps.push_back(std::move(split_result.lazy_expression_step));
             required_columns = std::move(split_result.available_input_positions);
         }
@@ -779,10 +779,13 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
         else
         {
-            auto filter_dag_info = std::move(std::get<FilterDAGInfo>(step));
-            main_plan.addStep(std::make_unique<FilterStep>(
+            auto & [filter_dag_info, is_row_level_filter_after_read] = std::get<std::pair<FilterDAGInfo, bool>>(step);
+            auto filter_step = std::make_unique<FilterStep>(
                 main_plan.getCurrentHeader(),
-                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column));
+                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column);
+            if (is_row_level_filter_after_read)
+                filter_step->markAsRowLevelFilterAfterRead();
+            main_plan.addStep(std::move(filter_step));
         }
     }
 

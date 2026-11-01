@@ -314,6 +314,10 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
+    const bool row_level_filter_after_read = source_step_with_filter->getQueryInfo().row_level_filter_after_read || filter_step->isRowLevelFilterAfterRead();
+    if (row_level_filter_after_read && hasOrderSensitiveFunctions(&filter_root_node))
+        return;
+
     ConditionSelectivityEstimatorPtr selectivity_estimator;
     if (has_multiple_conditions && read_from_merge_tree_step)
         selectivity_estimator = use_pruned_parts
@@ -346,7 +350,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final,
-        columns_read_before_filter);
+        columns_read_before_filter,
+        row_level_filter_after_read);
 
     if (optimize_result.prewhere_nodes.empty())
         return;
@@ -413,11 +418,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        auto remaining_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        if (filter_step->isRowLevelFilterAfterRead())
+            remaining_filter_step->markAsRowLevelFilterAfterRead();
+        new_step = std::move(remaining_filter_step);
     }
     else
     {

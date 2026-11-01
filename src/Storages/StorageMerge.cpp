@@ -1997,6 +1997,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
     QueryPlan plan;
     bool applies_row_policy = false;
+    std::optional<FilterDAGInfo> prewhere_after_row_policy;
 
     bool must_return_interpreter_select_query_plan
         = processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
@@ -2008,6 +2009,16 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         {
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
             is_smallest_column_requested = true;
+        }
+
+        if (row_policy_data_opt)
+        {
+            modified_query_info.row_level_filter_after_read = true;
+            if (modified_query_info.prewhere_info)
+            {
+                prewhere_after_row_policy = std::move(*modified_query_info.prewhere_info).toFilterDAGInfo();
+                modified_query_info.prewhere_info.reset();
+            }
         }
 
         storage->read(plan,
@@ -2061,7 +2072,11 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         applies_row_policy = true;
     }
 
-    return ChildPlan{.plan = std::move(plan), .stage = storage_stage, .applies_row_policy = applies_row_policy};
+    return ChildPlan{
+        .plan = std::move(plan),
+        .stage = storage_stage,
+        .applies_row_policy = applies_row_policy,
+        .prewhere_after_row_policy = std::move(prewhere_after_row_policy)};
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2152,11 +2167,17 @@ void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
 void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextPtr local_context) const
 {
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
+    filter_step->markAsRowLevelFilterAfterRead();
     plan.addStep(std::move(filter_step));
 
     /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
     /// additional pushdown. No subquery adds no step.
     addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
+}
+
+bool ReadFromMerge::RowPolicyData::requiresColumn(const String & column_name) const
+{
+    return std::ranges::contains(filter_actions->getRequiredColumns(), column_name);
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
@@ -2368,36 +2389,55 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    auto add_alias_step = [&](const AliasData & alias)
     {
-        for (const auto & alias : aliases)
-        {
-            ActionsDAG actions_dag(pipe_columns);
+        ActionsDAG actions_dag(pipe_columns);
 
-            QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
-            query_tree->setAlias(alias.name);
+        QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
+        query_tree->setAlias(alias.name);
 
-            QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-            query_analysis_pass.run(query_tree, local_context);
+        QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+        query_analysis_pass.run(query_tree, local_context);
 
-            /// On the query info cache path nothing registered this expression's sets.
-            collectSets(query_tree, *modified_query_info.planner_context);
+        /// On the query info cache path nothing registered this expression's sets.
+        collectSets(query_tree, *modified_query_info.planner_context);
 
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-            const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
 
-            if (nodes.size() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
+        if (nodes.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
 
-            actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
-            child.plan.addStep(std::move(expression_step));
-        }
-    }
+        actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
+        auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
+        child.plan.addStep(std::move(expression_step));
+    };
+
+    const bool applies_row_policy_here = row_policy_data_opt && !child.applies_row_policy;
+
+    /// Only the ALIAS columns the row policy reads are computed before it, so that the others are not computed for the rows it rejects.
+    for (const auto & alias : aliases)
+        if (applies_row_policy_here && row_policy_data_opt->requiresColumn(alias.name))
+            add_alias_step(alias);
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
-    if (row_policy_data_opt && !child.applies_row_policy)
+    if (applies_row_policy_here)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
+
+    /// Before the remaining ALIAS columns: PREWHERE reads only physical columns of a child, see `supportedPrewhereColumns`.
+    if (child.prewhere_after_row_policy)
+    {
+        auto & prewhere = *child.prewhere_after_row_policy;
+        auto prewhere_step = std::make_unique<FilterStep>(
+            child.plan.getCurrentHeader(), std::move(prewhere.actions), prewhere.column_name, prewhere.do_remove_column);
+        prewhere_step->setStepDescription("Prewhere");
+        child.plan.addStep(std::move(prewhere_step));
+    }
+
+    for (const auto & alias : aliases)
+        if (!applies_row_policy_here || !row_policy_data_opt->requiresColumn(alias.name))
+            add_alias_step(alias);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,

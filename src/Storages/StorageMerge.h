@@ -315,6 +315,8 @@ private:
         /// rows that are not conform to row level policy
         void addFilterTransform(QueryPlan &, ContextPtr) const;
 
+        bool requiresColumn(const String & column_name) const;
+
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
@@ -334,6 +336,8 @@ private:
         bool forget_aggregation_buckets = false;
         /// Set when the child's plan was built by the interpreter, which applies the child's row policy itself.
         bool applies_row_policy = false;
+        /// The PREWHERE of a child read whose row policy is applied after the read, to apply after that policy.
+        std::optional<FilterDAGInfo> prewhere_after_row_policy;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first

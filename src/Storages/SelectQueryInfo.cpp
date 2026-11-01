@@ -88,6 +88,22 @@ PrewhereInfo PrewhereInfo::clone() const
     return prewhere_info;
 }
 
+FilterDAGInfo PrewhereInfo::toFilterDAGInfo() &&
+{
+    chassert(need_filter);
+
+    auto & outputs = prewhere_actions.getOutputs();
+    NameSet output_names;
+    for (const auto * output : outputs)
+        output_names.insert(output->result_name);
+
+    for (const auto * input : prewhere_actions.getInputs())
+        if (output_names.insert(input->result_name).second)
+            outputs.push_back(input);
+
+    return {std::move(prewhere_actions), std::move(prewhere_column_name), remove_prewhere_column};
+}
+
 /// `query_condition_cache_attribution` is not serialized: a deserialized plan does not attribute.
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
