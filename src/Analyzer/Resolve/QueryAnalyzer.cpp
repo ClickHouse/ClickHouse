@@ -8484,8 +8484,37 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         Names pinned_projection_names;
         const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+
+        /// A projection without an explicit alias that passes a column through keeps its source name,
+        /// so it also keeps the pin of that name in the source, e.g. `SELECT * FROM (SELECT 1 AS "Foo")`
+        /// or `SELECT "Foo" FROM (SELECT 1 AS "Foo")`. An explicit alias defines a new name instead.
+        std::unordered_map<const IQueryTreeNode *, Names> source_pinned_names;
+        auto is_pinned_in_source = [&](const QueryTreeNodePtr & projection_node, const String & projection_name)
+        {
+            if (!projection_node->getAlias().empty())
+                return false;
+            const auto * column_node = projection_node->as<ColumnNode>();
+            if (!column_node || column_node->getColumnName() != projection_name)
+                return false;
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (!column_source)
+                return false;
+
+            auto [it, inserted] = source_pinned_names.try_emplace(column_source.get());
+            if (inserted)
+            {
+                if (const auto * table_node = column_source->as<TableNode>())
+                    it->second = table_node->getPinnedColumnNames();
+                else if (column_source->as<QueryNode>() || column_source->as<UnionNode>())
+                    it->second = collectPinnedProjectionNames(column_source);
+                std::sort(it->second.begin(), it->second.end());
+            }
+            return std::binary_search(it->second.begin(), it->second.end(), projection_name);
+        };
+
         for (size_t i = 0; i < projection_nodes.size() && i < projection_columns.size(); ++i)
-            if (projection_nodes[i]->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)
+            if (projection_nodes[i]->getAliasQuote() == IdentifierPartQuote::DoubleQuoted
+                || is_pinned_in_source(projection_nodes[i], projection_columns[i].name))
                 pinned_projection_names.push_back(projection_columns[i].name);
         std::sort(pinned_projection_names.begin(), pinned_projection_names.end());
         query_node_typed.setPinnedProjectionColumnNames(std::move(pinned_projection_names));
