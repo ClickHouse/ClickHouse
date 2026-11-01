@@ -19,6 +19,7 @@ SETTINGS table_disk = 1, disk = disk(
     type = 'object_storage',
     object_storage_type = 'local',
     metadata_type = 'plain_rewritable',
+    metadata_snapshot_write_delay_ms = 0, -- the reader sees the snapshot of the state right after every commit
     path = '${disk_path}');
 
 INSERT INTO writer VALUES (1), (2), (3);
@@ -28,6 +29,8 @@ SETTINGS table_disk = 1, disk = disk(
     name = '05345_cache_${CLICKHOUSE_DATABASE}',
     type = 'cache',
     max_size = '1Mi',
+    max_file_segment_size = '256Ki',
+    boundary_alignment = '256Ki',
     path = '05345_cache_${CLICKHOUSE_DATABASE}/',
     disk = disk(
         name = '05345_reader_${CLICKHOUSE_DATABASE}',

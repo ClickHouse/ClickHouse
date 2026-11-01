@@ -11,7 +11,6 @@
 --        row 2: val 12  <=> 99   = false 
 -- count() = 2
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;

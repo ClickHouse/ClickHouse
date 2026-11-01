@@ -68,6 +68,9 @@ std::optional<String> tryGetExternalDatabaseQuery(
     LiteralEscapingStyle literal_escaping_style,
     IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::WhenNecessary);
 
+/// Returns the evaluated string argument of a `query('...')` call, or std::nullopt if the argument is not such a call.
+std::optional<String> tryGetQueryFunctionArgument(const ASTPtr & argument, const ContextPtr & context);
+
 /** Build `SELECT <columns> FROM (<query>) AS __subquery`, projecting the requested columns from the result
   * of a user-provided query. Identifiers are quoted according to the given style of the external database.
   */

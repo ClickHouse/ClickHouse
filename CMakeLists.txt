@@ -229,6 +229,17 @@ if (OS_DARWIN)
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
+    # Emit chained fixups (`LC_DYLD_CHAINED_FIXUPS`) instead of classic dyld rebase/bind opcodes.
+    # The clickhouse binary has about 1.4 million fixups; with opcodes dyld applies all of them
+    # at launch, touching every data page, while chained fixups are applied lazily as pages are
+    # first touched, which makes startup faster.
+    # Chained fixups need macOS 11, which is already the minimum for arm64, so this is not
+    # enabled for x86_64, where the deployment target is 10.15.
+    # Both lld and the cctools `ld` used for cross-compilation in CI understand the flag.
+    if (ARCH_AARCH64)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-fixup_chains")
+    endif ()
+
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
@@ -281,10 +292,15 @@ endif ()
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
-set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata)
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact)
 
-if (NOT SYMBOL_SECTIONS STREQUAL "symtab" AND NOT SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
-    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Expected 'symtab' or 'gnu_debugdata'.")
+set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact)
+if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
+    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
 endif()
 
 if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
@@ -382,14 +398,14 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # Align functions and loops to reduce performance sensitivity to code layout changes,
 # providing more stable benchmarks.
 # -falign-loops applies only to non-LTO builds; ThinLTO builds pass the loop alignment to the linker below.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+# Sanitizer builds are not benchmarked, and the padding counts against the 2 GiB reach of x86-64 code.
+if (NOT SANITIZE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-# Sanitizer and coverage builds do not benefit from these size optimizations
-# and the extra sections hurt instruction-cache locality in hot loops,
-# causing timing-sensitive tests to fail.
-if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+if (NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
@@ -400,7 +416,7 @@ if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     endif ()
 endif()
 
-if (ARCH_AMD64)
+if (ARCH_AMD64 AND NOT SANITIZE)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
@@ -434,6 +450,22 @@ endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
+
+# Treat only a trailing `[]` member as a flexible array, so that the bounds of every other array are known to
+# `-Warray-bounds` and `__builtin_object_size`. Not with Undefined Behavior Sanitizer: its `array-bounds` check would
+# then reject the over-allocated `[0]` members of `uniqUpTo` and `histogram` states. Not on macOS: its SDK enables
+# `_FORTIFY_SOURCE=2` for C, and the checked `strcpy` would then reject the over-allocated `char name[1]` of
+# jemalloc's `prof_log.c`.
+if (NOT OS_DARWIN AND NOT (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined"))
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstrict-flex-arrays=3")
+endif ()
+
+# Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
+# to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
+# llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+if (USE_MUSL)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
+endif ()
 
 # Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
 # computed result - `errno` is the only observable difference and ClickHouse never reads it
@@ -753,6 +785,12 @@ if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
 endif ()
 
+# Keep the stack non-executable even if an input object asks for an executable one (for GNU ld, an assembly source
+# without a `.note.GNU-stack` section does), and forbid loading the executable with `dlopen`. Same exclusions as above.
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack -Wl,-z,nodlopen")
+endif ()
+
 # Keep the static initializers (`.text.startup`) and the code the compiler marks cold (`.text.unlikely`) in
 # their own groups instead of next to their translation units all over `.text`. Startup then reads a few
 # hundred contiguous pages instead of thousands scattered over the binary, which matters most when the
@@ -844,6 +882,12 @@ include_directories(${CONFIG_INCLUDE_PATH})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
+
+# Forbid printing of pointers in our own code with `fmt`, `std::format` and iostreams (see the patches in the `fmtlib` and `llvm-project` submodules).
+# Memory addresses are internal state and must not leak into exception messages, logs or query results.
+# If an address is really needed (e.g. in a stack trace), convert it to an integer explicitly.
+add_compile_definitions (FMT_DISALLOW_POINTERS=1 _LIBCPP_DISALLOW_PRINTING_POINTERS=1)
+
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
@@ -899,10 +943,13 @@ if (FUZZER)
         OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
         ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
     string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
-    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
-    # abort on an unmatched glob far from here.
+    # Fail here: consumers copy tests/fuzz/*.dict, a glob the committed
+    # per-target dictionaries satisfy even when all.dict is missing.
     if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
         message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict")
+        message (FATAL_ERROR "tests/fuzz/all.dict is missing after generation")
     endif()
     message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
 
@@ -1010,6 +1057,8 @@ if (NATIVE_BUILD_TARGETS
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
+            "-DSPLIT_DEBUG_SYMBOLS=${SPLIT_DEBUG_SYMBOLS}"
+            "-DSYMBOL_SECTIONS=${SYMBOL_SECTIONS}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT
