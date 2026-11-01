@@ -19,6 +19,6 @@ WHERE database = currentDatabase() AND table = 'tab';
 
 SELECT '---';
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM tab WHERE has(foo, 'b');
+EXPLAIN indexes = 1, description = 0 SELECT * FROM tab WHERE has(foo, 'b') SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab;

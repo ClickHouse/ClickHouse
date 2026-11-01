@@ -1,5 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database
 SET explain_query_plan_default = 'legacy';
+-- The test checks query plans, which parallel replicas change
+SET enable_parallel_replicas = 0;
 
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_lazy_materialization = 1;

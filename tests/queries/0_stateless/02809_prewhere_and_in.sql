@@ -1,4 +1,6 @@
 SET explain_query_plan_default = 'legacy';
+-- The test checks query plans, which parallel replicas change
+SET enable_parallel_replicas = 0;
 DROP TABLE IF EXISTS t_02809;
 
 CREATE TABLE t_02809(a Int64, b Int64, s String)

@@ -19,6 +19,6 @@ SET use_statistics = 1;
 
 SELECT explain FROM (
     EXPLAIN PLAN actions = 1 SELECT count() FROM prewhere_stats_group WHERE a > 2500 AND b = 1 AND a < 2502
-) WHERE explain LIKE '%Prewhere filter column%';
+) WHERE explain LIKE '%Prewhere filter column%' SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE prewhere_stats_group;

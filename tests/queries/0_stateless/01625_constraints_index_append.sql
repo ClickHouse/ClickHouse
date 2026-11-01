@@ -21,6 +21,8 @@ SET optimize_substitute_columns = 1;
 SET optimize_append_index = 1;
 SET optimize_redundant_comparisons = 0;
 SET optimize_extract_common_expressions = 0;
+-- The test checks plans, which parallel replicas change.
+SET enable_parallel_replicas = 0;
 
 
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE a = 0) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
