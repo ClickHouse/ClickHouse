@@ -17,12 +17,16 @@ NESTED_V2='UEFSMRUEFTIVNEwVChUAEgAAGRABAAAAMAEFPDEBAAAAMgEAAAAzAQAAADQVBhUQFRBcF
 # x Nullable(Int32) = 0, 1, 4, 5, 6, 7 in four v1 pages with 2, 0, 2, 2 values, offset index first rows 0, 2, 2, 4,
 # column index min/max per page [0, 1], [2, 3], [4, 5], [6, 7].
 FLAT='UEFSMRUAFRwVHCwVBBUAFQYVBgAAAgAAAAQBAAAAAAEAAAAVABUcFRwsFQAVABUGFQYAAAIAAAAEAQIAAAADAAAAFQAVHBUcLBUEFQAVBhUGAAACAAAABAEEAAAABQAAABUAFRwVHCwVBBUAFQYVBgAAAgAAAAQBBgAAAAcAAAAZQQICAgIZSAQAAAAABAIAAAAEBAAAAAQGAAAAGUgEAQAAAAQDAAAABAUAAAAEBwAAABUCGUYAAAAAKYYABAAEAAQABAAZTBYIFT4WAAAWRhU+FgQAFoQBFT4WBAAWwgEVPhYIAAAVBBksNQAYBnNjaGVtYRUCABUCJQIYAXgAFgwZHBkcJgAcFQIZJQYAGRgBeBUAFgwW+AEW+AEmCDwYBAcAAAAYBAAAAAAWACgEBwAAABgEAAAAABERABkcFQAVABUIADwpBhkmABAAABaKAxVCFoACFYoBABb4ARYMJggW+AEAKCBwYXJxdWV0LWNwcC1hcnJvdyB2ZXJzaW9uIDI0LjAuMBkcHAAAAKcAAABQQVIx'
+# SIMPLE_V2 changed to x = [1, 2], [3]: the second page continues row 0 (num_rows 0), and the offset index
+# gives it, the empty page and the last page the same first row.
+CONTINUED_V2='UEFSMRUEFRgVHEwVBhUAEgAADCwBAAAAAgAAAAMAAAAVBhUOFQ5cFQIVABUCFRAVBBUEEgAAAgACAwECABUGFQ4VDlwVAhUAFQAVEBUEFQQSAAACAQIDAQIBFQYVAhUCXBUAFQAVABUQFQAVABIAAAEVBhUOFQ5cFQIVABUCFRAVBBUEEgAAAgACAwICAhlMFkAVOhYAABZ6FToWAgAWtAEVLhYCABbiARU6FgIAABUEGUw1ABgGc2NoZW1hFQIANQIYAXgVAhUGTDwAAAA1BBgEbGlzdBUCABUCJQIYB2VsZW1lbnQAFgQZHBkcJgAcFQIZNQAGEBk4AXgEbGlzdAdlbGVtZW50FQIWBhaQAhaUAiZAJggpLBUEFQAVAgAVABUQFQgAPCkmBgAZRgAAAAYAABacAhVCABaQAhYEJggWlAIAKCBwYXJxdWV0LWNwcC1hcnJvdyB2ZXJzaW9uIDI0LjAuMBkcHAAAAL0AAABQQVIx'
 
 D=$(cd "$CLICKHOUSE_TMP" && pwd)
 echo "$SIMPLE_V1" | base64 --decode > "$D/simple_v1.parquet"
 echo "$SIMPLE_V2" | base64 --decode > "$D/simple_v2.parquet"
 echo "$NESTED_V2" | base64 --decode > "$D/nested_v2.parquet"
 echo "$FLAT" | base64 --decode > "$D/flat.parquet"
+echo "$CONTINUED_V2" | base64 --decode > "$D/continued_v2.parquet"
 # The same, but the second page has its 2 values (2, 3) while the offset index still gives it no rows.
 ${CLICKHOUSE_LOCAL} -q "SELECT overlay(base64Decode('$FLAT'), '\\x04', 44) FORMAT RawBLOB" > "$D/flat_hidden.parquet"
 
@@ -55,3 +59,19 @@ ${CLICKHOUSE_LOCAL} -q "SELECT 'flat_hidden', groupArray(x) FROM (SELECT x FROM 
     SETTINGS input_format_parquet_use_offset_index = 1"
 ${CLICKHOUSE_LOCAL} -q "SELECT 'flat_hidden x = 2', groupArray(x) FROM (SELECT x FROM file('$D/flat_hidden.parquet') WHERE x = 2 ORDER BY x)
     SETTINGS input_format_parquet_page_filter_push_down = 1, input_format_parquet_use_offset_index = 1"
+
+for use_offset_index in 1 0; do
+    for max_block_size in 1000 1; do
+        ${CLICKHOUSE_LOCAL} -q "SELECT 'continued_v2', $use_offset_index, $max_block_size, groupArray(x) FROM (SELECT x FROM file('$D/continued_v2.parquet') ORDER BY x)
+            SETTINGS input_format_parquet_use_offset_index = $use_offset_index, input_format_parquet_max_block_size = $max_block_size"
+    done
+done
+
+# arrow-go continues rows in data pages v2 with num_rows 0.
+CORPUS="$CUR_DIR/data_lake_corpus"
+${CLICKHOUSE_LOCAL} -q "
+    CREATE TABLE t ENGINE = Memory AS SELECT * FROM file('$CORPUS/parquet/arrow-go-v18.4.1/nested.dpv2.small_pages.parquet')
+        SETTINGS input_format_parquet_use_offset_index = 0, input_format_parquet_max_block_size = 7, max_block_size = 7;
+    CREATE TABLE e AS t ENGINE = Memory;
+    INSERT INTO e SELECT * FROM file('$CORPUS/expected/deb4df4c21b50dfc.jsonl.zst', JSONEachRow);
+    SELECT 'arrow-go small pages', (SELECT count(), sum(cityHash64(tuple(*))) FROM t) = (SELECT count(), sum(cityHash64(tuple(*))) FROM e)"

@@ -3468,10 +3468,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             {
                 readRowsInPage(end_row_idx, subchunk, column, column_info);
 
+                /// Without the offset index, a page's row count doesn't prove that the next page starts a
+                /// row (arrow-go continues a row in a page with num_rows 0), so that page is checked.
                 auto & page = column.page;
+                const bool page_ends_row = page.end_row_idx.has_value() &&
+                    (column_info.levels.back().rep == 0 || !column.data_pages.empty());
                 if (page.next_row_idx == end_row_idx &&
                     (page.value_idx < page.num_values ||
-                     page.end_row_idx.has_value() ||
+                     page_ends_row ||
                      column.next_page_offset >= column.data_pages_bytes))
                     break;
 

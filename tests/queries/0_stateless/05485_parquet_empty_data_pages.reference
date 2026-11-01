@@ -22,3 +22,8 @@ flat	0	[0,1,4,5,6,7]
 flat filtered	[0,1,4,5]
 flat_hidden	[0,1,2,3,4,5]
 flat_hidden x = 2	[2]
+continued_v2	1	1000	[[1,2],[3]]
+continued_v2	1	1	[[1,2],[3]]
+continued_v2	0	1000	[[1,2],[3]]
+continued_v2	0	1	[[1,2],[3]]
+arrow-go small pages	1
