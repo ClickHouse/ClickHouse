@@ -4,19 +4,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A pressure sweep that throws while draining into the adaptive session's shared table, for example
-# on a memory limit hit while creating the states of a new key, leaves that key in the table with a
-# null state. The other producers kept running until the executor cancelled them, and the next one
-# to take the coordinator lock dereferenced the null state: a drain adding rows into it, or a residue
-# release writing the table to disk through the serialization of `topK`. The failed drain now
-# cancels the session before it releases the coordinator lock, so the query fails with the drain's
-# exception.
+# The creation of the states of a key that the adaptive merge inserts into its destination fails, as
+# on a memory limit, and leaves that key in the destination with a null state. The query must fail
+# with that exception rather than touch the null state: aggregate rows into it, write it to disk or
+# serialize it through `topK`. This test was first written for the shared drain table of the earlier
+# adaptive aggregator, where a failed drain left null states that other producers then used.
 #
-# The failpoint fails the creation of the states of the first key a drain inserts. With a threshold
-# of 200 MB the sweeps stay in the tail regime, which drains into the shared table, while the other
-# producers queue on the coordinator lock. The race is narrow - without the fix about one run in
-# seventy crashed, and only with 64 threads - so this exercises the path rather than reproducing the
-# crash reliably. The outer query reads the aggregates, so they are not pruned from the inner one.
+# The failpoint fails the creation of the states of the first key the merge inserts. The tables freeze
+# at 1000 keys, so the 200000 keys reach the merge as staged records. The outer query reads the
+# aggregates, so they are not pruned from the inner one.
 
 $CLICKHOUSE_LOCAL --query "
 SYSTEM ENABLE FAILPOINT adaptive_aggregation_drain_create_states_throw;
