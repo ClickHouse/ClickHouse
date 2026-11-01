@@ -14,9 +14,9 @@ namespace DB
 /// `finishAppending`, consumers may read and release distinct partitions concurrently. The caller chooses
 /// the record format and partition for each append.
 ///
-/// A partition's chunks double in size from a first chunk, which the caller chooses, up to a cap: most partitions of
-/// a producer stay small, and the first chunks of all partitions form the minimum allocation for their records,
-/// while doubling keeps the unused end of a large partition's last chunk proportional to its records.
+/// A partition's chunks double in size from a first chunk up to a cap, both of which the caller chooses: most
+/// partitions of a producer stay small, and the first chunks of all partitions form the minimum allocation for their
+/// records, while doubling keeps the unused end of a large partition's last chunk proportional to its records.
 ///
 /// The chunks are carved from blocks rather than allocated one by one: chunks past the allocator's small size
 /// classes would each take its arena path, whose locks and extent bookkeeping cost more than the records the chunk
@@ -42,11 +42,16 @@ public:
     /// Padding after the last record permits bounded reads and writes past a record
     /// by vectorized comparison and copy routines.
     static constexpr size_t tail_padding_bytes = 64;
+    /// The cap that the chunks of a partition double up to, unless the caller chooses another.
+    static constexpr size_t default_max_chunk_bytes = 8 << 10;
 
     /// Both counts must be positive. A final allocation group may contain fewer partitions. The first chunk is
-    /// between `min_first_chunk_bytes` and `max_first_chunk_bytes`.
+    /// between `min_first_chunk_bytes` and `max_first_chunk_bytes`, and the chunk cap is at least the first chunk.
     PartitionedRecordBuffer(
-        size_t num_partitions_, size_t partitions_per_group_, size_t first_chunk_bytes_ = max_first_chunk_bytes);
+        size_t num_partitions_,
+        size_t partitions_per_group_,
+        size_t first_chunk_bytes_ = max_first_chunk_bytes,
+        size_t max_chunk_bytes_ = default_max_chunk_bytes);
     ~PartitionedRecordBuffer();
 
     PartitionedRecordBuffer(const PartitionedRecordBuffer &) = delete;
@@ -94,7 +99,6 @@ public:
     void clear();
 
 private:
-    static constexpr size_t max_chunk_bytes = 32 << 10;
     static constexpr size_t max_block_bytes = 256 << 10;
 
     struct Block;
@@ -141,6 +145,7 @@ private:
     const size_t num_partitions;
     const size_t partitions_per_group;
     const size_t first_chunk_bytes;
+    const size_t max_chunk_bytes;
     std::unique_ptr<Cursor[]> cursors;
     std::unique_ptr<Chain[]> chains;
     std::vector<Carver> carvers;
