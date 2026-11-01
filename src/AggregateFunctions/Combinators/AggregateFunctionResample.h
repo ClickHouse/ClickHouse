@@ -93,23 +93,37 @@ public:
                     getName());
 
         /// Nested -Resample combinators multiply the number of nested states, and every `create`,
-        /// `destroy`, `merge`, ... loops over all of them. `sizeOfData` bounds the total state size, but a
-        /// nested level with an empty range (or a nested function without state) makes the state size zero
-        /// while the loops still run, so `countResampleResampleResample(0, 0, 1, 0, 1048576, 1, 0, 1048576, 1)`
-        /// used to spin through 2^40 nested calls. Bound the number of nested states directly.
-        size_t nested_elements = std::max<size_t>(total, 1);
-        for (auto nested = nested_function; nested; nested = nested->getNestedFunction())
+        /// `destroy`, `merge`, ... loops over all of them. `sizeOfData` / `max_state_size` already bound
+        /// the total state size (and therefore the number of iterations) whenever a single nested state
+        /// occupies at least one byte, so a legitimate nested chain like `countResampleIfResample(
+        /// 0, 2048, 1, 0, 2048, 1)` (4M buckets of 8-byte count state = ~32 MiB) stays allowed.
+        ///
+        /// The pathological case is a zero-byte nested state: `sizeOfData` is zero no matter how many
+        /// buckets, so the state-size cap passes vacuously, but every loop still iterates over `total`
+        /// no-op calls and nested -Resample combinators multiply those loops. For example
+        /// `nothingResampleIfResample(0, 1048576, 1, 0, 1048576, 1)` has a zero-sized state yet spins
+        /// through 2^40 nested calls; before `(begin, begin, step)` was rejected up front, an empty
+        /// innermost range made the entire nested state zero bytes and triggered the same explosion in
+        /// `countResampleIfResampleIfResampleIfResample(0, 0, 1, 0, 1048576, 1, 0, 1048576, 1, 0, 1048576, 1)`.
+        /// Bound the number of nested states directly in that case; nonzero nested states remain bounded
+        /// by `sizeOfData` / `max_state_size` alone.
+        if (size_of_data == 0)
         {
-            size_t nested_total = 0;
-            if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
-                nested_total = resample->total;
-            else if (const auto * resample_signed = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
-                nested_total = resample_signed->total;
-            else
-                continue;
-            if (common::mulOverflow(nested_elements, std::max<size_t>(nested_total, 1), nested_elements) || nested_elements > max_elements)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The nested -Resample combinators of function {} produce too many elements", getName());
+            size_t nested_elements = total;
+            for (auto nested = nested_function; nested; nested = nested->getNestedFunction())
+            {
+                size_t nested_total = 0;
+                if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
+                    nested_total = resample->total;
+                else if (const auto * resample_signed = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
+                    nested_total = resample_signed->total;
+                else
+                    continue;
+                if (common::mulOverflow(nested_elements, nested_total, nested_elements) || nested_elements > max_elements)
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "The nested -Resample combinators of function {} would iterate over too many "
+                        "zero-sized nested states", getName());
+            }
         }
     }
 
