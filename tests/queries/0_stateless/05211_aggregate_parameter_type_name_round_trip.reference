@@ -12,6 +12,6 @@ AggregateFunction(uniqUpTo(\'5\'::Int256), UInt64)
 AggregateFunction(uniqUpTo(\'5\'::Int256), UInt64, UInt64)
 1
 [7]	[2]
-AggregateFunction(groupArrayInsertAt([\'1\'], 3), Array(Decimal(9, 0)), UInt8)
+AggregateFunction(groupArrayInsertAt([\'1\'::Decimal32(0)], 3), Array(Decimal(9, 0)), UInt8)
 1
 AggregateFunction(exponentialMovingAverage(\'0.5\'::Decimal32(1)), UInt64, UInt64)

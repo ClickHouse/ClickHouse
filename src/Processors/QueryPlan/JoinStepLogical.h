@@ -205,11 +205,29 @@ public:
 
     UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
+    /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
+    /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
+    /// stands such a column - NULL where it is Nullable, the default otherwise - so a `Nullable` column
+    /// passed through here tells which rows matched. Only the expressions change: the caller updates the
+    /// input headers once it has passed what it needs.
+    void addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side);
+
+    /// Makes an input the join already reads one of its outputs as well, last, the way
+    /// `addPassThroughColumn` passes a new one. `input` must be an input of `getActionsDAG`.
+    void addInputToOutputs(const ActionsDAG::Node * input);
+
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
     /// Swap left and right sides
     void swapInputs();
+
+    /// The input a hash join builds its table from, and the input it streams through that table. The planner
+    /// builds from the smaller input (`swapInputs`); a sorting join reads both inputs at once.
+    static constexpr JoinTableSide getBuildSide() { return JoinTableSide::Right; }
+    static constexpr JoinTableSide getProbeSide() { return JoinTableSide::Left; }
+    /// The index of the input of `side`, which is also its index in the children of the plan node.
+    static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
 
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }

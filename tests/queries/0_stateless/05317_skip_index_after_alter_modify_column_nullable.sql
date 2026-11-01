@@ -33,13 +33,13 @@ ALTER TABLE t_skip_index_alter_nullable MODIFY COLUMN value Nullable(UInt64);
 SELECT count()
 FROM t_skip_index_alter_nullable
 WHERE value = 300
-SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, enable_analyzer = 1;
+SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
 
 -- Same query with the on-fly apply flags at their defaults: must also work and give the same result.
 SELECT count()
 FROM t_skip_index_alter_nullable
 WHERE value = 300
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, enable_analyzer = 1;
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
 
 -- The direct skip-index read deserializes the same granules in `MergeTreeSkipIndexReader::read`
 -- (via `MergeTreeIndexBulkGranulesSet::deserializeBinary`) instead of during planning, so pin it
@@ -50,7 +50,7 @@ SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_p
 SELECT id
 FROM t_skip_index_alter_nullable
 WHERE value = 300
-SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, force_data_skipping_indices = 'idx_value', use_skip_indexes_on_data_read = 1, secondary_indices_enable_bulk_filtering = 1, max_rows_to_read = 0, optimize_use_implicit_projections = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, enable_analyzer = 1, log_comment = '05317_direct_read_stale';
+SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, force_data_skipping_indices = 'idx_value', use_skip_indexes_on_data_read = 1, secondary_indices_enable_bulk_filtering = 1, max_rows_to_read = 0, optimize_use_implicit_projections = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, log_comment = '05317_direct_read_stale';
 
 -- Index analysis still consults `idx_value` on every old part but prunes nothing with it.
 SELECT arrayStringConcat(groupArray(explain), '\n') ILIKE '%Name: idx_value%Granules: 3/3%' FROM (
@@ -84,7 +84,7 @@ WHERE explain ILIKE '%Parts: 3 | Granules: 3%';
 SELECT id
 FROM t_skip_index_alter_nullable
 WHERE value = 300
-SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, force_data_skipping_indices = 'idx_value', use_skip_indexes_on_data_read = 1, secondary_indices_enable_bulk_filtering = 1, max_rows_to_read = 0, optimize_use_implicit_projections = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, enable_analyzer = 1, log_comment = '05317_direct_read_rebuilt';
+SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, force_data_skipping_indices = 'idx_value', use_skip_indexes_on_data_read = 1, secondary_indices_enable_bulk_filtering = 1, max_rows_to_read = 0, optimize_use_implicit_projections = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, log_comment = '05317_direct_read_rebuilt';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['SelectedMarks']
@@ -95,6 +95,6 @@ ORDER BY event_time_microseconds;
 SELECT count()
 FROM t_skip_index_alter_nullable
 WHERE value = 300
-SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, enable_analyzer = 1;
+SETTINGS apply_mutations_on_fly = 0, apply_patch_parts = 0, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
 
 DROP TABLE t_skip_index_alter_nullable;

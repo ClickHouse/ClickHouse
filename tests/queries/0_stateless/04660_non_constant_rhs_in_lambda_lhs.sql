@@ -4,8 +4,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 -- Array-returning right-hand side.
 SELECT (y -> 1) IN [materialize(1), 2]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT (y -> 1) IN arrayMap(x -> x, [materialize(1), 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

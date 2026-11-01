@@ -28,9 +28,7 @@ Il est utile de commencer par quelques définitions.
 
 **Sauvegardes et snapshots de base de données** : les sauvegardes assurent un stockage durable à long terme grâce à une copie distincte des données. Les snapshots ne créent pas de copie supplémentaire des données, sont généralement plus rapides et offrent de meilleurs RPO.
 
-<div id="database-backups">
-  ## Sauvegardes de base de données
-</div>
+## Sauvegardes de base de données {#database-backups}
 
 Disposer d&#39;une sauvegarde de votre service principal permet de restaurer efficacement les données en cas d&#39;indisponibilité du service principal.
 ClickHouse Cloud prend en charge les fonctionnalités de sauvegarde suivantes.
@@ -55,6 +53,8 @@ Des frais de transfert de données s&#39;appliquent aux sauvegardes inter-régio
 
 Les clients peuvent [configurer les sauvegardes](/fr/products/cloud/guides/backups/configurable-backups) afin qu&#39;elles soient effectuées plus fréquemment, jusqu&#39;à toutes les 6 heures, afin d&#39;améliorer le RPO.
 Les clients peuvent également configurer une durée de rétention plus longue.
+
+La fréquence des sauvegardes détermine l’ancienneté maximale du point de restauration le plus récent et, par conséquent, le RPO. La durée de rétention détermine combien de temps les données de sauvegarde sont conservées ; elle n’a aucune incidence sur l’ancienneté du point de restauration le plus récent. Par exemple, pour un service configuré avec une durée de rétention de 1 jour et une fréquence de 48 heures, le point de restauration le plus récent peut dater de près de 48 heures.
 
 Les sauvegardes actuellement disponibles pour le service sont répertoriées sur la page « backups » de la console ClickHouse Cloud.
 Cette section fournit également le statut de réussite ou d&#39;échec de chaque sauvegarde.

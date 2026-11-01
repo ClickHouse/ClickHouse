@@ -307,6 +307,10 @@ public:
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
 
+    /// The packed fixed-width maps, `keys32` to `keys256`, hold the keys of a clause if all of them are fixed-width
+    /// and take at most this many bytes together.
+    static constexpr size_t max_packed_keys_bytes = 32;
+
     enum class Type : uint8_t
     {
         #define M(NAME) NAME,
@@ -624,9 +628,6 @@ public:
 
     size_t getAndSetRightTableKeys() const;
 
-    bool hasNonJoinedRows();
-    void updateNonJoinedRowsStatus();
-
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
@@ -651,9 +652,6 @@ private:
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
-
-    bool has_non_joined_rows_checked = false;
-    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
@@ -737,6 +735,8 @@ private:
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
+
+    class ContinuationResult;
 
     JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
