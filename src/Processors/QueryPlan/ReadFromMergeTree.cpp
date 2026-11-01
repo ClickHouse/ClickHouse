@@ -12,10 +12,12 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -34,7 +36,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -4788,7 +4789,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
 /// Adds the subcolumns `subcolumns` to the result of a `FINAL` merge that read their columns whole. Runs before the
 /// filters deferred after `FINAL`, which may use the subcolumns, so `out_projection` of the merge is applied first.
 static void extractSubcolumnsAfterFinal(
-    Pipe & pipe, const Names & subcolumns, std::optional<ActionsDAG> & out_projection, const ContextPtr & context)
+    Pipe & pipe, const NamesAndTypesList & subcolumns, std::optional<ActionsDAG> & out_projection, const ContextPtr & context)
 {
     if (out_projection)
     {
@@ -4799,15 +4800,40 @@ static void extractSubcolumnsAfterFinal(
 
     /// A `PREWHERE` that is not deferred after `FINAL` reads its subcolumns before the merge and may keep them in the
     /// result. They hold the values of the rows before the merge, so they are replaced.
-    Block available_columns = pipe.getHeader();
+    NameSet subcolumn_names;
     for (const auto & subcolumn : subcolumns)
-        if (available_columns.has(subcolumn))
-            available_columns.erase(subcolumn);
+        subcolumn_names.insert(subcolumn.name);
 
-    auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, subcolumns, context);
+    ActionsDAG extract_subcolumns_dag;
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
     for (const auto & column : pipe.getHeader())
-        if (!available_columns.has(column.name))
-            extract_subcolumns_dag.addInput(column);
+    {
+        const auto & input = extract_subcolumns_dag.addInput(column);
+        if (!subcolumn_names.contains(column.name))
+        {
+            extract_subcolumns_dag.getOutputs().push_back(&input);
+            inputs.emplace(column.name, &input);
+        }
+    }
+
+    /// The subcolumn is extracted from the column it was resolved to in storage. Its name does not tell it: `j.v.null`
+    /// may be `null` of a column `j.v` or `v.null` of a `JSON` column `j`.
+    auto get_subcolumn = FunctionFactory::instance().get("getSubcolumn", context);
+    for (const auto & subcolumn : subcolumns)
+    {
+        auto parent = inputs.find(subcolumn.getNameInStorage());
+        if (parent == inputs.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of subcolumn {} is not in the result of the FINAL merge",
+                subcolumn.getNameInStorage(), subcolumn.name);
+
+        auto subcolumn_name_type = std::make_shared<DataTypeString>();
+        auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn.getSubcolumnName());
+        const auto & subcolumn_name_node = extract_subcolumns_dag.addColumn(
+            std::move(subcolumn_name_column), std::move(subcolumn_name_type), subcolumn.getSubcolumnName());
+        const auto & function_node = extract_subcolumns_dag.addFunction(
+            get_subcolumn, {parent->second, &subcolumn_name_node}, {});
+        extract_subcolumns_dag.getOutputs().push_back(&extract_subcolumns_dag.addAlias(function_node, subcolumn.name));
+    }
 
     auto extract_subcolumns = std::make_shared<ExpressionActions>(std::move(extract_subcolumns_dag));
     pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, extract_subcolumns); });
@@ -4856,7 +4882,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         /// key, such as `t.a` of `ORDER BY t.a`, is read as it is: a subcolumn of a key column read alone is not a key
         /// column for the merge, so `SummingMergeTree` would sum it. A column only used by an expression of the key is not
         /// equal in the merged rows either.
-        Names subcolumns_to_extract;
+        NamesAndTypesList subcolumns_to_extract;
         if (data.merging_params.mode == MergeTreeData::MergingParams::Summing
             || data.merging_params.mode == MergeTreeData::MergingParams::Aggregating
             || data.merging_params.mode == MergeTreeData::MergingParams::Coalescing)
@@ -4882,7 +4908,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
                 auto column = storage_snapshot->tryGetColumn(options, column_name);
                 if (column && column->isSubcolumn() && !sorting_key_columns_set.contains(column_name))
                 {
-                    subcolumns_to_extract.push_back(column_name);
+                    subcolumns_to_extract.push_back(*column);
                     if (columns_with_parents_set.emplace(column->getNameInStorage()).second)
                         columns_with_parents.push_back(column->getNameInStorage());
                     if (columns_for_filters_before_merge.contains(column_name) && columns_with_parents_set.emplace(column_name).second)
@@ -4900,7 +4926,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
                 /// that replace the subcolumns are kept, as the sorting key is for the merge.
                 NameSet parents;
                 for (const auto & subcolumn : subcolumns_to_extract)
-                    parents.insert(storage_snapshot->getColumn(options, subcolumn).getNameInStorage());
+                    parents.insert(subcolumn.getNameInStorage());
                 if (query_info.prewhere_info || query_info.row_level_filter)
                     restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), parents);
 

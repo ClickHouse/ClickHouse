@@ -8,6 +8,9 @@ DROP TABLE IF EXISTS t_summing;
 DROP TABLE IF EXISTS t_aggregating;
 DROP TABLE IF EXISTS t_summing_tuple_key;
 DROP TABLE IF EXISTS t_coalescing_prewhere;
+DROP TABLE IF EXISTS t_shadowed;
+DROP TABLE IF EXISTS t_shadowed_summing;
+DROP TABLE IF EXISTS t_shadowed_aggregating;
 
 CREATE TABLE t_coalescing (id UInt32, j Nullable(JSON), s Nullable(String), env Nullable(Tuple(v UInt64, arr Array(String))))
 ENGINE = CoalescingMergeTree ORDER BY id;
@@ -61,8 +64,27 @@ SELECT 'aggregating';
 SELECT m, m.a, m.b, x, x.null FROM t_aggregating FINAL;
 SELECT m.a, m.b, x.null FROM t_aggregating FINAL;
 
+-- `j.v.null` is `null` of the column `j.v`, not `v.null` of the `JSON` column `j`.
+CREATE TABLE t_shadowed (id UInt64, j JSON, `j.v` Nullable(UInt64)) ENGINE = CoalescingMergeTree ORDER BY id;
+INSERT INTO t_shadowed VALUES (1, '{"v":{"null":99}}', 42);
+
+SELECT 'shadowed';
+SELECT j, `j.v`, `j.v.null` FROM t_shadowed FINAL;
+SELECT `j.v.null` FROM t_shadowed FINAL;
+SELECT count() FROM t_shadowed FINAL WHERE NOT `j.v.null`;
+
+CREATE TABLE t_shadowed_summing (id UInt64, j JSON, `j.v` Nullable(UInt64)) ENGINE = SummingMergeTree ORDER BY id;
+INSERT INTO t_shadowed_summing VALUES (1, '{"v":{"null":99}}', 42);
+CREATE TABLE t_shadowed_aggregating (id UInt64, j JSON, `j.v` Nullable(UInt64)) ENGINE = AggregatingMergeTree ORDER BY id;
+INSERT INTO t_shadowed_aggregating VALUES (1, '{"v":{"null":99}}', 42);
+SELECT `j.v.null` FROM t_shadowed_summing FINAL;
+SELECT `j.v.null` FROM t_shadowed_aggregating FINAL;
+
 DROP TABLE t_coalescing;
 DROP TABLE t_summing;
 DROP TABLE t_aggregating;
 DROP TABLE t_summing_tuple_key;
 DROP TABLE t_coalescing_prewhere;
+DROP TABLE t_shadowed;
+DROP TABLE t_shadowed_summing;
+DROP TABLE t_shadowed_aggregating;
