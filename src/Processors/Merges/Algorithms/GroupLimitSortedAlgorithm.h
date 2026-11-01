@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortCursor.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
@@ -9,12 +10,13 @@
 namespace DB
 {
 
-/// Merges the spill runs of a group limit (`DISTINCT` or `LIMIT BY`) and keeps the input rows whose rank
-/// within their group falls into `[group_offset, group_limit_end)`. The sort description contains the keys
-/// without collators, followed by the number of rows seen before spilling, descending. Each input contains
-/// only input rows, whose count is zero, or only seen rows, whose counts are positive. Seen inputs need only
-/// the sort columns; input-row inputs also provide every output column by name. An input-row chunk holds at
-/// most `group_limit_end` rows of a group, in source order; seen chunks may contain sort-equal keys.
+/// Merges inputs sorted by `key_description`, which contains the keys without collators, and keeps the input rows
+/// whose rank within their group falls into `[group_offset, group_limit_end)`, as in the spill runs of a group limit
+/// (`DISTINCT` or `LIMIT BY`). If set, `seen_rows_column` names the unsigned integer column of the rows seen before
+/// spilling, and each input then contains only input rows, whose count is zero, or only seen rows, whose counts are
+/// positive. Without it, all rows are input rows. Seen inputs need only the keys and the counts; input-row inputs
+/// also provide every output column by name. An input-row chunk holds at most `group_limit_end` rows of a group, in
+/// source order; seen chunks may contain sort-equal keys.
 /// Within a group, seen rows come first and their counts start the rank; input rows follow in source order
 /// and each takes the next rank. Seen rows are never emitted. With the window `[0, 1)` of `DISTINCT`, equal
 /// keys retain the first input row in source order.
@@ -22,8 +24,13 @@ class GroupLimitSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
     GroupLimitSortedAlgorithm(
-        SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_,
-        UInt64 group_offset_, UInt64 group_limit_end_, size_t max_block_size_rows_);
+        SharedHeaders input_headers,
+        SharedHeader output_header_,
+        SortDescription key_description,
+        const std::optional<String> & seen_rows_column,
+        UInt64 group_offset_,
+        UInt64 group_limit_end_,
+        size_t max_block_size_rows_);
 
     const char * getName() const override { return "GroupLimitSortedAlgorithm"; }
     void addInput(SharedHeader header);
@@ -42,6 +49,9 @@ private:
     void saveLastKey();
     /// Returns the accumulated output and resets the consumed-row count.
     Chunk pull();
+    /// The rows seen before spilling that `row` of `cursor` stands for: zero for an input row, and for every row
+    /// without the seen-rows column.
+    UInt64 seenRows(const SortCursorImpl & cursor, size_t row) const;
 
     /// Selects output columns while retaining chunk information and ownership of their values.
     Chunk projectOutput(Chunk chunk, size_t source_num) const;
@@ -54,14 +64,16 @@ private:
     };
 
     const SharedHeader output_header;
+    /// The keys, followed by the seen-rows column descending if there is one.
     SortDescription description;
+    const bool has_seen_rows;
     const size_t num_key_columns;
     const UInt64 group_offset;
     const UInt64 group_limit_end;
     const size_t max_block_size_rows;
     Inputs current_inputs;
     SortCursorImpls cursors;
-    std::vector<Source> sources;
+    VectorWithMemoryTracking<Source> sources;
     SortingQueueBatch<SortCursor> queue;
     MergedData merged_data;
 

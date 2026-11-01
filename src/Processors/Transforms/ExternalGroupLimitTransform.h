@@ -4,6 +4,8 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/SpillableAdapter.h>
+#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <Processors/Transforms/GroupLimitSpillLayout.h>
 #include <Processors/Transforms/SeenGroupExtractor.h>
 #include <Processors/Transforms/SortingTransform.h>
@@ -61,12 +63,17 @@ struct GroupLimitParams
 /// When input order must be preserved, `GroupLimitSpillLayout` attaches arrival numbers to spilled rows.
 /// After merging, `MergeSortingTransform` restores that order and can itself spill.
 /// Otherwise, rows follow the spill comparison order, which is fingerprint order for generic keys.
+/// Scheduler requests synchronously write unconnected runs and release their memory before returning;
+/// their readers are attached at the next pipeline update.
 template <typename Traits>
 class ExternalGroupLimitTransform final : public IProcessor
 {
     using Filter = typename Traits::Filter;
 
 public:
+    /// A non-null `shared_filter_bytes_` reports memory snapshots to `DistinctLimitsCheckingTransform`, which
+    /// enforces the limits across all streams of a parallel `DISTINCT`. In that mode, `params_.size_limits` must be
+    /// unlimited.
     ExternalGroupLimitTransform(
         SharedHeader header_,
         const GroupLimitParams & params_,
@@ -75,7 +82,8 @@ public:
         size_t min_free_disk_space_,
         size_t max_block_size_rows_,
         size_t preferred_block_bytes_,
-        bool preserve_input_order_);
+        bool preserve_input_order_,
+        DistinctSetMemoryTracker::SharedCounter shared_filter_bytes_ = nullptr);
 
     ~ExternalGroupLimitTransform() override;
 
@@ -87,13 +95,26 @@ public:
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
 
+    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
+
 private:
+    SpillableAdapter<ExternalGroupLimitTransform> spillable{*this};
+    ISpillable * const spillable_ptr = &spillable;
+
     struct Hashing
     {
         Hashing(const Block & header, const GroupLimitParams & limit_params, const IProcessor & owner)
             : filter(Traits::createFilter(header, limit_params, owner))
         {
         }
+
+        /// Memory charged to the global `max_bytes_in_distinct` check. A filter without groups counts as empty,
+        /// like in a serial `DISTINCT` that checks limits only after inserting keys: otherwise the
+        /// preallocated hash table of a transform that spills before hashing would exceed tiny limits.
+        size_t getRetainedFilterBytes() const { return filter.getTotalRowCount() ? filter.getTotalByteCount() : 0; }
 
         Filter filter;
         /// EOF is observed in `prepare`, but releasing the filter belongs to `work`.
@@ -227,6 +248,8 @@ private:
         Finishing>;
 
     Status prepareInput();
+    CollectingInput * getCollectingInput();
+    const CollectingInput * getCollectingInput() const;
     Status prepareCollectingInput(CollectingInput & collecting);
     Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output);
     Status prepareSeenRunWrite(WritingSeenRun & writing);
@@ -257,11 +280,16 @@ private:
         SharedHeader header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
     PreparedMerge prepareMerge();
     void connectMerge(PreparedMerge & prepared, Processors & processors);
+    void connectRunSource(PreparedRun & prepared, Processors & processors);
     OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
+    /// Drain an unconnected run on the calling thread, transferring its finalized file to the reader.
+    void spillRun(PreparedRun run);
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
     const GroupLimitParams params;
+    /// Outlives the state that owns the filter and its seen-group extractor.
+    DistinctSetMemoryTracker filter_memory;
     State state;
     const size_t max_bytes_before_external;
     TemporaryDataOnDiskScopePtr tmp_data;
@@ -274,6 +302,8 @@ private:
 
     /// Tracks connected merge inputs until tail attachment or early termination closes registration.
     std::optional<MergeRegistration> merge_registration;
+    /// Scheduler-driven spilling releases memory before returning; completed readers are connected later.
+    std::vector<PreparedRun> spilled_runs;
     size_t temporary_files_num = 0;
     /// Run output sizes estimate the memory needed to read all files concurrently during merging.
     size_t estimated_file_read_memory = 0;

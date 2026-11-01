@@ -1,4 +1,5 @@
 #include <Client/LineReader.h>
+#include <Common/StringUtils.h>
 
 #include <iostream>
 #include <string_view>
@@ -15,9 +16,9 @@ namespace
 {
 
 /// Trim ending whitespace inplace
-void trim(String & s)
+void trimTrailingWhitespace(String & s)
 {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](char ch) { return !isWhitespaceASCII(ch); }).base(), s.end());
 }
 
 struct NoCaseCompare
@@ -26,7 +27,7 @@ struct NoCaseCompare
     {
         return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char c1, const char c2)
         {
-            return std::tolower(c1) < std::tolower(c2);
+            return static_cast<unsigned char>(toLowerASCII(c1)) < static_cast<unsigned char>(toLowerASCII(c2));
         });
     }
 };
@@ -122,8 +123,7 @@ LineReader::Suggest::Words LineReader::Suggest::getMatchingWords(
     {
         std::string folded(s);
         if (no_case)
-            std::transform(folded.begin(), folded.end(), folded.begin(),
-                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            toLowerASCII(folded);
         return folded;
     };
 
@@ -308,7 +308,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         if (has_extender)
         {
             input.resize(input.size() - strlen(has_extender));
-            trim(input);
+            trimTrailingWhitespace(input);
             if (input.empty())
                 continue;
         }
@@ -339,7 +339,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
             return ABORT;
     }
 
-    trim(input);
+    trimTrailingWhitespace(input);
     return INPUT_LINE;
 }
 

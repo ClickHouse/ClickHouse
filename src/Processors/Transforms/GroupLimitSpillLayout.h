@@ -30,6 +30,7 @@ public:
     const SharedHeader & getMergedHeader() const { return merged_header; }
     const SortDescription & getKeySortDescription() const { return key_sort_description; }
     const SortDescription & getRunSortDescription() const { return run_sort_description; }
+    const String & getSeenRowsColumnName() const { return seen_rows_column_name; }
     const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
     bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
 
@@ -62,6 +63,8 @@ private:
     SortDescription key_sort_description;
     /// Run ordering puts seen rows before input rows with equal keys; key comparisons ignore the seen counts.
     SortDescription run_sort_description;
+    /// The number of input rows seen per group before spilling, the last column of `run_sort_description`.
+    String seen_rows_column_name;
     SortDescription arrival_number_sort_description;
 };
 

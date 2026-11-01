@@ -61,8 +61,12 @@ static NO_INLINE void findExtremeWideImpl(
     }
 }
 
-template <has_find_extreme_implementation T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
-static std::optional<T> findExtremeImpl(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
+MULTITARGET_FUNCTION_ARM_SVE(
+    MULTITARGET_FUNCTION_HEADER(
+        template <has_find_extreme_implementation T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
+        static std::optional<T>),
+    findExtremeImpl,
+    MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end) /// NOLINT
 {
     size_t count = row_end - row_begin;
     ptr += row_begin;
@@ -169,7 +173,7 @@ static std::optional<T> findExtremeImpl(const T * __restrict ptr, const UInt8 * 
         }
         return ret;
     }
-}
+}))
 
 
 /// Given a vector of T finds the extreme (MIN or MAX) value
@@ -177,6 +181,10 @@ template <has_find_extreme_implementation T, class ComparatorClass, bool add_all
 static std::optional<T>
 findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
 {
+#if USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+        return findExtremeImpl_ARM_SVE<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+#endif
     return findExtremeImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 }
 

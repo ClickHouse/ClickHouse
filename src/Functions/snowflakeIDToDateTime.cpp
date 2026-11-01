@@ -49,22 +49,19 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime>(timezone);
+        /// (UInt64 value, [const NativeUInt epoch, [String tz]]). Note tz requires epoch, so the
+        /// optional groups can't be flattened to `(UInt64, [const NativeUInt], [String])` — that
+        /// would erroneously accept `(UInt64, "tz")`.
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(UInt64, const NativeUInt, const tz String) -> DateTime(tz)"
+                " OR (UInt64, const NativeUInt, [String]) -> DateTime"
+                " OR (UInt64) -> DateTime";
+        return
+            "(UInt64, const NativeUInt, const tz String) -> DateTime(tz)"
+            " OR (UInt64, [const NativeUInt]) -> DateTime";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -120,22 +117,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime64>(3, timezone);
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(UInt64, const NativeUInt, const tz String) -> DateTime64(3, tz)"
+                " OR (UInt64, const NativeUInt, [String]) -> DateTime64(3)"
+                " OR (UInt64) -> DateTime64(3)";
+        return
+            "(UInt64, const NativeUInt, const tz String) -> DateTime64(3, tz)"
+            " OR (UInt64, [const NativeUInt]) -> DateTime64(3)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

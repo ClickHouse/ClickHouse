@@ -34,6 +34,9 @@ public:
     /// column memory. The byte target is soft because a key or an allocation can exceed it; zero disables it.
     /// `max_rows` must be positive. Empty `keys` mark exhaustion.
     virtual SeenGroups next(size_t max_rows, size_t max_bytes) = 0;
+
+    /// The memory of the grouping state that the extractor retains.
+    virtual size_t getTotalByteCount() const = 0;
 };
 
 }

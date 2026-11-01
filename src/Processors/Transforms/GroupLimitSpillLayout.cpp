@@ -99,14 +99,14 @@ GroupLimitSpillLayout::GroupLimitSpillLayout(
     for (const auto & column : seen)
         key_sort_description.emplace_back(column.name, 1, 1);
 
-    const auto seen_rows_name = uniqueColumnName(input, SEEN_ROWS_COLUMN_NAME);
-    input.insert({seen_rows_type->createColumn(), seen_rows_type, seen_rows_name});
+    seen_rows_column_name = uniqueColumnName(input, SEEN_ROWS_COLUMN_NAME);
+    input.insert({seen_rows_type->createColumn(), seen_rows_type, seen_rows_column_name});
     seen.insert(input.getByPosition(input.columns() - 1));
 
     /// Order seen rows, whose counts are positive, before input rows with equal keys, independently of run
     /// registration.
     run_sort_description = key_sort_description;
-    run_sort_description.emplace_back(seen_rows_name, -1, 1);
+    run_sort_description.emplace_back(seen_rows_column_name, -1, 1);
     input_run_header = std::make_shared<const Block>(std::move(input));
     seen_run_header = std::make_shared<const Block>(std::move(seen));
 }

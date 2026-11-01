@@ -165,7 +165,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     const UInt64 group_limit_end = computeGroupLimitEnd(group_length, group_offset);
     const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
         settings.max_bytes_before_external_limit_by, settings.max_bytes_ratio_before_external_limit_by,
-        "max_bytes_ratio_before_external_limit_by", "LIMIT BY", getLogger("LimitByStep"));
+        "max_bytes_ratio_before_external_limit_by");
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk;
     auto create_hash_transform = [&](const SharedHeader & header) -> ProcessorPtr
@@ -335,7 +335,7 @@ void LimitByStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, ctx.out);
+        ctx.writeColumnName(column);
 }
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)

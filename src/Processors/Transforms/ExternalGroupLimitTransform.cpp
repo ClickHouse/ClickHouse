@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <utility>
 
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
@@ -63,9 +64,11 @@ ExternalGroupLimitTransform<Traits>::ExternalGroupLimitTransform(
     size_t min_free_disk_space_,
     size_t max_block_size_rows_,
     size_t preferred_block_bytes_,
-    bool preserve_input_order_)
+    bool preserve_input_order_,
+    DistinctSetMemoryTracker::SharedCounter shared_filter_bytes_)
     : IProcessor({header_}, {header_})
     , params(params_)
+    , filter_memory(shared_filter_bytes_)
     , state(std::in_place_type<Hashing>, *header_, params_, *this)
     , max_bytes_before_external(max_bytes_before_external_)
     , tmp_data(std::move(tmp_data_))
@@ -75,6 +78,7 @@ ExternalGroupLimitTransform<Traits>::ExternalGroupLimitTransform(
     , preserve_input_order(preserve_input_order_)
 {
     chassert(params.group_limit_end > 0);
+    chassert(!shared_filter_bytes_ || !params.size_limits.hasLimits());
 }
 
 template <typename Traits>
@@ -83,7 +87,136 @@ ExternalGroupLimitTransform<Traits>::~ExternalGroupLimitTransform() = default;
 template <typename Traits>
 size_t ExternalGroupLimitTransform<Traits>::minBytesInRun() const
 {
-    return std::min(max_bytes_before_external, DEFAULT_BYTES_IN_RUN);
+    return max_bytes_before_external ? std::min(max_bytes_before_external, DEFAULT_BYTES_IN_RUN) : DEFAULT_BYTES_IN_RUN;
+}
+
+template <typename Traits>
+const typename ExternalGroupLimitTransform<Traits>::CollectingInput * ExternalGroupLimitTransform<Traits>::getCollectingInput() const
+{
+    if (const auto * collecting = std::get_if<CollectingInput>(&state))
+        return collecting;
+    if (const auto * tail = std::get_if<PreparingTail>(&state))
+        return &tail->collecting;
+    if (const auto * tail = std::get_if<ConnectingTailRun>(&state))
+        return &tail->remaining;
+    if (const auto * tail = std::get_if<WritingTailRun>(&state))
+        return &tail->remaining;
+    return nullptr;
+}
+
+template <typename Traits>
+typename ExternalGroupLimitTransform<Traits>::CollectingInput * ExternalGroupLimitTransform<Traits>::getCollectingInput()
+{
+    return const_cast<CollectingInput *>(std::as_const(*this).getCollectingInput());
+}
+
+template <typename Traits>
+ProcessorMemoryStats ExternalGroupLimitTransform<Traits>::getMemoryStats() const
+{
+    ProcessorMemoryStats res;
+    if (const auto * hashing = std::get_if<Hashing>(&state); hashing && !hashing->input_finished && hashing->filter.getTotalRowCount())
+    {
+        res.spillable_memory_bytes = hashing->filter.getTotalByteCount();
+        /// Allow the bounded seen-group extraction/sorting workspace.
+        res.need_reserved_memory_bytes = 2 * DEFAULT_BYTES_IN_RUN
+            + estimateSortingWorkspace(maxRowsInSortingUnit()) + 3 * tmp_data->getSettings().buffer_size;
+    }
+    else if (const auto * collecting = getCollectingInput())
+    {
+        res.spillable_memory_bytes = collecting->sorted_bytes + collecting->pending.allocated_bytes;
+        if (res.spillable_memory_bytes)
+        {
+            res.need_reserved_memory_bytes = 3 * collecting->pending.allocated_bytes
+                + estimateSortingWorkspace(collecting->pending.rows)
+                + estimateRunWriteMemory(collecting->sorted_rows + collecting->pending.rows, res.spillable_memory_bytes);
+        }
+    }
+
+    return res;
+}
+
+template <typename Traits>
+size_t ExternalGroupLimitTransform<Traits>::spill(size_t at_least_bytes)
+{
+    size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!at_least_bytes || !bytes || isCancelled())
+        return 0;
+
+    if (auto * hashing = std::get_if<Hashing>(&state))
+    {
+        LOG_TRACE(log, "Switching {} to external mode: scheduler requested spilling (requested bytes: {}, state memory: {}, query memory: {})",
+            Traits::operator_name,
+            formatReadableSizeWithBinarySuffix(at_least_bytes),
+            formatReadableSizeWithBinarySuffix(bytes),
+            formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()));
+        startSpilling(*hashing);
+        /// The extractor retains the grouping state until its last group is materialized. Drain every seen run
+        /// before settling the scheduler's request, keeping only one run's working columns alive.
+        while (auto * connecting = std::get_if<ConnectingSeenRun>(&state))
+        {
+            auto run = std::move(connecting->run);
+            auto extractor = std::move(connecting->extractor);
+            spillRun(std::move(run));
+            auto & extracting = state.template emplace<ExtractingSeenGroups>(std::move(extractor));
+            extractSeenRun(extracting);
+        }
+    }
+    else
+    {
+        /// A prepared tail prefix must be registered before any later suffix, so equal keys keep their
+        /// earliest rows. Finish its unconnected run before spilling more of the tail.
+        if (auto * connecting = std::get_if<ConnectingTailRun>(&state))
+        {
+            spillRun(std::move(connecting->run));
+            auto remaining = std::move(connecting->remaining);
+            state.template emplace<PreparingTail>(std::move(remaining));
+        }
+
+        auto * collecting = getCollectingInput();
+        chassert(collecting);
+        flushSortingUnit(*collecting);
+        /// Spill a prefix of whole chunks so earlier runs still win ties for the earliest rows.
+        Chunks chunks;
+        bytes = 0;
+        size_t rows = 0;
+        for (auto & chunk : collecting->sorted_chunks)
+        {
+            bytes += chunk.allocatedBytes();
+            rows += chunk.getNumRows();
+            chunks.emplace_back(std::move(chunk));
+            if (bytes >= at_least_bytes)
+                break;
+        }
+        collecting->sorted_chunks.erase(collecting->sorted_chunks.begin(), collecting->sorted_chunks.begin() + chunks.size());
+        collecting->sorted_bytes -= bytes;
+        collecting->sorted_rows -= rows;
+        if (!std::holds_alternative<CollectingInput>(state))
+            ProfileEvents::increment(Traits::tailSpilledRowsEvent(), rows);
+
+        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(chunks), bytes,
+            spill_layout->getKeySortDescription(), MergeSorter::Mode::LimitGroupRows);
+        spillRun(std::move(run));
+    }
+
+    return isCancelled() ? 0 : bytes;
+}
+
+template <typename Traits>
+void ExternalGroupLimitTransform<Traits>::spillRun(PreparedRun run)
+{
+    /// None of these processors have been connected yet, so writing does not depend on pipeline work.
+    while (run.progress.chunk || run.progress.merger)
+    {
+        if (run.progress.chunk)
+            run.sink->consume(std::move(run.progress.chunk));
+        if (run.progress.merger)
+            readRun(run.progress);
+    }
+    run.sink->onFinish();
+    run.source = std::make_shared<BufferingFromFileSource>(
+        run.source->getPort().getSharedHeader(), std::move(run.sink->getHolder()), log);
+    run.sink.reset();
+    spilled_runs.emplace_back(std::move(run));
 }
 
 template <typename Traits>
@@ -95,6 +228,9 @@ IProcessor::Status ExternalGroupLimitTransform<Traits>::prepare()
         /// owned by the pipeline until destruction, outside the executor's preparation lock.
         return finish();
     }
+
+    if (!spilled_runs.empty())
+        return Status::UpdatePipeline;
 
     return std::visit([this]<typename Phase>(Phase & phase) -> Status
     {
@@ -318,6 +454,9 @@ void ExternalGroupLimitTransform<Traits>::work()
     {
         if constexpr (std::is_same_v<Phase, Hashing>)
         {
+            /// A completed filter keeps its bytes in the shared counter until the transform is destroyed. A
+            /// single-stream `DISTINCT` would still retain these keys while other partitions insert theirs,
+            /// so the combined byte limit must count them even if this partition finishes first.
             if (phase.input_finished)
                 state.template emplace<Finishing>();
             else
@@ -352,11 +491,17 @@ void ExternalGroupLimitTransform<Traits>::consumeHashing(Hashing & hashing)
 {
     if (unlikely(!input_chunk.hasRows()))
     {
+        /// A rowless chunk with a `ChunkInfo` is a marker for the consumer (e.g. a watermark of a streaming
+        /// read). Before spilling, the results of the preceding chunks are already emitted, so it keeps its place.
+        chassert(!output_chunk);
+        if (!input_chunk.getChunkInfos().empty())
+            output_chunk = std::move(input_chunk);
         input_chunk.clear();
         return;
     }
 
     hashing.filter.prepareForInsert(input_chunk);
+    filter_memory.update(hashing.getRetainedFilterBytes());
 
     /// The input columns and existing filter state are already charged to query memory. The estimates below
     /// cover additional allocations for inserting keys, filtering rows, and preparing the first spill run.
@@ -431,7 +576,8 @@ void ExternalGroupLimitTransform<Traits>::consumeHashing(Hashing & hashing)
     /// arena storing string keys, and other per-group state.
     /// Filtering releases its masks and packed keys before spilling; `spill_memory` already includes
     /// any pending filtered output. The budget covers the larger workspace alongside possible filter-state growth.
-    if (check_memory_budget(hashing.filter.estimateGrowthMemory(input_chunk), std::max(filtering_memory, spill_memory)))
+    if (!max_bytes_before_external
+        || check_memory_budget(hashing.filter.estimateGrowthMemory(input_chunk), std::max(filtering_memory, spill_memory)))
     {
         output_chunk = hashing.filter.filter(std::move(input_chunk));
         processed_rows = input_rows;
@@ -464,6 +610,7 @@ void ExternalGroupLimitTransform<Traits>::consumeHashing(Hashing & hashing)
     }
 
     consumed_rows += processed_rows;
+    filter_memory.report(output_chunk, outputs.front().getHeader(), hashing.getRetainedFilterBytes());
     addResultRows(output_chunk.getNumRows());
 
     /// A hint or a size limit in the 'break' overflow mode retains this final result chunk.
@@ -503,7 +650,7 @@ void ExternalGroupLimitTransform<Traits>::consumeHashing(Hashing & hashing)
 
     /// Actual allocations and concurrent operators can consume more than the pre-insertion estimate.
     const Int64 query_memory_usage_after_insert = getCurrentQueryMemoryUsage();
-    if (query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external))
+    if (max_bytes_before_external && query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external))
     {
         LOG_TRACE(log, "Switching {} to external mode: query memory exceeded the spill threshold after insertion "
             "(query memory: {}, spill threshold: {})",
@@ -527,11 +674,14 @@ void ExternalGroupLimitTransform<Traits>::startSpilling(Hashing & hashing)
             hashing.filter.getTotalRowCount(), Traits::operator_name, formatReadableSizeWithBinarySuffix(hashing.filter.getTotalByteCount()));
         auto extractor = std::move(hashing.filter).extractSeenGroups();
         auto & extracting = state.template emplace<ExtractingSeenGroups>(std::move(extractor));
+        /// The extractor retains the grouping state, but the dictionary filtering state is released.
+        filter_memory.update(extracting.extractor->getTotalByteCount());
         extractSeenRun(extracting);
     }
     else
     {
         state.template emplace<CollectingInput>();
+        filter_memory.update(0);
         LOG_TRACE(log, "{} hash table is empty; collecting input for input spill runs", Traits::operator_name);
     }
 }
@@ -547,6 +697,7 @@ void ExternalGroupLimitTransform<Traits>::extractSeenRun(ExtractingSeenGroups & 
     while (!isCancelled() && bytes < DEFAULT_BYTES_IN_RUN)
     {
         auto seen = extracting.extractor->next(maxRowsInSortingUnit(), DEFAULT_BYTES_IN_RUN - bytes);
+        filter_memory.update(extracting.extractor->getTotalByteCount());
         if (seen.keys.empty())
             break;
 
@@ -591,6 +742,9 @@ size_t ExternalGroupLimitTransform<Traits>::maxRowsInSortingUnit() const
 template <typename Traits>
 bool ExternalGroupLimitTransform<Traits>::fitsSortingBudget(size_t rows, size_t column_bytes, size_t additional_input_bytes) const
 {
+    if (!max_bytes_before_external)
+        return true;
+
     /// Buffered source chunks are already tracked; future input needs a separate allowance. Reserve
     /// space for copy-on-write mutation, column concatenation, and the sorted output while upstream
     /// owners may retain the source columns.
@@ -662,6 +816,8 @@ template <typename Traits>
 void ExternalGroupLimitTransform<Traits>::collectInput(CollectingInput & collecting)
 {
     auto chunk = std::move(input_chunk);
+    /// Rowless marker chunks are dropped here: after spilling, the rows are emitted only once the input
+    /// ends, so a forwarded marker (e.g. a watermark) would overtake the rows that arrived before it.
     if (unlikely(!chunk.hasRows()))
         return;
 
@@ -705,7 +861,8 @@ void ExternalGroupLimitTransform<Traits>::collectInput(CollectingInput & collect
     const size_t run_bytes = collecting.sorted_bytes + pending.allocated_bytes;
     const size_t write_memory = estimateRunWriteMemory(run_rows, run_bytes);
     const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
-    const bool write_budget_exceeded = query_memory + write_memory > max_bytes_before_external;
+    const bool write_budget_exceeded = max_bytes_before_external
+        && query_memory + write_memory > max_bytes_before_external;
     const bool spill_budget_exceeded = sorting_budget_exceeded || write_budget_exceeded;
     if (first_run || spill_budget_exceeded || !can_coalesce || unit_full)
         flushSortingUnit(collecting);
@@ -751,7 +908,7 @@ typename ExternalGroupLimitTransform<Traits>::PreparedRun ExternalGroupLimitTran
         .source = std::move(source),
         .initial_merge = {},
     };
-    if (!merge_registration)
+    if (!merge_registration && spilled_runs.empty())
         run.initial_merge = prepareMerge();
 
     return run;
@@ -812,7 +969,7 @@ template <typename Traits>
 size_t ExternalGroupLimitTransform<Traits>::selectTailSpillPrefix(const CollectingInput & collecting) const
 {
     const auto & chunks = collecting.sorted_chunks;
-    if (chunks.empty())
+    if (!max_bytes_before_external || chunks.empty())
         return 0;
 
     const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
@@ -920,10 +1077,11 @@ void ExternalGroupLimitTransform<Traits>::consumeMerged(Merging & merging)
     /// Arrival numbers have served their purpose after the optional order-restoration sort.
     chassert(!output_chunk);
     output_chunk = spill_layout->restoreOutputChunk(std::move(chunk));
+    filter_memory.report(output_chunk, outputs.front().getHeader(), 0);
     addResultRows(output_chunk.getNumRows());
 
-    /// The row limit applies to the result. The hash table has been released, so no state memory remains
-    /// to check against the byte limit. The row limit is checked before applying the hint.
+    /// The row limit applies to the result. This stream's hash table has been released, so no local state
+    /// memory remains to check against the byte limit. The row limit is checked before applying the hint.
     if (!params.size_limits.check(result_rows, /*bytes=*/ 0, Traits::operator_name, ErrorCodes::SET_SIZE_LIMIT_EXCEEDED)
         || (params.limit_hint && result_rows >= params.limit_hint))
         state.template emplace<Finishing>();
@@ -937,8 +1095,9 @@ typename ExternalGroupLimitTransform<Traits>::PreparedMerge ExternalGroupLimitTr
     /// The merger cannot consume its inputs until the final in-memory tail has been registered.
     PreparedMerge prepared;
     prepared.merger = std::make_shared<GroupLimitSortedTransform>(
-        String(Traits::merge_transform_name), SharedHeaders{}, merged_header, spill_layout->getRunSortDescription(),
-        params.group_offset, params.group_limit_end, max_block_size_rows, /*have_all_inputs=*/ false);
+        String(Traits::merge_transform_name), SharedHeaders{}, merged_header, spill_layout->getKeySortDescription(),
+        spill_layout->getSeenRowsColumnName(), params.group_offset, params.group_limit_end, max_block_size_rows,
+        /*have_all_inputs=*/ false);
 
     if (spill_layout->preservesInputOrder())
     {
@@ -963,7 +1122,7 @@ typename ExternalGroupLimitTransform<Traits>::PreparedMerge ExternalGroupLimitTr
             /*increase_sort_description_compile_attempts=*/ false,
             minBytesInRun(),
             /*remerge_lowered_memory_bytes_ratio_=*/ 2.,
-            minBytesInRun(),
+            max_bytes_before_external ? minBytesInRun() : 0,
             max_bytes_before_external,
             tmp_data,
             min_free_disk_space));
@@ -991,7 +1150,7 @@ void ExternalGroupLimitTransform<Traits>::connectMerge(PreparedMerge & prepared,
 }
 
 template <typename Traits>
-OutputPort & ExternalGroupLimitTransform<Traits>::connectRun(PreparedRun & prepared, Processors & processors)
+void ExternalGroupLimitTransform<Traits>::connectRunSource(PreparedRun & prepared, Processors & processors)
 {
     if (prepared.initial_merge)
         connectMerge(*prepared.initial_merge, processors);
@@ -1000,9 +1159,15 @@ OutputPort & ExternalGroupLimitTransform<Traits>::connectRun(PreparedRun & prepa
     auto & merger = *merge_registration->merger;
     merger.addInput(prepared.source->getPort().getHeader());
     connect(prepared.source->getPort(), merger.getInputs().back());
+    processors.emplace_back(prepared.source);
+}
+
+template <typename Traits>
+OutputPort & ExternalGroupLimitTransform<Traits>::connectRun(PreparedRun & prepared, Processors & processors)
+{
+    connectRunSource(prepared, processors);
     outputs.emplace_back(prepared.sink->getPort().getHeader(), this);
     connect(outputs.back(), prepared.sink->getPort());
-    processors.emplace_back(prepared.source);
     processors.emplace_back(prepared.sink);
     return outputs.back();
 }
@@ -1011,6 +1176,14 @@ template <typename Traits>
 IProcessor::PipelineUpdate ExternalGroupLimitTransform<Traits>::updatePipeline()
 {
     Processors processors;
+    if (!spilled_runs.empty())
+    {
+        for (auto & run : spilled_runs)
+            connectRunSource(run, processors);
+        spilled_runs.clear();
+        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    }
+
     std::visit([this, &processors]<typename Phase>(Phase & phase)
     {
         if constexpr (std::is_same_v<Phase, ConnectingSeenRun> || std::is_same_v<Phase, ConnectingTailRun>)

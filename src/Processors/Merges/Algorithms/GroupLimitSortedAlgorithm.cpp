@@ -9,18 +9,28 @@ namespace DB
 {
 
 GroupLimitSortedAlgorithm::GroupLimitSortedAlgorithm(
-    SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_,
-    UInt64 group_offset_, UInt64 group_limit_end_, size_t max_block_size_rows_)
+    SharedHeaders input_headers,
+    SharedHeader output_header_,
+    SortDescription key_description,
+    const std::optional<String> & seen_rows_column,
+    UInt64 group_offset_,
+    UInt64 group_limit_end_,
+    size_t max_block_size_rows_)
     : output_header(std::move(output_header_))
-    , description(std::move(description_))
-    , num_key_columns(description.size() - 1)
+    , description(std::move(key_description))
+    , has_seen_rows(seen_rows_column.has_value())
+    , num_key_columns(description.size())
     , group_offset(group_offset_)
     , group_limit_end(group_limit_end_)
     , max_block_size_rows(max_block_size_rows_)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
-    chassert(description.size() >= 2);
-    chassert(description.back().direction == -1);
+    chassert(num_key_columns > 0);
+
+    /// Sorting the seen counts descending after the keys places seen rows, whose counts are positive, before input
+    /// rows with equal keys, independently of input registration.
+    if (has_seen_rows)
+        description.emplace_back(*seen_rows_column, -1, 1);
     for (auto & header : input_headers)
         addInput(std::move(header));
 }
@@ -57,7 +67,7 @@ void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
         {
             auto & cursor = cursors[source_num];
             cursor = SortCursorImpl(*source.header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
-            if (cursor.sort_columns[num_key_columns]->getUInt(0) == 0)
+            if (seenRows(cursor, 0) == 0)
             {
                 for (const auto & column : *output_header)
                 {
@@ -83,7 +93,7 @@ void GroupLimitSortedAlgorithm::consume(Input & input, size_t source_num)
     const auto & chunk = current_inputs[source_num].chunk;
     auto & cursor = cursors[source_num];
     cursor.reset(chunk.getColumns(), *source.header, chunk.getNumRows());
-    chassert((cursor.sort_columns[num_key_columns]->getUInt(0) == 0) == !source.output_positions.empty());
+    chassert((seenRows(cursor, 0) != 0) == source.output_positions.empty());
     for (size_t i = 0; i < source.output_positions.size(); ++i)
         source.output_columns[i] = cursor.all_columns[source.output_positions[i]];
     queue.push(cursor);
@@ -122,6 +132,11 @@ Chunk GroupLimitSortedAlgorithm::pull()
     return merged_data.pull();
 }
 
+UInt64 GroupLimitSortedAlgorithm::seenRows(const SortCursorImpl & cursor, size_t row) const
+{
+    return has_seen_rows ? cursor.sort_columns[num_key_columns]->getUInt(row) : 0;
+}
+
 IMergingAlgorithm::Status GroupLimitSortedAlgorithm::merge()
 {
     if (group_offset == 0 && group_limit_end == 1)
@@ -150,7 +165,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeDistinctRows()
         current_key.set(current);
         current_key.num_columns = num_key_columns;
         size_t skipped_rows = batch_size;
-        if (current->sort_columns[num_key_columns]->getUInt(first_row) == 0)
+        if (seenRows(*current.impl, first_row) == 0)
         {
             /// Input-row chunks are internally unique, so only the first row can repeat a prior key,
             /// and only when switching chunks. Source refills compare against the saved boundary key.
@@ -207,8 +222,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeRankedRows()
         auto current = *current_ptr;
         const size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
         const size_t first_row = current->getRow();
-        const IColumn & seen_rows = *current->sort_columns[num_key_columns];
-        const bool is_seen_source = seen_rows.getUInt(first_row) != 0;
+        const bool is_seen_source = seenRows(*current.impl, first_row) != 0;
         const IColumn ** key_columns = current->sort_columns.data();
 
         size_t range_start = first_row;
@@ -234,7 +248,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeRankedRows()
             if (is_seen_source)
             {
                 /// A rank at or past the window end suppresses the rest of the key, so it can saturate.
-                if (common::addOverflow(last_key_rank, seen_rows.getUInt(row), last_key_rank))
+                if (common::addOverflow(last_key_rank, seenRows(*current.impl, row), last_key_rank))
                     last_key_rank = std::numeric_limits<UInt64>::max();
                 continue;
             }
