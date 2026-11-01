@@ -446,17 +446,13 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         const auto & filter_dag = filter_step->getExpression();
         const auto * filter_node = &filter_dag.findInOutputs(filter_step->getFilterColumnName());
         ActionsDAG::NodeRawConstPtrs atoms;
-        std::unordered_set<const ActionsDAG::Node *> and_nodes;
         std::vector<const ActionsDAG::Node *> stack{filter_node};
         while (!stack.empty())
         {
             const auto * node = stack.back();
             stack.pop_back();
             if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
-            {
-                and_nodes.insert(node);
                 stack.insert(stack.end(), node->children.rbegin(), node->children.rend());
-            }
             else
                 atoms.push_back(node);
         }
@@ -471,8 +467,9 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             if (!non_intersecting.contains(atom) || ((atoms.size() != 1 || has_prewhere) && !canBeEvaluatedOnMoreRows(atom)))
                 break;
             /// A condition that shares a computation with another column of the WHERE, e.g. `notEmpty(extractAll(s, 'x'))`
-            /// in `SELECT length(extractAll(s, 'x')) ... WHERE notEmpty(extractAll(s, 'x'))`, would compute it once more.
-            if (!isComputedOnlyForItself(filter_dag, atom, and_nodes, atom == filter_node && filter_step->removesFilterColumn()))
+            /// in `SELECT length(extractAll(s, 'x')) ... WHERE notEmpty(extractAll(s, 'x'))`, or that is a part of a returned
+            /// conjunction, e.g. `a` in `SELECT (a AND b) AS f ... WHERE f AND c`, would compute it once more.
+            if (!isComputedOnlyForConjunction(filter_dag, atom, filter_node, atom != filter_node || filter_step->removesFilterColumn()))
                 break;
             non_intersecting_final_conditions.push_back(atom);
         }

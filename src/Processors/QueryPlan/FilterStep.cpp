@@ -509,15 +509,13 @@ void FilterStep::setPrefilteredConditions(UInt64 token, std::unordered_set<UInt6
     prefiltered_conditions = PrefilteredConditions{.token = token, .condition_hashes = std::move(condition_hashes)};
 }
 
-/// The atoms of the AND chain of `node` from left to right, the order of short-circuit evaluation, and its `and` nodes.
-static void collectConjunctionAtoms(
-    const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms, std::unordered_set<const ActionsDAG::Node *> & and_nodes)
+/// The atoms of the AND chain of `node` from left to right, the order of short-circuit evaluation.
+static void collectConjunctionAtoms(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
     {
-        and_nodes.insert(node);
         for (const auto * child : node->children)
-            collectConjunctionAtoms(child, atoms, and_nodes);
+            collectConjunctionAtoms(child, atoms);
         return;
     }
     atoms.push_back(node);
@@ -578,8 +576,7 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
 
     const auto * filter_node = &dag.findInOutputs(filter_column_name);
     ActionsDAG::NodeRawConstPtrs atoms;
-    std::unordered_set<const ActionsDAG::Node *> and_nodes;
-    collectConjunctionAtoms(filter_node, atoms, and_nodes);
+    collectConjunctionAtoms(filter_node, atoms);
 
     size_t num_prefiltered = 0;
     while (num_prefiltered < atoms.size() && atoms[num_prefiltered]->type == ActionsDAG::ActionType::FUNCTION
@@ -590,7 +587,7 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
 
     const ActionsDAG::NodeRawConstPtrs prefiltered_atoms(atoms.begin(), atoms.begin() + num_prefiltered);
     for (const auto * atom : prefiltered_atoms)
-        if (!isComputedOnlyForItself(dag, atom, and_nodes, atom == filter_node && remove_filter_column))
+        if (!isComputedOnlyForConjunction(dag, atom, filter_node, atom != filter_node || remove_filter_column))
             return std::nullopt;
 
     String conditions_column_name = "__prefiltered_conditions";
@@ -620,7 +617,7 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
     const ActionsDAG::Node * rest_filter = &addConjunction(rest, std::move(rest_atoms));
     if (!remove_filter_column)
     {
-        /// The filter column is a result too: an `and` (see `isComputedOnlyForItself` above), so it is 1 in the rows that
+        /// The filter column is a result too: an `and` (see `isComputedOnlyForConjunction` above), so it is 1 in the rows that
         /// pass, like the conjunction of the other atoms. It keeps its type and constness.
         if (rest_filter->column && !filter_node->column)
             rest_filter = &rest.addFunction(

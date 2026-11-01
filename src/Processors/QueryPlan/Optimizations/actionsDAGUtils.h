@@ -190,10 +190,12 @@ NodeSet findReachableNodes(
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 
-/// Whether `dag` uses the values that `root` computes only to compute `root`: no other node uses its computed nodes (an input
-/// or a constant may be shared), except `root` itself as a child of `root_users`, and none of them is an output, except `root`
-/// if `root_may_be_output`. Then removing `root` from `dag` does not leave a part of its computation to do anyway.
-bool isComputedOnlyForItself(const ActionsDAG & dag, const ActionsDAG::Node * root, const NodeSet & root_users, bool root_may_be_output);
+/// Whether `dag` uses the values that `atom` of the AND chain of `conjunction` computes only to compute `conjunction`: no other
+/// node uses its computed nodes (an input or a constant may be shared) or the `and` nodes between `conjunction` and `atom`,
+/// except these `and` nodes, and none of them is an output, except `conjunction` if `conjunction_may_be_output`. Then
+/// removing `atom` from the AND chain does not leave a part of its computation to do anyway.
+bool isComputedOnlyForConjunction(
+    const ActionsDAG & dag, const ActionsDAG::Node * atom, const ActionsDAG::Node * conjunction, bool conjunction_may_be_output);
 
 /// Our objective is to replace injective function nodes in `actions` results with its children
 /// until only the irreducible subset of nodes remains. Against these set of nodes we will match partition key expression
