@@ -213,7 +213,7 @@ For each CI failure:
 
 ### 4a. Re-approve workflows for fork PRs
 
-Workflow runs of a PR from a fork wait in the `action_required` state until a maintainer clicks "Approve and run workflows". If a maintainer already approved CI for an earlier commit of this PR, and every commit added since then is from the current user (for example, made by this skill), approve the waiting runs instead of leaving the PR without CI. Do this both here, before analyzing CI, and after every push in step 7 — a push to a fork PR creates new runs that wait for approval again.
+Workflow runs of a PR from a fork wait in the `action_required` state until a maintainer clicks "Approve and run workflows" (`$REPO` requires approval for all external contributors). If a maintainer already approved CI for an earlier commit of this PR, and every commit added since then is provably from the current user, approve the waiting runs instead of leaving the PR without CI. Do this both here, before analyzing CI, and after every push in step 7 — a push to a fork PR creates new runs that wait for approval again. Every check below fails closed: if any of them cannot be established, do not approve; report why and leave the approval to a human.
 
 Skip this step for PRs from branches of `$REPO` itself (`headRepositoryOwner` is the owner of `$REPO`): their workflows never wait for approval.
 
@@ -228,20 +228,28 @@ Skip this step for PRs from branches of `$REPO` itself (`headRepositoryOwner` is
    ```
    If the list is empty, there is nothing to approve.
 
-2. Find the newest earlier commit of this PR whose CI was approved — a run of the same fork and head branch that actually ran (its conclusion is anything but `action_required`):
+2. Find the newest earlier commit of this PR whose CI was approved. A conclusion other than `action_required` is not enough: GitHub marks runs that waited for approval for more than 30 days as `failure` without running anything. A run counts as approved only if at least one of its jobs was created — jobs are created only after approval:
    ```bash
    gh api "repos/$REPO/actions/runs?event=pull_request&branch=$HEAD_BRANCH&per_page=100" --paginate \
-       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .head_sha != \"$HEAD_SHA\" and .conclusion != \"action_required\" and .status != \"waiting\") | \"\(.created_at) \(.head_sha)\"" \
-       | sort -r | awk '{print $2}' | uniq
+       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .head_sha != \"$HEAD_SHA\" and .conclusion != \"action_required\") | \"\(.created_at) \(.id) \(.head_sha)\"" \
+       | sort -r > tmp/continue-pr-$PR_NUMBER-candidate-runs
+   while read -r _ RUN_ID SHA; do
+       JOBS=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=1" --jq .total_count)
+       echo "$RUN_ID $SHA $JOBS"
+   done < tmp/continue-pr-$PR_NUMBER-candidate-runs
    ```
-   Take the first SHA in this list that is an ancestor of the current head (the compare API reports `"status": "ahead"` for it). If there is none, CI was never approved for this PR — do not approve; report that a maintainer has to review and approve it.
+   Take the newest run with a nonzero job count whose SHA is an ancestor of the current head (the compare API in the next step reports `"status": "ahead"` for it); its SHA is `$APPROVED_SHA`. If there is none, CI was never approved for this PR — do not approve; report that a maintainer has to review and approve it.
 
-3. Verify that every commit added since the approved commit is from the current user:
+3. Verify that every commit added since the approved commit is from the current user. The `author` and `committer` logins that GitHub shows are derived from the e-mail addresses in the commit header, which anyone can forge, so they prove nothing. Accept a commit only by one of these:
+   - it is already in the base branch (`git merge-base --is-ancestor <sha> "origin/$BASE_BRANCH"` succeeds) — such commits arrive with merges of the base branch;
+   - its exact SHA is in the ledger of commits pushed by this skill (see step 7): `grep -qx <sha> "$PUSHED_LEDGER"`;
+   - it has a verified signature and `committer.login` is `$ME` — the signing key then belongs to the current user's account. Commits signed by `web-flow` do not count: they can be created through the API with an arbitrary author.
    ```bash
+   PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
    gh api "repos/$REPO/compare/$APPROVED_SHA...$HEAD_SHA" --paginate \
-       --jq '.status, (.commits[] | "\(.sha) \(.author.login // "-") \(.committer.login // "-")")'
+       --jq '.status, (.commits[] | "\(.sha) \(.commit.verification.verified) \(.committer.login // "-")")'
    ```
-   The `status` must be `ahead`. Ignore commits that are already in the base branch (`git merge-base --is-ancestor <sha> "origin/$BASE_BRANCH"` succeeds) — they arrive with merges of the base branch and are trusted. Every remaining commit must have `author.login` equal to `$ME`, and `committer.login` equal to `$ME` or `web-flow` (commits made through the GitHub UI, e.g. the "Update branch" button). If any commit is from someone else, or its author cannot be mapped to a GitHub login, do not approve: the PR author or another person added code that no maintainer has seen. Report the offending commits and leave the approval to a human.
+   The `status` must be `ahead`. If any remaining commit fails all three checks, do not approve: it may contain code that no maintainer has seen. Report the offending commits and leave the approval to a human. Commits that the current user pushed outside of this skill without signing cannot be told apart from forged ones; they also need a human.
 
 4. Approve every waiting run:
    ```bash
@@ -402,9 +410,12 @@ Before every commit and push, run this safety gate. It is a hard stop:
    ```
    Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
 
-After the gate succeeds, push with:
+After the gate succeeds, record the commits that are about to be pushed in the ledger used by step 4a (it lives outside the repository, so it survives worktree removal), then push:
 
 ```bash
+PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
+mkdir -p "$(dirname "$PUSHED_LEDGER")"
+git rev-list "$REMOTE_HEAD..HEAD" >> "$PUSHED_LEDGER"
 git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
 ```
 
