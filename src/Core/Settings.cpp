@@ -5186,9 +5186,12 @@ When enabled and aggregation in order is active, pushes LIMIT into the aggregati
 )", 0, \
         {"26.7", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."}) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
-Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or `adaptive_aggregator_freeze_threshold_bytes` of memory, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+Enables the adaptive `GROUP BY` strategies, which look at the data while the query runs and choose how to aggregate it. With 0, every aggregation runs the ordinary algorithm.
 
-The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold a thread writes its staged records to disk and frees them, and the merge reads them back bucket by bucket. A table that has not frozen yet is written to disk as in the ordinary external aggregation once it holds enough memory, and a frozen one once its aggregate states, such as those of `uniqExact` or `groupArray`, grow enough; the thread then starts filling a new table.
+- Staging: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or `adaptive_aggregator_freeze_threshold_bytes` of memory, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+- Multi-pass top-K (see [adaptive_aggregator_top_k](#adaptive_aggregator_top_k)): for `GROUP BY ... ORDER BY <aggregate> DESC LIMIT n`, the aggregation finds the keys that may enter the top, aggregates only their rows, and proves that the result is exact.
+
+Staging honors the external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`): past the threshold a thread writes its staged records to disk and frees them, and the merge reads them back bucket by bucket. A table that has not frozen yet is written to disk as in the ordinary external aggregation once it holds enough memory, and a frozen one once its aggregate states, such as those of `uniqExact` or `groupArray`, grow enough; the thread then starts filling a new table.
 )", 0, \
         {"26.8", false, true, "New setting to enable adaptive `GROUP BY` aggregation that freezes each thread's local hash table once it reaches `adaptive_aggregator_freeze_threshold` keys, so frequent keys keep aggregating in the small local tables while rare keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge; this stores and processes rare keys once instead of once per thread."}) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 16384, R"(
@@ -5205,6 +5208,26 @@ Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adapt
 With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 )", 0, \
         {"26.11", false, false, "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}) \
+    DECLARE(Bool, adaptive_aggregator_top_k, true, R"(
+Enables the multi-pass top-K strategy of the adaptive aggregator (see [enable_adaptive_aggregator](#enable_adaptive_aggregator)) for `GROUP BY ... ORDER BY <aggregate> DESC LIMIT n` over a `MergeTree` table, where the aggregate is `count`, `uniqExact` or `uniqExactIf`.
+
+The ordinary aggregation builds a state for every key, although the query returns only the top `n`. The strategy instead finds the keys that may enter the top, aggregates only their rows, and checks that no other key can enter the top. The result is always exact.
+
+To find these keys, the strategy first aggregates a sample of the table. It then reads the table again and aggregates only the rows of the keys that stand out in the sample. When the check fails, one more pass aggregates the keys it could not rule out.
+
+The sample does not always show the top, for example when the rows of each key value are stored together, as in a table sorted by one of the keys. When the query groups by several keys and one of them is an integer column of the table, the strategy then bounds the groups by that column instead. A group never has more rows than its value of that column. So the strategy first makes a quick pass that reads that column over the whole table, to bound how many rows each of its values has. It then aggregates all the keys, but only for the rows of the values that may have enough rows to hold a group of the top.
+
+Reading the table again costs less than aggregating many distinct keys, so the strategy pays off for queries with many keys. It applies only to reads of at least 1024 granules, and when the sample shows that it would not pay off, the query runs the ordinary aggregation.
+
+With [collect_hash_table_stats_during_aggregation](#collect_hash_table_stats_during_aggregation), the next runs of the same query start from what an earlier run found and skip the sample (see also [adaptive_aggregator_top_k_cache_candidates](#adaptive_aggregator_top_k_cache_candidates)).
+
+Takes effect only with [query_plan_enable_optimizations](#query_plan_enable_optimizations).
+)", 0, \
+        {"26.11", false, true, "New setting to enable the multi-pass top-K strategy of the adaptive aggregator, which aggregates only the rows of the keys that may enter a top-K by `count` or `uniqExact`."}) \
+    DECLARE(Bool, adaptive_aggregator_top_k_cache_candidates, true, R"(
+Lets the next runs of a query that uses the multi-pass top-K strategy (see [adaptive_aggregator_top_k](#adaptive_aggregator_top_k)) reuse the candidate keys that an earlier run found, instead of sampling the table again. Every run still checks its own result, so the setting changes only the speed. Requires [collect_hash_table_stats_during_aggregation](#collect_hash_table_stats_during_aggregation), which identifies the repeated runs of a query.
+)", 0, \
+        {"26.11", false, true, "New setting to keep the candidate keys of the multi-pass top-K strategy of the adaptive aggregator for the next runs of a query."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \
