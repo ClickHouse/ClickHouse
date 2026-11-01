@@ -207,14 +207,10 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
 
     auto is_sensitive = [](std::string_view name) -> bool
     {
-        if (name == "authorization" || name == "proxy-authorization"
-            || name == "cookie" || name == "set-cookie"
-            || name == "x-api-key" || name == "api-key")
-            return true;
-        if (name.ends_with("-key") || name.ends_with("-token")
-            || name.ends_with("_key") || name.ends_with("_token"))
-            return true;
-        return false;
+        return name.contains("auth") || name.contains("token")
+            || name.contains("key") || name.contains("secret")
+            || name.contains("pass") || name.contains("cookie")
+            || name.contains("credential");
     };
 
     auto trim = [](std::string_view s) -> std::string_view
@@ -226,8 +222,8 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
         return s;
     };
 
-    std::vector<std::pair<String, String>> normalized;
-    normalized.reserve(headers.size());
+    /// Use a map to enforce last-value-wins for duplicate headers as in HTTP transport
+    std::unordered_map<String, String> unique_headers;
 
     for (const auto & entry : headers)
     {
@@ -250,33 +246,39 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
             SipHash h;
             h.update(trimmed_val.data(), trimmed_val.size());
             UInt64 hash_val = h.get64();
-            normalized.emplace_back(std::move(lower_name), "hash:" + getHexUIntLowercase(hash_val));
+            unique_headers[lower_name] = "hash:" + getHexUIntLowercase(hash_val);
         }
         else
         {
-            normalized.emplace_back(std::move(lower_name), String(trimmed_val));
+            unique_headers[lower_name] = String(trimmed_val);
         }
     }
 
+    if (unique_headers.empty())
+        return "";
+
+    std::vector<std::pair<String, String>> normalized(unique_headers.begin(), unique_headers.end());
     std::sort(normalized.begin(), normalized.end(), [](const auto & a, const auto & b)
     {
-        if (a.first != b.first)
-            return a.first < b.first;
-        return a.second < b.second;
+        return a.first < b.first;
     });
 
+    /// Unambiguous length-delimited serialization: len(name):name=len(val):val;
+    /// Prevents delimiter injection collision when values contain semicolons or colons.
     String result;
-    for (size_t i = 0; i < normalized.size(); ++i)
+    for (const auto & [name, val] : normalized)
     {
-        if (i > 0)
-            result.push_back(';');
-        result.append(normalized[i].first);
+        result.append(std::to_string(name.size()));
         result.push_back(':');
-        result.append(normalized[i].second);
+        result.append(name);
+        result.push_back('=');
+        result.append(std::to_string(val.size()));
+        result.push_back(':');
+        result.append(val);
+        result.push_back(';');
     }
     return result;
 }
-
 
 String getSampleURI(String uri, ContextPtr context)
 {
