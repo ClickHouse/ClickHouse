@@ -55,3 +55,16 @@ SELECT b FROM file(currentDatabase() || '_05428_unparsable.json', JSONColumns, '
 SELECT b FROM file(currentDatabase() || '_05428_unparsable.json', JSONColumns, 'a String, c UInt32 DEFAULT toUInt32(a), b UInt32 DEFAULT c * 2');
 -- "d" is not in the file, its default is computed for the missing "b".
 SELECT b FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, d UInt32 DEFAULT a + 1, b UInt32 DEFAULT d * 2');
+
+-- A missing tuple, which a DEFAULT uses as "a.x", takes its own default first: the same with and without "a.x" selected.
+INSERT INTO FUNCTION file(currentDatabase() || '_05428_tuple_default.json', JSONColumns, 'z UInt32, a Nullable(UInt32), b Nullable(UInt32)')
+    SELECT * FROM values('z UInt32, a Nullable(UInt32), b Nullable(UInt32)', (4, NULL, NULL)) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT b FROM file(currentDatabase() || '_05428_tuple_default.json', JSONColumns, 'z UInt32, a Tuple(x UInt32) DEFAULT tuple(z * 2), b UInt32 DEFAULT a.x');
+SELECT a.x, b FROM file(currentDatabase() || '_05428_tuple_default.json', JSONColumns, 'z UInt32, a Tuple(x UInt32) DEFAULT tuple(z * 2), b UInt32 DEFAULT a.x');
+
+-- "c" is present, so the default of "d" (which fails for "oops") is not needed for the missing "b".
+INSERT INTO FUNCTION file(currentDatabase() || '_05428_present_dependency.json', JSONColumns, 'a String, c UInt32, b Nullable(UInt32)')
+    SELECT * FROM values('a String, c UInt32, b Nullable(UInt32)', ('oops', 7, NULL)) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT b FROM file(currentDatabase() || '_05428_present_dependency.json', JSONColumns, 'a String, d UInt32 DEFAULT toUInt32(a), c UInt32 DEFAULT d, b UInt32 DEFAULT c * 2');

@@ -2588,75 +2588,159 @@ private:
     size_t counter = 0;
 };
 
-/// Replaces the not inserted columns in a default expression with their defaults, as the server does.
-/// The arguments of lambdas are renamed to unique names (`lambda_arguments` maps the names bound by the enclosing lambdas),
-/// so that they don't shadow the columns of a substituted default and are not taken for columns themselves.
-void substituteNotInsertedColumns(
-    ASTPtr & ast,
-    const NameSet & inserted_columns,
-    const ColumnsDescription & columns,
-    LambdaArgumentNameGenerator & lambda_argument_names,
-    const std::unordered_map<String, String> & lambda_arguments = {})
+/// Makes the default expressions of the inserted columns computable without the not inserted columns, as the server does:
+/// a not inserted column takes its own default (or the default of its type).
+/// Each of them is defined as `_CAST(default, 'Type') AS column` in place of one of its uses, and the other uses refer
+/// to it by name, as in `evaluateMissingDefaults`, so that a default which is used many times is not copied for every use.
+/// An alias defined in a lambda body is not visible outside of it, so the definitions are not placed into lambdas:
+/// a column which is used only in lambdas is defined as `tupleElement(tuple(expression, definition, ...), 1)`.
+/// The arguments of lambdas are renamed to unique names, so that they don't capture the columns of a definition
+/// which is substituted for an alias in a lambda body, and are not taken for columns themselves.
+class NotInsertedColumnsDefaults
 {
-    if (const auto * identifier = ast->as<ASTIdentifier>())
+public:
+    NotInsertedColumnsDefaults(const NameSet & inserted_columns_, const ColumnsDescription & columns_)
+        : inserted_columns(inserted_columns_), columns(columns_), lambda_argument_names(columns_)
     {
-        if (auto it = identifier->name_parts.empty() ? lambda_arguments.end() : lambda_arguments.find(identifier->name_parts.front());
-            it != lambda_arguments.end())
+    }
+
+    void apply(ASTPtr & expression)
+    {
+        NameSet defined_columns;
+        define(expression, defined_columns);
+    }
+
+private:
+    struct Definition
+    {
+        ASTPtr expression;
+        /// The column itself and the columns defined in its expression.
+        NameSet defined_columns;
+    };
+
+    /// Defines the not inserted columns which `expression` uses, and adds them to `defined_columns`.
+    void define(ASTPtr & expression, NameSet & defined_columns)
+    {
+        std::vector<String> not_defined_columns;
+        rewrite(expression, defined_columns, not_defined_columns);
+
+        std::vector<ASTPtr> definitions_to_add;
+        for (const auto & name : not_defined_columns)
         {
-            auto name_parts = identifier->name_parts;
-            name_parts.front() = it->second;
-            auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
-            renamed->setAlias(identifier->tryGetAlias());
-            ast = std::move(renamed);
-            return;
+            if (defined_columns.contains(name))
+                continue;
+
+            const auto & definition = getDefinition(name);
+            definitions_to_add.push_back(definition.expression->clone());
+            defined_columns.insert(definition.defined_columns.begin(), definition.defined_columns.end());
         }
 
-        const String & name = identifier->name();
-        if (inserted_columns.contains(name) || !columns.has(name))
+        if (definitions_to_add.empty())
             return;
 
+        auto expression_with_definitions = makeASTFunction("tuple", std::move(expression));
+        for (auto & definition : definitions_to_add)
+            expression_with_definitions->arguments->children.push_back(std::move(definition));
+
+        expression = makeASTFunction(
+            "tupleElement", std::move(expression_with_definitions), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+    }
+
+    /// The same definition is used everywhere, because the defaults of several columns are computed together,
+    /// and different expressions with the same alias are not allowed.
+    const Definition & getDefinition(const String & name)
+    {
+        if (auto it = definitions.find(name); it != definitions.end())
+            return it->second;
+
         const auto & column = columns.get(name);
+        Definition definition;
         ASTPtr default_value;
         if (column.default_desc.expression)
         {
             default_value = column.default_desc.expression->clone();
-            substituteNotInsertedColumns(default_value, inserted_columns, columns, lambda_argument_names);
+            define(default_value, definition.defined_columns);
         }
         else
             default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
 
-        /// Keep the alias, the expression can refer to it.
-        auto substituted = makeASTFunction("_CAST", std::move(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
-        substituted->setAlias(identifier->tryGetAlias());
-        ast = std::move(substituted);
-        return;
+        definition.expression = makeASTFunction("_CAST", std::move(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
+        definition.expression->setAlias(name);
+        definition.defined_columns.insert(name);
+        return definitions.emplace(name, std::move(definition)).first->second;
     }
 
-    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
-        && function->arguments->children.size() == 2)
+    /// Replaces the first use of each not inserted column, which can be its definition, with the definition,
+    /// collects the other not defined columns, and renames the arguments of lambdas
+    /// (`lambda_arguments` maps the names bound by the enclosing lambdas).
+    void rewrite(
+        ASTPtr & ast,
+        NameSet & defined_columns,
+        std::vector<String> & not_defined_columns,
+        const std::unordered_map<String, String> & lambda_arguments = {},
+        bool in_lambda = false)
     {
-        auto body_lambda_arguments = lambda_arguments;
-        if (auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
+        if (const auto * identifier = ast->as<ASTIdentifier>())
         {
-            for (auto & argument : arguments_tuple->arguments->children)
+            if (auto it = identifier->name_parts.empty() ? lambda_arguments.end() : lambda_arguments.find(identifier->name_parts.front());
+                it != lambda_arguments.end())
             {
-                auto * argument_identifier = argument->as<ASTIdentifier>();
-                if (!argument_identifier)
-                    continue;
-
-                String unique_name = lambda_argument_names.generate();
-                body_lambda_arguments[argument_identifier->name()] = unique_name;
-                argument_identifier->setShortName(unique_name);
+                auto name_parts = identifier->name_parts;
+                name_parts.front() = it->second;
+                auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
+                renamed->setAlias(identifier->tryGetAlias());
+                ast = std::move(renamed);
+                return;
             }
+
+            const String & name = identifier->name();
+            if (inserted_columns.contains(name) || !columns.has(name) || defined_columns.contains(name))
+                return;
+
+            /// The alias of the identifier is kept, so it refers to the definition.
+            if (in_lambda || !identifier->tryGetAlias().empty())
+            {
+                not_defined_columns.push_back(name);
+                return;
+            }
+
+            const auto & definition = getDefinition(name);
+            defined_columns.insert(definition.defined_columns.begin(), definition.defined_columns.end());
+            ast = definition.expression->clone();
+            return;
         }
 
-        substituteNotInsertedColumns(function->arguments->children[1], inserted_columns, columns, lambda_argument_names, body_lambda_arguments);
-        return;
+        if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
+            && function->arguments->children.size() == 2)
+        {
+            auto body_lambda_arguments = lambda_arguments;
+            if (auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
+            {
+                for (auto & argument : arguments_tuple->arguments->children)
+                {
+                    auto * argument_identifier = argument->as<ASTIdentifier>();
+                    if (!argument_identifier)
+                        continue;
+
+                    String unique_name = lambda_argument_names.generate();
+                    body_lambda_arguments[argument_identifier->name()] = unique_name;
+                    argument_identifier->setShortName(unique_name);
+                }
+            }
+
+            rewrite(function->arguments->children[1], defined_columns, not_defined_columns, body_lambda_arguments, /*in_lambda=*/ true);
+            return;
+        }
+
+        for (auto & child : ast->children)
+            rewrite(child, defined_columns, not_defined_columns, lambda_arguments, in_lambda);
     }
 
-    for (auto & child : ast->children)
-        substituteNotInsertedColumns(child, inserted_columns, columns, lambda_argument_names, lambda_arguments);
-}
+    const NameSet & inserted_columns;
+    const ColumnsDescription & columns;
+    LambdaArgumentNameGenerator lambda_argument_names;
+    std::unordered_map<String, Definition> definitions;
+};
 }
 
 
@@ -2840,7 +2924,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 inserted_columns.insert(col_name->getColumnName());
 
             ColumnsDescription reordered_description{};
-            LambdaArgumentNameGenerator lambda_argument_names(columns_description_for_query);
+            NotInsertedColumnsDefaults not_inserted_columns_defaults(inserted_columns, columns_description_for_query);
             for (const auto & col_name : columns->children)
             {
                 auto col = columns_for_storage_file.get(col_name->getColumnName());
@@ -2848,7 +2932,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 if (col.default_desc.expression)
                 {
                     col.default_desc.expression = col.default_desc.expression->clone();
-                    substituteNotInsertedColumns(col.default_desc.expression, inserted_columns, columns_description_for_query, lambda_argument_names);
+                    not_inserted_columns_defaults.apply(col.default_desc.expression);
                 }
                 reordered_description.add(std::move(col));
             }

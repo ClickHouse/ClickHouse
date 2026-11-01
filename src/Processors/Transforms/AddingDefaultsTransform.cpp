@@ -138,6 +138,20 @@ static MutableColumnPtr mixColumns(
 }
 
 
+/// The column which a name required by a default expression refers to, e.g. `a` for a subcolumn `a.x` of a tuple.
+/// `columns` may have no subcolumns, so it is the longest prefix which is a column.
+static String getRequiredColumnName(const String & required_name, const ColumnsDescription & columns)
+{
+    if (columns.has(required_name))
+        return required_name;
+
+    for (size_t pos = required_name.rfind('.'); pos != String::npos && pos != 0; pos = required_name.rfind('.', pos - 1))
+        if (String prefix = required_name.substr(0, pos); columns.has(prefix))
+            return prefix;
+
+    return required_name;
+}
+
 AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
     const ColumnsDescription & columns_,
@@ -227,8 +241,11 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
             if (!visited.insert(name).second)
                 continue;
 
+            /// The default of a column which is read and has no missing values is not used.
             if (missing_columns.contains(name))
                 columns_to_compute.insert(name);
+            else if (res.has(name))
+                continue;
 
             auto it = column_defaults.find(name);
             if (it == column_defaults.end())
@@ -239,14 +256,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
             RequiredSourceColumnsVisitor(columns_context).visit(expression);
 
             for (const auto & required_name : columns_context.requiredColumns())
-            {
-                /// A subcolumn, e.g. `a.x` of a tuple, depends on its column.
-                String name_in_storage = required_name;
-                if (!columns.has(required_name))
-                    if (auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_name))
-                        name_in_storage = subcolumn->getNameInStorage();
-                names_to_visit.push_back(std::move(name_in_storage));
-            }
+                names_to_visit.push_back(getRequiredColumnName(required_name, columns));
         }
 
         std::erase_if(columns_needing_defaults, [&](const auto & column) { return !columns_to_compute.contains(column.first); });
@@ -280,8 +290,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         NameSet deps;
         for (const auto & req : required)
         {
-            if (columns_needing_defaults_set.contains(req))
-                deps.insert(req);
+            if (auto name = getRequiredColumnName(req, columns); columns_needing_defaults_set.contains(name))
+                deps.insert(std::move(name));
         }
         dependencies[col_name] = std::move(deps);
     }
