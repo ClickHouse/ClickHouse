@@ -234,12 +234,15 @@ void validateExponentialTimeDecayingColumn(
 ColumnPtr materializeExponentialTimeDecayingLogicalColumn(
     const IColumn & storage_column, Float64 decay_length);
 
+/// When mismatch exceptions are disabled, a mismatched decay-length marker returns `nullptr`.
+/// Other validation and allocation failures still propagate.
 ColumnPtr materializeExponentialTimeDecayingStorageColumn(
     const IColumn & logical_column,
     Float64 decay_length,
     const String & operation,
     ExponentialTimeDecayingKeyWidth key_width = ExponentialTimeDecayingKeyWidth::Bits64,
-    ExponentialTimeDecayingMode mode = ExponentialTimeDecayingMode::Compact);
+    ExponentialTimeDecayingMode mode = ExponentialTimeDecayingMode::Compact,
+    bool throw_on_decay_length_mismatch = true);
 
 void validateExponentialTimeDecayingColumn(
     const IColumn & column, const DataTypePtr & type, const String & operation);

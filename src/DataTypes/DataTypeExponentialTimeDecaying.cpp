@@ -577,7 +577,10 @@ private:
         auto logical = logical_type->createColumn();
         if (!deserialize(*logical))
             return false;
-        auto storage = materializeExponentialTimeDecayingStorageColumn(*logical, decay_length, "deserialization", key_width, mode);
+        auto storage = materializeExponentialTimeDecayingStorageColumn(
+            *logical, decay_length, "deserialization", key_width, mode, /*throw_on_decay_length_mismatch=*/false);
+        if (!storage)
+            return false;
         column.insertRangeFrom(*storage, 0, storage->size());
         return true;
     }
@@ -1154,7 +1157,8 @@ ColumnPtr materializeExponentialTimeDecayingStorageColumn(
     Float64 decay_length,
     const String & operation,
     ExponentialTimeDecayingKeyWidth key_width,
-    ExponentialTimeDecayingMode mode)
+    ExponentialTimeDecayingMode mode,
+    bool throw_on_decay_length_mismatch)
 {
     ColumnPtr full = logical_column.convertToFullColumnIfConst();
     const auto & tuple = assert_cast<const ColumnTuple &>(*full);
@@ -1188,12 +1192,16 @@ ColumnPtr materializeExponentialTimeDecayingStorageColumn(
         {
             const Float64 supplied = decay_lengths->getData()[row];
             if (!std::isfinite(supplied) || supplied != decay_length)
+            {
+                if (!throw_on_decay_length_mismatch)
+                    return nullptr;
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Malformed ExponentialTimeDecaying value in {}: supplied decay length {} does not match type decay length {}",
                     operation,
                     supplied,
                     decay_length);
+            }
         }
 
         const Float64 value = values[row];

@@ -1795,7 +1795,12 @@ public:
         }
 
         auto storage_column = materializeExponentialTimeDecayingStorageColumn(
-            *logical_column, decay_length, "JSON extraction", key_width, mode);
+            *logical_column, decay_length, "JSON extraction", key_width, mode, /*throw_on_decay_length_mismatch=*/false);
+        if (!storage_column)
+        {
+            error = "ExponentialTimeDecaying decay length does not match the requested type";
+            return false;
+        }
         column.insertRangeFrom(*storage_column, 0, storage_column->size());
         return true;
     }
