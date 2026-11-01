@@ -22,6 +22,19 @@ class SchemaCache;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 
+/// The query condition cache key of a TopN (`ORDER BY ... LIMIT n`) read. Which row groups of a file
+/// the TopN filter lets through depends on the running threshold, which is established from the rows
+/// of *every* file the query reads, so the key covers the TopK plan, the predicate and the set of files
+/// (see `ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey`). It is made only for a data lake,
+/// where the snapshot identifies the set of files and the data files are never modified in place.
+struct ObjectStorageTopKQueryConditionCacheKey
+{
+    UInt64 condition_hash = 0;
+    /// A printable description of the key for `system.query_condition_cache`.
+    String condition;
+};
+using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
+
 class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
@@ -46,7 +59,8 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_,
-        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr);
+        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr,
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
 
     ~StorageObjectStorageSource() override;
 
@@ -79,7 +93,11 @@ public:
     /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
     /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
     /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
+    static std::optional<String> makeQueryConditionCacheKey(
+        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid);
+    /// The key for a table with a UUID, from the path of the object within its storage.
     static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
+    static std::optional<String> makeQueryConditionCacheKey(const String & identifier, const ObjectInfo & object_info, bool is_data_lake);
 
 protected:
     StorageID storage_id;
@@ -93,6 +111,22 @@ protected:
     const bool need_only_count;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
+
+    /// A file read by a TopN read, whose query condition cache entry is written only when the source
+    /// is destroyed: the row groups without a row of the result are known only once the threshold is
+    /// final, and while the file is read, its rows may still wait for the sorting transforms.
+    struct PendingTopKQueryConditionCacheEntry
+    {
+        String cache_file_key;
+        size_t total_row_groups = 0;
+        std::vector<size_t> matched_row_groups;
+        /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
+        std::vector<std::pair<size_t, Field>> best_values;
+    };
+    std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
@@ -123,6 +157,13 @@ protected:
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
+
+        /// Whether the file is read as a whole (not as a bucket the iterator split it into), so it may
+        /// consult and populate `top_k_query_condition_cache_key`.
+        bool use_top_k_query_condition_cache_key = false;
+        /// Whether the entries under `top_k_query_condition_cache_key` made the file skip row groups that
+        /// the entries of the predicate alone did not.
+        bool skipped_row_groups_by_top_k_entry = false;
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
         ReadBuffer * readBuffer() const { return read_buf.get(); }
 
@@ -149,6 +190,7 @@ protected:
     static ReaderHolder createReader(
         size_t processor,
         const StorageID & storage_id,
+        const UUID & query_condition_cache_table_id,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -160,9 +202,13 @@ protected:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        bool need_only_count);
+        bool need_only_count,
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr);
 
     ReaderHolder createReader();
+
+    /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
+    void writePendingTopKQueryConditionCacheEntries();
 
     std::future<ReaderHolder> createReaderAsync();
 

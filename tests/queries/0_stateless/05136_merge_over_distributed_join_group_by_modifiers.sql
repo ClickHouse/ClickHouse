@@ -48,10 +48,6 @@ SETTINGS group_by_use_nulls = 0, prefer_localhost_replica = 1;
 SELECT '-- 6 oracle and control: the same rows over a Merge of the plain table';
 SELECT m.a, count() FROM mt_99508 AS m JOIN r_99508 AS r ON m.a = r.a GROUP BY m.a WITH TOTALS ORDER BY m.a;
 
-SELECT '-- 7 control: the old analyzer already reset the modifiers';
-SELECT m.a, count() FROM m_99508 AS m JOIN r_99508 AS r ON m.a = r.a GROUP BY m.a WITH TOTALS ORDER BY m.a
-SETTINGS enable_analyzer = 0;
-
 SELECT '-- 8 control: without a JOIN the child query is not rewritten';
 SELECT a, count() FROM m_99508 GROUP BY a WITH TOTALS ORDER BY a;
 

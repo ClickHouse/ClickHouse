@@ -12,6 +12,8 @@ from ci.defs.defs import (
     LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_FT_S3_PARALLEL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
+    NIGHTLY_PERF_BATCH_JOBS,
+    NIGHTLY_PERF_PLACEMENT,
     ArtifactNames,
     BuildTypes,
     JobNames,
@@ -128,6 +130,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         "./ci/jobs/scripts/log_cluster.py",
         "./utils/prepare-time-trace/prepare-time-trace.sh",
+        "./utils/CMakeLists.txt",
+        "./utils/compact-symbols",
         # The build job also assembles the deb, rpm and tgz packages, so changes to
         # their definitions and to the packaging script have to schedule a rebuild.
         "./packages",
@@ -282,6 +286,9 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
+            # Runs the tests over the protocols other than native, see `clickhouse-test --protocols`.
+            "./tests/protocol_client.py",
+            "./utils/grpc-client/pb2",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
@@ -401,7 +408,7 @@ class JobConfigs:
                 parameter=f"{BuildTypes.ARM_TIDY}, {i}/{TIDY_SHARDS}",
                 command=f'python3 ./ci/jobs/build_clickhouse.py --build-type "{BuildTypes.ARM_TIDY}" --shard {i}/{TIDY_SHARDS}',
                 provides=[],
-                runs_on=RunnerLabels.ARM_LARGE,
+                runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             )
             for i in range(1, TIDY_SHARDS + 1)
         ]
@@ -410,7 +417,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
     )
     # The merge queue's clang-tidy gate. The full tidy build above walks the whole
@@ -441,7 +448,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
             provides=[ArtifactNames.CH_AMD_DEBUG],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
@@ -449,7 +456,7 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_ASAN_UBSAN,
                 ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_TSAN,
@@ -457,7 +464,7 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MSAN,
@@ -465,37 +472,37 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_BINARY,
             provides=[ArtifactNames.CH_AMD_BINARY],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DEBUG,
             provides=[ArtifactNames.CH_ARM_DEBUG],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
             provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_TSAN,
             provides=[ArtifactNames.CH_ARM_TSAN],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
             provides=[ArtifactNames.CH_ARM_MSAN],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
             provides=[ArtifactNames.CH_ARM_BINARY],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
     )
     coverage_build_jobs = common_build_job_config.parametrize(
@@ -504,14 +511,14 @@ class JobConfigs:
             provides=[
                 ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PER_TEST_COVERAGE,
             provides=[
                 ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
         ),
     )
     release_build_jobs = common_build_job_config.set_post_hooks(
@@ -554,7 +561,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,
             provides=[ArtifactNames.CH_AMD_CFI],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             timeout=4 * 3600,
         ),
     )
@@ -630,7 +637,7 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_DARWIN_BIN,
                 ArtifactNames.CH_AMD_DARWIN_PLAIN,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
@@ -638,57 +645,57 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_DARWIN_BIN,
                 ArtifactNames.CH_ARM_DARWIN_PLAIN,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_V80COMPAT,
             provides=[ArtifactNames.CH_ARM_V80COMPAT],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_FREEBSD,
             provides=[ArtifactNames.CH_AMD_FREEBSD],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ILLUMOS,
             provides=[ArtifactNames.CH_AMD_ILLUMOS],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
             provides=[ArtifactNames.CH_PPC64LE],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_COMPAT,
             provides=[ArtifactNames.CH_AMD_COMPAT],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MUSL,
             provides=[ArtifactNames.CH_AMD_MUSL],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.RISCV64,
             provides=[ArtifactNames.CH_RISCV64],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.S390X,
             provides=[ArtifactNames.CH_S390X],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,
             provides=[ArtifactNames.CH_LOONGARCH64],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.WASM64,
             provides=[ArtifactNames.CH_WASM64],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_FUZZERS,
@@ -699,7 +706,7 @@ class JobConfigs:
             # repair with thunks, while aarch64 addresses +-4 GiB and does thunk calls.
             # The ~94 GiB of build output also does not fit the ~135 GiB free on
             # `amd-large` (`m7i.8xlarge`).
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
     )
     # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
@@ -760,7 +767,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.WASM_PARSER,
             provides=[ArtifactNames.CH_WASM_PARSER],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
     )
     install_check_jobs = Job.Config(
@@ -1743,6 +1750,13 @@ class JobConfigs:
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/named_collection.xml",
+                "./tests/config/config.d/disable_s3_env_credentials.xml",
+                "./tests/config/config.d/keeper_port.xml",
+                "./tests/config/config.d/zookeeper.xml",
+                "./tests/config/config.d/macros.xml",
+                # `run-fuzzer.sh` starts the S3 emulator with it
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
                 "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
                 "./tests/config/config.d/jemalloc_flush_profile.yaml",
                 "./tests/config/config.d/listen.xml",
@@ -1802,6 +1816,13 @@ class JobConfigs:
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/named_collection.xml",
+                "./tests/config/config.d/disable_s3_env_credentials.xml",
+                "./tests/config/config.d/keeper_port.xml",
+                "./tests/config/config.d/zookeeper.xml",
+                "./tests/config/config.d/macros.xml",
+                # `run-fuzzer.sh` starts the S3 emulator with it
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
                 "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
                 "./tests/config/config.d/jemalloc_flush_profile.yaml",
                 "./tests/config/config.d/listen.xml",
@@ -1846,6 +1867,13 @@ class JobConfigs:
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/named_collection.xml",
+                "./tests/config/config.d/disable_s3_env_credentials.xml",
+                "./tests/config/config.d/keeper_port.xml",
+                "./tests/config/config.d/zookeeper.xml",
+                "./tests/config/config.d/macros.xml",
+                # `run-fuzzer.sh` starts the S3 emulator with it
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
                 "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
                 "./tests/config/config.d/jemalloc_flush_profile.yaml",
                 "./tests/config/config.d/listen.xml",
@@ -2007,7 +2035,10 @@ class JobConfigs:
         timeout=16 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
-        *[Job.ParamSet(parameter=f"arm_release, master_head, nightly, {batch}/4") for batch in range(1, 5)]
+        *[
+            Job.ParamSet(parameter=f"arm_release, master_head, nightly, {job}")
+            for job in NIGHTLY_PERF_BATCH_JOBS + sorted(set(NIGHTLY_PERF_PLACEMENT.values()) - {*NIGHTLY_PERF_BATCH_JOBS, "skip"})
+        ]
     )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
@@ -2046,6 +2077,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
+                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -2063,6 +2095,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
+                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -2354,12 +2387,12 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd64",
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD],
         ),
         Job.ParamSet(
             parameter="aarch64",
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM],
         ),
     )

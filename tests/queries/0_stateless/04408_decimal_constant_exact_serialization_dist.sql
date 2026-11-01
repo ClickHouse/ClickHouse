@@ -4,7 +4,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/94612
 
 -- The exact serialization lives in the analyzer (ConstantNode::toASTImpl), so force the analyzer.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS ts_data_94612;
 CREATE TABLE ts_data_94612

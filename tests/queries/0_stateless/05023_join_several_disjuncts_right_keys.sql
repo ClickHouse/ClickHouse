@@ -48,7 +48,7 @@ SELECT count() FROM l ANTI LEFT JOIN r ON l.a = r.a OR l.b = r.b;
 
 SELECT '-- a residual condition reads a right column that nothing else selects';
 -- the old analyzer does not support a residual condition next to the disjuncts
-SELECT l.a, l.lp FROM l ALL LEFT JOIN r ON (l.a = r.a OR l.b = r.b) AND l.lp < r.rp ORDER BY l.a SETTINGS enable_analyzer = 1;
+SELECT l.a, l.lp FROM l ALL LEFT JOIN r ON (l.a = r.a OR l.b = r.b) AND l.lp < r.rp ORDER BY l.a;
 
 SELECT '-- and with join_use_nulls';
 SELECT l.a, r.a FROM l ALL LEFT JOIN r ON l.a = r.a OR l.b = r.b ORDER BY l.a SETTINGS join_use_nulls = 1;

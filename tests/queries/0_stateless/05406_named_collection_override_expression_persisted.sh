@@ -16,8 +16,18 @@ NC="nc_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 P="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_"
 L="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
 
-# The tables are dropped before the collections they use.
-trap '${CLICKHOUSE_CLIENT} -q "SET ast_fuzzer_any_query = 0; DROP TABLE IF EXISTS t_kv; DROP TABLE IF EXISTS t_pos; DROP TABLE IF EXISTS t_lit; DROP TABLE IF EXISTS t_s3" && ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS ${NC}; DROP NAMED COLLECTION IF EXISTS ${NC}_s3"; rm -rf "${P}"* "${L:?}"' EXIT
+# The tables are dropped before the collections they use, and the collections are kept if anything fails. A client killed between
+# DETACH and ATTACH leaves a table detached, which DROP TABLE IF EXISTS skips, so it is attached back first.
+cleanup()
+{
+    ${CLICKHOUSE_CLIENT} -q "
+        SET ast_fuzzer_any_query = 0;
+        ATTACH TABLE IF NOT EXISTS t_kv; ATTACH TABLE IF NOT EXISTS t_pos; ATTACH TABLE IF NOT EXISTS t_lit; ATTACH TABLE IF NOT EXISTS t_s3;
+        DROP TABLE IF EXISTS t_kv; DROP TABLE IF EXISTS t_pos; DROP TABLE IF EXISTS t_lit; DROP TABLE IF EXISTS t_s3;
+    " && ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS ${NC}; DROP NAMED COLLECTION IF EXISTS ${NC}_s3"
+    rm -rf "${P}"* "${L:?}"
+}
+trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} -q "
 CREATE NAMED COLLECTION ${NC} AS format = 'Parquet';
