@@ -71,6 +71,8 @@ private:
         const NameSet & previous_step_columns,
         size_t num_read_rows) const;
 
+    static Block getPreviousStepsColumns(const Block & previous_header, const ReadResult & result);
+
     /// Evaluates default expressions for columns that are absent in part.
     void evaluateMissingDefaults(
         MergeTreeRangeReader & range_reader,
@@ -126,6 +128,8 @@ private:
     /// at their own turn).
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
+
+    bool has_writes_after_alter = false;
 
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
