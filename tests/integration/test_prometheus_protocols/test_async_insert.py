@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -177,22 +179,27 @@ def test_async_insert_counts_dropped_exemplars():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
     before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
+    query_id = f"remote-write-{uuid.uuid4()}"
     send_protobuf_to_remote_write(
         node.ip_address,
         9093,
-        "/write?async_insert=1",
+        f"/write?async_insert=1&query_id={query_id}",
         write_request_with_exemplar("exemplar_async_metric"),
     )
 
     # The flush counts the exemplar before the write is acknowledged.
     assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 1
 
-    # The event is attributed to the flush in the query log.
+    # The event is attributed to the flush query of this request in the query log.
     node.query("SYSTEM FLUSH LOGS")
+    flush_query_id = node.query(
+        f"SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '{query_id}'"
+    ).strip()
+    assert flush_query_id
     assert (
         node.query(
-            "SELECT sum(ProfileEvents['PrometheusRemoteWriteDroppedExemplars']) FROM system.query_log "
-            "WHERE type = 'QueryFinish'"
+            "SELECT ProfileEvents['PrometheusRemoteWriteDroppedExemplars'] FROM system.query_log "
+            f"WHERE type = 'QueryFinish' AND query_id = '{flush_query_id}'"
         )
         == "1\n"
     )
