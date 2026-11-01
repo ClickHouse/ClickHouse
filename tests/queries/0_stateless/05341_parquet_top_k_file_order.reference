@@ -38,6 +38,12 @@ hits	0	misses <= 8	1
 1
 2
 hits	0	misses <= 8	1
+-- the first pass skips the files that the statistics kept with their footers exclude
+7000
+7001
+7002
+ParquetFilesSkippedByCachedStatistics	7
+ParquetMetadataCacheHits	9
 -- a corrupt file and an empty file fail the query in the same way
 Code: 117
 Code: 117

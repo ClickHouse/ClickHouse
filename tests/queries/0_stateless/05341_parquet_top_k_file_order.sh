@@ -120,6 +120,18 @@ cache_events "${MT[*]}" k "use_parquet_metadata_cache = 0"
 cache_events "${MT[*]}" k "input_format_parquet_preserve_order = 1"
 cache_events "${MT[*]}" k "input_format_allow_seeks = 0"
 
+echo "-- the first pass skips the files that the statistics kept with their footers exclude"
+mkdir -p "${DIR}/kept"
+cp "${DIR}"/t/f_*.parquet "${DIR}/kept/"
+# Statistics are kept and used only for a file version that has settled.
+touch -d '2001-01-01 00:00:00' "${DIR}"/kept/*.parquet
+"${LOCAL[@]}" "${ST[@]}" "${ON[@]}" --use_query_condition_cache=0 --query "
+    SELECT k FROM file('${DIR}/kept/*.parquet') WHERE k >= 7000 ORDER BY k LIMIT 3 FORMAT Null;
+    CREATE TEMPORARY TABLE events_before AS SELECT event, value FROM system.events;
+    SELECT k FROM file('${DIR}/kept/*.parquet') WHERE k >= 7000 ORDER BY k LIMIT 3;
+    SELECT event, e.value - b.value FROM system.events AS e LEFT JOIN events_before AS b USING (event)
+    WHERE event IN ('ParquetFilesSkippedByCachedStatistics', 'ParquetMetadataCacheHits') ORDER BY event"
+
 echo "-- a corrupt file and an empty file fail the query in the same way"
 for j in 0 1 2 3; do cp "${DIR}/t/f_${j}.parquet" "${DIR}/bad/"; done
 echo "not a parquet file" > "${DIR}/bad/f_9.parquet"

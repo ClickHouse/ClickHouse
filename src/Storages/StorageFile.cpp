@@ -3008,6 +3008,7 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
         UUID table_uuid = UUIDHelpers::Nil;
         std::optional<UInt64> plain_condition_hash;
         StorageFileSource::TopKQueryConditionCacheKeyPtr top_k_key;
+        std::shared_ptr<const ParquetCachedStatisticsFilter> cached_statistics_filter;
 
         /// Whether the entries `StorageFileSource` consults for this version of the file exclude all its row groups.
         bool cacheExcludesAllRowGroups(const String & path, const String & token) const
@@ -3062,6 +3063,7 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
     state->max_bytes = max_bytes;
 
     state->format_filter_info->initKeyConditionOnce(state->header);
+    state->cached_statistics_filter = ParquetCachedStatisticsFilter::create(format_filter_info, info.format_header, state->format_settings);
     {
         ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::PARQUET_PREFETCH);
         runner.reserve(state->num_tasks);
@@ -3088,7 +3090,9 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
                     if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || file_stat.st_size == 0)
                         continue;
                     const String token = computeFileCacheVersionToken(file_stat);
-                    if (state->query_condition_cache && state->cacheExcludesAllRowGroups(path, token))
+                    if ((state->query_condition_cache && state->cacheExcludesAllRowGroups(path, token))
+                        || (state->cached_statistics_filter && isFileCacheVersionTokenSettled(file_stat)
+                            && state->cached_statistics_filter->canSkipFile(*state->metadata_cache, path, token)))
                         continue;
 
                     try
