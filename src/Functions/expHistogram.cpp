@@ -442,13 +442,17 @@ private:
         bool exact;
     };
 
-    /// The finest scale whose buckets are at least as wide as the bins of `gamma`. It is exact if `gamma` is the gamma of a scale
-    /// (`scaleOfGamma`), e.g. in a state from `fromExpHistogram`. Otherwise each bucket is 1 to 2 bins wide
+    /// The finest scale whose buckets are at least as wide as the bins of `gamma`, at least `min_supported_scale`. It is exact
+    /// if `gamma` is the gamma of a supported scale (`scaleOfGamma`), e.g. in a state from `fromExpHistogram`. Otherwise each
+    /// bucket is 1 to 2 bins wide
     static StateScale getStateScale(Float64 gamma)
     {
         if (const auto scale = DDSketchLogarithmicMapping::scaleOfGamma(gamma))
-            return {*scale, true};
-        return {static_cast<Int64>(std::floor(-std::log2(std::log2(gamma)))), false};
+        {
+            if (*scale >= min_supported_scale)
+                return {*scale, true};
+        }
+        return {std::max(static_cast<Int64>(std::floor(-std::log2(std::log2(gamma)))), min_supported_scale), false};
     }
 
     static UInt64 roundCount(Float64 value)

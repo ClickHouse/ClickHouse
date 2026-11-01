@@ -297,6 +297,18 @@ SELECT h, toExpHistogram(fromExpHistogram(h.scale, h.zero_count, h.positive_offs
 SELECT toExpHistogram(unhex(concat('02', hex(reinterpretAsFixedString(toFloat64(1.0000001))), '0000000000000000',
     '010C01D00F02', hex(reinterpretAsFixedString(toFloat64(3))), '030C000002', '04', '0000000000000000'))::AggregateFunction(quantileDD(0.01), Float64), 21); -- { serverError BAD_ARGUMENTS }
 
+SELECT 'states wider than scale -5';
+-- The bins of `quantileDD` can be wider than the buckets of scale -5 when the relative accuracy is close to 1:
+-- the histogram of such a state has scale -5, and every bin goes to the bucket that holds its middle value
+SELECT toExpHistogram(quantileDDState(0.9999999999)(toFloat64(1))),
+    toExpHistogram(quantileDDState(0.9999999999)(toFloat64(2)), -5),
+    round(quantileDD(0.9999999999)(toFloat64(1)), 6);
+-- Merging a wide state with a narrow one downscales to scale -5 and keeps the counts
+WITH CAST(fromExpHistogram(10, 0, 0, [1], 0, [], 0.000001), 'String') AS canonical
+SELECT toExpHistogram(arrayReduce('quantileDDMergeState(0.000001)', [
+    CAST(concat(substring(canonical, 1, 1), reinterpretAsFixedString(toFloat64(2e10)), substring(canonical, 10)), 'AggregateFunction(quantileDD(0.000001), Float64)'),
+    quantileDDState(0.000001)(toFloat64(1))]));
+
 SELECT 'gammas of the scales';
 -- The bits of the gamma of each scale, after the flag byte of the state. They are the same on every platform
 SELECT s, hex(reverse(substring(CAST(fromExpHistogram(s, 1, 0, [], 0, []), 'String'), 2, 8))) FROM (SELECT arrayJoin(range(-5, 19)) AS s);
@@ -410,9 +422,9 @@ SELECT fromExpHistogram(0, 0, 0, [1], 0, [], 1); -- { serverError ILLEGAL_TYPE_O
 SELECT fromExpHistogram(0, 0, 0, [1], 0, [], toFloat32(0.01)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT fromExpHistogram(0, 0, 0, [1], 0, [], materialize(0.01)); -- { serverError ILLEGAL_COLUMN }
 SELECT fromExpHistogram(0, 0, 0, [1], 0, [], 1.5); -- { serverError BAD_ARGUMENTS }
+SELECT quantileDDState(0.0000001)(number) FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 SELECT toExpHistogram(quantileDDState(0.01)(number), 6) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 SELECT toExpHistogram(fromExpHistogram(0, 0, 0, [1], 0, []), -6); -- { serverError BAD_ARGUMENTS }
-SELECT toExpHistogram(quantileDDState(0.9999999999)(number)) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 SELECT toExpHistogram(quantileTDigestState(number)) FROM numbers(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toExpHistogram(quantileDDState(0.01)(toNullable(number))) FROM numbers(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toExpHistogram(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
