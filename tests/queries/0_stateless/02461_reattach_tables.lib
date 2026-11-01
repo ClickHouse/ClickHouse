@@ -12,6 +12,7 @@
 #   `05104_reattach_tables_dynamic_disk` - a table that builds its own disk with the `disk` function
 #   `05398_reattach_tables_bindings_quota_limits` - `IN` bindings, SQL UDFs, quotas, `CREATE` table limits
 #   `05441_reattach_tables_indirect_sources` - `Alias` targets, table functions, CTE-named columns
+#   `05479_reattach_tables_type_gates_refreshable_view` - setting-gated `AggregateFunction` types, refreshable views
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
@@ -30,6 +31,20 @@ function check_if_detached_impl()
 function check_if_detached()
 {
     check_if_detached_impl "$1" "$2"
+    # The hook skips a table that is in use right now: it probes the exclusive lock for only 100 ms, and a
+    # brief share lock held concurrently, e.g. by the table's own background merge selection that the
+    # previous check's `ATTACH` scheduled, makes it skip one randomization. That is the intended best-effort
+    # behaviour, so repeat a read-only query a few times before reporting that the table was not detached.
+    # A query that writes is not repeated, because that would change the data the later checks look at.
+    if echo "$1" | grep -qiE '^[[:space:]]*(SELECT|WITH)[[:space:]]'; then
+        for _ in {1..4}
+        do
+            if [ "$REATTACH_STATUS" -ne 0 ] || echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+                break
+            fi
+            check_if_detached_impl "$1" "$2"
+        done
+    fi
     if [ "$REATTACH_STATUS" -ne 0 ]; then
         echo "FAIL (client error: $REATTACH_OUTPUT)"
     elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
