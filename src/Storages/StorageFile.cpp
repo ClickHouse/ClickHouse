@@ -848,7 +848,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
-            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), file_settings[Setting::snappy_mode]);
+            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
             auto key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext(), compression_name);
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
@@ -860,7 +860,7 @@ namespace
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
-            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), file_settings[Setting::snappy_mode]);
+            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
             auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext(), compression_name);
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
