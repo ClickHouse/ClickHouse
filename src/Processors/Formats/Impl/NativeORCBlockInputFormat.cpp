@@ -1087,21 +1087,17 @@ static std::vector<UInt64> getORCAncestorColumnIds(const ORC::Type & root, const
 static Range getRangeFromORCStatistics(const ORC::Proto::ColumnStatistics & stats, const ORCRowGroupFilterColumn & column)
 {
     /// Some writers omit `has_null`; without bounds (no non-NULL values) nothing is known either.
-    if (!stats.has_null || !stats.int_statistics || !stats.int_statistics->minimum || !stats.int_statistics->maximum
-        || *stats.int_statistics->minimum > *stats.int_statistics->maximum)
+    /// A NULL read as NULL has no position in a Range that every chain and set respects (`ifNull`, `transform_null_in`).
+    if (!stats.has_null || (*stats.has_null && !column.null_value) || !stats.int_statistics || !stats.int_statistics->minimum
+        || !stats.int_statistics->maximum || *stats.int_statistics->minimum > *stats.int_statistics->maximum)
         return Range::createWholeUniverse();
     Range range(Field(*stats.int_statistics->minimum), true, Field(*stats.int_statistics->maximum), true);
     if (*stats.has_null)
     {
-        if (column.null_value)
-        {
-            if (accurateLess(*column.null_value, range.left))
-                range.left = *column.null_value;
-            if (accurateLess(range.right, *column.null_value))
-                range.right = *column.null_value;
-        }
-        else
-            range.left = NEGATIVE_INFINITY; /// A Range represents NULL as an infinity.
+        if (accurateLess(*column.null_value, range.left))
+            range.left = *column.null_value;
+        if (accurateLess(range.right, *column.null_value))
+            range.right = *column.null_value;
     }
     return range;
 }

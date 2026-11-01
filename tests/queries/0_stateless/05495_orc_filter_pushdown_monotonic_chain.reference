@@ -23,7 +23,14 @@ in 8192	3	0	999998	1499998
 in 10000	3	0	999998	1499998
 in 10000	3	0	999998	1499998
 null or	1
-null pruned	10000
+null kept	20000
+ifNull	1
+ifNull	1
+coalesce	1
+negate ifNull	1
+toFloat64 ifNull	1
+ifNull in	1
+null in	1
 default	28572
 default pruned	10000
 tuple	1	100000

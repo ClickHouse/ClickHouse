@@ -57,7 +57,23 @@ SELECT 'in 10000', count(), min(id), max(id), sum(id) FROM file(currentDatabase(
 INSERT INTO FUNCTION file(currentDatabase() || '_05495_null.orc', ORC)
     SELECT if(number = 5000, NULL, 1000000 + number)::Nullable(Int64) AS id FROM numbers(200000);
 SELECT 'null or', count() FROM file(currentDatabase() || '_05495_null.orc', ORC) WHERE id + 1 = 999 OR id IS NULL;
-SELECT 'null pruned', count() FROM file(currentDatabase() || '_05495_null.orc', ORC) WHERE indexHint(intDiv(id, 10) = 110000);
+SELECT 'null kept', count() FROM file(currentDatabase() || '_05495_null.orc', ORC) WHERE indexHint(intDiv(id, 10) = 110000);
+
+-- A chain or a set can match a NULL, so a row group with a NULL is not pruned.
+INSERT INTO FUNCTION file(currentDatabase() || '_05495_ifnull.orc', ORC)
+    SELECT if(number = 0, NULL, if(number < 10000, -1, number))::Nullable(Int64) AS id FROM numbers(20000);
+SELECT 'ifNull', count() FROM file(currentDatabase() || '_05495_ifnull.orc', ORC) WHERE ifNull(id, toInt64(42)) = 42
+    SETTINGS allow_key_condition_coalesce_rewrite = 0;
+SELECT 'ifNull', count() FROM file(currentDatabase() || '_05495_ifnull.orc', ORC) WHERE ifNull(id, toInt64(42)) = 42
+    SETTINGS allow_key_condition_coalesce_rewrite = 0, input_format_orc_filter_push_down = 0;
+SELECT 'coalesce', count() FROM file(currentDatabase() || '_05495_ifnull.orc', ORC) WHERE coalesce(id, toInt64(42)) = 42
+    SETTINGS allow_key_condition_coalesce_rewrite = 0;
+SELECT 'negate ifNull', count() FROM file(currentDatabase() || '_05495_ifnull.orc', ORC) WHERE ifNull(-id, toInt64(42)) = 42
+    SETTINGS allow_key_condition_coalesce_rewrite = 0;
+SELECT 'toFloat64 ifNull', count() FROM file(currentDatabase() || '_05495_ifnull.orc', ORC) WHERE toFloat64(ifNull(id, toInt64(42))) = 42;
+SELECT 'ifNull in', count() FROM file(currentDatabase() || '_05495_ifnull.orc', ORC) WHERE ifNull(id, toInt64(42)) IN (42, 43);
+SELECT 'null in', count() FROM file(currentDatabase() || '_05495_ifnull.orc', ORC) WHERE intDiv(id, 10) IN (NULL, 5)
+    SETTINGS transform_null_in = 1;
 
 -- With `input_format_null_as_default` a NULL is read as the default of a non-Nullable column.
 INSERT INTO FUNCTION file(currentDatabase() || '_05495_default.orc', ORC)
