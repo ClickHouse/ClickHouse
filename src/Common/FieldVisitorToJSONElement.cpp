@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToJSONElement.h>
+#include <Common/checkStackSize.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -54,9 +55,11 @@ String FieldVisitorToJSONElement::operator() (const IPv6 & x) const { return for
 String FieldVisitorToJSONElement::operator() (const AggregateFunctionStateData & x) const { return formatAsString(x.data); }
 String FieldVisitorToJSONElement::operator() (const bool & x) const { return x ? "true" : "false"; }
 String FieldVisitorToJSONElement::operator() (const CustomType & x) const { return formatString(x.toString()); }
+String FieldVisitorToJSONElement::operator() (const NumberLiteral & x) const { return x.value; }
 
 String FieldVisitorToJSONElement::operator() (const Array & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '[';
@@ -73,6 +76,7 @@ String FieldVisitorToJSONElement::operator() (const Array & x) const
 
 String FieldVisitorToJSONElement::operator() (const Tuple & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '[';
@@ -89,6 +93,7 @@ String FieldVisitorToJSONElement::operator() (const Tuple & x) const
 
 String FieldVisitorToJSONElement::operator() (const Map & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '{';
@@ -107,6 +112,7 @@ String FieldVisitorToJSONElement::operator() (const Map & x) const
 
 String FieldVisitorToJSONElement::operator() (const Object & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '{';

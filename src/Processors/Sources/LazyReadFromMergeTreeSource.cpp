@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsBool use_uncompressed_cache;
+    extern const SettingsBool use_columns_cache;
 }
 
 namespace ErrorCodes
@@ -231,6 +232,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
+        .use_columns_cache = ctx_settings[Setting::use_columns_cache],
         .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = 1,
     };
@@ -245,10 +247,13 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     VirtualFields shared_virtual_fields;
     shared_virtual_fields.emplace("_sample_factor", 1.0);
 
-    bool has_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
+    /// Lazy materialization reads a precomputed set of rows — no filter is applied here,
+    /// so `sum_rows` is a hard upper bound. Treat it as a hard limit.
+    bool has_hard_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
 
     auto pool = std::make_shared<MergeTreeReadPoolInOrder>(
-        has_limit_below_one_block,
+        has_hard_limit_below_one_block,
+        /* has_soft_limit_below_one_block */ false,
         MergeTreeReadType::InOrder,
         ranges_in_data_parts,
         mutations_snapshot,
@@ -285,6 +290,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             lazy_materializing_rows);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
+        source->keepReadingOnPartialResult();
         source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));

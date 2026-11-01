@@ -1,12 +1,12 @@
 = full plan: both deferred =
 Expression (Project names)
-Actions: INPUT : 0 -> __table1.y String : 0
-         INPUT : 1 -> __table1.x UInt32 : 1
+Actions: INPUT : 0 -> __table1.x UInt32 : 0
+         INPUT : 1 -> __table1.y String : 1
          INPUT : 2 -> __table1.version UInt32 : 2
-         ALIAS __table1.y :: 0 -> y String : 3
-         ALIAS __table1.x :: 1 -> x UInt32 : 0
+         ALIAS __table1.x :: 0 -> x UInt32 : 3
+         ALIAS __table1.y :: 1 -> y String : 0
          ALIAS __table1.version :: 2 -> version UInt32 : 1
-Positions: 0 3 1
+Positions: 3 0 1
   Sorting (Sorting for ORDER BY)
   Prefix sort description: __table1.x ASC
   Result sort description: __table1.x ASC
@@ -20,6 +20,7 @@ Positions: 0 3 1
     Positions: 0 3 1
       ReadFromMergeTree (default.tab)
       ReadType: InOrder
+      FINAL: 1
       Parts: 3
       Granules: 3
       Prewhere info
@@ -39,15 +40,19 @@ Positions: 0 3 1
         Deferred filters (applied after FINAL)
           Deferred row level filter column: notEquals(y, \'ccc\'_String)
           Deferred prewhere filter column: notEquals(y, \'ccc\'_String)
+        Virtual row conversions
+        Actions: INPUT : 0 -> x UInt32 : 0
+                 ALIAS x :: 0 -> __table1.x UInt32 : 1
+        Positions: 1
 = full plan: nothing deferred =
 Expression (Project names)
-Actions: INPUT : 0 -> __table1.y String : 0
-         INPUT : 1 -> __table1.x UInt32 : 1
+Actions: INPUT : 0 -> __table1.x UInt32 : 0
+         INPUT : 1 -> __table1.y String : 1
          INPUT : 2 -> __table1.version UInt32 : 2
-         ALIAS __table1.y :: 0 -> y String : 3
-         ALIAS __table1.x :: 1 -> x UInt32 : 0
+         ALIAS __table1.x :: 0 -> x UInt32 : 3
+         ALIAS __table1.y :: 1 -> y String : 0
          ALIAS __table1.version :: 2 -> version UInt32 : 1
-Positions: 0 3 1
+Positions: 3 0 1
   Sorting (Sorting for ORDER BY)
   Prefix sort description: __table1.x ASC
   Result sort description: __table1.x ASC
@@ -61,6 +66,7 @@ Positions: 0 3 1
     Positions: 0 3 1
       ReadFromMergeTree (default.tab)
       ReadType: InOrder
+      FINAL: 1
       Parts: 3
       Granules: 3
       Prewhere info
@@ -77,6 +83,10 @@ Positions: 0 3 1
                  COLUMN Const(String) -> \'ccc\'_String String : 1
                  FUNCTION notEquals(y : 0, \'ccc\'_String :: 1) -> notEquals(y, \'ccc\'_String) UInt8 : 2
         Positions: 2 0
+        Virtual row conversions
+        Actions: INPUT : 0 -> x UInt32 : 0
+                 ALIAS x :: 0 -> __table1.x UInt32 : 1
+        Positions: 1
 = row policy deferred =
         Deferred filters (applied after FINAL)
           Deferred row level filter column: notEquals(y, \'ccc\'_String)

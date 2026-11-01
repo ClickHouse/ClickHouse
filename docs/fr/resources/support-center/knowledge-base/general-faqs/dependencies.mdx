@@ -1,0 +1,17 @@
+---
+title: "Quelles sont les dépendances tierces nécessaires pour exécuter ClickHouse ?"
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/dependencies
+description: "ClickHouse est autonome et n'a aucune dépendance à l’exécution"
+doc_type: 'reference'
+keywords: ['dépendances', 'tierces']
+---
+
+ClickHouse n&#39;a aucune dépendance à l’exécution. Il est distribué sous la forme d&#39;une application binaire unique, entièrement autonome. Cette application assure à elle seule toutes les fonctionnalités du cluster : elle exécute les requêtes, fait office de nœud worker dans le cluster, de système de coordination reposant sur l&#39;algorithme de consensus RAFT, ainsi que de client ou de moteur de requête local.
+
+Ce choix d’architecture unique le distingue des autres systèmes, qui reposent souvent sur des nœuds frontend, backend ou d’agrégation dédiés, car il simplifie le déploiement, la gestion du cluster et la supervision.
+
+<Info>
+  Il y a de nombreuses années, ClickHouse nécessitait ZooKeeper pour la coordination des clusters distribués. Ce n&#39;est plus nécessaire et, bien que nous prenions toujours en charge l&#39;utilisation de ZooKeeper, elle n&#39;est plus recommandée.
+</Info>

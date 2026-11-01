@@ -37,9 +37,13 @@ void ObjectFilterStep::updateOutputHeader()
 
 void ObjectFilterStep::serialize(Serialization & ctx) const
 {
-    writeStringBinary(filter_column_name, ctx.out);
+    /// Position, not name, for a cache key - see `FilterStep::serialize`.
+    if (ctx.for_cache_key)
+        writeIntBinary(actions_dag.getOutputIdentity(filter_column_name, ctx.input_header), ctx.out);
+    else
+        writeStringBinary(filter_column_name, ctx.out);
 
-    actions_dag.serialize(ctx.out, ctx.registry);
+    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
 }
 
 std::unique_ptr<IQueryPlanStep> ObjectFilterStep::deserialize(Deserialization & ctx)
@@ -50,11 +54,12 @@ std::unique_ptr<IQueryPlanStep> ObjectFilterStep::deserialize(Deserialization & 
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
     return std::make_unique<ObjectFilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name));
 }
 
+void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 void registerObjectFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ObjectFilter", ObjectFilterStep::deserialize);

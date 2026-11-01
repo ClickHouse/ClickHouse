@@ -1,0 +1,45 @@
+---
+slug: /native-protocol/hash
+title: 'CityHash'
+description: '네이티브 프로토콜 해시'
+doc_type: '참고'
+keywords: ['CityHash', '네이티브 프로토콜 해시', '해시 함수', 'Google CityHash', '프로토콜 해싱']
+---
+
+ClickHouse는 [Google의 CityHash](https://github.com/google/cityhash) **이전 버전 중 하나**를 사용합니다.
+
+<Info>
+  CityHash는 ClickHouse에 추가된 이후 알고리즘이 변경되었습니다.
+
+  CityHash 문서에는 사용자가 특정 해시 값에 의존해서는 안 되며,
+  이를 어디에도 저장하거나 세그먼트 분할 키로 사용해서도 안 된다고 명시되어 있습니다.
+
+  하지만 이 함수를 사용자에게 공개했기 때문에 CityHash 버전(1.0.2)을 고정해야 했습니다. 따라서 이제 SQL에서 사용할 수 있는 CityHash 함수의 동작이 변경되지 않음을 보장합니다.
+
+  — Alexey Milovidov
+</Info>
+
+<Info>
+  **참고**
+
+  현재 Google의 CityHash 버전은 ClickHouse `cityHash64` 변형과 [다릅니다](https://github.com/ClickHouse/ClickHouse/issues/8354).
+
+  Google의 CityHash 값을 얻기 위해 `farmHash64`를 사용하지 마십시오! [FarmHash](https://opensource.googleblog.com/2014/03/introducing-farmhash.html)는 CityHash의 후속작이지만, 완전히 호환되지는 않습니다.
+
+  | String                                                     | ClickHouse64         | CityHash64          | FarmHash64           |
+  | ---------------------------------------------------------- | -------------------- | ------------------- | -------------------- |
+  | `Moscow`                                                   | 12507901496292878638 | 5992710078453357409 | 5992710078453357409  |
+  | `How can you write a big system without C++?  -Paul Glick` | 6237945311650045625  | 749291162957442504  | 11716470977470720228 |
+</Info>
+
+설명과 만들어진 배경은 [Introducing CityHash](https://opensource.googleblog.com/2011/04/introducing-cityhash.html)도 참고하십시오. 요약하면 [MurmurHash](http://en.wikipedia.org/wiki/MurmurHash)보다 빠르지만 더 복잡한 **비암호학적** 해시입니다.
+
+<div id="implementations">
+  ## 구현
+</div>
+
+<div id="go">
+  ### Go
+</div>
+
+두 가지 방식을 모두 구현한 [go-faster/city](https://github.com/go-faster/city) Go 패키지를 사용할 수 있습니다.

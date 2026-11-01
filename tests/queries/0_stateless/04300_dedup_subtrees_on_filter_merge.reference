@@ -1,0 +1,14 @@
+9999
+dedup hits	1
+1
+99
+rand not deduped across scopes	1
+1
+equals + const dedup	1	1
+0	1
+2
+3
+1
+nested formatRow stays distinct	1
+1
+1	1

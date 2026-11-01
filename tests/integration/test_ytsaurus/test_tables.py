@@ -530,7 +530,7 @@ def test_yt_named_collection(started_cluster):
     )
 
     instance.query(
-        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus(ytsaurus_nc)"
+        "CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus(ytsaurus_nc)"
     )
 
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
@@ -541,7 +541,7 @@ def test_yt_named_collection(started_cluster):
     instance.wait_for_log_line("Get list of heavy proxies from path")
 
     assert (
-        instance.query(f"SELECT * FROM ytsaurus(ytsaurus_nc, 'a Int32, b Int32')")
+        instance.query("SELECT * FROM ytsaurus(ytsaurus_nc, 'a Int32, b Int32')")
         == "10\t20\n20\t40\n"
     )
 

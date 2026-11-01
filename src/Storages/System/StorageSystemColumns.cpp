@@ -1,17 +1,21 @@
 #include <optional>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -29,6 +33,7 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -55,6 +60,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "is_in_primary_key",   std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the primary key expression."},
         { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the sampling key expression."},
         { "compression_codec",   std::make_shared<DataTypeString>(), "Compression codec name."},
+        { "subcolumn_codecs",    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+            "Compression codecs declared for subcolumns of the column, by the subcolumn name relative to the column."},
         { "character_octet_length",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for FixedString data type. Otherwise, the NULL value is returned."},
         { "numeric_precision",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
@@ -93,7 +100,7 @@ namespace
 }
 
 
-class ColumnsSource : public ISource
+class ColumnsSource final : public ISource
 {
 public:
     ColumnsSource(
@@ -144,9 +151,11 @@ protected:
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
+            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
+            const auto * alias = storage->as<StorageAlias>();
+            NameSet chain_granted;
 
             {
-                StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
 
                 if (table_lock == nullptr)
@@ -155,11 +164,34 @@ protected:
                     continue;
                 }
 
-                StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
+                if (alias)
+                {
+                    Names all_columns;
+                    all_columns.reserve(columns.size());
+                    for (const auto & column : columns)
+                        all_columns.push_back(column.name);
+                    chain_granted = alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, all_columns);
+                }
+
+                const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[22];
+                bool can_expose_any_column_metadata = !needs_column_metadata;
+                if (needs_column_metadata)
+                {
+                    for (const auto & column : columns)
+                    {
+                        if (!alias || chain_granted.contains(column.name))
+                        {
+                            can_expose_any_column_metadata = true;
+                            break;
+                        }
+                    }
+                }
+
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
-                if (columns_mask[7] || columns_mask[8] || columns_mask[9])
+                if (can_expose_any_column_metadata && (columns_mask[7] || columns_mask[8] || columns_mask[9]))
                 {
                     if (auto sizes = storage->tryGetColumnSizes())
                         column_sizes = std::move(*sizes);
@@ -174,7 +206,7 @@ protected:
                 if (columns_mask[14])
                     cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
 
-                if (columns_mask[21])
+                if (can_expose_any_column_metadata && columns_mask[22])
                 {
                     if (auto hints = storage->tryGetSerializationHints())
                         serialization_hints = std::move(*hints);
@@ -192,6 +224,9 @@ protected:
             {
                 ++position;
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+                    continue;
+
+                if (alias && !chain_granted.contains(column.name))
                     continue;
 
                 size_t src_index = 0;
@@ -270,6 +305,14 @@ protected:
                         res_columns[res_index++]->insert(column.codec->formatForLogging());
                     else
                         res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    Map subcolumn_codecs;
+                    for (const auto & [subcolumn_name, codec] : column.subcolumn_codecs)
+                        subcolumn_codecs.push_back(Tuple{subcolumn_name, codec->formatForLogging()});
+                    res_columns[res_index++]->insert(subcolumn_codecs);
                 }
 
                 /// character_octet_length makes sense for FixedString only
@@ -399,6 +442,8 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     std::optional<ActionsDAG> virtual_columns_filter;
+    IDatabase::FilterByNameFunction database_name_filter;
+    IDatabase::FilterByNameFunction table_name_filter;
 };
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -410,6 +455,14 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
         Block block_to_filter;
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
+
+        /// Read the conditions on `database` and `table` before the sets below are built: that build
+        /// drops the elements of an `IN` over a subquery, and the extraction needs them (it builds such
+        /// a set itself, keeping them). The block filter of the databases below only sees `database`,
+        /// so it cannot use a condition that names the database together with the table, such as
+        /// `(database, table) IN ((db, t))`; the extraction reads that shape too.
+        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
+        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
 
         virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
 
@@ -456,11 +509,15 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         const auto & context = getContext();
         const auto & settings = context->getSettingsRef();
-        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+            .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
+            .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue; /// We don't want to show the internal database for temporary tables in system.columns
+            if (database_name_filter && !database_name_filter(database_name))
+                continue;
             database_column_mut->insert(database_name);
         }
 
@@ -468,7 +525,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         if (context->hasSessionContext())
         {
             external_tables = context->getSessionContext()->getExternalTables();
-            if (!external_tables.empty())
+            if (!external_tables.empty() && (!database_name_filter || database_name_filter("")))
                 database_column_mut->insertDefault(); /// Empty database for external tables.
         }
 
@@ -499,6 +556,8 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             {
                 for (auto & [table_name, table] : external_tables)
                 {
+                    if (table_name_filter && !table_name_filter(table_name))
+                        continue;
                     storages[{"", table_name}] = table;
                     table_column_mut->insert(table_name);
                 }
@@ -506,7 +565,10 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                /// Enumerating a table means resolving its storage, so let the database skip the
+                /// names the query cannot ask for instead of walking everything it holds.
+                auto iterator = database->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+                for (; iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {
@@ -546,3 +608,6 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemColumns) }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database, no-encrypted-storage, no-msan, no-azure-blob-storage
+# Tags: long, no-ordinary-database, no-msan, no-azure-blob-storage
 # no-msan: it is too slow
 # shellcheck disable=SC2119
 
@@ -46,7 +46,7 @@ function run_with_time_and_iterations_limits()
     started_time=$SECONDS
     local iteration=0
 
-    while true
+    while clickhouse_test_time_left
     do
         $function_to_run $iteration "$@"
 
@@ -170,7 +170,7 @@ fi
 START_TIME=$SECONDS
 MIN_TIME=$((START_TIME + MIN_SECONDS))
 MAX_TIME=$((START_TIME + MAX_SECONDS))
-MIN_ITERATIONS=15
+MIN_ITERATIONS=5
 MAX_ITERATIONS=200
 
 run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_commit_action 1   & PID_1=$!

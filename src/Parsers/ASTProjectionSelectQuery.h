@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -15,6 +16,7 @@ public:
     {
         WITH,
         SELECT,
+        WHERE,
         GROUP_BY,
         ORDER_BY,
     };
@@ -23,11 +25,13 @@ public:
     String getID(char) const override { return "ProjectionSelectQuery"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr & refSelect() { return getExpression(Expression::SELECT); }
 
     ASTPtr with() const { return getExpression(Expression::WITH); }
     ASTPtr select() const { return getExpression(Expression::SELECT); }
+    ASTPtr where() const { return getExpression(Expression::WHERE); }
     ASTPtr groupBy() const { return getExpression(Expression::GROUP_BY); }
     ASTPtr orderBy() const { return getExpression(Expression::ORDER_BY); }
 
@@ -43,6 +47,9 @@ public:
     }
 
     ASTPtr cloneToASTSelect() const;
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

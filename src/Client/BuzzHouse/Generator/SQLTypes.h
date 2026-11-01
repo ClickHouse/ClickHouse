@@ -276,9 +276,9 @@ class EnumType : public SQLType
 public:
     const uint32_t size;
     const std::vector<EnumValue> values;
-    EnumType(const uint32_t s, const std::vector<EnumValue> v)
+    EnumType(const uint32_t s, std::vector<EnumValue> v)
         : size(s)
-        , values(v)
+        , values(std::move(v))
     {
     }
 
@@ -563,10 +563,13 @@ class QBitType : public SQLType
 public:
     std::unique_ptr<SQLType> subtype;
     const uint32_t dimension;
+    /// Number of dimensions stored together in one group of streams. Equal to `dimension` when not strided.
+    const uint32_t stride;
 
-    QBitType(std::unique_ptr<SQLType> s, const uint32_t d)
+    QBitType(std::unique_ptr<SQLType> s, const uint32_t d, const uint32_t st)
         : subtype(std::move(s))
         , dimension(d)
+        , stride(st)
     {
     }
 
@@ -587,12 +590,14 @@ class AggregateFunctionType : public SQLType
 {
 public:
     const bool simple;
-    const SQLFunc aggregate;
+    const std::string aggregate;
+    std::vector<AggregateParam> params;
     std::vector<std::unique_ptr<SQLType>> subtypes;
 
-    AggregateFunctionType(const bool s, const SQLFunc aggr, std::vector<std::unique_ptr<SQLType>> subs)
+    AggregateFunctionType(const bool s, std::string aggr, std::vector<AggregateParam> p, std::vector<std::unique_ptr<SQLType>> subs)
         : simple(s)
-        , aggregate(aggr)
+        , aggregate(std::move(aggr))
+        , params(std::move(p))
         , subtypes(std::move(subs))
     {
     }
@@ -648,40 +653,31 @@ public:
 template <typename T>
 bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
-    LowCardinality * lc;
-
     if (dynamic_cast<const T *>(tp))
     {
         return true;
     }
     if (inside_nullable)
     {
-        Nullable * nl;
-
-        if ((nl = dynamic_cast<Nullable *>(tp)))
+        if (auto * nl = dynamic_cast<Nullable *>(tp))
         {
             return hasType<T>(inside_array, inside_nullable, inside_nested, nl->subtype.get());
         }
     }
-    if ((lc = dynamic_cast<LowCardinality *>(tp)))
+    if (auto * lc = dynamic_cast<LowCardinality *>(tp))
     {
         return hasType<T>(inside_array, inside_nullable, inside_nested, lc->subtype.get());
     }
     if (inside_array)
     {
-        ArrayType * at;
-
-        if ((at = dynamic_cast<ArrayType *>(tp)))
+        if (auto * at = dynamic_cast<ArrayType *>(tp))
         {
             return hasType<T>(inside_array, inside_nullable, inside_nested, at->subtype.get());
         }
     }
     if (inside_nested)
     {
-        TupleType * ttp;
-        NestedType * ntp;
-
-        if ((ttp = dynamic_cast<TupleType *>(tp)))
+        if (auto * ttp = dynamic_cast<TupleType *>(tp))
         {
             for (const auto & entry : ttp->subtypes)
             {
@@ -691,7 +687,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
                 }
             }
         }
-        else if ((ntp = dynamic_cast<NestedType *>(tp)))
+        else if (auto * ntp = dynamic_cast<NestedType *>(tp))
         {
             for (const auto & entry : ntp->subtypes)
             {
@@ -706,9 +702,10 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
 }
 
 String appendDecimal(RandomGenerator & rg, bool use_func, uint32_t left, uint32_t right);
-String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
-String strBuildJSONElement(RandomGenerator & rg);
-String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
+String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth, bool fuzz_floating_points);
+String strBuildJSONElement(RandomGenerator & rg, bool fuzz_floating_points);
+String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth, bool fuzz_floating_points);
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
+EnumType * getColumnEnumType(SQLType * tp);
 
 }

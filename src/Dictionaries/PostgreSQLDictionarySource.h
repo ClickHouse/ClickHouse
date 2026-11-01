@@ -3,6 +3,7 @@
 #include "config.h"
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/InvalidateQueryResponse.h>
 
 #if USE_LIBPQXX
 #include <Dictionaries/ExternalQueryBuilder.h>
@@ -55,6 +56,8 @@ public:
 private:
     String getUpdateFieldAndDate();
     String doInvalidateQuery(const std::string & request) const;
+    /// Empty unless the source has a custom QUERY, whose columns are mapped by position.
+    String getCustomQueryStructureHint() const;
     QueryPipeline loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
@@ -65,7 +68,7 @@ private:
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     std::chrono::time_point<std::chrono::system_clock> update_time;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
 
 };
 

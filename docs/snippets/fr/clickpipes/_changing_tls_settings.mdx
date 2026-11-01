@@ -1,0 +1,26 @@
+---
+title: Modifier les paramètres TLS
+---
+
+Par défaut, votre ClickPipe sera créé avec TLS activé et la vérification du certificat. Ces paramètres par défaut peuvent être modifiés lors de la création du ClickPipe :
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/tls-settings.webp" alt="Paramètres TLS" />
+</Frame>
+
+Ou modifiés dans la section *Paramètres de connexion* de l’onglet *Paramètres* de votre ClickPipe en pause :
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-connection-settings.webp" alt="Paramètres de connexion -> Modifier la connexion" />
+</Frame>
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-edit-connection.webp" alt="Modifier la connexion" />
+</Frame>
+
+Où :
+
+* `Disable TLS` active ou désactive TLS pour la connexion. Désactiver TLS signifie que les données sont envoyées en clair sur le réseau, y compris, potentiellement, des secrets et des données sensibles.
+* `Skip certificate verification` active ou désactive la vérification du certificat présenté par la base de données source. Tenez compte des implications de sécurité liées à l’ignorance de la vérification du certificat.
+* `TLS Host` (facultatif, utilise par défaut le *Host* source) est le nom d’hôte auquel le CN du certificat doit correspondre lorsque la vérification du certificat est activée.
+* `Upload CA` permet de fournir une CA à utiliser lorsque la vérification du certificat est activée.

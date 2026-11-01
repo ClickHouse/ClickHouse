@@ -1,0 +1,4 @@
+CREATE TABLE t (`a` UInt64 CODEC(LZ4)) ENGINE = MergeTree ORDER BY a
+CREATE TABLE t (`a` UInt64 CODEC(Delta, ZSTD(1)), `b` UInt64 STATISTICS(tdigest, uniq)) ENGINE = MergeTree ORDER BY a
+ALTER TABLE t (MODIFY COLUMN `a` UInt64 CODEC(ZSTD(3)))
+CREATE TABLE t (`d` Date, `a` UInt64) ENGINE = MergeTree ORDER BY a TTL d + toIntervalMonth(1) RECOMPRESS CODEC(ZSTD(6))

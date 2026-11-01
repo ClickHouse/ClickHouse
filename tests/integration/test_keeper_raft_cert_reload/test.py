@@ -223,7 +223,7 @@ def test_cert_reload_on_reconnect(started_cluster):
     assert wait_for_cert_reload(node2, "node1", initial_serial, timeout=30), (
         f"Raft port should serve initial cert {initial_serial}"
     )
-    print(f"Verified: Raft port is serving initial certificate")
+    print("Verified: Raft port is serving initial certificate")
 
     # Verify initial cluster works
     verify_cluster_works(f"/test_initial_{test_id}", all_nodes)

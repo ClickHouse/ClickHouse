@@ -3,8 +3,12 @@
 #include <memory>
 #include <mutex>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/UUID.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -13,6 +17,8 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -201,7 +207,7 @@ public:
         DefaultsOrFilter defaults_or_filter) const
     {
         bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+        chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
         size_t attribute_names_size = attribute_names.size();
 
@@ -365,6 +371,40 @@ public:
             key_types.emplace_back(key.type);
         }
 
+        /// Normalize wrapper-compatible key columns to the declared key schema via `convertKeyColumns`.
+        /// Track NULL rows and unwrap the outer `Nullable` first: casting a real NULL to a
+        /// non-Nullable declared type would throw.
+        PaddedPODArray<UInt8> key_row_is_null;
+        for (size_t i = 0; i < key_columns.size(); ++i)
+        {
+            if (!isNullableOrLowCardinalityNullable(key_types[i]))
+                continue;
+
+            /// Drop `Const`/`Sparse`/`ColumnReplicated` and `LowCardinality` (as `HashJoin` prepares
+            /// probe keys) so the null map is exposed, then peel off the outer `Nullable`.
+            ColumnPtr full_column = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_columns[i]->convertToFullColumnIfConst()));
+            DataTypePtr full_type = recursiveRemoveLowCardinality(key_types[i]);
+
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(full_column.get()))
+            {
+                const auto & row_null_map = nullable->getNullMapData();
+                if (key_row_is_null.empty())
+                    key_row_is_null.resize_fill(row_null_map.size(), 0);
+                for (size_t row = 0; row < row_null_map.size(); ++row)
+                    key_row_is_null[row] |= row_null_map[row];
+
+                key_columns[i] = nullable->getNestedColumnPtr();
+                key_types[i] = removeNullable(full_type);
+            }
+            else
+            {
+                key_columns[i] = std::move(full_column);
+                key_types[i] = std::move(full_type);
+            }
+        }
+
+        convertKeyColumns(key_columns, key_types);
+
         /// Fill null map
         {
             out_null_map.clear();
@@ -374,6 +414,12 @@ public:
 
             out_null_map.resize(mask_data.size(), 0);
             std::copy(mask_data.begin(), mask_data.end(), out_null_map.begin());
+
+            /// A NULL key never matches, even if its unwrapped value coincides with a stored key
+            /// (e.g. NULL unwrapped to the empty string could otherwise hit a stored empty key).
+            for (size_t row = 0; row < key_row_is_null.size(); ++row)
+                if (key_row_is_null[row])
+                    out_null_map[row] = 0;
         }
 
         Names attribute_names;
@@ -405,6 +451,11 @@ public:
             default_cols[i] = result_types[i]->createColumnConstWithDefaultValue(out_null_map.size());
 
         Columns result_columns = getColumns(attribute_names, result_types, key_columns, key_types, default_cols);
+
+        /// Blank attributes for NULL-key rows so a coincidental match yields defaults like a miss.
+        if (!key_row_is_null.empty())
+            for (auto & result_column : result_columns)
+                result_column = JoinCommon::filterWithBlanks(result_column, out_null_map);
 
         /// Result block should consist of key columns and then attributes
         for (const auto & key_col : key_columns)
@@ -452,7 +503,7 @@ public:
     void updateDictionaryID(const StorageID & new_dictionary_id)
     {
         std::lock_guard lock{mutex};
-        assert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
+        chassert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
         dictionary_id = new_dictionary_id;
     }
 

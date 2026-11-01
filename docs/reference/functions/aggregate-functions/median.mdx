@@ -1,0 +1,45 @@
+---
+description: 'The `median*` functions are the aliases for the corresponding `quantile*`
+  functions. They calculate median of a numeric data sample.'
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: 'reference'
+---
+
+The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
+
+Functions:
+
+- `median` — Alias for [quantile](/reference/functions/aggregate-functions/quantile).
+- `medianDeterministic` — Alias for [quantileDeterministic](/reference/functions/aggregate-functions/quantileDeterministic).
+- `medianExact` — Alias for [quantileExact](/reference/functions/aggregate-functions/quantileExact).
+- `medianExactWeighted` — Alias for [quantileExactWeighted](/reference/functions/aggregate-functions/quantileExactWeighted).
+- `medianTiming` — Alias for [quantileTiming](/reference/functions/aggregate-functions/quantileTiming).
+- `medianTimingWeighted` — Alias for [quantileTimingWeighted](/reference/functions/aggregate-functions/quantileTimingWeighted).
+- `medianTDigest` — Alias for [quantileTDigest](/reference/functions/aggregate-functions/quantileTDigest).
+- `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](/reference/functions/aggregate-functions/quantileTDigestWeighted).
+- `medianBFloat16` — Alias for [quantileBFloat16](/reference/functions/aggregate-functions/quantileBFloat16).
+- `medianDD` — Alias for [quantileDD](/reference/functions/aggregate-functions/quantileddsketch).
+
+**Example**
+
+Input table:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

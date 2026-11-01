@@ -52,7 +52,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionsMultiStringSearch : public IFunction
+class FunctionsMultiStringSearch final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -75,6 +75,17 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Declarative signature — `Impl::ResultType` is one of `UInt8`, `UInt64` or
+    /// `Array(UInt8)` depending on the variant (any-match / first-index /
+    /// all-indices), driven by `Impl::is_column_array`.
+    String getSignatureString() const override
+    {
+        if constexpr (Impl::is_column_array)
+            return "(String, Array(String)) -> Array(" + String(DataTypeNumber<typename Impl::ResultType>{}.getName()) + ")";
+        else
+            return "(String, Array(String)) -> " + String(DataTypeNumber<typename Impl::ResultType>{}.getName());
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
@@ -94,11 +105,11 @@ public:
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
         const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
-        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
+        chassert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
         const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
-        assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
+        chassert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
 
         if (col_haystack_const && col_needles_vector)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);

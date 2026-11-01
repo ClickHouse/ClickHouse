@@ -56,7 +56,7 @@ private:
     /// for row like ..., non-nullable column name=\N, ...
 };
 
-class TSKVSchemaReader : public IRowWithNamesSchemaReader
+class TSKVSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

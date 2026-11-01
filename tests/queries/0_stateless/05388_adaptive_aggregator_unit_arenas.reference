@@ -1,0 +1,9 @@
+Final string and array results
+matches the baseline	1
+more units than buckets, staged records spilled, merge went external	1	0	0
+-State results
+matches the baseline	1
+more units than buckets, staged records spilled, merge went external	1	0	0
+Non-final chunks of an external merge
+matches the baseline	1
+more units than buckets, staged records spilled, merge went external	1	1	1

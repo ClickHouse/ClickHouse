@@ -1,0 +1,37 @@
+---
+title: Explicação do Keeper
+---
+
+Cada arquivo de configuração conterá a seguinte configuração exclusiva (mostrada abaixo).
+O `server_id` usado deve ser exclusivo para esse nó específico do ClickHouse Keeper
+no cluster e corresponder ao `<id>` do servidor definido na seção `<raft_configuration>`.
+`tcp_port` é a porta usada pelos *clientes* do ClickHouse Keeper.
+
+```xml
+<tcp_port>9181</tcp_port>
+<server_id>{id}</server_id>
+```
+
+A seção a seguir é usada para configurar os servidores que participam do
+quórum do [algoritmo de consenso Raft](https://en.wikipedia.org/wiki/Raft_\(algorithm\)):
+
+```xml highlight={6}
+<raft_configuration>
+    <server>
+        <id>1</id>
+        <hostname>clickhouse-keeper-01</hostname>
+        <!-- Porta TCP usada para comunicação entre os nós do ClickHouse Keeper -->
+        <port>9234</port>
+    </server>
+    <server>
+        <id>2</id>
+        <hostname>clickhouse-keeper-02</hostname>
+        <port>9234</port>
+    </server>
+    <server>
+        <id>3</id>
+        <hostname>clickhouse-keeper-03</hostname>
+        <port>9234</port>
+    </server>
+</raft_configuration>
+```

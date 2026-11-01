@@ -1,0 +1,15 @@
+---
+slug: /faq/general/mapreduce
+title: "Pourquoi ne pas utiliser quelque chose comme MapReduce ?"
+toc_hidden: true
+toc_priority: 110
+description: "Cette page explique pourquoi utiliser ClickHouse plutôt que MapReduce"
+keywords: ['MapReduce']
+doc_type: 'reference'
+---
+
+On peut considérer des systèmes comme MapReduce comme des systèmes de calcul distribué dans lesquels l’opération de réduction repose sur un tri distribué. La solution open source la plus répandue dans cette catégorie est [Apache Hadoop](http://hadoop.apache.org).
+
+Ces systèmes ne conviennent pas aux requêtes en ligne en raison de leur latence élevée. Autrement dit, ils ne peuvent pas servir de back-end à une interface web. Ces types de systèmes ne sont pas adaptés aux mises à jour de données en temps réel. Le tri distribué n’est pas la meilleure manière d’effectuer des opérations de réduction si le résultat de l’opération et tous les résultats intermédiaires (s’il y en a) se trouvent dans la RAM d’un seul serveur, ce qui est généralement le cas pour les requêtes en ligne. Dans un tel cas, une table de hachage est la solution optimale pour effectuer des opérations de réduction. Une approche courante pour optimiser les tâches map-reduce consiste à faire une pré-agrégation (réduction partielle) à l’aide d’une table de hachage en RAM. L’utilisateur effectue cette optimisation manuellement. Le tri distribué est l’une des principales causes de la baisse des performances lors de l’exécution de tâches map-reduce simples.
+
+La plupart des implémentations de MapReduce permettent d’exécuter du code arbitraire sur un cluster. Mais un langage de requête déclaratif est mieux adapté à l’OLAP pour mener rapidement des expérimentations. Par exemple, Hadoop propose Hive et Pig. On peut également citer Cloudera Impala ou Shark (obsolète) pour Spark, ainsi que Spark SQL, Presto et Apache Drill. Les performances lors de l’exécution de telles tâches sont très loin d’être optimales par rapport à des systèmes spécialisés, et leur latence relativement élevée rend irréaliste l’utilisation de ces systèmes comme back-end pour une interface web.

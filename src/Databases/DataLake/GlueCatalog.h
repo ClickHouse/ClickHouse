@@ -33,13 +33,16 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_);
+        DB::ASTPtr table_engine_definition_,
+        bool allow_server_credentials_in_user_queries_);
 
     ~GlueCatalog() override;
 
     bool empty() const override;
 
-    DB::Names getTables() const override;
+    CatalogTables getTables() const override;
+
+    Namespaces getNamespaces() const override;
 
     bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
@@ -64,10 +67,33 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
+
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
-    void dropTable(const String & namespace_name, const String & table_name) const override;
+
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
+
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+
+    /// Returns a callback that re-vends fresh AWS credentials from the configured
+    /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
+    /// fails with `ExpiredToken`, so that a long-running read can recover without
+    /// the user having to restart the query.
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
     /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
     /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
@@ -77,8 +103,17 @@ public:
         const String & column_name,
         const String & glue_column_type);
 
+    using FieldTypes = std::unordered_map<String, String>;
+
+    static FieldTypes getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object);
+
+    static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
+
 private:
-    void createNamespaceIfNotExists(const String & namespace_name) const;
+    struct FieldTypesWeightFunction
+    {
+        size_t operator()(const FieldTypes & field_types) const;
+    };
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
@@ -88,7 +123,8 @@ private:
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
+    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
+    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
@@ -107,7 +143,7 @@ private:
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
-    mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
+    mutable DB::CacheBase<String, FieldTypes, std::hash<String>, FieldTypesWeightFunction> current_schema_field_types;
 };
 
 }

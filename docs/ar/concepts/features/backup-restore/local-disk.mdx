@@ -1,0 +1,356 @@
+---
+description: 'يوضح تفاصيل النسخ الاحتياطي/الاستعادة إلى قرص محلي أو منه'
+sidebarTitle: 'القرص المحلي / قرص S3'
+slug: /operations/backup/disk
+title: 'النسخ الاحتياطي / الاستعادة إلى القرص'
+doc_type: 'guide'
+---
+
+import ExampleSetup from '/snippets/ar/_example_setup.mdx';
+import Syntax from '/snippets/ar/_syntax.mdx';
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+<Syntax />
+
+<div id="configure-backup-destinations-for-disk">
+  ## تهيئة وجهات النسخ الاحتياطي للقرص
+</div>
+
+<div id="configure-a-backup-destination">
+  ### إعداد وجهة النسخ الاحتياطي للقرص المحلي
+</div>
+
+في الأمثلة أدناه، ستظهر وجهة النسخ الاحتياطي بالشكل `Disk('backups', '1.zip')`.
+ولاستخدام محرك النسخ الاحتياطي `Disk`، يجب أولاً إضافة ملف يحدد
+وجهة النسخ الاحتياطي في المسار أدناه:
+
+```text
+/etc/clickhouse-server/config.d/backup_disk.xml
+```
+
+على سبيل المثال، يحدّد الإعداد أدناه قرصًا باسم `backups`، ثم يضيف هذا القرص إلى
+قائمة **allowed&#95;disk** الخاصة بـ **backups**:
+
+```xml highlight={4,10-13}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>
+```
+
+<div id="backuprestore-using-an-s3-disk">
+  ### تهيئة وجهة نسخ احتياطي لقرص S3
+</div>
+
+يمكن أيضًا إجراء `BACKUP`/`RESTORE` إلى S3 عبر تهيئة قرص S3 ضمن
+إعدادات التخزين في ClickHouse. هيّئ القرص كما يلي، وذلك بإضافة ملف إلى
+`/etc/clickhouse-server/config.d` كما فُعل أعلاه للقرص المحلي.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_plain>
+                <type>s3_plain</type>
+                <endpoint></endpoint>
+                <access_key_id></access_key_id>
+                <secret_access_key></secret_access_key>
+            </s3_plain>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3_plain</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <backups>
+        <allowed_disk>s3_plain</allowed_disk>
+    </backups>
+</clickhouse>
+```
+
+يُجرى `BACKUP`/`RESTORE` لقرص S3 بالطريقة نفسها كما هو الحال مع القرص المحلي:
+
+```sql
+BACKUP TABLE data TO Disk('s3_plain', 'cloud_backup');
+RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
+```
+
+<Note>
+  * يجب عدم استخدام هذا القرص مع `MergeTree` نفسه، وإنما فقط مع `BACKUP`/`RESTORE`
+  * إذا كانت جداولك تعتمد على تخزين S3 وكانت أنواع الأقراص مختلفة،
+    فلن تُستخدَم استدعاءات `CopyObject` لنسخ الأجزاء إلى حاوية الوجهة، بل سيجري
+    تنزيلها ثم إعادة رفعها، وهذا غير فعّال جدًا. في هذه الحالة، يُفضَّل استخدام
+    الصيغة `BACKUP ... TO S3(<endpoint>)` لهذا الغرض.
+</Note>
+
+<div id="usage-examples">
+  ## أمثلة على استخدام النسخ الاحتياطي والاستعادة على القرص المحلي
+</div>
+
+<div id="backup-and-restore-a-table">
+  ### أخذ نسخة احتياطية من جدول واستعادته
+</div>
+
+<ExampleSetup />
+
+لأخذ نسخة احتياطية من الجدول، يمكنك تشغيل:
+
+```sql title="Query"
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status─────────┐
+1. │ 065a8baf-9db7-4393-9c3f-ba04d1e76bcd │ BACKUP_CREATED │
+   └──────────────────────────────────────┴────────────────┘
+```
+
+يمكن استعادة الجدول من النسخة الاحتياطية بالأمر التالي إذا كان الجدول فارغًا:
+
+```sql title="Query"
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status───┐
+1. │ f29c753f-a7f2-4118-898e-0e4600cd2797 │ RESTORED │
+   └──────────────────────────────────────┴──────────┘
+```
+
+<Note>
+  سيفشل `RESTORE` أعلاه إذا كان الجدول `test.table` يحتوي على بيانات.
+  يتيح الإعداد `allow_non_empty_tables=true` لـ `RESTORE TABLE` إدراج البيانات
+  في الجداول غير الفارغة. سيؤدي ذلك إلى مزج البيانات الموجودة مسبقًا في الجدول مع البيانات المستخرجة من النسخة الاحتياطية.
+  لذلك قد يتسبب هذا الإعداد في تكرار البيانات داخل الجدول، ويجب استخدامه بحذر.
+</Note>
+
+لاستعادة الجدول مع وجود بيانات فيه مسبقًا، شغّل:
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+SETTINGS allow_non_empty_tables=true
+```
+
+يمكن استعادة الجداول أو إنشاء نسخ احتياطية منها بأسماء جديدة:
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backups', '1.zip')
+```
+
+يحتوي أرشيف هذه النسخة الاحتياطية على البنية التالية:
+
+```text
+├── .backup
+└── metadata
+    └── test_db
+        └── test_table.sql
+```
+
+{/* مطلوب: 
+  يُضاف هنا شرح عن صيغة النسخة الاحتياطية. راجع التذكرة 24a
+  https://github.com/ClickHouse/clickhouse-docs/issues/3968
+  */}
+
+يمكن استخدام تنسيقات أخرى غير zip. راجع [&quot;النسخ الاحتياطية كأرشيفات tar&quot;](#backups-as-tar-archives)
+أدناه لمزيد من التفاصيل.
+
+<div id="incremental-backups">
+  ### النسخ الاحتياطية التزايدية إلى القرص
+</div>
+
+النسخة الاحتياطية الأساسية في ClickHouse هي النسخة الاحتياطية الكاملة الأولية التي تُنشأ انطلاقًا منها
+النسخ الاحتياطية التزايدية اللاحقة. ولا تخزّن النسخ الاحتياطية التزايدية سوى التغييرات
+التي أُجريت منذ إنشاء النسخة الاحتياطية الأساسية، لذلك يجب إبقاء النسخة الاحتياطية الأساسية متاحة
+لكي تتمكن من الاستعادة من أي نسخة احتياطية تزايدية. ويمكن تعيين وجهة النسخة الاحتياطية الأساسية باستخدام الإعداد
+`base_backup`.
+
+<Note>
+  تعتمد النسخ الاحتياطية التزايدية على النسخة الاحتياطية الأساسية. ويجب إبقاء النسخة الاحتياطية الأساسية متاحة
+  حتى تتمكن من الاستعادة من نسخة احتياطية تزايدية.
+</Note>
+
+لإنشاء نسخة احتياطية تزايدية لجدول، أنشئ أولاً نسخة احتياطية أساسية:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'd.zip')
+```
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'incremental-a.zip')
+SETTINGS base_backup = Disk('backups', 'd.zip')
+```
+
+يمكن استعادة جميع البيانات من النسخة الاحتياطية التزايدية والنسخة الاحتياطية الأساسية إلى
+جدول جديد `test_db.test_table2` باستخدام الأمر:
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table2
+FROM Disk('backups', 'incremental-a.zip');
+```
+
+<div id="assign-a-password-to-the-backup">
+  ### تأمين نسخة احتياطية
+</div>
+
+يمكن تعيين كلمة مرور على ملفات النسخ الاحتياطية المكتوبة على القرص.
+يمكن تحديد كلمة المرور باستخدام الإعداد `password`.
+
+<Note>
+  لا تُدعَم الحماية بكلمة مرور إلا لأرشيفات ZIP (`.zip`, `.zipx`).
+  يجب أن ينتهي مسار النسخة الاحتياطية بـ `.zip` أو `.zipx` حتى تُقبل كلمة المرور.
+  سيؤدي استخدام كلمة مرور مع أي تنسيق آخر - بما في ذلك أرشيفات tar والمسارات غير المؤرشفة - إلى
+  ظهور الخطأ `BAD_ARGUMENTS`:‏ `Password is not applicable, backup cannot be encrypted`.
+</Note>
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+لاستعادة نسخة احتياطية محمية بكلمة مرور، يجب تحديد كلمة المرور مرة أخرى
+باستخدام الإعداد `password`:
+
+```sql
+RESTORE TABLE test_db.test_table
+FROM Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+<div id="backups-as-tar-archives">
+  ### النسخ الاحتياطية كأرشيفات tar
+</div>
+
+يمكن تخزين النسخ الاحتياطية ليس فقط كأرشيفات zip، بل أيضًا كأرشيفات tar.
+وتبقى الوظائف نفسها كما في zip، باستثناء أن الحماية بكلمة مرور غير
+مدعومة في أرشيفات tar. بالإضافة إلى ذلك، تدعم أرشيفات tar مجموعة متنوعة من
+طرق الضغط.
+
+لإنشاء نسخة احتياطية من جدول كأرشيف tar:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar')
+```
+
+للاستعادة من أرشيف tar:
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.tar')
+```
+
+لتغيير طريقة الضغط، يجب إضافة امتداد الملف الصحيح
+إلى اسم النسخة الاحتياطية. على سبيل المثال، لضغط أرشيف tar باستخدام gzip، شغّل:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
+```
+
+امتدادات ملفات الضغط المدعومة هي:
+
+* `tar.gz`
+* `.tgz`
+* `tar.bz2`
+* `tar.lzma`
+* `.tar.zst`
+* `.tzst`
+* `.tar.xz`
+
+<div id="compression-settings">
+  ### إعدادات الضغط
+</div>
+
+يمكن تحديد أسلوب الضغط ومستوى الضغط باستخدام
+الإعدادين `compression_method` و`compression_level`، على التوالي.
+
+{/* للمتابعة لاحقًا:
+  هناك حاجة إلى مزيد من المعلومات حول هذه الإعدادات وسبب استخدام ذلك
+  */}
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'filename.zip')
+SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="restore-specific-partitions">
+  ### استعادة تقسيمات محددة
+</div>
+
+إذا كانت هناك حاجة إلى استعادة تقسيمات محددة مرتبطة بجدول، فيمكن تحديدها.
+
+لنُنشئ جدولًا بسيطًا مُقسّمًا إلى أربعة تقسيمات، ونُدرج بعض البيانات فيه، ثم
+نأخذ نسخة احتياطية من التقسيمين الأول والرابع فقط:
+
+<Accordion title="الإعداد">
+  ```sql
+  CREATE IF NOT EXISTS test_db;
+         
+  -- إنشاء جدول مُقسّم
+  CREATE TABLE test_db.partitioned (
+      id UInt32,
+      data String,
+      partition_key UInt8
+  ) ENGINE = MergeTree()
+  PARTITION BY partition_key
+  ORDER BY id;
+
+  INSERT INTO test_db.partitioned VALUES
+  (1, 'data1', 1),
+  (2, 'data2', 2),
+  (3, 'data3', 3),
+  (4, 'data4', 4);
+
+  SELECT count() FROM test_db.partitioned;
+
+  SELECT partition_key, count() 
+  FROM test_db.partitioned
+  GROUP BY partition_key
+  ORDER BY partition_key;
+  ```
+
+  ```response
+     ┌─count()─┐
+  1. │       4 │
+     └─────────┘
+     ┌─partition_key─┬─count()─┐
+  1. │             1 │       1 │
+  2. │             2 │       1 │
+  3. │             3 │       1 │
+  4. │             4 │       1 │
+     └───────────────┴─────────┘
+  ```
+</Accordion>
+
+شغّل الأمر التالي لأخذ نسخة احتياطية من التقسيمين 1 و4:
+
+```sql
+BACKUP TABLE test_db.partitioned PARTITIONS '1', '4'
+TO Disk('backups', 'partitioned.zip')
+```
+
+نفّذ الأمر التالي لاستعادة التقسيمين 1 و4:
+
+```sql
+RESTORE TABLE test_db.partitioned PARTITIONS '1', '4'
+FROM Disk('backups', 'partitioned.zip')
+SETTINGS allow_non_empty_tables=true
+```

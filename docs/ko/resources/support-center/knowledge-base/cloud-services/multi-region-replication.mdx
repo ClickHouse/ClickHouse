@@ -1,0 +1,15 @@
+---
+slug: /faq/operations/multi-region-replication
+title: 'ClickHouse는 멀티 리전 레플리케이션을 지원합니까?'
+toc_hidden: true
+toc_priority: 30
+description: '이 페이지에서는 ClickHouse의 멀티 리전 레플리케이션 지원 여부를 설명합니다'
+doc_type: 'reference'
+keywords: ['멀티 리전', '복제', '지리 분산', '분산 시스템', '데이터 동기화']
+---
+
+짧게 답하면 &quot;예&quot;입니다. 다만 모든 리전/데이터센터 간 지연 시간을 두 자릿수 밀리초 범위로 유지하는 것이 좋습니다. 그렇지 않으면 분산 합의 프로토콜을 거치기 때문에 쓰기 성능이 저하됩니다. 예를 들어 미국 동부와 서부 해안 간 복제는 대체로 문제없이 작동하겠지만, 미국과 유럽 간 복제는 그렇지 않을 가능성이 높습니다.
+
+구성상으로는 단일 리전 복제와 차이가 없으며, 레플리카로 서로 다른 위치에 있는 호스트를 사용하면 됩니다.
+
+자세한 내용은 [데이터 복제 전체 문서](/ko/reference/engines/table-engines/mergetree-family/replication)를 참조하십시오.

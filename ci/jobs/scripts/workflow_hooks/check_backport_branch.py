@@ -30,7 +30,7 @@ if __name__ == "__main__":
             sys.exit(-1)
 
         if not info.get_changed_files():
-            print(f"ERROR: No Files changed in the Backport PR.")
+            print("ERROR: No Files changed in the Backport PR.")
             sys.exit(-1)
     else:
         assert False, f"Unsupported workflow name [{info.workflow_name}]"

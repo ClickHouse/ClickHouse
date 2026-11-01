@@ -1,0 +1,120 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-03
+title: '演示日 - 2026-04-03'
+sidebarTitle: '2026-04-03'
+description: 'ClickStack 2026-04-03 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="new-dashboard-and-saved-search-listing-pages">
+  ## 新的仪表盘和已保存搜索列表页面
+</div>
+
+*演示：[@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dQCkNZElwcg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+仪表盘和已保存搜索现已从侧边栏移出，改为使用专门的列表页面。如果你的团队已经积累了不少仪表盘，旧的侧边栏方式很快就会变得难以管理。新页面会以按标签组织的卡片视图展示所有内容，并内置名称搜索和标签过滤器。如果你更喜欢更紧凑的展示方式，也可以切换到列表视图。
+
+现在也支持收藏功能了。给仪表盘或已保存搜索加星后，它会固定在列表页面顶部，并重新出现在侧边栏中，方便快速访问——类似于之前的体验，但不会让其他人的导航栏显得拥挤。列表页面还会在每张卡片上显示告警状态图标以及“创建者 / 更新者”元数据，因此你可以一眼看出各项内容由谁负责，以及是否有告警正在触发。
+
+此外，还新增了一个模板库。四个涵盖 Node.js、Python、Go 和 Java 的 OTel 运行时指标的预置仪表盘只需点击几下即可导入。导入时还可以编辑标签和目标指标数据源，因此你可以直接将它们纳入现有的标签结构中。
+
+**相关 PR：** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) 添加仪表盘列表页面、[#2012](https://github.com/hyperdxio/hyperdx/pull/2012) 添加已保存搜索列表页面、[#2021](https://github.com/hyperdxio/hyperdx/pull/2021) 为仪表盘和已保存搜索添加收藏、[#2033](https://github.com/hyperdxio/hyperdx/pull/2033) 按标签对仪表盘和搜索进行分组、[#2031](https://github.com/hyperdxio/hyperdx/pull/2031) 显示创建/更新元数据、[#2053](https://github.com/hyperdxio/hyperdx/pull/2053) 在仪表盘列表页面添加告警图标、[#2010](https://github.com/hyperdxio/hyperdx/pull/2010) 添加仪表盘模板库
+
+<div id="filters-for-filters">
+  ## 过滤器的过滤条件
+</div>
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Tfe9kJygoEg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+仪表盘变量过滤器现在也支持设置自身的过滤条件。这个需求其实很直接：如果你在一个 Node.js 仪表盘上有一个“服务名称”下拉菜单，你大概率只希望它列出 Node.js 服务，而不是环境中的所有服务。现在，你可以直接在仪表盘变量上配置过滤条件，来限定显示范围。
+
+过滤器选择器也已更新，支持多选。对于按服务分组的仪表盘来说，能够在下拉菜单中一次选择多个值，会让比较方便得多。
+
+**相关 PR：** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) 为仪表盘过滤器添加条件；支持过滤器多选
+
+<div id="rbac-for-predefined-dashboards">
+  ## 预设仪表盘的 RBAC
+</div>
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，基于角色的访问控制也适用于 ClickStack 的预设仪表盘。此前，这些内置仪表盘完全不受 RBAC 约束，因此无论分配了什么角色，任何用户都可以访问。这个缺口现在已经补上。
+
+细粒度的读取权限如今按预期生效。对于仅授予特定服务只读访问权限的角色，用户将只能看到与这些服务相关的预设仪表盘。该角色下的用户可以查看这些仪表盘及其过滤器，但过滤器控件会被锁定，无法编辑。演示中展示了一个自定义角色：它拥有针对某个命名服务的 &quot;services&quot; 读取权限；使用该角色登录的用户，看到的正是他们应当有权访问的仪表盘和过滤器状态。
+
+<div id="optimizations-for-searching">
+  ## 搜索优化
+</div>
+
+*演示：[@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/uVD2FKzoHjM" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickHouse 的 “Read in Order” 优化会在 ORDER BY 与表的主键匹配时按顺序读取数据，并在达到 LIMIT 后立即停止，因此能加快搜索查询。基准测试显示，尽管如此，在较大的数据集上，搜索仍然会过度拉取数据。问题的根源在于需要遍历的 parts 数量：即使启用了该优化，只要表足够大，ClickHouse 仍会因为 parts 过多而读取超出必要范围的数据。
+
+修复方法是：在搜索查询的窗口查询数组前添加一个 1 分钟的时间窗口。反正大多数搜索所需的数据都在最近 1 分钟内，因此优先命中这个窗口几乎就能立刻返回结果。如果这里没有找到内容，查询就会像往常一样回退到逐步扩大的时间窗口。另外，由于时间戳列使用了未被识别的 `toDateTime(Timestamp)` 表达式，ORDER BY 优化此前未能在 `otel_traces` schema 上正确应用。这个问题现在也已修复。
+
+**相关 PR：** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) 搜索使用 1 分钟时间窗口，[#2014](https://github.com/hyperdxio/hyperdx/pull/2014) 修复 otel&#95;traces 的 ORDER BY 优化缺陷
+
+<div id="copy-row-and-configurable-filter-sizes">
+  ## 复制行和可配置的过滤器数量
+</div>
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e_IIKG3f6SE" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，行查看器中新增了“复制为 JSON”按钮，让你一键即可获取整条日志行。该按钮在完整侧边栏视图中也会显示。无论是将某一行粘贴到 LLM 提示词中，询问这条日志会出现在代码的哪个位置，还是在无需手动选中文本的情况下，为故障报告保留完整事件内容，它都非常方便。
+
+现在，侧边栏中拉取的过滤器键数量已可在“查询设置”下作为团队设置进行配置。此前的固定限制意味着，在较大的数据集中，只能看到部分可用的过滤属性。现在，团队可以提高这一限制，以显示更多资源属性和日志属性。此次更改还包括虚拟化方面的改进，即使显示大量过滤器组，也能保持过滤器面板的渲染速度。
+
+**相关 PR：** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) 添加“复制行为 JSON”按钮，[#2020](https://github.com/hyperdxio/hyperdx/pull/2020) 新增用于设置要拉取的过滤器数量的团队设置，[#1979](https://github.com/hyperdxio/hyperdx/pull/1979) 嵌套过滤器组虚拟化
+
+<div id="tabs-and-groups-in-dashboards">
+  ## 仪表盘中的标签页和 Group
+</div>
+
+*演示者：[ @alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/tyumDlJuDTg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，仪表盘卡片可以归入 Group 中进行组织。这取代了之前将容器分为两种独立类型 (“sections”和“groups”) 的模型；过去，用户必须预先决定要使用哪一种容器。新的单一 Group 概念更简单：Group 默认可折叠，也可以选择显示边框，还可以添加标签页。每个标签页都有自己的一组卡片，卡片也可以通过拖拽手柄在不同 Group 之间移动。
+
+演示中展示了一个启用了若干自定义选项的组：可折叠可开关、边框可显示或隐藏，以及是否启用标签页。演示时，该 PR 仍在评审中，同时也在收集设计反馈。一旦合并，相比旧的双容器类型模型，它应能为仪表盘作者提供一套更灵活、也更不易引起困惑的构建模块。
+
+**相关 PR：** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) 支持标签页及可折叠/边框选项的仪表盘组，[#2015](https://github.com/hyperdxio/hyperdx/pull/2015) 将 section/group 统一为单一 Group
+
+<div id="clickstack-cli">
+  ## ClickStack CLI
+</div>
+
+*由 [@wrn14897](https://github.com/wrn14897) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack CLI (`hdx`) 是一款新的终端 TUI，让你无需离开终端即可搜索、tail 和检查日志及链路追踪。它通过与浏览器相同的 Web 会话机制连接到你的 HyperDX 实例，因此无需单独管理 API key。使用实例 URL 和电子邮件执行一次性 `hdx auth login` 后，它会持续保持登录状态。
+
+这个 TUI 的界面与你在 Web 应用中看到的搜索界面一致：相同的查询语法、相同的数据源选择，以及同样可深入查看单条日志记录。其中一大亮点是 trace 瀑布视图：点击某条日志记录后，可直接在终端中看到完整的分布式 trace。该演示还预览了一项早期的 agent 使用实验：让 AI agent 访问 CLI 的 schema 内部信息输出，并能通过 ClickHouse 代理运行查询后，agent 就可以自主排查问题。演示更进一步，展示了 agent 如何通过 Playwright 利用 Web 会话在 HyperDX UI 中导航，从渲染出的图表中提取指标，并与它在日志中发现的内容交叉比对。
+
+**相关 PR：** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) 添加 @hyperdx/cli 包——用于搜索和 tail 事件的终端 TUI

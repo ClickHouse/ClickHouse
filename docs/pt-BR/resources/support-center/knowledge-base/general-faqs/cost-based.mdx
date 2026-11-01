@@ -1,0 +1,13 @@
+---
+title: 'O ClickHouse tem um otimizador baseado em custo'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/cost-based
+description: 'O ClickHouse tem alguns mecanismos de otimização baseados em custo'
+doc_type: 'reference'
+keywords: ['CBE', 'optimizer']
+---
+
+O ClickHouse tem alguns mecanismos isolados de otimização baseados em custo, como: a ordem de leitura das colunas é determinada pelo custo de leitura de intervalos compactados de dados em disco.
+
+O ClickHouse também faz reordenação de JOIN com base em estatísticas de colunas, porém isso (em 2025) ainda está longe de ser tão avançado quanto o CBE no Postgres, Oracle e MS SQL Server.

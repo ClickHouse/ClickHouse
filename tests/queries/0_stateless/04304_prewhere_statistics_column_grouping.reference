@@ -1,0 +1,1 @@
+          Prewhere filter column: and(greater(__table1.a, 2500_UInt16), less(__table1.a, 2502_UInt16), equals(__table1.b, 1_UInt8)) (removed)

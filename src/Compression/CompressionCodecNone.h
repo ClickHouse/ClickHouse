@@ -1,8 +1,6 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Compression/ICompressionCodec.h>
-#include <IO/BufferWithOwnMemory.h>
 
 
 namespace DB
@@ -11,11 +9,14 @@ namespace DB
 class CompressionCodecNone final : public ICompressionCodec
 {
 public:
-    CompressionCodecNone();
+    CompressionCodecNone() = default;
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
+
+    std::optional<UInt32> tryGetCompressedSize(const char * /*source*/, UInt32 source_size) const override { return source_size; }
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;

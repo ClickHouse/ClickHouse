@@ -1,7 +1,6 @@
 SET allow_experimental_ts_to_grid_aggregate_function=1;
 
 SET cluster_for_parallel_replicas = 'test_shard_localhost';
-SET enable_parallel_replicas = 0; -- Prevent randomized parallel replicas from interfering; queries that need it set it explicitly via SETTINGS
 
 
 CREATE TABLE t_resampled_timeseries
@@ -27,7 +26,7 @@ WITH
     10 AS step_sec,
     50 as window_sec,
     range(toUnixTimestamp(start_ts), toUnixTimestamp(end_ts) + 1, step_sec) as grid
-SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, irate_values_scale_3, idelta_values, rate_values, rate_values_scale_5, delta_values))
+SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, irate_values_scale_3, idelta_values, rate_values, rate_values_scale_5, delta_values)) AS point
 FROM (
     SELECT
         metric_id,
@@ -40,8 +39,8 @@ FROM (
     FROM clusterAllReplicas('test_shard_localhost', currentDatabase(), t_resampled_timeseries)
     GROUP BY metric_id
 )
-ORDER BY metric_id
-SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, prefer_localhost_replica=1;
+ORDER BY metric_id, point
+SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- Test with DateTime64
 
@@ -67,7 +66,7 @@ WITH
     10 AS step_sec,
     50 as window_sec,
     range(toUnixTimestamp(start_ts), toUnixTimestamp(end_ts) + 1, step_sec) as grid
-SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, idelta_values, rate_values, delta_values))
+SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, idelta_values, rate_values, delta_values)) AS point
 FROM (
     SELECT
         metric_id,
@@ -78,8 +77,8 @@ FROM (
     FROM clusterAllReplicas('test_shard_localhost', currentDatabase(), t_resampled_timeseries_64)
     GROUP BY metric_id
 )
-ORDER BY metric_id
-SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, prefer_localhost_replica=1;
+ORDER BY metric_id, point
+SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- Another test with a reset
 WITH [
@@ -100,8 +99,8 @@ SELECT * FROM (
 ) ORDER BY name;
 
 
--- Tests to validate block header compatibility for serialized query plans
-SET serialize_query_plan=1, prefer_localhost_replica = false, enable_parallel_replicas = 0;
+-- Tests to validate block header compatibility in queries with parallel replicas
+SET serialize_query_plan=1, prefer_localhost_replica = false;
 
 SELECT
     metric_id,

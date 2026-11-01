@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/key-value
+title: '¿Puedo usar ClickHouse como almacenamiento de clave-valor?'
+toc_hidden: true
+toc_priority: 101
+description: 'Responde a la pregunta frecuente de si ClickHouse puede usarse como almacenamiento de clave-valor.'
+doc_type: 'reference'
+keywords: ['key-value', 'modelo de datos', 'caso de uso', 'diseño de esquema', 'patrón de almacenamiento']
+---
+
+La respuesta corta es **&quot;no&quot;**. La carga de trabajo de clave-valor está entre los primeros puestos de la lista de casos en los que <span class="text-danger">**NO**</span> se debe usar ClickHouse. Al fin y al cabo, es un sistema [OLAP](/es/resources/support-center/knowledge-base/general-faqs/olap), y existen muchos sistemas de almacenamiento de clave-valor excelentes.
+
+Sin embargo, puede haber situaciones en las que siga teniendo sentido usar ClickHouse para consultas de tipo clave-valor. Normalmente, se trata de productos con presupuestos ajustados en los que la carga de trabajo principal es de naturaleza analítica y encaja bien con ClickHouse, pero también hay algún proceso secundario que necesita un patrón de clave-valor con un volumen de solicitudes no muy alto y sin requisitos estrictos de latencia. Si tuvieras un presupuesto ilimitado, habrías instalado una base de datos secundaria de clave-valor para esta carga de trabajo secundaria, pero en la práctica mantener un sistema de almacenamiento adicional tiene un coste extra (monitorización, copias de seguridad, etc.) que puede ser preferible evitar.
+
+Si decides ir en contra de las recomendaciones y ejecutar algunas consultas de tipo clave-valor en ClickHouse, aquí tienes algunos consejos:
+
+* La razón principal por la que las consultas puntuales son costosas en ClickHouse es su índice primario disperso de la [familia de motores de tabla MergeTree principal](/es/reference/engines/table-engines/mergetree-family/mergetree). Este índice no puede apuntar a cada fila concreta de datos; en su lugar, apunta a cada N filas, y el sistema tiene que escanear desde la fila vecina marcada cada N filas hasta la fila deseada, leyendo datos de más por el camino. En un escenario de clave-valor, puede ser útil reducir el valor de N con la configuración `index_granularity`.
+* ClickHouse mantiene cada columna en un conjunto de archivos independiente, así que, para ensamblar una fila completa, necesita recorrer cada uno de esos archivos. Su número aumenta linealmente con la cantidad de columnas, por lo que, en un escenario de clave-valor, puede merecer la pena evitar usar muchas columnas y colocar toda la carga útil en una sola columna `String` codificada en algún formato de serialización como JSON, Protobuf o cualquier otro que tenga sentido.
+* Existe un enfoque alternativo que utiliza el motor de tabla [Join](/es/reference/engines/table-engines/special/join) en lugar de tablas `MergeTree` normales y la función [joinGet](/es/reference/functions/regular-functions/other-functions#joinGet) para recuperar los datos. Puede ofrecer un mejor rendimiento de consulta, pero también puede presentar algunos problemas de usabilidad y fiabilidad. Aquí tienes un [ejemplo de uso](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00800_versatile_storage_join.sql#L49-L51).

@@ -1,0 +1,36 @@
+<test>
+    <!-- Cost of emitting String values in JSON row output formats, which is paid once per String
+         cell per row. `max_threads = 1` keeps that per-row cost visible instead of hiding it
+         behind threading, and `formatRow` keeps the output in memory so the sink is never the
+         bottleneck. -->
+
+    <create_query>
+        CREATE TABLE json_string_value_formatting (clean String, escaped String,
+            separator String, escape_heavy String, doc String) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO json_string_value_formatting
+        SELECT
+            leftPad(toString(number), 70, 'x'),
+            concat(leftPad(toString(number), 58, 'x'), '"a"', unhex('5c'), 'c/d', unhex('0a'), 'e'),
+            concat(leftPad(toString(number), 64, 'x'), unhex('e280a8'), 'ab'),
+            concat(repeat(concat('"', unhex('5c'), '/', unhex('0a')), 17), leftPad(toString(number), 2, 'x')),
+            concat('{{"u":"https://host.example/', toString(number), '/a/b/c","s":"plain value"}}')
+        FROM numbers(1700000)
+    </fill_query>
+
+    <!-- A long value with nothing to escape: the whole value is one run -->
+    <query>SELECT count() FROM json_string_value_formatting WHERE NOT ignore(formatRow('JSONEachRow', clean)) SETTINGS max_threads = 1</query>
+    <!-- Same length, a handful of escapes: several short runs -->
+    <query>SELECT count() FROM json_string_value_formatting WHERE NOT ignore(formatRow('JSONEachRow', escaped)) SETTINGS max_threads = 1</query>
+    <!-- Contains U+2028, whose three-byte sequence needs a lookahead from a run boundary -->
+    <query>SELECT count() FROM json_string_value_formatting WHERE NOT ignore(formatRow('JSONEachRow', separator)) SETTINGS max_threads = 1</query>
+    <!-- Almost every byte needs escaping, so there are no runs to copy in bulk -->
+    <query>SELECT count() FROM json_string_value_formatting WHERE NOT ignore(formatRow('JSONEachRow', escape_heavy)) SETTINGS max_threads = 1</query>
+    <!-- JSONExtractRaw writes its result through the same function with forward slashes unescaped -->
+    <query>SELECT count() FROM json_string_value_formatting WHERE NOT ignore(JSONExtractRaw(doc)) SETTINGS max_threads = 1</query>
+    <!-- Scope control: every one of those values through a format that does not use this function, so it must not move -->
+    <query>SELECT count() FROM json_string_value_formatting WHERE NOT ignore(formatRow('TSV', clean, escaped, separator, escape_heavy, doc)) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_string_value_formatting</drop_query>
+</test>

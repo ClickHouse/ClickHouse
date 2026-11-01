@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -30,9 +31,9 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<ColumnT>();
+        return "() -> " + ColumnT{}.getName();
     }
 
     bool isDeterministic() const override { return false; }

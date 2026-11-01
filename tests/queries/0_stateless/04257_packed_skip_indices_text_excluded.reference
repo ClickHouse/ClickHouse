@@ -1,0 +1,9 @@
+after_insert_count	4000
+after_merge_count	4000
+after_merge_active_parts	1
+after_merge_text_filtered_lookup	1
+after_merge_text_filters_granules	1
+1
+before_drop_indices_materialized	1
+after_drop_indices_materialized	0
+1

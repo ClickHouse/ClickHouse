@@ -1,0 +1,31 @@
+---
+title: Evitar colunas Nullable
+---
+
+[coluna `Nullable`](/pt-BR/reference/data-types/nullable) (por exemplo, `Nullable(String)`) cria uma coluna separada do tipo `UInt8`. Essa coluna adicional precisa ser processada sempre que um usuário trabalha com uma coluna `Nullable`. Isso resulta em uso adicional de espaço de armazenamento e quase sempre afeta negativamente o desempenho.
+
+Para evitar colunas `Nullable`, considere definir um valor padrão para essa coluna. Por exemplo, em vez de:
+
+```sql highlight={4}
+CREATE TABLE default.sample
+(
+    `x` Int8,
+    `y` Nullable(Int8)
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+usar
+
+```sql highlight={4}
+CREATE TABLE default.sample2
+(
+    `x` Int8,
+    `y` Int8 DEFAULT 0
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+Considere seu caso de uso; um valor padrão pode não ser apropriado.

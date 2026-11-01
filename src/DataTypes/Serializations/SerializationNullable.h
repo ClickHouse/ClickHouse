@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class SerializationNullable : public ISerialization
+class SerializationNullable final : public ISerialization
 {
 private:
     SerializationPtr nested;
@@ -14,9 +14,13 @@ private:
     /// Used in Sparse columns where the null map is implicitly derived from sparse offsets.
     bool use_default_null_map;
 
+    /// Cached `nested->supportsPooling`, see `SerializationArray`.
+    bool nested_supports_pooling;
+
     explicit SerializationNullable(const SerializationPtr & nested_, bool use_default_null_map_ = false)
         : nested(nested_)
         , use_default_null_map(use_default_null_map_)
+        , nested_supports_pooling(nested->supportsPooling())
     {
     }
 
@@ -24,7 +28,10 @@ public:
     static UInt128 getHash(const SerializationPtr & nested_, bool use_default_null_map_);
     static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false);
 
-    bool supportsPooling() const override { return nested->supportsPooling(); }
+    /// Whether a resolved subcolumn is really the null map, which its name alone cannot tell.
+    static bool isNullMapSubcolumn(const SubstreamPath & path);
+
+    bool supportsPooling() const override { return nested_supports_pooling; }
 
     const SerializationPtr & getNested() const { return nested; }
 
@@ -55,8 +62,7 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-            ColumnPtr & column,
-            size_t rows_offset,
+            IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
@@ -88,6 +94,7 @@ public:
       */
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

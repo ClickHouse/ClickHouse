@@ -1,0 +1,315 @@
+---
+slug: /best-practices/use-json-where-appropriate
+sidebarTitle: 'JSONの使用'
+title: '適切な場合にJSONを使用する'
+description: 'JSONを使用すべき場面を説明するページ'
+keywords: ['JSON']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+import WhenToUseJson from '/snippets/ja/_when-to-use-json.mdx';
+
+ClickHouse では、半構造化データや動的なデータ向けに設計されたネイティブの JSON カラム型を利用できるようになりました。ここで重要なのは、**これはデータフォーマットではなく、カラム型である**という点です。JSON は文字列として、または [JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) のような対応フォーマット経由で ClickHouse に挿入できますが、それは JSON カラム型を使っていることを意味するわけではありません。JSON 型を使うべきなのは、単に JSON を保存したい場合ではなく、データ構造が動的な場合に限られます。
+
+<WhenToUseJson />
+
+<div id="considerations-and-tips-for-using-json">
+  ## JSON を使用する際の考慮事項とヒント
+</div>
+
+JSON 型は、パスをサブカラムにフラット化することで、効率的な列指向ストレージを実現します。ただし、柔軟性が高いぶん、適切な使い方が重要です。効果的に活用するには、次の点に注意してください。
+
+* 既知のサブカラムについては、不要な型推論を避けるため、[カラム定義内のヒント](/ja/reference/data-types/newjson)を使って**パスの型を指定**します。
+* 値が不要な場合は、[SKIP と SKIP REGEXP](/ja/reference/data-types/newjson)で**パスをスキップ**し、ストレージ使用量を削減してパフォーマンスを向上させます。
+* **[`max_dynamic_paths`](/ja/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) は高くしすぎないでください**。値を大きくするとリソース消費が増え、効率が低下します。目安として、10,000 未満に抑えてください。
+
+<Info>
+  **型ヒント**
+
+  型ヒントは、不要な型推論を避けるためだけのものではありません。ストレージや処理における間接性そのものを完全になくします。型ヒントが付いた JSON パスは、常に従来のカラムと同様に格納されるため、[**discriminator columns**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)や、クエリ時の動的な解決を必要としません。つまり、型ヒントを適切に定義しておけば、ネストされた JSON フィールドでも、最初からトップレベルのフィールドとして定義されていたかのように、同等のパフォーマンスと効率を得られます。そのため、大部分は一貫している一方で JSON の柔軟性も活かしたいデータセットでは、スキーマや取り込みパイプラインを作り直すことなくパフォーマンスを維持するうえで、型ヒントは便利な手段になります。
+</Info>
+
+<div id="advanced-features">
+  ## 高度な機能
+</div>
+
+* JSONカラムは、他のカラムと同様に**主キーに使用できます**。サブカラム に codecs は指定できません。
+* [`JSONAllPathsWithTypes()` and `JSONDynamicPaths()`](/ja/reference/data-types/newjson#introspection-functions) のような関数によるイントロスペクションをサポートしています。
+* `.^` 構文を使って、ネストされた sub-objects を読み取れます。
+* クエリ構文は標準SQLと異なる場合があり、ネストされたフィールドには特別なキャストや演算子が必要になることがあります。
+
+詳細については、[ ClickHouse JSON ドキュメント](/ja/reference/data-types/newjson) またはブログ記事[ ClickHouse 向けの強力な新しい JSON データ型](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)を参照してください。
+
+<div id="examples">
+  ## 例
+</div>
+
+以下の JSON サンプルは、[Python PyPI dataset](https://clickpy.clickhouse.com/) の1行を表したものです。
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+このスキーマは固定的で、型を明確に定義できると仮定します。データがNDJSONフォーマット (各行が1つのJSONオブジェクト) であっても、そのようなスキーマにJSON型を使う必要はありません。スキーマは従来の型で定義すれば十分です。
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+JSON形式の行を挿入します:
+
+```sql
+INSERT INTO pypi FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"ES","project":"clickhouse-connect","type":"bdist_wheel","installer":"pip","python_minor":"3.9","system":"Linux","version":"0.3.0"}
+```
+
+250万本の学術論文を含む [arXiv データセット](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download) を考えてみましょう。このデータセットは NDJSON 形式で配布されており、各行が公開された学術論文 1 本を表しています。以下に行の例を示します。
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+ここで扱う JSON はネストした構造を含む複雑なものですが、構造は予測可能です。フィールドの数や型が変わることはありません。この例では JSON 型を使うこともできますが、[Tuples](/ja/reference/data-types/tuple) 型と [Nested](/ja/reference/data-types/nested-data-structures/index) 型を使って構造を明示的に定義することもできます。
+
+```sql
+CREATE TABLE arxiv
+(
+  `id` String,
+  `submitter` String,
+  `authors` String,
+  `title` String,
+  `comments` String,
+  `journal-ref` String,
+  `doi` String,
+  `report-no` String,
+  `categories` String,
+  `license` String,
+  `abstract` String,
+  `versions` Array(Tuple(created String, version String)),
+  `update_date` Date,
+  `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+ここでも、データを JSON として insert できます:
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}
+```
+
+`tags` という別のカラムが追加されたとします。これが単なる文字列のリストであれば、`Array(String)` で表現できますが、ここでは型が混在した任意のタグ構造を追加できると仮定します (`score` が文字列または整数になっていることに注目してください) 。修正後の JSON ドキュメントは次のとおりです。
+
+```sql
+{
+ "id": "2101.11408",
+ "submitter": "Daniel Lemire",
+ "authors": "Daniel Lemire",
+ "title": "Number Parsing at a Gigabyte per Second",
+ "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+ "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+ "doi": "10.1002/spe.2984",
+ "report-no": null,
+ "categories": "cs.DS cs.MS",
+ "license": "http://creativecommons.org/licenses/by/4.0/",
+ "abstract": "With disks and networks providing gigabytes per second ....\n",
+ "versions": [
+ {
+   "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+   "version": "v1"
+ },
+ {
+   "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+   "version": "v2"
+ }
+ ],
+ "update_date": "2022-11-07",
+ "authors_parsed": [
+ [
+   "Lemire",
+   "Daniel",
+   ""
+ ]
+ ],
+ "tags": {
+   "tag_1": {
+     "name": "ClickHouse user",
+     "score": "A+",
+     "comment": "A good read, applicable to ClickHouse"
+   },
+   "28_03_2025": {
+     "name": "professor X",
+     "score": 10,
+     "comment": "Didn't learn much",
+     "updates": [
+       {
+         "name": "professor X",
+         "comment": "Wolverine found more interesting"
+       }
+     ]
+   }
+ }
+}
+```
+
+この場合、arXiv のドキュメントは、すべてを JSON として扱うことも、JSON の `tags` カラムを追加するだけにすることもできます。以下に両方の例を示します。
+
+```sql
+CREATE TABLE arxiv
+(
+  `doc` JSON(update_date Date)
+)
+ENGINE = MergeTree
+ORDER BY doc.update_date
+```
+
+<Note>
+  `update_date` カラムは順序付け/主キーで使用するため、JSON 定義でその型ヒントを指定しています。これにより、ClickHouse はこのカラムが null にならないことを認識でき、さらにどの `update_date` サブカラムを使うべきかも判断できます (型ごとに複数存在する可能性があるため、そうしないと曖昧になります) 。
+</Note>
+
+このテーブルに insert し、その後に推論されたスキーマを、[`JSONAllPathsWithTypes`](/ja/reference/functions/regular-functions/json-functions#JSONAllPathsWithTypes) 関数と [`PrettyJSONEachRow`](/ja/reference/formats/JSON/PrettyJSONEachRow) 出力フォーマットを使って確認できます。
+
+```sql
+INSERT INTO arxiv FORMAT JSONAsObject 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+```sql
+SELECT JSONAllPathsWithTypes(doc)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(doc)": {
+    "abstract": "String",
+    "authors": "String",
+    "authors_parsed": "Array(Array(Nullable(String)))",
+    "categories": "String",
+    "comments": "String",
+    "doi": "String",
+    "id": "String",
+    "journal-ref": "String",
+    "license": "String",
+    "submitter": "String",
+    "tags.28_03_2025.comment": "String",
+    "tags.28_03_2025.name": "String",
+    "tags.28_03_2025.score": "Int64",
+    "tags.28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tags.tag_1.comment": "String",
+    "tags.tag_1.name": "String",
+    "tags.tag_1.score": "String",
+    "title": "String",
+    "update_date": "Date",
+    "versions": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))"
+  }
+}
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+別の方法として、先ほどのスキーマと JSON の `tags` カラムを使ってこれを表現することもできます。一般的にはこちらのほうが好ましく、ClickHouse 側で必要となる推論を最小限に抑えられます。
+
+```sql
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String)),
+    `tags` JSON()
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+これで、`tags` サブカラムの型を推論できるようになりました。
+
+```sql
+SELECT JSONAllPathsWithTypes(tags)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(tags)": {
+    "28_03_2025.comment": "String",
+    "28_03_2025.name": "String",
+    "28_03_2025.score": "Int64",
+    "28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tag_1.comment": "String",
+    "tag_1.name": "String",
+    "tag_1.score": "String"
+  }
+}
+```
+
+```response
+1 row in set. Elapsed: 0.002 sec.
+```

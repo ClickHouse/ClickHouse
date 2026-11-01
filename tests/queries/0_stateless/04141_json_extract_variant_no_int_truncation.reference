@@ -1,0 +1,44 @@
+mixed_variant_fractional_double
+3.14	Float64	3.14	\N
+declaration_order_does_not_matter
+3.14	Float64	3.14	Float64
+negative_fractional
+-2.5	Float64	-2.5
+small_fractional
+0.0001	Float64	0.0001
+integer_literal_picks_int
+3	Int64	3
+overflow_picks_float
+1e100	Float64
+string_with_fractional_no_int_truncation
+3.14	Float64	\N	\N
+string_with_fractional_picks_float
+3.14	Float64	3.14
+decimal_picks_fractional
+1.5	Decimal(10, 4)	1.5
+only_int_variants_fall_back_to_truncation
+3	Int32	\N	3
+direct_int_extract_unchanged
+3
+3
+direct_float_extract_unchanged
+3.14
+big_int_variants_fractional
+7.5	Float64	7.5
+bool_picks_bool
+true	Bool
+closes_103617
+Row 1:
+──────
+v:        3.14
+active:   Float64
+f64_slot: 3.14
+i64_slot: ᴺᵁᴸᴸ
+string_int_no_float_picks_string
+3.14	String	3.14	\N
+string_smaller_int_no_float_picks_string
+3.14	String	3.14	\N
+string_int_no_float_integer_literal_picks_int
+3	Int64	3
+string_with_multiple_ints_picks_string
+3.14	String

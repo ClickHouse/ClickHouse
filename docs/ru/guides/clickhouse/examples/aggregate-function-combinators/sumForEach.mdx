@@ -1,0 +1,60 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'Пример использования агрегатной функции sumForEach'
+keywords: ['sum', 'ForEach', 'комбинатор', 'примеры', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`ForEach`](/ru/reference/functions/aggregate-functions/combinators#-foreach)
+можно применить к агрегатной функции [`sum`](/ru/reference/functions/aggregate-functions/sum), чтобы превратить её из агрегатной
+функции, работающей со значениями строк, в агрегатную функцию, работающую со
+столбцами типа Array и выполняющую агрегацию для каждого элемента массива по всем строкам.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+В этом примере мы будем использовать набор данных `hits`, доступный в нашей [Песочнице ClickHouse](https://sql.clickhouse.com/).
+
+Таблица `hits` содержит столбец `isMobile` типа UInt8, который может принимать значение
+`0` для настольных устройств или `1` для мобильных:
+
+<RunnableCode>
+  ```sql
+  SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+  ```
+</RunnableCode>
+
+Мы будем использовать агрегатную функцию-комбинатор `sumForEach`, чтобы проанализировать, как
+трафик с настольных и мобильных устройств меняется в зависимости от часа суток. Нажмите кнопку
+play ниже, чтобы интерактивно выполнить запрос:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toHour(EventTime) AS hour_of_day,
+      -- Используем sumForEach, чтобы за один проход подсчитать визиты с настольных и мобильных устройств
+      sumForEach([
+          IsMobile = 0, -- Визиты с настольных устройств (IsMobile = 0)
+          IsMobile = 1  -- Визиты с мобильных устройств (IsMobile = 1)
+      ]) AS device_counts
+  FROM metrica.hits
+  GROUP BY hour_of_day
+  ORDER BY hour_of_day;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`sum`](/ru/reference/functions/aggregate-functions/sum)
+* [комбинатор `ForEach`](/ru/reference/functions/aggregate-functions/combinators#-foreach)

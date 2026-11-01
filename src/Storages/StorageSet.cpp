@@ -1,26 +1,30 @@
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-#include <Storages/SetSettings.h>
-#include <Storages/StorageSet.h>
-#include <Storages/StorageFactory.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeWriter.h>
-#include <Formats/NativeReader.h>
-#include <QueryPipeline/ProfileInfo.h>
-#include <Disks/IDisk.h>
-#include <Common/CurrentThread.h>
-#include <Common/formatReadable.h>
-#include <Common/StringUtils.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/Set.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
 #include <optional>
+#include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <Disks/IDisk.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/ProfileInfo.h>
+#include <Storages/SetSettings.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageSet.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/StringUtils.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -36,11 +40,12 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class SetOrJoinSink : public SinkToStorage, WithContext
+class SetOrJoinSink final : public SinkToStorage, WithContext
 {
 public:
     SetOrJoinSink(
@@ -122,6 +127,7 @@ void SetOrJoinSink::consume(Chunk & chunk)
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
+    setCurrentQueryMemoryDriftExpected();
     if (backup_buf)
     {
         backup_stream->flush();
@@ -184,7 +190,8 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
-    Block header = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    Block header = metadata_snapshot->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
@@ -195,6 +202,24 @@ SetPtr StorageSet::getSet() const
 {
     std::lock_guard lock(mutex);
     return set;
+}
+
+
+void StorageSet::checkNoRowPolicy(const ContextPtr & context) const
+{
+    auto storage_id = getStorageID();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    context->checkAccess(AccessType::SELECT, storage_id, metadata_snapshot->getColumns().getNamesOfPhysical());
+
+    auto row_policy_filter
+        = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Cannot use table {} on the right side of IN because a row policy applies to it. "
+            "The Set engine has no read path that could filter the rows",
+            storage_id.getNameForLogs());
 }
 
 
@@ -265,6 +290,8 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
     }
@@ -345,6 +372,7 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 }
 
 
+void registerStorageSet(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory)
 {
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
@@ -361,7 +389,41 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
+    }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
+    Documentation{
+        .description = R"DOCS_MD(
+<Note>
+In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
+</Note>
+
+A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section "IN operators").
+
+You can use `INSERT` to insert data in the table. New elements will be added to the data set, while duplicates will be ignored.
+But you can't perform `SELECT` from the table. The only way to retrieve data is by using it in the right half of the `IN` operator.
+
+Data is always located in RAM. For `INSERT`, the blocks of inserted data are also written to the directory of tables on the disk. When starting the server, this data is loaded to RAM. In other words, after restarting, the data remains in place.
+
+For a rough server restart, the block of data on the disk might be lost or damaged. In the latter case, you may need to manually delete the file with damaged data.
+
+### Limitations and settings {#join-limitations-and-settings}
+
+When creating a table, the following settings are applied:
+
+#### Persistent {#persistent}
+
+Disables persistency for the Set and [Join](/reference/engines/table-engines/special/join) table engines.
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.
+)DOCS_MD",
+        .syntax = "ENGINE = Set",
+        .related = {"Join"}});
 }
 
 

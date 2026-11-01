@@ -1,0 +1,153 @@
+---
+slug: /community-wisdom/performance-optimization
+sidebarTitle: '性能优化'
+doc_type: 'guide'
+keywords: [
+  '性能优化',
+  '查询性能',
+  '数据库调优',
+  '慢查询',
+  '内存优化',
+  '基数分析',
+  '索引策略',
+  '聚合优化',
+  '采样技术',
+  '数据库性能',
+  '查询分析',
+  '性能故障排查'
+]
+title: '经验总结 - 性能优化'
+description: '性能优化策略的真实案例'
+---
+
+*本指南属于社区交流会经验总结系列的一部分。若想了解更多真实场景中的解决方案和洞察，可[按具体问题浏览](/zh/resources/support-center/tips-and-tricks/community-wisdom)。*
+*如果你在使用 Materialized Views 时遇到问题，欢迎查看 [Materialized Views](/zh/resources/support-center/tips-and-tricks/materialized-views) 社区经验指南。*
+*如果你正遇到慢查询问题，并希望查看更多示例，我们还提供了[查询优化](/zh/guides/clickhouse/performance-and-monitoring/query-optimization)指南。*
+
+<div id="cardinality-ordering">
+  ## 按基数从低到高排序
+</div>
+
+当低基数列排在前面时，ClickHouse 的主索引效果最佳，这样就能高效地跳过大块数据。而键中靠后的高基数列，则可在这些数据块内提供更细粒度的排序。应从唯一值较少的列开始 (如 status、category、country) ，以唯一值较多的列结束 (如 user&#95;id、timestamp、session&#95;id) 。
+
+有关基数和主索引的更多信息，请参阅：
+
+* [选择主键](/zh/concepts/best-practices/choosing-a-primary-key)
+* [主索引](/zh/concepts/core-concepts/primary-indexes)
+
+<div id="time-granularity">
+  ## 时间粒度至关重要
+</div>
+
+在 `ORDER BY` 子句中使用时间戳时，需要权衡基数与精度。微秒级精度的时间戳会带来非常高的基数 (几乎每一行对应一个唯一值) ，从而降低 ClickHouse 稀疏主索引的效果。经过舍入的时间戳基数较低，更有利于索引跳过，但会损失基于时间的查询精度。
+
+```sql runnable editable
+-- 挑战：尝试使用不同的时间函数，例如 toStartOfMinute 或 toStartOfWeek
+-- 实验：用您自己的时间戳数据对比基数差异
+SELECT 
+    'Microsecond precision' as granularity,
+    uniq(created_at) as unique_values,
+    'Creates massive cardinality - bad for sort key' as impact
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL
+SELECT 
+    'Hour precision',
+    uniq(toStartOfHour(created_at)),
+    'Much better for sort key - enables skip indexing'
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL  
+SELECT 
+    'Day precision',
+    uniq(toStartOfDay(created_at)),
+    'Best for reporting queries'
+FROM github.github_events
+WHERE created_at >= '2024-01-01';
+```
+
+<div id="focus-on-individual-queries-not-averages">
+  ## 关注单个查询，而不是平均值
+</div>
+
+在调试 ClickHouse 性能时，不要依赖平均查询时间或整体系统指标。相反，要找出具体某条查询为什么会变慢。系统的平均性能可能很好，但单个查询仍可能因为内存耗尽、过滤效果不佳或高基数操作而表现不佳。
+
+正如 ClickHouse CTO Alexey 所说：*&quot;正确的做法，是问问自己为什么这个特定查询花了五秒钟才处理完……我不在乎中位数，也不在乎其他查询处理得有多快。我只关心我的查询&quot;*
+
+当某条查询变慢时，不要只看平均值。要问：“为什么偏偏这条查询这么慢？”并检查实际的资源使用模式。
+
+<div id="memory-and-row-scanning">
+  ## 内存与行扫描
+</div>
+
+Sentry 是一个以开发者为中心的错误跟踪平台，每天处理来自 400 多万名开发者的数十亿条事件。他们的关键洞察是：*&quot;在这种特定情况下，真正决定内存占用的是分组键的基数&quot;*——拖垮性能的并不是行扫描，而是高基数聚合导致的内存耗尽。
+
+当查询失败时，要先判断是内存问题 (分组过多) ，还是扫描问题 (行过多) 。
+
+像 `GROUP BY user_id, error_message, url_path` 这样的查询，会为这三个值的每一种唯一组合创建一个独立的内存状态。随着用户数、错误类型和 URL 路径增多，你很容易生成数百万个聚合状态，而这些状态都必须同时保存在内存中。
+
+对于极端情况，Sentry 会使用确定性采样。10% 的样本可将内存使用量降低 90%，同时对大多数聚合操作仍能保持约 5% 的精度：
+
+```sql
+WHERE cityHash64(user_id) % 10 = 0  -- 始终抽取相同的 10% 用户
+```
+
+这可确保每次查询中都会出现相同的用户，从而在不同时间段内获得一致的结果。关键在于：`cityHash64()` 对相同输入始终会生成相同的哈希值，因此 `user_id = 12345` 总会被哈希为同一个值，保证该用户要么始终出现在你的 10% 样本中，要么始终不会出现——不会在不同查询之间来回“跳变”。
+
+<div id="bit-mask-optimization">
+  ## Sentry 的位掩码优化
+</div>
+
+当按高基数列 (如 URL) 进行聚合时，每个唯一值都会在内存中创建单独的聚合状态，从而导致内存耗尽。Sentry 的解决方案是：不按实际的 URL 字符串分组，而是按可压缩为位掩码的布尔表达式分组。
+
+如果你也遇到这种情况，可以在自己的表上试试下面这条查询：
+
+```sql
+-- 内存高效聚合模式：每个条件 = 每组一个整数
+-- 核心思路：无论数据量多大，sumIf() 的内存占用始终有界
+-- 每组内存占用：N 个整数（N * 8 字节），其中 N = 条件数量
+
+SELECT 
+    your_grouping_column,
+    
+    -- 每个 sumIf 在每组中仅创建一个整数计数器
+    -- 无论每个条件匹配多少行，内存占用始终保持不变
+    sumIf(1, your_condition_1) as condition_1_count,
+    sumIf(1, your_condition_2) as condition_2_count,
+    sumIf(1, your_text_column LIKE '%pattern%') as pattern_matches,
+    sumIf(1, your_numeric_column > threshold_value) as above_threshold,
+    
+    -- 复杂的多条件聚合同样只占用固定大小的内存
+    sumIf(1, your_condition_1 AND your_text_column LIKE '%pattern%') as complex_condition_count,
+    
+    -- 常规聚合（供参考）
+    count() as total_rows,
+    avg(your_numeric_column) as average_value,
+    max(your_timestamp_column) as latest_timestamp
+    
+FROM your_schema.your_table
+WHERE your_timestamp_column >= 'start_date' 
+  AND your_timestamp_column < 'end_date'
+GROUP BY your_grouping_column
+HAVING condition_1_count > minimum_threshold 
+   OR condition_2_count > another_threshold
+ORDER BY (condition_1_count + condition_2_count + pattern_matches) DESC
+LIMIT 20
+```
+
+你无需在内存中存储每个唯一的字符串，而是将关于这些字符串的查询结果以整数形式存储。这样一来，无论数据有多么多样，聚合状态都会受到限制且非常小。
+
+Sentry 工程团队表示：&quot;这些高负载查询的速度提升了 10 倍以上，而我们的 memory usage 降低了 100 倍 (更重要的是，它是有界的) 。我们最大的客户在搜索回放时不再遇到 error，如今我们也能够支持任意规模的客户，而不会耗尽内存。&quot;
+
+<div id="video-sources">
+  ## 视频资源
+</div>
+
+* [迷失在 haystack 中：优化高基数聚合](https://www.youtube.com/watch?v=paK84-EUJCA) - Sentry 在 production 环境中的内存优化经验
+* [ClickHouse 性能分析](https://www.youtube.com/watch?v=lxKbvmcLngo) - Alexey Milovidov 谈调试方法论
+* [ClickHouse Meetup：查询优化技巧](https://www.youtube.com/watch?v=JBomQk4Icjo) - 社区优化策略
+
+**延伸阅读**：
+
+* [查询优化指南](/zh/guides/clickhouse/performance-and-monitoring/query-optimization)
+* [materialized views 社区见解](/zh/resources/support-center/tips-and-tricks/materialized-views)

@@ -1,0 +1,47 @@
+---
+title: Добавление подробностей о Superset
+---
+
+<Accordion title="Запуск Apache Superset в Docker">
+  В Superset есть инструкции по [локальной установке Superset с помощью Docker Compose](https://superset.apache.org/docs/installation/installing-superset-using-docker-compose/). После клонирования репозитория Apache Superset с GitHub вы можете запустить последнюю версию кода из ветки разработки или конкретный тег. Мы рекомендуем релиз 2.0.0, так как это последний релиз без пометки `pre-release`.
+
+  Перед запуском `docker compose` нужно сделать несколько вещей:
+
+  1. Добавить официальный драйвер ClickHouse Connect
+  2. Получить API-ключ Mapbox и добавить его как переменную окружения (необязательно)
+  3. Указать версию Superset для запуска
+
+  <Tip>
+    Приведенные ниже команды нужно выполнять из корневого каталога GitHub-репозитория `superset`.
+  </Tip>
+
+  ## Официальный драйвер ClickHouse Connect
+
+  Чтобы драйвер ClickHouse Connect был доступен в Superset, добавьте его в локальный файл зависимостей:
+
+  ```bash
+  echo "clickhouse-connect" >> ./docker/requirements-local.txt
+  ```
+
+  ## Mapbox
+
+  Это необязательно: в Superset можно строить данные о местоположении и без API-ключа Mapbox, но вы увидите сообщение о том, что нужно добавить ключ, а фоновое изображение карты будет отсутствовать (вы увидите только точки данных, но не саму карту). У Mapbox есть бесплатный уровень, если вы захотите его использовать.
+
+  Некоторые примеры визуализаций, которые предлагается создать в руководствах, используют данные о местоположении, например широту и долготу. Superset поддерживает карты Mapbox. Чтобы использовать визуализации Mapbox, нужен API-ключ Mapbox. Зарегистрируйтесь на [бесплатном уровне Mapbox](https://account.mapbox.com/auth/signup/) и сгенерируйте API-ключ.
+
+  Сделайте API-ключ доступным для Superset:
+
+  ```bash
+  echo "MAPBOX_API_KEY=pk.SAMPLE-Use-your-key-instead" >> docker/.env-non-dev
+  ```
+
+  ## Развертывание Superset версии 2.0.0
+
+  Чтобы развернуть релиз 2.0.0, выполните:
+
+  ```bash
+  git checkout 2.0.0
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml pull
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml up
+  ```
+</Accordion>

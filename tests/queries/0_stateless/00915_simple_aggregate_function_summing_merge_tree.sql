@@ -41,7 +41,7 @@ insert into simple values(1,null,null,'2','2.2.2.2', 2, ([1,3], [1,1]), ([1,3], 
 insert into simple values(10,'10',null,'10','10.10.10.10', 4, ([2,3], [1,1]), ([2,3], [3,3]), ([2,3], [3,3]), [], [], {});
 insert into simple values(10,'2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222','10','20','20.20.20.20', 1, ([2, 4], [1,1]), ([2, 4], [4,4]), ([2, 4], [4,4]), [], [], {});
 
-select * from simple final order by id;
+select id, nullable_str, nullable_str_respect_nulls, low_str, ip, status, tup, tup_min, tup_max, arr, arraySort(uniq_arr), mapApply((k, v) -> (k, arraySort(v)), map_uniq_arr) from simple final order by id;
 select toTypeName(nullable_str),toTypeName(nullable_str_respect_nulls),toTypeName(low_str),toTypeName(ip),toTypeName(status), toTypeName(tup), toTypeName(tup_min), toTypeName(tup_max), toTypeName(arr), toTypeName(uniq_arr), toTypeName(map_uniq_arr) from simple limit 1;
 
 optimize table simple final;

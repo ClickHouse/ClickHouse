@@ -9,7 +9,11 @@ CREATE TABLE tab
     INDEX idx_s (s) TYPE text(tokenizer=ngrams(3))
 )
 ENGINE MergeTree
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS
+    text_index_dictionary_block_size = 512,
+    text_index_posting_list_block_size = 10000000,
+    text_index_dictionary_block_frontcoding_compression = 1;
 
 INSERT INTO tab (s) SELECT number FROM numbers(10000);
 

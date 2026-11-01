@@ -1,0 +1,267 @@
+---
+sidebarTitle: '무작위 테스트 데이터 생성'
+title: 'ClickHouse에서 무작위 테스트 데이터 생성'
+slug: /guides/generating-test-data
+description: 'ClickHouse에서 무작위 테스트 데이터를 생성하는 방법을 알아봅니다'
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['무작위 데이터', '테스트 데이터']
+---
+
+새로운 사용 사례를 테스트하거나 구현 성능을 벤치마크할 때 무작위 데이터 생성은 유용합니다.
+ClickHouse에는 [무작위 데이터를 생성하는 다양한 함수](/ko/reference/functions/regular-functions/random-functions)가 있어, 많은 경우 외부 데이터 생성기가 필요하지 않습니다.
+
+이 가이드에서는 무작위성 요구 사항에 따라 ClickHouse에서 다양한 데이터셋을 생성하는 여러 예시를 제공합니다.
+
+<div id="simple-uniform-dataset">
+  ## 간단한 균등 분포 데이터셋
+</div>
+
+**사용 사례**: 무작위 타임스탬프와 이벤트 유형이 포함된 사용자 이벤트 데이터셋을 빠르게 생성합니다.
+
+```sql
+CREATE TABLE user_events (
+  event_id UUID,
+  user_id UInt32,
+  event_type LowCardinality(String),
+  event_time DateTime
+) ENGINE = MergeTree
+ORDER BY event_time;
+
+INSERT INTO user_events
+SELECT
+  generateUUIDv4() AS event_id,
+  rand() % 10000 AS user_id,
+  arrayElement(['click','view','purchase'], toUInt32(rand()) % 3 + 1) AS event_type,
+  now() - INTERVAL rand() % 3600*24 SECOND AS event_time
+FROM numbers(1000000);
+```
+
+* `rand() % 10000`: 1만 명 사용자에 대한 균등 분포
+* `arrayElement(...)`: 3가지 이벤트 유형 중 하나를 무작위로 선택합니다
+* 타임스탬프는 직전 24시간에 걸쳐 분포합니다
+
+***
+
+<div id="exponential-distribution">
+  ## 지수 분포
+</div>
+
+**사용 사례**: 대부분은 낮고 일부만 높은 구매 금액을 시뮬레이션합니다.
+
+```sql
+CREATE TABLE purchases (
+  dt DateTime,
+  customer_id UInt32,
+  total_spent Float32
+) ENGINE = MergeTree
+ORDER BY dt;
+
+INSERT INTO purchases
+SELECT
+  now() - INTERVAL randUniform(1,1_000_000) SECOND AS dt,
+  number AS customer_id,
+  15 + round(randExponential(1/10), 2) AS total_spent
+FROM numbers(500000);
+```
+
+* 최근 기간 전반에 걸쳐 균등한 타임스탬프
+* `randExponential(1/10)` — 대부분의 값은 0에 가깝고, 최소값으로 15를 더해 보정합니다([ClickHouse][1], [ClickHouse][2], [Atlantic.Net][3], [GitHub][4])
+
+***
+
+<div id="poisson-distribution">
+  ## 시간대별 이벤트 분포 (Poisson)
+</div>
+
+**사용 사례**: 특정 시간대(예: 피크 시간대)에 이벤트가 몰려 도착하는 상황을 시뮬레이션합니다.
+
+```sql
+CREATE TABLE events (
+  dt DateTime,
+  event_type String
+) ENGINE = MergeTree
+ORDER BY dt;
+
+INSERT INTO events
+SELECT
+  toDateTime('2022-12-12 12:00:00')
+    - ((12 + randPoisson(12)) * 3600) AS dt,
+  'click' AS event_type
+FROM numbers(200000);
+```
+
+* 이벤트는 정오 무렵에 가장 많이 발생하며, 편차는 포아송 분포를 따릅니다
+
+***
+
+<div id="time-varying-normal-distribution">
+  ## 시간에 따라 변화하는 정규 분포
+</div>
+
+**사용 사례**: 시간에 따라 변화하는 시스템 메트릭(예: CPU 사용률)을 시뮬레이션합니다.
+
+```sql
+CREATE TABLE IF NOT EXISTS cpu_metrics (
+    host String,
+    ts   DateTime,
+    usage Float32
+) ENGINE = MergeTree
+ORDER BY (host, ts);
+
+INSERT INTO cpu_metrics
+SELECT
+    arrayJoin(['host1','host2','host3']) AS host,
+    now() - INTERVAL number SECOND AS ts,
+    greatest(0.0, least(100.0,
+        (50 + 30 * sin(toUInt32(number) % 86400 / 86400.0 * 2 * pi()))
+        + randNormal(0, 10)
+    )) AS usage
+FROM numbers(10000);
+```
+
+* `usage`는 일주기성 사인파 + 무작위성을 따릅니다
+* 값은 [0,100] 범위로 제한됩니다
+
+***
+
+<div id="categorical-and-nested-data">
+  ## 범주형 및 중첩 데이터
+</div>
+
+**사용 사례**: 여러 값을 가질 수 있는 관심사를 포함한 사용자 프로필을 생성합니다.
+
+```sql
+CREATE TABLE user_profiles (
+  user_id UInt32,
+  interests Array(String),
+  scores Array(UInt8)
+) ENGINE = MergeTree
+ORDER BY user_id;
+
+INSERT INTO user_profiles
+SELECT
+  number AS user_id,
+  arrayShuffle(['sports','music','tech'])[1 + rand() % 3 : 1 + rand() % 3] AS interests,
+  [rand() % 100, rand() % 100, rand() % 100] AS scores
+FROM numbers(20000);
+```
+
+* 배열 길이는 1–3 사이에서 무작위로 지정
+* 각 관심사마다 사용자별 점수 3개
+
+<Tip>
+  더 많은 예시는 [Generating Random Data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse) 블로그에서 확인하십시오.
+</Tip>
+
+<div id="generating-random-tables">
+  ## 무작위 테이블 생성
+</div>
+
+[`generateRandomStructure`](/ko/reference/functions/regular-functions/other-functions#generateRandomStructure) 함수는 테스트, 벤치마크, 또는 임의의 스키마(schema)를 가진 모의 데이터를 생성할 때 [`generateRandom`](/ko/reference/functions/table-functions/generate) 테이블 엔진과 함께 사용하면 특히 유용합니다.
+
+먼저 `generateRandomStructure` 함수를 사용해 무작위 구조가 어떤 모습인지 살펴보겠습니다:
+
+```sql
+SELECT generateRandomStructure(5);
+```
+
+다음과 같이 표시될 수 있습니다:
+
+```response
+c1 UInt32, c2 Array(String), c3 DateTime, c4 Nullable(Float64), c5 Map(String, Int16)
+```
+
+시드를 사용하면 매번 같은 구조를 생성할 수도 있습니다:
+
+```sql
+SELECT generateRandomStructure(3, 42);
+```
+
+```response
+c1 String, c2 Array(Nullable(Int32)), c3 Tuple(UInt8, Date)
+```
+
+이제 실제 테이블을 만들고 무작위 데이터를 채워 넣어 보겠습니다:
+
+```sql
+CREATE TABLE my_test_table
+ENGINE = MergeTree
+ORDER BY tuple()
+AS SELECT * 
+FROM generateRandom(
+    'col1 UInt32, col2 String, col3 Float64, col4 DateTime',
+    1,  -- 데이터 생성용 시드
+    10  -- 서로 다른 랜덤 값의 개수
+)
+LIMIT 100;  -- 100행
+
+-- 2단계: 새로 만든 테이블 조회
+SELECT * FROM my_test_table LIMIT 5;
+```
+
+```response
+┌───────col1─┬─col2──────┬─────────────────────col3─┬────────────────col4─┐
+│ 4107652264 │ &b!M-e;7  │  1.0013455832230728e-158 │ 2059-08-14 19:03:26 │
+│  652895061 │ Dj7peUH{T │   -1.032074207667996e112 │ 2079-10-06 04:18:16 │
+│ 2319105779 │ =D[       │    -2.066555415720528e88 │ 2015-04-26 11:44:13 │
+│ 1835960063 │ _@}a      │  -1.4998020545039013e110 │ 2063-03-03 20:36:55 │
+│  730412674 │ _}!       │ -1.3578492992094465e-275 │ 2098-08-23 18:23:37 │
+└────────────┴───────────┴──────────────────────────┴─────────────────────┘
+```
+
+이제 두 함수를 조합해 완전히 무작위인 테이블을 만들어 보겠습니다.
+먼저 어떤 구조를 얻게 되는지 살펴보겠습니다:
+
+```sql
+SELECT generateRandomStructure(7, 123) AS structure FORMAT vertical;
+```
+
+```response
+┌─structure──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ c1 Decimal64(7), c2 Enum16('c2V0' = -21744, 'c2V1' = 5380), c3 Int8, c4 UUID, c5 UUID, c6 FixedString(190), c7 Map(Enum16('c7V0' = -19581, 'c7V1' = -10024, 'c7V2' = 27615, 'c7V3' = -10177, 'c7V4' = -19644, 'c7V5' = 3554, 'c7V6' = 29073, 'c7V7' = 28800, 'c7V8' = -11512), Float64) │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+이제 해당 구조로 테이블을 생성하고, `DESCRIBE` 문을 사용해 생성된 결과를 확인하세요:
+
+```sql
+CREATE TABLE fully_random_table
+ENGINE = MergeTree
+ORDER BY tuple()
+AS SELECT * 
+FROM generateRandom(generateRandomStructure(7, 123), 1, 10)
+LIMIT 1000;
+
+DESCRIBE TABLE fully_random_table;
+```
+
+```response
+   ┌─name─┬─type─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+1. │ c1   │ Decimal(18, 7)                                                                                                                                                           │              │                    │         │                  │                │
+2. │ c2   │ Enum16('c2V0' = -21744, 'c2V1' = 5380)                                                                                                                                   │              │                    │         │                  │                │
+3. │ c3   │ Int8                                                                                                                                                                     │              │                    │         │                  │                │
+4. │ c4   │ UUID                                                                                                                                                                     │              │                    │         │                  │                │
+5. │ c5   │ UUID                                                                                                                                                                     │              │                    │         │                  │                │
+6. │ c6   │ FixedString(190)                                                                                                                                                         │              │                    │         │                  │                │
+7. │ c7   │ Map(Enum16('c7V4' = -19644, 'c7V0' = -19581, 'c7V8' = -11512, 'c7V3' = -10177, 'c7V1' = -10024, 'c7V5' = 3554, 'c7V2' = 27615, 'c7V7' = 28800, 'c7V6' = 29073), Float64) │              │                    │         │                  │                │
+   └──────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+생성된 데이터의 샘플을 확인하려면 첫 번째 행을 살펴보세요:
+
+```sql
+SELECT * FROM fully_random_table LIMIT 1 FORMAT vertical;
+```
+
+```response
+Row 1:
+──────
+c1: 80416293882.257732 -- 약 804억 2천만
+c2: c2V1
+c3: -84
+c4: 1a9429b3-fd8b-1d72-502f-c051aeb7018e
+c5: 7407421a-031f-eb3b-8571-44ff279ddd36
+c6: g̅b�&��rҵ���5C�\�|��H�>���l'V3��R�[��=3�G�LwVMR*s緾/2�J.���6#��(�h>�lە��L^�M�:�R�9%d�ž�zv��W����Y�S��_no��BP+��u��.0��UZ!x�@7:�nj%3�Λd�S�k>���w��|�&��~
+c7: {'c7V8':-1.160941256852442}
+```

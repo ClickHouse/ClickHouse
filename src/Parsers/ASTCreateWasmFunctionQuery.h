@@ -37,12 +37,19 @@ public:
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateWasmFunctionQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
     Definition validateAndGetDefinition() const;
     String getFunctionName() const;
+
+    /// Number of declared arguments, taken from the AST without validating it, so that a probe that
+    /// only needs the arity of a stored definition stays non-throwing.
+    size_t getNumberOfArguments() const { return arguments_ast ? arguments_ast->children.size() : 0; }
 
     void setName(ASTPtr ast) { function_name_ast = children.emplace_back(std::move(ast)); }
     void setArguments(ASTPtr ast) { arguments_ast = children.emplace_back(std::move(ast)); }

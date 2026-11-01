@@ -9,5 +9,6 @@
         <use_delayed_remote_source/>
         <cluster_discovery_faults/>
         <check_table_query_delay_for_part/>
+        <file_cache_slru_downgrade_fail_before_finalize/>
     </fail_points_active>
 </clickhouse>

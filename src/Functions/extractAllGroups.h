@@ -48,7 +48,7 @@ enum class ExtractAllGroupsResultKind : uint8_t
  * =>
  *   [['abc', 'def', 'ghi'], ['111', '222', '333']
 */
-class FunctionExtractAllGroups : public IFunction
+class FunctionExtractAllGroups final : public IFunction
 {
     const UInt64 regexp_max_matches_per_row;
     const char * function_name;
@@ -75,22 +75,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
-            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        /// Two-dimensional array of strings, each `row` of top array represents matching groups.
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
+        /// The regexp must be a constant: `executeImpl` reads it via
+        /// `typeid_cast<const ColumnConst &>(*column_needle).getValue<String>()`,
+        /// so a non-const second argument would only fail at execution.
+        return "(StringOrFixedString, const StringOrFixedString) -> Array(Array(String))";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        static const auto MAX_GROUPS_COUNT = 128;
-
         const ColumnPtr column_haystack = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
 
@@ -99,23 +93,12 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
-        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false>(needle);
+        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false, false>(needle);
+        const size_t groups_count = Regexps::getCapturingGroupsCount(holder, needle);
         const auto & regexp = holder.getRE2();
 
-        if (!regexp)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        const size_t groups_count = regexp->NumberOfCapturingGroups();
-
-        if (!groups_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        if (groups_count > MAX_GROUPS_COUNT - 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups in regexp: {}, max: {}",
-                            groups_count, std::to_string(MAX_GROUPS_COUNT - 1));
-
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<std::string_view, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);
+        Regexps::MatchedGroups matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr root_offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::ColumnOffsets::MutablePtr nested_offsets_col = ColumnArray::ColumnOffsets::create();
@@ -135,11 +118,14 @@ public:
                 std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data();
-                const auto * end = pos + current_row.size();
+                // Match over the whole row, advancing the start offset, so that the characters before the current
+                // position are seen as context for zero-width assertions such as `\b` and `^`.
+                const auto * begin = current_row.data();
+                const auto * pos = begin;
+                const auto * end = begin + current_row.size();
                 while (pos < end
-                    && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED,
+                    && regexp->Match({begin, current_row.size()},
+                        pos - begin, current_row.size(), RE2::UNANCHORED,
                         matched_groups.data(), static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
@@ -176,11 +162,14 @@ public:
                 const auto & current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data();
-                const auto * end = pos + current_row.size();
+                // Match over the whole row, advancing the start offset, so that the characters before the current
+                // position are seen as context for zero-width assertions such as `\b` and `^`.
+                const auto * begin = current_row.data();
+                const auto * pos = begin;
+                const auto * end = begin + current_row.size();
                 while (pos < end
-                    && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED, matched_groups.data(),
+                    && regexp->Match({begin, current_row.size()},
+                        pos - begin, current_row.size(), RE2::UNANCHORED, matched_groups.data(),
                         static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.

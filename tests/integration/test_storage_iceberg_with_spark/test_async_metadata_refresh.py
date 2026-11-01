@@ -39,7 +39,7 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
     # disabling async refresher to validate that the latest metadata will be pulled at SELECT
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark,
         additional_settings = [
-            f"iceberg_metadata_async_prefetch_period_ms=0"
+            "iceberg_metadata_async_prefetch_period_ms=0"
     ])
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
@@ -300,7 +300,7 @@ def test_insert_updates_metadata_cache(started_cluster_iceberg_with_spark, stora
     schema = "(a Int64)"
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, schema,
         additional_settings = [
-            f"iceberg_metadata_async_prefetch_period_ms=0"
+            "iceberg_metadata_async_prefetch_period_ms=0"
     ])
 
     instance.query(

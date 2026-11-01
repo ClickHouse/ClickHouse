@@ -1,0 +1,8 @@
+qualified partition key column in predicate
+1	1
+2	0
+affected partitions
+['1']
+EXISTS subquery in predicate
+1	11
+2	10

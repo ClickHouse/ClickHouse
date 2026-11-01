@@ -63,7 +63,7 @@ public:
         stream.next_out = next_out;
     }
 
-    bz_stream stream;
+    bz_stream stream{};
 };
 
 Bzip2ReadBuffer::Bzip2ReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char *existing_memory, size_t alignment)
@@ -80,7 +80,7 @@ bool Bzip2ReadBuffer::nextImpl()
     if (eof_flag)
         return false;
 
-    int ret;
+    int ret = 0;
     do
     {
         if (!bz->stream.avail_in)

@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
@@ -11,14 +12,8 @@ namespace DB
 {
 namespace
 {
-    class FunctionToBool : public IFunction
+    class FunctionToBool final : public IFunction
     {
-    private:
-        static String getReturnTypeName(const DataTypePtr & argument)
-        {
-            return argument->isNullable() ? "Nullable(Bool)" : "Bool";
-        }
-
     public:
         static constexpr auto name = "toBool";
 
@@ -37,18 +32,21 @@ namespace
         bool useDefaultImplementationForNulls() const override { return false; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            return DataTypeFactory::instance().get(getReturnTypeName(arguments[0]));
+            return
+                "(Nullable(Any)) -> Nullable(\"Bool\")"
+                " OR (Any) -> \"Bool\"";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
         {
+            const String target_name = result_type->getName();
             ColumnsWithTypeAndName cast_args
             {
                 arguments[0],
                 {
-                    DataTypeString().createColumnConst(arguments[0].column->size(), getReturnTypeName(arguments[0].type)),
+                    DataTypeString().createColumnConst(arguments[0].column->size(), target_name),
                     std::make_shared<DataTypeString>(),
                     ""
                 }
@@ -84,6 +82,8 @@ SELECT
 FORMAT Vertical
         )",
         R"(
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true

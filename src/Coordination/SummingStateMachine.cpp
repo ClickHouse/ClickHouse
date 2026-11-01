@@ -9,7 +9,7 @@ static constexpr int MAX_SNAPSHOTS = 3;
 static int64_t deserializeValue(nuraft::buffer & buffer)
 {
     nuraft::buffer_serializer bs(buffer);
-    int64_t result;
+    int64_t result = 0;
     memcpy(&result, bs.get_raw(buffer.size()), sizeof(result));
     return result;
 }
@@ -101,7 +101,7 @@ void SummingStateMachine::save_logical_snp_obj(
 
         std::lock_guard ll(snapshots_lock);
         auto entry = snapshots.find(s.get_last_log_idx());
-        assert(entry != snapshots.end());
+        chassert(entry != snapshots.end());
         entry->second->value = local_value;
     }
     // Request next object.

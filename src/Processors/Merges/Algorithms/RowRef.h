@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
 #include <Processors/Chunk.h>
 
@@ -29,6 +31,10 @@ struct SharedChunk : Chunk
 
     /// Used in ReplacingSortedAlgorithm when using skipping final
     MutableColumnPtr replace_final_selection;
+
+    /// The chunk's row filter, resolved from its infos when the chunk is taken from the
+    /// allocator, or nullptr when it carries none. Owned by the chunk's infos.
+    const IColumnFilter * row_filter_mask = nullptr;
 
     using Chunk::Chunk;
     using Chunk::operator=;
@@ -69,8 +75,8 @@ public:
     ~SharedChunkAllocator();
 
 private:
-    std::vector<SharedChunk> chunks;
-    std::vector<size_t> free_chunks;
+    VectorWithMemoryTracking<SharedChunk> chunks;
+    VectorWithMemoryTracking<size_t> free_chunks;
 
     void release(SharedChunk * ptr) noexcept;
 

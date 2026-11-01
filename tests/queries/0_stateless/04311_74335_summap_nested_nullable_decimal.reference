@@ -1,0 +1,14 @@
+in-memory aggregate (always worked)
+([1,2,3,4,5,6,7,8],[1,2,6,8,10,12,7,8])
+serialised state (used to throw BAD_GET)
+1
+state round-trip via sumMapState + sumMapMerge
+([1,2,3,4,5,6,7,8],[1,2,6,8,10,12,7,8])
+parallel replicas (the original reproducer)
+([1,2,3,4,5,6,7,8],[1,2,6,8,10,12,7,8])
+Nullable(Decimal64) serialised state
+1
+Nullable(Decimal64) state round-trip
+([1,2,3,4,5],[1,2,6,4,5])
+NULL values mixed with non-NULL (state round-trip)
+([2],[5])

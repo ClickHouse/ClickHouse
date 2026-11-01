@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 
 /// arrayTranspose([[1, 2, 3], [4, 5, 6]]) = [[1, 4], [2, 5], [3, 6]]
-class FunctionArrayTranspose : public IFunction
+class FunctionArrayTranspose final : public IFunction
 {
 public:
     static constexpr auto name = "arrayTranspose";
@@ -35,6 +35,11 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    String getSignatureString() const override
+    {
+        return "(A : Array(Array)) -> A";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -489,9 +494,9 @@ All inner arrays must have the same length.
         {"Array(Array(T))"}
     };
     FunctionDocumentation::Examples examples = {
-        {"Square matrix", "SELECT arrayTranspose([[1, 2], [3, 4]])", "[[1, 3], [2, 4]]"},
-        {"Non-square matrix", "SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])", "[[1, 4], [2, 5], [3, 6]]"},
-        {"String elements", "SELECT arrayTranspose([['a', 'b'], ['c', 'd']])", "[['a', 'c'], ['b', 'd']]"},
+        {"Square matrix", "SELECT arrayTranspose([[1, 2], [3, 4]])", "[[1,3],[2,4]]"},
+        {"Non-square matrix", "SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])", "[[1,4],[2,5],[3,6]]"},
+        {"String elements", "SELECT arrayTranspose([['a', 'b'], ['c', 'd']])", "[['a','c'],['b','d']]"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

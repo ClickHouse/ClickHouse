@@ -1,0 +1,97 @@
+--- empty system table ---
+0
+--- drop/recreate: old index applies before drop ---
+With idx_b (minmax, hypothetical):
+--- drop/recreate: new table does NOT see old index ---
+(none):
+--- drop/recreate: stale entry is removable by name ---
+0
+0
+--- drop/recreate: re-creating the index purges the stale entry ---
+1
+--- IF NOT EXISTS / DROP IF EXISTS edge cases ---
+--- IF NOT EXISTS is silent on duplicate ---
+1
+--- DROP IF EXISTS is silent on missing ---
+1
+--- IF NOT EXISTS is a no-op with an invalid replacement declaration ---
+1
+--- IF NOT EXISTS is a no-op when the name matches a real secondary index ---
+0
+--- DROP TABLE hides the entry from system.hypothetical_indexes ---
+1
+0
+--- CREATE respects allow_suspicious_indices = 0 ---
+BAD_ARGUMENTS
+--- EXPLAIN WHATIF with FINAL reports not_applicable ---
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL (PrimaryKeyExpand may re-include granules selected by skip indexes)
+--- CREATE rejects text index (explicit unsupported-type path) ---
+of type 'text' are not supported
+--- CREATE rejects vector_similarity index (explicit unsupported-type path) ---
+of type 'vector_similarity' are not supported
+--- force_data_skipping_indices: useful hypothetical index is accepted ---
+With idx_b (minmax, hypothetical):
+  status:       applicable
+--- force_data_skipping_indices: not-useful index throws like a real read ---
+INDEX_NOT_USED
+--- force_data_skipping_indices = '' throws like a real read ---
+CANNOT_PARSE_TEXT
+--- inner-SELECT SETTINGS apply on the effective query context ---
+--- use_skip_indexes = 0 reports not_applicable ---
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Skip indexes are disabled by `use_skip_indexes = 0`
+--- use_skip_indexes = 0 makes empty force_data_skipping_indices a no-op ---
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Skip indexes are disabled by `use_skip_indexes = 0`
+--- ignore_data_skipping_indices drops the candidate by name ---
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Index \'idx_b\' is listed in `ignore_data_skipping_indices`
+--- empty ignore_data_skipping_indices throws like a real read ---
+--- use_skip_indexes_on_data_read = 1 on the inner SELECT keeps the static baseline ---
+  parts:       1
+  marks:       1
+--- read limit (break mode) does not report partial empirical as ok ---
+  source:           applicability_only
+  empirical_status: unsupported
+--- EXPLAIN WHATIF with function-expression index ---
+With idx_l (set, hypothetical):
+  status:       applicable
+--- CREATE rejects reserved auto_minmax_index_ name ---
+reserved index name
+--- CREATE rejects unknown index type ---
+INCORRECT_QUERY
+--- type_full distinguishes parametrized index types ---
+i1	bloom_filter	bloom_filter(0.01)
+i2	bloom_filter	bloom_filter(0.001)
+--- applicability: predicate doesn't reference index column ---
+With idx_b_set (set, hypothetical):
+  status:       not_applicable
+  reason:       Index cannot filter this predicate (always unknown or true)
+--- applicability: query has no filter ---
+With idx_a_minmax (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Query has no filter predicate
+--- applicability: candidate usable via a standalone conjunct beside a mixed OR ---
+With idx_b (minmax, hypothetical):
+  status:       applicable
+--- parallel replicas: EXPLAIN WHATIF still runs locally ---
+With idx_a (minmax, hypothetical):
+  status:       applicable
+  source:           empirical
+--- parallel replicas via inner SETTINGS: EXPLAIN WHATIF still runs locally ---
+With idx_a (minmax, hypothetical):
+  status:       applicable
+  source:           empirical
+--- CREATE requires column-level SELECT on the index column ---
+ACCESS_DENIED
+--- column-level SELECT user can create and drop a hypothetical index ---
+create+drop ok
+--- EXPLAIN WHATIF re-checks column-level SELECT after a grant is revoked ---
+ACCESS_DENIED
+--- empirical EXPLAIN WHATIF consumes and respects READ_ROWS quota ---
+QUOTA_EXCEEDED

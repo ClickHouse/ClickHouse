@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'MySQL ClickPipe 的生命周期'
+description: '各种管道状态及其含义'
+slug: /integrations/clickpipes/mysql/lifecycle
+title: 'MySQL ClickPipe 的生命周期'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+本文档介绍 MySQL ClickPipe 的各个阶段、可能出现的不同状态及其含义。请注意，这也适用于 MariaDB。
+
+<div id="provisioning">
+  ## 预配中
+</div>
+
+当你点击 Create ClickPipe 按钮时，ClickPipe 会以 `Provisioning` 状态创建。预配过程会启动该服务运行 ClickPipes 所需的底层基础设施，并为该管道注册一些初始元数据。由于同一服务中的 ClickPipes 共享计算资源，因此第二个 ClickPipe 的创建速度会比第一个快得多——因为基础设施已经就绪。
+
+<div id="setup">
+  ## Setup
+</div>
+
+管道预配完成后，会进入 `Setup` 状态。在此状态下，我们会创建目标端 ClickHouse 表，并收集、记录源表的表定义。
+
+<div id="snapshot">
+  ## 快照
+</div>
+
+设置完成后，我们会进入 `Snapshot` 状态 (除非这是仅支持 CDC 的管道，此时会切换到 `Running`) 。`Snapshot`、`Initial Snapshot` 和 `Initial Load` (更常用) 这几个术语可以互换使用。在此状态下，我们会对源 MySQL 表创建快照并将其加载到 ClickHouse。二进制日志 的保留设置应将初始加载所需时间考虑在内。有关初始加载的更多信息，请参阅[并行初始加载文档](/zh/integrations/clickpipes/mysql/parallel-initial-load)。当触发重新同步，或向现有管道添加新表时，该管道也会进入 `Snapshot` 状态。
+
+<div id="running">
+  ## 运行中
+</div>
+
+初始加载完成后，管道会进入 `Running` 状态 (除非它是仅快照管道，此时会切换为 `Completed`) 。这时，管道开始进行 `CDC（变更数据捕获）`。在此状态下，我们会开始从源数据库读取二进制日志，并分批将数据同步到 ClickHouse。有关如何控制 CDC，请参阅[控制 CDC 的文档](/zh/integrations/clickpipes/mysql/controlling-sync)。
+
+<div id="paused">
+  ## 已暂停
+</div>
+
+一旦管道处于 `Running` 状态，您就可以将其暂停。这样会停止 CDC (变更数据捕获) 流程，管道也会进入 `Paused` 状态。在此状态下，不会再从源数据库拉取新数据，但 ClickHouse 中的现有数据会保持不变。您可以在此状态下恢复运行该管道。
+
+<div id="pausing">
+  ## 暂停中
+</div>
+
+<Note>
+  此状态即将推出。如果你正在使用我们的 [OpenAPI](/zh/products/cloud/features/admin-features/api/openapi)，建议现在就添加对该状态的支持，以确保在发布后你的集成仍能正常工作。
+</Note>
+
+当你点击 Pause 按钮时，管道会进入 `Pausing` 状态。这是一个过渡状态，表示系统正在停止 CDC (变更数据捕获) 进程。一旦 CDC (变更数据捕获) 进程完全停止，管道就会进入 `Paused` 状态。
+
+<div id="modifying">
+  ## 修改中
+</div>
+
+<Note>
+  此状态即将推出。如果您正在使用我们的 [OpenAPI](/zh/products/cloud/features/admin-features/api/openapi)，建议现在就添加对该状态的支持，以确保发布后您的集成仍能正常工作。
+</Note>
+
+目前，这表示该管道正在移除表。
+
+<div id="resync">
+  ## 重新同步
+</div>
+
+<Note>
+  此状态即将推出。如果您正在使用我们的 [OpenAPI](/zh/products/cloud/features/admin-features/api/openapi)，建议现在就添加对此状态的支持，以确保发布后您的集成仍能正常工作。
+</Note>
+
+此状态表示该管道正处于重新同步阶段，此时会将 &#95;resync 表与原始表进行原子交换。有关重新同步的更多信息，请参阅[重新同步文档](/zh/integrations/clickpipes/mysql/resync)。
+
+<div id="completed">
+  ## 已完成
+</div>
+
+此状态适用于仅执行快照的管道，表示快照已完成，无需再执行其他操作。
+
+<div id="failed">
+  ## Failed
+</div>
+
+如果管道中发生不可恢复的错误，它将进入 `Failed` 状态。你可以联系支持团队，或[重新同步](/zh/integrations/clickpipes/mysql/resync)你的管道以从该状态恢复。

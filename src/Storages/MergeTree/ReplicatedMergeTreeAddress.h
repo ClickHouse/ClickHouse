@@ -12,8 +12,8 @@ namespace DB
 struct ReplicatedMergeTreeAddress
 {
     String host;
-    UInt16 replication_port;
-    UInt16 queries_port;
+    UInt16 replication_port{};
+    UInt16 queries_port{};
     String database;
     String table;
     String scheme;

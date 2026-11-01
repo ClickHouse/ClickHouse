@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -251,7 +252,7 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
     {
         if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
         {
-            auto current_interval = interval_type->getKind().kind;
+            const IntervalKind::Kind current_interval = interval_type->getKind();
             if (current_interval > IntervalKind::Kind::Week)
                 is_higher_interval = true;
             if (current_interval < min_interval)
@@ -364,6 +365,8 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
 template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSupertype(const DataTypes & types)
 {
+    checkStackSize();
+
     /// Trivial cases
 
     if (types.empty())
@@ -616,7 +619,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// - typed paths: intersection by path name with type promotion
             /// - paths to skip / path regexps to skip: intersection using sorted sets
             /// - max_dynamic_paths / max_dynamic_types: take the maximum
-            std::unordered_map<String, DataTypePtr> merged_typed_paths = first.getTypedPaths();
+            auto merged_typed_paths = first.getTypedPaths();
+            std::unordered_set<String> merged_shared_typed_paths = first.getSharedTypedPaths();
             std::set<String> merged_paths_to_skip(first.getPathsToSkip().begin(), first.getPathsToSkip().end());
             std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
             size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
@@ -631,7 +635,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
                 /// Typed paths intersection with type promotion.
                 const auto & current_typed_paths = current.getTypedPaths();
-                std::unordered_map<String, DataTypePtr> new_merged;
+                DataTypeObject::TypedPathsMap new_merged;
                 for (auto & [path, type] : merged_typed_paths)
                 {
                     auto it = current_typed_paths.find(path);
@@ -645,6 +649,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     new_merged.emplace(path, std::move(common_type));
                 }
                 merged_typed_paths = std::move(new_merged);
+
+                /// A path stays SHARED only if it is SHARED in every type, like the other intersections.
+                std::erase_if(merged_shared_typed_paths, [&](const String & path) { return !current.isSharedTypedPath(path); });
 
                 /// Paths to skip intersection.
                 std::set<String> skip_set(current.getPathsToSkip().begin(), current.getPathsToSkip().end());
@@ -668,13 +675,17 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 merged_max_dynamic_types = std::max(merged_max_dynamic_types, current.getMaxDynamicTypes());
             }
 
+            /// A dropped typed path takes its SHARED mark with it.
+            std::erase_if(merged_shared_typed_paths, [&](const String & path) { return !merged_typed_paths.contains(path); });
+
             return std::make_shared<DataTypeObject>(
                 schema_format,
                 std::move(merged_typed_paths),
                 std::unordered_set<String>(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
                 std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
                 merged_max_dynamic_paths,
-                merged_max_dynamic_types);
+                merged_max_dynamic_types,
+                std::move(merged_shared_typed_paths));
         }
     }
 
@@ -953,9 +964,108 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
+namespace
+{
+/// Opt-in lossy fallback used when there is no lossless common type for a set of
+/// numeric branches (e.g. Decimal + Float64, or Int64 + Float64). It promotes to
+/// Float64, matching binary arithmetic promotion, so the result can be aggregated
+/// instead of becoming a Variant. Returns nullptr when the promotion does not apply
+/// (some branch is not numeric, or none of them is floating point - in the latter
+/// case there is no obvious lossy numeric supertype).
+DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
+{
+    bool has_float = false;
+    bool has_nullable = false;
+    /// Mirror the regular resolver's LowCardinality rule: all non-NULL branches
+    /// LowCardinality -> LowCardinality result; a mix drops it. Otherwise the wrapper
+    /// is silently lost, which corrupts array/map metadata (see 02354_array_lowcardinality).
+    bool all_low_cardinality = true;
+    for (const auto & type : types)
+    {
+        if (canContainNull(*type))
+            has_nullable = true;
+        /// Must run before the onlyNull() skip: the regular resolver's LowCardinality phase
+        /// precedes its Nullable phase, so a bare NULL counts as a non-LowCardinality branch
+        /// and drops the wrapper.
+        if (!typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            all_low_cardinality = false;
+        /// Skip NULL-only branches (a bare NULL literal is Nullable(Nothing)), mirroring the
+        /// lossless resolver: multiIf(c1, NULL, c2, toDecimal64(1, 2), 0.) then reaches the
+        /// fallback as [Decimal, Float64] and promotes to Nullable(Float64) rather than a Variant.
+        if (type->onlyNull())
+            continue;
+        const auto bare_type = removeLowCardinalityAndNullable(type);
+        if (!isNumber(bare_type))
+            return nullptr;
+        if (isFloat(bare_type))
+            has_float = true;
+    }
+
+    if (!has_float)
+        return nullptr;
+
+    DataTypePtr result = std::make_shared<DataTypeFloat64>();
+    if (has_nullable)
+        result = makeNullable(result);
+    /// LowCardinality wraps Nullable (never the reverse), matching the regular resolver.
+    if (all_low_cardinality)
+        result = std::make_shared<DataTypeLowCardinality>(result);
+    return result;
+}
+}
+
+DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_lossy_numeric)
+{
+    /// A lossless common type always wins over the lossy fallback.
+    if (auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types))
+        return common_type;
+    if (allow_lossy_numeric)
+        if (auto lossy_type = tryGetLossyNumericSupertype(types))
+            return lossy_type;
+    return getLeastSupertype<LeastSupertypeOnError::Throw>(types);
+}
+
+DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy_numeric)
+{
+    if (auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types))
+        return common_type;
+    if (allow_lossy_numeric)
+        if (auto lossy_type = tryGetLossyNumericSupertype(types))
+            return lossy_type;
+    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
+}
+
+String getNumericVariantSupertypeHint(const DataTypePtr & type)
+{
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(removeLowCardinalityAndNullable(type).get());
+    if (!variant_type)
+        return {};
+
+    /// Only suggest the setting when enabling it would actually replace the Variant with a
+    /// numeric supertype. Mirror the fallback eligibility (all numeric, at least one float):
+    /// integer-only sets such as Variant(Int64, UInt64) stay a Variant even with the setting on,
+    /// so pointing users at it there would be misleading.
+    if (!tryGetLossyNumericSupertype(variant_type->getVariants()))
+        return {};
+
+    /// Only the result type is visible here, not whether it was inferred (setting applies) or
+    /// stored/cast (it does not), so the wording stays conditional.
+    return ". If it is the inferred common type of if/multiIf/coalesce/ifNull/array/map over numeric "
+           "arguments, enable setting 'allow_lossy_numeric_supertype' to use a numeric supertype instead";
+}
+
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)
 {
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);
+}
+
+template<>
+DataTypePtr getLeastSupertype<LeastSupertypeOnError::Dynamic>(const DataTypes & types)
+{
+    auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
+    if (common_type)
+        return common_type;
+    return std::make_shared<DataTypeDynamic>();
 }
 
 template <LeastSupertypeOnError on_error>

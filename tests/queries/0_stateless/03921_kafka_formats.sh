@@ -112,22 +112,28 @@ $CLICKHOUSE_CLIENT -q "
     SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_kafka;
 "
 
-# Wait for all messages to be consumed (120s to allow for slow consumer group assignment)
+# Wait for all messages to be consumed (120s to allow for slow consumer group assignment).
+# Guard each count query: under transient load a failed/empty result must fall back to 0,
+# otherwise the shell arithmetic below throws "integer expression expected".
 for i in $(seq 1 120); do
-    json_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_json_dst")
-    csv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_csv_dst")
-    tsv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_dst")
+    json_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_json_dst SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
+    csv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_csv_dst SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
+    tsv_count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_dst SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$json_count" -ge 3 ] && [ "$csv_count" -ge 3 ] && [ "$tsv_count" -ge 3 ]; then
         break
     fi
     sleep 1
 done
 
+# SELECT DISTINCT: Kafka is at-least-once, so a batch whose offset commit does not land
+# before the next poll gets re-delivered and the MV re-inserts the same rows. DISTINCT
+# collapses such exact duplicates while still catching dropped rows (fewer) or mis-parsed
+# formats (an extra distinct row) - i.e. it preserves what this test verifies.
 echo "--- JSONEachRow ---"
-$CLICKHOUSE_CLIENT -q "SELECT a, b FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_json_dst ORDER BY a"
+$CLICKHOUSE_CLIENT -q "SELECT DISTINCT a, b FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_json_dst ORDER BY a"
 
 echo "--- CSV ---"
-$CLICKHOUSE_CLIENT -q "SELECT a, b FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_csv_dst ORDER BY a"
+$CLICKHOUSE_CLIENT -q "SELECT DISTINCT a, b FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_csv_dst ORDER BY a"
 
 echo "--- TSV ---"
-$CLICKHOUSE_CLIENT -q "SELECT a, b FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_dst ORDER BY a"
+$CLICKHOUSE_CLIENT -q "SELECT DISTINCT a, b FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tsv_dst ORDER BY a"

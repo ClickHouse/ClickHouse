@@ -1,0 +1,338 @@
+---
+title: 'DataStoreのデバッグ'
+sidebarTitle: '概要'
+slug: /chdb/debugging
+description: 'explain()、プロファイリング、ログを使用してDataStoreの操作をデバッグする'
+keywords: ['chdb', 'datastore', 'debug', 'explain', 'profiling', 'logging']
+doc_type: 'guide'
+---
+
+DataStoreには、データパイプラインの理解と最適化に役立つ包括的なデバッグツールが用意されています。
+
+<div id="overview">
+  ## デバッグツールの概要
+</div>
+
+| ツール         | 目的         | 使用するタイミング     |
+| ----------- | ---------- | ------------- |
+| `explain()` | 実行計画を表示    | 実行されるSQLを把握する |
+| プロファイラ    | パフォーマンスを測定 | 遅い操作を特定する     |
+| ロギング        | 実行の詳細を確認する | 想定外の動作をデバッグする |
+
+<div id="decision-matrix">
+  ## 簡易判断マトリクス
+</div>
+
+| 目的            | ツール         | コマンド                        |
+| ------------- | ----------- | --------------------------- |
+| 実行計画を確認する     | `explain()` | `ds.explain()`              |
+| パフォーマンスを測定する  | プロファイラ      | `config.enable_profiling()` |
+| SQLクエリをデバッグする | ロギング        | `config.enable_debug()`     |
+| 上記すべて         | 併用          | 以下を参照                       |
+
+<div id="quick-setup">
+  ## クイックセットアップ
+</div>
+
+<div id="enable-all">
+  ### すべてのデバッグを有効化する
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Enable all debugging
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+
+# View execution plan
+result.explain()
+
+# Get profiler report
+from chdb.datastore.config import get_profiler
+profiler = get_profiler()
+profiler.report()
+```
+
+***
+
+<div id="explain">
+  ## explain() メソッド
+</div>
+
+クエリを実行する前に、実行計画を確認できます。
+
+```python title="Query"
+ds = pd.read_csv("data.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# View plan
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  Source: file('data.csv', 'CSVWithNames')
+  Filter: amount > 1000
+  GroupBy: region
+  Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+詳しくは、[explain() ドキュメント](/ja/chdb/debugging/explain)を参照してください。
+
+***
+
+<div id="profiling">
+  ## プロファイリング
+</div>
+
+各操作の実行時間を測定します。
+
+```python title="Query"
+from chdb.datastore.config import config, get_profiler
+
+# Enable profiling
+config.enable_profiling()
+
+# Run operations
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# View report
+profiler = get_profiler()
+profiler.report(min_duration_ms=0.1)
+```
+
+```text title="Response"
+Performance Report
+==================
+Step                          Duration    Calls
+----                          --------    -----
+read_csv                      1.234s      1
+filter                        0.002s      1
+groupby                       0.001s      1
+agg                           0.089s      1
+sort                          0.045s      1
+head                          0.001s      1
+to_df (SQL execution)         0.567s      1
+----                          --------    -----
+Total                         1.939s      7
+```
+
+詳細については、[プロファイリングガイド](/ja/chdb/debugging/profiling) を参照してください。
+
+***
+
+<div id="logging">
+  ## ロギング
+</div>
+
+詳細な実行ログを確認できます。
+
+```python
+from chdb.datastore.config import config
+
+# Enable debug logging
+config.enable_debug()
+
+# Run operations - logs will show:
+# - SQL queries generated
+# - Execution engine used
+# - Cache hits/misses
+# - Timing information
+```
+
+ログ出力の例:
+
+```text
+DEBUG - DataStore: Creating from file 'data.csv'
+DEBUG - Query: SELECT region, SUM(amount) FROM ... WHERE amount > 1000 GROUP BY region
+DEBUG - Engine: Using chdb for aggregation
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+詳しくは、[ロギング設定](/ja/chdb/debugging/logging)を参照してください。
+
+***
+
+<div id="scenarios">
+  ## よくあるデバッグ シナリオ
+</div>
+
+<div id="scenario-wrong-results">
+  ### 1. クエリが期待どおりの結果を返さない
+</div>
+
+```python
+# Step 1: View the execution plan
+query = ds.filter(ds['age'] > 25).groupby('city').sum()
+query.explain(verbose=True)
+
+# Step 2: Enable logging to see SQL
+config.enable_debug()
+
+# Step 3: Run and check logs
+result = query.to_df()
+```
+
+<div id="scenario-slow">
+  ### 2. クエリの実行が遅い
+</div>
+
+```python
+# Step 1: Enable profiling
+config.enable_profiling()
+
+# Step 2: Run your query
+result = process_data()
+
+# Step 3: Check profiler report
+profiler = get_profiler()
+profiler.report()
+
+# Step 4: Identify slow operations and optimize
+```
+
+<div id="scenario-engine">
+  ### 3. エンジン選択を理解する
+</div>
+
+```python
+# Enable verbose logging
+config.enable_debug()
+
+# Run operations
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+
+# Logs will show which engine was used for each operation:
+# DEBUG - filter: Using chdb engine
+# DEBUG - apply: Using pandas engine (custom function)
+```
+
+<div id="scenario-cache">
+  ### 4. cache の問題のトラブルシューティング
+</div>
+
+```python
+# Enable debug to see cache operations
+config.enable_debug()
+
+# First run
+result1 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache miss, executing query
+
+# Second run (should use cache)
+result2 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache hit, returning cached result
+
+# If not caching when expected, check:
+# - Are operations identical?
+# - Is cache enabled? config.cache_enabled
+```
+
+***
+
+<div id="best-practices">
+  ## ベストプラクティス
+</div>
+
+<div id="best-practice-1">
+  ### 1. デバッグはDevelopmentで行い、本番環境では行わない
+</div>
+
+```python
+# Development
+config.enable_debug()
+config.enable_profiling()
+
+# Production
+config.set_log_level(logging.WARNING)
+config.set_profiling_enabled(False)
+```
+
+<div id="best-practice-2">
+  ### 2. 大規模なクエリを実行する前に explain() を使用する
+</div>
+
+```python
+# Build query
+query = ds.filter(...).groupby(...).agg(...)
+
+# Check plan first
+query.explain()
+
+# If plan looks good, execute
+result = query.to_df()
+```
+
+<div id="best-practice-3">
+  ### 3. 最適化の前にプロファイリングを行う
+</div>
+
+```python
+# Don't guess what's slow - measure it
+config.enable_profiling()
+result = your_pipeline()
+get_profiler().report()
+```
+
+<div id="best-practice-4">
+  ### 4. 結果が期待どおりでない場合は SQL を確認する
+</div>
+
+```python
+# View generated SQL
+print(query.to_sql())
+
+# Compare with expected SQL
+# Run SQL directly in ClickHouse to verify
+```
+
+***
+
+<div id="overview">
+  ## デバッグツールの概要
+</div>
+
+| ツール             | コマンド                        | 出力           |
+| --------------- | --------------------------- | ------------ |
+| 実行プランの説明        | `ds.explain()`              | 実行ステップ + SQL |
+| verbose explain | `ds.explain(verbose=True)`  | + メタデータ      |
+| SQL を表示         | `ds.to_sql()`               | SQL クエリ文字列   |
+| デバッグを有効化        | `config.enable_debug()`     | 詳細なログ        |
+| プロファイリングを有効化    | `config.enable_profiling()` | タイミングデータ     |
+| プロファイラ レポート   | `get_profiler().report()`   | パフォーマンスの概要   |
+| プロファイラ をクリア   | `get_profiler().reset()`    | タイミングデータをクリア |
+
+***
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* [explain() メソッド](/ja/chdb/debugging/explain) - 詳細な実行計画に関するドキュメント
+* [プロファイリングガイド](/ja/chdb/debugging/profiling) - パフォーマンス測定
+* [ロギング設定](/ja/chdb/debugging/logging) - ログレベルとフォーマットの設定

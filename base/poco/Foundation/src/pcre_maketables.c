@@ -51,6 +51,9 @@ compilation of dftables.c, in which case the macro DFTABLES is defined. */
 #endif
 
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 /*************************************************
 *           Create PCRE character tables         *
 *************************************************/
@@ -151,5 +154,7 @@ for (i = 0; i < 256; i++)
 
 return yield;
 }
+
+#pragma clang diagnostic pop
 
 /* End of pcre_maketables.c */

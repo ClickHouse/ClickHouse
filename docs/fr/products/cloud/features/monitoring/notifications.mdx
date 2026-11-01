@@ -1,0 +1,89 @@
+---
+title: 'Notifications'
+slug: /cloud/notifications
+description: 'Notifications pour votre service ClickHouse Cloud'
+keywords: ['cloud', 'notifications', 'alertes', 'notifications de service', 'notifications de facturation']
+sidebarTitle: 'Notifications'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse Cloud envoie des notifications concernant des événements critiques liés à votre service ou à votre organization. Voici quelques notions à garder à l’esprit pour comprendre comment les notifications sont envoyées et configurées :
+
+1. **Catégorie de notification** : désigne des groupes de notifications, comme les notifications de facturation, les notifications liées au service, etc. Au sein de chaque catégorie, plusieurs notifications permettent de configurer le mode de distribution.
+2. **Gravité de notification** : la gravité d’une notification peut être `info`, `warning` ou `critical`, selon son importance. Ce paramètre n’est pas configurable.
+3. **Canal de notification** : le canal désigne le mode de réception de la notification, comme l’UI, l’e-mail, Slack, etc. Ce paramètre est configurable pour la plupart des notifications.
+
+<div id="receiving-notifications">
+  ## Réception des notifications
+</div>
+
+Les notifications peuvent être reçues par différents canaux. ClickHouse Cloud permet de recevoir des notifications par e-mail, dans l’UI de ClickHouse Cloud et dans Slack. Vous pouvez cliquer sur l’icône en forme de cloche dans le menu en haut à gauche pour afficher les notifications en cours, ce qui ouvre un panneau latéral. En cliquant sur le bouton **View All** en bas de ce panneau, vous accéderez à une page affichant le journal d’activité de toutes les notifications.
+
+<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="Panneau latéral des notifications ClickHouse Cloud" border />
+
+<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="Journal d’activité des notifications ClickHouse Cloud" border />
+
+<div id="customizing-notifications">
+  ## Personnaliser les notifications
+</div>
+
+Pour chaque notification, vous pouvez personnaliser la manière dont vous la recevez. Vous pouvez accéder à l’écran des paramètres depuis le panneau latéral des notifications ou depuis le deuxième onglet du journal d’activité des notifications.
+
+Vous pouvez personnaliser les notifications envoyées via l’UI de Cloud, et ces personnalisations s’appliquent à chaque utilisateur individuellement. Vous pouvez également personnaliser les notifications envoyées à vos propres adresses e-mail, mais seuls les utilisateurs disposant des autorisations d’administrateur peuvent personnaliser les notifications envoyées à des adresses e-mail personnalisées et à des canaux Slack.
+
+Pour configurer l’envoi d’une notification spécifique, cliquez sur l’icône en forme de crayon pour modifier les canaux de diffusion de la notification.
+
+<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="Écran des paramètres des notifications ClickHouse Cloud" border />
+
+<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="Paramètres de diffusion des notifications ClickHouse Cloud" border />
+
+<Note>
+  Certaines notifications **obligatoires**, comme **Échec du paiement**, ne sont pas configurables.
+</Note>
+
+<div id="service-notifications">
+  ## Notifications de service
+</div>
+
+ClickHouse envoie des notifications de service lorsqu&#39;une condition d&#39;alerte donnée est déclenchée. Voir ci-dessous pour plus d&#39;informations sur les notifications de service de ClickHouse Cloud :
+
+| Notification lorsque                                        | Condition d&#39;alerte spécifique                                                                                                                                                             | Canaux de notification par défaut                     | Étapes de résolution                                                                                                                                                  |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Le cluster ne peut pas être mis à l&#39;échelle à la hausse | Lorsque la taille de cluster recommandée dépasse la limite maximale de mise à l&#39;échelle verticale. Une nouvelle notification est générée lorsque la taille de cluster recommandée change. |                                                       | Envisagez d&#39;augmenter la limite maximale d&#39;autoscaling de la taille par réplique. Voir [mise à l&#39;échelle](/fr/products/cloud/features/autoscaling/overview). |
+| Erreur Too many parts                                       | Lorsque l&#39;erreur &#39;too many parts&#39; est détectée. La notification ne sera déclenchée qu&#39;une seule fois par jour calendaire.                                                     | Les utilisateurs administrateurs recevront un e-mail. | Envisagez de regrouper les inserts par lots. Voir [Exception : Too many parts](/fr/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts).    |
+| Mutations en échec                                          | Lorsqu&#39;une mutation est en échec pendant 15 minutes. La notification ne sera déclenchée qu&#39;une seule fois par jour calendaire.                                                        | Les utilisateurs administrateurs recevront un e-mail. | Interrompez la mutation en échec. Voir [Évitez les mutations](/fr/concepts/best-practices/avoid-mutations).                                                              |
+| Concurrence élevée des requêtes                             | Lorsque la concurrence des requêtes dépasse 1 000 par réplique. La notification ne sera déclenchée qu&#39;une seule fois par jour calendaire.                                                 | Les utilisateurs administrateurs recevront un e-mail. | Envisagez d&#39;ajouter des répliques.                                                                                                                                |
+| Mise à l&#39;échelle du cluster terminée                    | Lorsque la taille d&#39;un cluster change.                                                                                                                                                    |                                                       | N/A                                                                                                                                                                   |
+| Le cluster ne peut pas être mis à l&#39;échelle à la baisse | Lorsque la taille de cluster recommandée dépasse la limite maximale de mise à l&#39;échelle verticale. Une nouvelle notification est générée lorsque la taille de cluster recommandée change. |                                                       | Envisagez d&#39;abaisser la limite minimale d&#39;autoscaling de la taille par réplique. Voir [mise à l&#39;échelle](/fr/products/cloud/features/autoscaling/overview).  |
+| Changement de version de ClickHouse                         | Lorsqu&#39;une mise à jour de version du service ClickHouse commence, puis lorsqu&#39;elle est terminée.                                                                                      |                                                       | N/A                                                                                                                                                                   |
+
+<div id="clickpipes-notifications">
+  ## Notifications ClickPipes
+</div>
+
+ClickHouse envoie des notifications ClickPipes lorsque votre ClickPipe rencontre des défaillances ou des problèmes.
+
+<div id="billing-notifications">
+  ## Notifications de facturation
+</div>
+
+ClickHouse envoie des notifications de facturation en cas de problèmes de paiement et lorsque les engagements prépayés atteignent certains seuils de consommation.
+
+<div id="supported-notifications">
+  ## Notifications prises en charge
+</div>
+
+Actuellement, nous envoyons des notifications liées à la facturation (échec de paiement, dépassement d’un certain seuil d’utilisation, etc.), ainsi que des notifications liées aux événements de mise à l’échelle (mise à l’échelle terminée, mise à l’échelle bloquée, etc.).
+
+<div id="related">
+  ## Pages associées
+</div>
+
+* [Monitoring de la Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Dashboards intégrés pour l’état de santé du service, les ressources et les performances des requêtes
+* [Vue d’ensemble du monitoring](/fr/products/cloud/features/monitoring/overview) — Comparez toutes les approches de monitoring pour ClickHouse Cloud
+
+<Note>
+  Les notifications de seuil de crédit ne sont actuellement disponibles que pour les organisations ayant des contrats d’engagement de dépenses. Les organisations Pay-As-You-Go (PAYG) ne reçoivent pas ces notifications.
+</Note>

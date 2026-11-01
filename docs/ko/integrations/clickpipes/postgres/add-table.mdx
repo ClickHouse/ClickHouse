@@ -1,0 +1,38 @@
+---
+title: 'ClickPipe에 특정 테이블 추가하기'
+description: 'ClickPipe에 특정 테이블을 추가하는 데 필요한 단계를 설명합니다.'
+sidebarTitle: '테이블 추가'
+slug: /integrations/clickpipes/postgres/add_table
+show_title: false
+keywords: ['ClickPipes Postgres', '테이블 추가', '테이블 구성', '초기 적재', '스냅샷']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+특정 테이블을 파이프에 추가하면 유용한 경우가 있습니다. 이는 트랜잭션 처리 또는 분석 워크로드가 확대될수록 흔히 필요해집니다.
+
+<div id="add-tables-steps">
+  ## ClickPipe에 특정 테이블을 추가하는 단계
+</div>
+
+다음 단계에 따라 진행합니다:
+
+1. 파이프를 [일시 중지](/ko/integrations/clickpipes/postgres/pause-and-resume)합니다.
+2. `Edit Table settings`를 클릭합니다.
+3. 추가할 테이블을 찾습니다. 검색창에서 검색하면 됩니다.
+4. 체크박스를 클릭하여 테이블을 선택합니다.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. `update`를 클릭합니다.
+6. 업데이트가 성공하면 파이프 상태는 순서대로 `Setup`, `Snapshot`, `Running`이 됩니다. 테이블의 초기 적재 진행 상황은 **Tables** 탭에서 확인할 수 있습니다.
+
+<Info>
+  기존 테이블의 CDC는 새 테이블의 스냅샷이 완료되면 자동으로 재개됩니다.
+</Info>

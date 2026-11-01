@@ -19,6 +19,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct FormatSettings;
 struct Settings;
 
+class BlockMissingValues;
+
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.
 /// Using ConstantExpressionTemplate for one expression is slower then evaluateConstantExpression(...),

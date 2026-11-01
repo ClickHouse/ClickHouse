@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/maxMap'
+title: 'maxMap'
+description: 'Exemple d’utilisation du combinateur maxMap'
+keywords: ['max', 'map', 'combinateur', 'exemples', 'maxMap']
+sidebarTitle: 'maxMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`Map`](/fr/reference/functions/aggregate-functions/combinators#-map) peut être appliqué à la fonction [`max`](/fr/reference/functions/aggregate-functions/max)
+pour calculer, pour chaque clé, la valeur maximale d’une Map à l’aide de la
+fonction de combinateur d’agrégation `maxMap`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans cet exemple, nous allons créer une table qui stocke des codes d’état et leur nombre d’occurrences pour différents créneaux horaires,
+chaque ligne contenant un Map qui associe les codes d’état à leur nombre d’occurrences correspondant. Nous utiliserons
+`maxMap` pour trouver le nombre d’occurrences maximal de chaque code d’état dans chaque créneau horaire.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    maxMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+La fonction `maxMap` renverra le nombre maximal pour chaque code d’état dans chaque créneau horaire. Par exemple :
+
+* Dans le créneau horaire &#39;2000-01-01 00:00:00&#39; :
+  * Code d’état &#39;a&#39; : 15
+  * Code d’état &#39;b&#39; : 25
+  * Code d’état &#39;c&#39; : max(35, 45) = 45
+  * Code d’état &#39;d&#39; : 55
+  * Code d’état &#39;e&#39; : 65
+* Dans le créneau horaire &#39;2000-01-01 00:01:00&#39; :
+  * Code d’état &#39;d&#39; : 75
+  * Code d’état &#39;e&#39; : 85
+  * Code d’état &#39;f&#39; : max(95, 105) = 105
+  * Code d’état &#39;g&#39; : max(115, 125) = 125
+
+```response title="Response"
+   ┌────────────timeslot─┬─maxMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':105,'g':125}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':45,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`max`](/fr/reference/functions/aggregate-functions/max)
+* [`combinateur Map`](/fr/reference/functions/aggregate-functions/combinators#-map)

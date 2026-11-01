@@ -1,0 +1,371 @@
+---
+description: 'GROUPING 집계 함수 문서입니다.'
+slug: /sql-reference/aggregate-functions/grouping_function
+title: 'GROUPING'
+doc_type: 'reference'
+---
+
+<div id="grouping">
+  ## GROUPING
+</div>
+
+[ROLLUP](/ko/reference/statements/select/group-by#rollup-modifier)과 [CUBE](/ko/reference/statements/select/group-by#cube-modifier)는 GROUP BY의 수정자입니다. 둘 다 소계를 계산합니다. ROLLUP은 `(day, month, year)`와 같이 정렬된 컬럼 목록을 받아, 집계의 각 수준에 대한 소계와 마지막으로 전체 합계를 계산합니다. CUBE는 지정된 컬럼의 가능한 모든 조합에 대한 소계를 계산합니다. GROUPING은 ROLLUP 또는 CUBE가 반환한 행 중 어떤 것이 상위 집계 행인지, 그리고 어떤 것이 수정되지 않은 GROUP BY에서 반환되는 행인지를 식별합니다.
+
+GROUPING 함수는 여러 컬럼을 인수로 받아 비트마스크를 반환합니다.
+
+* `1`은 `GROUP BY`에 `ROLLUP` 또는 `CUBE` 수정자를 적용해 반환된 행이 소계임을 나타냅니다
+* `0`은 `ROLLUP` 또는 `CUBE`가 반환한 행이 소계가 아님을 나타냅니다
+
+<div id="grouping-sets">
+  ## GROUPING SETS
+</div>
+
+기본적으로 CUBE 수정자는 CUBE에 전달된 컬럼의 가능한 모든 조합에 대해 소계를 계산합니다. GROUPING SETS를 사용하면 계산할 조합을 구체적으로 지정할 수 있습니다.
+
+계층형 데이터 분석에는 ROLLUP, CUBE, GROUPING SETS 수정자가 적합합니다. 여기의 예제는 두 개의 데이터 센터에 설치된 Linux 배포판과 해당 배포판의 버전에 대한 데이터를 담고 있는 테이블입니다. 이 데이터를 배포판, 버전, 위치별로 살펴보면 유용합니다.
+
+<div id="load-sample-data">
+  ### 샘플 데이터 불러오기
+</div>
+
+```sql
+CREATE TABLE servers ( datacenter VARCHAR(255),
+                         distro VARCHAR(255) NOT NULL,
+                         version VARCHAR(50) NOT NULL,
+                         quantity INT
+                       )
+                        ORDER BY (datacenter, distro, version)
+```
+
+```sql
+INSERT INTO servers(datacenter, distro, version, quantity)
+VALUES ('Schenectady', 'Arch','2022.08.05',50),
+       ('Westport', 'Arch','2022.08.05',40),
+       ('Schenectady','Arch','2021.09.01',30),
+       ('Westport', 'Arch','2021.09.01',20),
+       ('Schenectady','Arch','2020.05.01',10),
+       ('Westport', 'Arch','2020.05.01',5),
+       ('Schenectady','RHEL','9',60),
+       ('Westport','RHEL','9',70),
+       ('Westport','RHEL','7',80),
+       ('Schenectady','RHEL','7',80)
+```
+
+```sql
+SELECT 
+    *
+FROM
+    servers;
+```
+
+```response
+┌─datacenter──┬─distro─┬─version────┬─quantity─┐
+│ Schenectady │ Arch   │ 2020.05.01 │       10 │
+│ Schenectady │ Arch   │ 2021.09.01 │       30 │
+│ Schenectady │ Arch   │ 2022.08.05 │       50 │
+│ Schenectady │ RHEL   │ 7          │       80 │
+│ Schenectady │ RHEL   │ 9          │       60 │
+│ Westport    │ Arch   │ 2020.05.01 │        5 │
+│ Westport    │ Arch   │ 2021.09.01 │       20 │
+│ Westport    │ Arch   │ 2022.08.05 │       40 │
+│ Westport    │ RHEL   │ 7          │       80 │
+│ Westport    │ RHEL   │ 9          │       70 │
+└─────────────┴────────┴────────────┴──────────┘
+
+10 rows in set. Elapsed: 0.409 sec.
+```
+
+<div id="simple-queries">
+  ### 간단한 쿼리
+</div>
+
+각 데이터 센터에서 배포판별 서버 수를 구합니다:
+
+```sql
+SELECT
+    datacenter,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter,
+    distro;
+```
+
+```response
+┌─datacenter──┬─distro─┬─qty─┐
+│ Schenectady │ RHEL   │ 140 │
+│ Westport    │ Arch   │  65 │
+│ Schenectady │ Arch   │  90 │
+│ Westport    │ RHEL   │ 150 │
+└─────────────┴────────┴─────┘
+
+4 rows in set. Elapsed: 0.212 sec.
+```
+
+```sql
+SELECT
+    datacenter, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter;
+```
+
+```response
+┌─datacenter──┬─qty─┐
+│ Westport    │ 215 │
+│ Schenectady │ 230 │
+└─────────────┴─────┘
+
+2 rows in set. Elapsed: 0.277 sec. 
+```
+
+```sql
+SELECT
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    distro;
+```
+
+```response
+
+┌─distro─┬─qty─┐
+│ Arch   │ 155 │
+│ RHEL   │ 290 │
+└────────┴─────┘
+
+2 rows in set. Elapsed: 0.352 sec. 
+```
+
+```sql
+SELECT
+    SUM(quantity) qty
+FROM
+    servers;
+```
+
+```response
+┌─qty─┐
+│ 445 │
+└─────┘
+
+1 row in set. Elapsed: 0.244 sec. 
+```
+
+<div id="comparing-multiple-group-by-statements-with-grouping-sets">
+  ### GROUPING SETS를 사용해 여러 GROUP BY SQL 문 비교하기
+</div>
+
+CUBE, ROLLUP 또는 GROUPING SETS 없이 데이터를 나누면 다음과 같습니다:
+
+```sql
+SELECT
+    datacenter,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter,
+    distro
+UNION ALL
+SELECT
+    datacenter, 
+    null,
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter
+UNION ALL
+SELECT
+    null,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    distro
+UNION ALL
+SELECT
+    null,
+    null,
+    SUM(quantity) qty
+FROM
+    servers;
+```
+
+```response
+┌─datacenter─┬─distro─┬─qty─┐
+│ ᴺᵁᴸᴸ       │ ᴺᵁᴸᴸ   │ 445 │
+└────────────┴────────┴─────┘
+┌─datacenter──┬─distro─┬─qty─┐
+│ Westport    │ ᴺᵁᴸᴸ   │ 215 │
+│ Schenectady │ ᴺᵁᴸᴸ   │ 230 │
+└─────────────┴────────┴─────┘
+┌─datacenter──┬─distro─┬─qty─┐
+│ Schenectady │ RHEL   │ 140 │
+│ Westport    │ Arch   │  65 │
+│ Schenectady │ Arch   │  90 │
+│ Westport    │ RHEL   │ 150 │
+└─────────────┴────────┴─────┘
+┌─datacenter─┬─distro─┬─qty─┐
+│ ᴺᵁᴸᴸ       │ Arch   │ 155 │
+│ ᴺᵁᴸᴸ       │ RHEL   │ 290 │
+└────────────┴────────┴─────┘
+
+9 rows in set. Elapsed: 0.527 sec. 
+```
+
+GROUPING SETS를 사용해 동일한 정보 얻기:
+
+```sql
+SELECT
+    datacenter,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    GROUPING SETS(
+        (datacenter,distro),
+        (datacenter),
+        (distro),
+        ()
+    )
+```
+
+```response
+┌─datacenter──┬─distro─┬─qty─┐
+│ Schenectady │ RHEL   │ 140 │
+│ Westport    │ Arch   │  65 │
+│ Schenectady │ Arch   │  90 │
+│ Westport    │ RHEL   │ 150 │
+└─────────────┴────────┴─────┘
+┌─datacenter──┬─distro─┬─qty─┐
+│ Westport    │        │ 215 │
+│ Schenectady │        │ 230 │
+└─────────────┴────────┴─────┘
+┌─datacenter─┬─distro─┬─qty─┐
+│            │        │ 445 │
+└────────────┴────────┴─────┘
+┌─datacenter─┬─distro─┬─qty─┐
+│            │ Arch   │ 155 │
+│            │ RHEL   │ 290 │
+└────────────┴────────┴─────┘
+
+9 rows in set. Elapsed: 0.427 sec.
+```
+
+<div id="comparing-cube-with-grouping-sets">
+  ### CUBE와 GROUPING SETS 비교
+</div>
+
+다음 쿼리의 CUBE인 `CUBE(datacenter,distro,version)`는 그다지 적절하지 않은 계층 구조를 만듭니다. 두 배포판 전체에 걸쳐 `version`을 살펴보는 것은 의미가 없습니다(Arch와 RHEL은 릴리스 주기나 버전 명명 기준이 서로 다르기 때문입니다). 이어지는 GROUPING SETS 예시는 `distro`와 `version`을 같은 세트로 그룹화하므로 더 적절합니다.
+
+```sql
+SELECT
+   datacenter,
+   distro,
+   version,
+   SUM(quantity)
+FROM
+   servers
+GROUP BY
+   CUBE(datacenter,distro,version)
+ORDER BY
+   datacenter,
+   distro;
+```
+
+```response
+┌─datacenter──┬─distro─┬─version────┬─sum(quantity)─┐
+│             │        │ 7          │           160 │
+│             │        │ 2020.05.01 │            15 │
+│             │        │ 2021.09.01 │            50 │
+│             │        │ 2022.08.05 │            90 │
+│             │        │ 9          │           130 │
+│             │        │            │           445 │
+│             │ Arch   │ 2021.09.01 │            50 │
+│             │ Arch   │ 2022.08.05 │            90 │
+│             │ Arch   │ 2020.05.01 │            15 │
+│             │ Arch   │            │           155 │
+│             │ RHEL   │ 9          │           130 │
+│             │ RHEL   │ 7          │           160 │
+│             │ RHEL   │            │           290 │
+│ Schenectady │        │ 9          │            60 │
+│ Schenectady │        │ 2021.09.01 │            30 │
+│ Schenectady │        │ 7          │            80 │
+│ Schenectady │        │ 2022.08.05 │            50 │
+│ Schenectady │        │ 2020.05.01 │            10 │
+│ Schenectady │        │            │           230 │
+│ Schenectady │ Arch   │ 2022.08.05 │            50 │
+│ Schenectady │ Arch   │ 2021.09.01 │            30 │
+│ Schenectady │ Arch   │ 2020.05.01 │            10 │
+│ Schenectady │ Arch   │            │            90 │
+│ Schenectady │ RHEL   │ 7          │            80 │
+│ Schenectady │ RHEL   │ 9          │            60 │
+│ Schenectady │ RHEL   │            │           140 │
+│ Westport    │        │ 9          │            70 │
+│ Westport    │        │ 2020.05.01 │             5 │
+│ Westport    │        │ 2022.08.05 │            40 │
+│ Westport    │        │ 7          │            80 │
+│ Westport    │        │ 2021.09.01 │            20 │
+│ Westport    │        │            │           215 │
+│ Westport    │ Arch   │ 2020.05.01 │             5 │
+│ Westport    │ Arch   │ 2021.09.01 │            20 │
+│ Westport    │ Arch   │ 2022.08.05 │            40 │
+│ Westport    │ Arch   │            │            65 │
+│ Westport    │ RHEL   │ 9          │            70 │
+│ Westport    │ RHEL   │ 7          │            80 │
+│ Westport    │ RHEL   │            │           150 │
+└─────────────┴────────┴────────────┴───────────────┘
+
+39 rows in set. Elapsed: 0.355 sec. 
+```
+
+<Note>
+  위 예시의 Version은 distro와 연관되지 않으면 의미가 없을 수 있습니다. 커널 버전을 추적하는 경우에는 커널 버전이 어느 distro와도 연관될 수 있으므로 의미가 있을 수 있습니다. 다음 예시처럼 GROUPING SETS를 사용하는 편이 더 나은 선택일 수 있습니다.
+</Note>
+
+```sql
+SELECT
+    datacenter,
+    distro,
+    version,
+    SUM(quantity)
+FROM servers
+GROUP BY
+    GROUPING SETS (
+        (datacenter, distro, version),
+        (datacenter, distro))
+```
+
+```response
+┌─datacenter──┬─distro─┬─version────┬─sum(quantity)─┐
+│ Westport    │ RHEL   │ 9          │            70 │
+│ Schenectady │ Arch   │ 2022.08.05 │            50 │
+│ Schenectady │ Arch   │ 2021.09.01 │            30 │
+│ Schenectady │ RHEL   │ 7          │            80 │
+│ Westport    │ Arch   │ 2020.05.01 │             5 │
+│ Westport    │ RHEL   │ 7          │            80 │
+│ Westport    │ Arch   │ 2021.09.01 │            20 │
+│ Westport    │ Arch   │ 2022.08.05 │            40 │
+│ Schenectady │ RHEL   │ 9          │            60 │
+│ Schenectady │ Arch   │ 2020.05.01 │            10 │
+└─────────────┴────────┴────────────┴───────────────┘
+┌─datacenter──┬─distro─┬─version─┬─sum(quantity)─┐
+│ Schenectady │ RHEL   │         │           140 │
+│ Westport    │ Arch   │         │            65 │
+│ Schenectady │ Arch   │         │            90 │
+│ Westport    │ RHEL   │         │           150 │
+└─────────────┴────────┴─────────┴───────────────┘
+
+14 rows in set. Elapsed: 1.036 sec. 
+```

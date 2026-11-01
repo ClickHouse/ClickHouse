@@ -1,0 +1,24 @@
+---
+description: 'Guía para compilar ClickHouse desde el código fuente para la arquitectura RISC-V 64'
+sidebarTitle: 'Compilar en Linux para RISC-V 64'
+slug: /development/build-cross-riscv
+title: 'Cómo compilar ClickHouse en Linux para RISC-V 64'
+doc_type: 'guide'
+---
+
+ClickHouse ofrece compatibilidad experimental con RISC-V. No se pueden habilitar todas las funcionalidades.
+
+<div id="build-clickhouse">
+  ## Compilar ClickHouse
+</div>
+
+Para realizar una compilación cruzada para RISC-V en una máquina no RISC-V:
+
+```bash
+cd ClickHouse
+mkdir build-riscv64
+cmake . -Bbuild-riscv64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-riscv64.cmake -DGLIBC_COMPATIBILITY=OFF -DENABLE_LDAP=OFF  -DOPENSSL_NO_ASM=ON -DENABLE_JEMALLOC=ON -DENABLE_PARQUET=OFF -DENABLE_GRPC=OFF -DENABLE_HDFS=OFF -DENABLE_MYSQL=OFF
+ninja -C build-riscv64
+```
+
+El ejecutable resultante solo funcionará en Linux con la arquitectura de CPU RISC-V de 64 bits.

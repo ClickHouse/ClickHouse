@@ -1,0 +1,12 @@
+Row 1:
+──────
+pure_const:  6161A0626262
+const_len:   6161A0626262
+dynamic_len: 6161A0626262
+0	6161A0626262
+1	7AA07776
+2	616263
+Row 1:
+──────
+pure_const_pos:  626262
+dynamic_len_pos: 626262

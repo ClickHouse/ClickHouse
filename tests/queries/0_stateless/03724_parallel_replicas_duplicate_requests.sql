@@ -8,8 +8,6 @@ CREATE TABLE t(a UInt64, s String) ENGINE = MergeTree ORDER BY a SETTINGS ratio_
 
 INSERT INTO t SELECT *, randomString(100) FROM numbers_mt(3_000_000);
 
-SET enable_analyzer = 1;
-
 SET max_threads = 3, merge_tree_min_read_task_size = 1;
 
 SET automatic_parallel_replicas_mode = 0;
@@ -23,7 +21,7 @@ SYSTEM DISABLE FAILPOINT parallel_replicas_reading_response_timeout;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_reading_response_timeout;
 
-SET max_threads = 3, merge_tree_min_read_task_size = 1000;
+SET max_threads = 1, merge_tree_min_read_task_size = 10;
 
 SELECT * FROM t ORDER BY a FORMAT Null; -- { serverError SOCKET_TIMEOUT }
 

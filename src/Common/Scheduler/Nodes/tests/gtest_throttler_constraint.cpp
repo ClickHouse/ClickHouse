@@ -3,21 +3,42 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/FairPolicy.h>
-#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 
 using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
+namespace
+{
+
+/// A speed of 2^-33 tokens/s parks a cost-1 request for 2^33 seconds. That delay fits in `Int64`
+/// nanoseconds, but adding it to a large enough time point does not.
+constexpr double tiny_speed = 1.0 / 8589934592.0;
+
+/// Parks one cost-1 request on a throttler installed as the root node, and returns that root.
+ThrottlerConstraint & parkOneRequest(ResourceTest & t, EventQueue::TimePoint start, double max_speed)
+{
+    t.process(start, 0);
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, max_speed, /*max_burst=*/ 0.0);
+    t.add<RequestQueue>("/A");
+    t.enqueue("/A", {1});
+    t.process(start);
+    t.consumed("A", 1);
+    return static_cast<ThrottlerConstraint &>(t.getRoot());
+}
+
+}
+
 TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
-    t.add<ThrottlerConstraint>("/", "<max_burst>20.0</max_burst><max_speed>10.0</max_speed>");
-    t.add<FifoQueue>("/A", "");
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 20.0);
+    t.add<RequestQueue>("/A");
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10, 10, 10});
 
@@ -43,11 +64,11 @@ TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 TEST(SchedulerThrottlerConstraint, Unlimited)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
-    t.add<ThrottlerConstraint>("/", "");
-    t.add<FifoQueue>("/A", "");
+    t.add<ThrottlerConstraint>("/");
+    t.add<RequestQueue>("/A");
 
     for (int i = 0; i < 10; i++)
     {
@@ -60,13 +81,13 @@ TEST(SchedulerThrottlerConstraint, Unlimited)
 TEST(SchedulerThrottlerConstraint, Pacing)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     // Zero burst allows you to send one request of any `size` and than throttle for `size/max_speed` seconds.
     // Useful if outgoing traffic should be "paced", i.e. have the least possible burstiness.
-    t.add<ThrottlerConstraint>("/", "<max_burst>0</max_burst><max_speed>1</max_speed>");
-    t.add<FifoQueue>("/A", "");
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 1.0, /*max_burst=*/ 0.0);
+    t.add<RequestQueue>("/A");
 
     t.enqueue("/A", {1, 2, 3, 1, 2, 1});
     int output[] = {1, 2, 0, 3, 0, 0, 1, 2, 0, 1, 0};
@@ -80,11 +101,11 @@ TEST(SchedulerThrottlerConstraint, Pacing)
 TEST(SchedulerThrottlerConstraint, BucketFilling)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
-    t.add<ThrottlerConstraint>("/", "<max_burst>100.0</max_burst><max_speed>10.0</max_speed>");
-    t.add<FifoQueue>("/A", "");
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 100.0);
+    t.add<RequestQueue>("/A");
 
     t.enqueue("/A", {100});
 
@@ -114,15 +135,15 @@ TEST(SchedulerThrottlerConstraint, BucketFilling)
 TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     // Burst = 100 token
     // Peek speed = 50 token/s for 10 seconds
     // Avg speed = 10 tokens/s afterwards
-    t.add<ThrottlerConstraint>("/", "<max_burst>100.0</max_burst><max_speed>50.0</max_speed>");
-    t.add<ThrottlerConstraint>("/avg", "<max_burst>5000.0</max_burst><max_speed>10.0</max_speed>");
-    t.add<FifoQueue>("/avg/A", "");
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 50.0, /*max_burst=*/ 100.0);
+    t.add<ThrottlerConstraint>("/avg", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 5000.0);
+    t.add<RequestQueue>("/avg/A");
 
     ResourceCost req_cost = 1;
     ResourceCost total_cost = 10000;
@@ -142,13 +163,13 @@ TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
 TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
-    t.add<ThrottlerConstraint>("/", "<max_burst>100.0</max_burst><max_speed>10.0</max_speed>");
-    t.add<FairPolicy>("/fair", "");
-    t.add<FifoQueue>("/fair/A", "<weight>10</weight>");
-    t.add<FifoQueue>("/fair/B", "<weight>90</weight>");
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 100.0);
+    t.add<FairPolicy>("/fair");
+    t.add<RequestQueue>("/fair/A", SchedulerNodeInfo(10.0));
+    t.add<RequestQueue>("/fair/B", SchedulerNodeInfo(90.0));
 
     ResourceCost req_cost = 1;
     ResourceCost total_cost = 2000;
@@ -176,4 +197,40 @@ TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
         consumed_a = arrival_curve * share_a;
         consumed_b = arrival_curve * share_b;
     }
+}
+
+/// The three cases below are separate tests on purpose: the sanitizer builds are compiled with
+/// `-fno-sanitize-recover=all`, so the first unbounded statement aborts the process and would hide
+/// the other two.
+
+/// A speed small enough that the quotient itself is outside `Int64`. Narrowing it is undefined.
+TEST(SchedulerThrottlerConstraint, TinySpeedDelayNarrowingIsBounded)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::seconds(1)};
+    auto & throttler = parkOneRequest(t, start, /*max_speed=*/ 1e-30);
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
+}
+
+/// A representable quotient, but `now + delay` is not representable.
+TEST(SchedulerThrottlerConstraint, TinySpeedDeadlineIsBounded)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::nanoseconds(Int64(1) << 62)};
+    auto & throttler = parkOneRequest(t, start, tiny_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
+}
+
+/// Each delay is bounded, but their sum is not: every `ALTER WORKLOAD` re-postpones the pending
+/// delay and counts it again, and 300 years of them overrun the ~292-year `Int64` range.
+TEST(SchedulerThrottlerConstraint, ThrottlingDurationSaturates)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::seconds(1)};
+    auto & throttler = parkOneRequest(t, start, tiny_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
+
+    for (int i = 0; i < 300; i++)
+        throttler.updateConstraints(tiny_speed, /*new_max_burst=*/ 0.0);
+    EXPECT_EQ(throttler.getThrottlingDuration(), std::chrono::nanoseconds::max());
 }

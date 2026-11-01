@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -25,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int CORRUPTED_DATA;
 }
 
@@ -82,6 +84,84 @@ struct CrossTabCountsState
         count_a.read(buf);
         count_b.read(buf);
         count_ab.read(buf);
+
+        validateDeserialized(count, count_a, count_b, count_ab);
+    }
+
+    /// Aggregate function states can be constructed from untrusted data, e.g. by `CAST` from `String`,
+    /// so deserialization has to check all invariants that the calculations rely on
+    /// (a genuine state produced by `add` and `merge` satisfies them by construction):
+    ///  - all joint counts in `count_ab` are positive;
+    ///  - `count_a` and `count_b` are exactly the marginal sums of `count_ab`;
+    ///  - the joint counts sum up to `count`.
+    /// These invariants guarantee that the state describes a valid contingency table, which in turn
+    /// guarantees the theoretical bounds asserted during finalization (e.g. 0 <= φ² <= min(|A|, |B|) - 1).
+    static void validateDeserialized(UInt64 count, const auto & count_a, const auto & count_b, const auto & count_ab)
+    {
+        UInt64 total = 0;
+        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> marginal_a;
+        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> marginal_b;
+
+        for (const auto & [key, value] : count_ab)
+        {
+            if (value == 0)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted aggregate function state: the joint count of the value pair with hashes ({}, {}) is zero",
+                    key.items[UInt128::_impl::little(0)],
+                    key.items[UInt128::_impl::little(1)]);
+
+            if (common::addOverflow(total, value, total))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted aggregate function state: the sum of joint counts overflows UInt64");
+
+            /// The marginal sums cannot overflow if the total sum does not: each of them is bounded by `total`.
+            marginal_a[key.items[UInt128::_impl::little(0)]] += value;
+            marginal_b[key.items[UInt128::_impl::little(1)]] += value;
+        }
+
+        if (total != count)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted aggregate function state: the joint counts sum up to {}, while the total count is {}",
+                total,
+                count);
+
+        auto check_marginals = [](const auto & expected, const auto & stored, const char * side)
+        {
+            if (expected.size() != stored.size())
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted aggregate function state: there are {} distinct values of the {} argument, "
+                    "while the joint counts imply {}",
+                    stored.size(),
+                    side,
+                    expected.size());
+
+            for (const auto & [key, value] : expected)
+            {
+                const auto * it = stored.find(key);
+                if (it == stored.end())
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Corrupted aggregate function state: the value with hash {} of the {} argument is present "
+                        "in the joint counts but has no marginal count",
+                        key,
+                        side);
+
+                if (it->getMapped() != value)
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Corrupted aggregate function state: the marginal count of the value with hash {} "
+                        "of the {} argument is {}, while its joint counts sum up to {}",
+                        key,
+                        side,
+                        it->getMapped(),
+                        value);
+            }
+        };
+
+        check_marginals(marginal_a, count_a, "first");
+        check_marginals(marginal_b, count_b, "second");
     }
 };
 
@@ -507,6 +587,8 @@ struct CrossTabPhiSquaredWindowData
                 count_ab.size(),
                 INVALID_EDGE_IDX - 1);
 
+        CrossTabCountsState::validateDeserialized(count, count_a, count_b, count_ab);
+
         /// Update the internal states
         a_hash_by_index.reserve(count_a.size());
         a_marginal_count.reserve(count_a.size());
@@ -561,9 +643,7 @@ struct CrossTabPhiSquaredWindowData
             const Float64 a = static_cast<Float64>(a_marginal_count[a_idx]);
             const Float64 b = static_cast<Float64>(b_marginal_count[b_idx]);
 
-            if (unlikely(a <= 0 || b <= 0))
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA, "Corrupted aggregate function state: value frequency must be positive (a={}, b={})", a, b);
+            chassert(a > 0 && b > 0 && "value frequencies are positive after validation");
 
             phi_term_sum += phiTerm(cnt_ab, a, b);
         }
@@ -804,9 +884,9 @@ public:
         this->data(place).add(hash1, hash2);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs));
+        mergeChecked(this->data(place), this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -842,7 +922,7 @@ public:
 
         if constexpr (Data::state_representation == AggregateFunctionStateVariant::Window)
         {
-            dst.merge(*reinterpret_cast<const CrossTabAggregateData *>(rhs_place));
+            mergeChecked(dst, *reinterpret_cast<const CrossTabAggregateData *>(rhs_place));
         }
         else
         {
@@ -858,11 +938,11 @@ public:
                     "CrossTab custom window state must keep CrossTabCountsState prefix (derive from CrossTabCountsState).");
                 static_assert(requires(Data & data, const WindowData & other) { data.merge(other); });
 
-                dst.merge(*reinterpret_cast<const WindowData *>(rhs_place));
+                mergeChecked(dst, *reinterpret_cast<const WindowData *>(rhs_place));
             }
             else
             {
-                dst.merge(*reinterpret_cast<const CrossTabPhiSquaredWindowData *>(rhs_place));
+                mergeChecked(dst, *reinterpret_cast<const CrossTabPhiSquaredWindowData *>(rhs_place));
             }
         }
     }
@@ -879,6 +959,22 @@ public:
         Float64 result = this->data(place).getResult();
         auto & column = static_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(result);
+    }
+
+private:
+    /// Every count of a state is at most its total `count`, so no count overflows if the merged total fits.
+    template <typename Src>
+    void mergeChecked(Data & dst, const Src & src) const
+    {
+        UInt64 merged_count = 0;
+        if (common::addOverflow(dst.count, src.count, merged_count))
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Cannot merge states of aggregate function {}: the total number of rows ({} + {}) does not fit into UInt64",
+                getName(),
+                dst.count,
+                src.count);
+        dst.merge(src);
     }
 };
 

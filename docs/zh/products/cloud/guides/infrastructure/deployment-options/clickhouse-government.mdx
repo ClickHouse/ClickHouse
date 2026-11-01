@@ -1,0 +1,62 @@
+---
+title: 'ClickHouse Government'
+slug: /cloud/infrastructure/clickhouse-government
+keywords: ['Government', 'fips', 'fedramp', '政务云']
+description: 'ClickHouse Government 产品概述'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="overview">
+  ## 概述
+</div>
+
+ClickHouse Government 是一个自部署软件包，包含与 ClickHouse Cloud 所运行的相同专有版本 ClickHouse 以及我们的 ClickHouse Operator，并针对计算与存储分离进行了配置和加固，以满足政府机构和公共部门组织的严苛要求。
+
+<Info>
+  **注意**
+
+  ClickHouse Government 专为政府机构、公共部门组织以及向这些机构和组织销售云软件的公司而设计，可对其专属基础设施实现全面控制和管理。最小部署规模为 2 TB。此选项仅可通过[联系我们](https://clickhouse.com/government)获取。
+</Info>
+
+<div id="benefits-over-os">
+  ## 相较开源版本的优势
+</div>
+
+以下特性使 ClickHouse Government 有别于自管理开源部署：
+
+* 原生支持计算与存储分离
+* 专有云功能，例如 [shared merge tree](/zh/products/cloud/features/infrastructure/shared-merge-tree) 和 [仓库](/zh/products/cloud/features/infrastructure/warehouses) 功能
+* 在 ClickHouse Cloud 中经过全面测试和验证的 ClickHouse 数据库和 operator 版本
+* [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) 文档，帮助加快获得 Authorization to Operate (ATO)
+* 用于程序化操作的 API，包括备份和扩缩容操作
+
+<div id="architecture">
+  ## 架构
+</div>
+
+ClickHouse Government 完全部署在您的环境中，并提供云原生的计算与存储分离架构。
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Government 架构" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## 支持的配置
+</div>
+
+ClickHouse Government 当前支持以下配置：
+
+| 环境  | 编排平台                             | 存储                          | 状态 |
+| :-- | :------------------------------- | :-------------------------- | :- |
+| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 可用 |
+| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | 预览 |
+
+<div id="onboarding-process">
+  ## Onboarding 流程
+</div>
+
+客户可[联系我们](https://clickhouse.com/company/contact?loc=nav)，申请预约沟通，评估 ClickHouse Government 是否适合其使用场景。满足最低规模要求且部署到支持的配置的使用场景将接受审核。Onboarding 名额有限。安装过程包括按照特定环境的安装指南，使用从 AWS ECR 下载的镜像和 Helm 图表部署 ClickHouse。

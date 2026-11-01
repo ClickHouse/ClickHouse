@@ -19,8 +19,12 @@
 #include <arrow/api.h>
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
+#include <parquet/geospatial/statistics.h>
+#include <parquet/size_statistics.h>
 #include <parquet/statistics.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <arrow/io/memory.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -30,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 static NamesAndTypesList getHeaderForParquetMetadata()
@@ -94,14 +99,34 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
                                  Names{"num_values", "null_count", "distinct_count", "min", "max"}),
                              std::make_shared<DataTypeInt64>(),
+                             DataTypeFactory::instance().get("Bool"),
+                             std::make_shared<DataTypeTuple>(
+                                 DataTypes{
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
+                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+                                 Names{"unencoded_byte_array_data_bytes", "repetition_level_histogram", "definition_level_histogram"}),
+                             DataTypeFactory::instance().get("Bool"),
+                             std::make_shared<DataTypeTuple>(
+                                 DataTypes{
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
+                                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>())},
+                                 Names{"xmin", "xmax", "ymin", "ymax", "zmin", "zmax", "mmin", "mmax", "geospatial_types"}),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes", "have_size_statistics", "size_statistics", "have_geospatial_statistics", "geospatial_statistics"}))},
              Names{"file_offset", "num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
 }
 
-void checkHeader(const Block & header)
+static void checkHeader(const Block & header)
 {
     auto expected_names_and_types = getHeaderForParquetMetadata();
     std::unordered_map<String, DataTypePtr> name_to_type;
@@ -125,6 +150,28 @@ void checkHeader(const Block & header)
                 name,
                 it->second->getName());
     }
+}
+
+/// Arrow's `parquet::Encoding` lacks the encodings added to the format recently (such as `ALP`) and
+/// reports all of them as `UNDEFINED`. Their names are taken from the Thrift metadata instead, which
+/// keeps the original values.
+static std::optional<Parquet::parq::FileMetaData> getThriftFileMetadata(const parquet::FileMetaData & metadata)
+{
+    /// Serializing the footer of an encrypted file with a plaintext footer requires the encryptor.
+    if (metadata.is_encryption_algorithm_set())
+        return std::nullopt;
+
+    auto stream = arrow::io::BufferOutputStream::Create();
+    if (!stream.ok())
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot serialize Parquet metadata: {}", stream.status().ToString());
+    metadata.WriteTo(stream->get());
+    auto buffer = (*stream)->Finish();
+    if (!buffer.ok())
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot serialize Parquet metadata: {}", buffer.status().ToString());
+
+    Parquet::parq::FileMetaData result;
+    Parquet::deserializeThriftStruct(result, reinterpret_cast<const char *>((*buffer)->data()), (*buffer)->size());
+    return result;
 }
 
 static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
@@ -242,6 +289,8 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
     auto & array_column = assert_cast<ColumnArray &>(*column);
     auto & tuple_column = assert_cast<ColumnTuple &>(array_column.getData());
     int32_t num_columns = metadata->num_columns();
+    std::optional<Parquet::parq::FileMetaData> thrift_metadata;
+    bool thrift_metadata_parsed = false;
     for (int32_t column_i = 0; column_i != num_columns; ++column_i)
     {
         const auto * column_info = metadata->schema()->Column(column_i);
@@ -288,9 +337,31 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
             /// encodings
             auto & encodings_array_column = assert_cast<ColumnArray &>(tuple_column.getColumn(10));
             auto & encodings_nested_column = assert_cast<ColumnString &>(encodings_array_column.getData());
-            for (auto codec : column_chunk_metadata->encodings())
+            const auto & encodings = column_chunk_metadata->encodings();
+            for (size_t encoding_i = 0; encoding_i < encodings.size(); ++encoding_i)
             {
-                auto codec_name = magic_enum::enum_name(codec);
+                std::string_view codec_name = magic_enum::enum_name(encodings[encoding_i]);
+                if (encodings[encoding_i] == parquet::Encoding::UNDEFINED)
+                {
+                    if (!thrift_metadata_parsed)
+                    {
+                        thrift_metadata = getThriftFileMetadata(*metadata);
+                        thrift_metadata_parsed = true;
+                    }
+                    /// The encodings of the last row group are shown, see the loop above.
+                    const size_t row_group_i = metadata->num_row_groups() - 1;
+                    if (thrift_metadata && row_group_i < thrift_metadata->row_groups.size()
+                        && size_t(column_i) < thrift_metadata->row_groups[row_group_i].columns.size())
+                    {
+                        const auto & thrift_encodings = thrift_metadata->row_groups[row_group_i].columns[column_i].meta_data.encodings;
+                        if (encoding_i < thrift_encodings.size())
+                        {
+                            auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(thrift_encodings[encoding_i]);
+                            if (it != Parquet::parq::_Encoding_VALUES_TO_NAMES.end())
+                                codec_name = it->second;
+                        }
+                    }
+                }
                 encodings_nested_column.insertData(codec_name.data(), codec_name.size());
             }
             encodings_array_column.getOffsets().push_back(encodings_nested_column.size());
@@ -356,8 +427,88 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
         else
             tuple_column.getColumn(5).insertDefault();
         assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(column_chunk_metadata->bloom_filter_length().value_or(0));
+        /// A file written before SizeStatistics existed, or by a writer that omits it, has no size
+        /// statistics at all; that is not the same as a column whose histograms are legitimately
+        /// empty, so the presence is reported separately.
+        auto size_statistics = column_chunk_metadata->size_statistics();
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(7)).insertValue(size_statistics != nullptr);
+        fillColumnSizeStatistics(size_statistics, tuple_column.getColumn(8));
+        /// Present only for columns with the `GEOMETRY` or `GEOGRAPHY` logical type.
+        auto geospatial_statistics = column_chunk_metadata->geo_statistics();
+        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(9)).insertValue(geospatial_statistics != nullptr);
+        fillColumnGeospatialStatistics(geospatial_statistics, tuple_column.getColumn(10));
     }
     array_column.getOffsets().push_back(tuple_column.size());
+}
+
+void ParquetMetadataInputFormat::fillColumnGeospatialStatistics(
+    const std::shared_ptr<parquet::geospatial::GeoStatistics> & geospatial_statistics, IColumn & column)
+{
+    auto & geospatial_statistics_column = assert_cast<ColumnTuple &>(column);
+    if (!geospatial_statistics)
+    {
+        geospatial_statistics_column.insertDefault();
+        return;
+    }
+
+    const auto lower_bound = geospatial_statistics->lower_bound();
+    const auto upper_bound = geospatial_statistics->upper_bound();
+    const auto dimension_valid = geospatial_statistics->dimension_valid();
+    /// The bounds are in XYZM order, the columns are xmin, xmax, ymin, ymax, ...
+    for (size_t dimension = 0; dimension < dimension_valid.size(); ++dimension)
+    {
+        for (size_t is_max = 0; is_max < 2; ++is_max)
+        {
+            auto & bound_column = assert_cast<ColumnNullable &>(geospatial_statistics_column.getColumn(dimension * 2 + is_max));
+            if (dimension_valid[dimension])
+            {
+                assert_cast<ColumnFloat64 &>(bound_column.getNestedColumn()).insertValue(is_max ? upper_bound[dimension] : lower_bound[dimension]);
+                bound_column.getNullMapData().push_back(false);
+            }
+            else
+            {
+                bound_column.insertDefault();
+            }
+        }
+    }
+
+    auto & types_column = assert_cast<ColumnArray &>(geospatial_statistics_column.getColumn(8));
+    auto & types_data = assert_cast<ColumnInt32 &>(types_column.getData());
+    if (auto geometry_types = geospatial_statistics->geometry_types())
+        for (const auto geometry_type : *geometry_types)
+            types_data.insertValue(geometry_type);
+    types_column.getOffsets().push_back(types_data.size());
+}
+
+void ParquetMetadataInputFormat::fillColumnSizeStatistics(
+    const std::shared_ptr<parquet::SizeStatistics> & size_statistics, IColumn & column)
+{
+    auto & size_statistics_column = assert_cast<ColumnTuple &>(column);
+
+    auto & unencoded_bytes = assert_cast<ColumnNullable &>(size_statistics_column.getColumn(0));
+    if (size_statistics && size_statistics->unencoded_byte_array_data_bytes.has_value())
+    {
+        assert_cast<ColumnUInt64 &>(unencoded_bytes.getNestedColumn())
+            .insertValue(static_cast<UInt64>(*size_statistics->unencoded_byte_array_data_bytes));
+        unencoded_bytes.getNullMapData().push_back(false);
+    }
+    else
+    {
+        unencoded_bytes.insertDefault();
+    }
+
+    auto insert_histogram = [&](const std::vector<int64_t> & histogram, IColumn & histogram_column)
+    {
+        auto & array_column = assert_cast<ColumnArray &>(histogram_column);
+        auto & data_column = assert_cast<ColumnUInt64 &>(array_column.getData());
+        for (const auto level_count : histogram)
+            data_column.insertValue(static_cast<UInt64>(level_count));
+        array_column.getOffsets().push_back(data_column.size());
+    };
+
+    static const std::vector<int64_t> empty_histogram;
+    insert_histogram(size_statistics ? size_statistics->repetition_level_histogram : empty_histogram, size_statistics_column.getColumn(1));
+    insert_histogram(size_statistics ? size_statistics->definition_level_histogram : empty_histogram, size_statistics_column.getColumn(2));
 }
 
 template <typename T>
@@ -499,6 +650,7 @@ NamesAndTypesList ParquetMetadataSchemaReader::readSchema()
     return getHeaderForParquetMetadata();
 }
 
+void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -512,8 +664,157 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
            FormatFilterInfoPtr) -> InputFormatPtr
         { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
+
+    factory.setDocumentation("ParquetMetadata", Documentation{
+        .description = R"DOCS_MD(
+## Description {#description}
+
+Special format for reading Parquet file metadata (https://parquet.apache.org/docs/file-format/metadata/). It always outputs one row with the next structure/content:
+- `num_columns` - the number of columns
+- ``num_rows` - the total number of rows
+- `num_row_groups` - the total number of row groups
+- `format_version` - parquet format version, always 1.0 or 2.6
+- `total_uncompressed_size` - total uncompressed bytes size of the data, calculated as the sum of total_byte_size from all row groups
+- `total_compressed_size` - total compressed bytes size of the data, calculated as the sum of total_compressed_size from all row groups
+- `columns` - the list of columns metadata with the next structure:
+  - `name` - column name
+  - `path` - column path (differs from name for nested column)
+  - `max_definition_level` - maximum definition level
+  - `max_repetition_level` - maximum repetition level
+  - `physical_type` - column physical type
+  - `logical_type` - column logical type
+  - `compression` - compression used for this column
+  - `total_uncompressed_size` - total uncompressed bytes size of the column, calculated as the sum of total_uncompressed_size of the column from all row groups
+  - `total_compressed_size` - total compressed bytes size of the column,  calculated as the sum of total_compressed_size of the column from all row groups
+  - `space_saved` - percent of space saved by compression, calculated as (1 - total_compressed_size/total_uncompressed_size).
+  - `encodings` - the list of encodings used for this column
+- `row_groups` - the list of row groups metadata with the next structure:
+  - `num_columns` - the number of columns in the row group
+  - `num_rows` - the number of rows in the row group
+  - `total_uncompressed_size` - total uncompressed bytes size of the row group
+  - `total_compressed_size` - total compressed bytes size of the row group
+  - `columns` - the list of column chunks metadata with the next structure:
+    - `name` - column name
+    - `path` - column path
+    - `total_compressed_size` - total compressed bytes size of the column
+    - `total_uncompressed_size` - total uncompressed bytes size of the row group
+    - `have_statistics` - boolean flag that indicates if column chunk metadata contains column statistics
+    - `statistics` - column chunk statistics (all fields are NULL if have_statistics = false) with the next structure:
+      - `num_values` - the number of non-null values in the column chunk
+      - `null_count` - the number of NULL values in the column chunk
+      - `distinct_count` - the number of distinct values in the column chunk
+      - `min` - the minimum value of the column chunk
+      - `max` - the maximum column of the column chunk
+    - `have_size_statistics` - boolean flag that indicates if column chunk metadata contains size statistics
+    - `size_statistics` - column chunk size statistics (all fields are NULL or empty if have_size_statistics = false) with the next structure:
+      - `unencoded_byte_array_data_bytes` - the total size of the unencoded byte array values as recorded in the footer, NULL when the writer did not record it
+      - `repetition_level_histogram` - the number of values at each repetition level as recorded in the footer, empty when the writer did not record it
+      - `definition_level_histogram` - the number of values at each definition level as recorded in the footer, empty when the writer did not record it
+    - `have_geospatial_statistics` - boolean flag that indicates if column chunk metadata contains geospatial statistics, which are written only for columns with the `GEOMETRY` or `GEOGRAPHY` logical type
+    - `geospatial_statistics` - column chunk geospatial statistics (all fields are NULL or empty if have_geospatial_statistics = false) with the next structure:
+      - `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax`, `mmin`, `mmax` - the bounding box of the geometries in the column chunk, NULL for the dimensions that the writer did not record
+      - `geospatial_types` - the WKB (ISO) codes of the geometry types in the column chunk (for example, 1 for `Point`, 3 for `Polygon`, 1001 for `Point Z`), empty when unknown
+
+## Example usage {#example-usage}
+
+Example:
+
+```sql
+SELECT * 
+FROM file(data.parquet, ParquetMetadata) 
+FORMAT PrettyJSONEachRow
+```
+
+```json
+{
+    "num_columns": "2",
+    "num_rows": "100000",
+    "num_row_groups": "2",
+    "format_version": "2.6",
+    "metadata_size": "577",
+    "total_uncompressed_size": "282436",
+    "total_compressed_size": "26633",
+    "columns": [
+        {
+            "name": "number",
+            "path": "number",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "INT32",
+            "logical_type": "Int(bitWidth=16, isSigned=false)",
+            "compression": "LZ4",
+            "total_uncompressed_size": "133321",
+            "total_compressed_size": "13293",
+            "space_saved": "90.03%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        },
+        {
+            "name": "concat('Hello', toString(modulo(number, 1000)))",
+            "path": "concat('Hello', toString(modulo(number, 1000)))",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "BYTE_ARRAY",
+            "logical_type": "None",
+            "compression": "LZ4",
+            "total_uncompressed_size": "149115",
+            "total_compressed_size": "13340",
+            "space_saved": "91.05%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        }
+    ],
+    "row_groups": [
+        {
+            "num_columns": "2",
+            "num_rows": "65409",
+            "total_uncompressed_size": "179809",
+            "total_compressed_size": "14163",
+            "columns": [
+                {
+                    "name": "number",
+                    "path": "number",
+                    "total_compressed_size": "7070",
+                    "total_uncompressed_size": "85956",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "0",
+                        "max": "999"
+                    }
+                },
+                {
+                    "name": "concat('Hello', toString(modulo(number, 1000)))",
+                    "path": "concat('Hello', toString(modulo(number, 1000)))",
+                    "total_compressed_size": "7093",
+                    "total_uncompressed_size": "93853",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "Hello0",
+                        "max": "Hello999"
+                    }
+                }
+            ]
+        },
+        ...
+    ]
+}
+```
+)DOCS_MD"});
 }
 
+void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -532,6 +833,8 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatParquetMetadata(FormatFactory &);
+void registerParquetMetadataSchemaReader(FormatFactory &);
 void registerInputFormatParquetMetadata(FormatFactory &)
 {
 }

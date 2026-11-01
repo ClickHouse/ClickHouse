@@ -1,0 +1,2 @@
+an empty block is processed even though the memory limit is below one page
+0

@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathUnary : public IFunction
+class FunctionMathUnary final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -40,6 +40,23 @@ private:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    String getSignatureString() const override
+    {
+        /// `Float32`/`Float64` keep their precision unless `always_returns_float64`; other `Number` types, including `BFloat16`, become `Float64`.
+        if constexpr (Impl::always_returns_float64)
+            return "(Number) -> Float64";
+        else
+            return R"sig(("Float32") -> "Float32" OR ("Float64") -> "Float64" OR (Number) -> Float64)sig";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -52,7 +69,7 @@ private:
                 getName());
 
         /// Integers are converted to Float64.
-        if (Impl::always_returns_float64 || !isFloat(argument))
+        if (Impl::always_returns_float64 || !isNativeFloat(argument))
             return std::make_shared<DataTypeFloat64>();
         return argument;
     }
@@ -88,6 +105,12 @@ private:
             const size_t rows_remaining = size % Impl::rows_per_iteration;
             const size_t rows_size = size - rows_remaining;
 
+            /// When rows_per_iteration == 1, the loop body is a scalar libm call (or an inlined
+            /// implementation like `preciseExp10` that itself calls libm), so unrolling cannot
+            /// overlap iterations and only bloats the code. Removing this pragma made `exp10`
+            /// 19-23% slower in the CI performance tests on m7i (Sapphire Rapids) with clang 22,
+            /// while a Zen 5 machine showed no difference with the same binaries.
+#pragma clang loop unroll(disable)
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(&src_data[i], &dst_data[i]);
 

@@ -34,7 +34,7 @@ private:
     struct Payload
     {
         String message;
-        UInt64 id;
+        UInt64 id{};
     };
 
     using Payloads = ConcurrentBoundedQueue<Payload>;

@@ -9,6 +9,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Common/FloatUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <base/unaligned.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +37,34 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A NumPy `<U<n>` (or `>U<n>`) value is fixed-width UTF-32, padded with trailing zero code points. Convert it to
+/// UTF-8, keeping zero code points inside the value as `np.load` does.
+String decodeNumpyUnicode(std::string_view data, NumpyDataType::Endianness endianness)
+{
+    auto code_point_at = [&](size_t i)
+    {
+        const char * address = data.data() + i * sizeof(UInt32);
+        return endianness == NumpyDataType::Endianness::BIG ? unalignedLoadBigEndian<UInt32>(address)
+                                                             : unalignedLoadLittleEndian<UInt32>(address);
+    };
+
+    size_t length = data.size() / sizeof(UInt32);
+    while (length > 0 && code_point_at(length - 1) == 0)
+        --length;
+
+    String result;
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i)
+    {
+        const UInt32 code_point = code_point_at(i);
+        if (code_point > 0x10FFFF || UTF8::isSurrogateCodePoint(code_point))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Numpy unicode string contains an invalid code point {:#x}", code_point);
+        char utf8[4];
+        result.append(utf8, UTF8::convertCodePointToUTF8(static_cast<int>(code_point), utf8, sizeof(utf8)));
+    }
+    return result;
+}
 
 DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & numpy_type)
 {
@@ -73,7 +103,7 @@ DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & nump
 DataTypePtr createNestedArrayType(const DataTypePtr & nested_type, size_t depth)
 {
     DataTypePtr result_type = nested_type;
-    assert(depth > 0);
+    chassert(depth > 0);
     if (depth > 1)
     {
         for (size_t i = 0; i < depth - 1; ++i)
@@ -85,7 +115,7 @@ DataTypePtr createNestedArrayType(const DataTypePtr & nested_type, size_t depth)
 size_t parseTypeSize(const std::string & size_str)
 {
     ReadBufferFromString buf(size_str);
-    size_t size;
+    size_t size = 0;
     if (!tryReadIntText(size, buf))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid data type size: {}", size_str);
     return size;
@@ -94,7 +124,7 @@ size_t parseTypeSize(const std::string & size_str)
 std::shared_ptr<NumpyDataType> parseType(String type)
 {
     /// Parse endianness
-    NumpyDataType::Endianness endianness;
+    NumpyDataType::Endianness endianness = {};
     if (type[0] == '<')
         endianness = NumpyDataType::Endianness::LITTLE;
     else if (type[0] == '>')
@@ -145,7 +175,7 @@ std::vector<size_t> parseShape(String shape_string)
         /// Reject negative values before parsing as unsigned.
         if (!buf.eof() && *buf.position() == '-')
             throw Exception(ErrorCodes::INCORRECT_DATA, "Negative shape dimension in shape {}", shape_string);
-        size_t value;
+        size_t value = 0;
         if (!tryReadIntText(value, buf))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid shape format: {}", shape_string);
         shape.push_back(value);
@@ -160,17 +190,17 @@ NumpyHeader parseHeader(ReadBuffer &buf)
     assertString(magic_string, buf);
 
     /// Read npy version.
-    UInt8 version_major;
-    UInt8 version_minor;
+    UInt8 version_major = 0;
+    UInt8 version_minor = 0;
     readBinary(version_major, buf);
     readBinary(version_minor, buf);
 
     /// Read header length.
-    UInt32 header_length;
+    UInt32 header_length = 0;
     /// In v1 header length is 2 bytes, in v2 - 4 bytes.
     if (version_major == 1)
     {
-        UInt16 header_length_u16;
+        UInt16 header_length_u16 = 0;
         readBinaryLittleEndian(header_length_u16, buf);
         header_length = header_length_u16;
     }
@@ -360,7 +390,7 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Par
 
 size_t NpyRowInputFormat::countRows(size_t max_block_size)
 {
-    size_t count;
+    size_t count = 0;
     if (counted_rows + max_block_size <= size_t(header.shape[0]))
         count = max_block_size;
     else
@@ -383,7 +413,7 @@ void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyD
 template <typename ColumnValue>
 void NpyRowInputFormat::readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness)
 {
-    uint16_t value;
+    uint16_t value = 0;
     if (endianness == NumpyDataType::Endianness::BIG)
         readBinaryBigEndian(value, *in);
     else
@@ -427,7 +457,7 @@ void NpyRowInputFormat::readAndInsertFloat(IColumn * column, const DataTypePtr &
 template <typename T>
 void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataTypePtr & data_type, const NumpyDataType & npy_type, bool is_fixed)
 {
-    size_t size;
+    size_t size = 0;
     if (npy_type.getTypeIndex() == NumpyDataTypeIndex::String)
         size = assert_cast<const NumpyDataTypeString &>(npy_type).getSize();
     else if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
@@ -454,8 +484,12 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
 
         tmp.resize(size);
         in->readStrict(tmp.data(), size);
-        tmp.erase(std::remove(tmp.begin(), tmp.end(), '\0'), tmp.end());
-        column_string.insertData(tmp.c_str(), tmp.size());
+        if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
+            tmp = decodeNumpyUnicode(tmp, npy_type.getEndianness());
+        else
+            /// NumPy pads `|S<n>` byte strings with zero bytes; zero bytes inside the value are part of it.
+            tmp.erase(tmp.find_last_not_of('\0') + 1);
+        column_string.insertData(tmp.data(), tmp.size());
     }
 }
 
@@ -485,10 +519,13 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
     if (read_rows >= header.shape[0])
         return false;
 
-    /// For non-zero element sizes, check eof to detect truncated files.
-    /// For zero-size elements (|S0, <U0), the data section is empty and
-    /// eof is expected — rows are produced based on the row counter alone.
-    if (header.numpy_type->getSize() != 0 && in->eof())
+    /// Check eof only when the current row requires data bytes. Rows with zero-size
+    /// elements or a zero inner dimension are represented without a data section.
+    bool row_requires_data_bytes = header.numpy_type->getSize() != 0;
+    for (size_t i = 1; i != header.shape.size(); ++i)
+        row_requires_data_bytes = row_requires_data_bytes && header.shape[i] != 0;
+
+    if (row_requires_data_bytes && in->eof())
         return false;
 
     ++read_rows;
@@ -545,6 +582,7 @@ std::optional<size_t> NpySchemaReader::readNumberOrRows()
     return header.shape[0];
 }
 
+void registerInputFormatNpy(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory)
 {
     factory.registerInputFormat("Npy", [](
@@ -557,7 +595,74 @@ void registerInputFormatNpy(FormatFactory & factory)
     });
 
     factory.markFormatSupportsSubsetOfColumns("Npy");
+
+    factory.setDocumentation("Npy", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+The `Npy` format is designed to load a NumPy array from a `.npy` file into ClickHouse. 
+The NumPy file format is a binary format used for efficiently storing arrays of numerical data. 
+During import, ClickHouse treats the top level dimension as an array of rows with a single column. 
+
+The table below gives the supported Npy data types and their corresponding type in ClickHouse:
+
+## Data types matching {#data-types-matching}
+
+| Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
+|--------------------------|-----------------------------------------------------------------|-------------------------|
+| `i1`                     | [Int8](/reference/data-types/int-uint)           | `i1`                    |
+| `i2`                     | [Int16](/reference/data-types/int-uint)          | `i2`                    |
+| `i4`                     | [Int32](/reference/data-types/int-uint)          | `i4`                    |
+| `i8`                     | [Int64](/reference/data-types/int-uint)          | `i8`                    |
+| `u1`, `b1`               | [UInt8](/reference/data-types/int-uint)          | `u1`                    |
+| `u2`                     | [UInt16](/reference/data-types/int-uint)         | `u2`                    |
+| `u4`                     | [UInt32](/reference/data-types/int-uint)         | `u4`                    |
+| `u8`                     | [UInt64](/reference/data-types/int-uint)         | `u8`                    |
+| `f2`, `f4`               | [Float32](/reference/data-types/float)           | `f4`                    |
+| `f8`                     | [Float64](/reference/data-types/float)           | `f8`                    |
+| `S`, `U`                 | [String](/reference/data-types/string)           | `S`                     |
+|                          | [FixedString](/reference/data-types/fixedstring) | `S`                     |
+
+## Example usage {#example-usage}
+
+### Saving an array in .npy format using Python {#saving-an-array-in-npy-format-using-python}
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+### Reading a NumPy file in ClickHouse {#reading-a-numpy-file-in-clickhouse}
+
+```sql title="Query"
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+```response title="Response"
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
+```
+
+### Selecting data {#selecting-data}
+
+You can select data from a ClickHouse table and save it into a file in the Npy format using the following command with clickhouse-client:
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
+void registerNpySchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Npy", [](ReadBuffer & buf, const FormatSettings &)

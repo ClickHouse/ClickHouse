@@ -1,5 +1,4 @@
 import pytest
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -75,27 +74,27 @@ def test_excpected_failure_with_default_profile(started_cluster):
   # and we'll have to adjust timeout expectations for this test
   prepare_data(instance=node1)
   assert_mutate_blocking(instance=node1, sleep_sec_per_row=1, expected_failure=True)
-  print(f"Check 1: background operation failed as expected with all defaults")
+  print("Check 1: background operation failed as expected with all defaults")
 
 def test_background_profile_configured_with_all_defaults(started_cluster):
   prepare_data(instance=node2)
   assert_mutate_blocking(instance=node2, sleep_sec_per_row=1)
-  print(f"Check 2: background operation succeeds with 'background' profile minimally configured")
+  print("Check 2: background operation succeeds with 'background' profile minimally configured")
 
 def test_excpected_failure_with_tightened_default_profile(started_cluster):
   prepare_data(instance=node3)
   assert_mutate_blocking(instance=node3, sleep_sec_per_row=0.1, expected_failure=True)
-  print(f"Check 3: background operation failed as expected with a tighter query timeout")
+  print("Check 3: background operation failed as expected with a tighter query timeout")
 
 def test_background_profile_configured(started_cluster):
   prepare_data(instance=node4)
   assert_mutate_blocking(instance=node4, sleep_sec_per_row=0.1)
-  print(f"Check 4: background operation succeeds with 'background' profile configured")
+  print("Check 4: background operation succeeds with 'background' profile configured")
 
 def test_custom_background_profile_configured(started_cluster):
   prepare_data(instance=node5)
   assert_mutate_blocking(instance=node5, sleep_sec_per_row=0.1)
-  print(f"Check 5: background operation succeeds with a custom background profile configured")
+  print("Check 5: background operation succeeds with a custom background profile configured")
 
 def test_switching_to_background_profile_in_flight(started_cluster):
   prepare_data(instance=node6)
@@ -115,7 +114,7 @@ def test_switching_to_background_profile_in_flight(started_cluster):
   node6.restart_clickhouse()
   # And finally it works
   assert_mutate_blocking(instance=node6, sleep_sec_per_row=1)
-  print(f"Check 6: background created in flight")
+  print("Check 6: background created in flight")
 
 def test_changing_profile_in_flight(started_cluster):
   prepare_data(instance=node7)
@@ -123,4 +122,4 @@ def test_changing_profile_in_flight(started_cluster):
 
   node7.query_and_get_error("ALTER SETTINGS PROFILE background SETTINGS function_sleep_max_microseconds_per_block=5000000")
   
-  print(f"Check 7: background can't be created in config and modified via SQL")
+  print("Check 7: background can't be created in config and modified via SQL")

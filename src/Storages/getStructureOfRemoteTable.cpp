@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NetException.h>
 #include <Common/quoteString.h>
@@ -33,11 +34,12 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
 }
 
 
-ColumnsDescription getStructureOfRemoteTableInShard(
+static ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
@@ -64,7 +66,16 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-            return storage_ptr->getInMemoryMetadataPtr(context, false)->getColumns();
+
+            /// An `Alias` reports its target's columns, so a structure inferred from one needs the
+            /// privilege on the target that describing the target requires.
+            if (const auto * alias = storage_ptr->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
+
+            auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
+            return metadata_snapshot->getColumns();
         }
 
         /// Request for a table description
@@ -83,6 +94,10 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         new_settings[Setting::describe_compact_output] = false;
         new_context->setSettings(new_settings);
     }
+
+    /// The source context may carry no client version at all: e.g. `StorageDistributed` fetches the
+    /// structure of the remote table at CREATE time under the global context.
+    new_context->setInitiatorVersionIfUnset();
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     auto sample_block = std::make_shared<const Block>(Block

@@ -1,0 +1,33 @@
+---
+title: '从 ClickPipe 中移除特定表'
+description: '从 ClickPipe 中移除特定表'
+sidebarTitle: '移除表'
+slug: /integrations/clickpipes/mysql/removing_tables
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+在某些情况下，从 MySQL ClickPipe 中排除特定表是合理的——例如，如果某个表并非你的分析工作负载所需，跳过它可以降低 ClickHouse 中的存储和复制成本。
+
+<div id="remove-tables-steps">
+  ## 移除特定表的步骤
+</div>
+
+第一步是将该表从管道中移除。可按以下步骤操作：
+
+1. [暂停](/zh/integrations/clickpipes/mysql/pause-and-resume)该管道。
+2. 点击“Edit Table Settings”。
+3. 找到你的表——可以在搜索栏中搜索。
+4. 点击已选中的复选框，取消选中该表。
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. 点击“update”。
+6. 更新成功后，在 **Metrics** 选项卡中，状态将显示为 **Running**。该表将不再由此 ClickPipe 复制。

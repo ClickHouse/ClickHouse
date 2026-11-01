@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class DataTypeIPv4 : public IDataType
+class DataTypeIPv4 final : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;
@@ -51,7 +51,7 @@ public:
     SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationIP<IPv4>::create(); }
 };
 
-class DataTypeIPv6 : public IDataType
+class DataTypeIPv6 final : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;

@@ -152,6 +152,26 @@ def test_load_balancing_hostname_levenshtein_distance():
     assert unique_nodes == set(["n1"])
 
 
+def test_load_balancing_hostname_longest_common_prefix():
+    unique_nodes = set()
+    for _ in range(0, queries):
+        unique_nodes.add(
+            get_node(n1, settings={"load_balancing": "hostname_longest_common_prefix"})
+        )
+    assert len(unique_nodes) == 1, unique_nodes
+    assert unique_nodes == set(["n1"])
+
+
+def test_load_balancing_hostname_longest_common_suffix():
+    unique_nodes = set()
+    for _ in range(0, queries):
+        unique_nodes.add(
+            get_node(n1, settings={"load_balancing": "hostname_longest_common_suffix"})
+        )
+    assert len(unique_nodes) == 1, unique_nodes
+    assert unique_nodes == set(["n1"])
+
+
 def test_load_balancing_in_order():
     unique_nodes = set()
     for _ in range(0, queries):

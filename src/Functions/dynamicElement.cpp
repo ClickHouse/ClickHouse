@@ -30,7 +30,7 @@ namespace
 /** Extract element of Dynamic by type name.
   * Also the function looks through Arrays: you can get Array of Dynamic elements from Array of Dynamic.
   */
-class FunctionDynamicElement : public IFunction
+class FunctionDynamicElement final : public IFunction
 {
 public:
     static constexpr auto name = "dynamicElement";
@@ -43,6 +43,14 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Documentation-only — the result type is the requested variant
+    /// element (or array of), looked up dynamically from the const-string
+    /// or const-Array(String) type-name in the second argument.
+    String getSignatureString() const override
+    {
+        return "(Dynamic, const String) -> Any";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

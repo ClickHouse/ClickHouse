@@ -3,12 +3,26 @@
 #if USE_AVRO
 
 #include <compare>
+#include <mutex>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
+
+#include <Poco/String.h>
+
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event IcebergManifestFilesReadMicroseconds;
+}
 
 namespace DB::ErrorCodes
 {
@@ -17,6 +31,49 @@ namespace DB::ErrorCodes
 
 namespace DB::Iceberg
 {
+
+struct ManifestFileCacheableInfo::State
+{
+    State(String bytes_, const IcebergPathFromMetadata & path_, const FormatSettings & format_settings_)
+        : path(path_)
+        , bytes(std::move(bytes_))
+        , format_settings(format_settings_)
+    {
+    }
+
+    const IcebergPathFromMetadata path;
+    /// Released once parsed.
+    String bytes;
+    std::optional<FormatSettings> format_settings;
+
+    std::once_flag parsed;
+    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
+};
+
+ManifestFileCacheableInfo ManifestFileCacheableInfo::fromBytes(
+    String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings)
+{
+    const size_t size = bytes.size();
+    return ManifestFileCacheableInfo{std::make_shared<State>(std::move(bytes), path, format_settings), size};
+}
+
+std::shared_ptr<AvroForIcebergDeserializer> ManifestFileCacheableInfo::getDeserializer() const
+{
+    chassert(state);
+    std::call_once(
+        state->parsed,
+        [&parsed_state = *state]
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
+            parsed_state.deserializer = std::make_shared<AvroForIcebergDeserializer>(
+                std::make_unique<ReadBufferFromOutsideMemoryFile>(parsed_state.path.serialize(), parsed_state.bytes),
+                parsed_state.path,
+                *parsed_state.format_settings);
+            String().swap(parsed_state.bytes);
+            parsed_state.format_settings.reset();
+        });
+    return state->deserializer;
+}
 
 String FileContentTypeToString(FileContentType type)
 {
@@ -32,7 +89,7 @@ String FileContentTypeToString(FileContentType type)
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
 }
 
-std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
+static std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
 {
     return std::tie(lhs.source_id, lhs.transform_name, lhs.partition_name)
         <=> std::tie(rhs.source_id, rhs.transform_name, rhs.partition_name);
@@ -58,11 +115,11 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
 
 std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
 {
-    return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value, lhs->sequence_number)
-        <=> std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value, rhs->sequence_number);
+    return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value, lhs->sequence_number)
+        <=> std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value, rhs->sequence_number);
 }
 
-String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
+static String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
 {
     if (partition_specification.empty())
         return "[empty]";
@@ -82,7 +139,7 @@ String dumpPartitionSpecification(const PartitionSpecification & partition_speci
     }
 }
 
-String dumpPartitionKeyValue(const DB::Row & partition_key_value)
+static String dumpPartitionKeyValue(const DB::Row & partition_key_value)
 {
     if (partition_key_value.empty())
         return "[empty]";
@@ -102,12 +159,17 @@ String dumpPartitionKeyValue(const DB::Row & partition_key_value)
 }
 
 
+bool ParsedManifestFileEntry::isDeletionVector() const
+{
+    return content_type == FileContentType::POSITION_DELETE && Poco::toLower(file_format) == "puffin";
+}
+
 String ProcessedManifestFileEntry::dumpDeletesMatchingInfo() const
 {
     return fmt::format(
         "Partition specification: {}, partition key value: {}, added sequence number: {}",
         dumpPartitionSpecification(*common_partition_specification),
-        dumpPartitionKeyValue(parsed_entry->partition_key_value),
+        dumpPartitionKeyValue(normalized_partition_key_value),
         sequence_number);
 }
 }
