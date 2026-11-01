@@ -2,6 +2,7 @@
 #include <Planner/Planner.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
@@ -1355,7 +1356,7 @@ bool limitAlwaysReadsTillEnd(
         return true;
 
     if (query_node.isGroupByWithTotals())
-        return !query_node.hasOrderBy();
+        return !query_node.hasOrderBy() && !query_node.isShuffle();
 
     return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
@@ -1406,7 +1407,7 @@ void addDistinctStep(QueryPlan & query_plan,
       *    `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
+    if (((!query_node.hasOrderBy() && !query_node.isShuffle()) || !before_order) && !query_node.hasLimitBy()
         && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && limit_length != 0
         && !query_analysis_result.is_limit_length_negative
@@ -1432,7 +1433,7 @@ void addDistinctStep(QueryPlan & query_plan,
 
     /// The `DISTINCT` that runs after the `ORDER BY` sits above the sort in the plan: the sorted order has
     /// to survive it up to the result.
-    if (!before_order && query_node.hasOrderBy())
+    if (!before_order && (query_node.hasOrderBy() || query_node.isShuffle()))
         distinct_step->preserveInputOrder();
 
     query_plan.addStep(std::move(distinct_step));
@@ -1469,10 +1470,10 @@ void addShuffleStep(QueryPlan & query_plan,
     if (query_plan.getCurrentHeader()->has(key_column_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column name `{}` is reserved for `SHUFFLE`", key_column_name);
 
+    /// The values are replaced by `ShuffleStep`, but they have to be random already:
+    /// `ShuffleStep` may scatter the rows into streams by the hash of the key.
     ActionsDAG key_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-    auto key_type = std::make_shared<DataTypeUInt64>();
-    /// The values are filled by `ShuffleStep`; here it is a placeholder.
-    const auto & key_node = key_dag.materializeNode(key_dag.addColumn(key_type->createColumnConst(0, UInt64(0)), key_type, key_column_name));
+    const auto & key_node = key_dag.addFunction(FunctionFactory::instance().get("rand64", query_context), {}, key_column_name);
     key_dag.getOutputs().push_back(&key_node);
 
     auto key_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(key_dag));
@@ -1766,7 +1767,7 @@ void addLimitRangeStep(
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy() && !query_node.isShuffle())
         always_read_till_end = true;
     if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
         always_read_till_end = true;
@@ -3001,7 +3002,8 @@ void Planner::buildPlanForQueryNode()
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
     current_storage_limits.push_back(select_query_info.local_storage_limits);
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(current_storage_limits);
-    select_query_info.has_order_by = query_node.hasOrderBy();
+    /// `SHUFFLE` reorders the rows like `ORDER BY`, so the storage must not stop reading after `LIMIT` rows.
+    select_query_info.has_order_by = query_node.hasOrderBy() || query_node.isShuffle();
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;

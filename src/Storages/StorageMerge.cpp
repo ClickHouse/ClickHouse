@@ -150,8 +150,9 @@ bool queryHasOrderBy(const SelectQueryInfo & query_info)
 {
     if (query_info.query_tree)
     {
+        /// The streams of `SHUFFLE` are sorted by its key and merged the same way.
         if (const auto * query_node = query_info.query_tree->as<QueryNode>())
-            return query_node->hasOrderBy();
+            return query_node->hasOrderBy() || query_node->isShuffle();
     }
 
     if (query_info.query)

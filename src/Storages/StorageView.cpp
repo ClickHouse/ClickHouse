@@ -583,7 +583,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// result semantics when evaluated per-replica must disqualify the view.
                     if (query_node.hasGroupBy() || query_node.hasHaving()
                         || query_node.hasWindow() || query_node.hasQualify()
-                        || query_node.hasOrderBy() || query_node.isDistinct()
+                        || query_node.hasOrderBy() || query_node.isShuffle() || query_node.isDistinct()
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()
