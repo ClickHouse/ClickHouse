@@ -104,6 +104,28 @@ TEST(PartitionedRecordBuffer, ChunksDoubleUpToTheCap)
     }
 }
 
+TEST(PartitionedRecordBuffer, RecordsOverHalfTheCapTakeTheirOwnSize)
+{
+    /// A record of more than half the chunk cap gets a chunk of its own size, so a partition of such records takes
+    /// about the records' bytes, where capped chunks holding one record each would take the whole cap per record.
+    constexpr size_t record_size = PartitionedRecordBuffer::default_max_chunk_bytes / 2 + 1000;
+    constexpr size_t records = 10;
+    PartitionedRecordBuffer buffer(1, 1);
+    std::string expected;
+    for (size_t row = 0; row < records; ++row)
+    {
+        const std::string record(record_size, static_cast<char>('a' + row));
+        appendRecord(buffer, 0, record);
+        expected += record;
+    }
+    buffer.finishAppending();
+
+    /// Each chunk adds its header and the tail padding to the record.
+    EXPECT_LT(buffer.allocatedChunkBytes(), records * (record_size + 128));
+    EXPECT_EQ(buffer.recordsOf(0), records);
+    EXPECT_EQ(readPartition(buffer, 0), expected);
+}
+
 TEST(PartitionedRecordBuffer, RecordTooLargeForAChunk)
 {
     /// A chunk keeps its size in 32 bits, so a record that cannot fit one is rejected before anything is allocated.
