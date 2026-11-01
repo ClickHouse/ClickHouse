@@ -312,6 +312,8 @@ def test_stable_with_non_default_create_settings(start_cluster):
 
 
 def test_replaced_during_upgrade(start_cluster):
+    node4.query("SELECT 'test_upgrade_marker'")
+    node4.query("SYSTEM FLUSH LOGS query_log")
     node4.query("SYSTEM FLUSH LOGS trace_log")
     old_create_query = node4.query("SHOW CREATE TABLE system.all_trace_log FORMAT TSVRaw")
 
@@ -322,6 +324,35 @@ def test_replaced_during_upgrade(start_cluster):
 
     assert node4.query("SHOW CREATE TABLE system.all_trace_log FORMAT TSVRaw") != old_create_query
     assert not node4.contains_in_log("UUID collision", from_host=True)
+
+    # The log tables written by the previous version are rotated, and every union table reads them.
+    # `transaction_id` has fewer elements in the rotated `query_log`, the missing one is read as 0.
+    node4.query("SYSTEM FLUSH LOGS")
+    old_query_log = node4.query(
+        "SELECT table FROM system.columns WHERE database = 'system' AND table LIKE 'query\\_log\\_%' "
+        "AND name = 'transaction_id' AND type = 'Tuple(UInt64, UInt64, UUID)'"
+    ).strip()
+    assert old_query_log != ""
+
+    union_tables = node4.query(
+        "SELECT name FROM system.tables WHERE database = 'system' AND name LIKE 'all\\_%' ORDER BY name"
+    ).split()
+    assert "all_query_log" in union_tables
+    for name in union_tables:
+        node4.query(f"SELECT * FROM system.{name} FORMAT Null")
+
+    marker_filter = "query LIKE '%test\\_upgrade\\_marker%' AND type = 'QueryFinish'"
+    old_transaction_id = node4.query(
+        f"SELECT transaction_id FROM system.{old_query_log} WHERE {marker_filter}"
+    ).strip()
+    assert old_transaction_id != ""
+    assert (
+        node4.query(
+            "SELECT (transaction_id.1, transaction_id.2, transaction_id.3), transaction_id.4 "
+            f"FROM system.all_query_log WHERE _table = '{old_query_log}' AND {marker_filter}"
+        )
+        == f"{old_transaction_id}\t0\n"
+    )
 
 
 def test_cluster(start_cluster):
