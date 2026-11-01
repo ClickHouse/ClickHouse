@@ -684,7 +684,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
 
     /// The merge reads back the routing hash of a byte-staged key and the whole value of a fixed-width key from the
     /// bytes that the record stores.
-    const auto check_record = [&](const auto & format, const char * record, size_t i, UInt64 hash)
+    const auto check_record = [&](const auto & format, const char * record, [[maybe_unused]] size_t i, UInt64 hash)
     {
         if constexpr (adaptive_key_stages_bytes<RecordKey>)
             chassert(format.routingHash(record) == hash);
