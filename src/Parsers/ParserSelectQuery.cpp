@@ -3128,7 +3128,7 @@ It returns the same result as `ORDER BY rand()`, but works in O(n) time instead 
 `SHUFFLE` can be used without `LIMIT`, to randomize the order of all rows, or with `LIMIT n`, to take a uniformly random sample of `n` rows (also returned in a random order). With `LIMIT n`, every stream keeps only `n` rows, so the memory usage is O(n) regardless of the number of rows in the query result. `OFFSET` and `LIMIT BY` can be used as with `ORDER BY`.
 
 <Note>
-This is an experimental feature. Enable it with the setting [`allow_experimental_shuffle_query`](/reference/settings/session-settings#allow_experimental_shuffle_query). It requires the analyzer (`enable_analyzer = 1`).
+This is an experimental feature. Enable it with the setting [`allow_experimental_shuffle_query`](/reference/settings/session-settings#allow_experimental_shuffle_query).
 </Note>
 
 ## Implementation details {#implementation-details}
