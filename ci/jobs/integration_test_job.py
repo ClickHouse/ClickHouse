@@ -2000,8 +2000,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # module-scoped fixtures between them, breaking tests that call
         # cluster.add_instance() inside the fixture.
         # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
-        parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
-        sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
+        #
+        # The merge-queue targeted check runs under a 20-minute cap that ends the run
+        # without failing it, so the order decides what is cut off. Keep the priority
+        # order of the selection there (the changed modules, the modules owning changed
+        # files, the modules `master` changed since the PR CI, then the coverage
+        # ranking): sorting by name would let a large coverage selection starve the
+        # mandatory modules and report OK without running them.
+        if is_merge_queue_targeted_check:
+            priority = {}
+            for t in targeted_tests:
+                priority.setdefault(t.split("::")[0], len(priority))
+
+            def module_key(t):
+                module = t.split("::")[0]
+                return (priority.get(module, len(priority)), module)
+
+        else:
+
+            def module_key(t):
+                return t.split("::")[0]
+
+        parallel_test_modules = sorted(parallel_test_modules, key=module_key)
+        sequential_test_modules = sorted(sequential_test_modules, key=module_key)
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
