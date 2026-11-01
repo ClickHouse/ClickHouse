@@ -324,6 +324,16 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
     synchronization_started = true;
 
+    /// The initial synchronization has completed (or, in coordinated mode, this replica has joined the shared
+    /// setup), so from now on the database is in the same state as after a server restart: its nested tables
+    /// hold replicated data and the replication slot is the source of truth. A handler rebuilt later without a
+    /// restart - e.g. by `recoverAfterRefusedDrop` after a refused `DROP DATABASE` that removed no nested
+    /// table - must therefore resume attach-style from the slot. A create-style startup would clear the intact
+    /// nested tables and, with a user-managed slot, try to load them back from the original
+    /// `materialized_postgresql_snapshot`, which may already be invalid. A refused drop that did remove a nested
+    /// table switches back to the create-style startup in `applyPartialDropRecoveryMode`.
+    is_attach = true;
+
     /// Replication is running with the full set of tables again, so a partially applied `DROP DATABASE`
     /// (if there was one) is repaired and must not force a create-style startup after the next restart.
     /// A failure here must not be lost: the flag makes the startup task, which `tryStartSynchronization`

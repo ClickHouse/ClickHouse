@@ -2696,6 +2696,72 @@ def test_plain_refused_drop_rearms_startup_task(started_cluster):
     assert not publication_exists()
 
 
+def test_plain_refused_drop_without_restart_resumes_user_managed_slot(started_cluster):
+    # A refused `DROP DATABASE` that removed no nested table must resume replication from the slot
+    # (attach-style) even if the server has not been restarted since `CREATE DATABASE`. A create-style
+    # restart would clear the intact nested tables and, with a user-managed slot, try to reload them
+    # from the original exported snapshot, which is invalid once the exporting transaction has ended.
+    slot_name = "user_slot_refused_drop"
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+    replication_conn = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+        replication=True,
+        auto_commit=True,
+    )
+    try:
+        snapshot = create_replication_slot(replication_conn, slot_name=slot_name)
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=[
+                "materialized_postgresql_tables_list = 'test_table'",
+                f"materialized_postgresql_replication_slot = '{slot_name}'",
+                f"materialized_postgresql_snapshot = '{snapshot}'",
+            ],
+        )
+        check_tables_are_synchronized(instance, "test_table")
+    finally:
+        # Ends the exporting transaction, which invalidates the snapshot, as the documentation allows
+        # once the initial synchronization is confirmed. The slot itself persists.
+        replication_conn.close()
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        success_line = "Successfully loaded tables from PostgreSQL and started replication"
+        success_baseline = count_in_all_logs(instance, success_line)
+        try:
+            error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
+            assert "Injected failure while dropping a nested table" in error, error
+            wait_for_new_log_occurrence(instance, success_line, success_baseline)
+        finally:
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+            )
+
+        # The historical rows are kept and new rows arrive through the preserved slot.
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50, 50)"
+        )
+        check_tables_are_synchronized(instance, "test_table")
+        assert (
+            int(instance.query("SELECT count() FROM test_database.test_table")) == 100
+        )
+        instance.query("DROP DATABASE test_database SYNC")
+    finally:
+        instance.query("DROP DATABASE IF EXISTS test_database SYNC")
+        if pg_query(
+            f"SELECT slot_name FROM pg_replication_slots WHERE slot_name = '{slot_name}'"
+        ):
+            pg_query(f"SELECT pg_drop_replication_slot('{slot_name}')")
+
+
 def test_plain_refused_drop_in_restart_window_recreates_removed_tables(started_cluster):
     # A refused drop can remove one nested table before a later table removal fails. When this
     # happens in the attach/restart window, no replication handler exists yet to signal that the
