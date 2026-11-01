@@ -528,7 +528,8 @@ private:
 
     /// For `ORDER BY <column> LIMIT n` over several Parquet files: hands out first the files whose statistics
     /// hold the best values of the sort column, so that the top-K threshold tightens on the first files read.
-    void orderFilesByTopKBound(const FormatFilterInfoPtr & format_filter_info, size_t num_streams);
+    void orderFilesByTopKBound(
+        const FormatFilterInfoPtr & format_filter_info, size_t num_streams, const UUID & query_condition_cache_table_id);
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;

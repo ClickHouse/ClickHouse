@@ -2951,7 +2951,8 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     return key;
 }
 
-void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filter_info, size_t num_streams)
+void ReadFromFile::orderFilesByTopKBound(
+    const FormatFilterInfoPtr & format_filter_info, size_t num_streams, const UUID & query_condition_cache_table_id)
 {
 #if USE_PARQUET
     /// The footers are read with one task per stream; with more streams those reads cost more than the order saves.
@@ -3005,7 +3006,7 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
         std::atomic<bool> stop = false;
 
         QueryConditionCachePtr query_condition_cache;
-        UUID table_uuid = UUIDHelpers::Nil;
+        UUID table_id = UUIDHelpers::Nil;
         std::optional<UInt64> plain_condition_hash;
         StorageFileSource::TopKQueryConditionCacheKeyPtr top_k_key;
         std::shared_ptr<const ParquetCachedStatisticsFilter> cached_statistics_filter;
@@ -3017,7 +3018,7 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
             std::optional<QueryConditionCache::MatchingMarks> marks;
             auto merge = [&](UInt64 condition_hash)
             {
-                auto other = query_condition_cache->read(table_uuid, file_key, condition_hash, /*increment_profile_events=*/ false);
+                auto other = query_condition_cache->read(table_id, file_key, condition_hash, /*increment_profile_events=*/ false);
                 if (!other)
                     return;
                 if (!marks)
@@ -3039,9 +3040,9 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
     };
     auto state = std::make_shared<State>();
     /// The reader of a file whose row groups are all excluded skips the file, so its footer is not needed.
-    if (storage->getStorageID().uuid != UUIDHelpers::Nil)
+    if (query_condition_cache_table_id != UUIDHelpers::Nil)
     {
-        state->table_uuid = storage->getStorageID().uuid;
+        state->table_id = query_condition_cache_table_id;
         if (ctx->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
             state->plain_condition_hash = format_filter_info->condition_hash;
         state->top_k_key = makeTopKQueryConditionCacheKey();
@@ -3193,12 +3194,26 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         && !query_info.prewhere_info && !query_info.row_level_filter;
     format_filter_info->keep_filter_column_statistics = filter_actions_dag && !storage->use_table_fd && !storage->archive_info
         && ctx->getSettingsRef()[Setting::use_parquet_metadata_cache];
+
+    /// Derived from the snapshot the query is planned against, not from the live metadata, so a concurrent
+    /// `ALTER` cannot make this query write entries under the identity of the altered table.
+    /// The format settings of the storage are fixed at `CREATE`.
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
+    if (format_filter_info->condition_hash || top_k_filter)
+        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
+            storage->getStorageID().uuid,
+            storage->format_name,
+            storage->compression_method,
+            storage_snapshot->metadata->getColumns(),
+            format_filter_info->column_mapper.get(),
+            storage->format_settings ? &*storage->format_settings : nullptr);
+
     /// The TopK key holds the versions of the files: a writer of this table must not change them before the sources lock it.
     RWLockImpl::LockHolder read_lock;
     if (top_k_filter && !storage->use_table_fd)
         read_lock = storage->lockRwlock(RWLockImpl::Read, ctx);
     if (format_filter_info->top_k_filter && !need_only_count)
-        orderFilesByTopKBound(format_filter_info, num_streams);
+        orderFilesByTopKBound(format_filter_info, num_streams, query_condition_cache_table_id);
     /// As late as possible: a writer that the lock does not serialize can still change the files.
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
@@ -3209,19 +3224,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         top_k_filter_tracking_best_values->track_row_group_best_values = true;
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
-
-    /// Derived from the snapshot the query is planned against, not from the live metadata, so a concurrent
-    /// `ALTER` cannot make this query write entries under the identity of the altered table.
-    /// The format settings of the storage are fixed at `CREATE`.
-    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
-    if (format_filter_info->condition_hash || top_k_query_condition_cache_key)
-        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
-            storage->getStorageID().uuid,
-            storage->format_name,
-            storage->compression_method,
-            storage_snapshot->metadata->getColumns(),
-            format_filter_info->column_mapper.get(),
-            storage->format_settings ? &*storage->format_settings : nullptr);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

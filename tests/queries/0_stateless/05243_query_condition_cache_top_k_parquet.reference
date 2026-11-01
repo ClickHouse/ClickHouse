@@ -105,6 +105,12 @@ gate_2	0	0
 0
 1
 2
+0
+1
+2
+0
+1
+2
 order_asc_pass	1	0
 order_asc_no_pass	1	1
 order_desc_pass	1	0
@@ -112,3 +118,4 @@ order_desc_no_pass	1	1
 order_asc_pass	1
 order_desc_pass	1
 order_asc_pass_rerun	4	2
+file_asc_pass_rerun	4	2
