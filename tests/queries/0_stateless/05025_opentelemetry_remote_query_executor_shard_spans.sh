@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed, no-fasttest
+# Tags: distributed, no-msan, no-fasttest
 # no-fasttest: Too slow for fast test (~12s), covered by regular stateless runs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
