@@ -718,7 +718,8 @@
     M(1023, XGBOOST_ERROR) \
     M(1024, BUZZHOUSE_ORACLE) \
     M(1025, GPU_ERROR) \
-    M(1026, PROMETHEUS_REMOTE_WRITE_TIMEOUT) \
+    M(1026, ICEBERG_CATALOG_CONCURRENT_UPDATE) \
+    M(1027, PROMETHEUS_REMOTE_WRITE_TIMEOUT) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES

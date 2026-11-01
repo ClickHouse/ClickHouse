@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 SET explain_query_plan_default = 'legacy';
 
 set mutations_sync=1;
