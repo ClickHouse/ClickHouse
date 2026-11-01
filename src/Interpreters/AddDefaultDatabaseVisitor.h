@@ -128,7 +128,9 @@ public:
             column->setAlias(column_name);
             expression_list.children.push_back(std::move(column));
         }
+        standalone_expression_select = select.get();
         visitTableExpressions(*select);
+        standalone_expression_select = nullptr;
         substituteCurrentDatabase(expression_list.children.at(0), expression_list);
         ast = expression_list.children.at(0);
     }
@@ -196,10 +198,18 @@ private:
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
 
+    mutable const ASTSelectQuery * standalone_expression_select = nullptr;
+    /// Whether the walk is in a select query nested in a standalone expression, whose columns are not known.
+    mutable bool in_select_with_unknown_columns = false;
+
     void visitTableExpressionsImpl(IAST & ast) const
     {
         if (auto * select = ast.as<ASTSelectQuery>())
         {
+            auto enclosing_in_select_with_unknown_columns = in_select_with_unknown_columns;
+            if (standalone_expression_select && select != standalone_expression_select)
+                in_select_with_unknown_columns = true;
+
             /// A name defined by a `WITH` element is a common table expression and not a table,
             /// recursive or not, so a table expression (or the right argument of `IN`) which refers
             /// to it must not be qualified. Unlike the callers of the full traversal, the callers of
@@ -233,6 +243,7 @@ private:
             expression_aliases = std::move(enclosing_query_aliases);
             with_aliases = std::move(enclosing_with_aliases);
             with_expression_aliases = std::move(enclosing_with_expression_aliases);
+            in_select_with_unknown_columns = enclosing_in_select_with_unknown_columns;
             return;
         }
 
@@ -369,6 +380,10 @@ private:
                 /// then it is not a table name and must not be qualified with the database,
                 /// like in `visit(ASTFunction &, ASTPtr &)` of the full traversal.
                 if (isExpressionAlias(identifier->name()))
+                    return;
+
+                /// Nor when it may be a column, which the analyzer resolves before a table.
+                if (in_select_with_unknown_columns)
                     return;
 
                 if (auto maybe_table_identifier = identifier->createTable())

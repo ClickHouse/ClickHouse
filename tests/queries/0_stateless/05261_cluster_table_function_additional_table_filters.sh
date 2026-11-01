@@ -44,6 +44,9 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE_ARR AS t SETTINGS additional_t
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'arrayExists(x -> n IN x, [[2, 3]])'}"
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'_table_function.urlCluster': 'arrayExists(x -> n IN x, [[2, 3]])'}"
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n IN ids AND arrayExists(ids -> ids = 1, [1])'}"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ids_allowed (id UInt64, allowed Array(UInt64)) ENGINE = Memory AS SELECT arrayJoin([2, 3]), [2, 3]"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n IN (SELECT id FROM ids_allowed WHERE id IN allowed)'}"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'_table_function.urlCluster': 'n IN (SELECT id FROM ids_allowed WHERE id IN allowed)'}"
 
 # A filter sees the current database of the query.
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND currentDatabase() = \'$CLICKHOUSE_DATABASE\' AND current_schema() = \'$CLICKHOUSE_DATABASE\''}"
