@@ -13,6 +13,8 @@ rev_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_rev.raw"
 plain_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_plain.raw"
 same_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_same.raw"
 match_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_match.csv.gz"
+snappy_basic_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_snappy_basic.raw"
+snappy_framed_file="${CLICKHOUSE_TEST_UNIQUE_NAME}_snappy_framed.raw"
 
 cleanup()
 {
@@ -41,6 +43,8 @@ assert_exception()
     local pattern="$expected_code"
     if [ "$expected_code" = "CANNOT_DECOMPRESS" ]; then
         pattern="CANNOT_DECOMPRESS|ZLIB_INFLATE_FAILED"
+    elif [ "$expected_code" = "SNAPPY_UNCOMPRESS_FAILED" ]; then
+        pattern="SNAPPY_UNCOMPRESS_FAILED|CANNOT_DECOMPRESS"
     fi
 
     if ! echo "$out" | grep -q -E "$pattern"; then
@@ -58,6 +62,8 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$rev_file', 'LineAsString', 'l
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$plain_file', 'CSV', 'a UInt8, b UInt8') SELECT 1, 2 SETTINGS engine_file_truncate_on_insert = 1"
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$same_file', 'LineAsString', 'line String', 'gzip') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1"
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$match_file', 'CSV', 'x UInt64', 'gzip') SELECT number FROM numbers(100) SETTINGS engine_file_truncate_on_insert = 1"
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'basic'"
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SELECT toString(number) FROM numbers(50) SETTINGS engine_file_truncate_on_insert = 1, snappy_mode = 'framed'"
 
 # Bounded wait to ensure file modification timestamp is older than current second for cache registration
 synced=0
@@ -175,7 +181,7 @@ echo "Case M: Secret header redaction"
 url_secret="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_secret"
 $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_secret', 'CSV', 'x UInt64', 'none', headers('X-Private-Data' = 'secret-key-value-12345'))"
 $CLICKHOUSE_CLIENT -q "
-SELECT storage, format, headers LIKE '%secret-key-value%', headers LIKE '%x-private-data%=%hash:%'
+SELECT storage, format, headers LIKE '%secret-key-value%', headers LIKE '%x-private-data%=%[HIDDEN]%'
 FROM system.schema_inference_cache
 WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_secret%'
 SETTINGS schema_inference_use_cache_for_url=0
@@ -186,7 +192,7 @@ echo "Case N: Arbitrary custom credential header redaction"
 url_custom_secret="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_custom_secret"
 $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_custom_secret', 'CSV', 'x UInt64', 'none', headers('X-Opaque' = 'opaque-secret-value-777', 'X-Internal-Metadata' = 'confidential-customer-blob'))"
 $CLICKHOUSE_CLIENT -q "
-SELECT storage, format, headers LIKE '%opaque-secret%', headers LIKE '%confidential-customer%', headers LIKE '%x-opaque%=%hash:%', headers LIKE '%x-internal-metadata%=%hash:%'
+SELECT storage, format, headers LIKE '%opaque-secret%', headers LIKE '%confidential-customer%', headers LIKE '%x-opaque%=%[HIDDEN]%', headers LIKE '%x-internal-metadata%=%[HIDDEN]%'
 FROM system.schema_inference_cache
 WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_custom_secret%'
 SETTINGS schema_inference_use_cache_for_url=0
@@ -203,3 +209,13 @@ echo "Case P: Duplicate header order sensitivity schema inference"
 url_dup_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&enable_http_compression=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_dup_schema"
 $CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_dup_schema', 'CSV', 'auto', 'gzip', headers('Accept-Encoding' = 'identity', 'Accept-Encoding' = 'gzip')) FORMAT TSV" | cut -f1,2
 assert_exception "CANNOT_DECOMPRESS" $CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_dup_schema', 'CSV', 'auto', 'gzip', headers('Accept-Encoding' = 'gzip', 'Accept-Encoding' = 'identity'))"
+
+# Case Q: Snappy wire mode file count cache isolation
+echo "Case Q: Snappy wire mode file count cache isolation"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='basic'"
+assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_basic_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='framed'"
+
+# Case R: Snappy wire mode reverse order file count cache isolation
+echo "Case R: Snappy wire mode reverse order file count cache isolation"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='framed'"
+assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$snappy_framed_file', 'LineAsString', 'line String', 'snappy') SETTINGS use_cache_for_count_from_files=1, snappy_mode='basic'"

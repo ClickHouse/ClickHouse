@@ -48,3 +48,9 @@ CANNOT_DECOMPRESS
 Case P: Duplicate header order sensitivity schema inference
 c1	Nullable(Int64)
 CANNOT_DECOMPRESS
+Case Q: Snappy wire mode file count cache isolation
+50
+SNAPPY_UNCOMPRESS_FAILED
+Case R: Snappy wire mode reverse order file count cache isolation
+50
+SNAPPY_UNCOMPRESS_FAILED

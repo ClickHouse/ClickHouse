@@ -194,3 +194,19 @@ TEST(StorageURLCacheHeaders, OpenTelemetryHeadersIgnored)
     };
     EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(telemetry_only), "");
 }
+
+TEST(StorageURLCacheHeaders, SnappyWireModeDistinction)
+{
+    EXPECT_EQ(toContentEncodingName(CompressionMethod::Snappy, SnappyMode::Basic), "snappy:basic");
+    EXPECT_EQ(toContentEncodingName(CompressionMethod::Snappy, SnappyMode::Framed), "snappy:framed");
+    EXPECT_EQ(toContentEncodingName(CompressionMethod::Snappy), "snappy");
+    EXPECT_EQ(toContentEncodingName(CompressionMethod::Gzip, SnappyMode::Basic), "gzip");
+
+    SchemaCache::Key key_basic{"http://example.com/data.snappy", "CSV", "", "DEFAULT", "snappy:basic", ""};
+    SchemaCache::Key key_framed{"http://example.com/data.snappy", "CSV", "", "DEFAULT", "snappy:framed", ""};
+
+    EXPECT_NE(key_basic, key_framed);
+
+    SchemaCache::KeyHash hasher;
+    EXPECT_NE(hasher(key_basic), hasher(key_framed));
+}

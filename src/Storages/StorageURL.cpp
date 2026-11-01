@@ -1439,14 +1439,14 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
-    auto compression_name = toContentEncodingName(compression_method);
+    auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
-    auto compression_name = toContentEncodingName(compression_method);
+    auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
@@ -1743,7 +1743,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
-            auto compression_name = toContentEncodingName(compression_method);
+            auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
             auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
             StorageURL::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
@@ -1753,7 +1753,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
-            auto compression_name = toContentEncodingName(compression_method);
+            auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
             auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
         }
@@ -1870,7 +1870,7 @@ namespace
                     return last_mod_time;
                 };
 
-                auto compression_name = toContentEncodingName(compression_method);
+                auto compression_name = toContentEncodingName(compression_method, context->getSettingsRef()[Setting::snappy_mode]);
                 if (format)
                 {
                     auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context, compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
