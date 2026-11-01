@@ -71,14 +71,14 @@ done
 
 table="${CLICKHOUSE_TEST_UNIQUE_NAME}_t"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${table}"
-${CLICKHOUSE_CLIENT} --allow_url_wildcard_from_index_pages 1 -q "CREATE TABLE ${table} (x UInt64) ENGINE = URL('http://127.0.0.1:${HTTP_PORT}/data/*.tsv', 'TSV')"
+${CLICKHOUSE_CLIENT} --allow_url_wildcard_from_index_pages 1 --max_http_get_redirects 1 -q "CREATE TABLE ${table} (x UInt64) ENGINE = URL('http://127.0.0.1:${HTTP_PORT}/data/*.tsv', 'TSV')"
 
-${CLICKHOUSE_CLIENT} -q "SELECT 'v1 read', x FROM ${table}"
-${CLICKHOUSE_CLIENT} -q "SELECT 'v1 hash is null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${table}'"
+${CLICKHOUSE_CLIENT} --max_http_get_redirects 1 -q "SELECT 'v1 read', x FROM ${table}"
+${CLICKHOUSE_CLIENT} --max_http_get_redirects 1 -q "SELECT 'v1 hash is null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${table}'"
 
 curl -s "http://127.0.0.1:$HTTP_PORT/flip" -o /dev/null
 
-${CLICKHOUSE_CLIENT} -q "SELECT 'v2 read', x FROM ${table}"
-${CLICKHOUSE_CLIENT} -q "SELECT 'v2 hash is null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${table}'"
+${CLICKHOUSE_CLIENT} --max_http_get_redirects 1 -q "SELECT 'v2 read', x FROM ${table}"
+${CLICKHOUSE_CLIENT} --max_http_get_redirects 1 -q "SELECT 'v2 hash is null', modification_hash IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${table}'"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${table}"
