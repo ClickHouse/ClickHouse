@@ -44,8 +44,9 @@ public:
         if (!is_open)
             return;
 
-        // FIXME: On darwin calling shutdown(SHUT_RD) on the socket blocked in accept() leads to ENOTCONN
-#ifndef OS_DARWIN
+        // FIXME: On Darwin and illumos, shutdown(SHUT_RD) on a listening socket
+        // returns ENOTCONN, so accept() is not explicitly awakened.
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS)
         // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
         socket.shutdownReceive();
 #endif

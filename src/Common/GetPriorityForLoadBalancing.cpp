@@ -26,6 +26,24 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_levenshtein_distance is not initialized");
             get_priority = [this](size_t i) { return Priority{static_cast<Int64>(hostname_levenshtein_distance[i])}; };
             break;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX:
+            if (hostname_longest_common_prefix.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_longest_common_prefix is not initialized");
+            /// `Priority` is "lower value means higher priority", and the other hostname strategies store a
+            /// *distance* (smaller == more similar == preferred) that is returned verbatim. Here we instead
+            /// store a *similarity* (the common prefix length, where larger == more similar == preferred), so
+            /// we negate it to turn it into a priority. We deliberately do not store a synthetic distance such
+            /// as `BIG - length`: negating here keeps the stored vector semantically honest (it really is the
+            /// common prefix length) and avoids an arbitrary magic constant.
+            get_priority = [this](size_t i) { return Priority{-static_cast<Int64>(hostname_longest_common_prefix[i])}; };
+            break;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX:
+            if (hostname_longest_common_suffix.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_longest_common_suffix is not initialized");
+            /// See the comment for HOSTNAME_LONGEST_COMMON_PREFIX: the stored value is a similarity (common
+            /// suffix length, larger == preferred), so we negate it to obtain a priority (lower == preferred).
+            get_priority = [this](size_t i) { return Priority{-static_cast<Int64>(hostname_longest_common_suffix[i])}; };
+            break;
         case LoadBalancing::IN_ORDER:
             get_priority = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
             break;
@@ -35,8 +53,12 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
             get_priority = [offset](size_t i) { return i != offset ? Priority{1} : Priority{0}; };
             break;
         case LoadBalancing::ROUND_ROBIN:
-            auto local_last_used = last_used % pool_size;
-            ++last_used;
+            /// `last_used` is `std::atomic<size_t>`. Use relaxed ordering: this counter
+            /// is only used to derive a rotation index, and there is no happens-before
+            /// relationship that needs to be observed by other threads. We compute
+            /// `local_last_used` from the pre-increment value so that two concurrent
+            /// callers receive distinct rotations of the round-robin sequence.
+            auto local_last_used = last_used.fetch_add(1, std::memory_order_relaxed) % pool_size;
 
             // Example: pool_size = 5
             // | local_last_used | i=0 | i=1 | i=2 | i=3 | i=4 |
@@ -71,6 +93,10 @@ bool GetPriorityForLoadBalancing::hasOptimalNode() const
         case LoadBalancing::NEAREST_HOSTNAME:
             return true;
         case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
+            return true;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX:
+            return true;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX:
             return true;
         case LoadBalancing::IN_ORDER:
             return false;

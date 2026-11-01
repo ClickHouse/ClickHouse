@@ -1,0 +1,5 @@
+plan	1
+under limit	1480
+break	1480
+break, first chunk over limit	1
+result block size	1	1

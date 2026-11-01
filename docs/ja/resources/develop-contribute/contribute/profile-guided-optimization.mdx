@@ -1,0 +1,27 @@
+---
+description: 'プロファイル誘導最適化に関するドキュメント'
+sidebarTitle: 'プロファイル誘導最適化（PGO）'
+slug: /operations/optimizing-performance/profile-guided-optimization
+title: 'プロファイル誘導最適化'
+doc_type: 'guide'
+---
+
+プロファイル誘導最適化 (PGO) は、実行時プロファイルに基づいてプログラムを最適化するコンパイラ最適化手法です。
+
+テストによると、PGO は ClickHouse のパフォーマンス向上に役立ちます。ClickBench テストスイートでは、QPS が最大 15% 向上することが確認されています。より詳細な結果は[こちら](https://pastebin.com/xbue3HMU)で確認できます。パフォーマンス向上の効果は、通常のワークロードによって異なります。より良い結果が得られる場合もあれば、逆に悪化する場合もあります。
+
+ClickHouse における PGO の詳細については、該当する GitHub の[issue](https://github.com/ClickHouse/ClickHouse/issues/44567)をご覧ください。
+
+<div id="how-to-build-clickhouse-with-pgo">
+  ## ClickHouse を PGO 付きでビルドするには？
+</div>
+
+PGO には大きく分けて 2 種類あります。[Instrumentation](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) と [Sampling](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) (AutoFDO とも呼ばれます) です。このガイドでは、ClickHouse で Instrumentation PGO を使用する方法を説明します。
+
+1. Instrumented モードで ClickHouse をビルドします。Clang では、`CXXFLAGS` に `-fprofile-generate` オプションを指定することで行えます。
+2. インストルメントした ClickHouse をサンプルワークロードで実行します。ここでは、普段使用している通常のワークロードを使う必要があります。方法の 1 つとして、[ClickBench](https://github.com/ClickHouse/ClickBench) をサンプルワークロードとして利用できます。インストルメンテーション モードの ClickHouse は低速になる可能性があるため、その点に注意し、パフォーマンスが重要な環境では実行しないでください。
+3. 前の手順で収集したプロファイルと `-fprofile-use` コンパイラフラグを使って、ClickHouse を再度コンパイルします。
+
+PGO の適用方法の詳細については、Clang の[ドキュメント](https://clang.llvm.org/docs/UsersManual.html#profile-guided-optimization)を参照してください。
+
+本番環境から直接サンプルワークロードを収集する場合は、Sampling PGO の利用を試すことを推奨します。

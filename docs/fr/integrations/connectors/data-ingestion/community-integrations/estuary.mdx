@@ -1,0 +1,46 @@
+---
+sidebar_label: 'Estuary'
+sidebar_position: 2
+sidebarTitle: 'Estuary'
+slug: /integrations/estuary
+description: 'Acheminez des sources SaaS, de bases de données et autres vers ClickHouse grâce à une intégration Estuary'
+title: 'Connectez Estuary à ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'ingestion de données', 'etl', 'pipeline', 'intégration de données']
+---
+
+import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Estuary](https://estuary.dev/) est une plateforme de données qui combine avec souplesse des données en temps réel et par lots dans des pipelines ETL faciles à mettre en place. Avec une sécurité de niveau entreprise et différentes options de déploiement, Estuary permet de créer des flux de données fiables à partir de sources SaaS, de bases de données et de streaming vers diverses destinations, dont ClickHouse.
+
+Estuary propose deux principales façons de s’intégrer à ClickHouse :
+
+* [Connectez-vous directement à votre base de données ClickHouse](/fr/integrations/connectors/data-ingestion/community-integrations/estuary-native).
+* [Connectez-vous via Kafka ClickPipes](/fr/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes).
+
+Dans les deux cas, Estuary gère la capture et le transfert des données. Vous n&#39;avez pas besoin de maintenir votre propre écosystème Kafka ni aucune autre infrastructure.
+
+<div id="choose-integration-type">
+  ## Quand choisir chaque intégration
+</div>
+
+La [matérialisation directe vers ClickHouse](/fr/integrations/connectors/data-ingestion/community-integrations/estuary-native) d&#39;Estuary est recommandée dans la plupart des cas d&#39;utilisation. Elle est spécialement conçue pour fonctionner avec le protocole natif de ClickHouse et prend en charge les déploiements auto-hébergés ainsi que les instances ClickHouse Cloud.
+
+Préférez plutôt [l&#39;intégration ClickPipe](/fr/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes) si vous souhaitez gérer vos pipelines via ClickPipes. Vous pouvez ainsi traiter les données entrantes comme des messages Kafka.
+
+<div id="additional-resources">
+  ## Ressources supplémentaires
+</div>
+
+Pour en savoir plus sur la mise en place d’une intégration avec Estuary, consultez la documentation d’Estuary :
+
+* [Découvrez les fonctionnalités d’Estuary](https://docs.estuary.dev/).
+* Consultez la documentation de référence du [connecteur direct de matérialisation ClickHouse d’Estuary](https://docs.estuary.dev/reference/Connectors/materialization-connectors/ClickHouse/).
+* Consultez la documentation de référence de l’[intégration Kafka ClickPipe d’Estuary](https://docs.estuary.dev/reference/Connectors/materialization-connectors/Dekaf/clickhouse/).
+* Pour voir la liste des sources que vous pouvez acheminer en streaming vers ClickHouse avec Estuary, consultez les [connecteurs de capture d’Estuary](https://docs.estuary.dev/reference/Connectors/capture-connectors/).

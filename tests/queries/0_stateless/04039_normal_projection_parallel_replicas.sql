@@ -4,8 +4,8 @@
 -- Verifies that the projection optimization is applied and produces
 -- correct results when PREWHERE is involved (the WHERE filter on a
 -- column not in SELECT gets moved to PREWHERE by optimizePrewhere).
+SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
 SET allow_experimental_parallel_reading_from_replicas = 2;
 SET max_parallel_replicas = 3;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;

@@ -36,7 +36,7 @@ void IPv6ToRawBinary(const Poco::Net::IPAddress & address, char * res)
 
 std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
 {
-    std::array<char, 16> res;
+    std::array<char, 16> res{};
     IPv6ToRawBinary(address, res.data());
     return res;
 }

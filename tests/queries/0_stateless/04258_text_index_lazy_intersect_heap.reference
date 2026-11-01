@@ -1,0 +1,18 @@
+cardinality tka	25000
+cardinality tkb	16667
+cardinality tkc	12500
+cardinality tkd	10000
+cardinality tke	8334
+cardinality tkf	7143
+cardinality tkg	6250
+cardinality tkh	5556
+cardinality tki	5000
+cardinality tkj	4546
+cardinality tkk	3847
+and 9-way:	20
+and 9-way rows:	[0,2520,5040,7560,10080,12600,15120,17640,20160,22680,25200,27720,30240,32760,35280,37800,40320,42840,45360,47880]
+and 11-way:	1
+and 11-way rows:	[0]
+materialize 9-way:	20
+materialize 11-way:	1
+heap leapfrog telemetry:	1	1	1

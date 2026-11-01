@@ -86,6 +86,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     return InterpreterAlterQuery(alter_query, context).execute();
 }
 
+void registerInterpreterCreateIndexQuery(InterpreterFactory & factory);
 void registerInterpreterCreateIndexQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

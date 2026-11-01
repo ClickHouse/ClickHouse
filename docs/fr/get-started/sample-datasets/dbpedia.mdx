@@ -1,0 +1,344 @@
+---
+description: 'Jeu de données contenant 1 million d’articles de Wikipedia et leurs embeddings vectoriels'
+sidebarTitle: 'jeu de données dbpedia'
+slug: /getting-started/example-datasets/dbpedia-dataset
+title: 'jeu de données dbpedia'
+keywords: ['recherche sémantique', 'similarité vectorielle', 'plus proches voisins approximatifs', 'embeddings']
+doc_type: 'guide'
+---
+
+Le [jeu de données dbpedia](https://huggingface.co/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M) contient 1 million d’articles de Wikipedia et leurs embeddings vectoriels, générés à l’aide du modèle [text-embedding-3-large](https://platform.openai.com/docs/models/text-embedding-3-large) d’OpenAI.
+
+Ce jeu de données constitue un excellent point de départ pour comprendre les embeddings vectoriels, la recherche par similarité vectorielle et l’IA générative. Nous l’utilisons pour illustrer la [recherche approximative des plus proches voisins](/fr/reference/engines/table-engines/mergetree-family/annindexes) dans ClickHouse, ainsi qu’une application de questions-réponses simple mais puissante.
+
+<div id="dataset-details">
+  ## Détails du jeu de données
+</div>
+
+Le jeu de données contient 26 fichiers `Parquet` hébergés sur [huggingface.co](https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/). Les fichiers sont nommés `0.parquet`, `1.parquet`, ..., `25.parquet`. Pour consulter quelques lignes d’exemple du jeu de données, veuillez visiter cette [page Hugging Face](https://huggingface.co/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M).
+
+<div id="create-table">
+  ## Créer la table
+</div>
+
+Créez la table `dbpedia` pour stocker l’identifiant de l’article, le titre, le texte et le vecteur d’embedding :
+
+```sql
+CREATE TABLE dbpedia
+(
+  id      String,
+  title   String,
+  text    String,
+  vector  Array(Float32) CODEC(NONE)
+) ENGINE = MergeTree ORDER BY (id);
+
+```
+
+<div id="load-table">
+  ## Charger la table
+</div>
+
+Pour charger le jeu de données à partir de tous les fichiers Parquet, exécutez la commande shell suivante :
+
+```shell
+for i in $(seq 0 25); do
+  echo "Processing file ${i}..."
+  clickhouse client -q "INSERT INTO dbpedia SELECT _id, title, text, \"text-embedding-3-large-1536-embedding\" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/${i}.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;"
+  echo "File ${i} complete."
+done
+```
+
+Sinon, vous pouvez exécuter, comme indiqué ci-dessous, des instructions SQL distinctes pour charger chacun des 25 fichiers Parquet :
+
+```sql
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/0.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/1.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+...
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/25.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+
+```
+
+Vérifiez qu’un million de lignes sont présentes dans la table `dbpedia` :
+
+```sql
+SELECT count(*)
+FROM dbpedia
+```
+
+```response
+   ┌─count()─┐
+1. │ 1000000 │
+   └─────────┘
+```
+
+<div id="semantic-search">
+  ## Recherche sémantique
+</div>
+
+Lecture recommandée : [guide OpenAPI « Embeddings vectoriels »](https://platform.openai.com/docs/guides/embeddings)
+
+La recherche sémantique (également appelée *recherche par similarité*) à l’aide d’embeddings vectoriels comprend
+les étapes suivantes :
+
+* Recevoir une requête de recherche d’un utilisateur en langage naturel, par ex. *« Parle-moi de trajets ferroviaires pittoresques »*, *« Romans à suspense se déroulant en Europe »*, etc.
+* Générer un vecteur d’embedding pour la requête de recherche à l’aide du modèle LLM
+* Trouver les plus proches voisins du vecteur d’embedding de la requête dans le jeu de données
+
+Les *plus proches voisins* sont des documents, des images ou des contenus correspondant à des résultats pertinents pour la requête de l’utilisateur.
+Les résultats récupérés constituent l’entrée clé de la génération augmentée par récupération (RAG) dans les applications d’IA générative.
+
+<div id="run-a-brute-force-vector-similarity-search">
+  ## Exécuter une recherche de similarité vectorielle par force brute
+</div>
+
+La recherche KNN (k - plus proches voisins), ou recherche par force brute, consiste à calculer la distance entre chaque vecteur du jeu de données
+et le vecteur d&#39;embedding de recherche, puis à trier ces distances pour obtenir les plus proches voisins. Avec le jeu de données `dbpedia`,
+une méthode rapide pour observer visuellement la recherche sémantique consiste à utiliser comme vecteurs de recherche des vecteurs d&#39;embedding issus du jeu de données lui-même.
+Par exemple :
+
+```sql title="Query"
+SELECT id, title
+FROM dbpedia
+ORDER BY cosineDistance(vector, ( SELECT vector FROM dbpedia WHERE id = '<dbpedia:The_Remains_of_the_Day>') ) ASC
+LIMIT 20
+```
+
+```response title="Response" highlight={23}
+    ┌─id────────────────────────────────────────┬─title───────────────────────────┐
+ 1. │ <dbpedia:The_Remains_of_the_Day>          │ The Remains of the Day          │
+ 2. │ <dbpedia:The_Remains_of_the_Day_(film)>   │ The Remains of the Day (film)   │
+ 3. │ <dbpedia:Never_Let_Me_Go_(novel)>         │ Never Let Me Go (novel)         │
+ 4. │ <dbpedia:Last_Orders>                     │ Last Orders                     │
+ 5. │ <dbpedia:The_Unconsoled>                  │ The Unconsoled                  │
+ 6. │ <dbpedia:The_Hours_(novel)>               │ The Hours (novel)               │
+ 7. │ <dbpedia:An_Artist_of_the_Floating_World> │ An Artist of the Floating World │
+ 8. │ <dbpedia:Heat_and_Dust>                   │ Heat and Dust                   │
+ 9. │ <dbpedia:A_Pale_View_of_Hills>            │ A Pale View of Hills            │
+10. │ <dbpedia:Howards_End_(film)>              │ Howards End (film)              │
+11. │ <dbpedia:When_We_Were_Orphans>            │ When We Were Orphans            │
+12. │ <dbpedia:A_Passage_to_India_(film)>       │ A Passage to India (film)       │
+13. │ <dbpedia:Memoirs_of_a_Survivor>           │ Memoirs of a Survivor           │
+14. │ <dbpedia:The_Child_in_Time>               │ The Child in Time               │
+15. │ <dbpedia:The_Sea,_the_Sea>                │ The Sea, the Sea                │
+16. │ <dbpedia:The_Master_(novel)>              │ The Master (novel)              │
+17. │ <dbpedia:The_Memorial>                    │ The Memorial                    │
+18. │ <dbpedia:The_Hours_(film)>                │ The Hours (film)                │
+19. │ <dbpedia:Human_Remains_(film)>            │ Human Remains (film)            │
+20. │ <dbpedia:Kazuo_Ishiguro>                  │ Kazuo Ishiguro                  │
+    └───────────────────────────────────────────┴─────────────────────────────────┘
+20 rows in set. Elapsed: 0.261 sec. Processed 1.00 million rows, 6.22 GB (3.84 million rows/s., 23.81 GB/s.)
+```
+
+Notez la latence de la requête afin que nous puissions la comparer à celle de l’ANN (à l’aide d’un index vectoriel).
+Consignez également la latence de la requête avec un cache de fichiers de l’OS à froid et avec `max_threads=1` afin d’évaluer l’utilisation réelle des ressources de calcul
+et de la bande passante du stockage (extrapolez-la à un jeu de données de production contenant des millions de vecteurs !)
+
+<div id="build-vector-similarity-index">
+  ## Créer un index de similarité vectorielle
+</div>
+
+Exécutez l’instruction SQL suivante pour définir et créer un index de similarité vectorielle sur la colonne `vector` :
+
+```sql
+ALTER TABLE dbpedia ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 1536, 'bf16', 64, 512);
+
+ALTER TABLE dbpedia MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+```
+
+Les paramètres et les considérations de performance relatifs à la création de l’index et à la recherche sont décrits dans la [documentation](/fr/reference/engines/table-engines/mergetree-family/annindexes).
+
+La construction et l’enregistrement de l’index peuvent prendre quelques minutes, selon le nombre de cœurs CPU disponibles et la bande passante du stockage.
+
+<div id="perform-ann-search">
+  ## Effectuer une recherche ANN
+</div>
+
+*Approximate Nearest Neighbours* ou ANN désigne un ensemble de techniques (par ex., des structures de données spécialisées comme des graphes et des forêts aléatoires) qui permettent d’obtenir des résultats bien plus rapidement qu’une recherche vectorielle exacte. La précision des résultats est généralement &quot;suffisamment bonne&quot; pour un usage pratique. De nombreuses techniques approximatives proposent des paramètres permettant d’ajuster le compromis entre la précision des résultats et le temps de recherche.
+
+Une fois l’index de similarité vectorielle construit, les requêtes de recherche vectorielle utiliseront automatiquement l’index :
+
+```sql title="Query"
+SELECT
+    id,
+    title
+FROM dbpedia
+ORDER BY cosineDistance(vector, (
+        SELECT vector
+        FROM dbpedia
+        WHERE id = '<dbpedia:Glacier_Express>'
+    )) ASC
+LIMIT 20
+```
+
+```response title="Response" highlight={23}
+    ┌─id──────────────────────────────────────────────┬─title─────────────────────────────────┐
+ 1. │ <dbpedia:Glacier_Express>                       │ Glacier Express                       │
+ 2. │ <dbpedia:BVZ_Zermatt-Bahn>                      │ BVZ Zermatt-Bahn                      │
+ 3. │ <dbpedia:Gornergrat_railway>                    │ Gornergrat railway                    │
+ 4. │ <dbpedia:RegioExpress>                          │ RegioExpress                          │
+ 5. │ <dbpedia:Matterhorn_Gotthard_Bahn>              │ Matterhorn Gotthard Bahn              │
+ 6. │ <dbpedia:Rhaetian_Railway>                      │ Rhaetian Railway                      │
+ 7. │ <dbpedia:Gotthard_railway>                      │ Gotthard railway                      │
+ 8. │ <dbpedia:Furka–Oberalp_railway>                 │ Furka–Oberalp railway                 │
+ 9. │ <dbpedia:Jungfrau_railway>                      │ Jungfrau railway                      │
+10. │ <dbpedia:Monte_Generoso_railway>                │ Monte Generoso railway                │
+11. │ <dbpedia:Montreux–Oberland_Bernois_railway>     │ Montreux–Oberland Bernois railway     │
+12. │ <dbpedia:Brienz–Rothorn_railway>                │ Brienz–Rothorn railway                │
+13. │ <dbpedia:Lauterbrunnen–Mürren_mountain_railway> │ Lauterbrunnen–Mürren mountain railway │
+14. │ <dbpedia:Luzern–Stans–Engelberg_railway_line>   │ Luzern–Stans–Engelberg railway line   │
+15. │ <dbpedia:Rigi_Railways>                         │ Rigi Railways                         │
+16. │ <dbpedia:Saint-Gervais–Vallorcine_railway>      │ Saint-Gervais–Vallorcine railway      │
+17. │ <dbpedia:Gatwick_Express>                       │ Gatwick Express                       │
+18. │ <dbpedia:Brünig_railway_line>                   │ Brünig railway line                   │
+19. │ <dbpedia:Regional-Express>                      │ Regional-Express                      │
+20. │ <dbpedia:Schynige_Platte_railway>               │ Schynige Platte railway               │
+    └─────────────────────────────────────────────────┴───────────────────────────────────────┘
+20 rows in set. Elapsed: 0.025 sec. Processed 32.03 thousand rows, 2.10 MB (1.29 million rows/s., 84.80 MB/s.)
+```
+
+<div id="generating-embeddings-for-search-query">
+  ## Génération d&#39;embeddings pour une requête de recherche
+</div>
+
+Les requêtes de recherche par similarité vues jusqu&#39;à présent utilisent comme vecteur de recherche l&#39;un des vecteurs existants de la table `dbpedia`.
+Dans les applications réelles, le vecteur de recherche doit être généré à partir d&#39;une requête saisie par l&#39;utilisateur, qui peut être en langage naturel. Ce vecteur de recherche
+doit être généré à l&#39;aide du même modèle LLM que celui utilisé pour générer les vecteurs d&#39;embedding
+du jeu de données.
+
+Un exemple de script Python est présenté ci-dessous pour montrer comment appeler l&#39;OpenAI API par programmation afin de
+générer des vecteurs d&#39;embedding à l&#39;aide du modèle `text-embedding-3-large`. Le vecteur d&#39;embedding de recherche
+est ensuite transmis comme argument à la fonction `cosineDistance()` dans la requête `SELECT`.
+
+L&#39;exécution du script nécessite qu&#39;une clé d&#39;API OpenAI soit définie dans la variable d&#39;environnement `OPENAI_API_KEY`.
+La clé d&#39;API OpenAI peut être obtenue après inscription sur https://platform.openai.com.
+
+```python
+import sys
+from openai import OpenAI
+import clickhouse_connect
+
+ch_client = clickhouse_connect.get_client(compress=False) # Pass ClickHouse credentials
+openai_client = OpenAI() # Set OPENAI_API_KEY environment variable
+
+def get_embedding(text, model):
+  text = text.replace("\n", " ")
+  return openai_client.embeddings.create(input = [text], model=model, dimensions=1536).data[0].embedding
+
+while True:
+    # Accept the search query from user
+    print("Enter a search query :")
+    input_query = sys.stdin.readline();
+
+    # Call OpenAI API endpoint to get the embedding
+    print("Generating the embedding for ", input_query);
+    embedding = get_embedding(input_query,
+                              model='text-embedding-3-large')
+
+    # Execute vector search query in ClickHouse
+    print("Querying clickhouse...")
+    params = {'v1':embedding, 'v2':10}
+    result = ch_client.query("SELECT id,title,text FROM dbpedia ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
+
+    for row in result.result_rows:
+        print(row[0], row[1], row[2])
+        print("---------------")
+```
+
+<div id="q-and-a-demo-application">
+  ## Application de démonstration Q&amp;A
+</div>
+
+Les exemples ci-dessus ont illustré la recherche sémantique et la récupération de documents avec ClickHouse. Nous présentons ci-dessous une application d’exemple d’IA générative très simple, mais à fort potentiel.
+
+L’application exécute les étapes suivantes :
+
+1. Reçoit un *sujet* saisi par l’utilisateur
+2. Génère un vecteur d’embedding pour le *sujet* en appelant l’OpenAI API avec le modèle `text-embedding-3-large`
+3. Récupère des articles/documents Wikipedia très pertinents à l’aide d’une recherche de similarité vectorielle dans la table `dbpedia`
+4. Reçoit de l’utilisateur une question libre en langage naturel en rapport avec le *sujet*
+5. Utilise l’API de chat OpenAI `gpt-3.5-turbo` pour répondre à la question à partir des connaissances contenues dans les documents récupérés à l’étape #3.
+   Les documents récupérés à l’étape #3 sont transmis comme *contexte* à l’API de chat et constituent le lien essentiel dans l’IA générative.
+
+Quelques exemples de conversation obtenus lors de l’exécution de l’application de questions-réponses sont d’abord présentés ci-dessous, suivis du code
+de l’application de questions-réponses. Pour exécuter l’application, une clé d’API OpenAI doit être définie dans la variable d’environnement
+`OPENAI_API_KEY`. La clé d’API OpenAI peut être obtenue après inscription sur https://platform.openai.com.
+
+```shell
+$ python3 QandA.py
+
+Enter a topic : FIFA world cup 1990
+Generating the embedding for 'FIFA world cup 1990' and collecting 100 articles related to it from ClickHouse...
+
+Enter your question : Who won the golden boot
+Salvatore Schillaci of Italy won the Golden Boot at the 1990 FIFA World Cup.
+
+Enter a topic : Cricket world cup
+Generating the embedding for 'Cricket world cup' and collecting 100 articles related to it from ClickHouse...
+
+Enter your question : Which country has hosted the world cup most times
+England and Wales have hosted the Cricket World Cup the most times, with the tournament being held in these countries five times - in 1975, 1979, 1983, 1999, and 2019.
+
+$
+```
+
+Code :
+
+```Python
+import sys
+import time
+from openai import OpenAI
+import clickhouse_connect
+
+ch_client = clickhouse_connect.get_client(compress=False) # Pass ClickHouse credentials here
+openai_client = OpenAI() # Set the OPENAI_API_KEY environment variable
+
+def get_embedding(text, model):
+  text = text.replace("\n", " ")
+  return openai_client.embeddings.create(input = [text], model=model, dimensions=1536).data[0].embedding
+
+while True:
+    # Take the topic of interest from user
+    print("Enter a topic : ", end="", flush=True)
+    input_query = sys.stdin.readline()
+    input_query = input_query.rstrip()
+
+    # Generate an embedding vector for the search topic and query ClickHouse
+    print("Generating the embedding for '" + input_query + "' and collecting 100 articles related to it from ClickHouse...");
+    embedding = get_embedding(input_query,
+                              model='text-embedding-3-large')
+
+    params = {'v1':embedding, 'v2':100}
+    result = ch_client.query("SELECT id,title,text FROM dbpedia ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
+
+    # Collect all the matching articles/documents
+    results = ""
+    for row in result.result_rows:
+        results = results + row[2]
+
+    print("\nEnter your question : ", end="", flush=True)
+    question = sys.stdin.readline();
+
+    # Prompt for the OpenAI Chat API
+    query = f"""Use the below content to answer the subsequent question. If the answer cannot be found, write "I don't know."
+
+Content:
+\"\"\"
+{results}
+\"\"\"
+
+Question: {question}"""
+
+    GPT_MODEL = "gpt-3.5-turbo"
+    response = openai_client.chat.completions.create(
+        messages=[
+        {'role': 'system', 'content': "You answer questions about {input_query}."},
+        {'role': 'user', 'content': query},
+       ],
+       model=GPT_MODEL,
+       temperature=0,
+    )
+
+    # Print the answer to the question!
+    print(response.choices[0].message.content)
+    print("\n")
+```

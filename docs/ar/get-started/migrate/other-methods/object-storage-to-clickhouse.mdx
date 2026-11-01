@@ -1,0 +1,28 @@
+---
+title: 'نقل البيانات من التخزين السحابي للكائنات إلى ClickHouse Cloud'
+description: 'نقل البيانات من تخزين الكائنات إلى ClickHouse Cloud'
+keywords: ['تخزين الكائنات', 'S3', 'Azure Blob', 'GCS', 'ترحيل']
+slug: /integrations/migration/object-storage-to-clickhouse
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Image img="/images/integrations/migration/object-storage-01.webp" size="md" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+إذا كنت تستخدم تخزين كائنات سحابيًا كمستودع بيانات وترغب في استيراد هذه البيانات إلى ClickHouse Cloud،
+أو إذا كان نظام قاعدة البيانات الحالي لديك قادرًا على تصدير البيانات مباشرةً إلى تخزين كائنات سحابي، فيمكنك استخدام إحدى
+دوال الجداول لترحيل البيانات المخزنة في تخزين الكائنات السحابي إلى جدول في ClickHouse Cloud:
+
+* [s3](/ar/reference/functions/table-functions/s3) أو [s3Cluster](/ar/reference/functions/table-functions/s3Cluster)
+* [gcs](/ar/reference/functions/table-functions/gcs)
+* [azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
+
+إذا لم يكن نظام قاعدة البيانات الحالي لديك قادرًا على تصدير البيانات مباشرةً إلى تخزين كائنات سحابي، فيمكنك استخدام [أداة ETL/ELT تابعة لجهة خارجية](/ar/get-started/migrate/other-methods/etl-tool-to-clickhouse) أو [clickhouse-local](/ar/get-started/migrate/other-methods/clickhouse-local-etl) لنقل البيانات
+من نظام قاعدة البيانات الحالي لديك إلى تخزين الكائنات السحابي، ثم ترحيل تلك البيانات في خطوة ثانية إلى جدول في ClickHouse Cloud.
+
+وعلى الرغم من أن هذه عملية من خطوتين (تصدير البيانات إلى تخزين كائنات سحابي، ثم تحميلها إلى ClickHouse)، فإن ميزتها أنها
+قابلة للتوسع حتى بيتابايتات بفضل [الدعم القوي في ClickHouse Cloud](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) لعمليات القراءة عالية التوازي من تخزين الكائنات السحابي.
+كما يمكنك الاستفادة من تنسيقات متقدمة ومضغوطة مثل [Parquet](/ar/reference/formats/Parquet/Parquet).
+
+توجد [مقالة في المدونة](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) تتضمن أمثلة شيفرة عملية توضّح كيف يمكنك إدخال البيانات إلى ClickHouse Cloud باستخدام S3.

@@ -1,0 +1,45 @@
+---
+date: 2023-06-07
+title: كيف أعرض عدد عمليات تعديل النشطة أو الموجودة في قائمة الانتظار؟
+description: راقب عدد عمليات تعديل النشطة أو الموجودة في قائمة الانتظار في ClickHouse، خاصةً عند تنفيذ أوامر `ALTER` أو `UPDATE`. استخدم جدول `system.mutations` لتتبّع عمليات تعديل.
+tags: ['جداول النظام']
+keywords: ['عمليات تعديل النشطة', 'عمليات تعديل الموجودة في قائمة الانتظار']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف أعرض عدد التعديلات النشطة أو قيد الانتظار؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+تُعد مراقبة عدد عمليات التعديل النشطة أو الموجودة في قائمة الانتظار أمرًا مهمًا إذا كنت تُجري عددًا كبيرًا من عبارات `ALTER` أو `UPDATE` على جداولك. تعيد هذه الاستعلامات كتابة أجزاء البيانات، وهي ليست ذرّية، إذ تُرتَّب بحسب جزء الإنشاء وتُطبَّق على كل جزء بهذا الترتيب. يمكنك العثور على مزيد من التفاصيل حول عمليات التعديل في [الوثائق](/ar/reference/statements/alter/index#mutations).
+
+تُنشئ كل عملية تعديل مُدخلًا في جدول `system.mutations`. وعند تنفيذ عدد كبير من عمليات التعديل، يمكنك مراقبة عدد العمليات قيد التنفيذ وتلك الموجودة في قائمة الانتظار باستخدام ما يلي:
+
+```
+SELECT
+   hostname() AS host,
+   count()
+   FROM clusterAllReplicas('default', 'system.mutations') WHERE not is_done
+   GROUP BY host;
+```
+
+<Note>
+  يفترض هذا الاستعلام أنك تشغّل cluster باسم `default`، وهو اسم الـ cluster لديك في ClickHouse Cloud. استبدل `default` باسم الـ cluster لديك.
+
+  إذا لم يكن لديك cluster، فاستخدم هذا الأمر:
+
+  ```sql
+  SELECT
+     hostname() AS host,
+     count()
+     FROM system.mutations WHERE not is_done
+     GROUP BY host;
+  ```
+</Note>
+
+نوصي أيضًا بقراءة هذه [التدوينة الحديثة حول التحديثات وعمليات الحذف](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse).

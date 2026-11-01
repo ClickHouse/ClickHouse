@@ -239,14 +239,25 @@ void ParserEngine::parse(InputSource* pInputSource)
 	init();
 	resetContext();
 	pushContext(_parser, pInputSource);
-	if (_pContentHandler) _pContentHandler->setDocumentLocator(this);
-	if (_pContentHandler) _pContentHandler->startDocument();
-	if (pInputSource->getCharacterStream())
-		parseCharInputStream(*pInputSource->getCharacterStream());
-	else if (pInputSource->getByteStream())
-		parseByteInputStream(*pInputSource->getByteStream());
-	else throw XMLException("Input source has no stream");
-	if (_pContentHandler) _pContentHandler->endDocument();
+	try
+	{
+		if (_pContentHandler) _pContentHandler->setDocumentLocator(this);
+		if (_pContentHandler) _pContentHandler->startDocument();
+		if (pInputSource->getCharacterStream())
+			parseCharInputStream(*pInputSource->getCharacterStream());
+		else if (pInputSource->getByteStream())
+			parseByteInputStream(*pInputSource->getByteStream());
+		else throw XMLException("Input source has no stream");
+		if (_pContentHandler) _pContentHandler->endDocument();
+	}
+	catch (...)
+	{
+		// An exception thrown from a handler unwinds out of XML_Parse and skips expat's internal
+		// handler-call-depth bookkeeping; rebalance it, or XML_ParserFree would silently refuse to
+		// free this parser and it would leak. No handler frame of this parser is on the stack here.
+		XML_ResetHandlerCallDepth(_parser);
+		throw;
+	}
 	popContext();
 }
 
@@ -257,19 +268,29 @@ void ParserEngine::parse(const char* pBuffer, std::size_t size)
 	resetContext();
 	InputSource src;
 	pushContext(_parser, &src);
-	if (_pContentHandler) _pContentHandler->setDocumentLocator(this);
-	if (_pContentHandler) _pContentHandler->startDocument();
-	std::size_t processed = 0;
-	while (processed < size)
+	try
 	{
-		const int bufferSize = processed + PARSE_BUFFER_SIZE < size ? PARSE_BUFFER_SIZE : static_cast<int>(size - processed);
-		if (!XML_Parse(_parser, pBuffer + processed, bufferSize, 0))
+		if (_pContentHandler) _pContentHandler->setDocumentLocator(this);
+		if (_pContentHandler) _pContentHandler->startDocument();
+		std::size_t processed = 0;
+		while (processed < size)
+		{
+			const int bufferSize = processed + PARSE_BUFFER_SIZE < size ? PARSE_BUFFER_SIZE : static_cast<int>(size - processed);
+			if (!XML_Parse(_parser, pBuffer + processed, bufferSize, 0))
+				handleError(XML_GetErrorCode(_parser));
+			processed += bufferSize;
+		}
+		if (!XML_Parse(_parser, pBuffer+processed, 0, 1))
 			handleError(XML_GetErrorCode(_parser));
-		processed += bufferSize;
+		if (_pContentHandler) _pContentHandler->endDocument();
 	}
-	if (!XML_Parse(_parser, pBuffer+processed, 0, 1))
-		handleError(XML_GetErrorCode(_parser));
-	if (_pContentHandler) _pContentHandler->endDocument();
+	catch (...)
+	{
+		// See the identical catch in parse(InputSource*): rebalance expat's handler-call-depth
+		// counter after an exception unwound out of XML_Parse, or the parser can never be freed.
+		XML_ResetHandlerCallDepth(_parser);
+		throw;
+	}
 	popContext();
 }
 
@@ -779,9 +800,19 @@ int ParserEngine::handleExternalEntityRef(XML_Parser parser, const XML_Char* con
 		{
 			pThis->parseExternal(extParser, pInputSource);
 		}
-		catch (XMLException&)
+		catch (...)
 		{
 			pEntityResolver->releaseInputSource(pInputSource);
+			// The exception may have unwound out of the external parser's XML_Parse, skipping
+			// expat's handler-call-depth bookkeeping; rebalance it or XML_ParserFree is a no-op
+			// and the external parser leaks. Any handler exception (not just XMLException)
+			// can unwind through parseExternal, so clean up on every exception type.
+			// Note: with the vendored expat compiled with XML_GE=0 (and no XML_DTD), expat never
+			// invokes the external-entity-ref handler — entity references are stored by
+			// storeSelfEntityValue and passed through as literal text — so this cleanup is
+			// defensive and cannot be exercised (or regression-tested) through any public API
+			// unless entity processing is re-enabled at compile time.
+			XML_ResetHandlerCallDepth(extParser);
 			XML_ParserFree(extParser);
 			throw;
 		}

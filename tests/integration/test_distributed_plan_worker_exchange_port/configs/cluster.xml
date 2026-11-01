@@ -1,0 +1,39 @@
+<clickhouse>
+    <stateless_worker_server>
+        <enabled>1</enabled>
+        <endpoint>localhost</endpoint>
+    </stateless_worker_server>
+
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <cluster>default</cluster>
+    </stateless_worker_client>
+
+    <!-- Single-shard worker cluster (replicas hold the same data). Each replica declares its own
+         interserver (stateless_worker_port) and streaming exchange port, so the initiator
+         dispatches tasks to, and dials, each node on its own ports. -->
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                    <stateless_worker_port>9009</stateless_worker_port>
+                    <streaming_exchange_port>9223</streaming_exchange_port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                    <stateless_worker_port>9010</stateless_worker_port>
+                    <streaming_exchange_port>9224</streaming_exchange_port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                    <stateless_worker_port>9011</stateless_worker_port>
+                    <streaming_exchange_port>9225</streaming_exchange_port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>

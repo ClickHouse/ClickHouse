@@ -15,7 +15,7 @@ namespace DB
   *   arrayRemove(['a', NULL, 'b', NULL], NULL) -> ['a', 'b']
   */
 
-class FunctionArrayRemove : public IFunction
+class FunctionArrayRemove final : public IFunction
 {
 public:
     static constexpr auto name = "arrayRemove";
@@ -27,6 +27,11 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    String getSignatureString() const override
+    {
+        return "(A : Array, Any) -> A";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override;

@@ -1,0 +1,173 @@
+---
+slug: '/examples/aggregate-function-combinators/minSimpleState'
+title: 'minSimpleState'
+description: 'minSimpleState 组合器的使用示例'
+keywords: ['min', 'state', 'simple', 'combinator', 'examples', 'minSimpleState']
+sidebarTitle: 'minSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 说明
+</div>
+
+[`SimpleState`](/zh/reference/functions/aggregate-functions/combinators#-simplestate) 组合器可应用于 [`min`](/zh/reference/functions/aggregate-functions/min)
+函数，返回所有输入值中的最小值。返回结果的类型为 [`SimpleAggregateFunction`](/zh/reference/data-types/simpleaggregatefunction)。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+让我们通过一个跟踪每日温度读数的表来看一个实际示例。对于每个位置，我们都希望保留已记录的最低温度。
+使用带有 `min` 的 `SimpleAggregateFunction` 类型时，在遇到更低温度时会自动更新
+存储的值。
+
+创建用于存储原始温度读数的源表：
+
+```sql
+CREATE TABLE raw_temperature_readings
+(
+    location_id UInt32,
+    location_name String,
+    temperature Int32,
+    recorded_at DateTime DEFAULT now()
+)
+    ENGINE = MergeTree()
+ORDER BY (location_id, recorded_at);
+```
+
+创建用于存储最低温度的聚合表：
+
+```sql
+CREATE TABLE temperature_extremes
+(
+    location_id UInt32,
+    location_name String,
+    min_temp SimpleAggregateFunction(min, Int32),  -- 存储最低温度
+    max_temp SimpleAggregateFunction(max, Int32)   -- 存储最高温度
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY location_id;
+```
+
+创建一个增量materialized view，使其作为已插入数据的插入触发器，
+并维护每个位置的最低和最高温度值。
+
+```sql
+CREATE MATERIALIZED VIEW temperature_extremes_mv
+TO temperature_extremes
+AS SELECT
+    location_id,
+    location_name,
+    minSimpleState(temperature) AS min_temp,     -- 使用 SimpleState 组合器
+    maxSimpleState(temperature) AS max_temp      -- 使用 SimpleState 组合器
+FROM raw_temperature_readings
+GROUP BY location_id, location_name;
+```
+
+插入一些初始温度读数：
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+(1, 'North', 5),
+(2, 'South', 15),
+(3, 'West', 10),
+(4, 'East', 8);
+```
+
+这些读数会由 materialized view 自动处理。我们来检查一下
+当前状态：
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,     -- 直接访问 SimpleAggregateFunction 的值
+    max_temp      -- 使用 SimpleAggregateFunction 无需调用终结函数
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+再插入一些数据：
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+    (1, 'North', 3),
+    (2, 'South', 18),
+    (3, 'West', 10),
+    (1, 'North', 8),
+    (4, 'East', 2);
+```
+
+查看新增数据后的最新极值：
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,  
+    max_temp
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       18 │       18 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        2 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+请注意，上面每个位置都有两个插入值。这是因为
+parts 还没有合并 (并由 `AggregatingMergeTree` 聚合) 。要从这些部分状态中得到
+最终结果，我们需要添加一个 `GROUP BY`：
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min(min_temp) AS min_temp,  -- 聚合所有 parts 的数据
+    max(max_temp) AS max_temp   -- 聚合所有 parts 的数据
+FROM temperature_extremes
+GROUP BY location_id, location_name
+ORDER BY location_id;
+```
+
+现在我们得到了预期的结果：
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           2 │ South         │       15 │       18 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+<Note>
+  使用 `SimpleState` 时，无需使用 `Merge` 组合器来合并
+  部分聚合状态。
+</Note>
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [`min`](/zh/reference/functions/aggregate-functions/min)
+* [`SimpleState 组合器`](/zh/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction 类型`](/zh/reference/data-types/simpleaggregatefunction)

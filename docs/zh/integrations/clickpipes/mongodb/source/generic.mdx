@@ -1,0 +1,63 @@
+---
+sidebarTitle: '通用 MongoDB'
+description: '将任意 MongoDB 实例设置为 ClickPipes 的源'
+slug: /integrations/clickpipes/mongodb/source/generic
+title: '通用 MongoDB 源设置指南'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Info>
+  如果你使用 MongoDB Atlas，请参阅[此处](/zh/integrations/clickpipes/mongodb/source/atlas)的专门指南。
+</Info>
+
+<div id="enable-oplog-retention">
+  ## 启用 oplog 保留期
+</div>
+
+复制要求 oplog 的最短保留期为 24 小时。我们建议将 oplog 保留期设置为 72 小时或更长，以确保在初始快照完成之前，oplog 不会被截断。
+
+您可以在 MongoDB shell 中运行以下命令，检查当前的 oplog 保留期 (运行此命令必须具有 `clusterMonitor` 角色) ：
+
+```javascript
+db.getSiblingDB("admin").serverStatus().oplogTruncation.oplogMinRetentionHours
+```
+
+要将 oplog 保留期设置为 72 小时，请以管理员身份在副本集的每个节点上运行以下命令：
+
+```javascript
+db.adminCommand({
+    "replSetResizeOplog" : 1,
+    "minRetentionHours": 72
+})
+```
+
+有关 `replSetResizeOplog` 命令和 oplog 保留设置的更多信息，请参阅 [MongoDB 文档](https://www.mongodb.com/docs/manual/reference/command/replSetResizeOplog/)。
+
+<div id="configure-database-user">
+  ## 配置数据库用户
+</div>
+
+以管理员用户身份连接到您的 MongoDB 实例，然后执行以下命令，为 MongoDB CDC ClickPipes 创建一个用户：
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  请务必将 `clickpipes_user` 和 `some_secure_password` 替换为你想使用的用户名和密码。
+</Note>
+
+<div id="whats-next">
+  ## 接下来呢？
+</div>
+
+您现在可以[创建 ClickPipe](/zh/integrations/clickpipes/mongodb/index)，并开始将 MongoDB 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下设置 MongoDB 实例时使用的连接信息，因为在创建 ClickPipe 的过程中需要用到这些信息。

@@ -1,0 +1,5 @@
+dictionary_collision
+dictionary_untouched	1
+detached_if_not_exists_noop
+detached_plain_create
+detached_intact	1	7

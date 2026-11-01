@@ -38,6 +38,7 @@ class IBackgroundOperation
 public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
     virtual Int32 getBiasBackoffSeconds() const { return 0; }
 
     virtual ~IBackgroundOperation() = default;
@@ -54,11 +55,17 @@ public:
     enum class Type : uint8_t
     {
         DataProcessing,
-        Moving
+        Moving,
+        Streaming,
     };
     Type type{Type::DataProcessing};
 
-    void start();
+    /// Allocates the scheduling task if needed and activates it. Idempotent.
+    /// Returns true if the task was created by this call, so that the caller can `finish` exactly
+    /// the assignees it started when the operation that started them is rolled back.
+    /// All or nothing: if activating a task created by this call throws, the task is destroyed
+    /// again before the exception leaves, so the assignee is exactly as it was before the call.
+    bool start();
     void trigger();
     void postpone();
     void finish();
@@ -83,7 +90,8 @@ public:
 
 private:
     IBackgroundOperation & data;
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(storage_id_mutex);
+    mutable std::mutex storage_id_mutex;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;
@@ -102,9 +110,16 @@ private:
 
     static String toString(Type type);
 
+    /// Must be called under `holder_mutex`. Returns true if the task was created by this call.
+    /// Takes the storage ID as an argument because it must be read before `holder_mutex` is taken,
+    /// so that `holder_mutex` and `storage_id_mutex` are never nested.
+    bool createHolderIfNeeded(const StorageID & current_storage_id);
+
     /// Function that executes in background scheduling pool
     void threadFunc();
 
     BackgroundTaskSchedulingSettings getSettings() const;
+
+    StorageID getStorageID() const;
 };
 }

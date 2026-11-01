@@ -38,27 +38,27 @@ REGISTER_FUNCTION(MultiSearchFirstIndexCaseInsensitiveUTF8)
         "Usage example",
         "SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server']);",
         R"(
-┌─multiSearchF⋯ 'server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
+│                                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "UTF-8 case handling",
         "SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ']);",
         R"(
-┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
+│                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "No match found",
         "SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test']);",
         R"(
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
+│                                                                            0 │
+└──────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

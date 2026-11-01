@@ -23,10 +23,10 @@ public:
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
-    UInt64 getRowCount() const { return row_count; }
 
     std::optional<Float64> estimateLess(const Field & val) const override;
     String getNameForLogs() const override;
+    size_t allocatedBytes() const override;
 private:
     Field min; /// null Field means "not initialized"
     Field max; /// null Field means "not initialized"

@@ -1,0 +1,8 @@
+<clickhouse>
+    <s3>
+        <sse_endpoint>
+            <endpoint>http://minio1:9001/root/sse_test/</endpoint>
+            <server_side_encryption_customer_key_base64>MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=</server_side_encryption_customer_key_base64>
+        </sse_endpoint>
+    </s3>
+</clickhouse>

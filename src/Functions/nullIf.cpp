@@ -15,7 +15,7 @@ namespace
 /// Implements the function nullIf which takes 2 arguments and returns
 /// NULL if both arguments have the same value. Otherwise it returns the
 /// value of the first argument.
-class FunctionNullIf : public IFunction
+class FunctionNullIf final : public IFunction
 {
 public:
     static constexpr auto name = "nullIf";
@@ -41,10 +41,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return makeNullable(arguments[0]);
-    }
+    String getSignatureString() const override { return "(T, Any) -> Nullable(T)"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

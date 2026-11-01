@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <DataTypes/DataTypeString.h>
@@ -66,3 +67,6 @@ void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, Cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicatedFetches) }

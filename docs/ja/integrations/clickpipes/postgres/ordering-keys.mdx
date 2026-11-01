@@ -1,0 +1,67 @@
+---
+sidebarTitle: '順序キー'
+description: 'カスタムの順序キーを定義する方法。'
+slug: /integrations/clickpipes/postgres/ordering_keys
+title: '順序キー'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+順序キー (別名ソートキー) は、ClickHouse のテーブルでデータをディスク上にどのように並べ、どのように索引付けするかを定義します。Postgres からレプリケーションする場合、ClickPipes はデフォルトで、Postgres のテーブルの主キーを、ClickHouse 内の対応するテーブルの順序キーとして使用します。ほとんどの場合、Postgres の主キーは順序キーとして十分です。ClickHouse はすでに高速スキャン向けに最適化されており、カスタムの順序キーが不要なことが多いためです。
+
+[migration guide](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part3) で説明しているとおり、より大規模なユースケースでは、クエリを最適化するために、ClickHouse の順序キーに Postgres の主キーに加えて追加のカラムを含める必要があります。
+
+CDC を使用する場合、デフォルトでは、Postgres の主キーとは異なる順序キーを選ぶと、ClickHouse でデータの重複排除に問題が生じる可能性があります。これは、ClickHouse の順序キーが二重の役割を持っているためです。つまり、データの索引付けとソートを制御する一方で、重複排除キーとしても機能します。この問題に対処する最も簡単な方法は、リフレッシュ可能なマテリアライズドビューを定義することです。
+
+<div id="use-refreshable-materialized-views">
+  ## リフレッシュ可能なマテリアライズドビューを使用する
+</div>
+
+カスタムのソートキー (ORDER BY) を定義する簡単な方法の 1 つが、[リフレッシュ可能なマテリアライズドビュー](/ja/concepts/features/materialized-views/refreshable-materialized-view) (MV) を使うことです。これを使うと、定期的に (たとえば 5 分または 10 分ごとに) 、目的の順序キーでテーブル全体をコピーできます。
+
+以下は、カスタムの ORDER BY と必要な重複排除を備えたリフレッシュ可能な MV の例です。
+
+```sql
+CREATE MATERIALIZED VIEW posts_final
+REFRESH EVERY 10 second ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (owneruserid,id) -- 異なる順序キー（接尾辞付きのPostgres主キーを含む）
+AS
+SELECT * FROM posts FINAL 
+WHERE _peerdb_is_deleted = 0; -- これによりdeduplicationを実行する
+```
+
+<div id="custom-ordering-keys-without-refreshable-materialized-views">
+  ## リフレッシュ可能なマテリアライズドビューを使わないカスタム順序キー
+</div>
+
+データ規模が大きく、リフレッシュ可能なマテリアライズドビューがうまく機能しない場合は、大規模なテーブルにカスタム順序キーを定義して、重複排除に関連する問題に対処するための推奨事項をいくつか紹介します。
+
+<div id="choose-ordering-key-columns-that-dont-change-for-a-given-row">
+  ### 各行で変化しない 順序キー カラムを選択する
+</div>
+
+ClickHouse の 順序キー に追加のカラムを含める場合 (Postgres の主キー以外) 、各行で値が変わらないカラムを選ぶことを推奨します。これは、ReplacingMergeTree でのデータ整合性や重複排除に関する問題を防ぐのに役立ちます。
+
+たとえば、マルチテナント SaaS アプリケーションでは、順序キー として (`tenant_id`, `id`) を使用するのが適切です。これらのカラムは各行を一意に識別し、`tenant_id` は他のカラムが変わっても、特定の `id` に対して一定のままです。`id` による重複排除は (`tenant_id`, `id`) による重複排除と整合するため、`tenant_id` が変わることで発生しうるデータの[重複排除の問題](https://docs.peerdb.io/mirror/ordering-key-different)を回避しやすくなります。
+
+<div id="set-replica-identity-on-postgres-tables-to-custom-ordering-key">
+  ### Postgres テーブルで Replica Identity をカスタム順序キーに設定する
+</div>
+
+Postgres CDC (変更データキャプチャ) を想定どおりに機能させるには、テーブルの `REPLICA IDENTITY` を変更して、順序キーのカラムを含めることが重要です。これは `DELETE` を正確に処理するうえで不可欠です。
+
+`REPLICA IDENTITY` に順序キーのカラムが含まれていない場合、Postgres CDC (変更データキャプチャ) は主キー以外のカラム値を取得できません。これは Postgres のロジカルデコードの制限によるものです。その結果、Postgres では主キー以外の順序キーカラムがすべて NULL になります。これにより重複排除に影響が生じ、行の以前のバージョンが、最新の削除済みバージョン (`_peerdb_is_deleted` が 1 に設定されたもの) と重複排除されない可能性があります。
+
+上記の `owneruserid` と `id` の例では、主キーに `owneruserid` がすでに含まれていない場合、(`owneruserid`, `id`) に対する `UNIQUE INDEX` を作成し、それをそのテーブルの `REPLICA IDENTITY` として設定する必要があります。これにより、Postgres CDC (変更データキャプチャ) が正確なレプリケーションと重複排除に必要なカラム値を取得できるようになります。
+
+以下は、events テーブルでこれを行う方法の例です。順序キーを変更したすべてのテーブルに必ず適用してください。
+
+```sql
+-- (owneruserid, id) に UNIQUE INDEX を作成する
+CREATE UNIQUE INDEX posts_unique_owneruserid_idx ON posts(owneruserid, id);
+-- このインデックスを使用するように REPLICA IDENTITY を設定する
+ALTER TABLE posts REPLICA IDENTITY USING INDEX posts_unique_owneruserid_idx;
+```

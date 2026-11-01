@@ -1,0 +1,15 @@
+<test>
+    <!--
+        Benchmarks hashing of the constant polygon. `pointInPolygon` hashes its constant polygon
+        argument once per block to look up the preprocessed polygon in the shared cache. A large
+        polygon combined with a small `max_block_size` makes that per-block hashing dominate the
+        run time, isolating the cost of the hash function from matching and preprocessing.
+    -->
+    <query>
+        SELECT count() FROM numbers(1000000)
+        WHERE NOT ignore(pointInPolygon(
+            (number % 997 / 997. - 0.5, (number * 7 % 991) / 991. - 0.5),
+            arrayMap(x -> (cos(x / 8000. * 2 * pi()), sin(x / 8000. * 2 * pi())), range(8000))))
+        SETTINGS max_block_size = 64, validate_polygons = 0;
+    </query>
+</test>

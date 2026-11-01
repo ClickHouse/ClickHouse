@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Tableau Online'
+slug: /integrations/tableau-online
+keywords: ['clickhouse', 'tableau', 'online', 'mysql', 'connect', 'integrate', 'ui']
+description: 'Tableau Online はデータの力を活用し、どこからでも人々がより迅速かつ自信を持って意思決定できるようにします。'
+title: 'Tableau Online'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import MySQLCloudSetup from '/snippets/ja/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/ja/_clickhouse_mysql_on_premise_setup.mdx';
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+Tableau Online は、公式の MySQL データソースを使用して、MySQL インターフェイス経由で ClickHouse Cloud またはオンプレミスの ClickHouse 環境に接続できます。
+
+<div id="clickhouse-cloud-setup">
+  ## ClickHouse Cloud の設定
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## オンプレミスの ClickHouse サーバーのセットアップ
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-tableau-online-to-clickhouse-on-premise-without-ssl">
+  ## Tableau Online を ClickHouse に接続する (オンプレミス環境、SSL なし)
+</div>
+
+Tableau Cloud サイトにログインし、新しい Published Data Source を追加します。
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="Published Data Source を作成するための「New」ボタンが表示された Tableau Online のインターフェイス" border />
+
+<br />
+
+使用可能なコネクタの一覧から &quot;MySQL&quot; を選択します。
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="MySQL オプションが強調表示された Tableau Online のコネクタ選択画面" border />
+
+<br />
+
+ClickHouse のセットアップ時に取得した接続情報を入力します。
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="server、port、database、認証情報の各フィールドがある Tableau Online の MySQL 接続設定画面" border />
+
+<br />
+
+Tableau Online がデータベースを読み取り、利用可能なテーブルの一覧を表示します。目的のテーブルを右側のキャンバスへドラッグします。さらに、&quot;Update Now&quot; をクリックしてデータをプレビューしたり、読み取られたフィールドの型や名前を調整したりできます。
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="左側にデータベーステーブル、右側にドラッグアンドドロップ可能なキャンバスが表示された Tableau Online のデータソースページ" border />
+
+<br />
+
+あとは右上の &quot;Publish As&quot; をクリックするだけで、新しく作成したデータセットを Tableau Online で通常どおり使用できるようになります。
+
+注: Tableau Online を Tableau Desktop と併用し、両者の間で ClickHouse のデータセットを共有したい場合は、Tableau Desktop 側でも既定の MySQL コネクタを使用してください。その際は、Data Source ドロップダウンから MySQL を選択すると表示されるセットアップガイド ([こちら](https://www.tableau.com/support/drivers)) に従ってください。M1 Mac を使用している場合は、ドライバーのインストール回避策について [このトラブルシューティングスレッド](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) を確認してください。
+
+<div id="connecting-tableau-online-to-clickhouse-cloud-or-on-premise-setup-with-ssl">
+  ## Tableau Online を ClickHouse に接続する (SSL を使用するクラウドまたはオンプレミス環境)
+</div>
+
+Tableau Online の MySQL 接続設定ウィザードでは SSL 証明書を指定できないため、
+接続を設定するには Tableau Desktop を使用し、その後 Tableau Online にエクスポートする必要があります。ただし、この手順自体はそれほど複雑ではありません。
+
+Windows または Mac マシンで Tableau Desktop を起動し、&quot;Connect&quot; -&gt; &quot;To a Server&quot; -&gt; &quot;MySQL&quot; を選択します。
+おそらく、最初にマシンへ MySQL ドライバーをインストールする必要があります。
+インストール方法については、Data Source のドロップダウンで MySQL を選択すると表示される [こちら](https://www.tableau.com/support/drivers) のセットアップガイドに従ってください。
+M1 Mac を使用している場合は、ドライバーのインストール回避策について [このトラブルシューティングスレッド](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) を確認してください。
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="MySQL オプションが強調表示された Connect メニューを示す Tableau Desktop のインターフェイス" border />
+
+<br />
+
+<Note>
+  MySQL 接続設定 UI では、&quot;SSL&quot; オプションが有効になっていることを確認してください。
+  ClickHouse Cloud の SSL 証明書は [Let&#39;s Encrypt](https://letsencrypt.org/certificates/) によって署名されています。
+  このルート証明書は [こちら](https://letsencrypt.org/certs/isrgrootx1.pem) からダウンロードできます。
+</Note>
+
+ClickHouse Cloud インスタンスの MySQL ユーザー認証情報と、ダウンロードしたルート証明書のパスを指定します。
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="SSL オプションが有効になっており、server、username、password、certificate の各フィールドが表示された Tableau Desktop の MySQL 接続ダイアログ" border />
+
+<br />
+
+通常どおり必要なテーブルを選択し (Tableau Online の場合と同様) 、
+&quot;Server&quot; -&gt; &quot;Publish Data Source&quot; -&gt; Tableau Cloud を選択します。
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Publish Data Source オプションが強調表示された Server メニューを示す Tableau Desktop" border />
+
+<br />
+
+重要: &quot;Authentication&quot; オプションで &quot;Embedded password&quot; を選択する必要があります。
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Embedded password が選択された Authentication オプションを示す Tableau Desktop の公開ダイアログ" border />
+
+<br />
+
+さらに、&quot;Update workbook to use the published data source&quot; を選択します。
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="'Update workbook to use the published data source' オプションがチェックされた Tableau Desktop の公開ダイアログ" border />
+
+<br />
+
+最後に &quot;Publish&quot; をクリックすると、認証情報が埋め込まれたデータソースが Tableau Online で自動的に開きます。
+
+<div id="known-limitations-clickhouse-2311">
+  ## 既知の制限事項 (ClickHouse 23.11)
+</div>
+
+これらの既知の制限事項は、ClickHouse `23.11` ですべて修正されています。ほかに互換性の問題が見つかった場合は、[お問い合わせ](https://clickhouse.com/company/contact)いただくか、[新しい Issue](https://github.com/ClickHouse/ClickHouse/issues) を作成してください。

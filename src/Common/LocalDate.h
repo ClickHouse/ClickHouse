@@ -19,9 +19,9 @@
 class LocalDate
 {
 private:
-    unsigned short m_year; /// NOLINT
-    unsigned char m_month;
-    unsigned char m_day;
+    unsigned short m_year{}; /// NOLINT
+    unsigned char m_month{};
+    unsigned char m_day{};
 
     void init(time_t time, const DateLUTImpl & date_lut);
     void init(const char * s, size_t length);

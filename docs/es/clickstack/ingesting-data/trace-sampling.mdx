@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: 'Muestreo de trazas'
+sidebarTitle: 'Muestreo de trazas'
+description: 'Configura agregaciones ponderadas por muestreo para datos de trazas muestreadas en ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'muestreo de trazas', 'muestreo de cola', 'tasa de muestreo', 'agregaciones ponderadas', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Los servicios de alto rendimiento pueden producir millones de spans por segundo. Almacenar cada span es costoso, por lo que los equipos suelen ejecutar el [tail-sampling processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) de OpenTelemetry Collector para conservar solo 1 de cada N spans. Cada span conservado lleva un atributo `SampleRate` que registra N.
+
+Una vez muestreados los datos, las agregaciones ingenuas son incorrectas: `count()` devuelve N veces menos eventos de los que realmente ocurrieron, `sum()` y `avg()` quedan sesgadas y los percentiles se desplazan. Los dashboards muestran recuentos de solicitudes, rendimiento y tasas de error engañosamente bajos.
+
+ClickStack resuelve esto con un motor de consultas consciente del muestreo. Cuando configuras una expresión de tasa de muestreo en una fuente de trazas, el generador de consultas reescribe las agregaciones de SQL para ponderar cada span según su tasa de muestreo, en dashboards, alertas y búsquedas ad hoc.
+
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
+
+Cuando una fuente de trazas tiene configurado `sampleRateExpression`, ClickStack la envuelve así:
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+Los spans sin un atributo `SampleRate` usan un peso de 1 de forma predeterminada, por lo que los datos no muestreados producen resultados idénticos a las consultas originales.
+
+El generador de consultas reescribe entonces las agregaciones:
+
+| Agregación         | Antes              | Después (ajustado al muestreo)            |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + condition  | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | sin cambios        | sin cambios                               |
+| count&#95;distinct | sin cambios        | sin cambios                               |
+
+<Note>
+  Los percentiles con muestreo usan `quantileTDigestWeighted`, un sketch aproximado de T-Digest. Los resultados son muy similares, pero no exactos.
+</Note>
+
+<div id="configuring">
+  ## Configuración de la expresión de tasa de muestreo
+</div>
+
+Abra la fuente de trazas en **Configuración de la fuente** e introduzca la expresión de ClickHouse que evalúa la tasa de muestreo por `span` en el campo **Expresión de tasa de muestreo**.
+
+Por ejemplo, si el tail-sampling processor de OpenTelemetry escribe la tasa en `SpanAttributes['SampleRate']`:
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Campo Expresión de tasa de muestreo en la Configuración de la fuente de ClickStack" size="lg" />
+
+Una vez configurada, todos los gráficos, dashboards, alertas y paneles del dashboard del servicio aplican automáticamente agregaciones ponderadas por muestreo. No es necesario modificar las consultas individuales.

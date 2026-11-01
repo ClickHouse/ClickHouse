@@ -1,0 +1,25 @@
+---
+title: 复制和分片术语
+---
+
+<div id="terminology">
+  ## 术语
+</div>
+
+<div id="replica">
+  ### 副本
+</div>
+
+数据的一份拷贝。ClickHouse 始终至少有一份数据副本，因此 **副本** 的最小数量为 1。这个细节很重要：你可能不习惯把数据的原始拷贝也算作副本，但在 ClickHouse 的代码和文档中，这就是所使用的术语。为数据增加第二个副本可提供容错能力。
+
+<div id="shard">
+  ### 分片
+</div>
+
+数据的一个子集。ClickHouse 始终至少会为你的数据保留一个分片，因此如果你没有将数据分散到多台服务器上，数据就会存储在单个分片中。当单台服务器的容量不足时，可以通过将数据分片到多台服务器来分摊负载。目标端服务器由**分片键**决定，并在创建分布式表时定义。分片键可以是随机值，也可以是某个[哈希函数](/zh/reference/functions/regular-functions/hash-functions)的输出。涉及分片的部署示例将使用 `rand()` 作为分片键，并进一步说明应在何时以及如何选择其他分片键。
+
+<div id="distributed-coordination">
+  ### 分布式协调
+</div>
+
+ClickHouse Keeper 为数据复制和分布式 DDL 查询的执行提供协调机制。ClickHouse Keeper 兼容 Apache ZooKeeper。

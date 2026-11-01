@@ -1,0 +1,30 @@
+Cartesian, empty LineString vs areal
+0
+0
+0
+0
+Cartesian, MultiLineString with an empty element vs areal
+0
+0
+0
+1
+Cartesian, non-constant LineString
+1
+0
+0
+0
+1
+Cartesian, Geometry
+0
+Spherical
+0
+0
+polygonsDistance, MultiLineString with an empty element
+11.313708498984761
+11.313708498984761
+11.313708498984761
+0
+polygonsDistanceSpherical, MultiLineString with an empty element
+1
+1
+1

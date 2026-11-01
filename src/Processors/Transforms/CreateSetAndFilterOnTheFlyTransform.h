@@ -17,7 +17,7 @@ using SetWithStatePtr = std::shared_ptr<SetWithState>;
  * Data is not changed and returned as is.
  * Can be executed in parallel, but blocks on operations with set.
  */
-class CreatingSetsOnTheFlyTransform : public ISimpleTransform
+class CreatingSetsOnTheFlyTransform final : public ISimpleTransform
 {
 public:
     CreatingSetsOnTheFlyTransform(SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
@@ -44,7 +44,7 @@ private:
  * Filter the input chunk by the set.
  * When set building is not completed, just return the source data.
  */
-class FilterBySetOnTheFlyTransform : public ISimpleTransform
+class FilterBySetOnTheFlyTransform final : public ISimpleTransform
 {
 public:
     FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_);

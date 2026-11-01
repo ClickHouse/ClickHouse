@@ -29,7 +29,7 @@ private:
     bool done_count_rows = false;
 };
 
-class RawBLOBSchemaReader: public IExternalSchemaReader
+class RawBLOBSchemaReader final : public IExternalSchemaReader
 {
 public:
     NamesAndTypesList readSchema() override

@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
@@ -22,6 +23,8 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <limits>
+#include <type_traits>
 #include <string>
 
 namespace DB
@@ -32,7 +35,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionWidthBucket : public IFunction
+class FunctionWidthBucket final : public IFunction
 {
     template <typename TDataType>
     void throwIfInvalid(
@@ -100,7 +103,19 @@ class FunctionWidthBucket : public IFunction
         }
         if (operand >= high)
         {
-            return count + 1;
+            /// The result type is deliberately one step wider than the count type so that this fits.
+            /// `UInt64` is the exception - nothing is wider - so reject the one count that would wrap
+            /// to zero, which is the bucket meaning "below the range".
+            if constexpr (std::is_same_v<TCountType, TResultType>)
+            {
+                if (count == std::numeric_limits<TCountType>::max())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Last argument (count) for function {} is too large: the bucket for an operand above the range "
+                        "would be count + 1, which does not fit the result type",
+                        getName());
+            }
+            return static_cast<TResultType>(static_cast<TResultType>(count) + 1);
         }
         return std::nullopt;
     }
@@ -129,7 +144,7 @@ class FunctionWidthBucket : public IFunction
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        std::vector<ColumnPtr> cast_columns;
+        VectorWithMemoryTracking<ColumnPtr> cast_columns;
         cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
@@ -188,32 +203,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 4; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"operand", isNativeNumber, nullptr, "native numeric"},
-            {"min_range", isNativeNumber, nullptr, "native numeric"},
-            {"max_range", isNativeNumber, nullptr, "native numeric"},
-            {"num_buckets", isNativeUInt, nullptr, "UInt8, UInt16, UInt32 or UInt64"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        switch (arguments[3].type->getTypeId())
-        {
-            case TypeIndex::UInt8:
-                return std::make_shared<DataTypeUInt16>();
-            case TypeIndex::UInt16:
-                return std::make_shared<DataTypeUInt32>();
-            case TypeIndex::UInt32:
-                [[fallthrough]];
-            case TypeIndex::UInt64:
-                return std::make_shared<DataTypeUInt64>();
-            default:
-                break;
-        }
-
-        UNREACHABLE();
+        return
+            "(NativeNumber, NativeNumber, NativeNumber, UInt8) -> UInt16"
+            " OR (NativeNumber, NativeNumber, NativeNumber, UInt16) -> UInt32"
+            " OR (NativeNumber, NativeNumber, NativeNumber, UInt32 | UInt64) -> UInt64";
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -256,7 +251,7 @@ FunctionDocumentation::Arguments arguments = {
 };
 FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
 FunctionDocumentation::Examples examples = {
-    {"Usage example", "widthBucket(10.15, -8.6, 23, 18)", "11"}
+    {"Usage example", "SELECT widthBucket(10.15, -8.6, 23, 18)", "11"}
 };
 FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;

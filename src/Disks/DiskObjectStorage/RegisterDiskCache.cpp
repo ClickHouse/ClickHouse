@@ -12,6 +12,8 @@
 namespace DB
 {
 
+void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -22,7 +24,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsString path;
 }
 
-std::pair<FileCachePtr, FileCacheSettings> getCache(
+static std::pair<FileCachePtr, FileCacheSettings> getCache(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,
@@ -31,8 +33,12 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
     bool is_custom_disk)
 {
     FileCacheSettings file_cache_settings;
-    auto predefined_configuration = config.has("cache_name")
-        ? NamedCollectionFactory::instance().tryGet(config.getString("cache_name"))
+    /// The key has to be looked up inside the section of the disk: for a disk defined in a query
+    /// the section is the whole configuration, but a disk from the server configuration file lives
+    /// in `storage_configuration.disks.<name>`, where the key was not found before.
+    const String cache_name_key = config_prefix + ".cache_name";
+    auto predefined_configuration = config.has(cache_name_key)
+        ? NamedCollectionFactory::instance().tryGet(config.getString(cache_name_key))
         : nullptr;
 
     std::string cache_path_prefix_if_relative;
@@ -52,7 +58,7 @@ std::pair<FileCachePtr, FileCacheSettings> getCache(
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot create cached custom disk without either "
-                    "`filesystem_caches_path` (common for all filesystem caches) or"
+                    "`filesystem_caches_path` (common for all filesystem caches) or "
                     "`custom_cached_disks_base_directory` (common only for custom cached disks) "
                     "in server configuration file");
             }
@@ -122,7 +128,7 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check)
                     bool attach,
                     bool custom_disk) -> DiskPtr
     {
-        const bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        const bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
 
         auto disk_name = config.getString(config_prefix + ".disk", "");
         if (disk_name.empty())
@@ -144,7 +150,7 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check)
                 "Cannot wrap disk `{}` with cache layer `{}`: cached disk is allowed only on top of object storage",
                 disk_name, name);
 
-        auto cached_disk_object_storage = std::dynamic_pointer_cast<DiskObjectStorage>(disk)->wrapWithCache(cache, cache_settings, name);
+        auto cached_disk_object_storage = std::dynamic_pointer_cast<DiskObjectStorage>(disk)->wrapWithCache(cache, cache_settings, name, config, config_prefix);
         cached_disk_object_storage->startup(skip_access_check);
 
         LOG_INFO(
@@ -155,7 +161,10 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check)
         return cached_disk_object_storage;
     };
 
-    factory.registerDiskType("cache", creator);
+    factory.registerDiskType("cache", creator, Documentation{
+        .description = "Wraps another disk with a local filesystem cache, caching data read from a remote disk on local storage to speed up repeated reads.",
+        .syntax = "disk(type = cache, disk = remote_disk, path = '/var/lib/clickhouse/disk_cache/', max_size = '10Gi')",
+        .related = {"object_storage", "s3"}});
 }
 
 }

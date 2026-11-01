@@ -1,0 +1,220 @@
+---
+title: '使用 Grafana 和 ClickHouse 实现可观测性'
+description: '使用 Grafana 和 ClickHouse 实现可观测性'
+slug: /observability/grafana
+keywords: ['可观测性', '日志', '链路追踪', '指标', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+Grafana 是在 ClickHouse 中可观测性数据的首选可视化工具。这是通过 Grafana 官方提供的 ClickHouse 插件实现的。你可以按照[此处](/zh/integrations/connectors/data-visualization/grafana/index)的安装说明进行操作。
+
+该插件的 V4 版本在全新的 查询构建器 体验中，将 日志 和链路追踪 作为一等支持的能力。这大大减少了 SRE 编写 SQL 查询的需求，并简化了基于 SQL 的可观测性，推动这一新兴范式进一步发展。
+其中一项工作是将 OpenTelemetry (OTel) 置于插件的核心位置，因为我们相信，未来几年它将成为基于 SQL 的可观测性的基础，也将成为数据采集的主流方式。
+
+<div id="open-telemetry-integration">
+  ## OpenTelemetry 集成
+</div>
+
+在 Grafana 中配置 ClickHouse 数据源时，该插件允许用户为日志和链路追踪指定默认的数据库和表，以及这些表是否符合 OTel schema。这样，插件就能返回在 Grafana 中正确渲染日志和 trace 所需的列。如果你修改了默认的 OTel schema，并希望使用自定义列名，也可以进行指定。对于时间 (`Timestamp`) 、日志级别 (`SeverityText`) 或消息体 (`Body`) 等列，如果使用默认的 OTel 列名，则无需做任何更改。
+
+<Info>
+  **HTTP 或 Native**
+
+  你可以通过 HTTP 或 Native 协议将 Grafana 连接到 ClickHouse。后者在性能上略有优势，但对于 Grafana 用户发起的聚合查询，这种优势通常并不明显。相对而言，HTTP 协议通常更便于你进行代理和检查。
+</Info>
+
+“日志”配置要求必须提供时间列、日志级别列和消息列，日志才能被正确渲染。
+
+“链路追踪”配置会稍微复杂一些 (完整列表见[这里](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)) 。这里要求的列是为了便于抽象后续用于构建完整 trace 概况的查询。这些查询假定数据结构与 OTel 类似，因此，如果用户与标准 schema 偏离较大，则需要使用视图才能受益于此功能。
+
+<Image img="/images/use-cases/observability/observability-15.webp" alt="连接器配置" size="sm" />
+
+配置完成后，你可以前往 [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) 并开始搜索日志和链路追踪。
+
+<div id="logs">
+  ## 日志
+</div>
+
+如果满足 Grafana 对日志的要求，你可以在查询构建器中选择 `Query Type: Log`，然后点击 `Run Query`。查询构建器会生成一个用于列出日志的查询，并确保它们能够正确渲染，例如
+
+```sql
+SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-16.webp" alt="连接器日志配置" size="lg" border />
+
+查询构建器提供了一种无需编写 SQL 即可轻松修改查询的方式。你可以直接在查询构建器中进行过滤，包括查找包含关键字的日志。需要编写更复杂查询的用户可以切换到 SQL 编辑器。只要返回了相应的列，并将 Query Type 选择为 `logs`，结果就会以日志形式呈现。日志渲染所需的列见[此处](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)。
+
+<div id="logs-to-traces">
+  ### 从日志跳转到链路追踪
+</div>
+
+如果日志中包含 trace ID，您就可以从特定的日志行直接跳转到相应的 trace。
+
+<Image img="/images/use-cases/observability/observability-17.webp" alt="从日志跳转到链路追踪" size="lg" border />
+
+<div id="traces">
+  ## 链路追踪
+</div>
+
+与上述日志部分的体验类似，如果满足 Grafana 渲染链路追踪所需的列 (例如使用 OTel schema) ，查询构建器就能自动生成所需的查询。选择 `Query Type: Traces` 并点击 `Run Query` 后，将生成并执行一条与下方类似的查询 (具体取决于已配置的列；以下示例假设使用 OTel) ：
+
+```sql
+SELECT "TraceId" as traceID,
+  "ServiceName" as serviceName,
+  "SpanName" as operationName,
+  "Timestamp" as startTime,
+  multiply("Duration", 0.000001) as duration
+FROM "default"."otel_traces"
+WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
+  AND ( ParentSpanId = '' )
+  AND ( Duration > 0 )
+  ORDER BY Timestamp DESC, Duration DESC LIMIT 1000
+```
+
+此查询会返回 Grafana 所需的列名，并渲染出如下所示的链路追踪表。无需编写 SQL，即可按耗时或其他列进行过滤。
+
+<Image img="/images/use-cases/observability/observability-18.webp" alt="链路追踪" size="lg" border />
+
+想要编写更复杂查询的用户可以切换到 `SQL 编辑器`。
+
+<div id="view-trace-details">
+  ### 查看 trace 详情
+</div>
+
+如上所示，trace ID 会显示为可点击的链接。点击某个 trace ID 后，用户可通过 `View Trace` 链接查看关联的 spans。这会发出以下查询 (假设使用 OTel 列) ，以按所需结构检索 spans，并将结果呈现为瀑布图。
+
+```sql
+WITH '<trace_id>' AS trace_id,
+  (SELECT min(Start) FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_start,
+  (SELECT max(End) + 1 FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_end
+SELECT "TraceId" AS traceID,
+  "SpanId" AS spanID,
+  "ParentSpanId" AS parentSpanID,
+  "ServiceName" AS serviceName,
+  "SpanName" AS operationName,
+  "Timestamp" AS startTime,
+  multiply("Duration", 0.000001) AS duration,
+  arrayMap(key -> map('key', key, 'value',"SpanAttributes"[key]),
+  mapKeys("SpanAttributes")) AS tags,
+  arrayMap(key -> map('key', key, 'value',"ResourceAttributes"[key]),
+  mapKeys("ResourceAttributes")) AS serviceTags
+FROM "default"."otel_traces"
+WHERE traceID = trace_id
+  AND startTime >= trace_start
+  AND startTime <= trace_end
+LIMIT 1000
+```
+
+<Note>
+  请注意，上述查询使用 materialized view `otel_traces_trace_id_ts` 来执行 trace ID 检索。更多详情，请参见[加速查询：使用 Materialized views 进行快速查找](/zh/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups)。
+</Note>
+
+<Image img="/images/use-cases/observability/observability-19.webp" alt="Trace 详情" size="lg" border />
+
+<div id="traces-to-logs">
+  ### 从 trace 查看日志
+</div>
+
+如果日志中包含 trace ID，您可以从 trace 跳转到其关联的日志。要查看日志，请点击某个 trace ID，然后选择 `View Logs`。这将发出如下查询，并假定使用默认的 OTel 列。
+
+```sql
+SELECT Timestamp AS "timestamp",
+  Body AS "body", SeverityText AS "level",
+  TraceId AS "traceID" FROM "default"."otel_logs"
+WHERE ( traceID = '<trace_id>' )
+ORDER BY timestamp ASC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-20.webp" alt="从链路追踪到日志" size="lg" border />
+
+<div id="dashboards">
+  ## 仪表盘
+</div>
+
+你可以在 Grafana 中使用 ClickHouse 数据源构建仪表盘。更多细节建议参考 Grafana 和 ClickHouse 的[数据源文档](https://github.com/grafana/clickhouse-datasource)，尤其是关于[宏](https://github.com/grafana/clickhouse-datasource?tab=readme-ov-file#macros)和[变量](https://grafana.com/docs/grafana/latest/dashboards/variables/)的说明。
+
+该插件提供了多个开箱即用的仪表盘，其中包括一个示例仪表盘“Simple ClickHouse OTel dashboarding”，适用于符合 OTel 规范的日志和链路追踪数据。这要求用户遵循 OTel 的默认列名，并且可通过数据源配置进行安装。
+
+<Image img="/images/use-cases/observability/observability-21.webp" alt="仪表盘" size="lg" border />
+
+下面提供一些构建可视化的简单建议。
+
+<div id="time-series">
+  ### 时间序列
+</div>
+
+与统计图一样，折线图也是可观测性场景中最常见的可视化形式。若查询返回一个名为 `time` 的 `datetime` 字段和一个数值列，ClickHouse 插件会自动将其渲染为折线图。例如：
+
+```sql
+SELECT
+ $__timeInterval(Timestamp) as time,
+ quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE
+ $__timeFilter(Timestamp)
+ AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-22.webp" alt="时间序列" size="lg" border />
+
+<div id="multi-line-charts">
+  ### 多折线图
+</div>
+
+满足以下条件时，查询结果会自动渲染为多折线图：
+
+* 字段 1：别名为 time 的 datetime 字段
+* 字段 2：用于分组的值，应为 String。
+* 字段 3+：指标值
+
+例如：
+
+```sql
+SELECT
+  $__timeInterval(Timestamp) as time,
+  ServiceName,
+  quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY ServiceName, time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-23.webp" alt="多折线图" size="lg" border />
+
+<div id="visualizing-geo-data">
+  ### 可视化地理数据
+</div>
+
+在前面的章节中，我们已经介绍了如何使用 IP 字典，通过地理坐标富化可观测性数据。假设你有 `latitude` 和 `longitude` 列，可以使用 `geohashEncode` 函数将可观测性数据可视化。这样会生成与 Grafana Geo Map 图表兼容的地理哈希。下面展示了一个示例查询及其可视化效果：
+
+```sql
+WITH coords AS
+        (
+        SELECT
+                Latitude,
+                Longitude,
+                geohashEncode(Longitude, Latitude, 4) AS hash
+        FROM otel_logs_v2
+        WHERE (Longitude != 0) AND (Latitude != 0)
+        )
+SELECT
+        hash,
+        count() AS heat,
+        round(log10(heat), 2) AS adj_heat
+FROM coords
+GROUP BY hash
+```
+
+<Image img="/images/use-cases/observability/observability-24.webp" alt="地理数据可视化" size="lg" border />

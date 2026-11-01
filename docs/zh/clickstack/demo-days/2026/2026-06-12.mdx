@@ -1,0 +1,196 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-12
+title: '演示日 - 2026-06-12'
+sidebarTitle: '2026-06-12'
+description: 'ClickStack 2026-06-12 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="schema-migration-tool">
+  ## Schema 迁移工具
+</div>
+
+*演示：[ @wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/jRKTN30ghAo" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Schema 迁移工具是 ClickStack 一项正在积极开发中的新功能，允许用户直接在 UI 中触发并监控 ClickHouse 的 schema 迁移。Warren 启用迁移器后，在 `body` 列上创建了全文搜索索引，随后又将其移除，同时通过实时日志流跟踪进度。
+
+接下来还计划支持整个部署范围内的 schema 变更，使该功能更接近正式可用。 
+
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## 告警和 MCP 的 数据源过滤器级过滤器
+</div>
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Drew 演示了 ClickStack 中对 数据源过滤器支持的一项重要扩展。现在，告警可以配置在需要 数据源过滤器的仪表板卡片和 Raw SQL 卡片上；如果缺少过滤器，或查询中没有可供注入的过滤器 macro，系统会直接提供清晰的内联提示。已保存搜索告警也支持相同的行为。
+
+现在，数据源过滤器在整个服务地图体验中都会生效，所选内容会传递到关联的搜索页面和 trace 侧边面板。
+
+MCP 也新增了对 数据源过滤器的感知能力。智能体可以识别过滤器要求、获取可用值，并将过滤器传递给查询工具。过滤器值支持交叉裁剪，因此一个选择可以缩小其他过滤器可兼容的值范围。缺少必需过滤器时，MCP 可以自动选择相应值，并说明实际应用了哪些值。初步评估结果表明，这对不使用 数据源过滤器的 source 没有可测量的影响。
+
+**相关 PR：** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: 在带有已排除 source 作用域过滤器的卡片上显示图标，[#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: 为仪表板过滤器添加 source 作用域
+
+<div id="candidate-columns-when-building-sources">
+  ## 创建数据源时的候选列
+</div>
+
+*演示：[ @karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PA-6sDjdjIM" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+创建数据源时，ClickStack 现在会从底层表中推荐候选字段，帮助填写配置表单。建议会以可点击标签的形式显示；验证还会区分不存在的字段，以及虽有效但在解析前需要先设置数据源过滤器的字段。
+
+新增的警告还会提示这样一种情况：已配置 body 表达式，但没有隐式列。该功能基本已完成，仅剩少量 UI 润色和验证改进工作。
+
+**相关 PR：** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
+
+<div id="anomaly-alerts-with-group-by">
+  ## 带 group-by 的异常告警 (WIP)
+</div>
+
+*由 [@fleon](https://github.com/fleon) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+这项工作旨在解决分组时间序列异常检测中的一个易用性难题。一次在所有序列上同时显示异常带，很快就会变得难以阅读。Himanshu 的方案是在悬停时通过图例展示异常带，而在选中单个序列时，仍会直接在图表上渲染异常带。
+
+该功能仍在积极开发中，发布前还需进一步改进。
+
+<div id="mcp-eval-multi-model-selector">
+  ## MCP 评估多模型选择器
+</div>
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+MCP 评估框架现已支持同时针对多个模型运行同一套评估。Brandon 在 Fable 发布后，通过单次运行对比 Fable、Opus 和 Sonnet，演示了这一功能。
+
+在 ClickHouse 和 HyperDX 的两套评估中，Fable 在 ClickStack 特定问题上的表现都明显更强。要是我们也能用上这个模型就好了 :).
+
+**相关 PR：** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): 支持在评估批次中进行多模型比较, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: 用于对 MCP 服务器进行基准测试的 AI 评估框架
+
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## 所有 notebook 工具现已使用 MCP
+</div>
+
+*演示：[ @brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lJnrfmQswpQ" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，所有 notebook 调查工具都通过 ClickStack MCP 执行，而不再使用单独的实现。虽然用户看不到明显变化，但这次整合消除了重复的代码路径，也为未来 notebook 与本地 agent 的互操作性打下了基础。
+
+下一步计划支持 Raw SQL notebook 卡片。
+
+<div id="datadog-receiver">
+  ## Datadog receiver
+</div>
+
+*由 [@SpencerTorres](https://github.com/SpencerTorres) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/P0VVuN_yL6Q" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Spencer 演示了 Datadog receiver 的改进。
+
+此前，Datadog 的日志载荷大多以消息 body 中的非结构化 JSON 形式被摄取。现在，receiver 会提取并提升 trace ID、span ID、timestamp 以及 HTTP request metadata 等关键字段，将其映射为标准的 OpenTelemetry resource 和日志属性。
+
+Datadog 的 64 位数字 trace ID 现在也会扩展为 128 位的 OpenTelemetry 格式，从而支持在 ClickStack 中进行正确的 trace 关联。预计该 receiver 将被纳入 ClickStack collector distribution，后续还将围绕端到端 trace 关联开展更多测试。
+
+<div id="event-patterns-any-column">
+  ## 事件模式：任意列
+</div>
+
+*演示：[@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/5uGZ69YNV74" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，事件模式分析可以针对任意字符串列运行，不再局限于 `Body`。新增的列选择器默认仍为 `Body`，以保持现有行为不变，但用户也可以选择任何可表示为字符串的列。
+
+Aaron 还讲解了在 Drain 算法将事件归类为模式之前，用于将可变内容标准化的掩码逻辑。该功能仍在评审中，但应该很快就会推出。
+
+**相关 PR：** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: 为任意列的事件模式匹配添加模式列选择器
+
+<div id="span-links">
+  ## Span 链接 (开发中)
+</div>
+
+*由 [@alex-fedotyev](https://github.com/alex-fedotyev) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/SK-T5J3YcQE" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Alex 演示了 ClickStack trace 查看器中 span 链接支持的早期实现。Span 链接是 OpenTelemetry 中的一个概念，允许 span 引用其他 trace 中相关的 span，也是用户经常请求的链路追踪功能。
+
+当前实现会直接在 trace 面板中显示已链接的 span 及其相关属性。其设计和呈现方式仍在持续完善中，因此目前还只是一个尚在开发中的功能。
+
+**相关 PR：** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): 在 trace 查看器中显示 span 链接
+
+<div id="time-series-highlighting-on-hover">
+  ## 悬停时高亮时间系列
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QhyWYDE-stY" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+多系列时间图表现在会高亮显示最接近光标的系列。这让你在包含大量 group-by 值的密集图表中，更容易辨认各条线。
+
+该功能源自从 Grafana 迁移到 ClickStack 的团队反馈。
+
+**相关 PR：** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: 在时间图表提示中高亮最接近光标的系列
+
+<div id="duplicate-series">
+  ## 复制系列
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PnhU_CtRFc4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+图表构建器中新增了复制操作。用户现在可以复制现有系列配置并进行少量调整，而不必从头重新构建一个类似系列。
+
+Alex 通过创建 P50 与 P95 对比来演示这一工作流程。
+
+**相关 PR：** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): 在图表构建器中复制一个系列
+
+<div id="editable-pill-filters">
+  ## 可编辑的胶囊式筛选器 (WIP)
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/T7q_qkhWjUU" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+胶囊式筛选器即将支持在搜索界面中直接编辑。当前的早期功能包括在包含和排除模式之间切换、就地编辑值，以及直接从筛选器标签复制过滤器。
+
+该功能仍在开发中，计划在正式发布前补充更多功能并进一步打磨。
+
+**相关 PR：** [#2455](https://github.com/hyperdxio/hyperdx/pull/2455) feat(search): 可编辑的筛选器标签, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): 编辑筛选器标签时允许使用自由文本值

@@ -1,0 +1,11 @@
+== gzip: low levels and the build's max level round-trip via external gunzip ==
+level <= max: OK
+level <= max: OK
+level <= max: OK
+== gzip: above-max level rejected before writing ==
+Invalid compression level
+file not written: OK
+== deflate (zlib): max level accepted, output round-trips via ClickHouse ==
+deflate max level: OK
+== deflate (zlib): above-max level rejected ==
+Invalid compression level

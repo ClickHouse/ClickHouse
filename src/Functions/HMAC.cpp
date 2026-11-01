@@ -7,7 +7,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -27,31 +31,56 @@ namespace ErrorCodes
 namespace
 {
 
-const EVP_MD * getHashAlgorithm(const std::string_view & mode)
+using EVP_MD_ptr = std::unique_ptr<EVP_MD, decltype(&EVP_MD_free)>;
+
+/// EVP_MD_fetch returns a reference-counted handle that must be released; the digest itself stays cached by OpenSSL.
+EVP_MD_ptr getHashAlgorithm(const std::string_view & mode)
 {
-    return EVP_MD_fetch(nullptr, std::string{mode}.c_str(), nullptr);
+    return EVP_MD_ptr(EVP_MD_fetch(nullptr, std::string{mode}.c_str(), nullptr), EVP_MD_free);
 }
 
-class FunctionHMAC : public IFunction
+class FunctionHMAC final : public IFunction
 {
 private:
     inline static std::once_flag supported_algorithms_flag;
-    inline static std::map<std::string, std::set<std::string>> grouped_algorithms;
+    inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
 
     static void fetchAndGroupSupportedAlgorithms()
     {
-        std::map<std::string, std::set<std::string>> algorithms_map;
+        /// The callback is invoked from OpenSSL C code (EVP_MD_do_all_sorted), so it must be
+        /// noexcept: a C++ exception (e.g. a memory limit hit while inserting) must not unwind
+        /// through the C frames. Capture it and rethrow once the C call has returned.
+        struct CallbackState
+        {
+            MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> algorithms_map;
+            std::exception_ptr exception;
+        };
+        CallbackState state;
 
         EVP_MD_do_all_sorted(
-            [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg)
+            [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg) noexcept
             {
-                auto * algos_map = static_cast<std::map<std::string, std::set<std::string>> *>(arg);
-                std::string primary_name = md_name;
-                (*algos_map)[primary_name].insert(primary_name);
-                if (alias)
-                    (*algos_map)[primary_name].insert(alias);
+                auto & cb_state = *static_cast<CallbackState *>(arg);
+                if (cb_state.exception)
+                    return;
+                try
+                {
+                    std::string primary_name = md_name;
+                    cb_state.algorithms_map[primary_name].insert(primary_name);
+                    if (alias)
+                        cb_state.algorithms_map[primary_name].insert(alias);
+                }
+                catch (...)
+                {
+                    cb_state.exception = std::current_exception();
+                }
             },
-            &algorithms_map);
+            &state);
+
+        if (state.exception)
+            std::rethrow_exception(state.exception);
+
+        auto & algorithms_map = state.algorithms_map;
 
         /// Filter out algorithms that cannot actually be fetched
         /// (e.g., non-approved algorithms when running in FIPS mode)
@@ -70,7 +99,7 @@ private:
         grouped_algorithms = std::move(algorithms_map);
     }
 
-    static const std::map<std::string, std::set<std::string>> & getGroupedAlgorithms()
+    static const MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> & getGroupedAlgorithms()
     {
         std::call_once(supported_algorithms_flag, [] { fetchAndGroupSupportedAlgorithms(); });
         return grouped_algorithms;
@@ -90,18 +119,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        validateFunctionArguments(
-            *this,
-            arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "Hash algorithm name (e.g., 'sha256')"},
-                {"message", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Message to be authenticated"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Secret key for HMAC"},
-            });
-
-        return std::make_shared<DataTypeString>();
+        return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -112,7 +132,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const std::string_view mode = arguments[0].column->getDataAt(0);
-        const EVP_MD * evp_md = getHashAlgorithm(mode);
+        const EVP_MD_ptr evp_md = getHashAlgorithm(mode);
 
         if (evp_md == nullptr)
             throw Exception(
@@ -128,7 +148,7 @@ public:
         ColumnString::Chars & result_data = result_column->getChars();
         ColumnString::Offsets & result_offsets = result_column->getOffsets();
 
-        const size_t digest_length = EVP_MD_size(evp_md);
+        const size_t digest_length = EVP_MD_size(evp_md.get());
 
         // Pre-allocate result data
         const size_t total_size = input_rows_count * digest_length;
@@ -143,7 +163,7 @@ public:
 
             unsigned int actual_digest_length = 0;
             const unsigned char * hmac_result = HMAC(
-                evp_md,
+                evp_md.get(),
                 key_value.data(),
                 static_cast<int>(key_value.size()),
                 reinterpret_cast<const unsigned char *>(message_value.data()),
@@ -167,7 +187,7 @@ public:
     static std::string getSupportedAlgorithmsAsString(bool by_lines = false)
     {
         const auto & algorithms = getGroupedAlgorithms();
-        std::vector<std::string> formatted_algorithms;
+        VectorWithMemoryTracking<std::string> formatted_algorithms;
 
         for (const auto & [primary, aliases] : algorithms)
         {
@@ -182,6 +202,19 @@ public:
             return fmt::format("{}", fmt::join(formatted_algorithms, ", "));
     }
 };
+
+/// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+void findHMACSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    if (finder.function->arguments->size() < 3)
+        return;
+
+    /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+    /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+    /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
+    finder.result.start = 2;
+    finder.result.count = finder.function->arguments->size() - 2;
+}
 
 }
 
@@ -214,9 +247,9 @@ Supported hash algorithms:
 SELECT hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', 'secret_key'));
             )",
             R"(
-┌─hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', 'secret_key'))─┐
-│ 31FD15FA0F61FD40DC09D919D4AA5B4141A0B27C1D51E74A6789A890AAAA187C                 │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', [HIDDEN id: 1]))─┐
+│ 31FD15FA0F61FD40DC09D919D4AA5B4141A0B27C1D51E74A6789A890AAAA187C                   │
+└────────────────────────────────────────────────────────────────────────────────────┘
             )"
         },
         {
@@ -262,7 +295,7 @@ SELECT
         category
     };
 
-    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive, SecretArgumentsSpec{.custom = findHMACSecretArguments});
 }
 
 }

@@ -11,6 +11,7 @@
 #include <Poco/Logger.h>
 
 #include <mysqlxx/Connection.h>
+#include <mysqlxx/SSLParams.h>
 
 
 /// NOLINTBEGIN(modernize-macro-to-enum)
@@ -167,16 +168,15 @@ public:
          const std::string & user_,
          const std::string & password_,
          unsigned port_,
-         const std::string & ssl_ca_ = "",
-         const std::string & ssl_cert_ = "",
-         const std::string & ssl_key_ = "",
+         const SSLParams & ssl_params_ = {},
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-         bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+         bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+         bool enable_compression_ = false);
 
     Pool(const Pool & other)
         : default_connections{other.default_connections},
@@ -185,8 +185,9 @@ public:
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
-          ssl_ca(other.ssl_ca), ssl_cert(other.ssl_cert), ssl_key(other.ssl_key),
-          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect)
+          ssl_params(other.ssl_params), resolved_ssl_paths(other.resolved_ssl_paths),
+          enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect),
+          enable_compression{other.enable_compression}
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -244,11 +245,14 @@ private:
     std::string socket;
     unsigned connect_timeout;
     unsigned rw_timeout;
-    std::string ssl_ca;
-    std::string ssl_cert;
-    std::string ssl_key;
+    SSLParams ssl_params;
+    /// `ssl_params` as paths, materializing the PEM contents into temporary files if there are any.
+    /// Shared by all connections of the pool and kept alive as long as the pool is: the client
+    /// library reads the files on every (re)connect.
+    ResolvedSSLPaths resolved_ssl_paths;
     bool enable_local_infile;
     bool opt_reconnect;
+    bool enable_compression;
 
     /// True if connection was established at least once.
     bool was_successful{false};

@@ -23,9 +23,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-settings="--enable_analyzer=1"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lazy_both;
     CREATE TABLE t_lazy_both
     (
@@ -66,13 +66,13 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Test 1: Correctness — results must match with both optimizations off vs on.
 echo "=== Correctness ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT key, value, substring(payload, 1, 1) AS p FROM t_lazy_both FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
     ORDER BY sipHash64(value) LIMIT 5
     SETTINGS query_plan_optimize_lazy_final = 0, query_plan_optimize_lazy_materialization = 0
 "
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT key, value, substring(payload, 1, 1) AS p FROM t_lazy_both FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
     ORDER BY sipHash64(value) LIMIT 5
@@ -85,7 +85,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 ## Test 2: Plan has both LazilyReadFromMergeTree (from lazy materialization)
 ## and InputSelector (from lazy FINAL).
 echo "=== Plan structure ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     EXPLAIN actions = 0
     SELECT key, value, substring(payload, 1, 1) AS p FROM t_lazy_both FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
@@ -96,7 +96,7 @@ $CLICKHOUSE_CLIENT $settings -q "
              query_plan_optimize_lazy_materialization = 1
 " | grep -c 'LazilyReadFromMergeTree'
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     EXPLAIN actions = 0
     SELECT key, value, substring(payload, 1, 1) AS p FROM t_lazy_both FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
@@ -109,7 +109,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Test 3: Full EXPLAIN showing both optimizations.
 echo "=== Full EXPLAIN ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     EXPLAIN actions = 0
     SELECT key, value, substring(payload, 1, 1) AS p FROM t_lazy_both FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
@@ -120,4 +120,4 @@ $CLICKHOUSE_CLIENT $settings -q "
              query_plan_optimize_lazy_materialization = 1
 "
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_both"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_both"

@@ -1,0 +1,65 @@
+---
+description: 'Svg 문서'
+sidebarTitle: 'SVG'
+slug: /sql-reference/functions/geo/svg
+title: 'Geo 데이터로 SVG 이미지를 생성하는 함수'
+doc_type: 'reference'
+---
+
+<div id="svg">
+  ## Svg
+</div>
+
+Geo 데이터에서 선택된 SVG 요소 태그로 구성된 문자열을 반환합니다.
+
+**구문**
+
+```sql
+Svg(geometry,[style])
+```
+
+별칭: `SVG`, `svg`
+
+**매개변수**
+
+* `geometry` — Geo 데이터. [Geo](/ko/reference/data-types/geo).
+* `style` — 선택 사항인 스타일 이름입니다. [String](/ko/reference/data-types/string).
+
+**반환 값**
+
+* `geometry`의 SVG 표현입니다. [String](/ko/reference/data-types/string).
+  * SVG 원
+  * SVG 다각형
+  * SVG 경로
+
+**예시**
+
+**원**
+
+```sql title="Query"
+SELECT SVG((0., 0.))
+```
+
+```response title="Response"
+<circle cx="0" cy="0" r="5" style=""/>
+```
+
+**Polygon**
+
+```sql title="Query"
+SELECT SVG([(0., 0.), (10, 0), (10, 10), (0, 10)])
+```
+
+```response title="Response"
+<polygon points="0,0 0,10 10,10 10,0 0,0" style=""/>
+```
+
+**경로**
+
+```sql title="Query"
+SELECT SVG([[(0., 0.), (10, 0), (10, 10), (0, 10)], [(4., 4.), (5, 4), (5, 5), (4, 5)]])
+```
+
+```response title="Response"
+<g fill-rule="evenodd"><path d="M 0,0 L 0,10 L 10,10 L 10,0 L 0,0M 4,4 L 5,4 L 5,5 L 4,5 L 4,4 z " style=""/></g>
+```

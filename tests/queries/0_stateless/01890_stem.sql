@@ -32,6 +32,23 @@ SELECT stem('intensivement', 'fr');
 SELECT stem('étudié', 'fr');
 SELECT stem('peuvent', 'fr');
 
+SELECT '-- Conjugation families: regular forms collapse to one stem, some irregular forms diverge.';
+-- English regular: every form of run / study / collect maps to a single stem.
+SELECT stem('running', 'en'), stem('runs', 'en'), stem('run', 'en');
+SELECT stem('studied', 'en'), stem('studying', 'en'), stem('study', 'en');
+SELECT stem('collection', 'en'), stem('collecting', 'en'), stem('collected', 'en');
+-- English irregular: 'ran' does not share the 'run' stem; the go-family splits into several stems.
+SELECT stem('go', 'en'), stem('going', 'en'), stem('goes', 'en'), stem('went', 'en'), stem('gone', 'en');
+SELECT stem('run', 'en'), stem('ran', 'en');
+-- Spanish regular -ar verbs collapse to one stem.
+SELECT stem('trabajar', 'es'), stem('trabajando', 'es'), stem('trabaja', 'es');
+SELECT stem('hablar', 'es'), stem('hablando', 'es'), stem('habla', 'es');
+-- Spanish irregular 'tener' produces several stems.
+SELECT stem('tener', 'es'), stem('teniendo', 'es'), stem('tenemos', 'es'), stem('tengo', 'es'), stem('tiene', 'es'), stem('tuve', 'es'), stem('tuvieron', 'es');
+-- Russian regular verb conjugations share a stem.
+SELECT stem('читать', 'ru'), stem('читает', 'ru'), stem('читаем', 'ru'), stem('читали', 'ru');
+SELECT stem('писать', 'ru'), stem('писал', 'ru'), stem('писали', 'ru');
+
 SELECT '-- FixedString input produces String output.';
 SELECT stem(toFixedString('blessing', 10), 'en'), toTypeName(stem(toFixedString('word', 10), 'en'));
 
@@ -126,6 +143,27 @@ CREATE TABLE stem_test_lc (word LowCardinality(String)) ENGINE = MergeTree ORDER
 INSERT INTO stem_test_lc VALUES ('blessing'), ('disguise'), ('blessing');
 SELECT stem(word, 'en') FROM stem_test_lc ORDER BY word;
 DROP TABLE stem_test_lc;
+
+SELECT '- Lengthening stemmers.';
+
+SELECT '-- Turkish stems a 3-byte word to a 5-byte word, so the output is longer than the input.';
+SELECT stem('uag', 'tr');
+
+SELECT '-- Over a multi-block scan the output must stay correct even when it overflows the input-sized estimate.';
+SELECT countIf(s != 'uagı')
+FROM (SELECT stem(materialize('uag'), 'tr') AS s FROM numbers(6800))
+SETTINGS max_block_size = 1700;
+
+SELECT '-- Turkish also lengthens via a multi-byte substitution (3 bytes to 4 bytes).';
+SELECT stem('aac', 'tr');
+
+SELECT '-- Estonian lengthens by appending ASCII letters (4 bytes to 5 bytes), a different mechanism.';
+SELECT stem('keeb', 'et');
+
+SELECT '-- Estonian over a multi-block scan must also stay correct past the input-sized estimate.';
+SELECT countIf(s != 'keesi')
+FROM (SELECT stem(materialize('keeb'), 'et') AS s FROM numbers(6800))
+SETTINGS max_block_size = 1700;
 
 SELECT '- Negative tests.';
 

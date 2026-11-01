@@ -1,0 +1,57 @@
+---
+title: 'Instalación autogestionada'
+sidebarTitle: 'Resumen'
+description: 'Instala ClickHouse en tu propia infraestructura.'
+doc_type: 'landing-page'
+keywords: ['instalar', 'autogestionado', 'linux', 'macos', 'windows', 'docker']
+---
+
+Instala ClickHouse en la plataforma que administras.
+
+<div id="local-development">
+  ## Desarrollo local
+</div>
+
+Ejecuta ClickHouse en tu propia máquina para compilar, probar y experimentar.
+
+<CardGroup cols={2}>
+  <Card title="Instalación rápida" href="/es/get-started/setup/self-managed/quick-install" icon="bolt">
+    Script de `curl` de una sola línea que descarga un único binario de ClickHouse.
+  </Card>
+
+  <Card title="clickhousectl (CLI)" href="/es/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    Instala y administra versiones y servidores locales de ClickHouse con ClickHouse CLI.
+  </Card>
+
+  <Card title="Docker" href="/es/get-started/setup/self-managed/docker" icon="docker">
+    Descarga la imagen oficial de Docker y ejecuta un contenedor.
+  </Card>
+
+  <Card title="Compilación desde el código fuente" href="/es/get-started/setup/self-managed/advanced" icon="code">
+    Compila desde el código fuente y explora otras opciones avanzadas de instalación.
+  </Card>
+</CardGroup>
+
+<div id="production-server">
+  ## Servidor de producción
+</div>
+
+Instale el servidor de ClickHouse desde paquetes o binarios para un despliegue de larga duración.
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/es/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    Instale mediante el repositorio oficial de APT.
+  </Card>
+
+  <Card title="Red Hat / CentOS" href="/es/get-started/setup/self-managed/redhat" icon="redhat">
+    Instale mediante el repositorio oficial de YUM/DNF.
+  </Card>
+
+  <Card title="NixOS" href="/es/get-started/setup/self-managed/nixos" icon="snowflake">
+    Instale en NixOS mediante el gestor de paquetes.
+  </Card>
+
+  <Card title="Otras distribuciones Linux" href="/es/get-started/setup/self-managed/other-linux" icon="linux">
+    Instalación genérica para distribuciones Linux mediante tarball.
+  </Card>
+</CardGroup>

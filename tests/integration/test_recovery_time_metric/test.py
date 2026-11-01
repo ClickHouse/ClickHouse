@@ -43,7 +43,7 @@ def test_recovery_time_metric(start_cluster):
 
     db_disk_name = get_database_disk_name(node)
     metadata_path = node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='rdb' AND name='t'"
+        "SELECT metadata_path FROM system.tables WHERE database='rdb' AND name='t'"
     ).strip()
 
     node.exec_in_container(

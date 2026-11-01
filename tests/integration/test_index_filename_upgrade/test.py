@@ -6,11 +6,16 @@ from helpers.cluster import ClickHouseCluster
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        # Until 25.12 index filenames weren't escaped
+        # Until 25.12 index filenames weren't escaped.
+        # System logs are disabled so that the new server does not create
+        # rotated system log tables marked with the `table_readonly` setting,
+        # which the older binary started via `restart_with_original_version`
+        # would not know and would fail to attach.
         cluster.add_instance(
             "old_node",
             image="clickhouse/clickhouse-server",
             tag="25.12.3.21",
+            main_configs=["configs/zz_disable_system_logs.xml"],
             with_installed_binary=True,
             stay_alive=True,
         )
@@ -26,7 +31,7 @@ def test_index_filename_upgrade(started_cluster):
 
     node.query("DROP TABLE IF EXISTS test_index_filename;")
     node.query(
-        f"""
+        """
         CREATE TABLE test_index_filename (
             column UInt8,
             INDEX `minmax_index_ESPAÑA` `column` TYPE set(0) GRANULARITY 1

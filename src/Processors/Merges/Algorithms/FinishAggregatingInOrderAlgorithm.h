@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
@@ -43,7 +44,8 @@ public:
         AggregatingTransformParamsPtr params_,
         const SortDescription & description_,
         size_t max_block_size_rows_,
-        size_t max_block_size_bytes_);
+        size_t max_block_size_bytes_,
+        size_t limit_hint_ = 0);
 
     const char * getName() const override { return "FinishAggregatingInOrderAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -86,16 +88,19 @@ private:
 
     Inputs current_inputs;
 
-    std::vector<State> states;
-    std::vector<size_t> inputs_to_update;
+    VectorWithMemoryTracking<State> states;
+    VectorWithMemoryTracking<size_t> inputs_to_update;
 
-    std::vector<Chunk> chunks;
+    VectorWithMemoryTracking<Chunk> chunks;
     UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;
 
     size_t total_merged_rows = 0;
     size_t total_merged_bytes = 0;
+
+    size_t limit_hint = 0;
+    size_t finalized_group_batches = 0;
 };
 
 }

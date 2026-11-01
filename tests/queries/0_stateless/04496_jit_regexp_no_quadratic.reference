@@ -1,0 +1,16 @@
+-- correctness parity with RE2 on the affected shapes
+0
+1
+1
+['111','111','111','1']
+xx
+0
+1
+1
+-- leading unbounded quantifier, rejected input: resumes past the run instead of retrying every offset
+0
+0
+0
+-- bounded quantifier via iterative callers: scans at most `max` bytes per match
+1333334
+1333334

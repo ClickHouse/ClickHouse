@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndAliases.h>
-#include <Processors/IProcessor.h>
+#include <Processors/ProcessorsProfileLogInfo.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -16,7 +18,7 @@ struct ProcessorProfileLogElement
     UInt64 id{};
     std::vector<UInt64> parent_ids;
 
-    UInt64 plan_step;
+    UInt64 plan_step{};
     UInt64 plan_group{};
     String plan_step_name;
     String plan_step_description;
@@ -39,6 +41,10 @@ struct ProcessorProfileLogElement
     size_t output_rows{};
     size_t output_bytes{};
 
+    /// Set if the query failed with an exception.
+    Int32 exception_code{};
+    String exception;
+
     static std::string name() { return "ProcessorsProfileLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
@@ -49,11 +55,18 @@ class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
 {
 public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
+
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY DELETE"; }
 };
 
-std::vector<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
+VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
 
-void logProcessorProfile(ContextPtr context, const Processors & processors);
-void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
+void logProcessorProfile(ContextPtr context, const Processors & processors, Int32 exception_code = 0, const String & exception = {});
+void logProcessorProfile(
+    ContextPtr context,
+    const VectorWithMemoryTracking<ProcessorsProfileLogInfo> & profile_infos,
+    String pipeline_dump,
+    Int32 exception_code = 0,
+    const String & exception = {});
 
 }

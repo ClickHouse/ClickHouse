@@ -3,12 +3,23 @@
 
 #include <base/EnumReflection.h>
 
+#include <string_view>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
+}
+
+IntervalKind IntervalKind::fromBinary(UInt8 value)
+{
+    auto kind = magic_enum::enum_cast<Kind>(value);
+    if (!kind)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown IntervalKind during Interval type decoding: {0:#04x}", UInt64(value));
+    return *kind;
 }
 
 std::string_view IntervalKind::toString() const
@@ -33,6 +44,11 @@ Int64 IntervalKind::toAvgNanoseconds() const
         default:
             return toAvgSeconds() * NANOSECONDS_PER_SECOND;
     }
+}
+
+Int64 IntervalKind::toAvgMilliseconds() const
+{
+    return toAvgNanoseconds() / 1'000'000;
 }
 
 Int32 IntervalKind::toAvgSeconds() const
@@ -73,7 +89,9 @@ Float64 IntervalKind::toSeconds() const
             return 86400;
         case IntervalKind::Kind::Week:
             return 604800;
-        default:
+        case IntervalKind::Kind::Month:
+        case IntervalKind::Kind::Quarter:
+        case IntervalKind::Kind::Year:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not possible to get precise number of seconds in non-precise interval");
     }
 }
@@ -247,63 +265,33 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 }
 
 
-bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
+namespace
 {
-    if ("nanosecond" == kind)
+
+/// Finds the kind whose name, as returned by `getter`, is `name`.
+bool tryParseByName(std::string_view name, const char * (IntervalKind::*getter)() const, IntervalKind & result)
+{
+    for (auto kind : magic_enum::enum_values<IntervalKind::Kind>())
     {
-        result = IntervalKind::Kind::Nanosecond;
-        return true;
-    }
-    if ("microsecond" == kind)
-    {
-        result = IntervalKind::Kind::Microsecond;
-        return true;
-    }
-    if ("millisecond" == kind)
-    {
-        result = IntervalKind::Kind::Millisecond;
-        return true;
-    }
-    if ("second" == kind)
-    {
-        result = IntervalKind::Kind::Second;
-        return true;
-    }
-    if ("minute" == kind)
-    {
-        result = IntervalKind::Kind::Minute;
-        return true;
-    }
-    if ("hour" == kind)
-    {
-        result = IntervalKind::Kind::Hour;
-        return true;
-    }
-    if ("day" == kind)
-    {
-        result = IntervalKind::Kind::Day;
-        return true;
-    }
-    if ("week" == kind)
-    {
-        result = IntervalKind::Kind::Week;
-        return true;
-    }
-    if ("month" == kind)
-    {
-        result = IntervalKind::Kind::Month;
-        return true;
-    }
-    if ("quarter" == kind)
-    {
-        result = IntervalKind::Kind::Quarter;
-        return true;
-    }
-    if ("year" == kind)
-    {
-        result = IntervalKind::Kind::Year;
-        return true;
+        if (name == (IntervalKind(kind).*getter)())
+        {
+            result = kind;
+            return true;
+        }
     }
     return false;
 }
+
+}
+
+bool IntervalKind::tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind & result)
+{
+    return tryParseByName(name, &IntervalKind::toNameOfFunctionExtractTimePart, result);
+}
+
+bool IntervalKind::tryParseString(std::string_view name, IntervalKind & result)
+{
+    return tryParseByName(name, &IntervalKind::toLowercasedKeyword, result);
+}
+
 }

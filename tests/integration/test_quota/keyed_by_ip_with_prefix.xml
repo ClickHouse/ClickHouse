@@ -1,0 +1,9 @@
+<clickhouse>
+    <quotas>
+        <myQuota>
+            <keyed_by_ip/>
+            <ipv4_prefix_bits>24</ipv4_prefix_bits>
+            <ipv6_prefix_bits>64</ipv6_prefix_bits>
+        </myQuota>
+    </quotas>
+</clickhouse>

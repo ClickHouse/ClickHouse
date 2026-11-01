@@ -9,6 +9,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -34,16 +35,16 @@ struct DecimalOpHelpers
      *
      * Here and below we use UInt8 for storing digits (0-9 range with maximum carry of 9 will definitely fit this)
      */
-    static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
+    static VectorWithMemoryTracking<UInt8> multiply(const VectorWithMemoryTracking<UInt8> & num1, const VectorWithMemoryTracking<UInt8> & num2)
     {
         const auto len1 = static_cast<UInt16>(num1.size());
         const auto len2 = static_cast<UInt16>(num2.size());
         if (len1 == 0 || len2 == 0)
             return {0};
 
-        std::vector<UInt8> result(len1 + len2, 0);
+        VectorWithMemoryTracking<UInt8> result(len1 + len2, 0);
         UInt16 i_n1 = 0;
-        UInt16 i_n2;
+        UInt16 i_n2 = 0;
 
         for (Int32 i = len1 - 1; i >= 0; --i)
         {
@@ -84,15 +85,15 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static std::vector<UInt8> divide(const std::vector<UInt8> & number, const Int256 & divisor)
+    static VectorWithMemoryTracking<UInt8> divide(const VectorWithMemoryTracking<UInt8> & number, const Int256 & divisor)
     {
-        std::vector<UInt8> result;
+        VectorWithMemoryTracking<UInt8> result;
         const auto max_index = number.size() - 1;
 
         UInt16 idx = 0;
         Int256 temp = 0;
 
-        while (temp < divisor && max_index > idx)
+        while (temp < divisor && max_index >= idx)
         {
             temp = temp * 10 + number[idx];
             ++idx;
@@ -112,9 +113,9 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static std::vector<UInt8> toDigits(Int256 x)
+    static VectorWithMemoryTracking<UInt8> toDigits(Int256 x)
     {
-        std::vector<UInt8> result;
+        VectorWithMemoryTracking<UInt8> result;
         if (x >= 10)
             result = toDigits(x / 10);
 
@@ -122,7 +123,7 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static UInt256 fromDigits(const std::vector<UInt8> & digits)
+    static UInt256 fromDigits(const VectorWithMemoryTracking<UInt8> & digits)
     {
         Int256 result = 0;
         UInt32 scale = 0;
@@ -231,7 +232,7 @@ struct DecimalArithmeticsImpl
 
 
 template <typename Transform>
-class FunctionsDecimalArithmetics : public IFunction
+class FunctionsDecimalArithmetics final : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
@@ -245,6 +246,15 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
+
+    /// Documentation-only — arithmetic on two `Decimal` operands; the optional
+    /// third argument is a const-`UInt8` scale for the result. The output is
+    /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
+    /// stays authoritative.
+    String getSignatureString() const override
+    {
+        return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -286,6 +296,16 @@ public:
                             "must be integer in range [0, 76]", this->getName());
 
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

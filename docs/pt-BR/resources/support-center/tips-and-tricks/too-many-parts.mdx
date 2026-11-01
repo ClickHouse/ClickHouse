@@ -1,0 +1,81 @@
+---
+slug: /tips-and-tricks/too-many-parts
+sidebarTitle: 'Too many parts'
+doc_type: 'guide'
+keywords: [
+  'clickhouse too many parts',
+  'erro too many parts',
+  'batching de inserts no ClickHouse',
+  'problema de explosão de partes',
+  'desempenho de merge no ClickHouse',
+  'otimização de insert em lote',
+  'async inserts no ClickHouse',
+  'problemas com inserts pequenos',
+  'gerenciamento de partes no ClickHouse',
+  'otimização de desempenho de insert',
+  'estratégia de batching no ClickHouse',
+  'padrões de insert em banco de dados'
+]
+title: 'Lições - problema de Too many parts'
+description: 'Soluções e prevenção para Too many parts'
+---
+
+*Este guia faz parte de uma coleção de aprendizados obtidos em encontros da comunidade. Para mais soluções práticas e insights, você pode [navegar por problema específico](/pt-BR/resources/support-center/tips-and-tricks/community-wisdom).*
+*Quer mais dicas de otimização de desempenho? Confira o guia de insights da comunidade sobre [Otimização de desempenho](/pt-BR/resources/support-center/tips-and-tricks/performance-optimization).*
+
+<div id="understanding-the-problem">
+  ## Entendendo o problema
+</div>
+
+O ClickHouse emitirá um erro &quot;Too many parts&quot; para evitar uma degradação grave do desempenho. Partes pequenas causam vários problemas: pior desempenho de consulta, pois é preciso ler e mesclar mais arquivos durante as consultas; maior uso de memória, já que cada parte exige metadados em memória; menor eficiência de compressão, porque blocos de dados menores são compactados com menos eficácia; maior sobrecarga de E/S devido ao maior número de descritores de arquivo e operações de seek; e merges em segundo plano mais lentos, o que aumenta o trabalho do agendador de merges.
+
+**Documentação relacionada**
+
+* [Motor MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree)
+* [Partes](/pt-BR/concepts/core-concepts/parts)
+* [Tabela de sistema Parts](/pt-BR/reference/system-tables/parts)
+
+<div id="recognize-parts-problem">
+  ## Identifique o problema cedo
+</div>
+
+Esta consulta monitora a fragmentação das tabelas analisando a contagem e o tamanho das partes em todas as tabelas ativas. Ela identifica tabelas com partes em excesso ou muito pequenas que podem exigir otimização de merge. Use isso regularmente para detectar problemas de fragmentação antes que eles afetem o desempenho das consultas.
+
+```sql runnable editable
+-- Desafio: Substitua pelos nomes reais do banco de dados e da tabela para uso em produção
+-- Experimento: Ajuste os limites de contagem de partes (1000, 500, 100) conforme o seu sistema
+SELECT 
+    database,
+    table,
+    count() as total_parts,
+    sum(rows) as total_rows,
+    round(avg(rows), 0) as avg_rows_per_part,
+    min(rows) as min_rows_per_part,
+    max(rows) as max_rows_per_part,
+    round(sum(bytes_on_disk) / 1024 / 1024, 2) as total_size_mb,
+    CASE 
+        WHEN count() > 1000 THEN 'CRITICAL - Too many parts (>1000)'
+        WHEN count() > 500 THEN 'WARNING - Many parts (>500)'
+        WHEN count() > 100 THEN 'CAUTION - Getting many parts (>100)'
+        ELSE 'OK - Reasonable part count'
+    END as parts_assessment,
+    CASE 
+        WHEN avg(rows) < 1000 THEN 'POOR - Very small parts'
+        WHEN avg(rows) < 10000 THEN 'FAIR - Small parts'
+        WHEN avg(rows) < 100000 THEN 'GOOD - Medium parts'
+        ELSE 'EXCELLENT - Large parts'
+    END as part_size_assessment
+FROM system.parts
+WHERE active = 1
+  AND database NOT IN ('system', 'information_schema')
+GROUP BY database, table
+ORDER BY total_parts DESC
+LIMIT 20;
+```
+
+<div id="video-sources">
+  ## Fontes de vídeo
+</div>
+
+* [INSERTs assíncronos rápidos, concorrentes e consistentes no ClickHouse](https://www.youtube.com/watch?v=AsMPEfN5QtM) - Um integrante da equipe do ClickHouse explica os async inserts e o problema de Too many parts
+* [ClickHouse em produção em escala](https://www.youtube.com/watch?v=liTgGiTuhJE) - Estratégias reais de batching usadas por plataformas de observabilidade

@@ -1,0 +1,57 @@
+---
+title: '自管理安装'
+sidebarTitle: '概览'
+description: '在您自己的基础设施上安装 ClickHouse。'
+doc_type: 'landing-page'
+keywords: ['安装', '自管理', 'linux', 'macos', 'windows', 'docker']
+---
+
+在您所使用的平台上安装 ClickHouse。
+
+<div id="local-development">
+  ## 本地开发
+</div>
+
+在本机上运行 ClickHouse，用于构建、测试和实验。
+
+<CardGroup cols={2}>
+  <Card title="快速安装" href="/zh/get-started/setup/self-managed/quick-install" icon="bolt">
+    一行 `curl` 脚本，即可下载单个 ClickHouse 可执行文件。
+  </Card>
+
+  <Card title="clickhousectl（CLI）" href="/zh/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    使用 ClickHouse 命令行客户端安装并管理本地 ClickHouse 版本和服务器。
+  </Card>
+
+  <Card title="Docker" href="/zh/get-started/setup/self-managed/docker" icon="docker">
+    拉取官方 Docker 镜像并运行容器。
+  </Card>
+
+  <Card title="从源码构建" href="/zh/get-started/setup/self-managed/advanced" icon="code">
+    从源码构建，以及其他高级安装方式。
+  </Card>
+</CardGroup>
+
+<div id="production-server">
+  ## 生产服务器
+</div>
+
+通过软件包或二进制文件安装 ClickHouse Server，以用于长期运行的部署。
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/zh/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    通过官方 APT 仓库安装。
+  </Card>
+
+  <Card title="Red Hat / CentOS" href="/zh/get-started/setup/self-managed/redhat" icon="redhat">
+    通过官方 YUM/DNF 仓库安装。
+  </Card>
+
+  <Card title="NixOS" href="/zh/get-started/setup/self-managed/nixos" icon="snowflake">
+    在 NixOS 上通过包管理器安装。
+  </Card>
+
+  <Card title="其他 Linux" href="/zh/get-started/setup/self-managed/other-linux" icon="linux">
+    通过 tar 包安装通用 Linux 发行版。
+  </Card>
+</CardGroup>

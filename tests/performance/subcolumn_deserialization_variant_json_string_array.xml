@@ -1,0 +1,153 @@
+<test>
+    <!--
+        Deserialization of a whole column together with its subcolumns, or of several subcolumns that
+        share a substream. Such reads hit the substreams cache: a substream is deserialized once and
+        reused by every column/subcolumn that needs it. This stresses how the cached data is handed to
+        each reader (pointer sharing vs. range copy). Large values (1000-byte strings) make the shared
+        substream big so the cost is visible.
+
+        Each case is measured for both Wide parts (with a minmax skip index that forces reading
+        alternating granules) and Compact parts (where the substreams cache persists across granules).
+
+        Split from the Tuple/Map cases into a separate file because CI measures at most 10
+        randomly-chosen queries per test file.
+    -->
+
+    <!-- ============================ Variant(String, UInt64) ============================ -->
+    <create_query>
+        CREATE TABLE variant_wide
+        (
+            id UInt64, skip UInt8, v Variant(String, UInt64),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2048, index_granularity_bytes = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO variant_wide SELECT number, intDiv(number, 2048) % 2,
+            if(number % 2, number::UInt64::Variant(String, UInt64), randomString(1000)::String::Variant(String, UInt64))
+        FROM numbers(1500000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE variant_wide FINAL</fill_query>
+
+    <create_query>
+        CREATE TABLE variant_compact
+        (
+            id UInt64, v Variant(String, UInt64)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000
+    </create_query>
+    <fill_query>
+        INSERT INTO variant_compact SELECT number,
+            if(number % 2, number::UInt64::Variant(String, UInt64), randomString(1000)::String::Variant(String, UInt64))
+        FROM numbers(800000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE variant_compact FINAL</fill_query>
+
+    <query>SELECT v, v.String, v.UInt64 FROM variant_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT v, v.String, v.UInt64 FROM variant_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+
+    <!-- ============================ JSON(max_dynamic_paths=0), shared data serialization 'map' ============================ -->
+    <create_query>
+        CREATE TABLE json_wide
+        (
+            id UInt64, skip UInt8, json JSON(max_dynamic_paths = 0),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2048, index_granularity_bytes = 0,
+                 object_shared_data_serialization_version = 'map', object_shared_data_serialization_version_for_zero_level_parts = 'map'
+    </create_query>
+    <fill_query>
+        INSERT INTO json_wide SELECT number, intDiv(number, 2048) % 2,
+            map('p0', hex(randomString(500)), 'p1', hex(randomString(500)), 'p2', hex(randomString(500)), 'p3', hex(randomString(500)), 'p4', hex(randomString(500)))::JSON(max_dynamic_paths = 0)
+        FROM numbers(300000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE json_wide FINAL</fill_query>
+
+    <create_query>
+        CREATE TABLE json_compact
+        (
+            id UInt64, json JSON(max_dynamic_paths = 0)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000,
+                 object_shared_data_serialization_version = 'map', object_shared_data_serialization_version_for_zero_level_parts = 'map'
+    </create_query>
+    <fill_query>
+        INSERT INTO json_compact SELECT number,
+            map('p0', hex(randomString(500)), 'p1', hex(randomString(500)), 'p2', hex(randomString(500)), 'p3', hex(randomString(500)), 'p4', hex(randomString(500)))::JSON(max_dynamic_paths = 0)
+        FROM numbers(150000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE json_compact FINAL</fill_query>
+
+    <query>SELECT json.p0, json.p1, json.p2, json.p3, json.p4 FROM json_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT json, json.p0, json.p1 FROM json_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT json.p0, json.p1, json.p2, json.p3, json.p4 FROM json_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT json, json.p0, json.p1 FROM json_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+
+    <!-- ============================ String (with_size_stream) — whole string + .size subcolumn ============================ -->
+    <create_query>
+        CREATE TABLE string_wide
+        (
+            id UInt64, skip UInt8, s String,
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2048, index_granularity_bytes = 0,
+                 string_serialization_version = 'with_size_stream'
+    </create_query>
+    <fill_query>INSERT INTO string_wide SELECT number, intDiv(number, 2048) % 2, randomString(1000) FROM numbers(1800000)</fill_query>
+    <fill_query>OPTIMIZE TABLE string_wide FINAL</fill_query>
+
+    <create_query>
+        CREATE TABLE string_compact
+        (
+            id UInt64, s String
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000, string_serialization_version = 'with_size_stream'
+    </create_query>
+    <fill_query>INSERT INTO string_compact SELECT number, randomString(1000) FROM numbers(900000)</fill_query>
+    <fill_query>OPTIMIZE TABLE string_compact FINAL</fill_query>
+
+    <query>SELECT s, s.size FROM string_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT s, s.size FROM string_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+
+    <!-- ============================ Array(UInt64) — whole array + .size0 subcolumn ============================ -->
+    <create_query>
+        CREATE TABLE array_wide
+        (
+            id UInt64, skip UInt8, arr Array(UInt64),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 2048, index_granularity_bytes = 0
+    </create_query>
+    <fill_query>INSERT INTO array_wide SELECT number, intDiv(number, 2048) % 2, arrayMap(i -> cityHash64(number, i), range(200)) FROM numbers(1000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE array_wide FINAL</fill_query>
+
+    <create_query>
+        CREATE TABLE array_compact
+        (
+            id UInt64, arr Array(UInt64)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000
+    </create_query>
+    <fill_query>INSERT INTO array_compact SELECT number, arrayMap(i -> cityHash64(number, i), range(200)) FROM numbers(500000)</fill_query>
+    <fill_query>OPTIMIZE TABLE array_compact FINAL</fill_query>
+
+    <query>SELECT arr, arr.size0 FROM array_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT arr, arr.size0 FROM array_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+
+    <drop_query>DROP TABLE IF EXISTS variant_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS variant_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS string_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS string_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_compact</drop_query>
+</test>

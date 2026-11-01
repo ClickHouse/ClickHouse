@@ -1,0 +1,31 @@
+---
+description: '为 E2K 架构从源码构建 ClickHouse 的指南'
+sidebarTitle: '在 Linux 上为 E2K 构建'
+slug: /development/build-e2k
+title: '在 Linux 上为 E2K 构建'
+doc_type: 'guide'
+---
+
+ClickHouse 目前对 E2K (Elbrus-2000) 仅提供 Experimental 支持，并且只能在原生模式下，使用针对 e2k 定制构建的 boost、jemalloc、libunwind、zstd 等库并配合最少配置进行编译。
+
+<div id="build-clickhouse">
+  ## 构建 ClickHouse
+</div>
+
+构建所需的 llvm 版本必须为 20.1.8 或更高。
+
+```bash
+cd ClickHouse
+mkdir build-e2k
+cmake -DCMAKE_CROSSCOMPILING=OFF -DCOMPILER_CACHE=disabled \
+ -DCMAKE_C_COMPILER=/usr/lib/llvm-20/bin/clang -DCMAKE_CXX_COMPILER=/usr/lib/llvm-20/bin/clang++ \
+ -DLLD_PATH=/usr/lib/llvm-20/bin/ld.lld \
+ -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+ -DGLIBC_COMPATIBILITY=OFF -DENABLE_LIBRARIES=OFF -DWERROR=OFF \
+ -DENABLE_SSL=OFF -DENABLE_OPENSSL_DYNAMIC=ON \
+ -DUSE_SIMDJSON=OFF -DENABLE_JEMALLOC=OFF -DENABLE_TESTS=OFF \
+ -DBOOST_USE_UCONTEXT=ON -DENABLE_NURAFT=ON -DENABLE_RAPIDJSON=ON -DUSE_LIBFIU=ON ..
+ninja -j8
+```
+
+生成的可执行文件只能在采用 E2K CPU 架构的 Linux 系统上运行。

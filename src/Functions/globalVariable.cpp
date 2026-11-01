@@ -7,7 +7,8 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
 #include <Poco/String.h>
 
 
@@ -26,7 +27,7 @@ namespace
   *
   * Currently it's a stub, no variables are implemented. Feel free to add more variables.
   */
-class FunctionGlobalVariable : public IFunction
+class FunctionGlobalVariable final : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
@@ -46,6 +47,13 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Documentation-only — the result type is looked up from the
+    /// per-variable map, so it varies with the const-string argument.
+    String getSignatureString() const override
+    {
+        return "(const String) -> Any";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -76,7 +84,7 @@ private:
         DataTypePtr type;
         Field value;
     };
-    std::unordered_map<String, TypeAndValue> global_variable_map =
+    UnorderedMapWithMemoryTracking<String, TypeAndValue> global_variable_map =
     {
         {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
         {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},

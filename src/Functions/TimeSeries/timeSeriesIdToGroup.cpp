@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -16,7 +17,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
 /// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
-class FunctionTimeSeriesIdToGroup : public IFunction
+class FunctionTimeSeriesIdToGroup final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToGroup";
@@ -32,7 +33,41 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
+
+    /// The collector handles dictionary-encoded identifiers itself, resolving only the dictionary
+    /// keys referenced by some row. The default implementation would run the function over the
+    /// whole dictionary, and a shared dictionary can contain identifiers whose rows were all
+    /// filtered out and which are therefore unknown to the collector.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// The declarative signature below is documentation-only — the exact accepted shapes
+    /// aren't expressible in the DSL yet: it advertises any `FixedString` (the helper
+    /// `checkArgumentTypeForID` accepts only `FixedString(16)`) and omits the
+    /// helper-accepted `LowCardinality` wrappers (`LowCardinality(UUID)` /
+    /// `LowCardinality(FixedString(16))`). The `ColumnsWithTypeAndName` override below is
+    /// authoritative (it runs the helper). Route the types-only path to it too, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the approximate
+    /// signature string as a validator.
+    String getSignatureString() const override
+    {
+        return "(UInt64 | UInt128 | UUID | FixedString) -> UInt64";
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -51,25 +86,12 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        const auto & id_type = TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
-        if (id_type == typeid(UInt64))
-            return executeForIDType<UInt64>(arguments, result_type, input_rows_count);
-        if (id_type == typeid(UInt128))
-            return executeForIDType<UInt128>(arguments, result_type, input_rows_count);
-        UNREACHABLE();
-    }
-
-    template <typename IDType>
-    ColumnPtr executeForIDType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const
-    {
-        auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
-
-        auto groups = tags_collector->getGroupByID(ids);
-        chassert(groups.size() == input_rows_count);
-
-        return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
+        auto res = ColumnUInt64::create();
+        tags_collector->getGroupByID(arguments[0].column, res->getData());
+        chassert(res->size() == input_rows_count);
+        return res;
     }
 
 private:
@@ -81,11 +103,11 @@ REGISTER_FUNCTION(TimeSeriesIdToGroup)
 {
     FunctionDocumentation::Description description = R"(
 Returns the names and values of the tags associated with a specified identifier of a time series.
-See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).
+See also function [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToGroup(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series.", {"UInt64", "UInt128", "UUID", "FixedString(16)"}}
+        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns a group of tags associated with the identifier `id` of a time series.", {"UInt64"}
@@ -101,9 +123,9 @@ SELECT 8374283493092 AS id,
        timeSeriesGroupToTags(group)
         )",
         R"(
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

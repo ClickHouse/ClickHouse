@@ -1,0 +1,105 @@
+---
+title: 'Escalando ClickPipes do MySQL via OpenAPI'
+description: 'Como escalar ClickPipes do MySQL via OpenAPI'
+slug: /integrations/clickpipes/mysql/scaling
+sidebarTitle: 'Escalonamento'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestão de dados', 'sincronização em tempo real', 'escalonamento']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Warning>
+  **A maioria dos usuários não precisará desta API**
+
+  A configuração padrão dos DB ClickPipes foi projetada para lidar com a maioria das cargas de trabalho sem ajustes adicionais. Se você acredita que sua carga de trabalho exige escalonamento, abra um [chamado de suporte](https://clickhouse.com/support/program) e orientaremos você sobre as configurações ideais para o caso de uso.
+</Warning>
+
+A API de escalonamento pode ser útil para:
+
+* Cargas iniciais grandes (acima de 4 TB)
+* Migrar uma quantidade moderada de dados o mais rápido possível
+* Dar suporte a mais de 8 ClickPipes de CDC no mesmo serviço
+
+Antes de tentar aumentar a escala, considere:
+
+* Garantir que o DB de origem tenha capacidade disponível suficiente
+* Primeiro ajustar o [paralelismo e o particionamento da carga inicial](/pt-BR/integrations/clickpipes/mysql/parallel-initial-load) ao criar um ClickPipe
+* Verificar se há [transações de longa duração](/pt-BR/integrations/clickpipes/mysql/controlling-sync#transactions) na origem que possam estar causando atrasos no CDC
+
+**Aumentar a escala aumentará proporcionalmente seus custos de computação do ClickPipes.** Se você estiver aumentando a escala apenas para as cargas iniciais, é importante reduzi-la após a conclusão do snapshot para evitar cobranças inesperadas. Para mais detalhes sobre preços, consulte [os preços do ClickPipes](/pt-BR/products/cloud/reference/billing/clickpipes/index).
+
+<div id="prerequisites">
+  ## Pré-requisitos para este processo
+</div>
+
+Antes de começar, você precisará de:
+
+1. Uma [chave de API do ClickHouse](/pt-BR/products/cloud/features/admin-features/api/openapi) com permissões de Admin no serviço ClickHouse Cloud de destino.
+2. Um DB ClickPipe (Postgres, MySQL ou MongoDB) provisionado no serviço em algum momento. A infraestrutura de CDC é criada junto com o primeiro ClickPipe, e os endpoints de escalonamento passam a ficar disponíveis a partir desse momento.
+
+<div id="cdc-scaling-steps">
+  ## Passos para escalar DB ClickPipes
+</div>
+
+Defina as seguintes variáveis de ambiente antes de executar qualquer comando:
+
+```bash
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_ID=<Your ClickHouse service ID>
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+```
+
+Obtenha a configuração atual de escalonamento (opcional):
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# resultado de exemplo:
+{
+  "result": {
+    "replicaCpuMillicores": 2000,
+    "replicaMemoryGb": 8
+  },
+  "requestId": "04310d9e-1126-4c03-9b05-2aa884dbecb7",
+  "status": 200
+}
+```
+
+Defina o escalonamento desejado. As configurações compatíveis incluem de 1 a 24 núcleos de CPU, com a memória (GB) definida como 4× o número de núcleos:
+
+```bash
+cat <<EOF | tee cdc_scaling.json
+{
+  "replicaCpuMillicores": 24000,
+  "replicaMemoryGb": 96
+}
+EOF
+
+curl --silent --user $KEY_ID:$KEY_SECRET \
+-X PATCH -H "Content-Type: application/json" \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+-d @cdc_scaling.json | jq
+```
+
+Aguarde a propagação da configuração (normalmente, de 3 a 5 minutos). Após a conclusão do escalonamento, o endpoint GET refletirá os novos valores:
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# resultado de exemplo:
+{
+  "result": {
+    "replicaCpuMillicores": 24000,
+    "replicaMemoryGb": 96
+  },
+  "requestId": "5a76d642-d29f-45af-a857-8c4d4b947bf0",
+  "status": 200
+}
+```

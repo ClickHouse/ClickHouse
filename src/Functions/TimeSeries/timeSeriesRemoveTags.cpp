@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesRemoveTags(group, ['tag_name_1', 'tag_name_2', ...]) removes specified tags from a tags group,
 /// and returns the new tags group.
-class FunctionTimeSeriesRemoveTags : public IFunction
+class FunctionTimeSeriesRemoveTags final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveTags";
@@ -33,7 +33,18 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    String getSignatureString() const override
+    {
+        return "(UInt64, const Array(String | IsNothing)) -> UInt64";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -74,8 +85,8 @@ REGISTER_FUNCTION(TimeSeriesRemoveTags)
     FunctionDocumentation::Description description = R"(
 Removes specified tags from a group of tags.
 If some of the specified tags are not in the group of tags the function ignores them.
-See also function [timeSeriesRemoveTag()](/sql-reference/functions/time-series-functions#timeSeriesRemoveTag),
-[timeSeriesRemoveAllTagsExcept()](/sql-reference/functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+See also function [timeSeriesRemoveTag()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
+[timeSeriesRemoveAllTagsExcept()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTags(group, tags_to_remove)";
     FunctionDocumentation::Arguments arguments = {

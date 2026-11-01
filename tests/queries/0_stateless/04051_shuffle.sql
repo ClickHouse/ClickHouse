@@ -1,29 +1,29 @@
-EXPLAIN SYNTAX
+EXPLAIN SYNTAX single_record = 0
 SELECT number
 FROM numbers(10) AS SHUFFLE;
 
-EXPLAIN PLAN
+EXPLAIN PLAN actions = 0, compact = 0, pretty = 0
 SELECT number
 FROM numbers(10) AS SHUFFLE;
 
-EXPLAIN PLAN
+EXPLAIN PLAN actions = 0, compact = 0, pretty = 0
 SELECT number
 FROM numbers(10) AS SHUFFLE
 LIMIT 3;
 
-EXPLAIN SYNTAX
+EXPLAIN SYNTAX single_record = 0
 SELECT number
 FROM numbers(10)
 SHUFFLE
 SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1;
 
-EXPLAIN PLAN
+EXPLAIN PLAN actions = 0, compact = 0, pretty = 0
 SELECT number
 FROM numbers(10)
 SHUFFLE
 SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1;
 
-EXPLAIN PLAN
+EXPLAIN PLAN actions = 0, compact = 0, pretty = 0
 SELECT number
 FROM numbers(10)
 SHUFFLE

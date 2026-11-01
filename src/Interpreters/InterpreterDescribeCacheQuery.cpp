@@ -50,6 +50,7 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     return res;
 }
 
+void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory);
 void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

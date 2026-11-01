@@ -136,6 +136,13 @@ SELECT isProbablePrime(toUInt64(17), '5');                   -- { serverError IL
 SELECT isProbablePrime(toUInt64(17), CAST(NULL AS Nullable(UInt32)));   -- NULL propagates by default
 \N
 SELECT isProbablePrime(toUInt64(17), 5, 3);                  -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- rounds upper bound: the cap protects against AST-fuzzer-amplified literals that would otherwise
+-- run for hours under sanitizers. 256 is accepted (4^-256 < 10^-150 already), 257 is rejected.
+SELECT isProbablePrime(toUInt128('170141183460469231731687303715884105727'), 256);
+1
+SELECT isProbablePrime(toUInt128('170141183460469231731687303715884105727'), 257);          -- { serverError BAD_ARGUMENTS }
+SELECT isProbablePrime(toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819949'), 1000);  -- { serverError BAD_ARGUMENTS }
+SELECT isProbablePrime(toUInt64(17), 4294967295);            -- { serverError BAD_ARGUMENTS }
 WITH toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819949') AS p25519
 SELECT
     p25519 * toUInt256(3) < p25519 AS overflowed,

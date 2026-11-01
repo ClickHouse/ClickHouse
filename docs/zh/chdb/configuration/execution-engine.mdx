@@ -1,0 +1,369 @@
+---
+title: '执行引擎配置'
+sidebarTitle: '执行引擎'
+slug: /chdb/configuration/execution-engine
+description: '配置 DataStore 执行引擎 - auto、chdb 或 pandas'
+keywords: ['chdb', 'DataStore', '执行', '引擎', 'chdb', 'pandas', 'auto']
+doc_type: 'guide'
+---
+
+DataStore 可以通过不同的后端执行操作。本指南介绍如何配置并优化引擎选择。
+
+<div id="engines">
+  ## 可用引擎
+</div>
+
+| 引擎       | 说明                          | 最适用场景             |
+| -------- | --------------------------- | ----------------- |
+| `auto`   | 自动为每项操作选择最合适的引擎             | 通用场景 (默认)         |
+| `chdb`   | 强制所有操作都通过 ClickHouse SQL 执行 | 大型数据集、聚合          |
+| `pandas` | 强制所有操作都通过 pandas 执行         | 兼容性测试、pandas 专有功能 |
+
+<div id="setting">
+  ## 配置引擎
+</div>
+
+<div id="global">
+  ### 全局配置
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Option 1: Using set method
+config.set_execution_engine('auto')    # Default
+config.set_execution_engine('chdb')    # Force ClickHouse
+config.set_execution_engine('pandas')  # Force pandas
+
+# Option 2: Using shortcuts
+config.use_auto()     # Auto-select
+config.use_chdb()     # Force ClickHouse
+config.use_pandas()   # Force pandas
+```
+
+<div id="checking">
+  ### 查看当前引擎
+</div>
+
+```python
+print(config.execution_engine)  # 'auto', 'chdb', or 'pandas'
+```
+
+***
+
+<div id="auto-mode">
+  ## 自动模式
+</div>
+
+在 `auto` 模式 (默认) 下，DataStore 会为每项操作选择最合适的引擎：
+
+<div id="auto-chdb">
+  ### 在 chDB 中执行的操作
+</div>
+
+* 与 SQL 兼容的筛选 (`filter()`, `where()`)
+* 列选择 (`select()`)
+* 排序 (`sort()`, `orderby()`)
+* 分组与聚合 (`groupby().agg()`)
+* 连接 (`join()`, `merge()`)
+* 去重 (`distinct()`, `drop_duplicates()`)
+* 限制结果数量 (`limit()`, `head()`, `tail()`)
+
+<div id="auto-pandas">
+  ### 在 pandas 中执行的操作
+</div>
+
+* 自定义 apply 函数 (`apply(custom_func)`)
+* 使用自定义聚合的复杂数据透视表
+* 无法用 SQL 表达的操作
+* 当输入本身已是 pandas DataFrame 时
+
+<div id="auto-example">
+  ### 示例
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+config.use_auto()  # Default
+
+ds = pd.read_csv("data.csv")
+
+# This uses chDB (SQL)
+result = (ds
+    .filter(ds['amount'] > 100)   # SQL: WHERE
+    .groupby('region')            # SQL: GROUP BY
+    .agg({'amount': 'sum'})       # SQL: SUM()
+)
+
+# This uses pandas (custom function)
+result = ds.apply(lambda row: complex_calculation(row), axis=1)
+```
+
+***
+
+<div id="chdb-mode">
+  ## chDB 模式
+</div>
+
+强制所有操作均通过 ClickHouse SQL 执行：
+
+```python
+config.use_chdb()
+```
+
+<div id="chdb-when">
+  ### 何时使用 chDB
+</div>
+
+* 处理大型数据集 (数百万行)
+* 高强度聚合类工作负载
+* 当你需要尽可能高的 SQL 优化时
+* 需要在所有操作中保持一致行为时
+
+<div id="chdb-performance">
+  ### 性能特性
+</div>
+
+| 操作类型       | 性能              |
+| ---------- | --------------- |
+| GroupBy/聚合 | 极佳 (最高可快 20 倍)  |
+| 复杂筛选       | 极佳              |
+| 排序         | 很好              |
+| 简单单条件过滤    | 良好 (有少量额外开销)    |
+
+<div id="chdb-limitations">
+  ### 局限性
+</div>
+
+* 可能不支持自定义 Python 函数
+* 某些 pandas 特有功能需要先进行转换
+
+***
+
+<div id="pandas-mode">
+  ## pandas 模式
+</div>
+
+强制所有操作都通过 pandas 进行：
+
+```python
+config.use_pandas()
+```
+
+<div id="pandas-when">
+  ### 何时使用
+</div>
+
+* 需要与 pandas 进行兼容性测试时
+* 需要使用 pandas 特有功能时
+* 调试与 pandas 相关的问题时
+* 数据已采用 pandas 格式时
+
+<div id="chdb-performance">
+  ### 性能特性
+</div>
+
+| 操作类型   | 性能      |
+| ------ | ------- |
+| 简单单次操作 | 良好      |
+| 自定义函数  | 极佳      |
+| 复杂聚合   | 慢于 chDB |
+| 大型数据集  | 内存占用高   |
+
+***
+
+<div id="cross-datastore">
+  ## Cross-DataStore 引擎
+</div>
+
+为需要组合不同 DataStore 中列的操作配置此引擎：
+
+```python
+# Set cross-DataStore engine
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+```
+
+<div id="auto-example">
+  ### 示例
+</div>
+
+```python
+ds1 = pd.read_csv("sales.csv")
+ds2 = pd.read_csv("inventory.csv")
+
+# This operation involves two DataStores
+result = ds1.join(ds2, on='product_id')
+# Uses cross_datastore_engine setting
+```
+
+***
+
+<div id="selection-logic">
+  ## 引擎选择逻辑
+</div>
+
+<div id="decision-tree">
+  ### 自动模式 决策树
+</div>
+
+```text
+Operation requested
+    │
+    ├─ Can be expressed in SQL?
+    │      │
+    │      ├─ Yes → Use chDB
+    │      │
+    │      └─ No → Use pandas
+    │
+    └─ Cross-DataStore operation?
+           │
+           └─ Use cross_datastore_engine setting
+```
+
+<div id="function-override">
+  ### 函数级别覆盖
+</div>
+
+某些函数可显式指定其引擎：
+
+```python
+from chdb.datastore.config import function_config
+
+# Force specific functions to use specific engine
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper', 'lower')
+```
+
+详见[函数配置](/zh/chdb/configuration/function-config)。
+
+***
+
+<div id="performance-comparison">
+  ## 性能对比
+</div>
+
+在 1000 万行数据上的基准测试结果：
+
+| 操作         | pandas (ms) | chdb (ms) | 加速比    |
+| ---------- | ----------- | --------- | ------ |
+| GroupBy 计数 | 347         | 17        | 19.93x |
+| 组合操作       | 1,535       | 234       | 6.56x  |
+| 复杂管道       | 2,047       | 380       | 5.39x  |
+| 过滤+排序+Head | 1,537       | 350       | 4.40x  |
+| GroupBy 聚合 | 406         | 141       | 2.88x  |
+| 单次过滤       | 276         | 526       | 0.52x  |
+
+**关键结论：**
+
+* chDB 在聚合和复杂管道方面表现出色
+* 对于简单的单项操作，pandas 略快一些
+* 使用 `auto` 模式可兼顾两者的优势
+
+***
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="start-with-auto-mode">
+  ### 1. 先使用 自动模式
+</div>
+
+```python
+config.use_auto()  # Let DataStore decide
+```
+
+<div id="profile-before-forcing">
+  ### 2. 先分析，再强制指定
+</div>
+
+```python
+config.enable_profiling()
+# Run your workload
+# Check profiler report to see where time is spent
+```
+
+<div id="force-engine-for-specific-workloads">
+  ### 3. 强制为特定工作负载指定引擎
+</div>
+
+```python
+# For heavy aggregation workloads
+config.use_chdb()
+
+# For pandas compatibility testing
+config.use_pandas()
+```
+
+<div id="use-explain-to-understand-execution">
+  ### 4. 使用 explain() 理解执行过程
+</div>
+
+```python
+ds = pd.read_csv("data.csv")
+query = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'sum'})
+
+# See what SQL will be generated
+query.explain()
+```
+
+***
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="issue-operation-slower">
+  ### 问题：操作速度低于预期
+</div>
+
+```python
+# Check current engine
+print(config.execution_engine)
+
+# Enable debug to see what's happening
+config.enable_debug()
+
+# Try forcing specific engine
+config.use_chdb()  # or config.use_pandas()
+```
+
+<div id="issue-unsupported-operation">
+  ### 问题：chdb 模式下不支持的操作
+</div>
+
+```python
+# Some pandas operations aren't supported in SQL
+# Solution: use auto mode
+config.use_auto()
+
+# Or explicitly convert to pandas first
+df = ds.to_df()
+result = df.some_pandas_specific_operation()
+```
+
+<div id="issue-memory-issues">
+  ### 问题：大数据量导致的内存问题
+</div>
+
+```python
+# Use chdb engine to avoid loading all data into memory
+config.use_chdb()
+
+# Filter early to reduce data size
+result = ds.filter(ds['date'] >= '2024-01-01').to_df()
+
+# For maximum throughput on large datasets, use performance mode
+# which enables parallel Parquet reading and single-SQL aggregation
+config.use_performance_mode()
+```
+
+<Tip>
+  **性能模式**
+
+  如果你正在处理高强度聚合工作负载，且不需要与 pandas 输出完全兼容 (如行顺序、MultiIndex、Dtype 修正) ，可以考虑使用[性能模式](/zh/chdb/configuration/performance-mode)。它会自动将 engine 设置为 `chdb`，并消除所有 Pandas 兼容性开销。
+</Tip>

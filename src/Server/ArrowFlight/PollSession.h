@@ -6,7 +6,6 @@
 
 #include <Server/ArrowFlight/commandSelector.h>
 
-#include <Common/ThreadStatus.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/BlockIO.h>
@@ -18,6 +17,9 @@
 
 namespace DB
 {
+
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 namespace ArrowFlight
 {

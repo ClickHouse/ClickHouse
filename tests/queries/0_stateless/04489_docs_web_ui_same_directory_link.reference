@@ -1,0 +1,3 @@
+ClickHouse <span class="accent">Reference</span>
+rather than emit a fabricated path that 404s, fall back to the docs root.
+1

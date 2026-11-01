@@ -17,7 +17,7 @@ class Context;
 
 /** Prints the result in the form of beautiful tables.
   */
-class PrettyBlockOutputFormat : public IOutputFormat
+class PrettyBlockOutputFormat final : public IOutputFormat
 {
 public:
     enum class Style
@@ -33,6 +33,8 @@ public:
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
 
+    void checkBackgroundError() override;
+
 protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
@@ -44,27 +46,42 @@ protected:
     size_t row_number_width = 7; // "10000. "
 
     FormatSettings format_settings;
-    Serializations serializations;
 
     using Widths = PODArray<size_t>;
     using WidthsPerColumn = std::vector<Widths>;
 
     void write(Chunk chunk, PortKind port_kind);
-    virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
+    void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    virtual void writeSuffixImpl();
+    void writeSuffixImpl();
 
     void onRowsReadBeforeUpdate() override;
 
+    /// `value_width_limit` is the effective width limit of a value: it is `output_format_pretty_max_value_width`,
+    /// or zero when the values are not cut at all (the single-value exemption), in which case the cells are
+    /// only bounded by `output_format_pretty_max_column_pad_width`.
+    /// `min_widths`, when not empty, gives a lower bound for the width of every column; it is used to
+    /// recalculate the widths after the columns have been widened to fit the names of the Tuple groups,
+    /// because the visible width of a value containing a tab depends on the position where the value starts.
     void calculateWidths(
-        const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,
+        const Block & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
+        const Widths & min_widths, bool & out_has_newlines,
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 
+    /// `prefix` is the position on the line where the cell starts: the visible width of a value
+    /// containing a tab depends on it, so it must be the same as in `calculateWidths`.
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
-        size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
+        size_t value_width, size_t pad_to_width, size_t cut_to_width, size_t prefix, bool align_right, bool is_number);
+
+    /// The position on the line where the first cell starts.
+    size_t firstCellPrefix() const;
+
+    /// Writes one cell-padding character: `U+00A0` when `use_nbsp_for_padding` is on, ASCII space otherwise.
+    void writePaddingSpace();
+    void writePaddingSpaces(size_t count);
 
     void resetFormatterImpl() override
     {
@@ -87,6 +104,9 @@ private:
     std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
     bool use_vertical_format = false;
 
+    /// True iff `format_settings.pretty.use_nbsp_for_padding` AND charset is `UTF-8`.
+    bool use_nbsp_for_padding = false;
+
     /// For mono_block == true only
     Chunk mono_chunk;
     Widths prev_chunk_max_widths;
@@ -96,8 +116,13 @@ private:
     std::condition_variable mono_chunk_condvar;
     std::optional<ThreadFromGlobalPool> thread;
     std::atomic_bool finish{false};
+    /// An exception from `writingThread`, rethrown by the writing methods. Protected by `writing_mutex`.
+    std::exception_ptr background_exception;
+    /// Whether `background_exception` is set, to check it without taking `writing_mutex`.
+    std::atomic_bool has_background_exception{false};
     void writingThread();
     void stopThread();
+    void rethrowBackgroundExceptionIfAny();
 };
 
 }

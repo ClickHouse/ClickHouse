@@ -1,0 +1,94 @@
+---
+description: 'ClickPipes で AWS IAM データベース認証を設定するには、ソース固有のガイドを選択してください。'
+sidebar_label: 'AWS IAM データベース認証'
+sidebar_position: 1
+slug: /integrations/clickpipes/postgres/auth
+title: 'AWS IAM データベース認証'
+doc_type: 'guide'
+keywords: ['clickpipes', 'rds', 'aurora', 'security', 'aws', 'private connection']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+AWS IAM データベース認証の設定手順は、各 ClickPipes ソースガイドに記載されています。使用するデータベースエンジンと AWS サービスに対応するガイドを選択してください。
+
+* [Amazon RDS for PostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [Amazon Aurora PostgreSQL-Compatible Edition](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [Amazon RDS for MySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [Amazon Aurora MySQL-Compatible Edition](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [Amazon RDS for MariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
+
+この互換ページは、以前の共通ガイド内の各セクションへのリンクを維持するためのものです。以下のリンクから、ソース固有のガイド内にある IAM 認証セクションを開いてください。
+
+<div id="setup">
+  ## セットアップ
+</div>
+
+<div id="before-you-start">
+  ### 始める前に
+</div>
+
+<div id="make-sure-iam-authentication-is-enabled">
+  #### IAM認証を有効にする
+</div>
+
+該当するIAM認証のセクションを開いてください。
+
+* [Amazon RDS 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [Amazon Aurora 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [Amazon RDS 上の MySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [Amazon Aurora 上の MySQL](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [Amazon RDS 上の MariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
+
+<div id="setting-up-the-database-user">
+  #### データベースユーザーを作成する
+</div>
+
+該当する IAM 認証のセクションを開きます。
+
+* [Amazon RDS 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [Amazon Aurora 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [Amazon RDS 上の MySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [Amazon Aurora 上の MySQL](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [Amazon RDS 上の MariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### ClickHouse サービスの IAM ロール ARN を取得する
+</div>
+
+該当する IAM 認証セクションを開きます。
+
+* [Amazon RDS 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [Amazon Aurora 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [Amazon RDS 上の MySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [Amazon Aurora 上の MySQL](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [Amazon RDS 上の MariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
+
+<div id="setting-up-iam-role">
+  ### IAMロールの設定
+</div>
+
+<div id="obtaining-the-rds-resource-id">
+  #### RDS または Aurora のリソース ID を取得する
+</div>
+
+該当する IAM 認証セクションを開きます。
+
+* [Amazon RDS 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [Amazon Aurora 上の PostgreSQL](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [Amazon RDS 上の MySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [Amazon Aurora 上の MySQL](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [Amazon RDS 上の MariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
+
+<div id="manually-create-iam-role">
+  #### IAM ロールを作成する
+</div>
+
+該当するIAM 認証セクションを開きます。
+
+* [Amazon RDS上のPostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [Amazon Aurora上のPostgreSQL](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [Amazon RDS上のMySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [Amazon Aurora上のMySQL](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [Amazon RDS上のMariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)

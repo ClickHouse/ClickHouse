@@ -1,10 +1,12 @@
 #include <IO/S3Common.h>
 
+#include <Common/Config/ConfigurationWithUsageTracking.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Settings.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -25,7 +27,7 @@ namespace DB
 bool S3Exception::isRetryableError() const
 {
     /// Looks like these list is quite conservative, add more codes if you wish
-    static const std::unordered_set<Aws::S3::S3Errors> unretryable_errors = {
+    static const UnorderedSetWithMemoryTracking<Aws::S3::S3Errors> unretryable_errors = {
         Aws::S3::S3Errors::NO_SUCH_KEY,
         Aws::S3::S3Errors::ACCESS_DENIED,
         Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
@@ -40,6 +42,13 @@ bool S3Exception::isRetryableError() const
 bool S3Exception::isAccessTokenExpiredError() const
 {
     return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID || code == Aws::S3::S3Errors::ACCESS_DENIED || code == Aws::S3::S3Errors::INVALID_SIGNATURE || code == Aws::S3::S3Errors::UNKNOWN;
+}
+
+bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
+{
+    return error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY
+        || error.GetExceptionName() == "InvalidPart"
+        || error.GetExceptionName() == "InvalidPartOrder";
 }
 
 }
@@ -69,6 +78,10 @@ HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Ut
     HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
+    /// The headers are picked by a prefix of their names. Look up the prefix, so that a configuration
+    /// tracking the read keys (`ConfigurationWithUsageTracking`, used for a definition of a disk) knows that
+    /// the elements with such names are read even when they are absent.
+    config.has(ConfigurationWithUsageTracking::getNamePrefixKey(config_elem + "." + header_key));
     for (const std::string & subkey : subconfig_keys)
     {
         if (subkey.starts_with(header_key))

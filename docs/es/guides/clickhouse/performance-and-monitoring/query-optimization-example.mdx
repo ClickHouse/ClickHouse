@@ -1,0 +1,414 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: 'Ejemplo práctico de optimización'
+title: 'Ejemplo práctico de optimización de consultas'
+description: 'Siga un ejemplo práctico para mejorar el rendimiento de las consultas de ClickHouse mediante cambios en el esquema y la clave de ordenación'
+doc_type: 'guide'
+keywords: ['optimización de consultas', 'rendimiento', 'NYC Taxi', 'tipos de datos', 'clave de ordenación']
+---
+
+import NYCTaxiExampleDataset from '/snippets/es/_nyc_taxi_example_dataset.mdx';
+
+Esta guía aplica dos enfoques de optimización al conjunto de datos NYC Taxi. Primero, reduce la cantidad de datos almacenados y procesados mediante la elección de tipos de columna más precisos. A continuación, introduce una clave de ordenación que permite a ClickHouse omitir datos en consultas selectivas. Cada cambio se mide con respecto a la misma referencia. Consulte la [descripción general de la optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization) para conocer el flujo de trabajo general que sigue este ejemplo.
+
+<div id="before-you-begin">
+  ## Antes de empezar
+</div>
+
+Los ejemplos usan la tabla `nyc_taxi.trips_small_inferred`. Créela y cárguela si aún no lo ha hecho:
+
+<Accordion title="Configurar el conjunto de datos de ejemplo">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+El archivo Parquet de origen contiene aproximadamente 329 millones de filas. Los tiempos de esta guía se registraron en una implementación y variarán según los recursos de procesamiento disponibles. Compare el cambio relativo entre las etapas en lugar de esperar duraciones idénticas.
+
+Al aplicar este método a su propia carga de trabajo, use [Diagnosticar consultas lentas](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) para identificar un patrón de consulta recurrente y seleccionar una ejecución representativa antes de modificar la consulta o el esquema.
+
+<div id="process-overview">
+  ## Descripción general del proceso
+</div>
+
+El ejemplo consta de las tres etapas siguientes:
+
+1. Ejecute tres consultas independientes de carga de trabajo sobre el esquema inferido para establecer una referencia.
+2. Cree una tabla con tipos de columna más precisos, cargue los mismos datos y vuelva a ejecutar las consultas.
+3. Cree otra tabla con el mismo esquema optimizado y una clave de ordenación, y vuelva a ejecutar las consultas.
+
+Cambiar el esquema y la clave de ordenación en etapas separadas permite distinguir más fácilmente sus efectos. [Enfoques de optimización](/es/guides/clickhouse/performance-and-monitoring/optimization-approaches) explica cuándo conviene considerar estos cambios y cómo validarlos. Para obtener más orientación sobre cómo recopilar mediciones comparables, consulte [Aislar los cuellos de botella de las consultas](/es/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+<div id="define-the-baseline-workload">
+  ## Defina la carga de trabajo de referencia
+</div>
+
+En la misma sesión del cliente utilizada para ejecutar la carga de trabajo, desactive la caché del sistema de archivos para datos remotos, la caché de consultas y la caché de condiciones de consulta:
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+  Estos ajustes ayudan a que las ejecuciones repetidas sean comparables durante las pruebas. Restaure los valores anteriores una vez completadas las mediciones.
+</Note>
+
+Las tres consultas independientes siguientes constituyen la carga de trabajo de referencia. Ejecute las tres en cada tabla creada en las etapas siguientes. Ejecute cada consulta varias veces en condiciones comparables y registre una duración representativa, como la mediana, junto con las filas leídas y el uso máximo de memoria. Consulte [Establecer una línea de referencia repetible](/es/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline) para conocer el flujo de trabajo de medición completo, incluido cómo recuperar estos valores de `system.query_log`.
+
+<div id="calculated-speed-filter">
+  ### Filtrar por velocidad de trayecto calculada
+</div>
+
+Esta consulta calcula la duración y la velocidad del trayecto antes de obtener la distribución de las distancias de los trayectos realizados a más de 30 millas por hora:
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+<div id="date-range-aggregation">
+  ### Agregar viajes en un intervalo de fechas
+</div>
+
+Esta consulta calcula el número de viajes, la distancia y los importes de pago medios del primer trimestre de 2009:
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+<div id="passenger-count-filter">
+  ### Filtrar por número de pasajeros
+</div>
+
+Esta consulta calcula la duración media de los viajes con uno o dos pasajeros:
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+Las mediciones iniciales fueron:
+
+| Carga de trabajo               | Duración |    Filas leídas | Memoria máxima |
+| ------------------------------ | -------: | --------------: | --------------: |
+| Filtro de velocidad calculado |  1.699 s | 329.04 millones |      440.24 MiB |
+| Agregación por intervalo de fechas |  1.419 s | 329.04 millones |      546.75 MiB |
+| Filtro por número de pasajeros |  1.414 s | 329.04 millones |      451.53 MiB |
+
+Las tres consultas leyeron aproximadamente 329 millones de filas, una cifra cercana al número de filas de la tabla. Esto permite mejorar dos aspectos distintos de la carga de trabajo: reducir el coste de procesar las columnas seleccionadas y, después, reducir el número de filas seleccionadas cuando los filtros lo permitan.
+
+<div id="optimize-the-schema">
+  ## Optimizar el esquema
+</div>
+
+La inferencia de esquemas es una forma práctica de empezar a explorar un conjunto de datos, pero los tipos inferidos pueden ser más amplios o permisivos de lo que exige la carga de trabajo. Inspeccione los datos antes de modificar el esquema, en lugar de dar por sentado que un tipo inferido es innecesario.
+
+<div id="nullable">
+  ### Evite columnas Nullable innecesarias
+</div>
+
+Una columna [`Nullable`](/es/reference/data-types/nullable) almacena una máscara de valores nulos además de los valores propiamente dichos. Mantenga `Nullable` cuando sea relevante distinguir entre un valor nulo y el valor predeterminado del tipo, pero evítelo en las columnas que siempre contengan un valor.
+
+Cuente los valores nulos de las columnas utilizadas en el esquema de ejemplo:
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+Solo `ratecode_id`, `mta_tax` y `payment_type` contienen valores nulos en este conjunto de datos. El esquema optimizado conserva `Nullable` en esas columnas y lo elimina de las demás.
+
+<div id="low-cardinality">
+  ### Use LowCardinality para valores repetidos
+</div>
+
+[`LowCardinality`](/es/reference/data-types/lowcardinality) utiliza codificación de diccionario y puede reducir el almacenamiento y el procesamiento de columnas con muchos valores repetidos. Compruebe el número de valores distintos antes de aplicarlo:
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+Estas cuatro columnas contienen considerablemente menos valores distintos que filas. Son buenas candidatas para `LowCardinality`, aunque conviene medir su efecto en la carga de trabajo. Unos 10.000 valores distintos constituyen un punto de partida útil para identificar candidatas, no un límite fijo.
+
+<div id="optimize-data-type">
+  ### Elige tipos de datos más precisos
+</div>
+
+Usa el tipo más específico que preserve de forma segura el rango y la precisión necesarios. Por ejemplo, examina los valores mínimo y máximo de las columnas numéricas antes de reemplazar un `Int64` o `Float64` inferido:
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+Ambas columnas de tipo entero caben en [`UInt8`](/es/reference/data-types/int-uint), aunque `passenger_count` alcanza el valor máximo de 255. El ejemplo también utiliza [`Float32`](/es/reference/data-types/float) para `trip_distance` y [`Decimal32`](/es/reference/data-types/decimal) para los valores monetarios. Todos los valores de este conjunto de datos caben dentro de los rangos de destino, y el ejemplo acepta la menor precisión de coma flotante y la precisión monetaria a nivel de céntimos porque su carga de trabajo compara resultados agregados. Conserve los tipos de origen más amplios cuando se requieran valores exactos de origen. El ejemplo sustituye las columnas [`DateTime64`](/es/reference/data-types/datetime64) inferidas por [`DateTime`](/es/reference/data-types/datetime) en la misma zona horaria `UTC`, ya que las consultas del ejemplo no requieren precisión de fracciones de segundo.
+
+Estas opciones son específicas de este conjunto de datos. Confirme los requisitos de rango, precisión y nulabilidad de los datos de producción antes de aplicar los mismos cambios.
+
+<div id="apply-the-optimizations">
+  ### Aplicar los cambios en el esquema
+</div>
+
+Cree una tabla sin una clave de ordenación para que esta etapa mida los cambios en el esquema de forma independiente:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+En cada consulta de carga de trabajo, sustituya `nyc_taxi.trips_small_inferred` por `nyc_taxi.trips_small_no_pk` y vuelva a ejecutar las tres consultas. El ejemplo original registró los siguientes resultados representativos:
+
+| Carga de trabajo                   | Esquema inferido | Esquema optimizado |    Filas leídas | Memoria máxima optimizada |
+| ---------------------------------- | ---------------: | -----------------: | --------------: | ------------------------: |
+| Filtro de velocidad calculada      |        1.699 seg |          1.353 seg | 329.04 millones |                337.12 MiB |
+| Agregación por intervalo de fechas |        1.419 seg |          1.171 seg | 329.04 millones |                531.09 MiB |
+| Filtro por número de pasajeros      |        1.414 seg |          1.188 seg | 329.04 millones |                265.05 MiB |
+
+Las consultas siguen leyendo el mismo número de filas, pero el esquema optimizado reduce la cantidad de datos representada por esas filas. Por lo tanto, mejoran la duración de las consultas y el uso máximo de memoria sin modificar la selección de datos.
+
+Compare el tamaño en disco de las dos tablas:
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+Para este conjunto de datos, el esquema optimizado reduce el almacenamiento comprimido en aproximadamente un 34 %, de 7,38 GiB a 4,89 GiB.
+
+<div id="optimize-the-ordering-key">
+  ## Optimiza la clave de ordenación
+</div>
+
+En la familia [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree), la clave de ordenación determina cómo se disponen las filas en disco. ClickHouse crea un índice primario disperso a partir de ese orden para omitir los gránulos que no pueden cumplir los filtros de una consulta. A diferencia de una clave primaria en muchas bases de datos transaccionales, no garantiza la unicidad.
+
+La clave de ordenación debe reflejar los filtros que utilizan las consultas recurrentes más importantes. El orden de las columnas importa: una clave es más eficaz cuando la consulta filtra por un prefijo útil. Las columnas de menor cardinalidad a veces son eficaces como elementos iniciales cuando se filtran con frecuencia, y un componente temporal suele ser útil para cargas de trabajo basadas en el tiempo. Para obtener orientación detallada sobre cómo elegirla, consulta [Elegir una clave primaria](/es/best-practices/choosing-a-primary-key).
+
+Para este ejemplo, utiliza `(passenger_count, pickup_datetime, dropoff_datetime)`. `passenger_count` tiene pocos valores distintos y aparece en el filtro por número de pasajeros, mientras que `pickup_datetime` aparece en la agregación por intervalo de fechas. Aunque `pickup_datetime` no es la primera columna, ClickHouse puede seguir usando valores de columnas posteriores de la clave para excluir datos cuando la columna inicial no tiene restricciones. Por lo general, filtrar por un prefijo útil de la clave de ordenación permite una poda más eficaz.
+
+<div id="apply-the-ordering-key-change">
+  ### Aplicar el cambio de la clave de ordenación
+</div>
+
+Cree una tabla con el mismo esquema optimizado utilizado en la etapa anterior. Cambie únicamente la clave de ordenación:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+En cada consulta de carga de trabajo, sustituye el nombre de la tabla por `nyc_taxi.trips_small_pk` y vuelve a ejecutar las tres consultas.
+
+<div id="compare-the-results">
+  ## Compare los resultados
+</div>
+
+La guía original registró las siguientes mediciones en las tres etapas:
+
+| Carga de trabajo                   | Medición       | Esquema inferido | Esquema optimizado | Esquema optimizado y clave de ordenación |
+| ---------------------------------- | -------------- | ---------------: | -----------------: | ---------------------------------------: |
+| Filtro de velocidad calculada      | Duración       |        1.699 sec |          1.353 sec |                                0.765 sec |
+|                                    | Filas leídas   |  329.04 millones |    329.04 millones |                          329.04 millones |
+|                                    | Memoria máxima |       440.24 MiB |         337.12 MiB |                               444.19 MiB |
+| Agregación por intervalo de fechas | Duración       |        1.419 sec |          1.171 sec |                                0.248 sec |
+|                                    | Filas leídas   |  329.04 millones |    329.04 millones |                           41.46 millones |
+|                                    | Memoria máxima |       546.75 MiB |         531.09 MiB |                               173.50 MiB |
+| Filtro por número de pasajeros   | Duración       |        1.414 sec |          1.188 sec |                                0.431 sec |
+|                                    | Filas leídas   |  329.04 millones |    329.04 millones |                          276.99 millones |
+|                                    | Memoria máxima |       451.53 MiB |         265.05 MiB |                               197.38 MiB |
+
+La optimización del esquema reduce el almacenamiento y hace que los valores seleccionados sean menos costosos de procesar. La clave de ordenación aporta la mayor mejora adicional en la agregación por intervalo de fechas, ya que ClickHouse puede omitir los gránulos que quedan fuera del intervalo de fechas. El filtro por número de pasajeros también lee menos filas porque filtra por la primera columna de la clave. El filtro de velocidad calculada sigue leyendo toda la tabla porque se basa en `pickup_datetime`, `dropoff_datetime` y `trip_distance`, en lugar de en un prefijo útil de la clave de ordenación.
+
+Inspeccione la agregación por intervalo de fechas con `EXPLAIN indexes = 1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  En ClickHouse 25.9 y versiones posteriores, estos ajustes garantizan que `EXPLAIN` informe de los índices utilizados y de las partes y los gránulos que estos descartan.
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+El índice primario selecciona 5.061 de 40.167 gránulos. Esta reducción permite que la agregación por intervalo de fechas procese 41,46 millones de filas en lugar de los 329,04 millones totales.
+
+<div id="apply-the-method-to-your-workload">
+  ## Aplique el método a su carga de trabajo
+</div>
+
+Siga la misma secuencia para su propia carga de trabajo:
+
+1. Registre la duración de referencia, las filas y los bytes leídos, y el uso máximo de memoria.
+2. Compruebe si las columnas seleccionadas usan tipos innecesariamente amplios o permisivos.
+3. Aplique y mida los cambios de esquema sin modificar la organización de los datos.
+4. Pruebe una clave de ordenación basada en los filtros utilizados por las consultas recurrentes más importantes.
+5. Compare los datos seleccionados con `EXPLAIN indexes = 1` y, a continuación, vuelva a ejecutar las consultas de referencia en condiciones comparables.
+
+No dé por sentado que los tipos o la clave de ordenación de este ejemplo sean adecuados para otro conjunto de datos. Use los valores observados y los filtros de las consultas para tomar esas decisiones.
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+Vuelva a [enfoques de optimización](/es/guides/clickhouse/performance-and-monitoring/optimization-approaches) para evaluar proyecciones, vistas materializadas, índices de omisión de datos o precálculo si los cambios en el esquema y la clave de ordenación no resuelven el cuello de botella detectado.

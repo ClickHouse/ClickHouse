@@ -1,0 +1,133 @@
+---
+description: '升级文档'
+sidebar_title: '自管理升级'
+slug: /operations/update
+title: '自管理升级'
+doc_type: 'guide'
+---
+
+<div id="clickhouse-upgrade-overview">
+  ## ClickHouse 升级概述
+</div>
+
+本文档包含：
+
+* 一般准则
+* 推荐方案
+* 在您的系统上升级二进制文件的具体说明
+
+<div id="general-guidelines">
+  ## 一般指南
+</div>
+
+这些说明有助于你进行规划，并帮助你理解我们为何会在本文档后续部分提出这些建议。
+
+<div id="upgrade-clickhouse-server-separately-from-clickhouse-keeper-or-zookeeper">
+  ### 将 ClickHouse 服务器 与 ClickHouse Keeper 或 ZooKeeper 分开升级
+</div>
+
+除非 ClickHouse Keeper 或 Apache ZooKeeper 需要安全修复，否则在升级 ClickHouse 服务器 时无需同时升级 Keeper。升级过程中必须保持 Keeper 的稳定性，因此应先完成 ClickHouse 服务器 的升级，再考虑升级 Keeper。
+
+<div id="minor-version-upgrades-should-be-adopted-often">
+  ### 应经常升级到最新小版本
+</div>
+
+强烈建议在最新小版本发布后尽快升级到该版本。小版本发行版不会引入破坏性变更，但会包含重要的缺陷修复 (也可能包含安全修复) 。
+
+<div id="test-experimental-features-on-a-separate-clickhouse-server-running-the-target-version">
+  ### 在运行目标版本的独立 ClickHouse 服务器上测试实验性功能
+</div>
+
+实验性功能的兼容性随时都可能以任何形式遭到破坏。如果你在使用实验性功能，请查看更新日志，并考虑搭建一台安装了目标版本的独立 ClickHouse 服务器，在那里测试这些实验性功能的使用情况。
+
+<div id="downgrades">
+  ### 降级
+</div>
+
+如果你升级后发现新版本与你所依赖的某些功能不兼容，并且还没有开始使用任何新功能，那么你或许可以降级到较新的版本 (发布时间不超过一年) 。一旦使用了这些新功能，就无法再降级。
+
+<div id="multiple-clickhouse-server-versions-in-a-cluster">
+  ### 集群中的多个 ClickHouse 服务器 版本
+</div>
+
+我们会尽力维持一年的兼容窗口 (其中包括 2 个 LTS 版本) 。这意味着，如果两个版本之间的差距不超过一年 (或者两者之间相隔的 LTS 版本少于两个) ，那么任意两个版本原则上都应能够在同一个集群中协同工作。不过，仍建议尽快将集群中的所有成员升级到相同版本，因为仍可能出现一些小问题 (例如分布式查询变慢、ReplicatedMergeTree 中某些后台操作出现可重试错误等) 。
+
+我们绝不建议在同一个集群中运行发布日期相差超过一年的不同版本。虽然我们预计不会发生数据丢失，但集群可能会变得无法使用。如果版本差距超过一年，可能会出现的问题包括：
+
+* 集群可能无法正常工作
+* 部分 (甚至全部) 查询可能因各种错误而失败
+* 日志中可能会出现各种错误/警告
+* 可能无法降级
+
+<div id="incremental-upgrades">
+  ### 增量升级
+</div>
+
+如果当前版本与目标版本之间相差超过一年，建议采用以下任一方式：
+
+* 停机升级 (停止所有服务器，升级所有服务器，然后再启动所有服务器) 。
+* 或先升级到一个中间版本 (该版本比当前版本新，且时间跨度不超过一年) 。
+
+<div id="recommended-plan">
+  ## 推荐方案
+</div>
+
+以下是实现 ClickHouse 零停机升级的推荐步骤：
+
+1. 确保你的配置更改不在默认的 `/etc/clickhouse-server/config.xml` 文件中，而是放在 `/etc/clickhouse-server/config.d/` 中，因为 `/etc/clickhouse-server/config.xml` 可能会在升级过程中被覆盖。
+2. 查阅 [更新日志](/zh/resources/changelogs/oss/2026) 中的破坏性变更 (从目标发布版本一路回溯到你当前使用的版本) 。
+3. 对于破坏性变更中可在升级前完成的项，先进行相应更新；同时列出那些需要在升级后再进行的更改。
+4. 为每个分片确定一个或多个需要保持在线的副本，同时升级该分片中的其余副本。
+5. 对于将要升级的副本，逐个执行：
+
+* 关闭 ClickHouse 服务器
+* 将 server 升级到目标版本
+* 启动 ClickHouse 服务器
+* 等待 Keeper 消息表明系统已稳定
+* 继续处理下一个副本
+
+6. 检查 Keeper 日志和 ClickHouse 日志中是否有错误
+
+7. 将步骤 4 中确定的副本升级到新版本
+
+8. 参考步骤 1 到 3 中列出的变更清单，完成那些需要在升级后进行的更改。
+
+<Note>
+  在复制环境中同时运行多个版本的 ClickHouse 时，出现此错误消息是正常现象。当所有副本都升级到相同版本后，这些消息就不会再出现。
+
+  ```text
+  MergeFromLogEntryTask: Code: 40. DB::Exception: Checksums of parts don't match:
+  hash of uncompressed files doesn't match. (CHECKSUM_DOESNT_MATCH)  Data after merge is not
+  byte-identical to data on another replicas.
+  ```
+</Note>
+
+<div id="clickhouse-server-binary-upgrade-process">
+  ## ClickHouse 服务器 二进制文件升级流程
+</div>
+
+如果 ClickHouse 是通过 `deb` 软件包安装的，请在服务器上执行以下命令：
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-client clickhouse-server
+$ sudo service clickhouse-server restart
+```
+
+如果您不是使用推荐的 `deb` 软件包安装 ClickHouse，请采用相应的更新方式。
+
+<Note>
+  只要始终不出现某个分片的所有副本同时离线的情况，您就可以一次更新多台服务器。
+</Note>
+
+将旧版本的 ClickHouse 升级到指定版本的过程：
+
+例如：
+
+`xx.yy.a.b` 是当前的稳定版本。最新稳定版本可在[此处](https://github.com/ClickHouse/ClickHouse/releases)查看。
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-server=xx.yy.a.b clickhouse-client=xx.yy.a.b clickhouse-common-static=xx.yy.a.b
+$ sudo service clickhouse-server restart
+```

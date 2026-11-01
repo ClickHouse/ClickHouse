@@ -1,0 +1,63 @@
+---
+description: 'Guide de compilation croisée de ClickHouse depuis Linux pour les systèmes macOS'
+sidebarTitle: 'Compiler sur Linux pour macOS'
+slug: /development/build-cross-osx
+title: 'Compiler sur Linux pour macOS'
+doc_type: 'guide'
+---
+
+Cette procédure s’applique si vous disposez d’une machine Linux et souhaitez l’utiliser pour compiler le binaire `clickhouse` qui s’exécutera sur OS X.
+Le principal cas d’utilisation concerne les vérifications d’intégration continue exécutées sur des machines Linux.
+Si vous souhaitez compiler ClickHouse directement sur macOS, suivez les [instructions de compilation native](/fr/resources/develop-contribute/build/build-osx).
+
+La compilation croisée pour macOS repose sur les [instructions de compilation](/fr/resources/develop-contribute/build/build) ; suivez-les d’abord.
+
+Les sections suivantes présentent une procédure pas à pas pour compiler ClickHouse pour macOS en `x86_64`.
+Si vous ciblez l’architecture ARM, remplacez simplement toutes les occurrences de `x86_64` par `aarch64`.
+Par exemple, remplacez `x86_64-apple-darwin` par `aarch64-apple-darwin` à toutes les étapes.
+
+<div id="install-cross-compilation-toolset">
+  ## Installer l’ensemble d’outils de compilation croisée
+</div>
+
+Retenons le chemin où nous installons `cctools`, sous la forme `${CCTOOLS}`
+
+```bash
+mkdir ~/cctools
+export CCTOOLS=$(cd ~/cctools && pwd)
+cd ${CCTOOLS}
+
+git clone https://github.com/tpoechtrager/apple-libtapi.git
+cd apple-libtapi
+git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9
+INSTALLPREFIX=${CCTOOLS} ./build.sh
+./install.sh
+cd ..
+
+git clone https://github.com/tpoechtrager/cctools-port.git
+cd cctools-port/cctools
+git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7
+./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=x86_64-apple-darwin
+make install
+```
+
+Il faut également télécharger le SDK macOS X dans l’arborescence de travail.
+
+```bash
+cd ClickHouse/cmake/toolchain/darwin-x86_64
+curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz' | tar xJ --strip-components=1
+```
+
+<div id="build-clickhouse">
+  ## Compiler ClickHouse
+</div>
+
+```bash
+cd ClickHouse
+mkdir build-darwin
+cd build-darwin
+cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+ninja
+```
+
+Le binaire obtenu sera au format exécutable Mach-O et ne pourra pas être exécuté sous Linux.

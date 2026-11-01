@@ -1,4 +1,4 @@
 {"cluster":"b","c":1}	{"d":"e","job":"g"}	{}
 {"cluster":"b","c":1}	{"d":"e","job":"g"}	{}
 {"cluster":"b","c":1}	{"d":"e","job":"g"}	{}
-{'cluster':'b','c':'1'}	{'d':'e','job':'g'}	{}
+{'c':'1','cluster':'b'}	{'d':'e','job':'g'}	{}

@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
@@ -26,7 +25,7 @@ static constexpr size_t max_arrays_size_in_columns = 1000000000;
  * arrayWithConstant(0, 'hello') = []
  */
 
-class FunctionArrayWithConstant : public IFunction
+class FunctionArrayWithConstant final : public IFunction
 {
 public:
     static constexpr auto name = "arrayWithConstant";
@@ -38,13 +37,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isNativeNumber(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Integer",
-                arguments[0]->getName(), getName());
-        return std::make_shared<DataTypeArray>(arguments[1]);
-    }
+    String getSignatureString() const override { return "(NativeNumber, T) -> Array(T)"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -99,7 +92,7 @@ Creates an array of length `length` filled with the constant `x`.
         {"x", "The value of the `N` elements in the array, of any type."},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an Array with `N` elements of value `x`.", {"Array(T)"}};
-    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayWithConstant(3, 1)", "[1, 1, 1]"}};
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayWithConstant(3, 1)", "[1,1,1]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};

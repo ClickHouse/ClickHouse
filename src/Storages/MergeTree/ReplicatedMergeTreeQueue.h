@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
@@ -157,6 +158,13 @@ private:
         /// Also we can jump over mutation when we download mutated part from other replica.
         bool is_done = false;
 
+        /// Time when the mutation was finalized on this replica (the modification time of the
+        /// `mutation_pointer` znode). Zero if the mutation is not done yet or if its completion
+        /// time is unknown: after the queue state is reloaded (e.g. on server restart), only the
+        /// finish time of the mutation the pointer points at can be restored from Keeper, and
+        /// older finished mutations report zero.
+        time_t finish_time = 0;
+
         String latest_failed_part;
         MergeTreePartInfo latest_failed_part_info;
         time_t latest_fail_time = 0;
@@ -173,10 +181,17 @@ private:
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
 
+    /// Total number of mutations in mutations_by_znode that contain supported metadata mutations.
+    /// Atomic so getMutationsSnapshot can check it without acquiring state_mutex.
+    std::atomic<Int64> num_metadata_mutations_in_map{0};
+
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
+    /// Modification time of the `mutation_pointer` znode, i.e. the time when the mutation
+    /// it points at was finalized on this replica. Used as `finish_time` of that mutation.
+    time_t mutation_pointer_mtime = 0;
 
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
@@ -450,6 +465,9 @@ public:
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
     std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
 
+    /// Build the per-partition cursor promoter map for streaming reads.
+    CursorPromotersMap buildPromoters(zkutil::ZooKeeperPtr & zookeeper);
+
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
 
@@ -465,7 +483,7 @@ public:
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
+        NameSet getColumnsChangedOnFly() const override;
     };
 
     /// Return mutation commands for part which could be not applied to
@@ -509,20 +527,20 @@ public:
     struct Status
     {
         /// TODO: consider using UInt64 here
-        UInt32 future_parts;
-        UInt32 queue_size;
-        UInt32 inserts_in_queue;
-        UInt32 merges_in_queue;
-        UInt32 part_mutations_in_queue;
-        UInt32 metadata_alters_in_queue;
-        UInt32 queue_oldest_time;
-        UInt32 inserts_oldest_time;
-        UInt32 merges_oldest_time;
-        UInt32 part_mutations_oldest_time;
+        UInt32 future_parts{};
+        UInt32 queue_size{};
+        UInt32 inserts_in_queue{};
+        UInt32 merges_in_queue{};
+        UInt32 part_mutations_in_queue{};
+        UInt32 metadata_alters_in_queue{};
+        UInt32 queue_oldest_time{};
+        UInt32 inserts_oldest_time{};
+        UInt32 merges_oldest_time{};
+        UInt32 part_mutations_oldest_time{};
         String oldest_part_to_get;
         String oldest_part_to_merge_to;
         String oldest_part_to_mutate_to;
-        UInt32 last_queue_update;
+        UInt32 last_queue_update{};
     };
 
     /// Get information about the queue.

@@ -1,0 +1,45 @@
+---
+title: Estimation des ressources
+---
+
+Ce qui suit propose un modèle pour estimer les ressources de calcul et de stockage nécessaires à un déploiement ClickStack en fonction du volume d’ingestion prévu. Les valeurs obtenues sont **uniquement des estimations** et doivent servir de **référence initiale** - elles ne constituent pas une recommandation prescriptive. Les besoins réels dépendent de la complexité des requêtes, de la concurrence, des politiques de rétention et des variations du débit d’ingestion. Surveillez toujours l’utilisation des ressources et adaptez le dimensionnement selon les besoins.
+
+<Warning>
+  **Tous les chiffres sont basés sur l’ingestion brute non compressée**
+
+  Tous les chiffres indiqués sur cette page - débit (MB/s, TB/mois), dimensionnement CPU et stockage - sont exprimés en **volume d’ingestion brute non compressée**, c’est-à-dire la taille des données telles qu’elles sont produites par vos applications et envoyées au collecteur OpenTelemetry avant toute compression.
+
+  C’est ce volume que vous devez estimer à partir de vos pipelines existants de logs, de traces et de métriques. Les chiffres de stockage du tableau ci-dessous intègrent déjà le **taux de compression de 10x** supposé appliqué à ce volume brut.
+</Warning>
+
+Lors du déploiement de ClickStack, provisionnez les ressources de calcul pour couvrir deux charges de travail indépendantes : **ingestion** et **requêtes**.
+
+| Charge de travail | Ressources estimées                                         |
+| ----------------- | ----------------------------------------------------------- |
+| **Ingestion**     | 1 vCPU pour 10 MB/s de débit d’ingestion soutenu            |
+| **Requêtes**      | 1 vCPU par QPS et pour 10 MB/s de débit d’ingestion soutenu |
+
+<Info>
+  **Isolation des requêtes par rapport à l’ingestion**
+
+  Dans la plupart des déploiements autogérés, l’ingestion et les requêtes partagent les mêmes nœuds. Dans ce cas, utilisez le total des **CPU** comme référence. Le dimensionnement isolé - où les ressources de calcul pour l’ingestion et les requêtes sont provisionnées indépendamment - est pris en charge dans ClickHouse Cloud via des [pools de calcul distincts, appelés Warehouses](/fr/products/cloud/features/infrastructure/warehouses).
+</Info>
+
+<Accordion title="Hypothèses">
+  * Un **taux de compression de 10x** pour le stockage - généralement une hypothèse prudente pour les logs et les traces.
+  * Des SLA de requête avec un P50 de 1,5 seconde et un P99 de 5 secondes.
+  * Nous supposons que la plupart des requêtes portent sur des données récentes, selon une distribution log-normale qui culmine autour d’une heure et décroît jusqu’à environ six heures. Les utilisateurs peuvent souhaiter provisionner des ressources de calcul dédiées pour interroger des données plus anciennes. Dans ClickHouse Cloud, celles-ci peuvent rester inactives (et donc ne pas engendrer de coûts) lorsqu’elles ne sont pas utilisées.
+  * Bien que les ressources de calcul des requêtes puissent être dimensionnées indépendamment de celles de l’ingestion, elles restent intrinsèquement liées au volume d’ingestion. Nous partons du principe qu’à mesure que l’ingestion augmente, la densité des données croît, ce qui entraîne des volumes analysés plus importants au moment des requêtes et, par conséquent, des besoins plus élevés en ressources de calcul pour les requêtes.
+</Accordion>
+
+Le tableau suivant présente des exemples de dimensionnement basés sur un débit d’ingestion croissant en mégaoctets par seconde, ainsi que les volumes de données correspondants en téraoctets par mois. Il suppose une moyenne soutenue de **1 QPS** depuis ClickStack sur l’ensemble des types de requêtes (recherche, tableaux de bord, alertes).
+
+| MB/s | TB/mois | CPU d’ingestion | CPU de requête | CPU totaux | Stockage total (par mois) (GB) |
+| ---: | ------: | --------------: | -------------: | ---------: | -----------------------------: |
+|   10 |   25.92 |               1 |              3 |          4 |                          2,592 |
+|   20 |   51.84 |               2 |              6 |          8 |                          5,184 |
+|   50 |   129.6 |               5 |             15 |         20 |                         12,960 |
+|  100 |   259.2 |              10 |             30 |         40 |                         25,920 |
+|  200 |   518.4 |              20 |             60 |         80 |                         51,840 |
+|  500 |   1,296 |              50 |            150 |        200 |                        129,600 |
+| 1000 |   2,592 |             100 |            300 |        400 |                        259,200 |

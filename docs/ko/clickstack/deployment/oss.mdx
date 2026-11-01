@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment/oss
+title: '오픈 소스 배포 옵션'
+description: '오픈 소스 ClickStack 배포 - ClickHouse 관측성 스택'
+doc_type: '참고'
+keywords: ['ClickStack', '관측성', '오픈 소스']
+---
+
+오픈 소스 ClickStack은 다양한 사용 사례에 맞는 여러 배포 옵션을 제공합니다.
+
+각 배포 옵션은 아래에 요약되어 있습니다. [오픈 소스 시작하기 가이드](/ko/clickstack/getting-started/oss)에서는 아래 옵션 중 1번을 예시로 설명하며, 여기에는 완전성을 위해 함께 포함했습니다.
+
+| 이름                  | 설명                                                                      | 적합한 대상                                         | 제한 사항                                                 | 예시 링크                                                             |
+| ------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------- |
+| All-in-One          | 단일 Docker 컨테이너에 모든 ClickStack 구성 요소가 포함되어 있습니다.                         | 비프로덕션 배포, 데모, 개념 검증                            | 프로덕션 환경에는 권장되지 않음                                     | [All-in-One](/ko/clickstack/deployment/all-in-one)                   |
+| Helm                | Kubernetes 기반 배포를 위한 공식 Helm 차트입니다. ClickHouse Cloud와 프로덕션 스케일링을 지원합니다. | Kubernetes 기반 프로덕션 배포                          | Kubernetes 지식이 필요하며 Helm을 통한 사용자 지정이 필요함              | [Helm](/ko/clickstack/deployment/helm)                               |
+| Docker Compose      | Docker Compose를 통해 각 ClickStack 구성 요소를 개별적으로 배포합니다.                     | 로컬 테스트, 개념 검증, 단일 서버 프로덕션, 자체 ClickHouse 사용 환경 | 장애 허용이 없으며 여러 컨테이너를 관리해야 함                            | [Docker Compose](/ko/clickstack/deployment/docker-compose)           |
+| HyperDX Only        | 자체 ClickHouse 및 스키마와 함께 HyperDX를 독립적으로 사용합니다.                           | 기존 ClickHouse 사용자, 사용자 지정 이벤트 파이프라인            | ClickHouse는 포함되지 않으며, 수집 및 스키마를 직접 관리해야 함             | [HyperDX Only](/ko/clickstack/deployment/hyperdx-only)               |
+| Local Mode Only     | 브라우저에서 로컬 스토리지를 사용해 전적으로 실행됩니다. 백엔드나 지속성은 없습니다.                         | 데모, 디버깅, HyperDX 개발                            | 인증 없음, 지속성 없음, 알림 없음, 단일 사용자만 지원                      | [Local Mode Only](/ko/clickstack/deployment/local-mode-only)         |
+| ClickHouse Embedded | ClickStack UI가 ClickHouse 서버 binary에 직접 포함됩니다. 추가 구성 요소가 필요하지 않습니다.     | ClickStack 체험, 기존 ClickHouse 데이터 탐색, 데모        | 알림 없음, 대시보드/검색 지속성 없음, 사용자 지정 가능한 쿼리 설정 없음, 이벤트 패턴 없음 | [ClickHouse Embedded](/ko/clickstack/deployment/clickhouse-embedded) |

@@ -1,9 +1,12 @@
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Core/Field.h>
 // #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -20,12 +23,18 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetMergeTreeSetting : public IFunction, WithContext
+class FunctionGetMergeTreeSetting final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "getMergeTreeSetting";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetMergeTreeSetting>(context_); }
+    /// The function is `SELECT value FROM system.merge_tree_settings WHERE name = ...`, so it requires the
+    /// grant that query needs, down to the columns it reads.
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings", Strings{"name", "value"});
+        return std::make_shared<FunctionGetMergeTreeSetting>(context_);
+    }
     explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
@@ -37,6 +46,13 @@ public:
     size_t getNumberOfArguments() const override { return 1 ; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Documentation-only — the result type is the dynamic type of the
+    /// MergeTree setting value resolved at query time from its const-string name.
+    String getSignatureString() const override
+    {
+        return "(const String) -> Any";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -82,6 +98,8 @@ REGISTER_FUNCTION(GetMergeTreeSetting)
 {
     FunctionDocumentation::Description description = R"(
 Returns the current value of a MergeTree setting.
+
+Requires the `SELECT` privilege on `system.merge_tree_settings`, just like reading that table.
 )";
     FunctionDocumentation::Syntax syntax = "getMergeTreeSetting(setting_name)";
     FunctionDocumentation::Arguments arguments = {

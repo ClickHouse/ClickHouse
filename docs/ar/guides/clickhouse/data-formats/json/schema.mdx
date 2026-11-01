@@ -1,0 +1,1019 @@
+---
+title: 'تصميم مخططك'
+slug: /integrations/data-formats/json/schema
+description: 'كيفية تصميم مخططات JSON على نحو أمثل'
+keywords: ['json', 'ClickHouse', 'إدراج', 'التحميل', 'التنسيقات', 'المخطط', 'مهيكل', 'شبه مهيكل']
+score: 20
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+بينما يمكن استخدام [استدلال المخطط](/ar/guides/clickhouse/data-formats/json/inference) لوضع مخطط أولي لبيانات JSON واستعلام ملفات بيانات JSON مباشرةً في مكانها، مثلًا في S3، ينبغي أن تسعى إلى وضع مخطط مُحسَّن مُدار بالإصدارات لبياناتك. نناقش أدناه النهج الموصى به لنمذجة بُنى JSON.
+
+<div id="static-vs-dynamic-json">
+  ## JSON الثابت مقابل الديناميكي
+</div>
+
+تتمثل المهمة الرئيسية عند تعريف مخطط لـ JSON في تحديد النوع المناسب لقيمة كل مفتاح. نوصي المستخدمين بتطبيق القواعد التالية بشكل متكرر على كل مفتاح ضمن التسلسل الهرمي لـ JSON لتحديد النوع المناسب لكل مفتاح.
+
+1. **الأنواع البدائية** - إذا كانت قيمة المفتاح من الأنواع البدائية، سواء كانت جزءًا من كائن فرعي أو موجودة في الجذر، فتأكد من اختيار نوعها وفقًا لـ [أفضل ممارسات تصميم المخطط](/ar/guides/clickhouse/data-modelling/schema-design) و[قواعد تحسين الأنواع](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types). ويمكن تمثيل مصفوفات الأنواع البدائية، مثل `phone_numbers` أدناه، على أنها `Array(<type>)`، مثل `Array(String)`.
+2. **الثابت مقابل الديناميكي** - إذا كانت قيمة المفتاح كائنًا معقدًا، أي كائنًا أو مصفوفة من الكائنات، فحدّد ما إذا كانت قابلة للتغيّر. يمكن اعتبار الكائنات التي نادرًا ما تُضاف إليها مفاتيح جديدة، والتي يمكن توقّع إضافة مفتاح جديد إليها والتعامل معه عبر تعديل المخطط باستخدام [`ALTER TABLE ADD COLUMN`](/ar/reference/statements/alter/column#add-column)، كائنات **ثابتة**. ويشمل ذلك الكائنات التي قد لا يظهر فيها سوى جزء من المفاتيح في بعض مستندات JSON. أما الكائنات التي تُضاف إليها مفاتيح جديدة بشكل متكرر و/أو يتعذر التنبؤ بها، فينبغي اعتبارها **ديناميكية**. **والاستثناء هنا هو البُنى التي تحتوي على مئات أو آلاف المفاتيح الفرعية، إذ يمكن اعتبارها ديناميكية لأغراض التيسير**.
+
+ولتحديد ما إذا كانت القيمة **ثابتة** أم **ديناميكية**، راجع القسمين ذوي الصلة [**التعامل مع الكائنات الثابتة**](/ar/guides/clickhouse/data-formats/json/schema#handling-static-structures) و[**التعامل مع الكائنات الديناميكية**](/ar/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures) أدناه.
+
+<p />
+
+**مهم:** ينبغي تطبيق القواعد المذكورة أعلاه بشكل متكرر. إذا تبيّن أن قيمة المفتاح ديناميكية، فلا حاجة إلى مزيد من التقييم، ويمكن اتباع الإرشادات الواردة في [**التعامل مع الكائنات الديناميكية**](/ar/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures). أما إذا كان الكائن ثابتًا، فتابع تقييم المفاتيح الفرعية إلى أن تصبح قيم المفاتيح بدائية أو تُصادَف مفاتيح ديناميكية.
+
+ولتوضيح هذه القواعد، نستخدم مثال JSON التالي الذي يمثل شخصًا:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021"
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+بتطبيق هذه القواعد:
+
+* يمكن تمثيل المفاتيح الجذرية `name` و`username` و`email` و`website` بالنوع `String`. أما العمود `phone_numbers` فهو قيمة أولية من النوع `Array(String)`، بينما يكون نوعا `dob` و`id` هما `Date` و`UInt32` على التوالي.
+* لن تُضاف مفاتيح جديدة إلى الكائن `address` (بل كائنات address جديدة فقط)، ولذلك يمكن اعتباره **ثابتًا**. وإذا تابعنا بشكل تكراري، فيمكن اعتبار جميع الأعمدة الفرعية قيمًا أولية (ومن النوع `String`) باستثناء `geo`. وهذا أيضًا هيكل ثابت يحتوي على عمودين من النوع `Float32`، هما `lat` و`lon`.
+* العمود `tags` **ديناميكي**. ونفترض أنه يمكن إضافة وسوم عشوائية جديدة إلى هذا الكائن بأي نوع أو بنية.
+* الكائن `company` **ثابت** وسيحتوي دائمًا على المفاتيح الثلاثة المحددة كحد أقصى. المفتاحان الفرعيان `name` و`catchPhrase` من النوع `String`. أما المفتاح `labels` فهو **ديناميكي**. ونفترض أنه يمكن إضافة وسوم عشوائية جديدة إلى هذا الكائن. وستكون القيم دائمًا أزواج مفتاح-قيمة من النوع string.
+
+<Note>
+  يمكن اعتبار البنى التي تحتوي على مئات أو آلاف المفاتيح الثابتة ديناميكية، إذ نادرًا ما يكون من العملي تعريف الأعمدة الخاصة بها تعريفًا ثابتًا. ومع ذلك، حيثما أمكن، [تخطَّ المسارات](#using-type-hints-and-skipping-paths) غير المطلوبة لتقليل كلٍّ من مساحة التخزين والعبء الإضافي للاستدلال.
+</Note>
+
+<div id="handling-static-structures">
+  ## التعامل مع البُنى الثابتة
+</div>
+
+نوصي بمعالجة البُنى الثابتة باستخدام `Tuple` مُسمّاة. ويمكن تمثيل مصفوفات الكائنات باستخدام مصفوفات من `Tuple`، أي `Array(Tuple)`. وداخل قيم `Tuple` نفسها، ينبغي تعريف الأعمدة وأنواعها المقابلة وفق القواعد نفسها. وقد ينتج عن ذلك استخدام `Tuple` متداخلة لتمثيل الكائنات المتداخلة، كما هو موضح أدناه.
+
+ولتوضيح ذلك، نستخدم مثال شخص JSON السابق، مع حذف الكائنات الديناميكية:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+فيما يلي مخطط هذا الجدول:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+لاحظ كيف تم تعريف العمود `company` على أنه `Tuple(catchPhrase String, name String)`. ويستخدم المفتاح `address` النوع ‎`Array(Tuple)`، مع `Tuple` متداخلة لتمثيل العمود `geo`.
+
+يمكن إدراج JSON في هذا الجدول ببنيته الحالية:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+في مثالنا أعلاه، لدينا قدر ضئيل من البيانات، ولكن كما هو موضح أدناه، يمكننا الاستعلام عن أعمدة Tuple باستخدام أسمائها المفصولة بنقاط.
+
+```sql
+SELECT
+ address.street,
+ company.name
+FROM people
+```
+
+```response
+┌─address.street────┬─company.name─┐
+│ ['Victor Plains'] │ ClickHouse   │
+└───────────────────┴──────────────┘
+```
+
+لاحظ كيف يُعاد العمود `address.street` على شكل `Array`. وللاستعلام عن كائن معيّن داخل مصفوفة حسب موضعه، يجب تحديد فهرس المصفوفة بعد اسم العمود. على سبيل المثال، للوصول إلى الشارع من العنوان الأول:
+
+```sql
+SELECT address.street[1] AS street
+FROM people
+```
+
+```response
+┌─street────────┐
+│ Victor Plains │
+└───────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+يمكن أيضًا استخدام الأعمدة الفرعية في مفاتيح الترتيب اعتبارًا من الإصدار [`24.12`](https://clickhouse.com/blog/clickhouse-release-24-12#json-subcolumns-as-table-primary-key):
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY company.name
+```
+
+<div id="handling-default-values">
+  ### التعامل مع القيم الافتراضية
+</div>
+
+حتى إذا كانت كائنات JSON منظَّمة، فإنها غالبًا ما تكون متناثرة ولا تتضمن سوى مجموعة فرعية من المفاتيح المعروفة. ولحسن الحظ، لا يتطلب النوع `Tuple` وجود جميع الأعمدة في حمولة JSON. وإذا لم تُوفَّر، فستُستخدَم القيم الافتراضية.
+
+لننظر إلى جدول `people` الذي استخدمناه سابقًا، وإلى JSON المتناثر التالي الذي يفتقد المفاتيح `suite` و`geo` و`phone_numbers` و`catchPhrase`.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+كما نرى أدناه، يمكن إدراج هذا الصف بنجاح:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","city":"Wisokyburgh","zipcode":"90566-7771"}],"website":"clickhouse.com","company":{"name":"ClickHouse"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+عند الاستعلام عن هذا الصف، نرى أن القيم الافتراضية تُستخدَم للأعمدة (بما في ذلك الكائنات الفرعية) التي لم تُدرَج:
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "1",
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "city": "Wisokyburgh",
+      "geo": {
+        "lat": 0,
+        "lng": 0
+      },
+      "street": "Victor Plains",
+      "suite": "",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "phone_numbers": [],
+  "website": "clickhouse.com",
+  "company": {
+    "catchPhrase": "",
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+```response
+1 row in set. Elapsed: 0.001 sec.
+```
+
+<Info>
+  **التمييز بين القيمة الفارغة وNULL**
+
+  إذا كنت بحاجة إلى التمييز بين كون القيمة فارغة وبين عدم توفيرها، فيمكن استخدام النوع [Nullable](/ar/reference/data-types/nullable). [ويُنصح بتجنّب ذلك](/ar/concepts/best-practices/select-data-type#avoid-nullable-columns) ما لم تكن هناك حاجة ماسّة إليه، لأنه سيؤثر سلبًا في التخزين وأداء الاستعلامات لهذه الأعمدة.
+</Info>
+
+<div id="handling-new-columns">
+  ### التعامل مع الأعمدة الجديدة
+</div>
+
+في حين أن النهج المهيكل هو الأبسط عندما تكون مفاتيح JSON ثابتة، فلا يزال بالإمكان استخدام هذا النهج إذا أمكن التخطيط للتغييرات على المخطط، أي إذا كانت المفاتيح الجديدة معروفة مسبقًا، ويمكن تعديل المخطط تبعًا لذلك.
+
+لاحظ أن ClickHouse يتجاهل، افتراضيًا، مفاتيح JSON المُضمَّنة في الحمولة وغير الموجودة في المخطط. تأمّل حمولة JSON المعدّلة التالية بعد إضافة المفتاح `nickname`:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "nickname": "Clicky",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+يمكن إدراج بيانات JSON هذه بنجاح مع تجاهل المفتاح `nickname`:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+يمكن إضافة أعمدة إلى المخطط باستخدام الأمر [`ALTER TABLE ADD COLUMN`](/ar/reference/statements/alter/column#add-column). ويمكن تحديد قيمة افتراضية عبر عبارة `DEFAULT`، وتُستخدم هذه القيمة إذا لم تُحدَّد أثناء عمليات الإدراج اللاحقة. كما أن الصفوف التي لا تتضمن هذه القيمة (لأنها أُدرجت قبل إنشائها) ستُرجِع أيضًا هذه القيمة الافتراضية. وإذا لم يتم تحديد قيمة `DEFAULT`، فستُستخدم القيمة الافتراضية للنوع.
+
+على سبيل المثال:
+
+```sql
+-- insert initial row (nickname will be ignored)
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- add column
+ALTER TABLE people
+ (ADD COLUMN `nickname` String DEFAULT 'no_nickname')
+
+-- insert new row (same data different id)
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- select 2 rows
+SELECT id, nickname FROM people
+```
+
+```response
+┌─id─┬─nickname────┐
+│  2 │ Clicky      │
+│  1 │ no_nickname │
+└────┴─────────────┘
+
+2 rows in set. Elapsed: 0.001 sec.
+```
+
+<div id="handling-semi-structured-dynamic-structures">
+  ## التعامل مع البنى شبه المنظَّمة/الديناميكية
+</div>
+
+إذا كانت بيانات JSON شبه منظَّمة، بحيث يمكن إضافة المفاتيح إليها ديناميكيًا و/أو تكون لها أنواع متعددة، فإن النوع [`JSON`](/ar/reference/data-types/newjson) هو الخيار الموصى به.
+
+وبشكل أكثر تحديدًا، استخدم النوع JSON عندما تكون بياناتك:
+
+* تحتوي على **مفاتيح غير متوقعة** يمكن أن تتغير بمرور الوقت.
+* تتضمن **قيمًا ذات أنواع متفاوتة** (على سبيل المثال، قد يحتوي مسار ما أحيانًا على سلسلة نصية، وأحيانًا أخرى على رقم).
+* تتطلب مرونة في المخطط حيث لا يكون الالتزام الصارم بالأنواع عمليًا.
+* لديك **مئات أو حتى آلاف** المسارات الثابتة، لكن التصريح بها صراحةً ليس عمليًا. ويكون هذا نادرًا في العادة.
+
+انظر إلى [مثال JSON السابق للشخص](/ar/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json)، حيث تبيَّن أن الكائن `company.labels` ديناميكي.
+
+لنفترض أن `company.labels` يحتوي على مفاتيح عشوائية. بالإضافة إلى ذلك، قد لا يكون نوع أي مفتاح في هذه البنية متسقًا بين الصفوف. على سبيل المثال:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021",
+      "employees": 250
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+```json
+{
+  "id": 2,
+  "name": "Analytica Rowe",
+  "username": "Analytica",
+  "address": [
+    {
+      "street": "Maple Avenue",
+      "suite": "Apt. 402",
+      "city": "Dataford",
+      "zipcode": "11223-4567",
+      "geo": {
+        "lat": 40.7128,
+        "lng": -74.006
+      }
+    }
+  ],
+  "phone_numbers": [
+    "123-456-7890",
+    "555-867-5309"
+  ],
+  "website": "fastdata.io",
+  "company": {
+    "name": "FastData Inc.",
+    "catchPhrase": "Streamlined analytics at scale",
+    "labels": {
+      "type": [
+        "real-time processing"
+      ],
+      "founded": 2019,
+      "dissolved": 2023,
+      "employees": 10
+    }
+  },
+  "dob": "1992-07-15",
+  "tags": {
+    "hobby": "Running simulations",
+    "holidays": [
+      {
+        "year": 2023,
+        "location": "Kyoto, Japan"
+      }
+    ],
+    "car": {
+      "model": "Audi e-tron",
+      "year": 2022
+    }
+  }
+}
+```
+
+نظرًا للطبيعة الديناميكية للعمود `company.labels` عبر الكائنات من حيث المفاتيح والأنواع، لدينا عدة خيارات لنمذجة هذه البيانات:
+
+* **عمود JSON واحد** - يمثّل المخطط بالكامل على هيئة عمود `JSON` واحد، مما يتيح أن تكون جميع البُنى تحته ديناميكية.
+* **عمود JSON موجَّه** - استخدام النوع `JSON` فقط للعمود `company.labels`، مع الإبقاء على المخطط المنظَّم المستخدم أعلاه لجميع الأعمدة الأخرى.
+
+مع أن النهج الأول [لا يتوافق مع المنهجية السابقة](#static-vs-dynamic-json)، فإن نهج العمود الواحد من نوع JSON مفيد في النماذج الأولية ومهام هندسة البيانات.
+
+بالنسبة إلى عمليات نشر ClickHouse في بيئات الإنتاج وعلى نطاق واسع، نوصي بتحديد البنية بدقة واستخدام النوع JSON للبُنى الفرعية الديناميكية الموجَّهة حيثما أمكن.
+
+للمخطط الصارم عدد من الفوائد:
+
+* **التحقق من صحة البيانات** – إن فرض مخطط صارم يجنّب خطر تضخّم الأعمدة خارج البُنى المحددة.
+* **تجنّب خطر تضخّم الأعمدة** - رغم أن نوع JSON يمكنه التوسّع ليشمل آلاف الأعمدة المحتملة، إذ تُخزَّن الأعمدة الفرعية كأعمدة مخصّصة، فقد يؤدي ذلك إلى تضخّم ملفات الأعمدة، أي إنشاء عدد مفرط من ملفات الأعمدة بما يؤثر في الأداء. وللحد من ذلك، يوفّر [النوع Dynamic](/ar/reference/data-types/dynamic) الأساسي الذي يستخدمه JSON المعلَمة [`max_dynamic_paths`](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns)، التي تقيّد عدد المسارات الفريدة المخزّنة كملفات أعمدة منفصلة. وما إن يُبلَغ هذا الحد، تُخزَّن المسارات الإضافية في ملف عمود مشترك باستخدام تنسيق مرمّز مضغوط، بما يحافظ على الأداء وكفاءة التخزين مع دعم استيعاب البيانات بمرونة. إلا أن الوصول إلى ملف العمود المشترك هذا يكون أقل أداءً. ومع ذلك، تجدر الإشارة إلى أنه يمكن استخدام عمود JSON مع [تلميحات الأنواع](#using-type-hints-and-skipping-paths). وستوفّر الأعمدة &quot;المزوّدة بتلميحات&quot; الأداء نفسه الذي توفّره الأعمدة المخصّصة.
+* **استبطان أبسط للمسارات والأنواع** - رغم أن نوع JSON يدعم [دوال الاستبطان](/ar/reference/data-types/newjson#introspection-functions) لتحديد الأنواع والمسارات التي جرى استنتاجها، فإن البُنى الثابتة قد تكون أسهل في الاستكشاف، مثلًا باستخدام `DESCRIBE`.
+
+<div id="single-json-column">
+  ### عمود JSON واحد
+</div>
+
+يُعد هذا النهج مفيدًا لإنشاء النماذج الأولية ولمهام هندسة البيانات. أمّا في بيئات الإنتاج، فحاول استخدام `JSON` فقط للبُنى الفرعية الديناميكية عند الحاجة.
+
+<Info>
+  **اعتبارات الأداء**
+
+  يمكن تحسين عمود JSON واحد من خلال تخطي مسارات JSON غير المطلوبة (أي عدم تخزينها)، ومن خلال استخدام [تلميحات الأنواع](#using-type-hints-and-skipping-paths). تتيح تلميحات الأنواع للمستخدم تحديد النوع صراحةً لعمود فرعي، وبذلك يُستغنى عن الاستدلال والمعالجة غير المباشرة وقت تنفيذ الاستعلام. ويمكن استخدام ذلك لتحقيق مستوى الأداء نفسه كما لو استُخدم مخطط صريح. راجع [&quot;استخدام تلميحات الأنواع وتخطي المسارات&quot;](#using-type-hints-and-skipping-paths) لمزيد من التفاصيل.
+</Info>
+
+المخطط لعمود JSON واحد هنا بسيط:
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE people
+(
+    `json` JSON(username String)
+)
+ENGINE = MergeTree
+ORDER BY json.username;
+```
+
+<Note>
+  نقدّم [تلميحًا للنوع](#using-type-hints-and-skipping-paths) للعمود `username` في تعريف JSON لأننا نستخدمه ضمن مفتاح الترتيب/المفتاح الأساسي. يساعد ذلك ClickHouse على معرفة أن هذا العمود لن تكون قيمته NULL، ويضمن أيضًا تحديد أي عمود فرعي لـ `username` ينبغي استخدامه (إذ قد يوجد أكثر من عمود فرعي واحد لكل نوع، وإلا فسيكون الأمر ملتبسًا).
+</Note>
+
+يمكن إدراج الصفوف في الجدول أعلاه باستخدام تنسيق `JSONAsObject`:
+
+```sql
+INSERT INTO people FORMAT JSONAsObject 
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.028 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+json: {"address":[{"city":"Dataford","geo":{"lat":40.7128,"lng":-74.006},"street":"Maple Avenue","suite":"Apt. 402","zipcode":"11223-4567"}],"company":{"catchPhrase":"Streamlined analytics at scale","labels":{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]},"name":"FastData Inc."},"dob":"1992-07-15","id":"2","name":"Analytica Rowe","phone_numbers":["123-456-7890","555-867-5309"],"tags":{"car":{"model":"Audi e-tron","year":"2022"},"hobby":"Running simulations","holidays":[{"location":"Kyoto, Japan","year":"2023"}]},"username":"Analytica","website":"fastdata.io"}
+
+Row 2:
+──────
+json: {"address":[{"city":"Wisokyburgh","geo":{"lat":-43.9509,"lng":-34.4618},"street":"Victor Plains","suite":"Suite 879","zipcode":"90566-7771"}],"company":{"catchPhrase":"The real-time data warehouse for analytics","labels":{"employees":"250","founded":"2021","type":"database systems"},"name":"ClickHouse"},"dob":"2007-03-31","email":"clicky@clickhouse.com","id":"1","name":"Clicky McCliickHouse","phone_numbers":["010-692-6593","020-192-3333"],"tags":{"car":{"model":"Tesla","year":"2023"},"hobby":"Databases","holidays":[{"location":"Azores, Portugal","year":"2024"}]},"username":"Clicky","website":"clickhouse.com"}
+
+2 rows in set. Elapsed: 0.005 sec.
+```
+
+يمكننا التعرّف على الأعمدة الفرعية المستنتجة وأنواعها باستخدام [دوال الاستبطان](/ar/reference/data-types/newjson#introspection-functions). على سبيل المثال:
+
+```sql
+SELECT JSONDynamicPathsWithTypes(json) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "String",
+        "company.labels.type": "String",
+        "company.name": "String",
+        "dob": "Date",
+        "email": "String",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.dissolved": "Int64",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "Int64",
+        "company.labels.type": "Array(Nullable(String))",
+        "company.name": "String",
+        "dob": "Date",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+للاطّلاع على قائمة كاملة بدوال الاستبطان، راجع [&quot;دوال الاستبطان&quot;](/ar/reference/data-types/newjson#introspection-functions)
+
+[يمكن الوصول إلى المسارات الفرعية](/ar/reference/data-types/newjson#reading-json-paths-as-sub-columns) باستخدام ترميز `.`، مثل:
+
+```sql
+SELECT json.name, json.email FROM people
+```
+
+```response
+┌─json.name────────────┬─json.email────────────┐
+│ Analytica Rowe       │ ᴺᵁᴸᴸ                  │
+│ Clicky McCliickHouse │ clicky@clickhouse.com │
+└──────────────────────┴───────────────────────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+لاحظ أن الأعمدة غير الموجودة في الصفوف تُعاد بقيمة `NULL`.
+
+بالإضافة إلى ذلك، يُنشأ عمود فرعي منفصل للمسارات التي لها النوع نفسه. على سبيل المثال، يوجد عمود فرعي للمسار `company.labels.type` بكلٍّ من النوعين `String` و`Array(Nullable(String))`. ومع أنه ستتم إعادة كليهما متى أمكن، يمكننا استهداف أعمدة فرعية محددة باستخدام الصياغة `.:`:
+
+```sql
+SELECT json.company.labels.type
+FROM people
+```
+
+```response
+┌─json.company.labels.type─┐
+│ database systems         │
+│ ['real-time processing'] │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.007 sec.
+```
+
+```sql
+SELECT json.company.labels.type.:String
+FROM people
+```
+
+```response
+┌─json.company⋯e.:`String`─┐
+│ ᴺᵁᴸᴸ                     │
+│ database systems         │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+لإرجاع الكائنات الفرعية المتداخلة، يلزم استخدام `^`. وهذا خيار تصميمي لتجنّب قراءة عدد كبير من الأعمدة ما لم يُطلب ذلك صراحةً. وستُرجِع الكائنات التي يتم الوصول إليها من دون `^` القيمة `NULL`، كما هو موضح أدناه:
+
+```sql
+-- sub objects will not be returned by default
+SELECT json.company.labels
+FROM people
+```
+
+```response
+┌─json.company.labels─┐
+│ ᴺᵁᴸᴸ                │
+│ ᴺᵁᴸᴸ                │
+└─────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+-- return sub objects using ^ notation
+SELECT json.^company.labels
+FROM people
+```
+
+```response
+┌─json.^`company`.labels─────────────────────────────────────────────────────────────────┐
+│ {"employees":"250","founded":"2021","type":"database systems"}                         │
+│ {"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]} │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="targeted-json-column">
+  ### عمود JSON المستهدف
+</div>
+
+على الرغم من فائدته في مرحلة النماذج الأولية وسيناريوهات هندسة البيانات، نوصي باستخدام مخطط صريح في بيئة الإنتاج كلما أمكن ذلك.
+
+يمكن نمذجة المثال السابق باستخدام عمود `JSON` واحد لعمود `company.labels`.
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String, labels JSON),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+يمكننا إدراج البيانات في هذا الجدول باستخدام تنسيق `JSONEachRow`:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:            2
+name:          Analytica Rowe
+username:      Analytica
+email:
+address:       [('Dataford',(40.7128,-74.006),'Maple Avenue','Apt. 402','11223-4567')]
+phone_numbers: ['123-456-7890','555-867-5309']
+website:       fastdata.io
+company:       ('Streamlined analytics at scale','FastData Inc.','{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]}')
+dob:           1992-07-15
+tags:          {"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}
+
+Row 2:
+──────
+id:            1
+name:          Clicky McCliickHouse
+username:      Clicky
+email:         clicky@clickhouse.com
+address:       [('Wisokyburgh',(-43.9509,-34.4618),'Victor Plains','Suite 879','90566-7771')]
+phone_numbers: ['010-692-6593','020-192-3333']
+website:       clickhouse.com
+company:       ('The real-time data warehouse for analytics','ClickHouse','{"employees":"250","founded":"2021","type":"database systems"}')
+dob:           2007-03-31
+tags:          {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}
+
+2 rows in set. Elapsed: 0.005 sec.
+```
+
+يمكن استخدام [دوال الاستبطان](/ar/reference/data-types/newjson#introspection-functions) لتحديد المسارات والأنواع المستنتجة لعمود `company.labels`.
+
+```sql
+SELECT JSONDynamicPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "Int64",
+        "employees": "Int64",
+        "founded": "Int64",
+        "type": "Array(Nullable(String))"
+ }
+}
+{
+    "paths": {
+        "employees": "Int64",
+        "founded": "String",
+        "type": "String"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+<div id="using-type-hints-and-skipping-paths">
+  ### استخدام تلميحات الأنواع وتخطّي المسارات
+</div>
+
+تتيح لنا تلميحات الأنواع تحديد نوع مسارٍ ما وعموده الفرعي، مما يمنع استدلال النوع غير الضروري. انظر إلى المثال التالي، حيث نحدّد الأنواع لمفاتيح JSON ‏`dissolved` و`employees` و`founded` داخل عمود JSON ‏`company.labels`
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(
+        city String,
+        geo Tuple(
+            lat Float32,
+            lng Float32),
+        street String,
+        suite String,
+        zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(
+        catchPhrase String,
+        name String,
+        labels JSON(dissolved UInt16, employees UInt16, founded UInt16)),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+لاحظ كيف أصبح لهذه الأعمدة الآن أنواع محددة صراحةً:
+
+```sql
+SELECT JSONAllPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "String"
+ }
+}
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "Array(Nullable(String))"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+بالإضافة إلى ذلك، يمكننا تخطي المسارات داخل JSON التي لا نريد تخزينها باستخدام المعاملتين [`SKIP` و`SKIP REGEXP`](/ar/reference/data-types/newjson) لتقليل مساحة التخزين وتجنب الاستدلال غير الضروري على المسارات غير المطلوبة. على سبيل المثال، لنفترض أننا نستخدم عمود JSON واحدًا للبيانات أعلاه. يمكننا تخطي المسارين `address` و`company`:
+
+```sql
+CREATE TABLE people
+(
+    `json` JSON(username String, SKIP address, SKIP company)
+)
+ENGINE = MergeTree
+ORDER BY json.username
+
+INSERT INTO people FORMAT JSONAsObject
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+لاحظ كيف استُبعدت الأعمدة من بياناتنا:
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+    "json": {
+        "dob" : "1992-07-15",
+        "id" : "2",
+        "name" : "Analytica Rowe",
+        "phone_numbers" : [
+            "123-456-7890",
+            "555-867-5309"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Audi e-tron",
+                "year" : "2022"
+            },
+            "hobby" : "Running simulations",
+            "holidays" : [
+                {
+                    "location" : "Kyoto, Japan",
+                    "year" : "2023"
+                }
+            ]
+        },
+        "username" : "Analytica",
+        "website" : "fastdata.io"
+    }
+}
+{
+    "json": {
+        "dob" : "2007-03-31",
+        "email" : "clicky@clickhouse.com",
+        "id" : "1",
+        "name" : "Clicky McCliickHouse",
+        "phone_numbers" : [
+            "010-692-6593",
+            "020-192-3333"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Tesla",
+                "year" : "2023"
+            },
+            "hobby" : "Databases",
+            "holidays" : [
+                {
+                    "location" : "Azores, Portugal",
+                    "year" : "2024"
+                }
+            ]
+        },
+        "username" : "Clicky",
+        "website" : "clickhouse.com"
+    }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="optimizing-performance-with-type-hints">
+  #### تحسين الأداء باستخدام تلميحات الأنواع
+</div>
+
+توفّر تلميحات الأنواع أكثر من مجرد وسيلة لتجنّب استدلال النوع غير الضروري؛ فهي تُلغي بالكامل أي مستوى وسيط في التخزين والمعالجة، كما تتيح تحديد [الأنواع البدائية المثلى](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types). وتُخزَّن مسارات JSON التي تتضمن تلميحات للأنواع دائمًا بالطريقة نفسها التي تُخزَّن بها الأعمدة التقليدية، مما يتجاوز الحاجة إلى [**أعمدة التمييز**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) أو التحليل الديناميكي وقت تنفيذ الاستعلام.
+
+وهذا يعني أنه عند استخدام تلميحات أنواع محددة جيدًا، تحقق مفاتيح JSON المتداخلة الأداء والكفاءة نفسيهما كما لو كانت مُصمَّمة منذ البداية كأعمدة من المستوى الأعلى.
+
+ونتيجةً لذلك، بالنسبة إلى مجموعات البيانات المتسقة في معظمها والتي لا تزال تستفيد من مرونة JSON، توفّر تلميحات الأنواع وسيلة عملية للحفاظ على الأداء من دون الحاجة إلى إعادة هيكلة المخطط أو مسار إدخال البيانات.
+
+<div id="configuring-dynamic-paths">
+  ### تهيئة المسارات الديناميكية
+</div>
+
+يخزّن ClickHouse كل مسار JSON كعمود فرعي ضمن تخطيط عمودي حقيقي، مما يتيح مزايا الأداء نفسها التي نراها مع الأعمدة التقليدية، مثل الضغط، والمعالجة المسرّعة باستخدام SIMD، وتقليل عمليات الإدخال/الإخراج على القرص إلى الحد الأدنى. ويمكن لكل تركيبة فريدة من المسار والنوع في بيانات JSON لديك أن تصبح ملف عمود مستقلاً على القرص.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="عمود لكل مسار JSON" />
+
+على سبيل المثال، عند إدراج مساري JSON بنوعين مختلفين، يخزّن ClickHouse قيم كل [نوع فعلي في أعمدة فرعية منفصلة](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). ويمكن الوصول إلى هذه الأعمدة الفرعية بشكل مستقل، مما يقلّل من عمليات الإدخال/الإخراج غير الضرورية. لاحظ أنه عند الاستعلام عن عمود يضم عدة أنواع، تظل قيمه تُعاد في استجابة عمودية واحدة.
+
+إضافةً إلى ذلك، ومن خلال الاستفادة من الإزاحات، يضمن ClickHouse أن تظل هذه الأعمدة الفرعية كثيفة، من دون تخزين أي قيم افتراضية لمسارات JSON غير الموجودة. ويزيد هذا النهج من كفاءة الضغط ويقلل عمليات الإدخال/الإخراج بدرجة أكبر.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="إزاحات JSON" />
+
+ومع ذلك، في السيناريوهات التي تتضمن بُنى JSON عالية الكاردينالية أو شديدة التغيّر، مثل خطوط معالجة بيانات القياس عن بُعد، أو السجلات، أو مخازن السمات للتعلّم الآلي - قد يؤدي هذا السلوك إلى تضخم كبير في عدد ملفات الأعمدة. إذ ينتج عن كل مسار JSON فريد جديد ملف عمود جديد، وينتج عن كل تنويعة نوع ضمن ذلك المسار ملف عمود إضافي. وعلى الرغم من أن هذا مثالي لأداء القراءة، فإنه يفرض تحديات تشغيلية، منها استنفاد واصفات الملفات، وزيادة استخدام الذاكرة، وبطء عمليات الدمج بسبب العدد الكبير من الملفات الصغيرة.
+
+وللتخفيف من ذلك، يقدّم ClickHouse مفهوم العمود الفرعي الفائض: فبمجرد أن يتجاوز عدد مسارات JSON المميزة عتبةً معيّنة، تُخزَّن المسارات الإضافية في ملف مشترك واحد باستخدام تنسيق مرمّز مضغوط. ويظل هذا الملف قابلاً للاستعلام، لكنه لا يستفيد من خصائص الأداء نفسها التي توفرها الأعمدة الفرعية المخصّصة.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="عمود JSON مشترك" />
+
+ويُتحكَّم في هذه العتبة بواسطة المَعلمة [`max_dynamic_paths`](/ar/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) في تعريف نوع JSON.
+
+```sql
+CREATE TABLE logs
+(
+    payload JSON(max_dynamic_paths = 500)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+**تجنب ضبط هذه المعلَمة على قيمة مرتفعة جدًا** - فالقيم الكبيرة تزيد من استهلاك الموارد وتقلل الكفاءة. وكقاعدة عامة، احرص على أن تبقى دون 10,000. بالنسبة إلى أعباء العمل ذات البُنى شديدة الديناميكية، استخدم تلميحات الأنواع ومعلَمات `SKIP` لتقييد ما يُخزَّن.
+
+للمستخدمين المهتمين بكيفية تنفيذ هذا النوع الجديد من الأعمدة، نوصي بقراءة تدوينتنا التفصيلية [&quot;نوع بيانات JSON جديد وقوي لـ ClickHouse&quot;](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse).

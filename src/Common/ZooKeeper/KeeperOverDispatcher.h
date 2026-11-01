@@ -32,7 +32,17 @@ public:
     int64_t getSessionID() const override { return session_id; }
     int64_t getLastZXIDSeen() const override { return 0; }
 
+    Int64 getLastReceivedTimestamp() const override
+    {
+        return callback_state->last_received_timestamp_us.load(std::memory_order_relaxed);
+    }
+
     using ResponseCallback = std::function<void(const ZooKeeperResponsePtr &)>;
+
+    /// Build the callback multi() installs: it promotes a failed multi's aggregate error
+    /// (the in-process path would otherwise leave it ZOK) before forwarding to the user
+    /// callback.
+    static ResponseCallback promotingMultiCallback(MultiCallback callback);
 
     void create(
         const String & path,
@@ -66,6 +76,12 @@ public:
         const String & path,
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
+
+    void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
         const String & path,
@@ -107,7 +123,7 @@ public:
 
     void finalize(const String & reason) override;
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override { return false; }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const override;
 
     void getACL(const String & path, GetACLCallback  callback) override;
 
@@ -123,6 +139,8 @@ private:
     struct CallbackState
     {
         std::atomic<bool> expired{false};
+        /// Progress tracker: microseconds since `steady_clock` epoch of the last received data.
+        std::atomic<Int64> last_received_timestamp_us{0};
         std::mutex callbacks_mutex;
         std::unordered_map<XID, ResponseCallback> callbacks;
     };

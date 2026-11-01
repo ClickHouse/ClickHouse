@@ -1,0 +1,28 @@
+--- test 1: no Accept-Encoding, no Content-Encoding ---
+no Content-Encoding (expected)
+--- test 2: Accept-Encoding: zstd on /play ---
+Content-Encoding: zstd
+--- test 3: Accept-Encoding: gzip on /dashboard ---
+Content-Encoding: gzip
+--- test 4: Accept-Encoding: zstd on /js/uplot.js ---
+Content-Encoding: zstd
+--- test 5: Accept-Encoding: zstd on /binary ---
+Content-Encoding: zstd
+--- test 6: Accept-Encoding: zstd on /merges ---
+Content-Encoding: zstd
+--- test 7: Accept-Encoding: zstd on /schema ---
+Content-Encoding: zstd
+--- test 8: zstd response is valid and decompressable ---
+clickhouse.com
+--- test 9: gzip response is valid and decompressable ---
+clickhouse.com
+--- test 10: ClickStack still pre-gzipped ---
+Content-Encoding: gzip
+--- test 11: Vary: Accept-Encoding advertised on negotiated response ---
+Vary: Accept-Encoding
+--- test 12: Vary: Accept-Encoding advertised even without Accept-Encoding ---
+Vary: Accept-Encoding
+--- test 13: pre-encoded response does not advertise Vary: Accept-Encoding ---
+no Vary (expected)
+--- test 14: Accept-Encoding: zstd on / with Mozilla UA ---
+Content-Encoding: zstd
