@@ -1352,12 +1352,15 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
         result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
     }
 
-    bool need_add_or_null = settings[Setting::aggregate_functions_null_for_empty] && !result_aggregate_function_name.ends_with("OrNull");
-    if (need_add_or_null)
+    bool added_or_null = false;
+    if (settings[Setting::aggregate_functions_null_for_empty] && !result_aggregate_function_name.ends_with("OrNull"))
     {
         auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
         if (!properties || !properties->returns_default_when_only_null)
+        {
             result_aggregate_function_name += "OrNull";
+            added_or_null = true;
+        }
     }
 
     /** Move -OrNull suffix ahead, this should execute after add -OrNull suffix.
@@ -1380,6 +1383,9 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
 
                 if (!result_aggregate_function_name.ends_with(suffix_to_check))
                     continue;
+
+                if (!added_or_null && (suffix == "MergeState" || suffix == "Merge"))
+                    break;
 
                 result_aggregate_function_name = result_aggregate_function_name.substr(0, function_name_size - suffix_to_check.size());
                 result_aggregate_function_name += "OrNull";

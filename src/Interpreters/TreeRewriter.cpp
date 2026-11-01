@@ -178,39 +178,23 @@ struct CustomizeFunctionsSuffixData
 char ifDistinct[] = "ifdistinct";
 using CustomizeIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsSuffixData<ifDistinct>>, true>;
 
-/// Used to rewrite all aggregate functions to add -OrNull suffix to them if setting `aggregate_functions_null_for_empty` is set.
+/// Add -OrNull suffix to aggregate functions if `aggregate_functions_null_for_empty` is set, then move it ahead, e.g. sumIfOrNull to sumOrNullIf
 struct CustomizeAggregateFunctionsSuffixData
 {
     using TypeToVisit = ASTFunction;
 
     const String & customized_func_suffix;
+    bool add_or_null;
 
-    void visit(ASTFunction & func, ASTPtr &) const
-    {
-        const auto & instance = AggregateFunctionFactory::instance();
-        if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
-        {
-            auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
-            if (properties && !properties->returns_default_when_only_null)
-            {
-                func.name += customized_func_suffix;
-            }
-        }
-    }
-};
-
-// Used to rewrite aggregate functions with -OrNull suffix in some cases, such as sumIfOrNull, we should rewrite to sumOrNullIf
-struct CustomizeAggregateFunctionsMoveSuffixData
-{
-    using TypeToVisit = ASTFunction;
-
-    const String & customized_func_suffix;
-
-    String moveSuffixAhead(const String & name) const
+    String moveSuffixAhead(const String & name, bool added_or_null) const
     {
         auto prefix = name.substr(0, name.size() - customized_func_suffix.size());
 
         auto prefix_size = prefix.size();
+
+        /// Explicit -MergeOrNull stays, -OrNullMerge would expect a different state type
+        if (!added_or_null && (endsWith(prefix, "Merge") || endsWith(prefix, "MergeState")))
+            return name;
 
         if (endsWith(prefix, "MergeState"))
             return prefix.substr(0, prefix_size - 10) + customized_func_suffix + "MergeState";
@@ -230,22 +214,26 @@ struct CustomizeAggregateFunctionsMoveSuffixData
     void visit(ASTFunction & func, ASTPtr &) const
     {
         const auto & instance = AggregateFunctionFactory::instance();
-        if (instance.isAggregateFunctionName(func.name))
+        if (!instance.isAggregateFunctionName(func.name))
+            return;
+
+        auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
+        if (!properties || properties->returns_default_when_only_null)
+            return;
+
+        bool added_or_null = false;
+        if (add_or_null && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
         {
-            if (endsWith(func.name, customized_func_suffix))
-            {
-                auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
-                if (properties && !properties->returns_default_when_only_null)
-                {
-                    func.name = moveSuffixAhead(func.name);
-                }
-            }
+            func.name += customized_func_suffix;
+            added_or_null = true;
         }
+
+        if (endsWith(func.name, customized_func_suffix))
+            func.name = moveSuffixAhead(func.name, added_or_null);
     }
 };
 
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
-using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
 
 struct ExistsExpressionData
 {
@@ -1732,16 +1720,8 @@ void TreeRewriter::normalize(
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
     }
 
-    /// Rewrite all aggregate functions to add -OrNull suffix to them
-    if (settings[Setting::aggregate_functions_null_for_empty])
-    {
-        CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
-        CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
-    }
-
-    /// Move -OrNull suffix ahead, this should execute after add -OrNull suffix
-    CustomizeAggregateFunctionsMoveOrNullVisitor::Data data_or_null{"OrNull"};
-    CustomizeAggregateFunctionsMoveOrNullVisitor(data_or_null).visit(query);
+    CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull", settings[Setting::aggregate_functions_null_for_empty]};
+    CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     QueryAliasesVisitor(aliases).visit(query);
