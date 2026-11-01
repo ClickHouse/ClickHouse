@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/ProtocolDefines.h>
 
@@ -582,6 +583,10 @@ ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataType
 {
     if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
         return ColumnConst::create(relabelAggregateStateVersions(const_column->getDataColumnPtr(), type), column->size());
+
+    if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(column.get()))
+        return ColumnReplicated::create(
+            relabelAggregateStateVersions(replicated_column->getNestedColumn(), type), replicated_column->getIndexesColumn());
 
     auto relabelled_column = type->createColumn();
     relabelled_column->insertRangeFrom(*recursiveRemoveSparse(column), 0, column->size());
