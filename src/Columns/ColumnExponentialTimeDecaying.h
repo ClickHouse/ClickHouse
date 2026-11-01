@@ -50,7 +50,7 @@ public:
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
-    std::string_view getDataAt(size_t n) const override { return storage->getDataAt(n); }
+    std::string_view getDataAt(size_t n) const override { return getOrderingKeyColumn().getDataAt(n); }
 
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
