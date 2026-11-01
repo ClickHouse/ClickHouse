@@ -1,6 +1,7 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -84,6 +85,12 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
     return time_series_storage->getTargetTable(target_kind, context);
 }
 
+
+template <ViewTarget::Kind target_kind>
+std::optional<String> TableFunctionTimeSeriesTarget<target_kind>::getParallelReplicasReadID() const
+{
+    return fmt::format("{}({}.{})", name, backQuoteIfNeed(time_series_storage_id.getDatabaseName()), backQuoteIfNeed(time_series_storage_id.getTableName()));
+}
 
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
