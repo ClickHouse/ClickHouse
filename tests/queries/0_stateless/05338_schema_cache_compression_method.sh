@@ -184,9 +184,9 @@ SETTINGS schema_inference_use_cache_for_url=0
 # Case N: Arbitrary custom credential header redaction in schema inference cache
 echo "Case N: Arbitrary custom credential header redaction"
 url_custom_secret="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_custom_secret"
-$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_custom_secret', 'CSV', 'x UInt64', 'none', headers('X-Password' = 'super-secret-password-999', 'Custom-Auth-Token' = 'bearer-token-abc'))"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_custom_secret', 'CSV', 'x UInt64', 'none', headers('X-Opaque' = 'opaque-secret-value-777', 'X-Internal-Metadata' = 'confidential-customer-blob'))"
 $CLICKHOUSE_CLIENT -q "
-SELECT storage, format, headers LIKE '%super-secret%', headers LIKE '%bearer-token%', headers LIKE '%x-password%=%hash:%', headers LIKE '%custom-auth-token%=%hash:%'
+SELECT storage, format, headers LIKE '%opaque-secret%', headers LIKE '%confidential-customer%', headers LIKE '%x-opaque%=%hash:%', headers LIKE '%x-internal-metadata%=%hash:%'
 FROM system.schema_inference_cache
 WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_custom_secret%'
 SETTINGS schema_inference_use_cache_for_url=0
