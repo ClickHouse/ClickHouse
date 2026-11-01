@@ -27,9 +27,11 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -53,6 +55,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -183,6 +186,82 @@ String unescapePrometheusLabelName(const String & name)
         pos = closing + 1;
     }
     return result;
+}
+
+/// Writes a metric or label name with the "underscores" escaping, the default of the Prometheus text format:
+/// like Prometheus, each character not allowed in a legacy metric name ([a-zA-Z_:][a-zA-Z0-9_:]*) becomes '_'.
+void writeFederateName(std::string_view name, WriteBuffer & out)
+{
+    for (size_t pos = 0; pos < name.size();)
+    {
+        char c = name[pos];
+        bool valid = isAlphaASCII(c) || (c == '_') || (c == ':') || (isNumericASCII(c) && pos > 0);
+        writeChar(valid ? c : '_', out);
+        pos += std::min<size_t>(UTF8::seqLength(static_cast<UInt8>(c)), name.size() - pos);
+    }
+}
+
+/// Writes a label value quoted and escaped like the Prometheus text format.
+void writeFederateLabelValue(std::string_view value, WriteBuffer & out)
+{
+    writeChar('"', out);
+    for (char c : value)
+    {
+        if (c == '\\')
+            writeString("\\\\", out);
+        else if (c == '"')
+            writeString("\\\"", out);
+        else if (c == '\n')
+            writeString("\\n", out);
+        else
+            writeChar(c, out);
+    }
+    writeChar('"', out);
+}
+
+/// Writes a sample value like Go's strconv.FormatFloat(value, 'g', -1, 64), which the Prometheus text format uses.
+void writeFederateValue(Float64 value, WriteBuffer & out)
+{
+    if (std::isnan(value))
+    {
+        writeString("NaN", out);
+        return;
+    }
+    if (std::isinf(value))
+    {
+        writeString((value > 0) ? "+Inf" : "-Inf", out);
+        return;
+    }
+    if (value == 0)
+    {
+        writeChar('0', out);
+        return;
+    }
+
+    /// Both use the shortest digits, but Go switches to the exponent form from 1e6 on, while fmt does it from 1e16 on.
+    String text = fmt::format("{}", value);
+    if ((std::abs(value) < 1e6) || text.contains('e'))
+    {
+        writeString(text, out);
+        return;
+    }
+
+    bool negative = (text[0] == '-');
+    String digits = text.substr(negative ? 1 : 0);
+    size_t exponent = std::min(digits.find('.'), digits.size()) - 1;
+    std::erase(digits, '.');
+    while (digits.size() > 1 && digits.back() == '0')
+        digits.pop_back();
+
+    if (negative)
+        writeChar('-', out);
+    writeChar(digits[0], out);
+    if (digits.size() > 1)
+    {
+        writeChar('.', out);
+        writeString(std::string_view{digits}.substr(1), out);
+    }
+    writeString(fmt::format("e+{:02}", exponent), out);
 }
 }
 
@@ -1001,6 +1080,130 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
         /// Finalize the query result cache write before the executor's destructor cancels the pipeline.
         /// The SQL query doesn't depend on `limit`, so its result is complete even when the response is truncated.
+        io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot early, flush the response and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
+}
+
+void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings & match_params, QueryFinishCallback query_finish_callback)
+{
+    const auto storage_id = time_series_storage->getStorageID();
+
+    /// `timeSeriesSelector` reads the samples and the tags from the target tables, so a row policy of the `TimeSeries` table
+    /// itself is not applied there. Federation is refused instead of exporting the rows such a policy hides.
+    if (getEffectiveRowPolicyFilter(*time_series_storage, getContext()))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot federate the table {} because a row policy is applied on it. "
+            "The /federate endpoint reads the samples from its target tables, so it cannot apply the row policy",
+            storage_id.getNameForLogs());
+
+    /// Like Prometheus, no `match[]` selectors means an empty response.
+    if (match_params.empty())
+        return;
+
+    /// Prometheus reads the samples in [now - 5m, now] (its default lookback delta).
+    const Int64 max_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const Int64 min_time_ms = max_time_ms - 5 * 60 * 1000;
+
+    String selects;
+    for (const auto & match_param : match_params)
+    {
+        if (!selects.empty())
+            selects += " UNION ALL ";
+        selects += fmt::format(
+            "SELECT id, timestamp, value FROM timeSeriesSelector({}, {}, {}, fromUnixTimestamp64Milli({}), fromUnixTimestamp64Milli({}), "
+            "'timestamp_and_value')",
+            quoteString(storage_id.getDatabaseName()), quoteString(storage_id.getTableName()), quoteString(match_param),
+            min_time_ms, max_time_ms);
+    }
+
+    /// The newest sample of each series, skipping the series whose newest sample is a stale marker, sorted by metric name.
+    /// Samples at the same timestamp follow the rule of the instant query: a real value beats a NaN, then the greatest wins.
+    /// Like the instant query, the samples are grouped by `timeSeriesIdToGroup`, because different identifiers can have
+    /// the same tags (after a change of `id_generator` the old rows keep their identifiers), and they are one series.
+    String sql_query = fmt::format(
+        "SELECT timeSeriesGroupToTags(group) AS tags, argMax(value, (timestamp, NOT isNaN(value), value)) AS last_value, "
+        "toUnixTimestamp64Milli(toDateTime64(max(timestamp), 3)) AS last_timestamp FROM ({}) GROUP BY timeSeriesIdToGroup(id) AS group "
+        "HAVING reinterpretAsUInt64(toFloat64(last_value)) != 0x7FF0000000000002 ORDER BY arrayFirst(tag -> tag.1 = '__name__', tags).2, tags",
+        selects);
+
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
+
+    auto [ast, io] = executeQuery(sql_query, getContext(), serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
+
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+        String last_metric_name;
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+            const auto & tags_column = typeid_cast<const ColumnArray &>(*block.getByName(TimeSeriesColumnNames::Tags).column);
+            const auto & offsets = tags_column.getOffsets();
+            const auto & tag_names = typeid_cast<const ColumnTuple &>(tags_column.getData()).getColumn(0);
+            const auto & tag_values = typeid_cast<const ColumnTuple &>(tags_column.getData()).getColumn(1);
+            const auto & value_column = block.getByName("last_value").column;
+            const auto & timestamp_column = block.getByName("last_timestamp").column;
+
+            for (size_t row = 0; row < block.rows(); ++row)
+            {
+                const size_t start = (row == 0) ? 0 : offsets[row - 1];
+                std::string_view metric_name;
+                for (size_t j = start; j < offsets[row]; ++j)
+                    if (tag_names.getDataAt(j) == TimeSeriesTagNames::MetricName)
+                        metric_name = tag_values.getDataAt(j);
+
+                /// Like Prometheus, skip nameless series and start a metric family for each new name.
+                if (metric_name.empty())
+                    continue;
+                if (metric_name != last_metric_name)
+                {
+                    writeString("# TYPE ", response);
+                    writeFederateName(metric_name, response);
+                    writeString(" untyped\n", response);
+                    last_metric_name = metric_name;
+                }
+
+                writeFederateName(metric_name, response);
+                char separator = '{';
+                bool has_instance = false;
+                for (size_t j = start; j < offsets[row]; ++j)
+                {
+                    auto name = tag_names.getDataAt(j);
+                    auto value = tag_values.getDataAt(j);
+                    if (value.empty() || (name == TimeSeriesTagNames::MetricName))
+                        continue;
+                    writeChar(separator, response);
+                    separator = ',';
+                    writeFederateName(name, response);
+                    writeChar('=', response);
+                    writeFederateLabelValue(value, response);
+                    has_instance |= (name == "instance");
+                }
+
+                /// Prometheus adds an empty `instance` label to each series without one.
+                if (!has_instance)
+                {
+                    writeChar(separator, response);
+                    writeString("instance=\"\"", response);
+                }
+                writeString("} ", response);
+                writeFederateValue(value_column->getFloat64(row), response);
+                writeChar(' ', response);
+                writeIntText(timestamp_column->getInt(row), response);
+                writeChar('\n', response);
+            }
+        }
+
         io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
