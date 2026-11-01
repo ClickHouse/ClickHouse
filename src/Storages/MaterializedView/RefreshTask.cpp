@@ -73,6 +73,7 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
+    extern const RefreshSettingsUInt64 refresh_coordination_jitter_ms;
     extern const RefreshSettingsInt64 refresh_retries;
     extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
     extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
@@ -145,6 +146,14 @@ namespace
 Int64 drawRandomness()
 {
     return std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+}
+
+/// Draw the delay before trying to start a coordinated refresh, see `refresh_coordination_jitter_ms`.
+/// Capped at a day so that steady_clock arithmetic can't overflow.
+std::chrono::milliseconds drawCoordinationJitter(UInt64 max_ms)
+{
+    max_ms = std::min<UInt64>(max_ms, 24 * 3600 * 1000);
+    return std::chrono::milliseconds(std::uniform_int_distribution<UInt64>(0, max_ms)(thread_local_rng));
 }
 
 /// Whether the Keeper this view is coordinated through is missing a feature flag that coordination
@@ -1277,6 +1286,29 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 setState(RefreshState::Scheduled, lock);
             }
             return;
+        }
+
+        /// Wait a random delay before racing the other replicas to start the refresh, otherwise the
+        /// replica with the lowest latency to the Keeper leader would win nearly every time.
+        if (coordination.coordinated && !out_of_schedule)
+        {
+            auto now = std::chrono::steady_clock::now();
+            if (scheduling.jitter_drawn_for_version != coordination.root_znode.version)
+            {
+                scheduling.jitter_drawn_for_version = coordination.root_znode.version;
+                scheduling.jitter_deadline = now + drawCoordinationJitter(refresh_settings[RefreshSetting::refresh_coordination_jitter_ms]);
+            }
+            if (now < scheduling.jitter_deadline)
+            {
+                auto delay = std::chrono::ceil<std::chrono::milliseconds>(scheduling.jitter_deadline - now);
+                /// Not later than the takeover check above, as this timer overwrites the one set there.
+                if (takeover_deadline != std::chrono::system_clock::time_point::max())
+                    delay = std::min(delay, std::chrono::ceil<std::chrono::milliseconds>(takeover_deadline - start_time));
+                scheduling_task->scheduleAfter(delay.count());
+                /// Not Scheduled: the refresh is due, so SYSTEM WAIT VIEW should keep waiting for it.
+                setState(RefreshState::Scheduling, lock);
+                return;
+            }
         }
 
         /// The time to start next refresh is now!
