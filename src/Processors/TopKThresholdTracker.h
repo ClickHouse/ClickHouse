@@ -76,7 +76,7 @@ private:
     /// (NULL ordering and collation from the stored SortColumnDescription).
     int compareFields(const Field & lhs, const Field & rhs) const;
 
-    /// Set when the `Field` order can differ from the sort's: a `Nullable` or a float anywhere in the type, or a collation.
+    /// Set when the `Field` order can differ from the sort's: a `Nullable`, float, or time-decay curve anywhere in the type, or a collation.
     ColumnPtr empty_column;
 
     Field threshold;

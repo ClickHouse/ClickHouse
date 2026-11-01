@@ -4,6 +4,7 @@
 #include <Columns/Collator.h>
 #include <Columns/IColumn.h>
 #include <Core/CompareHelper.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 
@@ -101,7 +102,10 @@ template class TopKThresholdTrackerNumeric<Float64>;
 TopKThresholdTrackerGeneric::TopKThresholdTrackerGeneric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
     : ITopKThresholdTracker(sort_desc_, std::move(data_type_))
 {
-    if (sort_desc.collator || anyInTypeTree(*data_type, [](const IDataType & node) { return node.isNullable() || isFloat(node); }))
+    if (sort_desc.collator || anyInTypeTree(*data_type, [](const IDataType & node)
+        {
+            return node.isNullable() || isFloat(node) || isExponentialTimeDecaying(node);
+        }))
         empty_column = data_type->createColumn();
 }
 
