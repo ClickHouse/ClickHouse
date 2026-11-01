@@ -151,7 +151,7 @@ void TopKThresholdCollector::add(const IColumn & sorted, size_t rows)
             values = sorted.cloneEmpty();
         values->insertRangeFrom(sorted, 0, rows);
 
-        if (merging || values->size() < limit + (boundary ? limit / 2 : 0))
+        if (merging || values->size() < limit + (boundary ? 1 : 0))
             return;
 
         to_merge = std::move(values);
@@ -182,7 +182,7 @@ void TopKThresholdCollector::add(const IColumn & sorted, size_t rows)
         boundary = best->cut(limit - 1, 1);
 
         /// Other threads did not merge what they added meanwhile because `merging` was set.
-        if (added_meanwhile && values->size() >= limit + limit / 2)
+        if (added_meanwhile)
         {
             to_merge = std::move(values);
             values = to_merge->cloneEmpty();
