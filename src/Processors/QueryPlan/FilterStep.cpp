@@ -15,6 +15,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/materialize.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -616,7 +617,18 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
         rest_atoms.push_back(copy_map.at(atoms[i]));
     auto & rest_outputs = rest.getOutputs();
     auto rest_filter_it = std::ranges::find(rest_outputs, copy_map.at(filter_node));
-    *rest_filter_it = &rest.addAlias(addConjunction(rest, std::move(rest_atoms)), filter_column_name);
+    const ActionsDAG::Node * rest_filter = &addConjunction(rest, std::move(rest_atoms));
+    if (!remove_filter_column)
+    {
+        /// The filter column is a result too: an `and` (see `isComputedOnlyForItself` above), so it is 1 in the rows that
+        /// pass, like the conjunction of the other atoms. It keeps its type and constness.
+        if (rest_filter->column && !filter_node->column)
+            rest_filter = &rest.addFunction(
+                std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize<false>>()), {rest_filter}, {});
+        if (!rest_filter->result_type->equals(*filter_node->result_type))
+            rest_filter = &rest.addCast(*rest_filter, filter_node->result_type, {}, nullptr);
+    }
+    *rest_filter_it = &rest.addAlias(*rest_filter, filter_column_name);
     rest.removeUnusedActions(false, false);
 
     /// The two filters one after the other must give the same columns as the filter.
