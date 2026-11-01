@@ -338,6 +338,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesThrowDuplicateSeriesIf",
     "timeSeriesFromGrid",
     "timeSeriesRange",
+    "timeSeriesSliceSortedArray",
     "getMacro",
     "currentProfiles",
     "defaultProfiles",
@@ -2390,7 +2391,7 @@ String formatStackTrace(const StackTrace & stack_trace)
         String address = resolved.address ? fmt::format("{}", resolved.address) : "<unknown>";
         if (resolved.kind == StackTrace::AddressKind::OtherObject)
             address += fmt::format(" in {}", resolved.object);
-        res += fmt::format("\n{}. {} {}", i, address, symbol ? demangle(symbol->name) : "?");
+        res += fmt::format("\n{}. {} {}", i, address, symbol ? demangle(symbol_index->getSymbolNameCString(*symbol)) : "?");
     }
     return res;
 }

@@ -436,6 +436,8 @@ StorageMaterializedView::StorageMaterializedView(
 
         auto new_columns_list = make_intrusive<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+        if (query.columns_list->codec_declarations)
+            new_columns_list->set(new_columns_list->codec_declarations, query.columns_list->codec_declarations->ptr());
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
@@ -625,7 +627,8 @@ void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
 
-    auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
+    /// The override also looks up the target table, which may be unreachable.
+    auto view_metadata = IStorage::getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
     if (view_metadata->sql_security_type == SQLSecurityType::DEFINER)
         DefinerDependencies::instance().removeDependencies(table_id);
 
@@ -1116,7 +1119,8 @@ void StorageMaterializedView::flushAndPrepareForShutdown()
 
 void StorageMaterializedView::shutdown(bool)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    /// The override also looks up the target table, which may be unreachable.
+    auto metadata_snapshot = IStorage::getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())

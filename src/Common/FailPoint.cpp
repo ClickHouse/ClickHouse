@@ -185,6 +185,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(rmt_restore_replica_pause_before_metadata_version_raise) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_analysis) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(smt_mutation_prune_pause_before_block_allocation) \
@@ -235,6 +236,7 @@ static struct InitFiu
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     ONCE(adaptive_aggregation_drain_create_states_throw) \
+    REGULAR(adaptive_aggregation_spill_no_room_to_append) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
@@ -298,6 +300,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(hudi_pause_before_iterate) \
     PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     REGULAR(storage_cluster_read_sleep) \
+    REGULAR(s3_slow_response) \
+    REGULAR(local_object_storage_slow_response) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \
     ONCE(backup_from_snapshot_fail_after_lock_file_creation) \
@@ -334,6 +338,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
@@ -364,6 +369,7 @@ static struct InitFiu
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
+    ONCE(merge_tree_load_part_io_error) \
     REGULAR(restore_part_inject_no_space_error) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \
@@ -427,6 +433,7 @@ static struct InitFiu
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
+    PAUSEABLE(version_metadata_store_pause_before_rename) \
     REGULAR(transaction_slow_resolve_removal_csn) \
     PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
     PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
@@ -458,8 +465,8 @@ static struct InitFiu
     ONCE(distributed_plan_task_fail_before_start) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
-    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
-    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_zookeeper_connection_attempt_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_connection_attempt_pause) \
     PAUSEABLE_ONCE(wasm_module_manager_pause_after_compile) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \

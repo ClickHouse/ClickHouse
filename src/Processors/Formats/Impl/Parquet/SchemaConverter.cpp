@@ -314,7 +314,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     size_t wrap_in_arrays = 0;
     DataTypePtr outer_type_hint = node.type_hint;
 
-    if (node.schema_context == SchemaContext::None)
+    if (node.schema_context == SchemaContext::None || node.schema_context == SchemaContext::MapKey)
     {
         bool not_in_schema = false;
         node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
@@ -2071,7 +2071,9 @@ void SchemaConverter::processPrimitiveColumn(
         case parq::Type::INT96:
         {
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
-            out_decoder.fixed_size_converter = std::make_shared<Int96Converter>();
+            auto converter = std::make_shared<Int96Converter>();
+            converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            out_decoder.fixed_size_converter = std::move(converter);
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;
         }

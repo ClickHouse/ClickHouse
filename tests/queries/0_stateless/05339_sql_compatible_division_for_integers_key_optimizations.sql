@@ -1,5 +1,4 @@
 SET sql_compatible_division_for_integers = 1;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 CREATE TABLE exact_division_unsigned_key (x UInt64) ENGINE = MergeTree ORDER BY x;

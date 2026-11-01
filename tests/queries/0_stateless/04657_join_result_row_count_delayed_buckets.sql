@@ -8,7 +8,6 @@
 -- log result_rows = 1 and the comparison would be meaningless.
 -- The in-memory cell is a control that was already correct before the fix and must not change.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 -- Pin the join orientation: side swapping decides which side emits non-joined rows.
 SET query_plan_optimize_join_order_randomize = 0;

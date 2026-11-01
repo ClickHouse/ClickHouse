@@ -29,6 +29,10 @@ void validateSupportedColumns(
     ColumnsDescription & columns,
     const StorageObjectStorageConfiguration & configuration);
 
+/// Throws `ACCESS_DENIED` if the client of `object_storage` uses the server's own Azure identity and the session of
+/// `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
+void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
+
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 
