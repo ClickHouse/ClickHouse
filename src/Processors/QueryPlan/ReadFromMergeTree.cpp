@@ -4912,6 +4912,11 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(
 
 QueryPlanStepPtr ReadFromMergeTree::clone() const
 {
+    return cloneWithContext(context);
+}
+
+std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithContext(ContextPtr context_) const
+{
     AnalysisResultPtr analysis_result_copy;
     if (analyzed_result_ptr)
         analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
@@ -4937,7 +4942,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         data_settings,
         query_info_copy,
         storage_snapshot,
-        context,
+        context_,
         block_size.max_block_size_rows,
         requested_num_streams,
         max_block_numbers_to_read,

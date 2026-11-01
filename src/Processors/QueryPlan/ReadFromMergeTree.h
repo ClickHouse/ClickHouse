@@ -321,6 +321,8 @@ public:
     String getName() const override { return name; }
 
     QueryPlanStepPtr clone() const override;
+    /// A copy of the step that reads with the settings of `context_`.
+    std::unique_ptr<ReadFromMergeTree> cloneWithContext(ContextPtr context_) const;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
