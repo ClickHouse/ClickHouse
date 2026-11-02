@@ -115,6 +115,10 @@ public:
     /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
     std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
 
+    /// Serves librdkafka callbacks (statistics, error events) from the reply queue of the underlying
+    /// consumer. Must be called while the consumer is in use, like prepareToPoll() does internally.
+    void drainKafkaEvents();
+
     /// Returns empty optional if polling it not possible or no messages were polled.
     /// Returns an OffsetGuard that rollbacks the offsets unless it is committed or deactivated.
     std::optional<OffsetGuard> poll(MessageSinkFunction & message_sink);

@@ -225,6 +225,12 @@ private:
 
     void threadFunc(size_t idx);
 
+    /// Serves librdkafka callbacks for a consumer that is not being streamed from right now: while there is
+    /// no attached materialized view (or streaming is stopped / dependencies are not ready), nobody polls
+    /// the consumer, and events (statistics, errors) would accumulate in the librdkafka reply queue
+    /// indefinitely. Called from threadFunc() on cycles that did not stream.
+    void pollIdleConsumerEvents(size_t idx);
+
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;

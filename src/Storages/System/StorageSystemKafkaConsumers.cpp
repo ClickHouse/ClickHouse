@@ -49,7 +49,7 @@ ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
         {"num_rebalance_assignments", std::make_shared<DataTypeUInt64>(), "Number of times the consumer was assigned to Kafka cluster."},
         {"is_currently_used", std::make_shared<DataTypeUInt8>(), "The flag which shows whether the consumer is in use."},
         {"last_used", std::make_shared<DataTypeDateTime64>(6), "The last time this consumer was in use."},
-        {"rdkafka_stat", std::make_shared<DataTypeString>(), "Library internal statistic. Set statistics_interval_ms to 0 disable. Default is 3000 (once in three seconds) for the Kafka engine; for the Kafka engine with Keeper (kafka_keeper_path) it is 0 (disabled) unless statistics_interval_ms is configured explicitly, because unconsumed statistics events would otherwise accumulate in the librdkafka queue while no materialized view is attached."},
+        {"rdkafka_stat", std::make_shared<DataTypeString>(), "Library internal statistic. Set statistics_interval_ms to 0 disable, default is 3000 (once in three seconds)."},
         {"dependencies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())), "Transitive database dependencies."},
         {"missing_dependencies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())), "Missing transitive database dependencies."},
     };

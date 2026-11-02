@@ -700,12 +700,10 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         consumer_number,
         client_id,
         getMaxBlockSize(),
-        // Statistics are disabled by default: unlike StorageKafka, which closes idle consumer handles after
-        // kafka_consumers_pool_ttl_ms, StorageKafka2 keeps its consumers alive for the whole storage lifetime,
-        // and without an attached materialized view nobody polls them, so statistics events would pile up in
-        // the librdkafka reply queue indefinitely (a live memory leak). An explicitly configured
-        // statistics.interval.ms (e.g. <statistics_interval_ms> in the server config) is now honored.
-        "0"};
+        // Statistics are enabled by default. This is safe even when no materialized view is attached:
+        // pollIdleConsumerEvents() serves the librdkafka reply queue of consumers that are not being
+        // streamed from, so statistics events cannot accumulate (see the note in KafkaConfigLoader).
+        "3000"};
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
@@ -1372,6 +1370,14 @@ void StorageKafka2::threadFunc(size_t idx)
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
+    /// Serve librdkafka callbacks (statistics, error events) when this task is not streaming: while there
+    /// is no attached materialized view (or streaming is stopped / dependencies are not ready), nobody
+    /// polls this consumer, and events would accumulate in the librdkafka reply queue indefinitely (a live
+    /// memory leak, slow consumer shutdown). Draining them here is what makes it safe to keep statistics
+    /// enabled by default for StorageKafka2.
+    if (!incremented_mv_streamers && !task->stream_cancelled)
+        pollIdleConsumerEvents(idx);
+
     if (incremented_mv_streamers)
         active_mv_streamers.fetch_sub(1);
 
@@ -1501,6 +1507,35 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
     /// Use notify_all so that all threads waiting for different consumer indices get a chance to check.
     cv.notify_all();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
+}
+
+void StorageKafka2::pollIdleConsumerEvents(size_t idx)
+{
+    try
+    {
+        {
+            std::lock_guard lock(consumers_mutex);
+            if (idx >= consumers.size() || !consumers[idx])
+                return;
+            /// Don't create a librdkafka handle just to poll an empty queue: a table that has never been
+            /// streamed from has nothing to drain. Also skip consumers that are busy right now (a direct
+            /// SELECT serves the callbacks itself while it holds the consumer).
+            if (!consumers[idx]->hasConsumer() || consumers[idx]->isInUse())
+                return;
+        }
+
+        /// A consumer can be acquired by a direct SELECT in between the check above and the acquisition;
+        /// acquireConsumer() then waits (bounded by kafka_consumer_acquire_timeout_ms), which is harmless:
+        /// the SELECT serves the events itself, so a timeout here only skips one drain round.
+        auto consumer = acquireConsumer(idx);
+        SCOPE_EXIT({ releaseConsumer(std::move(consumer)); });
+        consumer->drainKafkaEvents();
+    }
+    catch (...)
+    {
+        /// Don't let a failure to drain events break the background task; it is retried on the next cycle.
+        tryLogCurrentException(log, fmt::format("Failed to poll events of consumer #{}", idx));
+    }
 }
 
 void StorageKafka2::cleanConsumers()
