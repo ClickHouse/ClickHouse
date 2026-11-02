@@ -903,8 +903,8 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
 
         /// A state whose arguments differ only by the variant of a nested state serializes the same way,
         /// but it may keep the nested state in memory (e.g. `any` of a `Dynamic` value keeps a column).
-        if (agg_type->getFunction()->getStateVariant() == to_type->getFunction()->getStateVariant()
-            && !agg_type->getFunction()->haveEqualArgumentTypes(*to_type->getFunction())
+        /// The state's own variant may differ as well, because all variants serialize the same way.
+        if (!agg_type->getFunction()->haveEqualArgumentTypes(*to_type->getFunction())
             && differsOnlyByAggregateStateVariant(from_type_untyped, to_type->getPtr()))
         {
             return [function = to_type->getFunction(), version = to_type->getVersionIfExplicit(), format_version = to_type->getVersion()](

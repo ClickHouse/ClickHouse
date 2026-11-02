@@ -246,6 +246,20 @@ FROM (SELECT v, groupArrayState(s) OVER () AS g FROM (SELECT v, contingencyState
 SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
     max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
 
+-- Both the state and the state in its arguments are in the Window representation.
+SELECT '-- window state over another window state: through an external sort spilled then not spilled, cast to its printed type';
+SELECT sum(cityHash64(v, round(finalizeAggregation(r), 6)))
+FROM (SELECT v, contingencyState(s, v) OVER () AS r FROM (SELECT v, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 1000,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+SELECT sum(cityHash64(v, round(finalizeAggregation(r), 6)))
+FROM (SELECT v, contingencyState(s, v) OVER () AS r FROM (SELECT v, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+SELECT sum(cityHash64(v, round(finalizeAggregation(CAST(r AS AggregateFunction(contingency, AggregateFunction(contingency, UInt32, UInt32), UInt32))), 6)))
+FROM (SELECT v, contingencyState(s, v) OVER () AS r FROM (SELECT v, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather))
+SETTINGS make_distributed_plan = 0;
+
 SELECT '-- window state in a join condition in a Cascades stage: distributed then local';
 SELECT l.p, r.v
 FROM (SELECT p, contingencyState(b, c) OVER (PARTITION BY p) AS s FROM t_window_state_variant_gather) AS l
