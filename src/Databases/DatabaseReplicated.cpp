@@ -1683,8 +1683,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// This is needed to generate intermediate name
     String salt = toString(thread_local_rng());
 
-    /// A table that failed to load cannot be renamed, moved or created again. If its metadata is the same as in
-    /// Keeper, there is nothing to recover and it is kept. Otherwise the iteration below rethrows its loading error.
+    /// A table that failed to load cannot be renamed, moved or created again, and the iterator below rethrows its loading error.
     NameSet failed_tables_to_keep;
     {
         Strings failed_tables;
