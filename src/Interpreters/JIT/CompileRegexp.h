@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Interpreters/JIT/callJITFunction.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -39,6 +41,7 @@ using JITRegexpMatcherFunc = uint8_t (*)(
 
 struct RegexpJITMatcher
 {
+    /// Call it through `callJITFunction`.
     JITRegexpMatcherFunc func = nullptr;
     int num_captures = 1;
     /// Keeps the compiled module (and its `CHJIT` instance) alive while the caller holds this handle.
