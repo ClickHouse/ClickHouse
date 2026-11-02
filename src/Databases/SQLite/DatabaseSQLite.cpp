@@ -4,6 +4,7 @@
 
 #include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -18,6 +19,11 @@
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -84,7 +90,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name, bool) const
 {
     std::lock_guard lock(mutex);
 
@@ -99,8 +105,11 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
     {
         auto sqlite_db = openConnection();
         auto table_names = fetchTablesList(sqlite_db.get());
+        /// Apply the filter before `fetchTable`: it reads the structure of one table, so a query
+        /// that names the tables it wants must not pay for the whole database.
         for (const auto & table_name : table_names)
-            tables[table_name] = fetchTable(sqlite_db, table_name, local_context, true);
+            if (!filter_by_table_name || filter_by_table_name(table_name))
+                tables[table_name] = fetchTable(sqlite_db, table_name, local_context, true);
     }
     catch (...)
     {
@@ -110,6 +119,7 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
         tryLogCurrentException(log, "", LogsLevel::information);
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 

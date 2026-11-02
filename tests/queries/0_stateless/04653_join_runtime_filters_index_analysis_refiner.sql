@@ -3,7 +3,6 @@
 -- index pruning (its eager per-part build could snapshot a not-yet-published filter), so
 -- the pruning events and the amount of read data must not depend on the setting.
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 -- The probe side has 2000 rows, so the randomized threshold must not skip the filter.
 SET join_runtime_filter_min_probe_rows = 0;
@@ -14,8 +13,9 @@ SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_indexes_refiner_in_read_pools = 1;
 SET query_plan_join_swap_table = 'false';
--- Left-side join pruning is intentionally disabled under parallel replicas, so pin PR off to
--- exercise the feature (the ParallelReplicas CI job otherwise forces it on).
+-- Under parallel replicas the pruning is split among the replicas, so the per-query counters this
+-- test asserts would depend on the coordinator's assignment; pin PR off (the ParallelReplicas CI job
+-- otherwise forces it on). `05153_join_runtime_filters_index_analysis_modes` covers parallel replicas.
 SET enable_parallel_replicas = 0;
 -- The two runs execute the same predicate, so a query condition cache hit in the second run
 -- would prune extra granules and break the read_rows parity check.

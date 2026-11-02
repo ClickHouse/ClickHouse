@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/80495
-SET enable_analyzer=1;
 SELECT DISTINCT
     1 AS a,
     arrayMap(x -> intDiv(x, a), [1, 2, 3])

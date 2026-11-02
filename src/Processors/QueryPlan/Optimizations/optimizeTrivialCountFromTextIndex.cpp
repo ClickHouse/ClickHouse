@@ -35,7 +35,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
 }
@@ -61,6 +60,10 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 
     const auto & params = aggregating.getParams();
     if (!params.keys.empty() || params.aggregates.size() != 1)
+        return {};
+
+    /// Also set for constant `GROUP BY` keys; the count source would emit a `0` row instead of no row.
+    if (params.empty_result_for_aggregation_by_empty_set)
         return {};
 
     const auto & desc = params.aggregates.front();
@@ -221,10 +224,6 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (context->getCurrentTransaction())
         return false;
 
-    /// An empty set must then yield an empty result, not a 0 row.
-    if (context->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
-        return false;
-
     if (reading.isQueryWithFinal() || reading.isQueryWithSampling())
         return false;
 
@@ -274,15 +273,15 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     for (const auto & [index_name, task] : reading.getIndexReadTasks())
     {
         /// Only the task that produced this virtual column can resolve it.
-        bool owns_column = std::ranges::any_of(task.columns, [&column_name](const auto & column) { return column.name == column_name; });
-        if (!owns_column || !task.index.condition_template)
+        auto task_column_it = std::ranges::find(task.columns, column_name, &IndexReadTask::Column::name);
+        if (task_column_it == task.columns.end() || !task.index.condition_template)
             continue;
 
         auto condition = std::dynamic_pointer_cast<MergeTreeIndexConditionText>(task.index.condition_template->generateUnsubstituted());
         if (!condition)
             continue;
 
-        auto query = condition->getSearchQueryForVirtualColumn(column_name);
+        auto query = task_column_it->search_query;
 
         /// Hint mode keeps the original predicate, so only Exact is answerable from the index alone.
         if (query->getDirectReadMode() != TextIndexDirectReadMode::Exact)

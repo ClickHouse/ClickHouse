@@ -100,7 +100,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
  - Sides that are already sorted (a MergeTree read in order, or any pre-sorted input): an order-preserving scatter into the per-shard merges can deadlock the pipeline. The in-order read and its `read_in_order_use_virtual_row` optimization are kept instead.
  - While the initiator builds a distributed plan (`make_distributed_plan`), because the scattered sort is not serializable for remote execution. The local single-fragment plan and the per-worker fragments re-optimize with that setting disabled, so they can still be sharded.
 
- Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
+ Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) by `query_plan_join_shard_by_pk_ranges` (enabled by default).
 
 - prefer_partial_merge
 

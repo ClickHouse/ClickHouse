@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <limits>
+#include <utility>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -300,7 +301,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 
         auto merge_choices = chooseMergesFrom(
             selector, *merge_predicate,
-            ranges_in_partition, partitions_stats, metadata_snapshot, settings,
+            ranges_in_partition, partitions_stats, metadata_snapshot, settings, &data,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges, current_time, log);
 
@@ -360,7 +361,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const auto & partitions_stats = collected.partitions_stats;
     auto merge_choices = chooseMergesFrom(
         selector, *merge_predicate,
-        ranges, partitions_stats, metadata_snapshot, settings,
+        ranges, partitions_stats, metadata_snapshot, settings, &data,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
         can_use_ttl_merges, current_time, log);
 
@@ -755,8 +756,8 @@ String getBestPartitionToOptimizeEntire(
 
     chassert(best_partition_it != stats.end());
 
-    const size_t best_partition_min_age = static_cast<size_t>(best_partition_it->second.min_age);
-    if (best_partition_min_age < (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || is_partition_invalid(best_partition_it->second))
+    if (std::cmp_less(best_partition_it->second.min_age, (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds].value)
+        || is_partition_invalid(best_partition_it->second))
         return {};
 
     return best_partition_it->first;
@@ -781,6 +782,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionsStatistics & partitions_stats,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
+    const MergeTreeData * data,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
@@ -791,7 +793,7 @@ MergeSelectorChoices chooseMergesFrom(
 
     auto choices = selector.chooseMergesFrom(
         ranges, partitions_stats, predicate, metadata_snapshot,
-        data_settings, next_delete_times, next_recompress_times,
+        data_settings, data, next_delete_times, next_recompress_times,
         can_use_ttl_merges, current_time);
 
     if (!choices.empty())

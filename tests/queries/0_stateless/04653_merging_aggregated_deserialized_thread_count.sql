@@ -85,9 +85,8 @@ WHERE initial_query_id = (
 SETTINGS enable_parallel_replicas = 0;
 
 -- Second firing oracle, pinning a different axis: the parallel replicas aggregation rewrite
--- fired. A `MergingAggregated` step on a secondary is attributable to it: of the four creators
--- of that step, the old-analyzer one is excluded by the `enable_analyzer` pin above, the planner
--- one runs on the initiator, and `makeDistributed` throws `SUPPORT_IS_DISABLED` when combined
+-- fired. A `MergingAggregated` step on a secondary is attributable to it: of the three creators
+-- of that step, the planner one runs on the initiator, and `makeDistributed` throws `SUPPORT_IS_DISABLED` when combined
 -- with parallel replicas, leaving the rewrite that builds the step this fix repairs. Where the
 -- rewrite declines, the secondary stops at partial aggregation (`setFinal(false)`), so it reports
 -- `Aggregating` but never `MergingAggregated`.

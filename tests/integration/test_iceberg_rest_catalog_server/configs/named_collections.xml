@@ -1,0 +1,10 @@
+<clickhouse>
+    <named_collections>
+        <!-- Keep the credentials in sync with tests/integration/helpers/config_cluster.py -->
+        <warehouse_storage>
+            <url>http://minio1:9001/warehouse</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </warehouse_storage>
+    </named_collections>
+</clickhouse>

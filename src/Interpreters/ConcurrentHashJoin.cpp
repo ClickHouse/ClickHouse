@@ -458,10 +458,8 @@ public:
         if (data.is_last)
         {
             addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
-            if (data.next_block)
-                dispatched_blocks[next_block] = std::move(*data.next_block);
-            else
-                ++next_block;
+            chassert(!data.next_block);
+            ++next_block;
             current_result.reset();
         }
 
@@ -647,11 +645,8 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     {
         const auto & hash_join = hash_joins[i];
         std::lock_guard lock(hash_join->mutex);
-        if (hash_join->data->hasNonJoinedRows())
-        {
-            if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                streams.push_back(std::move(s));
-        }
+        if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+            streams.push_back(std::move(s));
     }
     if (streams.empty())
         return {};

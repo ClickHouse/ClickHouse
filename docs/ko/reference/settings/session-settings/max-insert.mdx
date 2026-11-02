@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="max_insert_block_size">
-  ## max_insert_block_size
-</div>
+## max_insert_block_size {#max_insert_block_size}
 
 **별칭**: `max_insert_block_size_rows`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "별칭 `max_insert_block_size_rows`가 추가되었습니다."}]}]} />
 
 테이블에 삽입할 블록의 최대 크기(행 수 기준)를 지정합니다.
 
@@ -32,7 +32,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
    참고: clickhouse-client 또는 clickhouse-local을 사용해 파일에서 읽는 경우에는 클라이언트 자체가 데이터를 파싱하므로, 이 설정은 클라이언트 측에 적용됩니다.
 
-2. INSERT 작업: INSERT 쿼리 실행 중이거나 데이터가 구체화된 뷰(Materialized View)를 통과할 때, 이 설정의 동작은 `use_strict_insert_block_limits` 값에 따라 달라집니다.
+2. INSERT 작업: INSERT 쿼리 실행 중이거나 데이터가 materialized view를 통과할 때, 이 설정의 동작은 `use_strict_insert_block_limits` 값에 따라 달라집니다.
 
    * 활성화된 경우: 다음 조건에서 블록이 생성됩니다.
      * 최소 임계값(AND): min&#95;insert&#95;block&#95;size&#95;rows AND min&#95;insert&#95;block&#95;size&#95;bytes를 모두 만족
@@ -44,9 +44,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 * 양의 정수.
 
-<div id="max_insert_block_size_bytes">
-  ## max_insert_block_size_bytes
-</div>
+## max_insert_block_size_bytes {#max_insert_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -61,9 +59,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 양의 정수입니다.
 * 0 — 설정이 블록 형성에 관여하지 않습니다.
 
-<div id="max_insert_delayed_streams_for_parallel_write">
-  ## max_insert_delayed_streams_for_parallel_write
-</div>
+## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,9 +67,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 Cloud 기본값: `50`.
 
-<div id="max_insert_threads">
-  ## max_insert_threads
-</div>
+## max_insert_threads {#max_insert_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -103,9 +97,7 @@ Cloud 기본값:
 안전한 경우에만 쓰기 측이 병렬 실행됩니다. 그렇지 않으면 단일 스트림으로 유지되며 이 설정은 적용되지 않습니다. 특히 [`use_strict_insert_block_limits`](/ko/reference/settings/session-settings/use#use_strict_insert_block_limits)가 활성화되어 있고 대상 테이블(또는 대상이 데이터를 전달하는 테이블)에서 삽입된 블록의 중복을 제거하며 쿼리에 삽입 중복 제거가 활성화된 경우([`deduplicate_insert`](/ko/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) 참조), 또는 대상에 종속 materialized view가 있는 경우(예: `Alias` 뒤에 있는 대상이 데이터를 전달하는 테이블의 view 포함)에는 쓰기가 단일 스트림으로 유지됩니다. 단, [`parallel_view_processing`](/ko/reference/settings/session-settings/parallel#parallel_view_processing)이 활성화되어 있고 종속 view 체인에 중복 제거 위험이 없는 경우(views의 중복 제거가 비활성화됨([`deduplicate_blocks_in_dependent_materialized_views`](/ko/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) 또는 어떤 종속 view 경로에서도 중복을 제거할 수 없음)는 예외입니다. 또한 `Buffer` 및 `Distributed` 대상에서는 항상 단일 스트림으로 유지됩니다. `Buffer`는 자체 Context에서 플러시하고 `Distributed`는 쓰기 작업을 원격 샤드로 전달합니다(원격 샤드에서 데이터를 버퍼링할 수 있음). 따라서 이 쿼리의 중복 제거 설정은 최종 쓰기에 적용되지 않으며, 해당 설정과 관계없이 단일 스트림으로 유지됩니다. 병렬이 아닌 쿼럼 삽입([`insert_quorum`](/ko/reference/settings/session-settings/insert-quorum#insert_quorum)이 `2` 이상이거나 `'auto'`이고 [`insert_quorum_parallel`](/ko/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)이 비활성화된 경우)도 테이블당 진행 중인 쿼럼 파트를 하나만 허용하므로 단일 스트림으로 유지됩니다.
 값이 클수록 메모리 사용량이 증가합니다.
 
-<div id="max_insert_threads_min_free_memory_per_thread">
-  ## max_insert_threads_min_free_memory_per_thread
-</div>
+## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 

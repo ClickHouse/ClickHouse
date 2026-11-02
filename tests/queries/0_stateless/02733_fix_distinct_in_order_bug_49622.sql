@@ -12,4 +12,4 @@ ORDER BY c1;
 
 INSERT INTO test_string(c1, c2) VALUES ('1',  ''), ('2', '');
 
-SELECT DISTINCT c2, c1 FROM test_string;
+SELECT DISTINCT c2, c1 FROM test_string ORDER BY c1;

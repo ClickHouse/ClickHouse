@@ -97,9 +97,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     IndexGranulesMap index_granules;
 
+    /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
+    const KeyCondition * rpn_template_for_part = use_for_disjunctions ? &key_condition_rpn_template->generateForPart(*part_info) : nullptr;
+
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
-    if (use_for_disjunctions)
-        partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+    if (rpn_template_for_part)
+        partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
+
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -119,7 +123,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
-            key_condition_rpn_template->generateForPart(*part_info),
+            rpn_template_for_part,
             part_info,
             ranges,
             input.read_hints,
@@ -141,10 +145,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         total_granules = ranges.getNumberOfMarks();
     }
 
-    if (use_for_disjunctions)
+    if (rpn_template_for_part)
     {
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
-                            *part_info, ranges, key_condition_rpn_template->generateForPart(*part_info),
+                            *part_info, ranges, *rpn_template_for_part,
                             partial_eval_results, reader_settings, log);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
@@ -173,7 +177,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             {
                 const auto & primary_key = metadata_snapshot->getPrimaryKey();
                 KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
-                dynamic_key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
 
                 ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,
@@ -206,7 +209,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     index_helper,
                     condition,
-                    /*key_condition_rpn_template=*/{},
+                    /*key_condition_rpn_template=*/nullptr,
                     part_info,
                     ranges,
                     input.read_hints,
@@ -248,7 +251,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     res->index_granules = std::move(index_granules);
 
-    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    /// The minmax index for TopK filtering is subject to the same staleness check as the other skip
+    /// indexes: a pending mutation that rewrites, drops or renames its column leaves the part with an
+    /// index file that does not describe the values a read returns, so pruning marks by the running
+    /// threshold against it would drop rows the query has to see.
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,

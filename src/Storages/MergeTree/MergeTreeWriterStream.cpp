@@ -45,6 +45,7 @@ class SizeAdaptiveSpoolBuffer : public WriteBufferFromFileBase
 {
 public:
     using OpenPerFileFunc = std::function<std::unique_ptr<WriteBufferFromFileBase>()>;
+    using ClaimArchiveBaseFunc = std::function<void()>;
 
     /// @coupled_spilled: shared spill flag (lifetime owned by the caller). A substream's data
     /// file and marks file must travel together: either both are inside the archive or both are
@@ -55,6 +56,7 @@ public:
         size_t spill_threshold_,
         size_t buf_size_,
         OpenPerFileFunc open_per_file_,
+        ClaimArchiveBaseFunc claim_archive_base_,
         PackedFilesWriter * packed_writer_,
         const String & packed_virtual_name_,
         const WriteSettings & packed_write_settings_,
@@ -63,6 +65,7 @@ public:
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
         , spill_threshold(spill_threshold_)
         , open_per_file(std::move(open_per_file_))
+        , claim_archive_base(std::move(claim_archive_base_))
         , packed_writer(packed_writer_)
         , packed_virtual_name(packed_virtual_name_)
         , packed_write_settings(packed_write_settings_)
@@ -85,6 +88,7 @@ private:
 
     const size_t spill_threshold;
     const OpenPerFileFunc open_per_file;
+    const ClaimArchiveBaseFunc claim_archive_base;
     PackedFilesWriter * const packed_writer;
     const String packed_virtual_name;
     const WriteSettings packed_write_settings;
@@ -156,6 +160,12 @@ void SizeAdaptiveSpoolBuffer::commitToPackedIfNeeded()
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "SizeAdaptiveSpoolBuffer for '{}' has no packed writer at commit time", display_file_name);
 
+    /// Reached only when the substream stays in the archive, which is the moment its key becomes
+    /// resolvable: reads look up `skp_idx_*` archive keys before the real disk, so a member here
+    /// shadows a same-named column even though it owns no directory entry.
+    if (claim_archive_base)
+        claim_archive_base();
+
     auto packed_buf = packed_writer->writeFile(packed_virtual_name, packed_write_settings);
     if (!accumulator.empty())
         packed_buf->write(reinterpret_cast<const char *>(accumulator.data()), accumulator.size());
@@ -221,18 +231,35 @@ static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
     size_t buf_size,
     const WriteSettings & write_settings,
     size_t packed_spill_threshold,
-    bool & coupled_spilled)
+    bool & coupled_spilled,
+    const StreamBaseManifestPtr & stream_base_manifest,
+    const String & archive_base,
+    const String & on_disk_base,
+    const String & owner_index_name)
 {
     if (packed_writer && !packed_virtual_name.empty())
     {
-        auto open_per_file = [data_part_storage, file_path, buf_size, write_settings]()
+        auto open_per_file
+            = [data_part_storage, file_path, buf_size, write_settings, stream_base_manifest, on_disk_base, owner_index_name]()
         {
+            /// Reached only on a real spill, which is the moment this substream takes a filename
+            /// in the part directory.
+            if (stream_base_manifest)
+                stream_base_manifest->registerStreamBase(
+                    on_disk_base, {StreamBaseManifest::Kind::SkipIndex, owner_index_name});
             return data_part_storage->writeFile(file_path, buf_size, write_settings);
+        };
+        auto claim_archive_base = [stream_base_manifest, archive_base, owner_index_name]()
+        {
+            if (stream_base_manifest)
+                stream_base_manifest->registerStreamBase(
+                    archive_base, {StreamBaseManifest::Kind::SkipIndex, owner_index_name});
         };
         return std::make_unique<SizeAdaptiveSpoolBuffer>(
             packed_spill_threshold,
             buf_size,
             std::move(open_per_file),
+            std::move(claim_archive_base),
             packed_writer,
             packed_virtual_name,
             write_settings,
@@ -309,11 +336,11 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     is_size_adaptive(packing.writer != nullptr && (!packing.data_name.empty() || !packing.marks_name.empty())),
-    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
+    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packing.spill_threshold, spool_coupled_spilled, packing.stream_base_manifest, packing.archive_base, packing.on_disk_base, packing.owner_index_name)),
     plain_hashing(*plain_file),
     compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
-    marks_file(openStreamFile(data_part_storage, packing.writer, packing.marks_name, marks_path_ + marks_file_extension, 4096, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
+    marks_file(openStreamFile(data_part_storage, packing.writer, packing.marks_name, marks_path_ + marks_file_extension, 4096, query_write_settings, packing.spill_threshold, spool_coupled_spilled, packing.stream_base_manifest, packing.archive_base, packing.on_disk_base, packing.owner_index_name)),
     marks_hashing(*marks_file),
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),
