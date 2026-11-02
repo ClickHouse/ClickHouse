@@ -164,21 +164,12 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        bool potentially_throwing_constant_divisor = false;
-        if (isInteger(removeNullable(arguments[0].type))
-            && isInteger(removeNullable(arguments[1].type))
-            && arguments[1].column && isColumnConst(*arguments[1].column))
-        {
-            const auto divisor = (*arguments[1].column)[0];
-            potentially_throwing_constant_divisor =
-                accurateEquals(divisor, Field(0)) || accurateEquals(divisor, Field(-1));
-        }
-
         /// Keep a potentially throwing integer division as an expression until execution.
         /// Folding it while resolving an unselected `if`, `multiIf`, or `CASE` branch defeats
-        /// short-circuit evaluation. A selected or top-level expression still throws at execution.
+        /// short-circuit evaluation. Valid constant pairs remain foldable, while a selected or
+        /// top-level invalid pair still throws at execution.
         return std::make_shared<FunctionDivideExactBase>(
-            delegate(arguments)->build(arguments), !potentially_throwing_constant_divisor);
+            delegate(arguments)->build(arguments), !constantExactIntegerDivisionCanThrow(arguments));
     }
 
 private:

@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/MaskOperations.h>
 
 
 namespace DB
@@ -51,7 +52,7 @@ public:
         settings.arguments_with_disabled_lazy_execution.insert(0);
         for (size_t i = 1; i + 1 < number_of_arguments; i += 2)
             settings.arguments_with_disabled_lazy_execution.insert(i);
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
         settings.force_enable_lazy_execution = false;
         return true;
     }
@@ -169,9 +170,8 @@ public:
         /// - It requires a common supertype for all WHEN values and all THEN values.
         /// - It doesn't support types larger than 8 bytes (e.g. Int128).
         /// When `transform` is not applicable, we fall through to the `multiIf` path.
-        /// `transform` evaluates its default argument eagerly. Keep a lazy ELSE result on the
-        /// `multiIf` path, which applies the row mask before reducing a `ColumnFunction`.
-        if (all_when_then_values_constant && !checkAndGetShortCircuitArgument(args.back().column))
+        /// A lazy default is reduced below only for rows that do not match a WHEN value.
+        if (all_when_then_values_constant)
         {
             ColumnsWithTypeAndName src_array_elems;
             DataTypes src_array_types;
@@ -244,7 +244,35 @@ public:
                 }
 
                 if (function_base)
+                {
+                    if (checkAndGetShortCircuitArgument(transform_args.back().column))
+                    {
+                        auto mask_type = std::make_shared<DataTypeUInt8>();
+                        ColumnsWithTypeAndName mask_array_elems;
+                        mask_array_elems.reserve(src_array_elems.size());
+                        for (size_t i = 0; i < src_array_elems.size(); ++i)
+                        {
+                            mask_array_elems.push_back(
+                                {mask_type->createColumnConst(input_rows_count, 1u), mask_type, ""});
+                        }
+
+                        auto mask_array_type = std::make_shared<DataTypeArray>(mask_type);
+                        ColumnWithTypeAndName mask_array_col{nullptr, mask_array_type, ""};
+                        mask_array_col.column = fun_array->build(mask_array_elems)
+                            ->execute(mask_array_elems, mask_array_type, input_rows_count, /* dry_run = */ false);
+
+                        ColumnWithTypeAndName zero{
+                            mask_type->createColumnConst(input_rows_count, 0u), mask_type, ""};
+                        ColumnsWithTypeAndName match_args{args.front(), src_array_col, mask_array_col, zero};
+                        auto matched = fun_transform->build(match_args)
+                            ->execute(match_args, mask_type, input_rows_count, /* dry_run = */ false);
+
+                        IColumn::Filter unmatched(input_rows_count, 1);
+                        auto unmatched_info = extractInvertedMask(unmatched, matched);
+                        maskedExecute(transform_args.back(), unmatched, unmatched_info);
+                    }
                     return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
+                }
             }
         }
 
