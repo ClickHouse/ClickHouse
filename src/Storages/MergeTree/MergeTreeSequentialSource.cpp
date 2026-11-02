@@ -45,11 +45,6 @@ namespace Setting
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
-}
-
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
 ///
@@ -68,6 +63,7 @@ public:
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
         bool prefetch,
+        bool force_read_through_cache,
         ContextPtr context);
 
     ~MergeTreeSequentialSource() override;
@@ -118,6 +114,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
     bool prefetch,
+    bool force_read_through_cache,
     ContextPtr context)
     : ISource(std::move(result_header))
     , storage(storage_)
@@ -162,10 +159,12 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     /// The read settings come from the context the merge or mutation runs under, not from the global
     /// context of the storage: a merge is executed under a frozen copy of the background context (see
     /// makeQueryContextForMerge), and its memory reservation is estimated against the same copy, so the
-    /// read buffers it allocates must be sized from it as well.
+    /// read buffers it allocates must be sized from it as well. For the same reason the table-level
+    /// force_read_through_cache_for_merges comes from the caller (a merge passes its frozen settings
+    /// snapshot) instead of the live storage settings: it decides whether the filesystem cache promotes
+    /// the read buffer size, which the reservation already priced.
     ReadSettings read_settings = context->getReadSettings();
-    const bool read_if_exists_otherwise_bypass
-        = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
+    const bool read_if_exists_otherwise_bypass = !force_read_through_cache;
     read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
 #if ENABLE_DISTRIBUTED_CACHE
     read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
@@ -358,6 +357,7 @@ Pipe createMergeTreeSequentialSource(
     bool apply_deleted_mask,
     bool read_with_direct_io,
     bool prefetch,
+    bool force_read_through_cache,
     ContextPtr context)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
@@ -416,6 +416,7 @@ Pipe createMergeTreeSequentialSource(
         std::move(mark_ranges),
         read_with_direct_io,
         prefetch,
+        force_read_through_cache,
         std::move(context));
 
     Pipe pipe(std::move(column_part_source));
@@ -454,6 +455,7 @@ public:
         std::optional<ActionsDAG> filter_,
         bool read_with_direct_io_,
         bool prefetch_,
+        bool force_read_through_cache_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
@@ -469,6 +471,7 @@ public:
         , filter(std::move(filter_))
         , read_with_direct_io(read_with_direct_io_)
         , prefetch(prefetch_)
+        , force_read_through_cache(force_read_through_cache_)
         , context(std::move(context_))
         , log(log_)
     {
@@ -519,6 +522,7 @@ public:
             apply_deleted_mask,
             read_with_direct_io,
             prefetch,
+            force_read_through_cache,
             context);
 
         pipeline.init(Pipe(std::move(source)));
@@ -539,6 +543,7 @@ public:
             filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
             read_with_direct_io,
             prefetch,
+            force_read_through_cache,
             context,
             log);
     }
@@ -556,6 +561,7 @@ private:
     const std::optional<ActionsDAG> filter;
     const bool read_with_direct_io;
     const bool prefetch;
+    const bool force_read_through_cache;
     const ContextPtr context;
     const LoggerPtr log;
 };
@@ -574,6 +580,7 @@ void createReadFromPartStep(
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
     bool prefetch,
+    bool force_read_through_cache,
     ContextPtr context,
     LoggerPtr log)
 {
@@ -590,6 +597,7 @@ void createReadFromPartStep(
         std::move(filter),
         read_with_direct_io,
         prefetch,
+        force_read_through_cache,
         std::move(context),
         log);
 

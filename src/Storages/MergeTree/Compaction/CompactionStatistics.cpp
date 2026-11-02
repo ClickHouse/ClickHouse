@@ -1432,7 +1432,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const std::vector<DiskWriteBufferMemory> & remote_write_buffer_memories,
     bool deduplicate,
     bool cleanup,
-    const MergeTreeData::MergingParams * merging_params_override = nullptr)
+    const MergeTreeData::MergingParams * merging_params_override = nullptr,
+    const MergeTreeData::PartCompressionCodec * part_codec_override = nullptr)
 {
     /// The merging params the merge runs with: those the caller passes for a nested projection merge, those
     /// of patch parts for a merge of patch parts (see MergeTreeDataMergerMutator::mergePartsToTemporaryPart),
@@ -1462,20 +1463,19 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     ///
     /// The promotion is skipped when the reader only reads from the cache if the data already exists there
     /// (read_if_exists_otherwise_bypass). MergeTreeSequentialSource does not take that flag from the context:
-    /// it overwrites it with !force_read_through_cache_for_merges of the storage the part belongs to, so the
-    /// estimate derives it the same way.
+    /// it overwrites it with !force_read_through_cache_for_merges, which a merge takes from the same frozen
+    /// settings snapshot this estimate receives as `settings` (MergeTask passes global_ctx->data_settings),
+    /// not from the live storage settings, so a concurrent ALTER ... MODIFY SETTING cannot change the read
+    /// buffer size after the reservation is fixed. The estimate derives it the same way.
     const UInt64 remote_read_buffer_size = read_settings.remote_fs_settings.buffer_size;
     const bool cache_may_promote_read_buffer = read_settings.enable_filesystem_cache
         && read_settings.filesystem_cache_settings.prefer_bigger_buffer_size;
     const UInt64 promoted_remote_read_buffer_size
         = std::max<UInt64>(remote_read_buffer_size, read_settings.remote_fs_settings.large_buffer_size);
-    auto merge_read_buffer_size_on_cached_disk = [&](const MergeTreeSettings & storage_settings)
-    {
-        const bool read_if_exists_otherwise_bypass = !storage_settings[MergeTreeSetting::force_read_through_cache_for_merges];
-        return cache_may_promote_read_buffer && !read_if_exists_otherwise_bypass
-            ? promoted_remote_read_buffer_size
-            : remote_read_buffer_size;
-    };
+    const UInt64 merge_read_buffer_size_on_cached_disk
+        = cache_may_promote_read_buffer && settings[MergeTreeSetting::force_read_through_cache_for_merges]
+        ? promoted_remote_read_buffer_size
+        : remote_read_buffer_size;
 
     /// The size a single reader of this part costs: local parts read through the local buffer, remote parts
     /// through the remote one, promoted when the part's disk is cache-backed (see above).
@@ -1485,7 +1485,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             return local_read_buffer_size;
         if (!part->getDataPartStorage().getCacheName())
             return remote_read_buffer_size;
-        return merge_read_buffer_size_on_cached_disk(*part->storage.getSettings());
+        return merge_read_buffer_size_on_cached_disk;
     };
 
     /// Per-stream write buffer size on multipart object storage (S3 / Azure). A stream's upload buffers
@@ -2138,8 +2138,13 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// The default codec of the result part, resolved like MergeTask resolves it (MergeTreeData::getCompressionCodecForPart):
     /// the compact writer keys its compressors by the resolved codecs. The TTL infos of the result part are not known
     /// before the merge; the union of the source parts' ones is what the merge starts from.
+    /// A nested merge of existing projection parts does not resolve its own codec: MergeTask inherits the
+    /// codec of the parent part being merged, including whether it came from an explicit RECOMPRESS TTL
+    /// (the projection's metadata carries no such TTL), so the recursion passes the parent's resolved one.
     const MergeTreeData::PartCompressionCodec part_codec = [&]
     {
+        if (part_codec_override)
+            return *part_codec_override;
         if (future_part.parts.empty())
             return MergeTreeData::PartCompressionCodec{.codec = CompressionCodecFactory::instance().getDefaultCodec()};
         IMergeTreeDataPart::TTLInfos merged_ttl_infos;
@@ -2906,16 +2911,20 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// with serialized index data and are covered reactively; reserve the compressor and file buffers they
     /// allocate eagerly - a MergeTreeWriterStream each, with the data and the marks chain - so a table with
     /// many skip indexes cannot bypass the admission gate altogether.
+    /// An index stream is opened at the writer's table-level max_compress_block_size
+    /// (MergeTreeDataPartWriterOnDisk::initSkipIndices): column-level overrides do not apply to it, so
+    /// resolve it like the compact writer's data file, not as the maximum over the written columns.
+    const UInt64 skip_index_block_size = resolve_compact_block_size(settings);
     const size_t skip_index_streams = countMaterializedSkipIndexStreams(metadata_snapshot, settings, context);
     output_memory = saturatingAdd(
         output_memory,
-        saturatingStreamsTimesBuffer(skip_index_streams, eager_stream_buffers_with_marks(base_max_compress_block_size)));
+        saturatingStreamsTimesBuffer(skip_index_streams, eager_stream_buffers_with_marks(skip_index_block_size)));
     /// With packing enabled, the in-memory accumulators of those substreams come on top of their buffers.
     /// Patch parts rewrite the indexed values but store no skip indexes of their own, so including them
     /// disables the cap by the source parts' index bytes for a merge that applies patches.
     output_memory = saturatingAdd(
         output_memory,
-        estimatePackedSkipIndexAccumulators(metadata_snapshot, settings, context, source_and_patch_parts, base_max_compress_block_size));
+        estimatePackedSkipIndexAccumulators(metadata_snapshot, settings, context, source_and_patch_parts, skip_index_block_size));
 
     /// The primary index is one more writer chain held for the whole merge: `MergedBlockOutputStream`
     /// rewrites the primary key, and `MergeTreeDataPartWriterOnDisk::initPrimaryIndex` opens the `primary`
@@ -3117,7 +3126,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     remote_write_buffer_memories,
                     deduplicate,
                     cleanup,
-                    &projection_merging_params));
+                    &projection_merging_params,
+                    &part_codec));
             }
             else
             {
@@ -3318,7 +3328,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// identical to the plain one under default settings. The read-back readers belong to the
                 /// table, whose settings `settings` are here.
                 const UInt64 projection_read_buffer_size
-                    = output_on_remote_disk ? merge_read_buffer_size_on_cached_disk(settings) : local_read_buffer_size;
+                    = output_on_remote_disk ? merge_read_buffer_size_on_cached_disk : local_read_buffer_size;
                 /// A Compact projection part is written by the compact writer (see compact_eager_buffers above),
                 /// with the projection's own table-level block size and the codecs of the projection columns.
                 const UInt64 projection_compact_block_size = resolve_compact_block_size(projection_settings);
@@ -3400,7 +3410,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// metadata, but decides which ones (`materialize_skip_indexes_on_merge` and its exclude
                 /// list) from the table settings snapshot, not the projection's overrides. Those writers live
                 /// alongside the projection data writer, so account for their eagerly allocated compressor
-                /// and file buffers as well.
+                /// and file buffers as well. Like the parent's, they are opened at the writer's table-level
+                /// block size - the projection's own max_compress_block_size - not at a column override.
+                const UInt64 projection_skip_index_block_size = resolve_compact_block_size(projection_settings);
                 const size_t projection_skip_index_streams
                     = countMaterializedSkipIndexStreams(projection.metadata, settings, context);
                 /// `packed_skip_index_max_bytes` cannot be overridden in a projection's WITH SETTINGS, so the
@@ -3408,9 +3420,35 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// parts do not exist yet, so no source part bounds their volume.
                 const UInt64 projection_skip_index_eager_buffers = saturatingAdd(
                     saturatingStreamsTimesBuffer(
-                        projection_skip_index_streams, eager_stream_buffers_with_marks(projection_max_compress_block_size)),
+                        projection_skip_index_streams, eager_stream_buffers_with_marks(projection_skip_index_block_size)),
                     estimatePackedSkipIndexAccumulators(
-                        projection.metadata, settings, context, /*source_parts=*/ {}, projection_max_compress_block_size));
+                        projection.metadata, settings, context, /*source_parts=*/ {}, projection_skip_index_block_size));
+                /// A packed parent part gives every projection its own packed storage
+                /// (DataPartStorageOnDiskPacked::getProjection), with its own PackedFilesWriter: the temporary
+                /// projection parts and the read-back result are buffered in an archive of their own while
+                /// the parent's archive (priced above from the base columns only) stays live. Price it like
+                /// the parent's: the encoded data and marks of the rebuilt projection, at the wider of the
+                /// two formats it is written in, capped by the projection's own spill budget.
+                UInt64 projection_packed_archive_bytes = 0;
+                if (future_part.part_format.storage_type == MergeTreeDataPartStorageType::Packed)
+                {
+                    const UInt64 projection_min_block_size = std::max<UInt64>(1, projection_min_compress_block_size);
+                    const UInt64 projection_data_blocks = saturatingAdd(
+                        saturatingStreamsTimesBuffer(
+                            std::max<size_t>(1, projection_writer_streams), saturatingAdd(projection_granules, 1)),
+                        projection_uncompressed_bytes / projection_min_block_size);
+                    const UInt64 projection_encoded_bytes = encoded_written_bytes(
+                        projection_uncompressed_bytes, projection_data_blocks, projection_max_compress_block_size, data_codecs);
+                    const UInt64 projection_archive_marks_bytes = std::max(
+                        saturatingStreamsTimesBuffer(
+                            projection_encoded_marks_bytes_per_stream(temp_projection_is_compact), projection_streams),
+                        saturatingStreamsTimesBuffer(
+                            projection_encoded_marks_bytes_per_stream(read_back_projection_is_compact), read_back_streams));
+                    projection_packed_archive_bytes = saturatingAdd(projection_encoded_bytes, projection_archive_marks_bytes);
+                    if (const UInt64 max_bytes_to_buffer = projection_settings[MergeTreeSetting::max_bytes_to_buffer_for_packed_part];
+                        max_bytes_to_buffer != 0)
+                        projection_packed_archive_bytes = std::min(projection_packed_archive_bytes, max_bytes_to_buffer);
+                }
                 projection_memory = std::max(
                     projection_memory,
                     saturatingAdd(
@@ -3418,7 +3456,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                         saturatingAdd(
                             std::min(read_back_reader_worst_case, saturatingStreamsTimesBuffer(2, projection_uncompressed_bytes)),
                             saturatingAdd(
-                                projection_skip_index_eager_buffers,
+                                saturatingAdd(projection_skip_index_eager_buffers, projection_packed_archive_bytes),
                                 primary_index_eager_buffers(projection.metadata, projection_settings)))));
             }
         }

@@ -19,6 +19,9 @@ enum MergeTreeSequentialSourceType
 
 /// Create stream for reading single part from MergeTree.
 /// If the part has lightweight delete mask then the deleted rows are filtered out.
+/// `force_read_through_cache` is the table-level `force_read_through_cache_for_merges` the read runs
+/// with: a merge passes the value from its frozen settings snapshot, so that the read buffer sizes match
+/// its memory reservation.
 Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
@@ -32,6 +35,7 @@ Pipe createMergeTreeSequentialSource(
     bool apply_deleted_mask,
     bool read_with_direct_io,
     bool prefetch,
+    bool force_read_through_cache,
     ContextPtr context);
 
 class QueryPlan;
@@ -50,6 +54,7 @@ void createReadFromPartStep(
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
     bool prefetch,
+    bool force_read_through_cache,
     ContextPtr context,
     LoggerPtr log);
 

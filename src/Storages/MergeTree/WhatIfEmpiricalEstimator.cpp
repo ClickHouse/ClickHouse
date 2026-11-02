@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Columns/ColumnSparse.h>
 #include <Common/Stopwatch.h>
@@ -25,6 +26,11 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsOverflowMode read_overflow_mode;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
 }
 
 namespace ErrorCodes
@@ -159,6 +165,7 @@ bool tryEstimateEmpirical(
                 false,
                 false,
                 false,
+                (*data.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges],
                 data.getContext());
 
             /// Apply the query's execution-speed limits here too (size is the explicit check below)

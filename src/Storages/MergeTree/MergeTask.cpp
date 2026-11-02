@@ -130,6 +130,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
     extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
@@ -2241,6 +2242,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             ctx->use_prefetch,
+            (*global_ctx->data_settings)[MergeTreeSetting::force_read_through_cache_for_merges],
             global_ctx->context,
             getLogger("VerticalMergeStage"));
 
@@ -3606,6 +3608,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             /*prefetch=*/ false,
+            (*global_ctx->data_settings)[MergeTreeSetting::force_read_through_cache_for_merges],
             global_ctx->context,
             ctx->log);
 
