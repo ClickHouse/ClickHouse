@@ -4,9 +4,11 @@
 
 #include <Common/AtomicLogger.h>
 #include <Core/Names.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -72,6 +74,14 @@ public:
 
     /// Returns true for error codes that trigger a retry on the next coarser table.
     static bool isFallbackError(int error_code);
+
+    /// Name of the source table for the given sample interval: `{table_prefix}_{interval}`.
+    static String getSourceTableName(const String & table_prefix, UInt64 interval);
+
+    /// Names of the source tables referenced by the arguments of an `ABR` engine definition, for the
+    /// dependency graphs. The source tables live in `database`, the database of the `ABR` table.
+    /// Malformed arguments are skipped, as the engine reports them when the table is created.
+    static TableNamesSet getSourceTableNames(const ASTFunction & engine, const String & database);
 
     String getName() const override { return "ABR"; }
 
