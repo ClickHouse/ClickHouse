@@ -5,7 +5,7 @@ currentDir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
 # iterate over all directories in current path
 clickhouseTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'clickhouse-*' -not -name 'clickhouse-distroless-*' -type d -exec basename {} \; )
-keeperTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'keeper-*' -type d -exec basename {} \; )
+keeperTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'keeper-*' -not -name 'keeper-distroless-*' -type d -exec basename {} \; )
 
 # Distroless images have no shell or coreutils inside the container, so run
 # only tests known to work with that constraint.

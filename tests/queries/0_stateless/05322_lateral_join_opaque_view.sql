@@ -2,7 +2,6 @@
 -- body cannot be detected. Such a view is rejected inside a LATERAL subquery; an inlined view is checked
 -- like any other subquery.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP VIEW IF EXISTS v_volatile;

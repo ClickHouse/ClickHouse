@@ -105,8 +105,8 @@ private:
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
     bool shouldBackupTableData(
         const QualifiedTableName & table_name,
-        /// Used in the Cloud build.
-        [[maybe_unused]] const StoragePtr & storage,
+        const StoragePtr & storage,
+        const ASTPtr & create_table_query,
         const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const;
 
     void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);

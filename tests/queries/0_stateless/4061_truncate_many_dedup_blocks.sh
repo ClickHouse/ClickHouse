@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, replica, no-shared-merge-tree
+# Tags: long, replica, no-shared-merge-tree, no-replicated-database
+# Tag no-replicated-database: the explicit `ReplicatedMergeTree` path gets `/auto_{shard}` appended on a replicated database, so the `zookeeper_log` path filter matches nothing
 # no-shared-merge-tree: depends on the ZooKeeper layout of ReplicatedMergeTree dedup blocks
 
 # Verify that TRUNCATE splits the ZooKeeper removal of deduplication blocks into

@@ -30,6 +30,13 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// A replica rebuilds the read from the table's parameters. The source filter and the pushed-down
+    /// LIMIT are not serialized: the replica sets them again when it optimizes the received plan.
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
 private:
     Pipe makePipe();
 
@@ -38,7 +45,6 @@ private:
     ExpressionActionsPtr key_expression;
     size_t max_block_size;
     size_t num_streams;
-    std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 
 }

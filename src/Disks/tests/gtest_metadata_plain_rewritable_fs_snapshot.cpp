@@ -1,3 +1,5 @@
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/BlobLinkCounts.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 
 #include <gtest/gtest.h>
@@ -9,15 +11,16 @@ using namespace DB;
 
 TEST(FsSnapshot, BranchesRemainIndependent)
 {
-    FsSnapshot original;
+    auto blob_link_counts = std::make_shared<BlobLinkCounts>();
+    FsSnapshot original(blob_link_counts);
     original.recordDirectoryPath("table/part", {.remote_path = "remote", .etag = "etag", .files = {}});
-    original.recordFile("table/part/data", {123, 456});
+    original.recordFile("table/part/data", {123, 456, ""});
 
-    FsSnapshot renamed(original.getRoot());
-    FsSnapshot removed(original.getRoot());
+    FsSnapshot renamed(original.getRoot(), blob_link_counts);
+    FsSnapshot removed(original.getRoot(), blob_link_counts);
     renamed.moveDirectory("table/part", "other/part");
     removed.removeFile("table/part/data");
-    removed.recordFile("table/part/new", {789, 123});
+    removed.recordFile("table/part/new", {789, 123, ""});
 
     ASSERT_TRUE(original.existsFile("table/part/data"));
     EXPECT_FALSE(original.existsFile("table/part/new"));
@@ -28,24 +31,51 @@ TEST(FsSnapshot, BranchesRemainIndependent)
     EXPECT_FALSE(removed.existsFile("table/part/data"));
     EXPECT_TRUE(removed.existsFile("table/part/new"));
 
-    FsSnapshot before_removal(renamed.getRoot());
+    FsSnapshot before_removal(renamed.getRoot(), blob_link_counts);
     renamed.removeDirectory("other");
     EXPECT_TRUE(renamed.listDirectory("").empty());
     EXPECT_TRUE(before_removal.existsFile("other/part/data"));
     EXPECT_THROW(original.moveDirectory("table", "table/part/child"), std::exception);
-    EXPECT_THROW(original.recordFile("table/part/data", {0, 0}), std::exception);
+    EXPECT_THROW(original.recordFile("table/part/data", {0, 0, ""}), std::exception);
     EXPECT_TRUE(original.existsFile("table/part/data"));
+}
+
+TEST(FsSnapshot, ConcurrentRemovalsOfLinksFindTheLastLink)
+{
+    FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
+    std::unordered_map<std::string, DirectoryRemoteInfo> layout;
+    layout["a"] = {.remote_path = "ra", .etag = "", .files = {{"data", {1, 0, "shared"}}}, .has_explicit_file_list = true};
+    layout["b"] = {.remote_path = "rb", .etag = "", .files = {{"data", {1, 0, "shared"}}}, .has_explicit_file_list = true};
+    fs.applyLayout(std::move(layout));
+
+    /// Two transactions on different directories start from the same committed state, so each sees the other link left.
+    auto first = fs.takeReadWriteSnapshot();
+    auto second = fs.takeReadWriteSnapshot();
+    first->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+    second->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+    ASSERT_EQ(first->getBlobLinkCount("shared"), 2);
+    ASSERT_EQ(second->getBlobLinkCount("shared"), 2);
+    first->removeFile("a/data");
+    first->removeBlobLink("shared");
+    second->removeFile("b/data");
+    second->removeBlobLink("shared");
+
+    EXPECT_TRUE(fs.applyJournal(first->getJournal()).empty());
+    EXPECT_EQ(fs.applyJournal(second->getJournal()), std::vector<std::string>{"shared"});
+    EXPECT_FALSE(fs.takeReadOnlySnapshot()->existsFile("a/data"));
+    EXPECT_FALSE(fs.takeReadOnlySnapshot()->existsFile("b/data"));
 }
 
 TEST(FsSnapshot, WideDirectorySharesUnchangedEntries)
 {
-    FsSnapshot original;
+    auto blob_link_counts = std::make_shared<BlobLinkCounts>();
+    FsSnapshot original(blob_link_counts);
     for (size_t i = 0; i < 10000; ++i)
         original.recordDirectoryPath("table/" + std::to_string(i), {.remote_path = std::to_string(i), .etag = "", .files = {}});
 
     auto children = original.getRoot()->subdirectories.findChild("table")->subdirectories;
-    FsSnapshot changed(original.getRoot());
-    changed.recordFile("table/5000/data", {123, 456});
+    FsSnapshot changed(original.getRoot(), blob_link_counts);
+    changed.recordFile("table/5000/data", {123, 456, ""});
 
     size_t copied_entries = 0;
     children.forEachChild([&](const auto &, const auto & child)
@@ -63,12 +93,13 @@ TEST(FsSnapshot, WideDirectorySharesUnchangedEntries)
 
 TEST(FsSnapshot, WideDirectoryRemovalSharesUnchangedEntries)
 {
-    FsSnapshot original;
+    auto blob_link_counts = std::make_shared<BlobLinkCounts>();
+    FsSnapshot original(blob_link_counts);
     for (size_t i = 0; i < 10000; ++i)
         original.recordDirectoryPath("table/" + std::to_string(i), {.remote_path = std::to_string(i), .etag = "", .files = {}});
 
     auto children = original.getRoot()->subdirectories.findChild("table")->subdirectories;
-    FsSnapshot changed(original.getRoot());
+    FsSnapshot changed(original.getRoot(), blob_link_counts);
     changed.removeDirectory("table/5000");
 
     size_t copied_entries = 0;
