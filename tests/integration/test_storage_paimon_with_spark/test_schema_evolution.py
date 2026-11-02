@@ -388,6 +388,66 @@ def test_schema_evolution_no_shared_column(started_cluster_paimon_with_spark):
         )
 
 
+def test_schema_evolution_row_column(started_cluster_paimon_with_spark):
+    """A tuple element of a ROW column is read from a file written before a
+    RENAME COLUMN. Fields inside a ROW are matched by name, so a file written
+    before one of them was renamed, or dropped and added again, is refused."""
+    started_cluster = started_cluster_paimon_with_spark
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    table_name = "test_schema_evolution_row_" + get_uuid_str()
+    table_expr = get_creation_expression(
+        "s3", table_name, started_cluster, table_function=True
+    )
+
+    create_spark_paimon_table(
+        spark, table_name, "id INT NOT NULL, s STRUCT<x: INT, y: STRING>"
+    )
+    for query in [
+        f"INSERT INTO {spark_table(table_name)} VALUES (1, named_struct('x', 1, 'y', 'a'))",
+        f"ALTER TABLE {spark_table(table_name)} RENAME COLUMN s TO s2",
+        f"INSERT INTO {spark_table(table_name)} VALUES (2, named_struct('x', 2, 'y', 'b'))",
+    ]:
+        execute_spark_query(started_cluster, "s3", table_name, query)
+
+    assert (
+        instance.query(f"SELECT id, s2.y FROM {table_expr} ORDER BY id")
+        == "1\ta\n2\tb\n"
+    )
+    assert instance.query(f"SELECT id FROM {table_expr} WHERE s2.y = 'a'") == "1\n"
+    assert (
+        instance.query(f"SELECT id, s2 FROM {table_expr} ORDER BY id")
+        == "1\t(1,'a')\n2\t(2,'b')\n"
+    )
+
+    for query in [
+        f"ALTER TABLE {spark_table(table_name)} RENAME COLUMN s2.x TO x2",
+        f"INSERT INTO {spark_table(table_name)} VALUES (3, named_struct('x2', 3, 'y', 'c'))",
+    ]:
+        execute_spark_query(started_cluster, "s3", table_name, query)
+    error = instance.query_and_get_error(f"SELECT * FROM {table_expr}")
+    assert "NOT_IMPLEMENTED" in error
+    assert "field id 2 is 's" in error and "'s2.x2'" in error
+
+    table_name = "test_schema_evolution_row_readd_" + get_uuid_str()
+    table_expr = get_creation_expression(
+        "s3", table_name, started_cluster, table_function=True
+    )
+    create_spark_paimon_table(
+        spark, table_name, "id INT NOT NULL, s STRUCT<x: INT, y: STRING>"
+    )
+    for query in [
+        f"INSERT INTO {spark_table(table_name)} VALUES (1, named_struct('x', 1, 'y', 'a'))",
+        f"ALTER TABLE {spark_table(table_name)} DROP COLUMN s.y",
+        f"ALTER TABLE {spark_table(table_name)} ADD COLUMN s.y STRING",
+        f"INSERT INTO {spark_table(table_name)} VALUES (2, named_struct('x', 2, 'y', 'b'))",
+    ]:
+        execute_spark_query(started_cluster, "s3", table_name, query)
+    error = instance.query_and_get_error(f"SELECT * FROM {table_expr}")
+    assert "NOT_IMPLEMENTED" in error
+    assert "'s.y' is field id 3" in error
+
+
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_incremental_read_across_rename_column(
     started_cluster_paimon_with_spark, storage_type

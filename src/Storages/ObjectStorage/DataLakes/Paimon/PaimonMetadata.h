@@ -131,8 +131,24 @@ private:
     void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
 
     /// The transform from the columns of a data file written with schema `file_schema_id` to the columns of `read_schema`,
-    /// matched by field id. nullptr if reading the file by column name gives the same columns.
-    std::shared_ptr<ActionsDAG> getDataFileSchemaTransform(Int64 file_schema_id, const PaimonTableSchema & read_schema) const;
+    /// matched by field id. nullptr if reading the file by column name gives the same columns. Throws if a field inside
+    /// a ROW column would be bound to another field id. Pass the cursor of an incremental read for its recovery hint.
+    std::shared_ptr<ActionsDAG> getDataFileSchemaTransform(
+        const String & file_path,
+        Int64 file_schema_id,
+        const PaimonTableSchema & read_schema,
+        std::optional<Int64> incremental_cursor) const;
+
+    /// `transform` is the result of `getDataFileSchemaTransform`. `in_file` and `in_read_schema` are empty if the file
+    /// can be read, else they name the field inside a ROW column that makes it unreadable.
+    struct FileSchemaMapping
+    {
+        std::shared_ptr<ActionsDAG> transform;
+        String in_file;
+        String in_read_schema;
+    };
+
+    FileSchemaMapping getDataFileSchemaMapping(Int64 file_schema_id, const PaimonTableSchema & read_schema) const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
@@ -204,10 +220,9 @@ private:
     /// Update mutex: only held briefly during state replacement
     mutable std::mutex update_mutex;
 
-    /// `getDataFileSchemaTransform` by (file schema id, read schema id). A schema never changes once written.
+    /// `getDataFileSchemaMapping` by (file schema id, read schema id). A schema never changes once written.
     mutable std::mutex file_schema_transforms_mutex;
-    mutable std::map<std::pair<Int64, Int64>, std::shared_ptr<ActionsDAG>>
-        file_schema_transforms TSA_GUARDED_BY(file_schema_transforms_mutex);
+    mutable std::map<std::pair<Int64, Int64>, FileSchemaMapping> file_schema_transforms TSA_GUARDED_BY(file_schema_transforms_mutex);
 
     /// Persistent components: thread-safe or immutable
     PaimonPersistentComponents persistent_components;
