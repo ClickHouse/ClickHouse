@@ -170,6 +170,11 @@ protected:
     /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
     /// read beside the overrides: one filename for a backup locator, none for a table engine.
     bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
+    /// Hides a connection value that no rule here can show: a URL carrying a credential of its own
+    /// (`user:key@`, a SAS `?sig=...`), or a value that is not a plain string literal.
+    void maskUnshowableAzureConnectionValue(size_t index, const AbstractFunction::Argument & value, bool argument_is_named);
+    /// The same, for the `connection_string` and `storage_account_url` overrides of a named collection from `start` on.
+    void maskUnshowableAzureConnectionOverrides(size_t start);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
     /// named `url = ...` override, and the `headers(...)` values at any position. `url` is at
