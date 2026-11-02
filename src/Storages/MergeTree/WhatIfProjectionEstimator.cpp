@@ -55,6 +55,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool optimize_use_projections;
@@ -272,8 +273,8 @@ Block mergeGroups(const Blocks & blocks)
     return all.cloneWithColumns(std::move(merged));
 }
 
-/// read only the key columns, false if a read limit was hit
-bool buildProjectionPart(
+/// read only the key columns, returns why the estimate is unsupported or an empty string
+String buildProjectionPart(
     ProjectionPartData & out,
     const ProjectionDescription & projection,
     const DataPartPtr & part,
@@ -339,11 +340,20 @@ bool buildProjectionPart(
     /// an aggregate projection part has one row for each group of the part, so the groups of all batches merge first
     const bool aggregate = projection.type == ProjectionDescription::Type::Aggregate;
     Blocks groups;
+    /// past the group limit of the query the estimate is unsupported instead of failing the query, so a batch stops at the limit
+    const UInt64 max_groups = context->getSettingsRef()[Setting::max_rows_to_group_by];
+    ContextPtr projection_context = context;
+    if (aggregate && max_groups)
+    {
+        auto limited_context = Context::createCopy(context);
+        limited_context->setSetting("group_by_overflow_mode", Field("break"));
+        projection_context = std::move(limited_context);
+    }
     auto flush = [&]
     {
         if (batch.empty())
             return;
-        auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, context);
+        auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, projection_context);
         batch.clear();
         batch_rows = 0;
         if (per_granule)
@@ -371,7 +381,7 @@ bool buildProjectionPart(
         /// past a limit the estimate is unsupported instead of failing the query, reaching it is fine as for the query
         if ((read_limits.max_rows && total_rows_read > read_limits.max_rows)
             || (read_limits.max_bytes && total_bytes_read > read_limits.max_bytes))
-            return false;
+            return "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
 
         /// key expression and sort need full columns
         for (auto & column : block)
@@ -385,16 +395,23 @@ bool buildProjectionPart(
     }
     flush();
     if (!groups.empty())
-        add(mergeGroups(groups));
+    {
+        auto merged = mergeGroups(groups);
+        /// the groups of all batches hold the groups of each batch, so a batch that stopped at the limit is over it here
+        if (max_groups && merged.rows() > max_groups)
+            return fmt::format(
+                "The projection part of part {} has more than max_rows_to_group_by = {} groups", part->name, max_groups);
+        add(std::move(merged));
+    }
 
     if (key_columns.empty() || key_columns[0]->empty())
-        return true;
+        return {};
 
     out.rows = key_columns[0]->size();
     for (size_t i = 0; i < key_columns.size(); ++i)
         out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
 
-    return true;
+    return {};
 }
 
 /// the whole part seen through its sample, in projection order: part row `r` falls on sample row `r * sample rows / part rows`
@@ -724,12 +741,12 @@ bool buildScenarios(
 
         const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
-        if (!buildProjectionPart(
+        if (auto reason = buildProjectionPart(
                 part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, merged_by_blocks,
-                total_rows_read, total_bytes_read, context))
+                total_rows_read, total_bytes_read, context);
+            !reason.empty())
         {
-            result.empirical_unsupported_reason
-                = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
+            result.empirical_unsupported_reason = std::move(reason);
             return false;
         }
         /// a `break` time limit or a cancelled query stops the read silently
