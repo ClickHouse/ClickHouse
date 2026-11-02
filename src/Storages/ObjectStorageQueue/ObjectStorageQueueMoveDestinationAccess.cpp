@@ -40,6 +40,17 @@ std::optional<MoveDestinationKind> getMoveDestinationKind(std::string_view name)
     return std::nullopt;
 }
 
+AccessTypeObjects::Source getAccessSource(MoveDestinationKind kind)
+{
+    switch (kind)
+    {
+        case MoveDestinationKind::S3:
+            return AccessTypeObjects::Source::S3;
+        case MoveDestinationKind::Azure:
+            return AccessTypeObjects::Source::AZURE;
+    }
+}
+
 /// A value that is not a `String` is never empty here: it is checked like a destination that cannot be parsed.
 bool isEmptyValue(const Field & value)
 {
@@ -59,7 +70,7 @@ AccessRightsElements getMoveDestinationAccess(const SettingsChanges & changes, M
     /// For S3, the move writes keys built from `after_processing_move_prefix` and the source keys, and uses only
     /// the bucket of the URI, not its key. For Azure, the `azureBlobStorage` function matches source filters against
     /// the blob path (`StorageAzureConfiguration::getRawURI` returns `blob_path.path`).
-    const auto source = table_kind == MoveDestinationKind::S3 ? AccessTypeObjects::Source::S3 : AccessTypeObjects::Source::AZURE;
+    const auto source = getAccessSource(table_kind);
     AccessRightsElements res;
     res.emplace_back(AccessType::WRITE, AccessTypeObjects::toStringSource(source));
     return res;
