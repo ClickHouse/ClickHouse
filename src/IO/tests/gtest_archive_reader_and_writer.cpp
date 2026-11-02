@@ -144,6 +144,26 @@ TEST(ArchiveUtils, SplitsRelativeWebTaskPathWithQueryOrFragment)
     EXPECT_EQ(key_member, "value.tsv");
 }
 
+/// A host template can carry several bracketed IPv6 literals, and none of their `::` is the separator.
+TEST(ArchiveUtils, KeepsIPv6LiteralsOfAHostTemplateOutOfTheSeparator)
+{
+    const auto [template_archive, template_member]
+        = getURLAndArchivePattern("http://{[::1]:8123|[::2]:8123}/a.zip::value.tsv");
+    EXPECT_EQ(template_archive, "http://{[::1]:8123|[::2]:8123}/a.zip");
+    EXPECT_EQ(template_member, "value.tsv");
+
+    /// The same holds when only one alternative of the template is a literal.
+    const auto [mixed_archive, mixed_member] = getURLAndArchivePattern("http://{[::1]|host}/a.zip::value.tsv");
+    EXPECT_EQ(mixed_archive, "http://{[::1]|host}/a.zip");
+    EXPECT_EQ(mixed_member, "value.tsv");
+
+    /// A single bracketed host keeps working, with and without a userinfo.
+    const auto [bracketed_archive, bracketed_member]
+        = getURLAndArchivePattern("http://user:pass@[::1]:8123/a.zip::value.tsv");
+    EXPECT_EQ(bracketed_archive, "http://user:pass@[::1]:8123/a.zip");
+    EXPECT_EQ(bracketed_member, "value.tsv");
+}
+
 TEST_P(ArchiveReaderAndWriterTest, EmptyArchive)
 {
     /// Make an archive.

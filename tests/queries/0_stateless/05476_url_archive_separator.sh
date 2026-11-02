@@ -79,6 +79,9 @@ echo "--- a bracketed host keeps its '::'"
 check_archive_path 'http://[::1]:1/a.zip::value.tsv' 'a.zip'
 check_archive_path 'http://user:pass@[::1]:1/a.zip::value.tsv' 'a.zip'
 check_archive_path 'http://[::1]:1/a.zip :: value.tsv' 'a.zip'
+echo "--- and so does every bracketed host of a host template"
+check_archive_path 'http://{[::1]:1|[::2]:1}/a.zip::value.tsv' 'a.zip'
+check_archive_path 'http://{[::1]:1|127.0.0.1:1}/a.zip::value.tsv' 'a.zip'
 echo "--- a '::' in the userinfo is not the separator"
 check_archive_path 'http://user:p::q@127.0.0.1:1/a.zip::value.tsv' 'a.zip'
 echo "--- and without a bracketed host the first '::' is still the separator"

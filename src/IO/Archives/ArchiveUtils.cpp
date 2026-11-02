@@ -31,8 +31,10 @@ bool hasSupportedExtension(std::string_view path, const auto & supported_extensi
 
 /// The `::` that separates an archive from a path inside it, ignoring the `::` of an IPv6 literal in the
 /// authority: `http://[::1]:8123/a.zip::member.csv` and `http://user:pass@[::1]/a.zip::member.csv` keep
-/// their bracketed host intact, so the separator is the `::` after it. A source without a scheme has no
-/// authority and is searched from the beginning, which keeps plain paths unchanged.
+/// their bracketed host intact, so the separator is the `::` after it. A host template can carry several
+/// bracketed hosts, as in `http://{[::1]:8123|[::2]:8123}/a.zip::member.csv`, so every bracketed segment is
+/// skipped rather than only a leading one. A source without a scheme has no authority and is searched from
+/// the beginning, which keeps plain paths unchanged.
 size_t findArchiveSeparator(const std::string & source)
 {
     size_t search_from = 0;
@@ -48,10 +50,16 @@ size_t findArchiveSeparator(const std::string & source)
         const size_t userinfo_end = authority.rfind('@');
         const size_t host_begin = userinfo_end == std::string_view::npos ? 0 : userinfo_end + 1;
         search_from = authority_begin + host_begin;
-        if (host_begin < authority.size() && authority[host_begin] == '[')
+        /// Skip every bracketed host, not only one that starts the authority: a host template such as
+        /// `{[::1]:8123|[::2]:8123}` starts with `{`, and its literals keep their `::` all the same.
+        size_t opening_bracket = authority.find('[', host_begin);
+        while (opening_bracket != std::string_view::npos)
         {
-            if (const size_t closing_bracket = authority.find(']', host_begin); closing_bracket != std::string_view::npos)
-                search_from = authority_begin + closing_bracket + 1;
+            const size_t closing_bracket = authority.find(']', opening_bracket + 1);
+            if (closing_bracket == std::string_view::npos)
+                break;
+            search_from = authority_begin + closing_bracket + 1;
+            opening_bracket = authority.find('[', closing_bracket + 1);
         }
     }
 
