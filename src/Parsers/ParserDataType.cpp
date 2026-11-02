@@ -196,33 +196,66 @@ private:
         }
 
         ParserCompoundIdentifier compound_identifier_parser;
+        ParserDataType type_parser;
         ASTPtr identifier;
-        if (!compound_identifier_parser.parse(pos, identifier, expected))
-            return false;
+        ASTPtr type;
 
-        /// some_parameter=N
-        if (pos->type == TokenType::Equals)
+        /// `path Type` with the first word as the path wins when it ends the argument, since a path may be named
+        /// `shared` (older servers wrote it unquoted) or `SHARED`, as in `shared DOUBLE PRECISION`; otherwise SHARED
+        /// is the keyword of `SHARED some.path Type`.
+        bool shared = false;
+        Pos begin = pos;
+        bool has_identifier = compound_identifier_parser.parse(pos, identifier, expected);
+        Pos after_identifier = pos;
+        bool has_type = has_identifier && type_parser.parse(pos, type, expected);
+        Pos after_type = pos;
+        bool plain_path = has_type && (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket);
+        if (!plain_path)
         {
-            ++pos;
-            ASTPtr number;
-            ParserNumber number_parser;
-            if (!number_parser.parse(pos, number, expected))
-                return false;
-
-            argument->parameter = makeASTOperator("equals", identifier, number);
-            argument->children.push_back(argument->parameter);
-            node = argument;
-            return true;
+            pos = begin;
+            ASTPtr shared_identifier;
+            ASTPtr shared_type;
+            if (ParserKeyword(Keyword::SHARED).ignore(pos) && compound_identifier_parser.parse(pos, shared_identifier, expected)
+                && type_parser.parse(pos, shared_type, expected))
+            {
+                shared = true;
+                identifier = std::move(shared_identifier);
+                type = std::move(shared_type);
+            }
         }
 
-        ParserDataType type_parser;
-        ASTPtr type;
-        if (!type_parser.parse(pos, type, expected))
-            return false;
+        if (!shared && !plain_path)
+        {
+            /// The first reading stands: parsing the type again from the same position would double the work of
+            /// every nesting level of a malformed type.
+            if (!has_identifier)
+                return false;
+            pos = after_identifier;
+
+            /// some_parameter=N
+            if (pos->type == TokenType::Equals)
+            {
+                ++pos;
+                ASTPtr number;
+                ParserNumber number_parser;
+                if (!number_parser.parse(pos, number, expected))
+                    return false;
+
+                argument->parameter = makeASTOperator("equals", identifier, number);
+                argument->children.push_back(argument->parameter);
+                node = argument;
+                return true;
+            }
+
+            if (!has_type)
+                return false;
+            pos = after_type;
+        }
 
         auto name_and_type = make_intrusive<ASTObjectTypedPathArgument>();
         name_and_type->path = getIdentifierName(identifier);
         name_and_type->type = type;
+        name_and_type->shared = shared;
         name_and_type->children.push_back(name_and_type->type);
         argument->path_with_type = name_and_type;
         argument->children.push_back(argument->path_with_type);

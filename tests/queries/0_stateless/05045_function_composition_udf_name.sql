@@ -5,8 +5,6 @@
 -- The function composition operator `f | g` is represented by an internal function name,
 -- so the name `compose` is not taken and remains available for user defined functions.
 
-SET enable_analyzer = 1;
-
 DROP FUNCTION IF EXISTS compose;
 CREATE FUNCTION compose AS (x, y) -> x + y;
 

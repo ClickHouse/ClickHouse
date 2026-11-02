@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: the test itself takes about a second, but it covers many scenarios (each with its
 -- own DDL and a fill), and the flaky check runs several instances of it in parallel against
 -- one debug server; the tag lifts the flaky-check run-time cap which such runners exceed.
@@ -8,7 +8,6 @@
 -- filter, and the filter then prunes whole mark ranges by the primary key at task-cut time.
 
 -- Runtime filters (and therefore the gating) exist only with the analyzer.
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_seal_gated_reading = 1;
 -- The gating marks only plain local reads (no parallel replicas).

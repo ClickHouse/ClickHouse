@@ -35,37 +35,37 @@ CREATE ROW POLICY target_policy ON test_table FOR SELECT USING tenant_id = 1 TO 
 
 -- A policy on the target table is also applied when reading through `Alias`.
 SELECT 'Target policy';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 1;
+SELECT arraySort(groupArray(id)) FROM test_alias;
 
 -- A target policy is also applied when `Merge` reads through `Alias`.
 SELECT 'Target policy through Merge';
-SELECT arraySort(groupArray(id)) FROM test_merge SETTINGS enable_analyzer = 1;
+SELECT arraySort(groupArray(id)) FROM test_merge;
 
 CREATE ROW POLICY alias_policy ON test_alias FOR SELECT USING active = 1 TO CURRENT_USER;
 
 -- Policies on the `Alias` and its target are combined with a logical AND.
 SELECT 'Combined policies';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 1;
+SELECT arraySort(groupArray(id)) FROM test_alias;
 
 -- A non-trivial combined policy disables the trivial count optimization.
 SELECT 'Combined policies and trivial count disabled';
-SELECT count() FROM test_alias SETTINGS enable_analyzer = 1, optimize_trivial_count_query = 0;
+SELECT count() FROM test_alias SETTINGS optimize_trivial_count_query = 0;
 
 SELECT 'Combined policies and trivial count enabled';
-SELECT count() FROM test_alias SETTINGS enable_analyzer = 1, optimize_trivial_count_query = 1;
+SELECT count() FROM test_alias SETTINGS optimize_trivial_count_query = 1;
 
 DROP ROW POLICY target_policy ON test_table;
 
 SELECT 'Alias policy';
-SELECT arraySort(groupArray(id)) FROM test_alias SETTINGS enable_analyzer = 1;
+SELECT arraySort(groupArray(id)) FROM test_alias;
 
 -- The text-index count optimization must not discard a policy defined only on the `Alias`.
 SELECT 'Alias policy and text-index count optimization disabled';
 SELECT count() FROM test_alias WHERE hasToken(text, 'alpha')
-    SETTINGS enable_analyzer = 1, query_plan_optimize_count_from_text_index = 0;
+    SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SELECT 'Alias policy and text-index count optimization enabled';
-SELECT count() FROM test_alias WHERE hasToken(text, 'alpha') SETTINGS enable_analyzer = 1;
+SELECT count() FROM test_alias WHERE hasToken(text, 'alpha');
 
 DROP ROW POLICY alias_policy ON test_alias;
 DROP TABLE test_merge;

@@ -95,7 +95,7 @@ int executeCommand(char * const argv[])
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
@@ -329,12 +329,6 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 namespace DB
 {
 
-static bool replxx_last_is_delimiter = false;
-void ReplxxLineReader::setLastIsDelimiter(bool flag)
-{
-    replxx_last_is_delimiter = flag;
-}
-
 ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     : LineReader
     (
@@ -388,8 +382,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         }
     }
 
-    /// The handler of `SIGWINCH` is process-wide. In the embedded mode the process is the server,
-    /// and the pseudoterminal is not its controlling terminal, so the signal is never delivered.
+    /// Signals are process-wide: an embedded client must not take over `SIGWINCH` of the server.
+    /// Its terminal size is updated by the server, and replxx queries it on every refresh.
     if (!options.embedded_mode)
         rx.install_window_change_handler();
 
@@ -444,7 +438,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_indent_multiline(false);
 
     if (highlighter)
-        rx.set_highlighter_callback(highlighter);
+    {
+        rx.set_highlighter_callback([this](const String & query, std::vector<Replxx::Color> & colors, int cursor_position)
+        {
+            highlighter(query, colors, cursor_position, last_is_delimiter);
+        });
+    }
 
     /// As-you-type autocompletion: show the matching suggestions as inline "ghost" hints, with
     /// the same priority ordering as Tab completion. replxx renders a single hint inline after
@@ -617,9 +616,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// a newline into the edit buffer and does not use the lexer, so the paste stays under a
         /// single prompt even with `--highlight 0`. The explicit `--multiline` continuation still
         /// requires the highlighter, preserving the previous behavior.
-        if (!replxx_last_is_delimiter && ((highlighter && multiline) || hasInputData()))
+        if (!last_is_delimiter && ((highlighter && multiline) || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
-        replxx_last_is_delimiter = false;
+        last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
     /// bind C-j to ENTER action.
