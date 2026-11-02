@@ -21,10 +21,11 @@ class ReadFromMergeTree;
 const ActionsDAG * expressionOfInputStep(const IQueryPlanStep & step);
 
 /// The input of a multi-pass top-K aggregation of `aggregating`, which takes the `top` best groups by its aggregate at
-/// `rank_index`, over `read` and `input_steps`, the expressions and filters between them, from the bottom up. The caller
-/// checks that reading the input again gives the same rows, and gives the read the analysis of its ranges. Null when the
-/// query takes more groups than the candidates may hold, when the read selects too few granules for the aggregation to
-/// pay off, or when a copy of the read would output other columns.
+/// `rank_index`, over `read` and `input_steps`, the expressions and filters between them, from the bottom up. The
+/// caller checks that reading the input again gives the same rows, and gives the read the analysis of its ranges. Null
+/// when the query takes more groups than the candidates may hold, when the read selects too few granules for the
+/// aggregation to pay off, when the pilot cannot identify the granules of the read, or when a copy of the read would
+/// output other columns.
 MultiPassTopKInputPtr makeMultiPassTopKInput(
     const AggregatingStep & aggregating,
     const ReadFromMergeTree & read,
@@ -46,10 +47,10 @@ std::optional<String> boundingKeyOf(const MultiPassTopKInput & input);
 /// none.
 ///
 /// The pilot aggregates a sample of every k-th granule exactly, by the keys, into the rank, the rows and the number of
-/// the sampled chunks of every key. The keys whose sampled ranks may place them among the best n are the candidates,
-/// with which the candidate mode runs. When the best keys of the sample appear in few of its chunks, the values of the
-/// keys come in runs rather than spread over the table (as for a column of the sorting key), so the sample may miss the
-/// heaviest ones. Then, or when the sample shows no clear top, the bounding mode runs where it applies, and the
+/// the sampled granules of every key. The keys whose sampled ranks may place them among the best n are the candidates,
+/// with which the candidate mode runs. When the best keys of the sample appear in few of its granules, the values of
+/// the keys come in runs rather than spread over the table (as for a column of the sorting key), so the sample may miss
+/// the heaviest ones. Then, or when the sample shows no clear top, the bounding mode runs where it applies, and the
 /// original aggregation otherwise.
 ///
 /// The candidate mode:

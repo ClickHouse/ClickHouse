@@ -2,6 +2,7 @@
 
 #include <Interpreters/AdaptiveAggregation/MultiPassTopK/BoundingKey.h>
 #include <Interpreters/AdaptiveAggregation/MultiPassTopK/MultiPassTopKImpl.h>
+#include <Interpreters/AdaptiveAggregation/MultiPassTopK/Pilot.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/typeid_cast.h>
@@ -44,6 +45,8 @@ MultiPassTopKInputPtr makeMultiPassTopKInput(
 {
     /// The candidate pass proves the n-th best of its candidates, so they must hold the top.
     if (top > max_candidates || read.getAnalyzedResult()->selected_marks < min_selected_granules)
+        return nullptr;
+    if (!pilotCanIdentifyGranules(read))
         return nullptr;
 
     auto input = std::make_shared<MultiPassTopKInput>();

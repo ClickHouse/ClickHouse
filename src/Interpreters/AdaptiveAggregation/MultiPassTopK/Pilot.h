@@ -10,4 +10,9 @@ namespace DB::MultiPassTopKImpl
 /// bounding mode where the sample bounds the top, or else declines.
 TopKModePtr makePilot(MultiPassTopKTemplatePtr templ, TopKRunMemoPtr memo);
 
+/// Whether the pilot can identify the granules of the rows of `read`. Its copy of `read` reads virtual columns for
+/// that, which pass through the expressions of the input: `read` must not read them already, and no column of its table
+/// may hide them.
+bool pilotCanIdentifyGranules(const ReadFromMergeTree & read);
+
 }

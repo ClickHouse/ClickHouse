@@ -4,8 +4,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/assert_cast.h>
 
@@ -109,16 +107,14 @@ QueryPlan makeInputPlan(const MultiPassTopKTemplate & templ, std::unique_ptr<Rea
 {
     QueryPlan plan;
     plan.addStep(std::move(read));
-    /// A `PREWHERE` that a pass extends outputs the columns of the read in another order.
-    const auto & header = plan.getCurrentHeader();
-    const auto & expected = templ.input->read->getOutputHeader();
-    if (!blocksHaveEqualStructure(*header, *expected))
-        plan.addStep(std::make_unique<ExpressionStep>(
-            header,
-            ActionsDAG::makeConvertingActions(
-                header->getColumnsWithTypeAndName(), expected->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name, templ.input->context)));
+    /// A `PREWHERE` that a pass extends outputs the columns of the read in another order, and the pilot reads columns
+    /// for itself. The expressions and the filters of the input find their columns by name and pass the others through.
     for (const auto & step : templ.input->input_steps)
-        plan.addStep(step->clone());
+    {
+        auto clone = step->clone();
+        clone->updateInputHeader(plan.getCurrentHeader());
+        plan.addStep(std::move(clone));
+    }
     return plan;
 }
 

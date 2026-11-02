@@ -44,8 +44,9 @@ bool hasFixedSizeStates(const Aggregator::Params & params);
 /// it applies while reading and the conditions it records in the query condition cache.
 std::unique_ptr<ReadFromMergeTree> cloneRead(const MultiPassTopKTemplate & templ, const ContextPtr & context);
 
-/// The input of a pass over `read`, a copy of the read of the template: the read, with the columns of the original read
-/// in their order, and the expressions and filters of the input over it.
+/// The input of a pass over `read`, a copy of the read of the template: the read, and the expressions and filters of
+/// the input over it. The copy may output other columns than the original read, or in another order, which the steps
+/// over it find by name.
 QueryPlan makeInputPlan(const MultiPassTopKTemplate & templ, std::unique_ptr<ReadFromMergeTree> read);
 
 /// Replaces the ranges of every part of `analysis` by `select(part)`, which may take the ranges of the part, drops the
