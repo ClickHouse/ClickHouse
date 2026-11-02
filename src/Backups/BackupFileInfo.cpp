@@ -74,11 +74,10 @@ namespace
     }
 
     /// We store entries' file names in the backup without leading slashes.
-    String removeLeadingSlash(const String & path)
+    void removeLeadingSlash(String & path)
     {
         if (path.starts_with('/'))
-            return path.substr(1);
-        return path;
+            path.erase(0, 1);
     }
 }
 
@@ -104,21 +103,27 @@ String BackupFileInfo::describe() const
 
 
 BackupFileInfo buildFileInfoForBackupEntry(
-    const String & file_name,
+    String file_name,
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
     LoggerPtr log)
 {
-    auto adjusted_path = removeLeadingSlash(file_name);
-
+    /// The name is taken by value so that the caller can hand over its own copy: a backup of millions of
+    /// files holds gigabytes of path characters, and one copy of them is enough.
     BackupFileInfo info;
-    info.file_name = adjusted_path;
+    info.file_name = std::move(file_name);
+    removeLeadingSlash(info.file_name);
+
+    /// The adjusted path is needed throughout this function - reference the copy stored in `info` instead
+    /// of keeping a second one alive for the whole call.
+    const String & adjusted_path = info.file_name;
 
     /// If it's a "reference" just set the target to a concrete file
     if (backup_entry->isReference())
     {
-        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
+        info.reference_target = backup_entry->getReferenceTarget();
+        removeLeadingSlash(info.reference_target);
         return info;
     }
 
@@ -218,7 +223,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
+BackupFileInfos buildFileInfosForBackupEntries(BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     LoggerPtr log = getLogger("FileInfosFromBackupEntries");
     LOG_TRACE(log, "Building file infos for backup entries");
@@ -245,13 +250,14 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
             auto component_guard = Coordination::setCurrentComponent(current_component);
             try
             {
-                const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
                 if (process_list_element)
                     process_list_element->checkTimeLimit();
 
-                infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+                /// The name is moved out: from here on it lives in `infos[i]`, which is indexed the same way,
+                /// and nothing reads it from `backup_entries` again.
+                infos[i] = buildFileInfoForBackupEntry(std::move(backup_entries[i].first), entry, base_backup, read_settings, log);
             }
             catch (...)
             {
