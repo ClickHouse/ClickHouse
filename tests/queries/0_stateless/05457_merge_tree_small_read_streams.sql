@@ -38,15 +38,15 @@ SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k, x FROM t_small_read AR
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k FROM (SELECT k FROM t_small_read WHERE k % 5 IN (SELECT number FROM numbers(3))) ORDER BY k % 7) WHERE explain ILIKE '%MergeTreeSelect%';
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT a.k FROM t_small_read AS a INNER JOIN (SELECT number AS k FROM numbers(10)) AS b ON a.k % 1000 = b.k ORDER BY a.k % 7
     SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
-    parallel_hash_join_threshold = 18446744073709551615) WHERE explain ILIKE '%MergeTreeSelect%';
+    hash_join_layout = 'serial') WHERE explain ILIKE '%MergeTreeSelect%';
 -- Swapped, the read is the build side.
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT a.k FROM t_small_read AS a INNER JOIN (SELECT number AS k FROM numbers(10)) AS b ON a.k % 1000 = b.k ORDER BY a.k % 7
     SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, query_plan_join_swap_table = 'true', query_plan_optimize_join_order_randomize = 0,
-    query_plan_optimize_join_order_limit = 10, parallel_hash_join_threshold = 18446744073709551615) WHERE explain ILIKE '%MergeTreeSelect%';
+    query_plan_optimize_join_order_limit = 10, hash_join_layout = 'serial') WHERE explain ILIKE '%MergeTreeSelect%';
 -- A parallel join resizes its probe side.
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT a.k FROM t_small_read AS a INNER JOIN (SELECT number AS k FROM numbers(10)) AS b ON a.k % 1000 = b.k ORDER BY a.k % 7
     SETTINGS join_algorithm = 'parallel_hash', enable_join_runtime_filters = 0, query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
-    parallel_hash_join_threshold = 0) WHERE explain ILIKE '%MergeTreeSelect%';
+    hash_join_layout = 'parallel') WHERE explain ILIKE '%MergeTreeSelect%';
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k, v FROM t_small_read ANY LEFT JOIN t_small_read_join USING (k) ORDER BY k % 7) WHERE explain ILIKE '%MergeTreeSelect%';
 
 DROP TABLE t_small_read;

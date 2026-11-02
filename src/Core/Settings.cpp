@@ -10321,6 +10321,7 @@ For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how 
 If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
 At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
 The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
+With `hash_join_layout` set to `serial` or `parallel`, this threshold is not used: the join builds one part or splits the hash table, whatever the estimate.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 The query plan estimates 0 rows for a right table known to be empty, such as a `MergeTree` table without data parts.
 `ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
@@ -10328,6 +10329,25 @@ The query plan estimates 0 rows for a right table known to be empty, such as a `
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \
         {"25.3", 0, 0, "New setting"}) \
+    DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, R"(
+How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
+The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+
+Possible values:
+
+- `auto` — `parallel_hash_join_threshold` decides, from the estimated number of rows in the right table. See that setting for a join without an estimate.
+- `serial` — the hash table is one part, filled by one thread, whatever the estimate.
+- `parallel` — the hash table is split into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`), whatever the estimate.
+
+Some joins always build one part, whatever the value:
+
+- joins of other kinds, such as `CROSS`;
+- a join with a `Join` table or a key-value storage on the right;
+- each bucket of a grace hash join;
+- the hash join that `join_algorithm = 'auto'` starts with, before it can switch to a merge join;
+- each per-shard join of `query_plan_join_shard_by_pk_ranges`.
+)", 0, \
+        {"26.11", "auto", "auto", "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 

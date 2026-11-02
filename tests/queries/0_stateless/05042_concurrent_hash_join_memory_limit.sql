@@ -7,8 +7,8 @@
 SET max_threads = 8;
 SET join_algorithm = 'hash';
 
--- `parallel_hash_join_threshold = 0` keeps the parallel layout even when an earlier run left a small row estimate.
-SET parallel_hash_join_threshold = 0;
+-- Keep the parallel layout even when an earlier run left a small row estimate.
+SET hash_join_layout = 'parallel';
 
 SET max_memory_usage = '8Mi';
 EXPLAIN

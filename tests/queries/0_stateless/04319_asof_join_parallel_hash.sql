@@ -1,5 +1,5 @@
 -- An ASOF JOIN must return the same rows with the serial and the parallel layout. Each join runs once with
--- `parallel_hash_join_threshold = 18446744073709551615` (serial) and once with `0` (parallel), and stores its rows.
+-- `hash_join_layout = 'serial'` and once with `hash_join_layout = 'parallel'`, and stores its rows.
 -- The two results are compared row by row with EXCEPT in both directions. Comparing count() and sum()
 -- would not work: the two builds return rows in different orders, and that changes sum() over floats.
 
@@ -35,14 +35,14 @@ SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left AS l
 ASOF INNER JOIN asof_right AS r
     ON l.k = r.k AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_inner_serial';
+SETTINGS hash_join_layout = 'serial', log_comment = '04319_inner_serial';
 
 CREATE TABLE inner_parallel ENGINE = Memory AS
 SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left AS l
 ASOF INNER JOIN asof_right AS r
     ON l.k = r.k AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_inner_parallel';
+SETTINGS hash_join_layout = 'parallel', log_comment = '04319_inner_parallel';
 
 SELECT count() FROM (SELECT * FROM inner_serial EXCEPT SELECT * FROM inner_parallel);
 SELECT count() FROM (SELECT * FROM inner_parallel EXCEPT SELECT * FROM inner_serial);
@@ -53,14 +53,14 @@ SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left AS l
 ASOF LEFT JOIN asof_right AS r
     ON l.k = r.k AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_left_serial';
+SETTINGS hash_join_layout = 'serial', log_comment = '04319_left_serial';
 
 CREATE TABLE left_parallel ENGINE = Memory AS
 SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left AS l
 ASOF LEFT JOIN asof_right AS r
     ON l.k = r.k AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_left_parallel';
+SETTINGS hash_join_layout = 'parallel', log_comment = '04319_left_parallel';
 
 SELECT count() FROM (SELECT * FROM left_serial EXCEPT SELECT * FROM left_parallel);
 SELECT count() FROM (SELECT * FROM left_parallel EXCEPT SELECT * FROM left_serial);
@@ -92,14 +92,14 @@ SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left2 AS l
 ASOF INNER JOIN asof_right2 AS r
     ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_two_keys_inner_serial';
+SETTINGS hash_join_layout = 'serial', log_comment = '04319_two_keys_inner_serial';
 
 CREATE TABLE two_keys_inner_parallel ENGINE = Memory AS
 SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left2 AS l
 ASOF INNER JOIN asof_right2 AS r
     ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_two_keys_inner_parallel';
+SETTINGS hash_join_layout = 'parallel', log_comment = '04319_two_keys_inner_parallel';
 
 SELECT count() FROM (SELECT * FROM two_keys_inner_serial EXCEPT SELECT * FROM two_keys_inner_parallel);
 SELECT count() FROM (SELECT * FROM two_keys_inner_parallel EXCEPT SELECT * FROM two_keys_inner_serial);
@@ -109,14 +109,14 @@ SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left2 AS l
 ASOF LEFT JOIN asof_right2 AS r
     ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_two_keys_left_serial';
+SETTINGS hash_join_layout = 'serial', log_comment = '04319_two_keys_left_serial';
 
 CREATE TABLE two_keys_left_parallel ENGINE = Memory AS
 SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left2 AS l
 ASOF LEFT JOIN asof_right2 AS r
     ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '04319_two_keys_left_parallel';
+SETTINGS hash_join_layout = 'parallel', log_comment = '04319_two_keys_left_parallel';
 
 SELECT count() FROM (SELECT * FROM two_keys_left_serial EXCEPT SELECT * FROM two_keys_left_parallel);
 SELECT count() FROM (SELECT * FROM two_keys_left_parallel EXCEPT SELECT * FROM two_keys_left_serial);

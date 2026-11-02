@@ -111,7 +111,7 @@ SETTINGS log_comment = 'query_03915_10';
 SET max_bytes_before_external_join = 1000000000;
 SET join_algorithm = 'parallel_hash';
 SET max_threads = 4;
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 
 -- Test 11: Small INNER JOIN that fits in memory (concurrent, no spill).
 SELECT 'concurrent inner join small';

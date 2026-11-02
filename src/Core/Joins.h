@@ -163,6 +163,14 @@ enum class JoinOrderConflictDetector : uint8_t
 
 const char * toString(JoinOrderConflictDetector join_order_conflict_detector);
 
+/// How a hash join builds its hash table, see the `hash_join_layout` setting.
+enum class HashJoinLayout : uint8_t
+{
+    AUTO = 0,
+    SERIAL,
+    PARALLEL,
+};
+
 enum class JoinAnalyzeMode : uint8_t
 {
     None = 0,

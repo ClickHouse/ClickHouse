@@ -3,8 +3,7 @@
 -- `two_level_key16`). Both layouts must return the same rows for INNER, RIGHT and FULL joins, so each
 -- serial result is printed and the parallel result is compared with it. With the serial layout, the
 -- fixed-size map serves as a runtime filter only when `join_runtime_filter_from_fixed_hash_table` is on.
--- `parallel_hash_join_threshold = 0` builds the parallel layout. The tables are small enough for the
--- default threshold to build the serial one.
+-- With the default `hash_join_layout = 'auto'`, the tables are small enough to build the serial layout.
 
 DROP TABLE IF EXISTS t_u8_l;
 DROP TABLE IF EXISTS t_u8_r;
@@ -63,73 +62,73 @@ SET join_use_nulls = 1;
 
 SELECT '-- key8 uint8 inner';
 SELECT l.k, l.v, r.v FROM t_u8_l AS l INNER JOIN t_u8_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v
-SETTINGS parallel_hash_join_threshold = 1000000000, log_comment = '04891_key8_serial';
+SETTINGS hash_join_layout = 'serial', log_comment = '04891_key8_serial';
 SELECT
-    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_u8_l AS l INNER JOIN t_u8_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_u8_l AS l INNER JOIN t_u8_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_u8_l AS l INNER JOIN t_u8_r AS r ON l.k = r.k)
 SETTINGS log_comment = '04891_key8_compare';
 
 SELECT '-- key8 uint8 right';
 SELECT r.k, l.v, r.v FROM t_u8_l AS l RIGHT JOIN t_u8_r AS r ON l.k = r.k ORDER BY r.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_u8_l AS l RIGHT JOIN t_u8_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_u8_l AS l RIGHT JOIN t_u8_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_u8_l AS l RIGHT JOIN t_u8_r AS r ON l.k = r.k);
 
 SELECT '-- key8 uint8 full';
 SELECT l.k, r.k, l.v, r.v FROM t_u8_l AS l FULL JOIN t_u8_r AS r ON l.k = r.k ORDER BY l.k, r.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_u8_l AS l FULL JOIN t_u8_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_u8_l AS l FULL JOIN t_u8_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_u8_l AS l FULL JOIN t_u8_r AS r ON l.k = r.k);
 
 SELECT '-- key8 int8 inner';
 SELECT l.k, l.v, r.v FROM t_i8_l AS l INNER JOIN t_i8_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_i8_l AS l INNER JOIN t_i8_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_i8_l AS l INNER JOIN t_i8_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_i8_l AS l INNER JOIN t_i8_r AS r ON l.k = r.k);
 
 SELECT '-- key8 int8 right';
 SELECT r.k, l.v, r.v FROM t_i8_l AS l RIGHT JOIN t_i8_r AS r ON l.k = r.k ORDER BY r.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_i8_l AS l RIGHT JOIN t_i8_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_i8_l AS l RIGHT JOIN t_i8_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_i8_l AS l RIGHT JOIN t_i8_r AS r ON l.k = r.k);
 
 SELECT '-- key8 int8 full';
 SELECT l.k, r.k, l.v, r.v FROM t_i8_l AS l FULL JOIN t_i8_r AS r ON l.k = r.k ORDER BY l.k, r.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_i8_l AS l FULL JOIN t_i8_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_i8_l AS l FULL JOIN t_i8_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_i8_l AS l FULL JOIN t_i8_r AS r ON l.k = r.k);
 
 SELECT '-- key16 uint16 inner';
 SELECT l.k, l.v, r.v FROM t_u16_l AS l INNER JOIN t_u16_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v
-SETTINGS parallel_hash_join_threshold = 1000000000, log_comment = '04891_key16_serial';
+SETTINGS hash_join_layout = 'serial', log_comment = '04891_key16_serial';
 SELECT
-    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_u16_l AS l INNER JOIN t_u16_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_u16_l AS l INNER JOIN t_u16_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_u16_l AS l INNER JOIN t_u16_r AS r ON l.k = r.k)
 SETTINGS log_comment = '04891_key16_compare';
 
 SELECT '-- key16 int16 inner';
 SELECT l.k, l.v, r.v FROM t_i16_l AS l INNER JOIN t_i16_r AS r ON l.k = r.k ORDER BY l.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_i16_l AS l INNER JOIN t_i16_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_i16_l AS l INNER JOIN t_i16_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((l.k, l.v, r.v))) FROM t_i16_l AS l INNER JOIN t_i16_r AS r ON l.k = r.k);
 
 SELECT '-- sparse key16 right';
 SELECT r.k, l.v, r.v FROM t_sparse_l AS l RIGHT JOIN t_sparse_r AS r ON l.k = r.k ORDER BY r.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_sparse_l AS l RIGHT JOIN t_sparse_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_sparse_l AS l RIGHT JOIN t_sparse_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((r.k, l.v, r.v))) FROM t_sparse_l AS l RIGHT JOIN t_sparse_r AS r ON l.k = r.k);
 
 SELECT '-- sparse key16 full';
 SELECT l.k, r.k, l.v, r.v FROM t_sparse_l AS l FULL JOIN t_sparse_r AS r ON l.k = r.k ORDER BY l.k, r.k, l.v, r.v;
 SELECT
-    (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_sparse_l AS l FULL JOIN t_sparse_r AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0)
+    (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_sparse_l AS l FULL JOIN t_sparse_r AS r ON l.k = r.k SETTINGS hash_join_layout = 'parallel')
     = (SELECT arraySort(groupArray((l.k, r.k, l.v, r.v))) FROM t_sparse_l AS l FULL JOIN t_sparse_r AS r ON l.k = r.k);
 
 SELECT '-- shared rf key8 serial';
 SELECT 'rf0', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fixed_hash_table = 0, log_comment = '04891_rf_serial_off';
+SETTINGS hash_join_layout = 'serial', join_runtime_filter_from_fixed_hash_table = 0, log_comment = '04891_rf_serial_off';
 SELECT 'rf1', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fixed_hash_table = 1, log_comment = '04891_rf_serial_on';
+SETTINGS hash_join_layout = 'serial', join_runtime_filter_from_fixed_hash_table = 1, log_comment = '04891_rf_serial_on';
 
 SYSTEM FLUSH LOGS query_log, text_log;
 

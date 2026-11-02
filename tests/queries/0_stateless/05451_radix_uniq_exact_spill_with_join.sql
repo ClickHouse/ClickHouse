@@ -7,7 +7,7 @@ SELECT uniqExact(a.number)
 FROM numbers_mt(4000000) AS a
 INNER JOIN (SELECT number AS k FROM numbers(400000)) AS b ON a.number % 400000 = b.k
 SETTINGS max_threads = 2, max_block_size = 4096, max_threads_min_free_memory_per_thread = 0, join_algorithm = 'hash',
-    parallel_hash_join_threshold = 18446744073709551615, query_plan_join_swap_table = false,
+    hash_join_layout = 'serial', query_plan_join_swap_table = false,
     count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0, optimize_uniq_exact_radix_partitioning = 1,
     max_untracked_memory = 0, max_bytes_ratio_before_external_group_by = 0, max_bytes_before_external_group_by = '24Mi',
     max_memory_usage = '40Mi';

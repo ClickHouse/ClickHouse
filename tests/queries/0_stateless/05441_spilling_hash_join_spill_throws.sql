@@ -13,7 +13,7 @@ SET max_bytes_before_external_join = '100Gi';
 SET max_bytes_ratio_before_external_join = 0;
 -- Many build threads, so that some of them wait while the switch runs.
 SET max_threads = 16;
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 SET query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0;
 

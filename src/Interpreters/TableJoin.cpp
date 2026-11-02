@@ -1319,11 +1319,24 @@ bool allowHashJoinCacheKeys(
     return true;
 }
 
-bool TableJoin::preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
+bool TableJoin::preferParallelHashLayout(
+    HashJoinLayout layout, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
 {
-    /// Without an estimate, only the largest threshold keeps the serial layout, so `0` and the largest value pin a layout.
-    return (isInnerOrLeft(kind()) || isRightOrFull(kind())) && !isSpecialStorage()
-        && (rhs_size_estimation ? *rhs_size_estimation >= parallel_hash_join_threshold
-                                : parallel_hash_join_threshold != std::numeric_limits<UInt64>::max());
+    if (!(isInnerOrLeft(kind()) || isRightOrFull(kind())) || isSpecialStorage())
+        return false;
+
+    switch (layout)
+    {
+        case HashJoinLayout::SERIAL:
+            return false;
+        case HashJoinLayout::PARALLEL:
+            return true;
+        case HashJoinLayout::AUTO:
+            /// Without an estimate only the largest threshold keeps the serial layout. So `0` always gives the parallel
+            /// layout and the largest value always gives the serial one.
+            return rhs_size_estimation ? *rhs_size_estimation >= parallel_hash_join_threshold
+                                       : parallel_hash_join_threshold != std::numeric_limits<UInt64>::max();
+    }
+    UNREACHABLE();
 }
 }

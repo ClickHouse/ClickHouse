@@ -76,6 +76,12 @@ IMPLEMENT_SETTING_ENUM(JoinOrderConflictDetector, ErrorCodes::BAD_ARGUMENTS,
      {"c", JoinOrderConflictDetector::CD_C}})
 
 
+IMPLEMENT_SETTING_ENUM(HashJoinLayout, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto",     HashJoinLayout::AUTO},
+     {"serial",   HashJoinLayout::SERIAL},
+     {"parallel", HashJoinLayout::PARALLEL}})
+
+
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
      {"after_having_exclusive", TotalsMode::AFTER_HAVING_EXCLUSIVE},

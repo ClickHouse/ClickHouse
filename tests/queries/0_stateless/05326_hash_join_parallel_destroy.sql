@@ -6,11 +6,9 @@
 
 SET join_algorithm = 'hash';
 SET max_threads = 4;
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 -- Otherwise the small side becomes the build side.
 SET query_plan_join_swap_table = 'false';
--- The serial case needs the real row estimate, which CI may skip with a limit of 0 or randomize.
-SET query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 -- The build keeps blocks of `max_block_size` rows instead of squashing them.
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
@@ -36,7 +34,7 @@ JOIN (SELECT number AS k, toString(number) AS a, toString(number + 1) AS b, toSt
     FROM numbers(10000)) AS r ON l.number = r.k
 SETTINGS log_comment = 'cancelled', max_block_size = 10, max_rows_in_join = 9500; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
--- The row count of the `Memory` table is below the threshold, so one build stream inserts its 1250 blocks of four columns.
+-- With the serial layout, one build stream inserts the 1250 blocks of four columns of the `Memory` table.
 -- With one build stream, debug and sanitizer builds walk all stored blocks after each insert, so few wide blocks keep the build fast.
 CREATE TABLE right_memory (k UInt64, a String, b String, c String, d String) ENGINE = Memory;
 INSERT INTO right_memory
@@ -45,7 +43,7 @@ SETTINGS max_block_size = 10, max_insert_block_size = 10, min_insert_block_size_
 SELECT count(), uniqExact(r.a, r.b, r.c, r.d)
 FROM numbers(10) AS l
 JOIN right_memory AS r ON l.number = r.k
-SETTINGS log_comment = 'serial', parallel_hash_join_threshold = 1000000000;
+SETTINGS log_comment = 'serial', hash_join_layout = 'serial';
 DROP TABLE right_memory;
 
 SYSTEM FLUSH LOGS query_log, query_thread_log;

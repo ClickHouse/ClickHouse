@@ -635,7 +635,7 @@ SELECT 'arm21 any left join over unbounded source', count(), sum(cityHash64(*)) 
         USING number LIMIT 10
 )
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0, parallel_hash_join_threshold = 18446744073709551615;
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0, hash_join_layout = 'serial';
 
 -- Arm 22: `RightAny` is a strictness of its own - the old `ANY`, selected by
 -- `any_join_distinct_right_table_keys` - and it picks a key's first row rather than claiming rows

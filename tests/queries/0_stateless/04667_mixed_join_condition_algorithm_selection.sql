@@ -36,7 +36,7 @@ SELECT 'prefer_partial_merge,hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (
 SETTINGS join_algorithm = 'prefer_partial_merge,hash';
 
 SELECT 'fsm,parallel_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'full_sorting_merge,parallel_hash', parallel_hash_join_threshold = 0;
+SETTINGS join_algorithm = 'full_sorting_merge,parallel_hash', hash_join_layout = 'parallel';
 
 SELECT 'fsm,grace_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,grace_hash';
@@ -95,7 +95,7 @@ SELECT 'hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND 
 SETTINGS join_algorithm = 'hash';
 
 SELECT 'parallel_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0;
+SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel';
 
 SELECT 'grace_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'grace_hash';

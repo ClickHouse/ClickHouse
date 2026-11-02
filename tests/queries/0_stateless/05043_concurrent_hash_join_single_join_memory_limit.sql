@@ -3,8 +3,8 @@
 
 SET max_threads = 256, join_algorithm = 'hash';
 
--- `parallel_hash_join_threshold = 0` keeps the parallel layout even when an earlier run left a small row estimate.
-SET parallel_hash_join_threshold = 0;
+-- Keep the parallel layout even when an earlier run left a small row estimate.
+SET hash_join_layout = 'parallel';
 
 -- The layout (about 1 MiB) is below the 4 MiB a thread may leave uncharged, yet it must count against
 -- `max_memory_usage`, so `max_untracked_memory` stays at its default.

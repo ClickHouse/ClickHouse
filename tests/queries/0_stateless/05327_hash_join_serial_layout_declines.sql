@@ -1,10 +1,11 @@
 -- A hash join builds its table with the parallel layout when the join kind is INNER, LEFT, RIGHT or
--- FULL and the right side is not estimated below `parallel_hash_join_threshold`. The number of threads
--- does not matter. Each case below builds the serial layout, next to a control that changes one
--- condition and builds the parallel layout. The one-thread case is the other way round.
+-- FULL. With `hash_join_layout = 'auto'`, the right side must also not be estimated below
+-- `parallel_hash_join_threshold`. The number of threads does not matter. Each case below builds the
+-- serial layout, next to a control that changes one condition and builds the parallel layout. The
+-- one-thread case is the other way round.
 -- `used_join_algorithms` reports `HASH` for both layouts, so the test counts the tables of each layout
--- with `HashJoinBuiltWithSerialLayout` and `HashJoinBuiltWithParallelLayout`. 05056 tests the hash
--- table statistics of an earlier run.
+-- with `HashJoinBuiltWithSerialLayout` and `HashJoinBuiltWithParallelLayout`. `03356_threshold_for_parallel_hash`
+-- tests the hash table statistics of an earlier run.
 
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;
@@ -17,7 +18,7 @@ SET collect_hash_table_stats_during_joins = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET grace_hash_join_initial_buckets = 4;
 SET join_algorithm = 'hash';
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 SET max_threads = 4;
 
 DROP TABLE IF EXISTS l;
@@ -34,29 +35,29 @@ INSERT INTO r SELECT number FROM numbers(200);
 
 -- The estimate of 200 rows is below a threshold of 201 and not below a threshold of 200.
 SELECT count() FROM l JOIN r ON l.a = r.a
-SETTINGS parallel_hash_join_threshold = 201, log_comment = '05327_estimate_below' FORMAT Null;
+SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 201, log_comment = '05327_estimate_below' FORMAT Null;
 SELECT count() FROM l JOIN r ON l.a = r.a
-SETTINGS parallel_hash_join_threshold = 200, log_comment = '05327_estimate_equal' FORMAT Null;
+SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 200, log_comment = '05327_estimate_equal' FORMAT Null;
 
 -- The join order optimization takes a separate path for SEMI, ANTI and ANY joins: it only swaps
 -- their sides. The estimate and the threshold work the same on that path.
 SELECT count() FROM l LEFT SEMI JOIN r ON l.a = r.a
-SETTINGS parallel_hash_join_threshold = 201, log_comment = '05327_semi_estimate_below' FORMAT Null;
+SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 201, log_comment = '05327_semi_estimate_below' FORMAT Null;
 SELECT count() FROM l LEFT SEMI JOIN r ON l.a = r.a
-SETTINGS parallel_hash_join_threshold = 200, log_comment = '05327_semi_estimate_equal' FORMAT Null;
+SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 200, log_comment = '05327_semi_estimate_equal' FORMAT Null;
 SELECT count() FROM l ANY LEFT JOIN r ON l.a = r.a
-SETTINGS parallel_hash_join_threshold = 201, log_comment = '05327_any_estimate_below' FORMAT Null;
+SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 201, log_comment = '05327_any_estimate_below' FORMAT Null;
 SELECT count() FROM l ANY LEFT JOIN r ON l.a = r.a
-SETTINGS parallel_hash_join_threshold = 200, log_comment = '05327_any_estimate_equal' FORMAT Null;
+SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 200, log_comment = '05327_any_estimate_equal' FORMAT Null;
 
 -- Without the join order optimization the join has no estimate, so on one thread it builds the parallel
 -- layout with one slot. The control has the estimate.
 SELECT count() FROM l JOIN r ON l.a = r.a
-SETTINGS max_threads = 1, parallel_hash_join_threshold = 201, query_plan_optimize_join_order_limit = 0, log_comment = '05327_one_thread' FORMAT Null;
+SETTINGS max_threads = 1, hash_join_layout = 'auto', parallel_hash_join_threshold = 201, query_plan_optimize_join_order_limit = 0, log_comment = '05327_one_thread' FORMAT Null;
 SELECT count() FROM l JOIN r ON l.a = r.a
-SETTINGS max_threads = 1, parallel_hash_join_threshold = 201, log_comment = '05327_one_thread_control' FORMAT Null;
+SETTINGS max_threads = 1, hash_join_layout = 'auto', parallel_hash_join_threshold = 201, log_comment = '05327_one_thread_control' FORMAT Null;
 
--- `grace_hash` builds one serial table for each of its 4 buckets, whatever the threshold says.
+-- `grace_hash` builds one serial table for each of its 4 buckets, whatever `hash_join_layout` says.
 SELECT count() FROM l JOIN r ON l.a = r.a
 SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 1000000000, log_comment = '05327_grace_buckets' FORMAT Null;
 SELECT count() FROM l JOIN r ON l.a = r.a

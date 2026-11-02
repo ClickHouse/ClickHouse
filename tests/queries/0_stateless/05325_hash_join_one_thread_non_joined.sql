@@ -1,8 +1,8 @@
 -- With one build thread, unmatched rows of a RIGHT or FULL join stay on `JoiningTransform`,
--- even when the right side is above `parallel_hash_join_threshold`.
+-- even with the parallel layout.
 
 SET join_algorithm = 'hash';
-SET parallel_hash_join_threshold = 1;
+SET hash_join_layout = 'parallel';
 SET max_threads = 1;
 SET parallel_non_joined_rows_processing = 1;
 SET query_plan_join_swap_table = 0;

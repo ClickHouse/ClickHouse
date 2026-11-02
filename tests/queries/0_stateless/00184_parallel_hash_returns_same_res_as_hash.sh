@@ -39,7 +39,6 @@ ORDER BY
 LIMIT $ROWS;
 
 set max_memory_usage = 0;
-set query_plan_optimize_join_order_limit = 10;
 
 CREATE TABLE res_hash
 ENGINE = MergeTree()
@@ -51,7 +50,7 @@ FROM t1
 LEFT JOIN t2 ON (t1.UserID = t2.UserID) AND ((t1.EventDate < t2.EventDate) OR (length(t1.URL) > length(t2.URL)))
 ORDER BY ALL
 LIMIT $ROWS
-SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 1000000000, log_comment = '00184_serial';
+SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial', log_comment = '00184_serial';
 
 CREATE TABLE res_parallel_hash
 ENGINE = MergeTree()
@@ -63,7 +62,7 @@ FROM t1
 LEFT JOIN t2 ON (t1.UserID = t2.UserID) AND ((t1.EventDate < t2.EventDate) OR (length(t1.URL) > length(t2.URL)))
 ORDER BY ALL
 LIMIT $ROWS
-SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 0, log_comment = '00184_parallel';
+SETTINGS join_algorithm = 'hash', hash_join_layout = 'parallel', log_comment = '00184_parallel';
 
 SELECT *
 FROM (
