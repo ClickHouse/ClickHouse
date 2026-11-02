@@ -238,10 +238,11 @@ UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt)
     return hash.get64();
 }
 
-QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
+QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash, UInt64 table_object_id)
 {
     SipHash hash;
     hash.update(table_id);
+    hash.update(table_object_id);
     hash.update(part_name);
     hash.update(condition_hash);
     return hash.get128();
@@ -318,12 +319,12 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 
 void QueryConditionCache::write(
     const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
-    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
+    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark, UInt64 table_object_id)
 {
     if (table_id == UUIDHelpers::Nil)
         return; /// Issue #92863: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, table_object_id);
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
@@ -380,12 +381,13 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events, UInt64 table_object_id)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
 
-    Key key = makeKey(table_id, part_name, condition_hash);
+    Key key = makeKey(table_id, part_name, condition_hash, table_object_id);
 
     if (auto entry = cache.get(key))
     {

@@ -4519,6 +4519,13 @@ PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
     return getContext()->getPrimaryIndexCache();
 }
 
+UInt64 MergeTreeData::nextTableObjectId()
+{
+    /// 0 is reserved for "no table object".
+    static std::atomic<UInt64> next{1};
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
+
 MergeTreeData::CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_uncompressed_bytes) const
 {
     CachesToPrewarm result;

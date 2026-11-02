@@ -823,7 +823,8 @@ void FilterTransform::writeMarksWithoutMatchesIntoQueryConditionCache(
             condition->second,
             marks_without_matches,
             mark_ranges_info->marks_count,
-            /*has_final_mark=*/ false);
+            /*has_final_mark=*/ false,
+            mark_ranges_info->table_object_id);
 }
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
@@ -853,7 +854,8 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
             condition->second,
             buffered_mark_ranges_info->mark_ranges,
             buffered_mark_ranges_info->marks_count,
-            buffered_mark_ranges_info->has_final_mark);
+            buffered_mark_ranges_info->has_final_mark,
+            buffered_mark_ranges_info->table_object_id);
 
         buffered_mark_ranges_info = nullptr;
 
@@ -869,7 +871,9 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         /// If the current and the buffer mark range info are from the same table/part, append to the buffer.
         /// Otherwise write to the query condition cache and reset the buffer.
 
-        if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
+        if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid
+            || buffered_mark_ranges_info->table_object_id != mark_ranges_info->table_object_id
+            || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
         {
             query_condition_cache->write(
                 buffered_mark_ranges_info->table_uuid,
@@ -878,7 +882,8 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
                 condition->second,
                 buffered_mark_ranges_info->mark_ranges,
                 buffered_mark_ranges_info->marks_count,
-                buffered_mark_ranges_info->has_final_mark);
+                buffered_mark_ranges_info->has_final_mark,
+                buffered_mark_ranges_info->table_object_id);
 
             buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
         }

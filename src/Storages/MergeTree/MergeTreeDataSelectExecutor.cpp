@@ -2051,6 +2051,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
+            const UInt64 table_object_id = data_part->storage.getTableObjectId();
             String part_name = data_part->isProjectionPart()
                 ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
                 : data_part->name;
@@ -2059,17 +2060,22 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// This is one logical cache consultation, so it must emit at most one
             /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
             /// the hit/miss ourselves and suppress the per-read events on every lookup.
-            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, condition_hash, /*increment_profile_events=*/false);
+            auto row_level_marks_opt = query_condition_cache->read(
+                storage_id.uuid, part_name, condition_hash, /*increment_profile_events=*/false, table_object_id);
             std::optional<QueryConditionCache::MatchingMarks> skip_index_marks_opt;
             if (probe_profiled_condition_hash)
-                skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, profiled_condition_hash, /*increment_profile_events=*/false);
+                skip_index_marks_opt = query_condition_cache->read(
+                    storage_id.uuid, part_name, profiled_condition_hash, /*increment_profile_events=*/false, table_object_id);
             std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_row_level_marks_opt;
             std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_skip_index_marks_opt;
             if (also_probe_topk_reuse_predicate_only_hash)
             {
-                topk_reuse_predicate_only_row_level_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_hash, /*increment_profile_events=*/false);
+                topk_reuse_predicate_only_row_level_marks_opt = query_condition_cache->read(
+                    storage_id.uuid, part_name, topk_reuse_predicate_only_hash, /*increment_profile_events=*/false, table_object_id);
                 if (probe_topk_reuse_predicate_only_profiled_hash)
-                    topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false);
+                    topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(
+                        storage_id.uuid, part_name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false,
+                        table_object_id);
             }
             if (!row_level_marks_opt && !skip_index_marks_opt
                 && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt)

@@ -4235,7 +4235,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     output->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
-                    data_part->index_granularity->hasFinalMark());
+                    data_part->index_granularity->hasFinalMark(),
+                    data_part->storage.getTableObjectId());
             }
         }
     }

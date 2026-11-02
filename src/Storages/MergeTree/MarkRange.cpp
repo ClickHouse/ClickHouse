@@ -124,8 +124,11 @@ void MarkRanges::deserialize(ReadBuffer & in)
     }
 }
 
-MarkRangesInfo::MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_)
+MarkRangesInfo::MarkRangesInfo(
+    UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_,
+    UInt64 table_object_id_)
     : table_uuid(table_uuid_)
+    , table_object_id(table_object_id_)
     , part_name(part_name_)
     , marks_count(marks_count_)
     , has_final_mark(has_final_mark_)
