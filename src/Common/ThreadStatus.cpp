@@ -271,6 +271,7 @@ void ThreadStatus::flushUntrackedMemory()
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     untracked_memory.store(0);
+    untracked_memory_flushed_unchecked = std::max<Int64>(0, untracked_memory_flushed_unchecked + current_untracked_memory);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
@@ -293,6 +294,11 @@ ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
 ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
 {
     query_cancellation_blocked = previous;
+}
+
+bool ThreadStatus::QueryCancellationBlocker::isActive()
+{
+    return query_cancellation_blocked;
 }
 
 bool ThreadStatus::isQueryCanceled() const

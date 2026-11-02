@@ -1067,10 +1067,12 @@ void registerStorageFileLog(StorageFactory & factory)
     factory.registerStorage(
         "FileLog",
         creator_fn,
+        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_deferred_load = true,
             .defers_only_without_dependent_views = true,
+            .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         },
         Documentation{
