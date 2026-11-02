@@ -92,13 +92,17 @@ struct ProjectionPartData
     PaddedPODArray<UInt32> row_bytes;
     /// some stored column has values of different sizes
     bool variable_width = false;
+    /// a merge sized some states by the memory it built them in, which grows with merges that the part does not record
+    bool merge_memory_unknown = false;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
     std::vector<UInt32> granule_rows;
 };
 
 /// per-row version of `getBlockSizeForGranularity`
-void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, const Block & block)
+/// a merge builds the states in the memory of its column, and the writer counts that memory if it is more than the serialized states
+void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
 {
+    auto & row_bytes = out.row_bytes;
     const size_t rows = block.rows();
     const size_t offset = row_bytes.size();
     row_bytes.resize_fill(offset + rows, 0);
@@ -117,12 +121,22 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
                 fixed += static_cast<UInt32>(sizeof(AggregateDataPtr) + function.sizeOfData());
                 continue;
             }
-            variable_width = true;
+            out.variable_width = true;
+            /// a state built from one state, more merges can leave more memory
+            out.merge_memory_unknown |= merged && function.allocatesMemoryInArena();
+            auto rebuilt = merged ? states->cloneEmpty() : nullptr;
             for (size_t i = 0; i < rows; ++i)
             {
                 NullWriteBuffer serialized;
                 function.serialize(states->getData()[i], serialized);
-                row_bytes[offset + i] += static_cast<UInt32>(sizeof(AggregateDataPtr) + serialized.count());
+                size_t bytes = sizeof(AggregateDataPtr) + serialized.count();
+                if (rebuilt)
+                {
+                    const size_t before = rebuilt->byteSize();
+                    assert_cast<ColumnAggregateFunction &>(*rebuilt).insertFrom(states->getData()[i]);
+                    bytes = std::max(bytes, rebuilt->byteSize() - before);
+                }
+                row_bytes[offset + i] += static_cast<UInt32>(bytes);
             }
             continue;
         }
@@ -130,7 +144,7 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else
         {
-            variable_width = true;
+            out.variable_width = true;
             for (size_t i = 0; i < rows; ++i)
                 row_bytes[offset + i] += static_cast<UInt32>(elem.column->byteSizeAt(i));
         }
@@ -268,6 +282,7 @@ bool buildProjectionPart(
     ReadFromMergeTree * read_step,
     const SizeLimits & read_limits,
     bool need_row_bytes,
+    bool merged_by_blocks,
     UInt64 & total_rows_read,
     UInt64 & total_bytes_read,
     const ContextPtr & context)
@@ -309,7 +324,7 @@ bool buildProjectionPart(
         proj_key.expression->execute(projected);
         out.bytes += getBlockSizeForGranularity(projected);
         if (need_row_bytes)
-            appendRowSizes(out.row_bytes, out.variable_width, projected);
+            appendRowSizes(out, projected, merged_by_blocks);
 
         if (key_columns.empty())
             for (const auto & name : proj_key.column_names)
@@ -665,6 +680,7 @@ struct Scenarios
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
     UInt64 uneven_width_parts = 0;
+    UInt64 merge_memory_parts = 0;
     std::vector<SampledPart> samples;
 };
 
@@ -701,12 +717,16 @@ bool buildScenarios(
 
         /// row bytes only matter when granules are sized by bytes
         const bool adaptive = data.canUseAdaptiveGranularity() && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
+        /// a merge sizes each block of an aggregate projection part, but a constant granularity comes from the sizes of the merged parts
+        /// ponytail: a compact part also sizes each block under a constant granularity, its part type is known only after the scan
+        const bool merged_by_blocks = projection.type == ProjectionDescription::Type::Aggregate && part->info.level > 0
+            && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity];
 
         const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
         if (!buildProjectionPart(
-                part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, total_rows_read,
-                total_bytes_read, context))
+                part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, merged_by_blocks,
+                total_rows_read, total_bytes_read, context))
         {
             result.empirical_unsupported_reason
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
@@ -733,6 +753,7 @@ bool buildScenarios(
         }
         if (uneven_rows)
             ++out.uneven_width_parts;
+        out.merge_memory_parts += part_data.merge_memory_unknown;
         /// no row passes the filter of the projection, so the writer writes no projection part
         if (part_data.rows == 0)
         {
@@ -876,6 +897,17 @@ void setVerdict(
             marks_text(projection_marks),
             baseline_marks,
             built.uneven_width_parts,
+            built.scanned_parts);
+    }
+    else if (built.merge_memory_parts != 0)
+    {
+        result.verdict = "too close to call";
+        result.verdict_reason = fmt::format(
+            "{} against {} from the base table, but on {} of the {} parts read a merge sized the granules by the memory of the "
+            "aggregate states, which grows with merges that a part does not record, so the mark count is a model, not a measurement",
+            marks_text(projection_marks),
+            baseline_marks,
+            built.merge_memory_parts,
             built.scanned_parts);
     }
     else if ((chosen_in != 0 && chosen_in != weighed) || beats_base(marks_low) != beats_base(marks_high))
