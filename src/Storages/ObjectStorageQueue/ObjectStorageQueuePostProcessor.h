@@ -48,6 +48,11 @@ public:
     static void checkS3MoveDestination(
         const String & move_uri, const String & move_prefix, bool preserve_path, IObjectStorage & source_storage);
 
+    /// Whether such a move goes to GCS. A table loaded from existing metadata skips `checkS3MoveDestination`,
+    /// so `moveS3Objects` checks this again and leaves the sources in place instead of writing.
+    static bool isFlattenedS3MoveToGCS(
+        const String & move_uri, const String & move_prefix, bool preserve_path, IObjectStorage & source_storage);
+
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// Storage errors are only logged, except `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ`: those are rethrown
     /// after the whole batch is handled, leaving the changed object in place, so the file is not committed as processed.

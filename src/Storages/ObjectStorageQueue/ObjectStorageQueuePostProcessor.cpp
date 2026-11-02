@@ -519,7 +519,7 @@ void ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
 #endif
 }
 
-void ObjectStorageQueuePostProcessor::checkS3MoveDestination(
+bool ObjectStorageQueuePostProcessor::isFlattenedS3MoveToGCS(
     [[maybe_unused]] const String & move_uri,
     [[maybe_unused]] const String & move_prefix,
     [[maybe_unused]] bool preserve_path,
@@ -528,21 +528,28 @@ void ObjectStorageQueuePostProcessor::checkS3MoveDestination(
 #if USE_AWS_S3
     /// Only a move that drops the source directories writes with `If-None-Match`, see `moveS3Objects`.
     if (move_prefix.empty() || preserve_path)
-        return;
+        return false;
 
-    bool to_gcs = false;
     if (!move_uri.empty())
-        to_gcs = S3::URI(move_uri).endpoint.contains("storage.googleapis.com"); /// The test `S3::Client` uses.
-    else if (auto * s3_storage = dynamic_cast<S3ObjectStorage *>(&source_storage))
-        to_gcs = s3_storage->getS3StorageClient()->isClientForGCS();
+        return S3::URI(move_uri).endpoint.contains("storage.googleapis.com"); /// The test `S3::Client` uses.
+    if (auto * s3_storage = dynamic_cast<S3ObjectStorage *>(&source_storage))
+        return s3_storage->getS3StorageClient()->isClientForGCS();
+#endif
+    return false;
+}
 
-    if (to_gcs)
+void ObjectStorageQueuePostProcessor::checkS3MoveDestination(
+    const String & move_uri,
+    const String & move_prefix,
+    bool preserve_path,
+    IObjectStorage & source_storage)
+{
+    if (isFlattenedS3MoveToGCS(move_uri, move_prefix, preserve_path, source_storage))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "A move with `after_processing_move_prefix` and `after_processing_move_preserve_path` = 0 is not supported "
             "to GCS: GCS cannot refuse to overwrite an existing object, so one processed file could replace another. "
             "Set `after_processing_move_preserve_path` = 1");
-#endif
 }
 
 void ObjectStorageQueuePostProcessor::moveWithinBucket(
@@ -793,6 +800,19 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     const String & move_access_key_id = settings.after_processing_move_access_key_id;
     const String & move_secret_access_key = settings.after_processing_move_secret_access_key;
     const String & move_prefix = settings.after_processing_move_prefix;
+
+    /// `CREATE` and `ALTER` refuse this, but a table loaded from existing metadata may still have it.
+    /// GCS cannot refuse to overwrite, so leave every source in place rather than risk replacing another file.
+    if (isFlattenedS3MoveToGCS(move_uri, move_prefix, settings.after_processing_move_preserve_path, *object_storage))
+    {
+        LOG_ERROR(
+            log,
+            "Not moving {} objects: a move with `after_processing_move_prefix` and `after_processing_move_preserve_path` = 0 "
+            "is not supported to GCS, because GCS cannot refuse to overwrite an existing object; leaving the sources in place "
+            "(set `after_processing_move_preserve_path` = 1)",
+            objects.size());
+        return;
+    }
 
     if (!move_uri.empty() || !move_access_key_id.empty() || !move_secret_access_key.empty())
     {
