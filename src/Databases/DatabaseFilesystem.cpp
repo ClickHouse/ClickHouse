@@ -81,21 +81,34 @@ DatabaseFilesystem::DatabaseFilesystem(
 
     path = fs::absolute(path).lexically_normal();
 
-    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop.
+    std::error_code ec;
+    const bool path_exists = fs::exists(path, ec);
+
+    /// Where a path stat fails on leads cannot be resolved, so it is not checked here. A user statement over it is
+    /// refused below, and each table resolution checks its own path before touching a file.
+    if (!is_local && !ec && !pathStartsWith(fs::path(path), user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());
     }
 
-    if (!fs::exists(path))
+    if (!path_exists)
     {
         /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
         /// would make a directory removed since then enough to stop the server from starting. Tables resolve
         /// their file on access, so an unreachable path costs only the tables; the database still drops.
         if (!is_internal_metadata_replay)
+        {
+            if (ec)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot access path {}: {}", path, ec.message());
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+        }
 
-        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
+        if (ec)
+            LOG_WARNING(log, "Cannot access path {}: {}. The database has no tables until it becomes accessible", path, ec.message());
+        else
+            LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
     }
 }
 

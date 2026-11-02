@@ -36,10 +36,24 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
     , is_initialized(true)
 {
+    for (const auto & range_reader : range_readers)
+    {
+        if (!range_reader.getReader()->producesFilterOnly())
+            columns_cache_readers.push_back(range_reader.getReader());
+    }
     previous_steps_columns.resize(range_readers.size());
     for (size_t i = 1; i < range_readers.size(); ++i)
         for (const auto & column : range_readers[i - 1].getSampleBlock())
             previous_steps_columns[i].insert(column.name);
+
+    for (size_t i = range_readers.size(); i > 1; --i)
+    {
+        if (range_readers[i - 1].getReader()->mayEvaluateMissingDefaults())
+        {
+            last_reader_evaluating_defaults = i - 1;
+            break;
+        }
+    }
 }
 
 size_t MergeTreeReadersChain::numReadRowsInCurrentGranule() const
@@ -294,7 +308,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb)
+    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
+    size_t max_block_size_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -314,7 +329,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
@@ -339,7 +354,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
 
-        executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
+        executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1, last_reader_evaluating_defaults > 0);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
 
         if (num_attributed_readers != 0)
@@ -383,7 +398,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
         }
 
-        executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size());
+        executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
 
         if (i < num_attributed_readers)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
@@ -541,6 +556,8 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     const Block & previous_header,
     Columns & columns) const
 {
+    chassert(range_reader.getReader()->mayEvaluateMissingDefaults());
+
     Block additional_columns;
     if (!previous_header.empty())
         additional_columns = previous_header.cloneWithColumns(result.columns);
@@ -552,9 +569,10 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
 }
 
-void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)
+void MergeTreeReadersChain::executePrewhereActions(
+    MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader, bool keep_additional_columns)
 {
-    reader.executePrewhereActionsAndFilterColumns(result, previous_header, is_last_reader);
+    reader.executePrewhereActionsAndFilterColumns(result, previous_header, keep_additional_columns);
     result.checkInternalConsistency();
 
     if (!result.can_return_prewhere_column_without_filtering && is_last_reader)

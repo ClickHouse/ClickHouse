@@ -11,9 +11,7 @@ keywords: ['snapshot', 'backup', 'restore', 'SharedMergeTree', 'SharedSet', 'Sha
 
 轻量级备份路径适用于 [SharedMergeTree](/zh/products/cloud/features/infrastructure/shared-merge-tree)、SharedSet 和 SharedJoin 表。对于所有其他引擎类型——例如日志或 Memory——备份会自动回退为标准的复制式备份。
 
-<div id="create-a-snapshot">
-  ## 创建快照
-</div>
+## 创建快照 {#create-a-snapshot}
 
 快照备份 使用标准的 [`BACKUP`](/zh/concepts/features/backup-restore/overview#syntax) 命令，并将 `experimental_lightweight_snapshot = true`。`id` 设置是必需的——它用于为快照命名，并在解锁和可观测性命令中引用该快照：
 
@@ -50,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+仅备份表的 DDL，不备份数据 (恢复后得到具有正确 schema 的空表) ：
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 同样的命令也适用于 Azure Blob 存储：
 
 ```sql
@@ -58,9 +65,7 @@ TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;Accoun
 SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
 ```
 
-<div id="restore-to-same-service">
-  ## 恢复到同一服务
-</div>
+## 恢复到同一服务 {#restore-to-same-service}
 
 由于快照保存的是对象存储中文件的引用，而不是数据副本，因此要恢复到新的或其他 ClickHouse 服务，就必须能够访问原始对象存储。正因如此，不支持通过 SQL 执行跨服务恢复——只能通过 UI 进行。通过 SQL，你可以使用 `snapshot_from_current_service = 1`，从外部备份 bucket 将快照恢复到同一服务。这样会经由目标端磁盘直接读取对象，而不是通过远程快照读取器：
 
@@ -80,9 +85,7 @@ FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCES
 SETTINGS snapshot_from_current_service = 1
 ```
 
-<div id="unlock-snapshot">
-  ## 解锁快照
-</div>
+## 解锁快照 {#unlock-snapshot}
 
 每个快照都会在 ClickHouse Keeper 中持有锁，防止其引用的对象存储文件被垃圾回收。在 恢复 完成后，或当某个快照不再需要时，应将其解锁以释放这些锁。
 
@@ -113,13 +116,9 @@ ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
 
 解锁后，相应的行会从 `system.snapshot_locks` 中消失，而不再被其他快照引用的 parts 也会从 `system.snapshot_parts` 中消失。
 
-<div id="observability">
-  ## 可观测性
-</div>
+## 可观测性 {#observability}
 
-<div id="system-backups">
-  ### system.backups
-</div>
+### system.backups {#system-backups}
 
 所有快照操作都会显示在 [`system.backups`](/zh/reference/system-tables/backups) 中，与常规的备份和恢复操作一并列出。使用你设置的 `id` (或命令返回的 UUID) 查询即可：
 
@@ -144,9 +143,7 @@ uncompressed_size: 1073741824
 compressed_size:   0
 ```
 
-<div id="system-snapshot-locks">
-  ### system.snapshot_locks
-</div>
+### system.snapshot_locks {#system-snapshot-locks}
 
 `system.snapshot_locks` 显示当前在 Keeper 中注册的已提交快照。当快照被提交时，会在 `/clickhouse/snapshot/committed/{snapshot_id}` 下创建一个 Keeper 节点。在删除任何数据分区片段之前，服务器会检查是否有某个已提交快照持有该分区片段的锁。如果有，则会跳过删除。该锁会一直保留，直到你显式对该快照执行解锁。
 
@@ -172,9 +169,7 @@ FROM system.snapshot_locks
 WHERE id = 'events_snapshot_1'
 ```
 
-<div id="system-snapshot-parts">
-  ### system.snapshot_parts
-</div>
+### system.snapshot_parts {#system-snapshot-parts}
 
 `system.snapshot_parts` 显示当前被至少一个快照锁固定的数据分区片段。对于每个被锁定的数据分区片段，`/clickhouse/snapshot/{table_uuid}/{part_name}` 处都会有一个 Keeper 节点，其中包含该分区片段的压缩大小和未压缩大小。此表通过读取这些节点，显示当前哪些数据分区片段受保护而不会被删除。
 
@@ -229,9 +224,7 @@ WHERE (name, table_id) NOT IN (
 
 这有助于了解在原始数据更改或删除后保留快照会带来多少存储开销。
 
-<div id="server-settings">
-  ## 服务器设置
-</div>
+## 服务器设置 {#server-settings}
 
 以下服务器配置参数用于控制快照行为。它们在服务器配置文件中设置，而不是在 SQL 中设置。
 
