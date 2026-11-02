@@ -859,13 +859,12 @@ void AlterCommand::apply(
     }
     else if (type == DROP_COLUMN)
     {
-        metadata.dropImplicitIndicesForColumn(column_name);
-
-        /// Otherwise just clear data on disk
+        /// `CLEAR` and `DROP ... IN PARTITION` keep the column, and its implicit indices.
         if (!clear && !partition)
         {
             if (should_skip_column_operation(column_name))
                 return;
+            metadata.dropImplicitIndicesForColumn(column_name);
             metadata.columns.remove(column_name);
         }
     }
@@ -2019,7 +2018,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
+        /// `n Nested(...)` is stored as `n.*`. Only `ADD`/`DROP` treat that parent name as the column.
+        const bool has_exact_column = columns.has(command.column_name);
+        bool has_column = has_exact_column
+            || ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::DROP_COLUMN)
+                && share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column)

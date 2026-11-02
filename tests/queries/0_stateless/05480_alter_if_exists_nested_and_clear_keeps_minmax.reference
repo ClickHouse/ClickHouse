@@ -1,0 +1,4 @@
+id	UInt8					
+n.a	Array(UInt8)					
+x	UInt8					
+auto_minmax_index_x
