@@ -231,7 +231,7 @@ GROUP BY table;
 
 ```
 </RunnableCode>
-As shown further above, the partitioned table `uk_price_paid_simple_partitioned` has over 600 partitions, and therefore at 600 306 active data parts. Whereas for our non-partitioned table `uk_price_paid_simple` all [initial](/concepts/core-concepts/parts) data parts could be merged into a single active part by background merges.
+As shown further above, the partitioned table `uk_price_paid_simple_partitioned` has hundreds of partitions (one per month of sales), and therefore at least as many active data parts. Whereas for our non-partitioned table `uk_price_paid_simple` all [initial](/concepts/core-concepts/parts) data parts could be merged into a single active part by background merges.
 
 When we [check](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgdG93biA9ICdMT05ET04nOw&run_query=true&tab=results) the physical query execution plan with an [EXPLAIN](/reference/statements/explain) clause for our example query from above without the partition filter running over the partitioned table, we can see in row 19 and 20 of the output below that ClickHouse identified 671 out of 3257 existing [granules](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocks of rows) spread over 431 out of 436 existing active data parts that potentially contain rows matching the query's filter, and therefore will be scanned and processed by the query engine:
 
