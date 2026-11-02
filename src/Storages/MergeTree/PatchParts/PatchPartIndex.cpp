@@ -17,8 +17,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DUPLICATE_DATA_PART;
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 PatchPartIndex::PatchPartIndex(MergeTreePatchPartsVersion format_version_, String sorting_key_desc_)
@@ -250,7 +250,9 @@ PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
     readBinaryLittleEndian(read_version, in);
 
     if (read_version > MAX_SUPPORTED_FORMAT_VERSION)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of PatchPartIndex: {}", std::to_string(read_version));
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unsupported version of PatchPartIndex: {}, the maximum supported version is {}",
+            std::to_string(read_version), std::to_string(MAX_SUPPORTED_FORMAT_VERSION));
 
     auto format_version = static_cast<MergeTreePatchPartsVersion>(read_version);
     if (format_version == MergeTreePatchPartsVersion::V2)

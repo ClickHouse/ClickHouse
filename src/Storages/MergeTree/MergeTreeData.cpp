@@ -3203,6 +3203,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         }
 
         res.is_broken = true;
+        if (getCurrentExceptionCode() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
+            res.unknown_format_version_error = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
         tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part_name, part_path));
 
         res.size_of_part = calculatePartSizeSafe(res.part, log.load());
@@ -3609,6 +3611,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     MutableDataPartsVector duplicate_parts_to_remove;
 
     size_t suspicious_broken_parts = 0;
+    size_t unknown_format_version_parts = 0;
+    String unknown_format_version_example;
     size_t suspicious_broken_parts_bytes = 0;
     size_t suspicious_broken_unexpected_parts = 0;
     size_t suspicious_broken_unexpected_parts_bytes = 0;
@@ -3627,6 +3631,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         {
             if (res.is_broken)
             {
+                if (res.unknown_format_version_error)
+                {
+                    if (unknown_format_version_parts == 0)
+                        unknown_format_version_example = fmt::format("{}: {}", res.part->name, *res.unknown_format_version_error);
+                    ++unknown_format_version_parts;
+                }
+
                 broken_parts_to_detach.push_back(res.part);
                 bool unexpected = expected_parts != std::nullopt && !expected_parts->contains(res.part->name);
                 if (unexpected)
@@ -3676,6 +3687,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!skip_sanity_checks)
     {
+        if (unknown_format_version_parts)
+            throw Exception(
+                ErrorCodes::UNKNOWN_FORMAT_VERSION,
+                "Table has {} part(s) in a format version that this server does not support, for example {}. "
+                "They were most likely written by a newer server version, so they are kept in place: upgrade the server "
+                "to a version that can read them. To detach them as broken instead (their data will not be visible), "
+                "start the server with the `force_restore_data` flag",
+                unknown_format_version_parts, unknown_format_version_example);
+
         if (suspicious_broken_parts > (*settings)[MergeTreeSetting::max_suspicious_broken_parts])
             throw Exception(
                 ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,

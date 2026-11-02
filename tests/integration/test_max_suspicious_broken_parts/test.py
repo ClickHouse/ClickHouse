@@ -161,3 +161,150 @@ def test_max_suspicious_broken_parts_bytes__wide():
     """
     )
     check_table("test_max_suspicious_broken_parts_bytes__wide")
+
+
+def bash(cmd):
+    return node.exec_in_container(["bash", "-c", cmd], privileged=True, user="root")
+
+
+def create_table_with_patch_part(table, engine):
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+    CREATE TABLE {table} (id UInt64, v Int64)
+    ENGINE = {engine}
+    ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+    """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, 0 FROM numbers(10)")
+    node.query(f"UPDATE {table} SET v = 1 WHERE id = 3")
+    assert node.query(f"SELECT sum(v) FROM {table}") == "1\n"
+
+    rows = (
+        node.query(
+            f"SELECT name, path FROM system.parts WHERE database = 'default' AND table = '{table}' AND active AND startsWith(partition_id, 'patch-')"
+        )
+        .strip()
+        .splitlines()
+    )
+    assert len(rows) == 1, rows
+    patch_name, patch_path = rows[0].split("\t")
+    assert patch_path.startswith("/"), patch_path
+    return patch_name, patch_path
+
+
+def write_first_byte(path, byte_hex):
+    bash(f"printf '\\x{byte_hex}' | dd of={path} bs=1 count=1 conv=notrunc")
+
+
+def test_patch_part_in_unsupported_format_version_is_kept():
+    table = "t_unsupported_patch"
+    patch_name, patch_path = create_table_with_patch_part(table, "MergeTree")
+
+    index_file = f"{patch_path}source_parts.dat"
+    original_byte = bash(f"od -An -tx1 -N1 {index_file}").strip()
+    size = bash(f"stat -c%s {index_file}").strip()
+
+    node.query(f"DETACH TABLE {table}")
+    write_first_byte(index_file, "7f")
+    assert bash(f"stat -c%s {index_file}").strip() == size
+
+    error = node.query_and_get_error(f"ATTACH TABLE {table}")
+    assert "UNKNOWN_FORMAT_VERSION" in error, error
+    assert patch_name in error, error
+
+    table_path = patch_path.rstrip("/").rsplit("/", 1)[0]
+    assert bash(f"test -d {patch_path} && echo yes || echo no").strip() == "yes"
+    assert "broken-on-start" not in bash(
+        f"ls -A {table_path}/detached/ 2>/dev/null || true"
+    )
+
+    write_first_byte(index_file, original_byte)
+    node.query(f"ATTACH TABLE {table}")
+    assert node.query(f"SELECT sum(v) FROM {table}") == "1\n"
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_part_with_unsupported_serialization_version_is_kept():
+    table = "t_unsupported_serialization"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+    CREATE TABLE {table} (id UInt64, s String)
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS serialization_info_version = 'with_types'
+    """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10)")
+
+    rows = (
+        node.query(
+            f"SELECT name, path FROM system.parts WHERE database = 'default' AND table = '{table}' AND active"
+        )
+        .strip()
+        .splitlines()
+    )
+    assert len(rows) == 1, rows
+    part_name, part_path = rows[0].split("\t")
+    table_path = part_path.rstrip("/").rsplit("/", 1)[0]
+
+    serialization_file = f"{part_path}serialization.json"
+    assert bash(f"test -f {serialization_file} && echo yes || echo no").strip() == "yes"
+    size = bash(f"stat -c%s {serialization_file}").strip()
+
+    node.query(f"DETACH TABLE {table}")
+    # The top-level version is the last key of the file: `,"version":N}`.
+    original_version = bash(f"tail -c 2 {serialization_file} | head -c 1")
+    assert original_version.isdigit(), original_version
+    bash('sed -i \'s/"version":[0-9]}$/"version":9}/\' ' + serialization_file)
+    assert bash(f"stat -c%s {serialization_file}").strip() == size
+    assert bash(f"tail -c 12 {serialization_file}") == '"version":9}'
+
+    error = node.query_and_get_error(f"ATTACH TABLE {table}")
+    assert "UNKNOWN_FORMAT_VERSION" in error, error
+    assert part_name in error, error
+    assert bash(f"test -d {part_path} && echo yes || echo no").strip() == "yes"
+    assert "broken-on-start" not in bash(
+        f"ls -A {table_path}/detached/ 2>/dev/null || true"
+    )
+
+    bash(
+        f'sed -i \'s/"version":9}}$/"version":{original_version}}}/\' '
+        + serialization_file
+    )
+    node.query(f"ATTACH TABLE {table}")
+    assert get_count(table) == 10
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_force_restore_data_detaches_part_in_unsupported_format_version():
+    table = "t_unsupported_force"
+    patch_name, patch_path = create_table_with_patch_part(table, "MergeTree")
+
+    index_file = f"{patch_path}source_parts.dat"
+    size = bash(f"stat -c%s {index_file}").strip()
+
+    node.query(f"DETACH TABLE {table}")
+    write_first_byte(index_file, "7f")
+    assert bash(f"stat -c%s {index_file}").strip() == size
+    bash(
+        "mkdir -p /var/lib/clickhouse/flags && touch /var/lib/clickhouse/flags/force_restore_data && (chown -R clickhouse:clickhouse /var/lib/clickhouse/flags 2>/dev/null || true)"
+    )
+    node.restart_clickhouse()
+
+    assert (
+        bash(
+            "test -e /var/lib/clickhouse/flags/force_restore_data && echo yes || echo no"
+        ).strip()
+        == "no"
+    )
+    assert node.query(f"SELECT sum(v) FROM {table}") == "0\n"
+    assert (
+        node.query(
+            f"SELECT name, reason FROM system.detached_parts WHERE database = 'default' AND table = '{table}'"
+        )
+        == f"broken-on-start_{patch_name}\tbroken-on-start\n"
+    )
+    node.query(f"DROP TABLE {table} SYNC")

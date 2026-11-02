@@ -258,3 +258,68 @@ def test_corrupted_unexpected_part_ultimate():
     assert node.query("SELECT sum(key) FROM broken_table_3") == "145\n"
 
     node.query("DROP TABLE broken_table_3 SYNC")
+
+
+def bash(cmd):
+    return node.exec_in_container(["bash", "-c", cmd], privileged=True, user="root")
+
+
+def write_first_byte(path, byte_hex):
+    bash(f"printf '\\x{byte_hex}' | dd of={path} bs=1 count=1 conv=notrunc")
+
+
+def test_patch_part_in_unsupported_format_version_is_kept():
+    table = "t_unsupported_patch"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+    CREATE TABLE {table} (id UInt64, v Int64)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}', 'r1')
+    ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+    """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, 0 FROM numbers(10)")
+    node.query(f"UPDATE {table} SET v = 1 WHERE id = 3")
+    assert node.query(f"SELECT sum(v) FROM {table}") == "1\n"
+
+    rows = (
+        node.query(
+            f"SELECT name, path FROM system.parts WHERE database = 'default' AND table = '{table}' AND active AND startsWith(partition_id, 'patch-')"
+        )
+        .strip()
+        .splitlines()
+    )
+    assert len(rows) == 1, rows
+    patch_name, patch_path = rows[0].split("\t")
+    assert patch_path.startswith("/"), patch_path
+    # The patch part must be an expected part (in Keeper), not an unexpected one.
+    assert (
+        node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/{table}/replicas/r1/parts' AND name = '{patch_name}'"
+        )
+        == "1\n"
+    )
+
+    index_file = f"{patch_path}source_parts.dat"
+    original_byte = bash(f"od -An -tx1 -N1 {index_file}").strip()
+    size = bash(f"stat -c%s {index_file}").strip()
+
+    detach_table(table)
+    write_first_byte(index_file, "7f")
+    assert bash(f"stat -c%s {index_file}").strip() == size
+
+    error = node.query_and_get_error(f"ATTACH TABLE {table}")
+    assert "UNKNOWN_FORMAT_VERSION" in error, error
+    assert patch_name in error, error
+
+    table_path = patch_path.rstrip("/").rsplit("/", 1)[0]
+    assert bash(f"test -d {patch_path} && echo yes || echo no").strip() == "yes"
+    assert "broken-on-start" not in bash(
+        f"ls -A {table_path}/detached/ 2>/dev/null || true"
+    )
+
+    write_first_byte(index_file, original_byte)
+    attach_table(table)
+    assert node.query(f"SELECT sum(v) FROM {table}") == "1\n"
+    node.query(f"DROP TABLE {table} SYNC")
