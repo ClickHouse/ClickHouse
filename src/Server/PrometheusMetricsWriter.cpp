@@ -26,11 +26,6 @@ namespace CurrentMetrics
     extern const std::vector<Metric> keeper_metrics;
 }
 
-namespace HistogramMetrics
-{
-    extern std::vector<MetricFamily *> keeper_histograms;
-}
-
 namespace DimensionalMetrics
 {
     extern std::vector<MetricFamily *> keeper_dimensional_metrics;
@@ -485,7 +480,7 @@ void KeeperPrometheusMetricsWriter::writeAsynchronousMetrics([[maybe_unused]] Wr
 void KeeperPrometheusMetricsWriter::writeHistogramMetrics([[maybe_unused]] WriteBuffer & wb) const
 {
 #if USE_NURAFT
-    for (const auto * histogram : HistogramMetrics::keeper_histograms)
+    for (const auto * histogram : HistogramMetrics::getKeeperHistograms())
     {
         writeHistogramMetric(wb, *histogram, constant_labels);
     }
@@ -530,7 +525,7 @@ std::unordered_set<std::string> KeeperPrometheusMetricsWriter::getReservedLabelN
     if (expose_histograms)
     {
         reserved_names.insert("le");
-        for (const auto * histogram : HistogramMetrics::keeper_histograms)
+        for (const auto * histogram : HistogramMetrics::getKeeperHistograms())
             for (const auto & label : histogram->getLabels())
                 reserved_names.insert(label);
     }

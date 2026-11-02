@@ -79,6 +79,8 @@ namespace HistogramMetrics
     using MetricFamilyPtr = std::unique_ptr<MetricFamily>;
     using MetricFamilies = std::vector<MetricFamilyPtr>;
 
+    const std::vector<MetricFamily *> & getKeeperHistograms();
+
     void observe(MetricFamily & metric, LabelValues labels, Value value);
     void observe(Metric & metric, Value value);
 
