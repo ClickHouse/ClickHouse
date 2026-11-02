@@ -370,6 +370,39 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
     return hash.get64();
 }
 
+/// A chain of `ExpressionStep`s, keyed as the single step merging them would be.
+struct ExpressionChain
+{
+    std::unique_ptr<ExpressionStep> merged;
+    /// The node below the chain.
+    const QueryPlan::Node * input = nullptr;
+};
+
+/// Optimizing a plan again can merge expressions it left apart (the local plan of plan-based parallel
+/// replicas is), so a chain and its merge must have one key, or the two plans cannot be matched.
+static std::optional<ExpressionChain> mergeExpressionChain(const QueryPlan::Node & node)
+{
+    std::vector<const ExpressionStep *> chain;
+    const QueryPlan::Node * current = &node;
+    while (current->children.size() == 1)
+    {
+        const auto * expression = typeid_cast<const ExpressionStep *>(current->step.get());
+        if (!expression)
+            break;
+        chain.push_back(expression);
+        current = current->children.front();
+    }
+
+    if (chain.size() < 2)
+        return {};
+
+    ActionsDAG merged = chain.back()->getExpression().clone();
+    for (auto it = chain.rbegin() + 1; it != chain.rend(); ++it)
+        merged = ActionsDAG::merge(std::move(merged), (*it)->getExpression().clone());
+
+    return ExpressionChain{std::make_unique<ExpressionStep>(chain.back()->getInputHeaders().front(), std::move(merged)), current};
+}
+
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
 /// itself approximate. Capturing every input that can affect the collected input/output bytes is a
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
@@ -450,6 +483,8 @@ void calculateHashTableCacheKeys(
             stack.push_back(next_frame);
             continue;
         }
+
+        const auto chain = mergeExpressionChain(node);
 
         /// Hash a `JoinStep`'s children in their physical order. `considerEnablingParallelReplicas`
         /// picks the parallelized side by physical slot (child 0, or child 1 for `RIGHT`) — see
@@ -610,17 +645,24 @@ void calculateHashTableCacheKeys(
             frame.hash.update(a);
             frame.hash.update(b);
         }
+        else if (chain)
+        {
+            frame.hash.update(cache_keys[chain->input]);
+        }
         else
         {
             for (const auto * child : node.children)
                 frame.hash.update(cache_keys[child]);
         }
 
-        if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
+        const IQueryPlanStep & step = chain ? *chain->merged : *node.step;
+        const QueryPlan::Node * input = chain ? chain->input : (node.children.size() == 1 ? node.children.front() : nullptr);
+
+        if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(&step))
             frame.hash.update(calculateHashFromStep(*source));
-        else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
+        else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(&step))
             frame.hash.update(calculateHashFromStep(*read));
-        else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        else if (const auto * transform = dynamic_cast<const ITransformingStep *>(&step))
         {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
@@ -646,11 +688,10 @@ void calculateHashTableCacheKeys(
         /// a key of its own, from the permutation `calculateHashFromStep` hashed: adopting it would put a
         /// plan that permutes same-typed columns and a plan that does not on one key, which is how two
         /// mirror queries over different join inputs came to share a statistics entry.
-        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1
-            && forwardsInputsInOrder(*node.step))
+        if (input && isPassthroughExpressionWithRenames(step) && forwardsInputsInOrder(step))
         {
-            raw_hashes[&node] = raw_hashes[node.children.front()];
-            cache_keys[&node] = cache_keys[node.children.front()];
+            raw_hashes[&node] = raw_hashes[input];
+            cache_keys[&node] = cache_keys[input];
         }
         else
         {
