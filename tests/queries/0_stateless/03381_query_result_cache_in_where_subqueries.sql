@@ -1,6 +1,8 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+SET enable_analyzer = 1;
+
 SYSTEM DROP QUERY CACHE;
 
 -- Create a top-level entry (cached under is_subquery = 0)

@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- RIGHT SEMI/ANTI IEJoin is executed as its LEFT mirror: `IEJoinStep` swaps its input
 -- pipelines, reverses the operators (EXPLAIN shows the executed type with `Swapped: true`),
 -- and restores the original column order on top of the join. The scan then drives from the

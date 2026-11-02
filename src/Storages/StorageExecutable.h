@@ -30,8 +30,6 @@ public:
 
     String getName() const override;
 
-    bool supportsTruncate() const override { return false; }
-
     static VirtualColumnsDescription createVirtuals();
 
     void readImpl(

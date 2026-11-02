@@ -1,6 +1,0 @@
-<clickhouse>
-    <rabbitmq>
-        <username>root</username>
-        <password>clickhouse</password>
-    </rabbitmq>
-</clickhouse>

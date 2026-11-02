@@ -44,18 +44,11 @@ public:
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
     bool hasStaticStructure() const override;
-    bool hasUnreplicatedTableDataOnDisk() const override;
     void setPartitionBy(const ASTPtr & partition_by_) override;
 
-    static void updateStructureAndFormatArgumentsIfNeeded(
-        ASTs & args,
-        const String & structure_,
-        const String & format_,
-        const ContextPtr & context,
-        bool with_structure,
-        bool is_replayed_definition = false)
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context, bool with_structure)
     {
-        if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
+        if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
         {
             /// In case of named collection, just add key-value pairs "format='...', structure='...'"
             /// at the end of arguments to override existed format and structure with "auto" values.
@@ -108,8 +101,6 @@ protected:
     /// Source URI used for the access check of the delegated function (e.g. the file path or the
     /// resolved object-storage URL). Empty for `file://`, matching `TableFunctionFile` behavior.
     String delegate_function_uri;
-    /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
-    bool is_relative_url = false;
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate

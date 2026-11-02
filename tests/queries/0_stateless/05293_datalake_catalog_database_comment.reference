@@ -1,2 +1,0 @@
-CREATE DATABASE default_1\nENGINE = DataLakeCatalog(\'http://localhost:18181/v1\')\nSETTINGS catalog_type = \'rest\', warehouse = \'demo\', auth_header = \'[HIDDEN]\'\nCOMMENT \'dl comment\'
-dl comment

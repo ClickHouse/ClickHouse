@@ -2,11 +2,11 @@ if (NOT TARGET ch_contrib::hdfs)
     if (ENABLE_HIVE)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without HDFS")
     endif()
-# `Storages/Hive/HiveFile.h` uses the ORC reader and `parquet/arrow/reader.h` outright,
-# so Hive needs both readers, not just the metastore client. The ORC reader needs only snappy.
-elseif (NOT TARGET ch_contrib::snappy OR NOT TARGET _parquet)
+# `Storages/Hive/HiveFile.h` includes `orc/OrcFile.hh` and `parquet/arrow/reader.h` outright,
+# so Hive needs both readers, not just the metastore client.
+elseif (NOT TARGET _orc)
     if (ENABLE_HIVE)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without ORC and Parquet")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without ORC")
     endif()
 else()
     option(ENABLE_HIVE "Enable Hive" ${ENABLE_LIBRARIES})
