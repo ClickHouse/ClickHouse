@@ -213,7 +213,8 @@ std::optional<String> findColumnParameter(const Aws::Glue::Model::Column & colum
 
 /// Glue columns for the fields of an Iceberg schema. The existing column of a field, matched by field id, or by name
 /// for a column without one, keeps its comment (unless the field has a `doc`) and its other parameters. The existing
-/// columns of older schemas (`iceberg.field.current = false`) are kept after the current ones.
+/// columns of older schemas, then the existing columns the schema no longer has (renamed or dropped), follow as
+/// non-current, each name once.
 Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
     const Poco::JSON::Object::Ptr & schema, const Aws::Vector<Aws::Glue::Model::Column> & existing_columns)
 {
@@ -230,7 +231,6 @@ Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
     }
 
     Aws::Vector<Aws::Glue::Model::Column> columns;
-    std::unordered_set<String> current_ids;
     std::unordered_set<String> current_names;
     const auto fields = schema->getArray(DB::Iceberg::f_fields);
     for (UInt32 i = 0; i < fields->size(); ++i)
@@ -238,7 +238,6 @@ Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
         const auto field = fields->getObject(i);
         const auto name = field->getValue<String>(DB::Iceberg::f_name);
         const auto id = std::to_string(field->getValue<Int32>(DB::Iceberg::f_id));
-        current_ids.insert(id);
         current_names.insert(name);
 
         const Aws::Glue::Model::Column * existing = nullptr;
@@ -263,13 +262,21 @@ Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
         columns.push_back(std::move(column));
     }
 
+    std::unordered_set<String> listed_names = current_names;
     for (const auto & column : existing_columns)
     {
-        if (!isNonCurrentGlueColumn(column) || current_names.contains(column.GetName()))
+        if (isNonCurrentGlueColumn(column) && listed_names.insert(column.GetName()).second)
+            columns.push_back(column);
+    }
+    for (const auto & column : existing_columns)
+    {
+        if (isNonCurrentGlueColumn(column) || !listed_names.insert(column.GetName()).second)
             continue;
-        if (auto id = findColumnParameter(column, "iceberg.field.id"); id && current_ids.contains(*id))
-            continue;
-        columns.push_back(column);
+        auto retired = column;
+        auto parameters = retired.GetParameters();
+        parameters["iceberg.field.current"] = "false";
+        retired.SetParameters(std::move(parameters));
+        columns.push_back(std::move(retired));
     }
     return columns;
 }

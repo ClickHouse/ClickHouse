@@ -2301,7 +2301,16 @@ def create_pyiceberg_table(
 
 @pytest.mark.parametrize(
     "operation",
-    ["insert", "alter_add_column", "delete", "optimize_manifest", "expire_snapshots", "insert_after_wipe"],
+    [
+        "insert",
+        "alter_add_column",
+        "alter_rename_column",
+        "alter_drop_column",
+        "delete",
+        "optimize_manifest",
+        "expire_snapshots",
+        "insert_after_wipe",
+    ],
 )
 def test_glue_update_keeps_table_definition(started_cluster, operation):
     # A ClickHouse commit to a table another engine registered in Glue keeps the table definition, records the
@@ -2330,8 +2339,8 @@ def test_glue_update_keeps_table_definition(started_cluster, operation):
         # What a commit of an earlier ClickHouse version leaves.
         glue_table["StorageDescriptor"] = {**glue_table["StorageDescriptor"], "Columns": []}
     else:
-        # A comment and a parameter typed in the Glue console, with no Iceberg `doc` behind them, and a column of an
-        # older schema.
+        # A comment and a parameter typed in the Glue console, with no Iceberg `doc` behind them, and columns of older
+        # schemas, one of them the old name of `s`.
         glue_table["StorageDescriptor"]["Columns"][0]["Comment"] = "typed in the console"
         glue_table["StorageDescriptor"]["Columns"][0]["Parameters"]["owner"] = "team-x"
         glue_table["StorageDescriptor"]["Columns"].append(
@@ -2345,6 +2354,17 @@ def test_glue_update_keeps_table_definition(started_cluster, operation):
                 },
             }
         )
+        glue_table["StorageDescriptor"]["Columns"].append(
+            {
+                "Name": "s_old",
+                "Type": "string",
+                "Parameters": {
+                    "iceberg.field.id": "2",
+                    "iceberg.field.optional": "true",
+                    "iceberg.field.current": "false",
+                },
+            }
+        )
     put_glue_table(started_cluster, namespace, glue_table)
     before = get_glue_table(started_cluster, namespace, table_name)
 
@@ -2352,6 +2372,8 @@ def test_glue_update_keeps_table_definition(started_cluster, operation):
         "insert": (f"INSERT INTO {table_ref} VALUES (4, 'd')", {}, 3),
         "insert_after_wipe": (f"INSERT INTO {table_ref} VALUES (4, 'd')", {}, 3),
         "alter_add_column": (f"ALTER TABLE {table_ref} ADD COLUMN c Nullable(String)", {}, 2),
+        "alter_rename_column": (f"ALTER TABLE {table_ref} RENAME COLUMN s TO s2", {}, 2),
+        "alter_drop_column": (f"ALTER TABLE {table_ref} DROP COLUMN s", {}, 2),
         "delete": (f"ALTER TABLE {table_ref} DELETE WHERE id = 1", {}, 1),
         "optimize_manifest": (
             f"OPTIMIZE TABLE {table_ref} MANIFEST",
@@ -2393,6 +2415,12 @@ def test_glue_update_keeps_table_definition(started_cluster, operation):
         assert columns[0]["Comment"] == "typed in the console", columns
         assert columns[0]["Parameters"]["owner"] == "team-x", columns
         assert "c\tNullable(String)" in node.query(f"DESCRIBE TABLE {table_ref}")
+    elif operation in ("alter_rename_column", "alter_drop_column"):
+        older = [c for c in before["StorageDescriptor"]["Columns"] if c["Parameters"]["iceberg.field.current"] == "false"]
+        id_column, s_column = [c for c in before["StorageDescriptor"]["Columns"] if c not in older]
+        retired = {**s_column, "Parameters": {**s_column["Parameters"], "iceberg.field.current": "false"}}
+        kept = [id_column, {**s_column, "Name": "s2"}] if operation == "alter_rename_column" else [id_column]
+        assert columns == kept + older + [retired], columns
     elif operation == "insert_after_wipe":
         assert columns == registered, columns
     else:
