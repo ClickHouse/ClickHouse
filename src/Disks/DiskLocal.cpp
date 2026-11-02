@@ -444,8 +444,7 @@ void DiskLocal::prepareRead(
         if (is_regular_file)
         {
             file_version = computeFileCacheVersionToken(file_stat);
-            /// Until the file settles, another file written at the same path in the same timestamp tick
-            /// can have the same token, so the read gets a version of its own.
+            /// Until the file settles, a file rewritten at the same path in the same tick can get the same token.
             if (!isFileCacheVersionTokenSettled(file_stat))
                 file_version += fmt::format("#{}", unsettled_file_reads.fetch_add(1, std::memory_order_relaxed));
         }
