@@ -446,6 +446,16 @@ addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr c
     }
 }
 
+/// The time-based event of the kind of the query, which is incremented along with `QueryTimeMicroseconds`.
+static ProfileEvents::Event queryKindTimeEvent(const ASTPtr & query_ast)
+{
+    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+        return ProfileEvents::SelectQueryTimeMicroseconds;
+    if (query_ast->as<ASTInsertQuery>())
+        return ProfileEvents::InsertQueryTimeMicroseconds;
+    return ProfileEvents::OtherQueryTimeMicroseconds;
+}
+
 static void
 addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr, std::chrono::system_clock::time_point time)
 {
@@ -455,18 +465,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_duration_ms = elapsed_microseconds / 1000;
 
     ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, elapsed_microseconds);
-    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-    {
-        ProfileEvents::increment(ProfileEvents::SelectQueryTimeMicroseconds, elapsed_microseconds);
-    }
-    else if (query_ast->as<ASTInsertQuery>())
-    {
-        ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, elapsed_microseconds);
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, elapsed_microseconds);
-    }
+    ProfileEvents::increment(queryKindTimeEvent(query_ast), elapsed_microseconds);
 
     element.read_rows = info.read_rows;
     element.read_bytes = info.read_bytes;
@@ -801,23 +800,36 @@ static bool isAsyncInsertFlush(const ASTPtr & query_ast)
 /// family of events has been incremented, so that the snapshot contains everything the query
 /// produced. When no governing quota defines such limits, the cost is one atomic load: no
 /// snapshot of the counters is taken.
+///
+/// A query cancelled without an exception does not go through `addStatusInfoToQueryLogElement`, so the
+/// time-based events (`QueryTimeMicroseconds` and friends) have not been incremented for it. For such a
+/// query, `cancelled_query_ast` is set, and they are added to what it is charged with here.
 static void usedQuotaProfileEvents(
     const std::shared_ptr<const EnabledQuota> & quota,
     const QueryStatusPtr & process_list_elem,
-    UInt64 normalized_query_hash)
+    UInt64 normalized_query_hash,
+    std::optional<ASTPtr> cancelled_query_ast = {})
 {
     if (!quota || !quota->hasProfileEventLimits() || !process_list_elem)
         return;
 
-    auto counters = process_list_elem->getInfo(false, /* get_profile_events= */ true).profile_counters;
-    /// What the nested queries charged on their own added to the local counters (see `excludeFromOuterQueryQuota`).
-    if (auto excluded = process_list_elem->getExcludedProfileEvents(); excluded && counters)
+    auto info = process_list_elem->getInfo(false, /* get_profile_events= */ true);
+    auto counters = info.profile_counters;
+    auto excluded = process_list_elem->getExcludedProfileEvents();
+    if (counters && (excluded || cancelled_query_ast))
     {
         ProfileEvents::Counters own_counters(VariableContext::Process, /* parent = */ nullptr);
         for (auto event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
         {
-            if ((*counters)[event] > (*excluded)[event])
-                own_counters.incrementNoTrace(event, (*counters)[event] - (*excluded)[event]);
+            /// What the nested queries charged on their own added to the local counters (see `excludeFromOuterQueryQuota`).
+            ProfileEvents::Count excluded_count = excluded ? (*excluded)[event] : 0;
+            if ((*counters)[event] > excluded_count)
+                own_counters.incrementNoTrace(event, (*counters)[event] - excluded_count);
+        }
+        if (cancelled_query_ast)
+        {
+            own_counters.incrementNoTrace(ProfileEvents::QueryTimeMicroseconds, info.elapsed_microseconds);
+            own_counters.incrementNoTrace(queryKindTimeEvent(*cancelled_query_ast), info.elapsed_microseconds);
         }
         counters = std::make_shared<ProfileEvents::Counters::Snapshot>(own_counters.getPartiallyAtomicSnapshot());
     }
@@ -3778,10 +3790,11 @@ static BlockIO executeQueryImpl(
             /// A query cancelled by its client without an exception (e.g. a cancelled Arrow Flight poll) reaches
             /// neither of the callbacks above, but what it has done until then is charged all the same.
             res.cancel_callbacks.push_back(
-                [context, internal, profile_events_quota, quota_profile_events_charged, normalized_query_hash]
+                [context, out_ast, internal, profile_events_quota, quota_profile_events_charged, normalized_query_hash]
                 {
                     if (!internal && !quota_profile_events_charged->exchange(true))
-                        usedQuotaProfileEvents(profile_events_quota, context->getProcessListElementSafe(), normalized_query_hash);
+                        usedQuotaProfileEvents(profile_events_quota, context->getProcessListElementSafe(), normalized_query_hash,
+                            /* cancelled_query_ast = */ out_ast);
                 });
         }
     }
