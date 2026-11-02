@@ -235,6 +235,8 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             return false;
 
         filter_nodes.push_back(filter_expression);
+        optimize_constant_columns_after_filter = FilterStep::combineOptimizeConstantColumnsAfterFilter(
+            optimize_constant_columns_after_filter, filter->getOptimizeConstantColumnsAfterFilter());
         return true;
     }
 

@@ -314,7 +314,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     size_t wrap_in_arrays = 0;
     DataTypePtr outer_type_hint = node.type_hint;
 
-    if (node.schema_context == SchemaContext::None)
+    if (node.schema_context == SchemaContext::None || node.schema_context == SchemaContext::MapKey)
     {
         bool not_in_schema = false;
         node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
