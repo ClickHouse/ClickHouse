@@ -1,8 +1,6 @@
 -- Test that recursive CTE column types are widened via iterative getLeastSupertype.
 -- Without type widening, `x` would be UInt8 and the query would run infinitely due to overflow.
 
-SET enable_analyzer = 1;
-
 WITH RECURSIVE t AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM t)
 SELECT x, toTypeName(x) FROM t WHERE x >= 256 LIMIT 1 SETTINGS max_threads = 1;
 

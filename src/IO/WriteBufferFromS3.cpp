@@ -19,6 +19,7 @@
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/HTTPConnectionInfo.h>
 
 #include <utility>
 
@@ -52,6 +53,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_part_number;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -117,7 +119,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , idempotency_id(getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH))
+    , idempotency_id(request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "")
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -434,6 +436,7 @@ void WriteBufferFromS3::createMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -483,6 +486,7 @@ void WriteBufferFromS3::abortMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3AbortMultipartUpload);
 
+    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     auto outcome = client_ptr->AbortMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -608,6 +612,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
         CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
         auto elapsed = watch.elapsedMicroseconds();
@@ -689,6 +694,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
         auto elapsed = watch.elapsedMicroseconds();
@@ -767,7 +773,8 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
 ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
 {
     auto metadata = object_metadata.value_or(ObjectAttributes{});
-    metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+    if (!idempotency_id.empty())
+        metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
     return metadata;
 }
 
@@ -795,6 +802,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
             CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);
             auto elapsed = watch.elapsedMicroseconds();

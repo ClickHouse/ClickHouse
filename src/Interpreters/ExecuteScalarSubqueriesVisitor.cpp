@@ -192,7 +192,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     }
     else
     {
-        if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
+        if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasComputedScalar(scalar_query_hash_str))
         {
             if (!data.getContext()->getViewSource())
             {

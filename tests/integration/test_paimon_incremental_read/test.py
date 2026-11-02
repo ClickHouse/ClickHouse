@@ -22,6 +22,8 @@ CH_TABLE_NAME_SESSION_LOSS = "paimon_inc_read_session_loss"
 CH_TABLE_NAME_MONOTONIC = "paimon_inc_read_monotonic"
 CH_TABLE_NAME_OPERATOR_RESET = "paimon_inc_read_operator_reset"
 CH_TABLE_NAME_CURSOR_AHEAD = "paimon_inc_read_cursor_ahead"
+CH_TABLE_NAME_REUSED_AT_CURSOR = "paimon_inc_read_reused_at_cursor"
+CH_TABLE_NAME_REUSED_BELOW_HEAD = "paimon_inc_read_reused_below_head"
 CH_TABLE_NAME_TRANSIENT_ERROR = "paimon_inc_read_transient_error"
 CH_TABLE_NAME_CONCURRENT = "paimon_inc_read_concurrent"
 CH_TABLE_NAME_EXPIRED = "paimon_inc_read_expired"
@@ -700,6 +702,167 @@ def test_paimon_incremental_read_cursor_ahead_of_warehouse(started_cluster):
         zk.stop()
 
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_CURSOR_AHEAD} SYNC;")
+
+
+def _consume_three_snapshots_then_rewind(zk, table_name: str, warehouse_name: str, reused_commits: int):
+    """Consumes snapshots 1..3, restores a byte copy of the table taken at snapshot 1 and
+    appends `reused_commits` snapshots, which get ids 2, 3, ... again. The copy keeps
+    schema-0, so the table identity check cannot see the restore."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    backup_path = f"/tmp/{warehouse_name}_backup"
+    keeper_path = f"/clickhouse/paimon_{warehouse_name}_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(table_name, table_path, keeper_path=keeper_path)
+    count_query = f"SELECT count() FROM {table_name}"
+    _drain_baseline(count_query, "1\n")
+
+    _warehouse_shell(writer_container_id, f"rm -rf {backup_path} && cp -a {table_path} {backup_path}")
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=2)
+    _wait_until_query_result(count_query, "20\n", database="default")
+    assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3"
+
+    _warehouse_shell(writer_container_id, f"rm -rf {table_path} && cp -a {backup_path} {table_path}")
+    _run_writer(
+        writer_container_id, warehouse_uri=warehouse_uri, start_id=100, rows_per_commit=10, commit_times=reused_commits
+    )
+    return writer_container_id, warehouse_uri, table_path, keeper_path, count_query
+
+
+def _wait_for_reused_snapshot_id_error(count_query: str) -> str:
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        out, error = node.query_and_get_answer_with_error(count_query)
+        if error:
+            assert "INVALID_STATE" in error, f"unexpected error: {error!r}"
+            assert "reused snapshot ids" in error, f"not the reused snapshot id error: {error!r}"
+            assert "clickhouse-keeper-client" in error, (
+                f"the error does not tell the operator how to recover: {error!r}"
+            )
+            return error
+        assert out == "0\n", (
+            f"the snapshots at the reused ids were skipped, the read returned {out!r}"
+        )
+        time.sleep(0.5)
+    raise AssertionError("the snapshots at the reused ids were silently reported as no new data")
+
+
+def test_paimon_incremental_read_reused_snapshot_id_at_cursor(started_cluster):
+    """After a rewind the writer re-creates snapshot 2, then snapshot 3 while a read is pinned at 2, below the cursor (3).
+    The cursor then equals the warehouse head again but points at a snapshot it never consumed."""
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        writer_container_id, warehouse_uri, _, keeper_path, count_query = _consume_three_snapshots_then_rewind(
+            zk, CH_TABLE_NAME_REUSED_AT_CURSOR, "warehouse_reused_at_cursor", reused_commits=1
+        )
+
+        # A read pinned at the new head 2, below the cursor, while the writer reuses the cursor's id 3.
+        node.query("SYSTEM ENABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock")
+        parked_result = {}
+        parked = threading.Thread(
+            target=lambda: parked_result.update(
+                zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+            )
+        )
+        parked.start()
+        node.query("SYSTEM WAIT FAILPOINT paimon_incremental_read_pause_before_processing_lock PAUSE", timeout=60)
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=110, rows_per_commit=10, commit_times=1)
+        node.query("SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock")
+        parked.join(timeout=120)
+        assert not parked.is_alive(), "the parked reader never finished"
+        assert "reused snapshot ids" in parked_result.get("err", ""), (
+            f"a read pinned below the cursor missed the reused cursor id: {parked_result!r}"
+        )
+
+        _wait_for_reused_snapshot_id_error(count_query)
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3", (
+            "the failing read modified the cursor"
+        )
+
+        # Setting the cursor by hand, here to its current value, accepts the loss.
+        zk.set(f"{keeper_path}/committed_snapshot", b"3")
+        out, error = node.query_and_get_answer_with_error(count_query)
+        assert not error and out == "0\n", f"a cursor set by hand was not trusted: {(out, error)!r}"
+
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=200, rows_per_commit=10, commit_times=1)
+        _wait_until_query_result(count_query, "10\n", database="default")
+
+        committed_path = f"{keeper_path}/committed_snapshot"
+        identity_path = f"{keeper_path}/committed_snapshot_identity"
+
+        def assert_identity_bound():
+            assert zk.exists(identity_path).mzxid == zk.exists(committed_path).mzxid, (
+                "the read that advanced the cursor did not record which snapshot it points at"
+            )
+
+        # The read that advanced a cursor set by hand records its snapshot again.
+        assert_identity_bound()
+
+        # Deleting the cursor means a full re-read: 1 + 2 * 10 + 10 rows.
+        zk.delete(committed_path)
+        out, error = node.query_and_get_answer_with_error(count_query)
+        assert not error and out == "31\n", f"deleting the cursor did not give a full re-read: {(out, error)!r}"
+        assert zk.get(committed_path)[0] == b"4"
+        assert_identity_bound()
+
+        # A cursor written by an older version has no identity node.
+        zk.delete(identity_path)
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=300, rows_per_commit=10, commit_times=1)
+        _wait_until_query_result(count_query, "10\n", database="default")
+        assert zk.get(committed_path)[0] == b"5"
+        assert_identity_bound()
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock")
+        zk.stop()
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_REUSED_AT_CURSOR} SYNC;")
+
+
+def test_paimon_incremental_read_reused_snapshot_id_below_head(started_cluster):
+    """After a rewind the writer re-creates snapshots 2, 3 and 4. Reading only what is above
+    the cursor (3) would deliver 4 and lose 2 and 3."""
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        writer_container_id, warehouse_uri, table_path, keeper_path, count_query = (
+            _consume_three_snapshots_then_rewind(
+                zk, CH_TABLE_NAME_REUSED_BELOW_HEAD, "warehouse_reused_below_head", reused_commits=3
+            )
+        )
+
+        _wait_for_reused_snapshot_id_error(count_query)
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3", (
+            "the failing read modified the cursor"
+        )
+
+        # Read every snapshot written since the rewind: the warehouse was rewound to snapshot 1.
+        zk.set(f"{keeper_path}/committed_snapshot", b"1")
+        _wait_until_query_result(count_query, "30\n", database="default")
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"4"
+        out, error = node.query_and_get_answer_with_error(count_query)
+        assert not error and out == "0\n", f"a cursor advanced by a read was rejected: {(out, error)!r}"
+
+        # Paimon expires the snapshot under the cursor: there is nothing left to compare,
+        # and a consumer behind retention keeps reading.
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=300, rows_per_commit=10, commit_times=2)
+        snapshot_dir = f"{table_path}/snapshot"
+        _warehouse_shell(
+            writer_container_id,
+            f"rm -f {snapshot_dir}/snapshot-1 {snapshot_dir}/snapshot-2 {snapshot_dir}/snapshot-3 "
+            f"{snapshot_dir}/snapshot-4 {snapshot_dir}/snapshot-5 && printf 6 > {snapshot_dir}/EARLIEST",
+        )
+        out, error = node.query_and_get_answer_with_error(count_query)
+        assert not error, f"an expired cursor snapshot was treated as an error: {error!r}"
+        assert out == "10\n", f"expected only snapshot 6, got {out!r}"
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"6"
+    finally:
+        zk.stop()
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_REUSED_BELOW_HEAD} SYNC;")
 
 
 def test_paimon_incremental_read_transient_error_does_not_burn_snapshot(started_cluster):

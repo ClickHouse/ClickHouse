@@ -5,16 +5,20 @@
 #include <Processors/Formats/Impl/ArrowIPC/MessageReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <limits>
 
@@ -33,6 +37,46 @@ ArrowIPCSchemaReader::ArrowIPCSchemaReader(ReadBuffer & in_, bool stream_, const
 {
 }
 
+namespace
+{
+
+/// An Arrow `null` field holds only NULLs, so its `Nullable(Nothing)` type must stay nullable at every depth when
+/// `schema_inference_make_columns_nullable = 0` removes the other `Nullable` wrappers.
+DataTypePtr wrapNothingInNullable(const DataTypePtr & type)
+{
+    if (isNothing(type))
+        return makeNullable(type);
+    /// Named compound types such as the geo `Point` hold no `null` fields; keep their names.
+    if (type->hasCustomName())
+        return type;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(wrapNothingInNullable(array->getNestedType()));
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(map->getKeyType(), wrapNothingInNullable(map->getValueType()));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        elements.reserve(tuple->getElements().size());
+        for (const auto & element : tuple->getElements())
+            elements.push_back(wrapNothingInNullable(element));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        /// `Variant` alternatives cannot be `Nullable` themselves, so restore nullability only inside them.
+        DataTypes alternatives;
+        alternatives.reserve(variant->getVariants().size());
+        for (const auto & alternative : variant->getVariants())
+            alternatives.push_back(removeNullable(wrapNothingInNullable(alternative)));
+        return std::make_shared<DataTypeVariant>(alternatives);
+    }
+    return type;
+}
+
+}
+
 NamesAndTypesList ArrowIPCSchemaReader::readSchema()
 {
     ArrowIPC::ArrowSchema schema;
@@ -44,7 +88,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
         if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
             throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
-        schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+        schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema(), msg.header->version());
     }
     else
     {
@@ -52,8 +96,8 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         /// directly only when it is genuinely seekable, the size is known, and `input_format_allow_seeks`
         /// is not disabled (mirroring `asArrowFile` in the library reader); otherwise load it into memory.
         SeekableReadBuffer * seekable = format_settings.seekable_read ? dynamic_cast<SeekableReadBuffer *>(&in) : nullptr;
-        std::unique_ptr<ReadBufferFromMemory> memory_buffer;
-        String file_data;
+        std::unique_ptr<ArrowIPC::InMemoryFile> file_data;
+        std::unique_ptr<SeekableReadBuffer> memory_buffer;
         size_t file_size = 0;
         std::optional<size_t> known_size;
         if (seekable)
@@ -72,13 +116,13 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             in.readStrict(magic, sizeof(magic));
             if (std::string_view(magic, sizeof(magic)) != ARROW_FILE_MAGIC)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: the leading {} magic is missing", ARROW_FILE_MAGIC);
-            file_data.assign(magic, sizeof(magic));
-            WriteBufferFromString out(file_data, AppendModeTag{});
-            copyData(in, out);
-            out.finalize();
-            file_size = file_data.size();
-            memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
-            seekable = memory_buffer.get(); /// `ReadBufferFromMemory` is a `SeekableReadBuffer` (implicit upcast).
+            file_data = std::make_unique<ArrowIPC::InMemoryFile>();
+            file_data->write(magic, sizeof(magic));
+            copyData(in, *file_data);
+            file_data->finalize();
+            file_size = file_data->count();
+            memory_buffer = file_data->getSeekableReadBuffer();
+            seekable = memory_buffer.get();
         }
         ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
         schema = std::move(footer.schema);
@@ -145,7 +189,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         DataTypePtr type;
         try
         {
-            type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable);
+            type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable, /*allow_null_type=*/true);
         }
         catch (const Exception & e)
         {
@@ -165,12 +209,20 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         /// recursively to nested types too, mirroring the library reader (which would otherwise infer a
         /// different nested schema for the same file and cache it under the same key).
         if (make_columns_nullable == 0)
-            type = removeNullableRecursively(type, format_settings);
+            type = wrapNothingInNullable(removeNullableRecursively(type, format_settings));
         else if (make_columns_nullable == 1)
             type = makeNullableRecursively(type, format_settings);
 
         result.emplace_back(field.name, type);
     }
+
+    /// Without this, `ReadSchemaUtils` would report the empty schema with an empty error message.
+    if (result.empty() && !schema.fields.empty())
+        throw Exception(
+            ErrorCodes::UNKNOWN_TYPE,
+            "The native Arrow IPC reader does not support the type of any of the {} columns, and "
+            "`input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` skipped all of them",
+            schema.fields.size());
     return result;
 }
 

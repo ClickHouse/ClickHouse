@@ -609,7 +609,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt16, requests UInt64)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
@@ -657,7 +657,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt8, requests UInt8)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),

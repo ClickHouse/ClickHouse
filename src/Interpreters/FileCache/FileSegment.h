@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
+#include <Common/Scheduler/ResourceLink.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
@@ -143,7 +144,8 @@ public:
      * ========== Methods for _any_ file segment's owner ========================
      */
 
-    String getOrSetDownloader();
+    /// When the caller is elected, the remote reader is switched to `io_scheduling` (the caller's links).
+    String getOrSetDownloader(const IOSchedulingSettings & io_scheduling = {});
 
     bool isDownloader() const;
 
@@ -227,7 +229,11 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    static void complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size);
+    static void complete(
+        FileSegmentPtr && file_segment,
+        bool allow_background_download,
+        bool force_shrink_to_downloaded_size,
+        const IOSchedulingSettings & holder_io_scheduling = {});
 
     void completePartAndResetDownloader();
 
@@ -262,7 +268,7 @@ public:
     RemoteFileReaderPtr getRemoteFileReader();
     LocalCacheWriterPtr getLocalCacheWriter();
 
-    RemoteFileReaderPtr extractRemoteFileReader();
+    RemoteFileReaderPtr extractRemoteFileReader(const IOSchedulingSettings & io_scheduling = {});
 
     void resetRemoteFileReader();
 
@@ -314,7 +320,14 @@ private:
 
     String tryGetPath() const;
 
-    void complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size);
+    void complete(
+        const LockedKeyPtr & locked_key,
+        bool allow_background_download,
+        bool force_shrink_to_downloaded_size,
+        const IOSchedulingSettings & holder_io_scheduling);
+
+    /// The only writer of `DownloadState::reader_io_scheduling`; switches the reader to the new links.
+    static void setReaderIOSchedulingUnlocked(DownloadState & download, const IOSchedulingSettings & io_scheduling);
 
     const Key file_key;
     Range segment_range;
@@ -343,8 +356,12 @@ private:
     /// Created/reset under `segment_guard`.
     struct DownloadState
     {
+        ~DownloadState();
+
         DownloaderId downloader_id; /// The one who prepares the download.
         RemoteFileReaderPtr remote_file_reader;
+        /// The links `remote_file_reader` carries: empty, or those of a holder that has not finished `complete`.
+        IOSchedulingSettings reader_io_scheduling;
         LocalCacheWriterPtr cache_writer;
         /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
         mutable std::mutex write_mutex;
@@ -410,8 +427,12 @@ struct FileSegmentsHolder final : private boost::noncopyable
     /// on destruction. Used by the ReaderExecutor cache to hand one segment to each reader/writer.
     std::shared_ptr<FileSegmentsHolder> popHolder();
 
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling_) { io_scheduling = io_scheduling_; }
+
 private:
     FileSegments file_segments{};
+    /// The links of the reads done through these segments, passed to `FileSegment::complete`.
+    IOSchedulingSettings io_scheduling;
 
     FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size);
 };

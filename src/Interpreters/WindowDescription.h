@@ -9,12 +9,15 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <memory>
+
 namespace DB
 {
 
 class ASTFunction;
 
 class ActionsDAG;
+class IGeneralWindowFunction;
 
 struct WindowFunctionDescription
 {
@@ -107,6 +110,9 @@ struct WindowDescription
 };
 
 using WindowFunctionDescriptions = VectorWithMemoryTracking<WindowFunctionDescription>;
+
+std::shared_ptr<const IGeneralWindowFunction> asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function);
+void validateWindowFunctions(const WindowDescription & window);
 
 using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;
 
