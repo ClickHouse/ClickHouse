@@ -1060,6 +1060,23 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     return compile_pattern(pattern);
 }
 
+/// Only splitByNonAlpha, splitByString, splitByRegexp, array, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+static bool isTokenizerSupportedByHasPhrase(const ITokenizer & tokenizer)
+{
+    static const std::unordered_set<std::string_view> supported_tokenizers = {
+        SplitByNonAlphaTokenizer::getExternalName(),
+        SplitByStringTokenizer::getExternalName(),
+        SplitByRegexpTokenizer::getExternalName(),
+        ArrayTokenizer::getExternalName(),
+        AsciiCJKTokenizer::getExternalName(),
+#if USE_ICU
+        IcuTokenizer::getExternalName(),
+#endif
+        NgramsTokenizer::getExternalName(),
+    };
+    return supported_tokenizers.contains(tokenizer.getTokenizerExternalName());
+}
+
 /// Converts a Field value to its text representation using `serializeText`,
 /// matching the format produced by `JSONAllValues`.
 static String serializeFieldAsText(const Field & value, const DataTypePtr & type)
@@ -1235,15 +1252,35 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
 
+        /// Neither prune nor inject a tokenizer that the function rejects.
+        if (function_name == "hasPhrase" && !isTokenizerSupportedByHasPhrase(*tokenizer))
+            return false;
+
+        const bool is_array_valued_path
+            = !WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString();
+        bool has_verbatim_needles = has_preprocessor && value_field.getType() == Field::Types::Array;
+
+        /// Direct read does not apply the preprocessor to a JSON path, so the row-level function sees the raw value and the index
+        /// only has to return a superset of its rows. A case mapping preserves token boundaries, so the preprocessed needles do.
+        if (is_special_text_index_function && has_verbatim_needles && !is_array_valued_path && preprocessor->isCaseMapping())
+        {
+            Array processed_needles;
+            for (const Field & element : value_field.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+                processed_needles.emplace_back(preprocessor->processConstant(element.safeGet<String>()));
+            }
+            value_field = std::move(processed_needles);
+            has_verbatim_needles = false;
+        }
+
         /// The index cannot prune when:
         /// - the path is array-valued: `JSONAllValues` stores an array value as a single serialized string, while these functions
         ///   search inside its elements;
-        /// - array needles meet a preprocessor: the index stores preprocessed tokens and takes array needles verbatim, while direct
-        ///   read does not apply the preprocessor to a JSON path.
+        /// - array needles meet a preprocessor other than a case mapping: the index stores preprocessed tokens, while the array
+        ///   needles are taken verbatim.
         /// Still return a query: direct read uses it to inject the index tokenizer and postprocessor.
-        const bool is_array_valued_path
-            = !WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString();
-        const bool has_verbatim_needles = has_preprocessor && value_field.getType() == Field::Types::Array;
         if (is_special_text_index_function && (is_array_valued_path || has_verbatim_needles))
         {
             out.function = RPNElement::FUNCTION_UNKNOWN;
@@ -1545,19 +1582,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, splitByRegexp, array, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
-        static const std::unordered_set<std::string_view> supported_tokenizers = {
-            SplitByNonAlphaTokenizer::getExternalName(),
-            SplitByStringTokenizer::getExternalName(),
-            SplitByRegexpTokenizer::getExternalName(),
-            ArrayTokenizer::getExternalName(),
-            AsciiCJKTokenizer::getExternalName(),
-#if USE_ICU
-            IcuTokenizer::getExternalName(),
-#endif
-            NgramsTokenizer::getExternalName(),
-        };
-        if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
+        if (!isTokenizerSupportedByHasPhrase(*tokenizer))
             return false;
 
         /// The two sides number an element's tokens differently, so the row-level function decides alone.

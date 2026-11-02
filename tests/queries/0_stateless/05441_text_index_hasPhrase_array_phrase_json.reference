@@ -70,3 +70,14 @@ preprocessor, array needles
 [1]
 [1]
 [1]
+case mapping preprocessor, index condition
+Condition: (mode: Any; tokens: ["cat", "quick"])
+other preprocessor, array needles
+[1]
+[1]
+[1]
+[1]
+array-valued path, tokenizer unsupported by hasPhrase
+[1]
+[1]
+[1]
