@@ -710,6 +710,13 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         bool has_additional_keys = low_cardinality_state->index_type.has_additional_keys;
         bool column_is_empty = low_cardinality_column.empty();
 
+        /// Indexes come from the stream.
+        if (low_cardinality_state->index_type.need_global_dictionary)
+        {
+            const size_t num_additional_keys = additional_keys ? additional_keys->size() : 0;
+            ColumnLowCardinality::checkIndexesAreLimited(*indexes_column, global_dictionary->size() + num_additional_keys);
+        }
+
         if (!low_cardinality_state->index_type.need_global_dictionary)
         {
             if (additional_keys == nullptr)
