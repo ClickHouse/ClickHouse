@@ -1,0 +1,33 @@
+<test>
+    <!-- A `Nullable(Enum)` argument that holds a NULL is copied with the enum's default in the null
+         slots before a function with the default implementation for NULLs runs on it (`patchNullSlots`
+         in IFunction.cpp). `enum_string_operation.xml` runs the same function family on a non-Nullable
+         Enum and cannot see that copy. The tables mirror https://github.com/ClickHouse/ClickHouse/issues/120864:
+         0.1 % NULLs (the issue's shape), no NULL at all (the path that skips the copy), and every other
+         row NULL (the LEFT JOIN with `join_use_nulls` shape). -->
+
+    <create_query>CREATE TABLE nullable_enum8_sparse_nulls (c Nullable(Enum8('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE nullable_enum8_no_nulls (c Nullable(Enum8('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE nullable_enum8_dense_nulls (c Nullable(Enum8('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE nullable_enum16_sparse_nulls (c Nullable(Enum16('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO nullable_enum8_sparse_nulls SELECT if(number % 1000 = 0, NULL, if(number % 2 = 0, 'a', 'b')) FROM numbers_mt(50000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO nullable_enum8_no_nulls SELECT if(number % 2 = 0, 'a', 'b') FROM numbers_mt(50000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO nullable_enum8_dense_nulls SELECT if(number % 2 = 0, NULL, 'a') FROM numbers_mt(50000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO nullable_enum16_sparse_nulls SELECT if(number % 1000 = 0, NULL, if(number % 2 = 0, 'a', 'b')) FROM numbers_mt(50000000) SETTINGS max_insert_threads = 8</fill_query>
+
+    <!-- `c = <enum constant>` takes the all-numeric fast path, `c = 'a'` and `LIKE` the general path. -->
+    <query>SELECT count() FROM nullable_enum8_sparse_nulls WHERE c = CAST('a' AS Enum8('a' = 1, 'b' = 2)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM nullable_enum8_sparse_nulls WHERE c = 'a' SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM nullable_enum8_sparse_nulls WHERE c LIKE 'a%' SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM nullable_enum8_no_nulls WHERE c = CAST('a' AS Enum8('a' = 1, 'b' = 2)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM nullable_enum8_dense_nulls WHERE c = CAST('a' AS Enum8('a' = 1, 'b' = 2)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM nullable_enum16_sparse_nulls WHERE c = CAST('a' AS Enum16('a' = 1, 'b' = 2)) SETTINGS max_threads = 1</query>
+    <!-- With the null rows filtered out before the function runs, nothing has to be copied. -->
+    <query>SELECT count() FROM nullable_enum8_sparse_nulls WHERE c = 'a' SETTINGS max_threads = 1, short_circuit_function_evaluation_for_nulls = 1, short_circuit_function_evaluation_for_nulls_threshold = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS nullable_enum8_sparse_nulls</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_enum8_no_nulls</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_enum8_dense_nulls</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_enum16_sparse_nulls</drop_query>
+</test>
