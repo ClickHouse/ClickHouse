@@ -2178,8 +2178,9 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, typename JSONParser::Element>> paths_and_values_for_shared_data;
-        /// Temporary Dynamic column that will be used to create and serialize values in shared data.
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true, 1))
+        /// One reused buffer accumulates the current path as the traversal descends and pops as it returns.
+        String current_path;
+        if (!traverseAndInsert(column_object, element, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true, 1))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -2263,7 +2264,7 @@ private:
     bool traverseAndInsert(
         ColumnObject & column_object,
         const typename JSONParser::Element & element,
-        const String & current_path,
+        String & current_path,
         const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         std::vector<std::pair<String, typename JSONParser::Element>> & paths_and_values_for_shared_data,
@@ -2296,8 +2297,10 @@ private:
                 /// checks (typed and dynamic) and the sorted shared-data scan below, rolling the row back.
                 for (auto [key, value] : element.getObject())
                 {
-                    String child_path = buildChildPath(current_path, key, insert_settings, is_root);
-                    if (!traverseAndInsert(column_object, value, child_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1))
+                    size_t parent_size = pushChildKey(current_path, key, insert_settings, is_root);
+                    bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1);
+                    current_path.resize(parent_size);
+                    if (!ok)
                         return false;
                 }
                 return true;
@@ -2364,7 +2367,6 @@ private:
             std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
             for (auto [key, value] : element.getObject())
             {
-                String path = buildChildPath(current_path, key, insert_settings, is_root);
                 auto value_element_type = getJSONElementType(value);
                 auto it = visited_keys.find(key);
                 if (it != visited_keys.end())
@@ -2384,6 +2386,8 @@ private:
                     visited_keys[key].insert(value_element_type);
                 }
 
+                size_t parent_size = pushChildKey(current_path, key, insert_settings, is_root);
+
                 /// When a key has both literal and object values (key_element_types has 2 types),
                 /// and the key corresponds to a typed path with a non-nested type (e.g. Int32, String —
                 /// not JSON/Map/Tuple that naturally parse objects), the object value should NOT be
@@ -2392,10 +2396,12 @@ private:
                 /// dynamic/shared data. The literal value will fill the typed path via normal recursion.
                 bool skip_typed = key_element_types[key].size() > 1
                     && value_element_type == JSONElementType::OBJECT
-                    && typed_path_nodes.contains(path)
-                    && !canParseObjectValue(typed_paths_types.at(path));
+                    && typed_path_nodes.contains(current_path)
+                    && !canParseObjectValue(typed_paths_types.at(current_path));
 
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, skip_typed))
+                bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, skip_typed);
+                current_path.resize(parent_size);
+                if (!ok)
                     return false;
             }
 
@@ -2470,6 +2476,20 @@ private:
         }
 
         return true;
+    }
+
+    /// Append a child key to the running path buffer in place, returning the parent length so the caller can
+    /// restore the buffer after recursing. Reusing one buffer avoids allocating a fresh path string per key.
+    size_t pushChildKey(String & path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root) const
+    {
+        size_t parent_size = path.size();
+        if (!is_root)
+            path += '.';
+        if (insert_settings.escape_dots_in_json_keys)
+            path += escapeDotInJSONKey(String(key));
+        else
+            path += key;
+        return parent_size;
     }
 
     /// Build the full path for a child key within the current object.
@@ -2637,84 +2657,16 @@ private:
     {
         /// Fast track where we process simple data types explicitly and serialize them into
         /// shared data without inserting value into Dynamic column with subsequent binary serialization.
-        switch (element.type())
+        InferredScalar scalar;
+        if (inferScalar(element, format_settings, scalar))
         {
-            case ElementType::BOOL:
-            {
-                encodeDataType(getDataTypesCache().getType("Bool"), buf);
-                writeBinary(element.getBool(), buf);
-                return true;
-            }
-            case ElementType::INT64:
-            {
-                encodeDataType(getDataTypesCache().getType("Int64"), buf);
-                writeBinaryLittleEndian(element.getInt64(), buf);
-                return true;
-            }
-            case ElementType::UINT64:
-            {
-                encodeDataType(getDataTypesCache().getType("UInt64"), buf);
-                writeBinaryLittleEndian(element.getUInt64(), buf);
-                return true;
-            }
-            case ElementType::DOUBLE:
-            {
-                encodeDataType(getDataTypesCache().getType("Float64"), buf);
-                writeBinaryLittleEndian(element.getDouble(), buf);
-                return true;
-            }
-            case ElementType::STRING:
-            {
-                std::string_view data = element.getString();
-
-                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
-                {
-                    encodeDataType(getDataTypesCache().getType("String"), buf);
-                    writeStringBinary(data, buf);
-                    return true;
-                }
-
-                if (format_settings.try_infer_dates)
-                {
-                    DayNum date;
-                    if (tryInferDateFromString(data, date))
-                    {
-                        encodeDataType(getDataTypesCache().getType("Date"), buf);
-                        writeBinaryLittleEndian(static_cast<UInt16>(date), buf);
-                        return true;
-                    }
-                }
-
-                if (format_settings.try_infer_datetimes)
-                {
-                    bool is_datetime64 = false;
-                    time_t datetime_value = 0;
-                    DateTime64 datetime64_value = 0;
-                    if (tryInferDateTimeOrDateTime64FromString(
-                            data, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference,
-                            is_datetime64, datetime_value, datetime64_value))
-                    {
-                        if (is_datetime64)
-                        {
-                            encodeDataType(getDataTypesCache().getType("DateTime64(9)"), buf);
-                            writeBinaryLittleEndian(datetime64_value, buf);
-                        }
-                        else
-                        {
-                            encodeDataType(getDataTypesCache().getType("DateTime"), buf);
-                            writeBinaryLittleEndian(static_cast<UInt32>(datetime_value), buf);
-                        }
-                        return true;
-                    }
-                }
-
-                encodeDataType(getDataTypesCache().getType("String"), buf);
-                writeStringBinary(data, buf);
-                return true;
-            }
-            default:
-                break;
+            encodeDataType(getScalarType(scalar.kind), buf);
+            writeScalarValue(buf, element, scalar);
+            return true;
         }
+
+        if (element.isArray() && trySerializeScalarArrayIntoSharedData(buf, element, format_settings))
+            return true;
 
         /// Non-scalar value. SerializationDynamic::serializeBinary writes encodeDataType(removeNullable(inferred))
         /// followed by that type's binary value, so reproduce those bytes directly instead of routing the value
@@ -2769,6 +2721,155 @@ private:
         /// the binary representation of the values and break the future deserialization.
         builder.serialization->serializeBinary(*builder.column, size_before, buf, getDefaultFormatSettings());
         builder.column->popBack(builder.column->size() - size_before);
+        return true;
+    }
+
+    /// Type of a scalar JSON element in shared data.
+    enum class ScalarKind : uint8_t
+    {
+        Bool,
+        Int64,
+        UInt64,
+        Float64,
+        String,
+        Date,
+        DateTime,
+        DateTime64,
+    };
+
+    /// Kind of a scalar element and, for the date and time kinds, the value parsed from the string.
+    struct InferredScalar
+    {
+        ScalarKind kind = ScalarKind::String;
+        DayNum date;
+        time_t datetime = 0;
+        DateTime64 datetime64 = 0;
+    };
+
+    /// Returns false for elements that are not scalars (null, array, object).
+    bool inferScalar(const typename JSONParser::Element & element, const FormatSettings & format_settings, InferredScalar & scalar) const
+    {
+        switch (element.type())
+        {
+            case ElementType::BOOL:
+                scalar.kind = ScalarKind::Bool;
+                return true;
+            case ElementType::INT64:
+                scalar.kind = ScalarKind::Int64;
+                return true;
+            case ElementType::UINT64:
+                scalar.kind = ScalarKind::UInt64;
+                return true;
+            case ElementType::DOUBLE:
+                scalar.kind = ScalarKind::Float64;
+                return true;
+            case ElementType::STRING:
+            {
+                std::string_view data = element.getString();
+                bool is_datetime64 = false;
+                if (format_settings.try_infer_dates && tryInferDateFromString(data, scalar.date))
+                    scalar.kind = ScalarKind::Date;
+                else if (format_settings.try_infer_datetimes && tryInferDateTimeOrDateTime64FromString(
+                             data, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference,
+                             is_datetime64, scalar.datetime, scalar.datetime64))
+                    scalar.kind = is_datetime64 ? ScalarKind::DateTime64 : ScalarKind::DateTime;
+                else
+                    scalar.kind = ScalarKind::String;
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    static DataTypePtr getScalarType(ScalarKind kind)
+    {
+        static const String names[] = {"Bool", "Int64", "UInt64", "Float64", "String", "Date", "DateTime", "DateTime64(9)"};
+        return getDataTypesCache().getType(names[static_cast<size_t>(kind)]);
+    }
+
+    void writeScalarValue(WriteBuffer & buf, const typename JSONParser::Element & element, const InferredScalar & scalar) const
+    {
+        switch (scalar.kind)
+        {
+            case ScalarKind::Bool:
+                writeBinary(element.getBool(), buf);
+                return;
+            case ScalarKind::Int64:
+                writeBinaryLittleEndian(element.getInt64(), buf);
+                return;
+            case ScalarKind::UInt64:
+                writeBinaryLittleEndian(element.getUInt64(), buf);
+                return;
+            case ScalarKind::Float64:
+                writeBinaryLittleEndian(element.getDouble(), buf);
+                return;
+            case ScalarKind::String:
+                writeStringBinary(element.getString(), buf);
+                return;
+            case ScalarKind::Date:
+                writeBinaryLittleEndian(static_cast<UInt16>(scalar.date), buf);
+                return;
+            case ScalarKind::DateTime:
+                writeBinaryLittleEndian(static_cast<UInt32>(scalar.datetime), buf);
+                return;
+            case ScalarKind::DateTime64:
+                writeBinaryLittleEndian(scalar.datetime64, buf);
+                return;
+        }
+    }
+
+    /// Schema inference gives an array of scalars of one kind T the type Array(T), or Array(Nullable(T)) with
+    /// schema_inference_make_columns_nullable, so serialize such an array directly. Returns false without writing
+    /// anything for other arrays, which go through the generic path.
+    bool trySerializeScalarArrayIntoSharedData(WriteBuffer & buf, const typename JSONParser::Element & element, const FormatSettings & format_settings) const
+    {
+        auto array = element.getArray();
+        /// Schema inference counts the array and its elements as two more levels of depth.
+        if (array.size() == 0 || format_settings.json.max_depth < 2)
+            return false;
+
+        /// The type is written before the values, so all elements are checked first. Values parsed from strings
+        /// (all elements have the first element's kind, so it decides) are kept to be written without parsing again.
+        std::vector<InferredScalar> parsed_scalars;
+        InferredScalar scalar;
+        bool is_first = true;
+        bool is_parsed_from_string = false;
+        ScalarKind kind = ScalarKind::String;
+        for (auto value : array)
+        {
+            if (!inferScalar(value, format_settings, scalar) || (!is_first && scalar.kind != kind))
+                return false;
+
+            if (is_first)
+            {
+                kind = scalar.kind;
+                is_parsed_from_string = kind == ScalarKind::Date || kind == ScalarKind::DateTime || kind == ScalarKind::DateTime64;
+                if (is_parsed_from_string)
+                    parsed_scalars.reserve(array.size());
+                is_first = false;
+            }
+
+            if (is_parsed_from_string)
+                parsed_scalars.push_back(scalar);
+        }
+
+        /// Schema inference also tries to infer numbers from strings.
+        if (kind == ScalarKind::String && format_settings.json.try_infer_numbers_from_strings)
+            return false;
+
+        auto element_type = getScalarType(kind);
+        bool is_nullable = format_settings.schema_inference_make_columns_nullable;
+        encodeDataType(std::make_shared<DataTypeArray>(is_nullable ? makeNullable(element_type) : element_type), buf);
+        writeVarUInt(array.size(), buf);
+        size_t i = 0;
+        for (auto value : array)
+        {
+            if (is_nullable)
+                writeBinary(UInt8(0), buf);
+            writeScalarValue(buf, value, is_parsed_from_string ? parsed_scalars[i] : scalar);
+            ++i;
+        }
         return true;
     }
 
