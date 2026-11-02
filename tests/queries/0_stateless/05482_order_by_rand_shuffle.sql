@@ -3,6 +3,7 @@
 
 SET query_plan_use_shuffle_for_order_by_rand = 1;
 SET max_threads = 4, max_block_size = 1000;
+SET max_rows_to_sort = 0, max_bytes_to_sort = 0;
 
 SELECT 'Plan';
 SELECT count() FROM (EXPLAIN SELECT number FROM numbers(1000) ORDER BY rand() LIMIT 10) WHERE explain LIKE '%Shuffle%';
@@ -15,6 +16,9 @@ SELECT count() FROM (EXPLAIN SELECT number FROM numbers(1000) ORDER BY number LI
 SELECT count() FROM (EXPLAIN SELECT number FROM numbers(1000) ORDER BY rand(), number LIMIT 10) WHERE explain LIKE '%Shuffle%';
 SELECT count() FROM (EXPLAIN SELECT number FROM numbers(1000) ORDER BY randCanonical() LIMIT 10) WHERE explain LIKE '%Shuffle%';
 SELECT count() FROM (EXPLAIN SELECT number FROM numbers(1000) ORDER BY rand() LIMIT 10 SETTINGS query_plan_use_shuffle_for_order_by_rand = 0) WHERE explain LIKE '%Shuffle%';
+-- Sorting limits must still be enforced by the sorting transforms.
+SELECT count() FROM (EXPLAIN SELECT number FROM numbers(1000) ORDER BY rand() LIMIT 10 SETTINGS max_rows_to_sort = 10000) WHERE explain LIKE '%Shuffle%';
+SELECT count() FROM (EXPLAIN SELECT number FROM numbers(1000) ORDER BY rand() LIMIT 10 SETTINGS max_bytes_to_sort = 1000000) WHERE explain LIKE '%Shuffle%';
 
 SELECT 'The result is sorted by the random values';
 SELECT count(), arraySort(groupArray(r)) = groupArray(r), uniqExact(number) FROM (SELECT number, rand() AS r FROM numbers_mt(100000) ORDER BY r SETTINGS max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0);
