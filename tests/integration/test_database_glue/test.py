@@ -2739,3 +2739,63 @@ def test_glue_create_registers_columns(started_cluster):
     ]
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize("case", ["comments", "long_name", "nested_name"])
+def test_glue_update_skips_column_text_glue_refuses(started_cluster, case):
+    # Glue refuses a column name, comment or type longer than its limit or with a control character other than tab,
+    # which an Iceberg field can have, and the proxy refuses such an `UpdateTable` like Glue does. A commit keeps
+    # the existing Glue comment instead of such a `doc`, and the existing columns instead of such a name or type.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"text_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_text_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    if case == "comments":
+        docs = {"id": "a" * 255, "u": "\u00e9" * 255, "s": "b" * 256, "m": "line one\nline two"}
+        fields = [
+            NestedField(field_id=i + 1, name=name, field_type=LongType(), required=False, doc=doc)
+            for i, (name, doc) in enumerate(docs.items())
+        ]
+        arrow_fields = [pa.field(name, pa.int64()) for name in docs]
+    elif case == "long_name":
+        fields = [NestedField(field_id=2, name="c" * 256, field_type=LongType(), required=False)]
+        arrow_fields = [pa.field("c" * 256, pa.int64())]
+    else:
+        nested = NestedField(field_id=3, name="line one\nline two", field_type=LongType(), required=False)
+        fields = [NestedField(field_id=2, name="st", field_type=StructType(nested), required=False)]
+        arrow_fields = [pa.field("st", pa.struct([pa.field(nested.name, pa.int64())]))]
+    if case != "comments":
+        fields.insert(0, NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+        arrow_fields.insert(0, pa.field("id", pa.int64()))
+    schema = Schema(*fields)
+    catalog, _ = create_pyiceberg_table(
+        started_cluster, namespace, table_name, [[{"id": 1}]], schema, pa.schema(arrow_fields)
+    )
+    # The Glue table another writer leaves: comments Glue accepted, or no columns.
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    if case == "comments":
+        for column in glue_table["StorageDescriptor"]["Columns"]:
+            column.pop("Comment", None)
+            if column["Name"] == "s":
+                column["Comment"] = "typed in the console"
+    else:
+        glue_table["StorageDescriptor"]["Columns"] = []
+    put_glue_table(started_cluster, namespace, glue_table)
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    node.query(f"INSERT INTO {table_ref} (id) VALUES (2)", settings=GLUE_WRITE_SETTINGS)
+
+    columns = get_glue_table(started_cluster, namespace, table_name)["StorageDescriptor"].get("Columns", [])
+    if case == "comments":
+        expected = {"id": "a" * 255, "u": "\u00e9" * 255, "s": "typed in the console", "m": None}
+        assert {column["Name"]: column.get("Comment") for column in columns} == expected, columns
+    else:
+        assert columns == [], columns
+    table = catalog.load_table(f"{namespace}.{table_name}")
+    assert table.schema().fields == schema.fields
+    assert table.scan().to_arrow().num_rows == 2
+    assert node.query(f"SELECT count() FROM {table_ref}") == "2\n"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

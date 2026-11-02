@@ -1,6 +1,7 @@
 import http.client
 import http.server
 import json
+import re
 import socketserver
 import sys
 import threading
@@ -68,6 +69,9 @@ TABLE_INPUT_KEYS = (
     "TargetTable",
 )
 
+# moto accepts any column text, Glue refuses a column name, comment or type that does not match `API_Column`.
+GLUE_COLUMN_TEXT = re.compile(r"[\u0020-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff\t]*")
+
 DROPPED_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length", "host", "server", "date"}
 
 injected = {}
@@ -107,6 +111,18 @@ def take_update_fault(database):
                 update_faults_taken.add(database)
             return prefix
     return None
+
+
+def is_valid_column_text(text, max_length):
+    return len(text.encode("utf-16-le")) // 2 <= max_length and GLUE_COLUMN_TEXT.fullmatch(text) is not None
+
+
+def has_invalid_column(table_input):
+    return any(
+        not is_valid_column_text(column.get(key, ""), max_length)
+        for column in table_input.get("StorageDescriptor", {}).get("Columns", [])
+        for key, max_length in (("Name", 255), ("Comment", 255), ("Type", 131072))
+    )
 
 
 def increment(kind, database):
@@ -200,6 +216,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         database = request.get("DatabaseName", "")
         name = request.get("TableInput", {}).get("Name", "")
         increment("updates", database)
+        if has_invalid_column(request.get("TableInput", {})):
+            self.reply_glue_error(400, "ValidationException", "Injected validation of a column name, comment or type.")
+            return
         if database.startswith("held_") and take_update_fault(database) == "held_":
             wait_for_release(database)
         with update_lock:

@@ -27,6 +27,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/checkStackSize.h>
 #include <base/unit.h>
 #include <Core/Settings.h>
@@ -214,8 +215,28 @@ std::optional<String> findColumnParameter(const Aws::Glue::Model::Column & colum
     return it->second;
 }
 
-/// Glue columns for an Iceberg schema. Existing columns, matched by field id (else by name), keep their comment and
-/// parameters; existing columns the schema no longer has follow as non-current, each name once.
+/// Glue refuses column text longer than `max_length` UTF-16 code units or with a control character other than tab.
+bool isValidGlueColumnText(const String & text, size_t max_length = 255)
+{
+    size_t utf16_length = 0;
+    for (size_t pos = 0; pos < text.size();)
+    {
+        const size_t length = DB::UTF8::seqLength(static_cast<UInt8>(text[pos]));
+        const auto code_point
+            = pos + length <= text.size() ? DB::UTF8::convertUTF8ToCodePoint(text.data() + pos, length) : std::nullopt;
+        if (!code_point
+            || !(*code_point == '\t' || (*code_point >= 0x20 && *code_point <= 0xD7FF)
+                 || (*code_point >= 0xE000 && *code_point <= 0xFFFD) || *code_point >= 0x10000))
+            return false;
+        utf16_length += *code_point >= 0x10000 ? 2 : 1;
+        pos += length;
+    }
+    return utf16_length <= max_length;
+}
+
+/// Glue columns for an Iceberg schema, or the existing ones if Glue would refuse a column name or type. Existing columns,
+/// matched by field id (else by name), keep their parameters, and their comment unless the field has a `doc` Glue
+/// accepts; existing columns the schema no longer has follow as non-current, each name once.
 Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
     const Poco::JSON::Object::Ptr & schema, const Aws::Vector<Aws::Glue::Model::Column> & existing_columns)
 {
@@ -238,6 +259,9 @@ Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
     {
         const auto field = fields->getObject(i);
         const auto name = field->getValue<String>(DB::Iceberg::f_name);
+        auto type = getGlueColumnType(field->get(DB::Iceberg::f_type));
+        if (!isValidGlueColumnText(name) || !isValidGlueColumnText(type, 131072))
+            return existing_columns;
         const auto id = std::to_string(field->getValue<Int32>(DB::Iceberg::f_id));
         current_names.insert(name);
 
@@ -249,8 +273,8 @@ Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
 
         Aws::Glue::Model::Column column;
         column.SetName(name);
-        column.SetType(getGlueColumnType(field->get(DB::Iceberg::f_type)));
-        if (field->has("doc") && !field->isNull("doc"))
+        column.SetType(std::move(type));
+        if (field->has("doc") && !field->isNull("doc") && isValidGlueColumnText(field->getValue<String>("doc")))
             column.SetComment(field->getValue<String>("doc"));
         else if (existing && !existing->GetComment().empty())
             column.SetComment(existing->GetComment());
