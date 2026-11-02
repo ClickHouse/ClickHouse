@@ -31,7 +31,9 @@ url="http://localhost:11111/test/${CLICKHOUSE_DATABASE}"
 #     2 * max_download_buffer_size = 20 MiB, so the ~11 MiB object sits in the band where the old
 #     code WOULD have prefetched - making RemoteFSPrefetches = 0 a proof of the gate, not just of
 #     the object being too large for any prefetch.
-read_settings="remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, max_read_buffer_size=1048576, max_download_buffer_size=10485760, input_format_parquet_filter_push_down=1, optimize_count_from_files=0"
+#   - use_query_condition_cache = 0: the same query over big.parquet runs twice, and a cache hit
+#     would skip the reads of the second run, prefetch included.
+read_settings="remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, max_read_buffer_size=1048576, max_download_buffer_size=10485760, input_format_parquet_filter_push_down=1, optimize_count_from_files=0, use_query_condition_cache=0"
 
 # big object: > 1 read buffer. The incompressible string column inflates it well past 1 MiB.
 ${CLICKHOUSE_CLIENT} --query "

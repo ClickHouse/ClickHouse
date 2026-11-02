@@ -1,0 +1,20 @@
+-- MVTEncodeGeom: a buffer beyond the representable MVT coordinate range is rejected
+-- MVTEncodeGeom: a MultiPoint keeps the points inside the tile and drops the rest
+[(124,3384)]
+-- MVTEncodeGeom: a MultiPoint lying entirely outside the tile becomes NULL
+1
+-- MVTEncodeGeom: a MultiLineString is projected into tile-local pixel space
+[[(1233,4097),(3969,1850)]]
+-- MVTEncodeGeom: a Ring is encoded as a polygon and clipped to the tile plus buffer
+MULTIPOLYGON(((3969 -1,3913 -1,590 4097,3969 4097,3969 -1)))
+-- MVTEncodeGeom: every discriminator of the Geometry variant is dispatched, a NULL inside the variant stays NULL
+LineString	MULTILINESTRING((592 1316,637 1241))
+MultiLineString	MULTILINESTRING((592 1316,637 1241))
+MultiPoint	MULTIPOINT((592 1316),(637 1241))
+MultiPolygon	MULTIPOLYGON(((637 1241,592 1316,637 1316,637 1241)))
+NULL inside the variant	\N
+Point	POINT(592 1316)
+Polygon	MULTIPOLYGON(((637 1241,592 1316,637 1316,637 1241)))
+Ring	MULTIPOLYGON(((637 1241,592 1316,637 1316,637 1241)))
+-- MVTEncodeGeom: a NULL tile argument on a Geometry input yields NULL
+1

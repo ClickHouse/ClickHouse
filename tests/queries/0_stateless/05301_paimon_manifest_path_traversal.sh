@@ -10,15 +10,17 @@ rm -rf "${BASE_DIR}"
 mkdir -p "${BASE_DIR}/outside"
 echo "SECRET_OUTSIDE_TABLE" > "${BASE_DIR}/outside/secret.txt"
 
-# $1 - table name, $2 - manifest file name in the manifest list, $3 - data file name in the manifest
+# $1 - table name, $2 - manifest file name in the manifest list, $3 - data file name in the manifest,
+# $4 - optional index manifest file name in the snapshot
 create_table()
 {
     local table_dir="${BASE_DIR}/$1"
+    local index_manifest="${4:+,\"indexManifest\":\"$4\"}"
     mkdir -p "${table_dir}/schema" "${table_dir}/snapshot" "${table_dir}/manifest" "${table_dir}/bucket-0"
     echo "INSIDE_TABLE" > "${table_dir}/bucket-0/data.txt"
     echo '{"version":3,"id":0,"highestFieldId":0,"partitionKeys":[],"primaryKeys":[],"options":{},"timeMillis":0,"fields":[{"id":0,"name":"data","type":"STRING NOT NULL"}]}' > "${table_dir}/schema/schema-0"
     echo -n '1' > "${table_dir}/snapshot/LATEST"
-    echo '{"id":1,"schemaId":0,"baseManifestList":"manifest-list-1","deltaManifestList":"manifest-list-1","commitUser":"test","commitIdentifier":0,"commitKind":"APPEND","timeMillis":0}' > "${table_dir}/snapshot/snapshot-1"
+    echo '{"id":1,"schemaId":0,"baseManifestList":"manifest-list-1","deltaManifestList":"manifest-list-1","commitUser":"test","commitIdentifier":0,"commitKind":"APPEND","timeMillis":0'"${index_manifest}"'}' > "${table_dir}/snapshot/snapshot-1"
 
     ${CLICKHOUSE_CLIENT} -q "
         INSERT INTO FUNCTION file('${table_dir}/manifest/manifest-list-1', 'Avro',
@@ -59,5 +61,11 @@ read_table manifest_dotdot
 
 create_table manifest_absolute "${BASE_DIR}/valid/manifest/manifest-1" 'data.txt'
 read_table manifest_absolute
+
+create_table index_manifest_dotdot 'manifest-1' 'data.txt' '../../outside/secret.txt'
+read_table index_manifest_dotdot
+
+create_table index_manifest_absolute 'manifest-1' 'data.txt' "${BASE_DIR}/outside/secret.txt"
+read_table index_manifest_absolute
 
 rm -rf "${BASE_DIR}"
