@@ -822,7 +822,8 @@ public:
         {
             auto data = element.getString();
             if (!tryParse(value, data, format_settings.date_time_input_format, saturate)
-                || (!insert_settings.truncate_fractional_seconds && !isWholeSeconds(data, format_settings.date_time_input_format)))
+                || (!insert_settings.truncate_fractional_seconds && !isWholeSeconds(data, format_settings.date_time_input_format))
+                || (!insert_settings.parse_any_string_as_date_time && !tryInferDateOrDateTimeFromString(data, format_settings)))
             {
                 error = fmt::format("cannot parse DateTime value here: {}", data);
                 return false;
@@ -1091,7 +1092,8 @@ public:
         DateTime64 value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format)
+                || (!insert_settings.parse_any_string_as_date_time && !tryInferDateOrDateTimeFromString(element.getString(), format_settings)))
             {
                 error = fmt::format("cannot parse DateTime64 value here: {}", element.getString());
                 return false;
@@ -1931,6 +1933,8 @@ public:
             insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
             insert_settings_with_no_type_conversion.saturate_on_overflow = false;
             insert_settings_with_no_type_conversion.truncate_fractional_seconds = false;
+            /// A string like `1` is inferred as `String`, so it must not be parsed into an existing `DateTime` variant either.
+            insert_settings_with_no_type_conversion.parse_any_string_as_date_time = false;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
