@@ -1984,6 +1984,10 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
+    /// `finalizeMutatedPart` writes the new part's own `uuid.txt`; through a hardlink it would overwrite the source part's.
+    if (new_part->uuid != UUIDHelpers::Nil)
+        files_to_skip.insert(IMergeTreeDataPart::UUID_FILE_NAME);
+
     /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
     files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
