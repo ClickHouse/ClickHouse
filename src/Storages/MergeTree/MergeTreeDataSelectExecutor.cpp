@@ -1266,12 +1266,27 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
 
+                const auto & part_key_condition = key_condition->generateForPart(ranges.data_part);
+                const auto * part_offset = part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr;
+                const auto * total_offset = total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr;
+
+                /// marks that `_part_offset` conditions exclude are not primary key drops
+                const bool key_condition_useful = metadata_snapshot->hasPrimaryKey() && !part_key_condition.alwaysUnknownOrTrue();
+                const bool offset_condition_useful = (part_offset && !part_offset->alwaysUnknownOrTrue())
+                    || (total_offset && !total_offset->alwaysUnknownOrTrue());
+                if (key_condition_useful && offset_condition_useful)
+                {
+                    const auto key_ranges = markRangesFromPKRange(
+                        ranges, metadata_snapshot, part_key_condition, nullptr, nullptr, nullptr, pk_to_minmax_slot_ptr, settings, log);
+                    index_usage.granules_dropped_by_primary_key = total_marks_count - key_ranges.getNumberOfMarks();
+                }
+
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPart(ranges.data_part),
-                    part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
-                    total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
+                    part_key_condition,
+                    part_offset,
+                    total_offset,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
@@ -1280,8 +1295,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 const size_t marks_dropped = total_marks_count - ranges.getMarksCount();
                 pk_stat.granules_dropped.fetch_add(marks_dropped, std::memory_order_relaxed);
-                /// without a primary key only `_part_offset` conditions drop marks, they are not counted
-                if (metadata_snapshot->hasPrimaryKey())
+                if (key_condition_useful && !offset_condition_useful)
                     index_usage.granules_dropped_by_primary_key = marks_dropped;
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
