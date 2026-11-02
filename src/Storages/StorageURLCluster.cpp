@@ -125,12 +125,15 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
+    /// The nodes check the added values as overrides of the named collection, so they infer a locked key themselves.
     if (add_structure_and_format)
         TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
             getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
             format_name,
-            context
+            context,
+            /* is_replayed_definition= */ false,
+            /* skip_not_overridable= */ true
         );
 
     /// When a non-cluster table function (`url`) was auto-converted to cluster mode

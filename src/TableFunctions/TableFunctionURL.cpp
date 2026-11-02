@@ -129,6 +129,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
+        structure_not_overridable = !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -374,7 +375,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            columns.empty() ? getActualTableStructure(context, true) : columns,
+            columns.empty() || structure_not_overridable ? getActualTableStructure(context, true) : columns,
             ConstraintsDescription{},
             configuration);
     }

@@ -18,3 +18,39 @@
 1	7	10
 2	5	6
 3	7	30
+--- url with parallel replicas reads from the cluster ---
+1
+1
+1
+--- locked format: SELECT from urlCluster ---
+1
+2
+3
+--- locked format: SELECT from url with parallel replicas ---
+1
+2
+3
+--- locked format: urlCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- locked format: url with parallel replicas ---
+1	7	10
+2	5	6
+3	7	30
+--- locked structure: SELECT from urlCluster ---
+1
+2
+3
+--- locked structure: SELECT from url with parallel replicas ---
+1
+2
+3
+--- locked structure: urlCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- locked structure: url with parallel replicas ---
+1	7	10
+2	5	6
+3	7	30
