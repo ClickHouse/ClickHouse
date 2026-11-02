@@ -2300,6 +2300,13 @@ deletion vectors therefore throws, even after `deletion-vectors.enabled` is turn
 A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
 it can be read again.
 
+Columns are matched to data files by name, not by Paimon field id, so **data files written before a column was renamed,
+or before a column was dropped and another one with the same name (compared case-insensitively) was added, cannot be
+read**: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one.
+Reading such a data file therefore throws. Adding and dropping columns is supported. Rewriting the table with the
+current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created
+after it readable.
+
 ## Defining a named collection {#defining-a-named-collection}
 
 Here is an example of configuring a named collection for storing the URL and credentials:
@@ -2347,7 +2354,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 |FLOAT     |Float32      |
 |DOUBLE     |Float64      |
 |STRING,VARCHAR,BYTES,VARBINARY     |String      |
-|DATE     |Date      |
+|DATE     |Date32      |
 |TIME(p),TIME     |Time('UTC')      |
 |TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
 |TIMESTAMP(p)     |DateTime64('UTC')      |
@@ -2356,6 +2363,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 Data types supported in Paimon partition keys:
