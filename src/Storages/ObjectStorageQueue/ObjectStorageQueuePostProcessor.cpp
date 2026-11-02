@@ -604,6 +604,11 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                 catch (...)
                 {
                     changed_generation.rememberIfCurrentExceptionIsOne();
+                    LOG_WARNING(
+                        log,
+                        "Could not verify the generation of colliding object {}: {}",
+                        object_from.remote_path,
+                        getExceptionMessage(std::current_exception(), /*with_stacktrace=*/false));
                 }
                 continue;
             }
@@ -871,6 +876,11 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                     catch (...)
                     {
                         changed_generation.rememberIfCurrentExceptionIsOne();
+                        LOG_WARNING(
+                            log,
+                            "Could not verify the generation of colliding object {}: {}",
+                            object_from.remote_path,
+                            getExceptionMessage(std::current_exception(), /*with_stacktrace=*/false));
                     }
                     continue;
                 }
@@ -1079,6 +1089,11 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                     catch (...)
                     {
                         changed_generation.rememberIfCurrentExceptionIsOne();
+                        LOG_WARNING(
+                            log,
+                            "Could not verify the generation of colliding object {}: {}",
+                            object_from.remote_path,
+                            getExceptionMessage(std::current_exception(), /*with_stacktrace=*/false));
                     }
                     continue;
                 }
