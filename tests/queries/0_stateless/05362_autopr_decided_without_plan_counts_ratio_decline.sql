@@ -29,8 +29,9 @@ SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 SET max_rows_to_read = 0;
 -- Keep the build side on the right and unfiltered: the join order optimizer would otherwise swap the
 -- sides, and a runtime filter would prune the probe side - either changes which read is coordinated.
+-- Both tables are sorted by the key, so keep the hash join instead of a sort-merge join.
 SET query_plan_join_swap_table = 0, enable_join_runtime_filters = 0,
-    query_plan_optimize_join_order_randomize = 0;
+    query_plan_optimize_join_order_randomize = 0, query_plan_join_order_use_interesting_orders = 0;
 
 -- Collects the statistics and remembers the boundary, building the plan with parallel replicas to find it.
 SELECT sum(p.id + b.id) FROM probe_dwp AS p INNER JOIN build_dwp AS b ON p.id = b.id

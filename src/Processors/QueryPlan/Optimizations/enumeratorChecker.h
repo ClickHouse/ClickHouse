@@ -66,7 +66,7 @@ private:
 
     struct MergeInputCandidate
     {
-        Int8 plan;
+        Int8 plan = -1;
         MergeJoinInput input;
     };
     struct MergeInputCandidates

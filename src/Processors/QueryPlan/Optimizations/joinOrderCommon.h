@@ -238,9 +238,9 @@ constexpr double SORT_ROW_COST = 0.8;
 /// An input of a sort-merge join: the cost of its plan, its rows, and whether it is sorted by the merge key.
 struct MergeJoinInput
 {
-    double cost;
-    UInt64 rows;
-    bool sorted;
+    double cost = 0;
+    UInt64 rows = 0;
+    bool sorted = false;
     /// The fraction of its rows a hash join reads if this input is the probe side, after its runtime filter prunes granules.
     double probe_fraction = 1.0;
 };
