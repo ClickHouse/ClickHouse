@@ -13,13 +13,15 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class ConcatWithSeparatorImpl final : public IFunction
+class ConcatWithSeparatorImpl : public IFunction
 {
 public:
     ConcatWithSeparatorImpl(ContextPtr context_, const char * name_, bool is_injective_)
@@ -40,9 +42,24 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(StringOrFixedString, [Any], ...) -> String";
+        if (arguments.empty())
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
+                getName(),
+                arguments.size());
+
+        const auto * separator_arg = arguments[0].get();
+        if (!isStringOrFixedString(separator_arg))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}",
+                separator_arg->getName(),
+                getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -52,7 +69,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        chassert(!arguments.empty());
+        assert(!arguments.empty());
         if (arguments.size() == 1)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
@@ -71,11 +88,11 @@ public:
         const size_t num_exprs = arguments.size() - 1;
         const size_t num_args = 2 * num_exprs - 1;
 
-        VectorWithMemoryTracking<const ColumnString::Chars *> data(num_args);
-        VectorWithMemoryTracking<const ColumnString::Offsets *> offsets(num_args);
-        VectorWithMemoryTracking<size_t> fixed_string_sizes(num_args);
-        VectorWithMemoryTracking<std::optional<String>> constant_strings(num_args);
-        VectorWithMemoryTracking<ColumnString::MutablePtr> converted_col_ptrs(num_args);
+        std::vector<const ColumnString::Chars *> data(num_args);
+        std::vector<const ColumnString::Offsets *> offsets(num_args);
+        std::vector<size_t> fixed_string_sizes(num_args);
+        std::vector<std::optional<String>> constant_strings(num_args);
+        std::vector<ColumnString::MutablePtr> converted_col_ptrs(num_args);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;
@@ -120,16 +137,20 @@ public:
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
-                auto full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
+                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
+                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
+                auto full_column
+                    = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
 
                 chassert(full_column->size() == input_rows_count);
 
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, input_rows_count);
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
-                for (size_t row = 0; row < input_rows_count; ++row)
+                for (size_t row = 0; row < column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
                     write_helper.finishRow();

@@ -1,9 +1,0 @@
---- a failure while delivering the framed exception aborts a buffered, not yet started response
-the client observes an aborted connection: OK
-nothing was delivered: OK
---- bytes already consumed by the HTTP transport compressor also fail closed
-the client observes an aborted connection: OK
-no plain error body was appended: OK
---- a fully buffered response is discarded and replaced by a plain HTTP error
-the client receives a complete HTTP response: OK
-the discarded stream was replaced by a plain error: OK

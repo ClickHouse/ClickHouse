@@ -24,15 +24,11 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!(expression_step || filter_step) || !array_join_step)
         return 0;
 
-    /// The fused filter reads these too, so treat them like the joined columns.
-    Names pinned_columns = array_join_step->getColumns();
-    if (const auto & element_filter = array_join_step->getElementFilter())
-        for (const auto & name : element_filter->getRequiredColumnsNames())
-            pinned_columns.push_back(name);
+    const auto & array_join_columns = array_join_step->getColumns();
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
 
-    auto split_actions = expression.splitActionsBeforeArrayJoin(pinned_columns);
+    auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns);
 
     /// No actions can be moved before ARRAY JOIN.
     if (split_actions.first.trivial())

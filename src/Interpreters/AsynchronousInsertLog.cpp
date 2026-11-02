@@ -1,7 +1,6 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -34,8 +33,6 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
 
     return ColumnsDescription{
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date when the async insert happened."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the async insert finished execution."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the async insert finished execution with microseconds precision."},
@@ -48,7 +45,7 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
         {"bytes", std::make_shared<DataTypeUInt64>(), "Number of inserted bytes."},
         {"rows", std::make_shared<DataTypeUInt64>(), "Number of inserted rows."},
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
-        {"status", type_status, "Status of the insert. Values: 'Ok' = 0 — Successful insert, 'ParsingError' = 1 — Exception when parsing the data, 'FlushError' = 2 — Exception when flushing the data."},
+        {"status", type_status, "Status of the view. Values: 'Ok' = 1 — Successful insert, 'ParsingError' = 2 — Exception when parsing the data, 'FlushError' = 3 — Exception when flushing the data"},
         {"data_kind", type_data_kind, "The status of the data. Value: 'Parsed' and 'Preprocessed'."},
 
         {"flush_time", std::make_shared<DataTypeDateTime>(), "The date and time when the flush happened."},
@@ -63,8 +60,6 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     auto event_date = DateLUT::instance().toDayNum(event_time).toUnderType();
     columns[i++]->insert(event_date);
     columns[i++]->insert(event_time);

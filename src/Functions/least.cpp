@@ -17,10 +17,7 @@ struct LeastBaseImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        const auto x = static_cast<Result>(a);
-        const auto y = static_cast<Result>(b);
-        /// Unlike the variadic form, a tie returns the right operand.
-        return candidateReplacesBest<LeastGreatest::Least>(y, x) ? x : y;
+        return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -30,9 +27,8 @@ struct LeastBaseImpl
     {
         if (!left->getType()->isIntegerTy())
         {
-            /// Same as `apply`.
-            auto * left_wins = b.CreateOr(b.CreateFCmpOLT(left, right), b.CreateFCmpUNO(right, right));
-            return b.CreateSelect(left_wins, left, right);
+            /// Follows the IEEE-754 semantics for minNum, except for handling of signaling NaNs. This match's the behavior of libc fmin.
+            return b.CreateMinNum(left, right);
         }
 
         auto * compare_value = is_signed ? b.CreateICmpSLT(left, right) : b.CreateICmpULT(left, right);
@@ -75,10 +71,10 @@ Returns the smallest value among the arguments.
 - For arrays, returns the lexicographically least array.
 - For DateTime types, the result type is promoted to the largest type (e.g., DateTime64 if mixed with DateTime32).
 
-<Note title="Use setting `least_greatest_legacy_null_behavior` to change `NULL` behavior">
-Version [24.12](/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
+:::note Use setting `least_greatest_legacy_null_behavior` to change `NULL` behavior
+Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
 To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "least(x1[, x2, ...])";
     FunctionDocumentation::Arguments arguments = {
@@ -89,8 +85,8 @@ To retain the previous behavior, set setting `least_greatest_legacy_null_behavio
     {
         "Numeric types",
         R"(
--- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
         )",
         R"(
 ┌─result─┬─type────┐
@@ -104,21 +100,21 @@ SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 SELECT least(['hello'], ['there'], ['world']);
         )",
         R"(
-┌─least(['hello'], ['there'], ['world'])─┐
-│ ['hello']                              │
-└────────────────────────────────────────┘
+┌─least(['hell⋯ ['world'])─┐
+│ ['hello']                │
+└──────────────────────────┘
         )"
     },
     {
         "DateTime types",
         R"(
+SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
-SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
         )",
         R"(
-┌─least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
-│                                                                2025-01-01 12:00:00.000 │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─least(toDate⋯(now(), 3))─┐
+│  2025-05-27 15:55:20.000 │
+└──────────────────────────┘
         )"
     }
     };
