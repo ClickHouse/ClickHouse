@@ -21,8 +21,8 @@ ALTER CLUSTER test_sql_cluster_05473 (
     SHARD (host = '127.0.0.1', port = 9000, user = 'test_user_05473', password = '${tcp_port}')
 );
 
--- Connect remotely, so the password is checked.
-SELECT currentUser() FROM cluster(test_sql_cluster_05473, system.one) SETTINGS prefer_localhost_replica = 0;
+-- Connect remotely, so the password is checked: authentication fails unless it is used verbatim.
+SELECT count() FROM cluster(test_sql_cluster_05473, system.one) SETTINGS prefer_localhost_replica = 0;
 
 DROP CLUSTER test_sql_cluster_05473;
 DROP USER test_user_05473;
