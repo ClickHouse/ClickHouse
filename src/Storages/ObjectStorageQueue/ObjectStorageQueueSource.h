@@ -223,6 +223,8 @@ public:
         Coordination::Requests & requests,
         const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
 
+    bool hasProcessedFiles() const { return !processed_files.empty(); }
+
     /// Mark all processed files' metadata so that their destructors check ownership
     /// before removing the processing node (rather than asserting).
     /// Called when a commit may have succeeded in ZK but the connection was lost before

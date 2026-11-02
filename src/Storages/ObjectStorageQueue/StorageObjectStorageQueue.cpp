@@ -1208,6 +1208,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
         file_iterator->releaseFinishedBuckets(processors);
         file_iterator->refreshExpiringBucketLocks();
+
+        /// Nothing was claimed: the files left are in buckets held by others, so wait for the next poll.
+        if (std::ranges::none_of(sources, [](const auto & source) { return source->hasProcessedFiles(); }))
+            break;
+
         max_files_override = 0;
         total_rows += rows;
 

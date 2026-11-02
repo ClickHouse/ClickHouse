@@ -453,7 +453,7 @@ Default value: Number of CPUs or 16.
 
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
-In `ordered` mode with `buckets = 1` all files share one processed position, so the files are inserted by one `INSERT` (with `processing_threads_num` threads).
+In `ordered` mode with `buckets = 1` all files share one processed position, so the files are inserted by one `INSERT`.
 
 <Note>
 `INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
