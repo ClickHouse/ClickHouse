@@ -19,10 +19,13 @@
 #include <google/cloud/credentials.h>
 #include <google/cloud/storage/client.h>
 
+namespace Poco { class URI; }
 namespace Poco::Util { class AbstractConfiguration; }
 
 namespace DB
 {
+
+class RemoteHostFilter;
 
 /// Defaults of the HTTP transport knobs. The same values as the S3 client's `connect_timeout_ms` and
 /// `request_timeout_ms` (`S3::DEFAULT_CONNECT_TIMEOUT_MS` / `S3::DEFAULT_REQUEST_TIMEOUT_MS`), which
@@ -187,6 +190,13 @@ struct GCSObjectStorageSettings
 /// subdomains (`<bucket>.storage.googleapis.com`). The comparison is on the whole parsed host, so a
 /// host merely containing that string (e.g. `storage.googleapis.com.evil.example`) does not match.
 bool isDefaultGCSHost(const String & host);
+
+/// Whether a request of the native client to `uri` is allowed by `remote_url_allow_hosts`: either the
+/// host is allowed, or the URL is a JSON API request, below `endpoint_path` (the path of the client's
+/// endpoint), to a bucket that an `<s3_bucket>` entry allows at that host and port. A bucket entry
+/// allows nothing else at the host, so a resumable-upload session URL the server hands out is only
+/// followed to an allowed host or to the same allowed bucket.
+bool isGCSRequestURLAllowed(const RemoteHostFilter & filter, const Poco::URI & uri, std::string_view endpoint_path);
 
 /// Whether `endpoint` is the exact default GCS endpoint. A canonical host alone is not enough:
 /// callers can intentionally use `http` or a custom port for a proxy or an emulator.
