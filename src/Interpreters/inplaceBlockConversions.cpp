@@ -366,20 +366,20 @@ void checkRequiredConversions(
     const ColumnDefaults & column_defaults,
     bool forbid_default_defaults)
 {
-    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
+    Block block_copy = block;
+    ASTPtr conversion_expr_list = convertRequiredExpressions(block_copy, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 
     bool has_unbuilt_sets = false;
     std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
-        block, conversion_expr_list, true, context, TablesReading::Skip, &has_unbuilt_sets);
+        block_copy, conversion_expr_list, true, context, TablesReading::Skip, &has_unbuilt_sets);
 
     /// Building the actions has already resolved the expressions and checked their types. Executing them,
     /// even over an empty block, needs the sets of `x IN table` filled, which would read the tables just to
     /// check the metadata, so the actions are executed only when they read no table.
     if (dag && !has_unbuilt_sets)
     {
-        Block block_copy = block;
         auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
         expression->execute(block_copy);
     }
