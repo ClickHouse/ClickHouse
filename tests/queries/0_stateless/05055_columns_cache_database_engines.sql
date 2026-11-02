@@ -11,6 +11,9 @@ SET enable_reads_from_columns_cache = 1;
 SET enable_writes_to_columns_cache = 1;
 SET log_queries = 1;
 SET send_logs_level = 'fatal';
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
 
 -- =============================================================================
 -- `Ordinary` database: nil UUID, the cache must stay completely out of the way.

@@ -9,7 +9,7 @@
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
@@ -110,6 +110,8 @@ namespace FailPoints
 KeeperDispatcher::KeeperDispatcher()
     : server_config(std::make_shared<KeeperConfiguration>())
     , log(getLogger("KeeperDispatcher"))
+    /// Random start: entries this server wrote before a restart are committed again after it and must not match new requests.
+    , internal_session_id_counter(static_cast<int64_t>(thread_local_rng() >> 2))
 {}
 
 void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros)

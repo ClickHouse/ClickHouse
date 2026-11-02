@@ -132,7 +132,15 @@ public:
 
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
-        const SubstreamData & data);
+        const SubstreamData & data,
+        size_t initial_array_level = 0);
+
+    /// Names of the subcolumns the type declares but resolves dynamically, which the stream enumeration does not
+    /// emit: the typed paths of JSON and the subcolumns under them. forEachSubcolumn asks every type it reaches,
+    /// at that type's array level, resolves each name as a query does and lists it with the static ones. A type
+    /// whose nested type is not a named subcolumn, Array or Nullable, delegates to it.
+    using SubcolumnNameCallback = std::function<void(const String &)>;
+    virtual void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback &, size_t /*array_level*/) const {}
 
     /// The number of types nested directly in this one. Zero for a type that has none.
     virtual size_t getNumberOfChildren() const { return 0; }
@@ -618,6 +626,13 @@ inline bool isBool(const DataTypePtr & data_type)
 inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 {
     return data_type->isNullable() || data_type->isLowCardinalityNullable();
+}
+
+/// A type that holds no value other than NULL. onlyNull() alone is not enough:
+/// it is true for Nullable(Nothing) but false for bare Nothing.
+inline bool isNothingOrNullableNothing(const DataTypePtr & data_type)
+{
+    return isNothing(data_type) || data_type->onlyNull();
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

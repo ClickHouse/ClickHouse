@@ -65,8 +65,11 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 
     IQueryPlanStep * step = node.step.get();
 
-    if (typeid_cast<DistinctStep *>(step))
-        return true;
+    /// A preliminary `DISTINCT` deduplicates each stream independently, so it keeps the shards. A final one
+    /// merges its input into a single stream, which leaves this side with one stream while the other side
+    /// is still split into shards, and a `YShaped` join cannot fall back to a regular join in that case.
+    if (auto * distinct = typeid_cast<DistinctStep *>(step))
+        return distinct->isPreliminary();
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
     {
@@ -340,7 +343,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
     /// Do not break shards after full_sorting_merge JOIN. For hash join it is automatically true.
     for (const auto & join_step : data.joins_to_keep_in_order)
-        join_step->keepLeftPipelineInOrder();
+        join_step->keepLeftPipelineLayout();
 }
 
 /// Join can be executed by independent shards if the same sharding can apply for the keft and right part,

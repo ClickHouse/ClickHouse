@@ -52,6 +52,7 @@ SELECT
 
     /// MySQL compatibility alias.
     factory.registerAlias("DAYOFWEEK", "toDayOfWeek", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("DAY_OF_WEEK", "toDayOfWeek", FunctionFactory::Case::Insensitive);
 }
 
 }

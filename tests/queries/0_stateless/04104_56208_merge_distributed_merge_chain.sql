@@ -19,8 +19,6 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.local_merged_data (name String) 
 -- (and through the remote-parse path that was broken), even though the shard is on localhost.
 SET prefer_localhost_replica = 0;
 
-SELECT '-- enable_analyzer=1 --';
-SET enable_analyzer = 1;
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.local_merged_data;
 SELECT DISTINCT _table FROM {CLICKHOUSE_DATABASE_1:Identifier}.local_merged_data;
 
