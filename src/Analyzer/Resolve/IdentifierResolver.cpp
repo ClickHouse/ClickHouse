@@ -50,6 +50,7 @@ namespace Setting
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsBool analyzer_alias_hides_table_name;
+    extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool semi_join_include_columns_from_both_sides;
     extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
@@ -743,7 +744,7 @@ static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeN
   *
   * Either way the name is only hidden when an enclosing scope carries it: a qualifier that means nothing
   * outside the subquery keeps resolving to the aliased table expression. Besides a table name, the enclosing
-  * scope can carry it as an `ARRAY JOIN` output or a column the identifier can be read from, and a qualifier
+  * scope can carry it as an `ARRAY JOIN` output, an expression alias or a column the identifier can be read from, and a qualifier
   * that looks like `database.table` here can be `table.column` there. Only a reading that resolves the
   * identifier counts: an `ARRAY JOIN` output or a column without the named subcolumn does not hide the name.
   *
@@ -799,10 +800,35 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
     if (identifier_column_qualifier_parts == 1 && identifier.getParts().front() == table_expression_node->getAlias())
         return false;
 
+    /// Whether the parent lookup still searches expression aliases at `outer_scope`, see below.
+    bool outer_aliases_are_visible = true;
+
     /// The scope directly below `outer_scope` in the chain, to locate the subquery in its join tree.
     const IdentifierResolveScope * inner_scope = &scope;
     for (const auto * outer_scope = scope.parent_scope; outer_scope; inner_scope = outer_scope, outer_scope = outer_scope->parent_scope)
     {
+        /** An expression alias of the enclosing query, such as `CAST(...) AS t` in its projection or
+          * `WITH ... AS t`, gives the identifier a reading there too: the parent lookup searches the aliases
+          * of the enclosing scopes by the first part of the identifier, as `tryResolveIdentifierFromAliases`
+          * does. It stops doing so above a query boundary when `enable_global_with_statement` is disabled,
+          * and it rejects an alias whose expression is being resolved right now, such as the subquery
+          * itself in `(SELECT ...) AS t`, to break the alias cycle.
+          *
+          * The type of an alias is not known before its expression is resolved, so an alias that names the
+          * first part counts regardless of whether it has the rest of the identifier: an alias that cannot
+          * provide it makes the identifier fail to resolve instead of silently reading the aliased table
+          * expression, and the result does not depend on the order in which the enclosing query resolves
+          * its expressions.
+          */
+        if (inner_scope->scope_node->getNodeType() == QueryTreeNodeType::QUERY
+            && !inner_scope->context->getSettingsRef()[Setting::enable_global_with_statement])
+            outer_aliases_are_visible = false;
+
+        if (outer_aliases_are_visible && identifier_lookup.isExpressionLookup()
+            && outer_scope->aliases.alias_name_to_expression_node.contains(identifier.front())
+            && !outer_scope->expressions_in_resolve_process_stack.getExpressionWithAlias(identifier.front()))
+            return true;
+
         /** The join tree of this query is still being resolved, so we are inside one of its table
           * expressions and cannot read a column of the others. Its name set is also only half filled at
           * this point, which is what would make the answer depend on the order of the `FROM`.
