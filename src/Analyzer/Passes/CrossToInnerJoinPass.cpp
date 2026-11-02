@@ -221,9 +221,9 @@ public:
                             graph.nodes[*rhs_index].edges[*lhs_index] = edge;
                         }
 
-                        /// Such a key matches NULLs that `equals` does not, so WHERE keeps the condition too.
-                        if (JoinCommon::keyMatchesNullAsValue(lhs_equi_argument->getResultType())
-                            || JoinCommon::keyMatchesNullAsValue(rhs_equi_argument->getResultType()))
+                        /// Such a key matches pairs `equals` rejects, so WHERE keeps the condition too.
+                        if (JoinCommon::keyMatchesValuesEqualsRejects(lhs_equi_argument->getResultType())
+                            || JoinCommon::keyMatchesValuesEqualsRejects(rhs_equi_argument->getResultType()))
                             other_conditions.push_back(condition->clone());
 
                         edge->equi_conditions.push_back(std::move(condition));

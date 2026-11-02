@@ -599,8 +599,8 @@ When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) 
 ## LATERAL JOIN {#lateral-join}
 
 `JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
-expressions on its left side; the subquery is evaluated for each distinct combination of the left-side
-column values it references, and its result is joined to every left row with that combination:
+expressions on its left side. The result is as if the subquery were evaluated for each distinct combination
+of the left-side column values it references, and its result were joined to every left row with that combination:
 
 ```sql
 SELECT ...
@@ -613,6 +613,22 @@ The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; o
 It is experimental and disabled by default; enable it with the
 [`allow_experimental_lateral_join`](/reference/settings/session-settings/allow-experimental#allow_experimental_lateral_join) setting.
 
+The lateral subquery is not executed once per left row or once per distinct combination. Like other correlated
+subqueries, it is decorrelated into a single query over all left rows: the left-side columns it references are
+added to its `GROUP BY` keys if it aggregates, its `LIMIT` (if any) becomes `LIMIT ... BY` these columns, and its
+result is joined to the left rows on them. When the correlation is a simple equality, such as `orders.user_id = u.id`,
+the left-side column can be replaced by the equal column of the subquery
+(`correlated_subqueries_substitute_equivalent_expressions`, enabled by default), which can let the subquery avoid
+reading the left rows. This is not guaranteed: for example, an aggregate without `GROUP BY` (such as `count`) still
+reads the distinct left values to produce its result for left values with no matching rows. Whenever the distinct
+left values are passed to the subquery, with the default settings this goes through an in-memory buffer, and only
+when such a buffer is actually used the join is always a hash join. In all other cases, such as when the equality
+substitution avoids reading the left rows or the buffer is disabled
+(`correlated_subqueries_use_in_memory_buffer = 0` or `correlated_subqueries_default_join_kind = 'left'`), the
+algorithm is chosen by the `join_algorithm` setting. For example, `EXPLAIN` of a lateral subquery with `LIMIT`
+shows a `Join` step over a `LimitBy (LIMIT BY for decorrelated correlated subquery)` step; a subquery without
+`LIMIT` has no such step.
+
 Only the following subset is supported so far; anything else is rejected with an error:
 
 - `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
@@ -622,21 +638,20 @@ Only the following subset is supported so far; anything else is rejected with an
 - The `GLOBAL` and `LOCAL` join modifiers are not supported.
 - The lateral subquery must reference at least one column of the left side. Use a regular join for a
   non-correlated subquery.
-- The lateral subquery is evaluated once per distinct value of the left-side columns it references, not
-  once per left row, so it must not contain functions that are non-deterministic within a query, such as
+- Because the lateral subquery is decorrelated rather than evaluated separately for each left value, it
+  must not contain functions that are non-deterministic within a query, such as
   `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
   Functions that are constant within a query, such as `now`, are allowed.
 - Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
   `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
   [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
-- The `GROUP BY` and `ORDER BY` of the lateral subquery run once over all evaluations together, so the
-  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows of all evaluations,
-  not of one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
-- The rows of all evaluations are matched to the left rows by a single join. As for any hash join,
+- The `GROUP BY` and `ORDER BY` of the lateral subquery run once for all left values together, so the
+  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows for all left values,
+  not for one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
+- The result of the decorrelated subquery is matched to the left rows by a single join. As for any hash join,
   `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
-  planner chooses that side: with the default settings (`correlated_subqueries_use_in_memory_buffer = 1`)
-  it is the left side of `JOIN LATERAL`, because the left rows must be fully read before the lateral
-  subquery is evaluated; otherwise it can be the results of all evaluations together. The limits are always
+  planner chooses that side: when the in-memory buffer described above is actually used, it is the left side
+  of `JOIN LATERAL`, because the left rows must be fully read before the lateral subquery is evaluated; otherwise it can be the result of the decorrelated subquery. The limits are always
   enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
 
 **Example**
@@ -1585,6 +1600,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 │ World │   5 │  50 │ [3,4,5] │ [30,40,50] │   3 │
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
+
+## Row Order and Paging {#row-order-and-paging}
+
+`ARRAY JOIN` keeps the order of the rows that it receives. For each row, it produces the elements in their order in the array. If a query has more than one `ARRAY JOIN` clause, the first clause is the outer loop:
+
+```sql
+SELECT x, y
+FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
+ARRAY JOIN xs AS x
+ARRAY JOIN ys AS y;
+```
+
+```response
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+If one `ARRAY JOIN` clause has more than one array, for example `ARRAY JOIN xs AS x, ys AS y`, the elements at the same position go to the same row. In this example, the result is the two rows `('a', 1)` and `('b', 2)`.
+
+Without `ORDER BY`, the order of the rows that `ARRAY JOIN` receives is not guaranteed. For example, a query can read a table in parallel streams. To get a stable order, add `ORDER BY` with the columns that identify the source row and the position of the element. You must do this to read the result in pages with `LIMIT` and `OFFSET`:
+
+```sql
+SELECT id, num, x
+FROM t
+ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
+ORDER BY id, num
+LIMIT 10 OFFSET 20;
+```
+
+If `ORDER BY` starts with the columns of the sorting key of a `MergeTree` table, the query reads the table in the order of the key. In the example, this is true when the table has `ORDER BY id`. The query then stops when it has the rows for `LIMIT`, and it does not expand the arrays of the other rows. For more information, see [Optimization of Data Reading](/reference/statements/select/order-by#optimization-of-data-reading) and the setting [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order). If `ORDER BY` starts with an element of the array, for example `ORDER BY num, id`, the query expands and sorts all the rows.
+
+The [arrayJoin](/reference/functions/regular-functions/array-join) function also produces the elements of each array in their order in the array. But if a query has more than one `arrayJoin` call, the first call is not always the outer loop. For more information, see [Row order](/reference/functions/regular-functions/array-join#row-order).
 
 ## Implementation Details {#implementation-details}
 

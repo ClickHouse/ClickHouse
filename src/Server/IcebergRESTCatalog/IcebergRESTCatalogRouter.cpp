@@ -32,14 +32,14 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::LoadNamespace, true},
         {HTTPRequest::HTTP_HEAD, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::NamespaceExists, true},
         {HTTPRequest::HTTP_DELETE, {"v1", "{prefix}", "namespaces", "{namespace}"}, IcebergRESTOperation::DropNamespace, false},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "properties"}, IcebergRESTOperation::UpdateNamespaceProperties, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "properties"}, IcebergRESTOperation::UpdateNamespaceProperties, true},
 
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables"}, IcebergRESTOperation::ListTables, true},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables"}, IcebergRESTOperation::CreateTable, true},
 
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::LoadTable, true},
         {HTTPRequest::HTTP_HEAD, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::TableExists, true},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::UpdateTable, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::UpdateTable, true},
         {HTTPRequest::HTTP_DELETE, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::DropTable, true},
 
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "register"}, IcebergRESTOperation::RegisterTable, false},

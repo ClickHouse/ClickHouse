@@ -18,7 +18,9 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
 
+#include <algorithm>
 #include <list>
+#include <ranges>
 
 #include <boost/functional/hash.hpp>
 
@@ -961,28 +963,32 @@ static ActionsDAG buildLayerFilter(
 /// primary key intervals of the selected ranges, so we add back every granule with this property.
 ///
 /// Granules of a part are sorted by the primary key, so the granules of a part that intersect a given
-/// interval form one contiguous range of marks, found by two binary searches. The work is
-/// O(parts * intervals * log(marks in part)), and it does not depend on the number of rejected granules.
+/// interval form one contiguous range of marks, found by two binary searches. A part only visits the
+/// intervals that overlap its key range, and the work does not depend on the number of rejected granules.
 static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
 
     RangesInDataPartsBuilder result(ranges_in_data_parts);
 
-    auto skip_and_return_all_part_ranges = [&]()
+    auto return_ranges_selected_by_primary_key = [&]()
     {
         RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
         for (auto & all_part_range : all_part_ranges)
         {
-            const auto & index_granularity = all_part_range.data_part->index_granularity;
-            all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity->getMarksCountWithoutFinal()}}};
+            if (!all_part_range.ranges_snapshot_after_pk_analysis)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
+                        all_part_range.data_part->name);
+            all_part_range.ranges = *all_part_range.ranges_snapshot_after_pk_analysis;
         }
+        std::erase_if(all_part_ranges, [](const auto & part) { return part.ranges.empty(); });
         return all_part_ranges;
     };
 
-    if (cannot_sort_primary_key) /// just expand to all parts + ranges
+    /// The ranges selected by the primary key are what FINAL reads without skip indexes.
+    if (cannot_sort_primary_key)
     {
-        return skip_and_return_all_part_ranges();
+        return return_ranges_selected_by_primary_key();
     }
 
     /// Closed primary key intervals of the selected ranges.
@@ -1004,7 +1010,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         {
             LOG_TRACE(logger, "use_skip_indexes_if_final_exact_mode processing is not applied, because {} does not have the final mark",
                         ranges_in_data_parts[part_index].data_part->name);
-            return skip_and_return_all_part_ranges();
+            return return_ranges_selected_by_primary_key();
         }
 
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
@@ -1012,7 +1018,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
             {
-                return skip_and_return_all_part_ranges();
+                return return_ranges_selected_by_primary_key();
             }
 
             intervals.push_back({index_access.getValue(part_index, range.begin), index_access.getValue(part_index, range.end)});
@@ -1059,10 +1065,15 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         const size_t part_begin = candidate_ranges.front().begin;
         const size_t part_end = candidate_ranges.back().end;
 
+        /// The intervals are sorted and disjoint, so their upper bounds are sorted.
+        const Values part_begin_value = index_access.getValue(part_index, part_begin);
+        const auto first_interval = std::ranges::partition_point(
+            intervals, [&](const Interval & interval) { return compareValues(interval.upper, part_begin_value, false) < 0; });
+
         /// Ranges of marks whose granules intersect one of the intervals, sorted and disjoint.
         MarkRanges intersecting_ranges;
         size_t search_begin = part_begin;
-        for (const auto & interval : intervals)
+        for (const auto & interval : std::ranges::subrange(first_interval, intervals.end()))
         {
             /// Granule `m` intersects the interval if value(m) <= upper and value(m + 1) >= lower.
             /// The first such mark is the rightmost mark with value < lower, because the next mark has value >= lower.
@@ -1232,6 +1243,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.borders = split_ranges.borders;
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }
@@ -1262,7 +1274,7 @@ static void applyLayerRangeFilter(
         return;
 
     /// The filter refers to the key columns by name, see `buildLayerFilter`. It is built over the key
-    /// sample block columns and then composed with the table's own key expression, so the values it
+    /// columns and then composed with the table's own key expression, so the values it
     /// compares are the ones the table computed - the ones the layer borders came from. Resolving the key
     /// expression in the query context instead made a key expression whose result type depends on a
     /// setting a different function: `CAST(json.b, 'String')` is `String` for a
@@ -1275,6 +1287,10 @@ static void applyLayerRangeFilter(
     /// sorting expression on the pipe first, but the join-by-shards layers of
     /// `ReadFromMergeTree::readByLayers` are read without it and carry the plain table columns only.
     /// Those may lack the source columns of a key suffix the filter does not compare, so its computation is removed.
+    ///
+    /// The filter uses `column_names` rather than the names of `sample_block`: the latter
+    /// carry the aliases of the key (`PRIMARY KEY (k AS a)` gives `a`), while `column_names` and the
+    /// outputs of `primary_key.expression` are alias-free.
     auto filter_actions = buildLayerFilter(primary_key, borders, layer, in_reverse_order, context);
     String filter_column = filter_actions.getOutputs().front()->result_name;
     auto actions = ActionsDAG::merge(primary_key.expression->getActionsDAG().clone(), std::move(filter_actions));
@@ -1344,7 +1360,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     bool cannot_sort_primary_key = false;
     if (!isSafePrimaryKey(primary_key) || !sorting_key.reverse_flags.empty())
     {
-        LOG_TRACE(logger, "Primary key is not sortable, expanding PK range to entire due to exact_mode.");
+        LOG_TRACE(logger, "Primary key is not sortable, using the ranges selected by the primary key due to exact_mode.");
         cannot_sort_primary_key = true;
     }
     return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
