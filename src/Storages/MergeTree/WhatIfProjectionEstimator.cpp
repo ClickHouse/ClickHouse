@@ -416,6 +416,29 @@ std::vector<size_t> simulateWriterMarks(
 }
 
 
+/// an in-memory projection part with the given granules and primary index
+MergeTreeDataPartPtr makeSyntheticProjectionPart(
+    const ProjectionDescription & projection,
+    const DataPartPtr & parent_part,
+    size_t rows,
+    const std::vector<size_t> & marks_rows_partial_sums,
+    const Columns & index_columns)
+{
+    /// `Synthetic` leaves the part directory alone, `CreateFresh` can delete a leftover `.tmp_proj`
+    auto part = const_cast<IMergeTreeDataPart &>(*parent_part)
+                    .getProjectionPartBuilder(projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
+                    .withPartType(MergeTreeDataPartType::Compact)
+                    .withBytesAndRows(0, rows, 0)
+                    .build();
+    part->setColumns(
+        projection.metadata->getColumns().getAllPhysical(),
+        SerializationInfoByName(SerializationInfoSettings{}),
+        projection.metadata->getMetadataVersion());
+    part->index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>(marks_rows_partial_sums);
+    part->setIndex(index_columns);
+    return part;
+}
+
 /// builds an in-memory projection part of `part_rows` rows for each layout the writer can leave
 /// returns the parts and the index of the likeliest layout
 std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionParts(
@@ -488,19 +511,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
             index_columns.push_back(std::move(index_column));
         }
 
-        /// `Synthetic` leaves the part directory alone, `CreateFresh` can delete a leftover `.tmp_proj`
-        auto part = const_cast<IMergeTreeDataPart &>(*parent_part)
-                        .getProjectionPartBuilder(projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
-                        .withPartType(MergeTreeDataPartType::Compact)
-                        .withBytesAndRows(0, whole_part.rows, 0)
-                        .build();
-        part->setColumns(
-            projection.metadata->getColumns().getAllPhysical(),
-            SerializationInfoByName(SerializationInfoSettings{}),
-            projection.metadata->getMetadataVersion());
-        part->index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>(partial_sums);
-        part->setIndex(index_columns);
-        return part;
+        return makeSyntheticProjectionPart(projection, parent_part, whole_part.rows, partial_sums, index_columns);
     };
 
     /// equal layouts use the same part
@@ -669,7 +680,7 @@ bool buildScenarios(
         }
         if (uneven_rows)
             ++out.uneven_width_parts;
-        /// no row passes the filter of the projection, so the writer writes no projection part
+        /// no row passes the filter of the projection, so the writer writes an empty projection part
         if (part_data.rows == 0)
         {
             /// a sample shows only that the granules it read have no such row
@@ -681,6 +692,12 @@ bool buildScenarios(
                     part->name);
                 return false;
             }
+            Columns empty_index_columns;
+            for (const auto & key_type : projection.metadata->getSortingKey().data_types)
+                empty_index_columns.push_back(key_type->createColumn());
+            const auto empty_part = makeSyntheticProjectionPart(projection, part, 0, {}, empty_index_columns);
+            for (auto & scenario : out.scenarios)
+                scenario->parts[part->name] = empty_part;
             continue;
         }
 

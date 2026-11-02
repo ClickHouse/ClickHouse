@@ -1205,28 +1205,27 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                     log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
             }
 
-            if (projection_block.rows())
-            {
-                auto proj_temp_part
-                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, context);
-                new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
+            /// A projection part is written even when no row passes the projection's `WHERE`:
+            /// merges require all source parts to have the same set of projection parts.
+            auto proj_temp_part
+                = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, context);
+            new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
-                if (global_settings[Setting::finalize_projection_parts_synchronously])
-                {
-                    /// Finish each projection stream's finalizer immediately to release
-                    /// output stream memory (writer buffers, S3 write buffers, etc.).
-                    /// We cannot call proj_temp_part->finalize() here because the part
-                    /// has already been moved to new_data_part above. The projection
-                    /// part's precommitTransaction() will be handled later by the main
-                    /// temp_part->finalize() which iterates part->getProjectionParts().
-                    for (auto & stream : proj_temp_part->streams)
-                        stream.finalizer.finish();
-                }
-                else
-                {
-                    for (auto & stream : proj_temp_part->streams)
-                        temp_part->streams.emplace_back(std::move(stream));
-                }
+            if (global_settings[Setting::finalize_projection_parts_synchronously])
+            {
+                /// Finish each projection stream's finalizer immediately to release
+                /// output stream memory (writer buffers, S3 write buffers, etc.).
+                /// We cannot call proj_temp_part->finalize() here because the part
+                /// has already been moved to new_data_part above. The projection
+                /// part's precommitTransaction() will be handled later by the main
+                /// temp_part->finalize() which iterates part->getProjectionParts().
+                for (auto & stream : proj_temp_part->streams)
+                    stream.finalizer.finish();
+            }
+            else
+            {
+                for (auto & stream : proj_temp_part->streams)
+                    temp_part->streams.emplace_back(std::move(stream));
             }
         }
     }
