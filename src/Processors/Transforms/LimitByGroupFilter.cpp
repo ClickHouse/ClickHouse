@@ -140,10 +140,10 @@ NO_INLINE size_t estimateSerializedBytes(const IColumn & column, size_t start_ro
     const IColumn::SerializationSettings settings;
     size_t sampled_rows = 0;
     size_t sampled_bytes = 0;
-    for (size_t row = start_row; row < start_row + num_rows; row += serialized_bytes_sample_step)
+    for (size_t offset = 0; offset < num_rows; offset += serialized_bytes_sample_step)
     {
         const char * begin = nullptr;
-        const size_t value_bytes = column.serializeValueIntoArena(row, scratch, begin, &settings).size();
+        const size_t value_bytes = column.serializeValueIntoArena(start_row + offset, scratch, begin, &settings).size();
         scratch.rollback(value_bytes);
         sampled_bytes += value_bytes;
         ++sampled_rows;
