@@ -2696,8 +2696,11 @@ private:
 
             SharedDataValueBuilder builder;
             builder.node = buildJSONExtractTree<JSONParser>(value_type, "Dynamic inference");
-            builder.column = value_type->createColumn();
             builder.serialization = getDataTypesCache().getSerialization(type_name, value_type);
+            /// A column with dynamic subcolumns keeps the paths and variants it created after popBack, and they would
+            /// steer the type inference of later values, so only columns without them are reused.
+            if (!value_type->hasDynamicSubcolumns())
+                builder.column = value_type->createColumn();
             builder_it = shared_data_value_builders.emplace(type_name, std::move(builder)).first;
         }
 
@@ -2707,20 +2710,24 @@ private:
         JSONExtractInsertSettings insert_settings_for_shared_data = insert_settings;
         insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
 
-        size_t size_before = builder.column->size();
-        if (!builder.node->insertResultToColumn(*builder.column, element, insert_settings_for_shared_data, format_settings, error))
+        MutableColumnPtr fresh_column;
+        IColumn & column = builder.column ? *builder.column : *(fresh_column = value_type->createColumn());
+        size_t size_before = column.size();
+        if (!builder.node->insertResultToColumn(column, element, insert_settings_for_shared_data, format_settings, error))
         {
             /// A failed insert may leave the reused column partially filled, so drop it instead of relying on
             /// popBack to find the right amount to remove.
-            builder.column = value_type->createColumn();
+            if (builder.column)
+                builder.column = value_type->createColumn();
             return false;
         }
 
         encodeDataType(value_type, buf);
         /// Use default format settings for binary serialization. Non-default settings may change
         /// the binary representation of the values and break the future deserialization.
-        builder.serialization->serializeBinary(*builder.column, size_before, buf, getDefaultFormatSettings());
-        builder.column->popBack(builder.column->size() - size_before);
+        builder.serialization->serializeBinary(column, size_before, buf, getDefaultFormatSettings());
+        if (builder.column)
+            builder.column->popBack(builder.column->size() - size_before);
         return true;
     }
 
@@ -2920,6 +2927,7 @@ private:
     struct SharedDataValueBuilder
     {
         std::unique_ptr<JSONExtractTreeNode<JSONParser>> node;
+        /// Reused scratch column, nullptr for types with dynamic subcolumns.
         MutableColumnPtr column;
         SerializationPtr serialization;
     };
