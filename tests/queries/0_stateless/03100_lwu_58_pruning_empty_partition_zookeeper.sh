@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: zookeeper, no-fasttest, no-parallel, no-replicated-database, no-shared-merge-tree
 # no-parallel: uses a global failpoint and two replicas with stopped replication queues.
+# no-fasttest: a test that arms a global failpoint must run alone, and such tests are kept out of the fast test.
 # no-replicated-database: the test controls replication queues of individual tables.
 # no-shared-merge-tree: the failpoint is in the `ReplicatedMergeTree` block allocation path.
 
