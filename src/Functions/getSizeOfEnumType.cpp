@@ -39,9 +39,16 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Enum8) -> UInt8 OR (Enum16) -> UInt16";
+        WhichDataType which(arguments[0]);
+
+        if (which.isEnum8())
+            return std::make_shared<DataTypeUInt8>();
+        if (which.isEnum16())
+            return std::make_shared<DataTypeUInt16>();
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

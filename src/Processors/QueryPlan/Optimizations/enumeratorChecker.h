@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/JoinExpressionActions.h>
-#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -43,7 +42,7 @@ class EnumeratorCheckerWithCosts
 public:
     EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_)
         : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_) {}
-    double computeJoinCost(UInt lhs, UInt rhs, const SelectivityEstimate & selectivity) const;
+    double computeJoinCost(UInt lhs, UInt rhs, double selectivity) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
@@ -61,10 +60,11 @@ template <class TDPTable, class TOptimizer>
 double
 EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const UInt lhs,
                                                                   const UInt rhs,
-                                                                  const SelectivityEstimate & selectivity) const
+                                                                  const double selectivity) const
 {
     return dp_table[lhs].cost + dp_table[rhs].cost
-        + estimateJoinedRows(selectivity, dp_table[lhs].estimated_rows, dp_table[rhs].estimated_rows);
+        + selectivity * static_cast<double>(dp_table[lhs].estimated_rows.value_or(1))
+        * static_cast<double>(dp_table[rhs].estimated_rows.value_or(1));
 }
 
 
@@ -105,22 +105,17 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     /// it is only read below and copied into the DP entry, so the aliasing is safe.
     const auto & edge = optimizer.collectJoinEdgesMask(left_mask, right_mask);
 
-    /// Decide whether this pair is a real join or a cross product, the way greedy does. `initDPTable`
-    /// links the two sides of a join that has no two-table condition, so the acceptor is reached for
-    /// pairs that nothing actually joins; those have to stay `Cross`, because that is what keeps a
-    /// cross product local in `applyParallelReplicas`.
-    const bool connected = !edge.empty()
-        || optimizer.areTransitivelyConnectedMask(left_mask, right_mask);
-    if (kind == JoinKind::Cross && connected)
+    /// The enumerator only invokes the acceptor for connected pairs, so a `Cross`
+    /// kind here is a connected join that should be treated as `Inner` (mirrors the
+    /// normalization done by the greedy and DPsize solvers).
+    if (kind == JoinKind::Cross)
         kind = JoinKind::Inner;
-    else if (kind == JoinKind::Inner && !connected)
-        kind = JoinKind::Cross;
 
     auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
-             selectivity.value,
+             selectivity,
              plan_cost,
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
@@ -131,7 +126,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.left = lhs_subset;
         entry.right = rhs_subset;
         entry.cost = plan_cost;
-        entry.sel = selectivity.reported_value;
+        entry.sel = selectivity;
         entry.kind = kind;
         entry.strictness = strictness;
         entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind, strictness);

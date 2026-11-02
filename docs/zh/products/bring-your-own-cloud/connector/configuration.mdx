@@ -1,23 +1,21 @@
 ---
 title: '配置'
 sidebarTitle: '配置'
-description: '配置 ClickHouse 连接器：托管模式、ClickHouse 实例、运维人员 允许列表、网络策略、脱敏、私有镜像 和存储'
-keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'configuration', 'managed mode']
+description: '配置 ClickHouse 连接器：ClickHouse 实例、运维人员 允许列表、网络策略、脱敏、私网 mirror 和存储'
+keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'configuration']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+本页面介绍安装 ClickHouse 连接器后最常需要进行的配置更改。有关各项 key 的默认值及其含义，请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)；有关命令行 flags，请参阅 [命令行客户端 参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。
 
-<PrivatePreviewBadge />
-
-本页面介绍安装连接器后最常需要进行的配置更改。各项 key 的默认值及其含义，均可在[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)中查阅；命令行 flags 请参阅 [命令行客户端 参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。创建、扩缩容和删除 服务的相关内容，请参阅 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services)。
-
-## 配置方式 {#configuration-surfaces}
+<div id="configuration-surfaces">
+  ## 配置方式
+</div>
 
 每种安装目标各有一种配置方式。
 
 <Tabs>
-  <Tab title="Kubernetes" id="surfaces-kubernetes">
+  <Tab title="Kubernetes">
     `clicklink clctl init` 会在工作目录中创建名为 `clicklink-values.yaml` 的配置值覆盖文件，并使用该文件部署 `clicklink-connector` 图表。该覆盖文件是部署配置的持久记录：除非传入 `--force`，否则重新运行 `init` 时会保留该文件，因此你的修改可在重新运行和恢复过程中保留。
 
     <Note>
@@ -36,7 +34,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
       -f clicklink-values.yaml
     ```
 
-    该命令会使用当前已安装的 图表 版本重新应用修改后的配置值，因此配置变更不会意外触发升级。升级到新版本是一个独立的步骤，详见[操作](/zh/products/bring-your-own-cloud/connector/operations)。对于使用 图表 仓库的镜像安装，请将 `--repo` 替换为你的镜像仓库。
+    该命令会使用当前已安装的 图表 版本重新应用修改后的配置值，因此配置变更不会意外触发升级；升级到新版本需要有意执行，详见[操作](/zh/products/bring-your-own-cloud/connector/operations)。对于使用 图表 仓库的镜像安装，请将 `--repo` 替换为你的镜像仓库。
 
     通过直接 图表 引用 (`oci://`、URL 或本地归档文件或目录；参见[私有镜像](#private-mirrors)) 安装时，没有可供解析的仓库。请使用安装时使用的引用重新运行升级命令：
 
@@ -48,135 +46,46 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
     ```
   </Tab>
 
-  <Tab title="Linux VM" id="surfaces-vm">
+  <Tab title="Linux VM">
     `clicklink clctl init` 会写入 `/etc/clicklink/config.yaml`。除非传入 `--force`，否则重新运行 `init` 时会保留现有配置，因此可以安全地手动编辑该文件。编辑后，重启守护进程并进行验证：
 
     ```bash
-    sudo systemctl restart clicklink-scraper clicklink-troubleshooter clicklink-executor
+    sudo systemctl restart clicklink-scraper clicklink-troubleshooter
     sudo clicklink clctl preflight
     ```
   </Tab>
 </Tabs>
 
-## 托管模式 {#managed-mode}
+<div id="clickhouse-instances">
+  ## 添加或更改 ClickHouse 实例
+</div>
 
-托管模式会运行 executor，由它把 ClickHouse Cloud 所驱动的服务生命周期应用到你的集群上。`init` 会在注册时启用该模式，并填入集群身份 (参见[启用托管模式](/zh/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)) 。下列键是之后可能需要再次调整的部分。若要更改该模式状态，请带上 `--force` 以及 `--managed` 或 `--no-managed` 重新运行 `init`。与任何一次 `init` 运行一样，这也需要一个 entry point：如果保留了支持包，则使用 `--handoff`；否则使用 `--enroll` 并提供新的 token (参见[重新运行与恢复](/zh/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)) 。
-
-在 VM 上，`--no-managed` 只会在 config 中禁用 executor，并不会停止或禁用正在运行的 systemd unit。请先将其停止，再更改 config：
-
-```bash
-sudo systemctl disable --now clicklink-executor
-```
-
-在 Kubernetes 上，请在配置值中设置 `executor.enabled: false`，并通过 `helm upgrade` 使其生效，以移除 executor 部署。在这两种目标环境中，集群授权都会一直保留，直到你手动移除；参见[停止托管模式](/zh/products/bring-your-own-cloud/connector/reference/faq#stop-managed-mode)。
+`instances` 下的每个条目都定义了连接器要读取的 ClickHouse 原生协议端点：`host`、`port`、`database`、`secure`，以及 Kubernetes 环境中的 `namespace` 和 `cluster`。凭据绝不会存储在配置中；每个组件都会从预配过程创建的访问包中获取其只读 ClickHouse 用户。
 
 <Tabs>
-  <Tab title="Kubernetes" id="managed-mode-kubernetes">
-    `init` 会根据你的 kube context 所指向的 EKS cluster，在 `clicklink-values.yaml` 中预置 `executor` block：
+  <Tab title="Kubernetes">
+    将实例添加到 `clicklink-values.yaml` 中两个组件的映射内，并将其命名空间添加到 `networkPolicy.clickhouseNamespaces` (根据命名空间的 `kubernetes.io/metadata.name` 标签匹配) ：
 
     ```yaml
-    cluster:
-      # Service namespaces are <namespacePrefix><service>; must match the
-      # prefix you registered.
-      namespacePrefix: ns-
+    scraper:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
 
-    executor:
-      enabled: true
-      pollInterval: 30s
-      syncInterval: 30s
-      # Local command API, bound to 127.0.0.1 inside the pod only.
-      apiPort: 9999
-      ports:
-        health: 8086
-      cluster:
-        name: <eks-cluster-name>
-        region: us-east-1
-        accountId: "123456789012"
-        inCluster: true
-        # Optional shared data bucket; per-service storage normally arrives
-        # with each service, so leave it out unless your account team asks for it.
-        # s3_storage:
-        #   bucket: <data-bucket>
-        #   backup_bucket: <backup-bucket>
-      serviceAccount:
-        create: false
-        name: pcm-executor
-      persistence:
-        enabled: true
-        storageClass: ""
-        size: 5Gi
-      platformBundleSecret: clicklink-platform-bundle
-    ```
-
-    * **`cluster.namespacePrefix`** 由所有组件共用，executor 的 grant 就限定在该 prefix 范围内。安装后若要修改，就意味着需要重新执行一次 grant。
-    * **`executor.cluster`** 只能对应一个 cluster：`name`、`region`、`accountId` 以及 `inCluster: true`，后者让 executor 以 pod (容器组) 的 ServiceAccount 身份进行认证。其余 keys 会以 snake&#95;case 形式原样传递给 executor，例如 `s3_storage`。
-    * **`executor.serviceAccount`** 保持 `create: false`：`init` 会为连接器命名空间中的 `pcm-executor` ServiceAccount 授予集群级 access，chart 直接绑定到该 ServiceAccount，而不是另建一个未绑定的。
-    * **`executor.persistence`** 为 `/var/lib/clicklink` 提供存储，executor 在此保存其命令 database 和服务 registry；参见 [storage](#storage)。
-    * **`executor.platformBundleSecret`** 指定保存已批准平台 update 的 Secret。该 mount 是可选的，因此在首次批准之前 pod (容器组) 即可启动；参见[批准平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates#approve-a-platform-update)。
-    * **`executor.ports.health`** 提供 `/livez` 和 `/metrics`；所有组件都不单独开放 metrics 端口。
-
-    使用[配置面](#configuration-surfaces)中给出的 `helm upgrade` 命令应用更改。
-  </Tab>
-
-  <Tab title="Linux VM" id="managed-mode-vm">
-    `init` 会根据主机的 instance 元数据和 kubeconfig，将 `executor` 块写入 `/etc/clicklink/config.yaml`。interval 和 port 这两个 key 使用的是默认值，可以显式添加以进行覆盖：
-
-    ```yaml
-    # Service namespaces are <namespace_prefix><service>; must match the
-    # prefix you registered.
-    namespace_prefix: ns-
-
-    executor:
-      enabled: true
-      cluster:
-        name: <eks-cluster-name>
-        region: us-east-1
-        account_id: "123456789012"
-        # Optional shared data bucket; per-service storage normally arrives
-        # with each service, so leave it out unless your account team asks for it.
-        # s3_storage:
-        #   bucket: <data-bucket>
-        #   backup_bucket: <backup-bucket>
-      poll_interval: 5m
-      sync_interval: 30s
-      # Local command API, bound to 127.0.0.1 only.
-      api_port: 9999
-      observability:
-        health_port: 8086
-    ```
-
-    * **`namespace_prefix`** 是所有组件共享的顶层键，也是 executor grant 所限定的作用前缀。安装后若要更改，就需重新执行 grant。
-    * **`executor.cluster`** 只能指定一个 cluster。executor 使用 `init` 在 `/etc/clicklink/access/executor/_cluster` 下生成的集群级访问 bundle 进行身份验证。
-    * **`poll_interval`** 表示 executor 重试已记录但未能完成的命令的间隔；**`sync_interval`** 表示 executor 将受管 service 的状态与 cluster 进行 reconcile 的间隔。
-    * **`api_port`** 是 executor 的本地命令 API。它仅绑定到回环 interface，自身不带任何身份验证，因此 `clicklink clctl` service 命令需要在主机上运行。
-    * **`observability.health_port`** 提供 `/livez` 和 `/metrics`；各组件均没有单独的 metrics 端口。
-
-    编辑完成后，重启 executor 并进行验证：
-
-    ```bash
-    sudo systemctl restart clicklink-executor
-    sudo clicklink clctl preflight
-    ```
-  </Tab>
-</Tabs>
-
-## 添加或更改 ClickHouse 实例 {#clickhouse-instances}
-
-executor 创建的 服务会自行注册，因此在托管模式下无需在此手动添加。本节适用于不运行 executor 的独立连接器部署，该部署用于观测你自行运行的 ClickHouse。当两个部署共用同一个实例时，请在其 `init` 时传入 `--ch-user-suffix`。`instances` 下的每个条目对应一个连接器读取数据的 ClickHouse 原生协议端点，包括 `host`、`port`、`database`、`secure`、`cluster`，在 Kubernetes 上还包括 `namespace`。`max_open_conns` 与 `max_idle_conns` 用于限制连接池的规模。凭据绝不保存在配置中；每个组件都从预配过程创建的访问包中获取各自的只读 ClickHouse 用户。
-
-<Tabs>
-  <Tab title="Kubernetes" id="instances-kubernetes">
-    将实例添加到 `clicklink-values.yaml` 中顶层的 `instances` 映射内 (字段与 VM registry 相同) 。将其命名空间添加到 `networkPolicy.clickhouseNamespaces`，根据命名空间的 `kubernetes.io/metadata.name` 标签匹配。图表会将该映射渲染为两个守护进程都会读取的 `clicklink-instance-registry` ConfigMap。这仅在 `executor.enabled` 为 `false` 时有效；启用 executor 后，渲染会失败，因为该 ConfigMap 由 executor 拥有。
-
-    ```yaml
-    instances:
-      analytics:
-        host: "clickhouse-analytics.clickhouse.svc.cluster.local"
-        port: 9440
-        database: "default"
-        secure: true
-        namespace: "clickhouse"
-        cluster: "default"
+    troubleshooter:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
 
     networkPolicy:
       clickhouseNamespaces:
@@ -199,7 +108,7 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
       --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
     ```
 
-    对于由 Operator 管理且没有可执行 SQL 的管理员用户的实例，请将 `--apply-ch-grants` 替换为 `--ch-user-via cr` (保留 pod 选择标志) ；请参阅 [命令行客户端 参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。然后，将各命令创建的 Secret 和 ServiceAccount 对接入相应的 `accessBundles` 映射，并运行上文所示的 `helm upgrade`：
+    对于由 Operator 管理且没有可执行 SQL 的管理员用户的实例，请将 `--apply-ch-grants` 替换为 `--ch-user-via cr` (保留 pod 选择标志) ；请参阅 [CLI 参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。然后，将各命令创建的 Secret 和 ServiceAccount 对接入相应的 `accessBundles` 映射，并运行上文所示的 `helm upgrade`：
 
     ```yaml
     scraper:
@@ -216,8 +125,8 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
     ```
   </Tab>
 
-  <Tab title="Linux VM" id="instances-vm">
-    在 VM 上，实例保存在 registry 文件 `/var/lib/clicklink/instances.yaml` 中，而不是 `config.yaml` 中；后者里的 `instances:` 块会被忽略。`init` 会根据 `--instance` 初始化 registry，抓取器无需重启即可感知修改。请在顶层 `instances:` 映射下添加实例：
+  <Tab title="Linux VM">
+    将实例添加到 `/etc/clicklink/config.yaml`：
 
     ```yaml
     instances:
@@ -229,13 +138,13 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
         cluster: "default"
     ```
 
-    然后以 root 身份在主机上为各组件预配访问权限。除非传入 `--ch-user-via cr`，否则必须提供管理员密码；请使用 `--ch-admin-password-stdin` 通过管道传入。每条命令都会应用 ClickHouse 授权并重启对应的守护进程 (可使用 `--skip-restart` 跳过重启) ：
+    然后以 root 身份在主机上为各组件预配访问权限。每条命令都会应用 ClickHouse 授权并重启对应的守护进程 (可使用 `--skip-restart` 跳过重启) ：
 
     ```bash
-    printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl scraper access provision --provider local \
-      --instance analytics --server <kubernetes-api-server-url> --ch-admin-password-stdin
-    printf '%s\n' "$CH_ADMIN_PASSWORD" | sudo clicklink clctl troubleshoot access provision --provider local \
-      --instance analytics --server <kubernetes-api-server-url> --ch-admin-password-stdin
+    sudo clicklink clctl scraper access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
     ```
   </Tab>
 </Tabs>
@@ -244,13 +153,15 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
   对同样的 `access provision` 命令添加 `--force`，即可轮换实例的 ClickHouse 凭据。请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。
 </Tip>
 
-## 运维人员允许列表 {#operator-allowlist}
+<div id="operator-allowlist">
+  ## 运维人员允许列表
+</div>
 
-运维人员电子邮件地址允许列表限制着网关管理的会话。发送至会话网关的每个请求都必须携带短时有效的 OIDC ID 标记，且其中经认证的电子邮件地址必须在列表中。允许列表为空时，网关将关闭。在 VM 上，主机的 root 用户也可以通过本地会话文件直接管理会话；允许列表仅约束经由网关的访问路径。有关完整的信任模型，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+网关管理的会话受运维人员电子邮件地址允许列表限制：发送至会话网关的每个请求都必须携带短时有效的 OIDC ID 标记，且其中经认证的电子邮件地址必须在列表中。允许列表为空时，网关将关闭，任何人都无法通过它打开会话。在 VM 上，主机的 root 用户还可以通过本地会话文件直接管理会话；允许列表仅约束经由网关的访问路径。有关完整的信任模型，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 
 <Tabs>
-  <Tab title="Kubernetes" id="allowlist-kubernetes">
-    允许列表位于覆盖层中，图表会将其渲染为 ConfigMap。要更改允许列表，请编辑该列表并运行 `helm upgrade`：
+  <Tab title="Kubernetes">
+    允许列表位于覆盖层中，并会渲染为 ConfigMap。要更改允许列表，请编辑该列表并运行 `helm upgrade`：
 
     ```yaml
     clctl:
@@ -262,7 +173,7 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
     ```
   </Tab>
 
-  <Tab title="Linux VM" id="allowlist-vm">
+  <Tab title="Linux VM">
     `init` 会将允许列表写入 `/etc/clicklink/allowed-operators.txt`，每行一个电子邮件地址：
 
     ```text
@@ -270,44 +181,40 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
     dba@example.com
     ```
 
-    距上次读取超过 30 秒后，网关会在下一个请求时重新读取该文件，因此编辑后无需重启即可生效。
+    故障排查工具每 30 秒重新读取一次该文件，因此编辑后无需重启即可生效。
   </Tab>
 </Tabs>
 
-## 网络策略 {#network-policy}
+<div id="network-policy">
+  ## 网络策略和出站流量
+</div>
 
-在 Kubernetes 上，该图表默认提供一个带出站允许列表的 default-deny NetworkPolicy。NetworkPolicy 对象只有在 CNI 强制执行时才会生效。在具备强制执行能力的 CNI 下，只有集群 DNS 和 ClickHouse 服务所在的命名空间可达，直到两个 CIDR 列表都填写完毕为止。在此之前，连接器无法通过出站访问你的连接器端点或 Kubernetes API server。只有当 `init` 获知连接器端点背后的 CIDR 后，才会将该 policy 以 `enabled` 状态部署。
+在 Kubernetes 中，图表 会部署一项默认拒绝的 NetworkPolicy，其中包含出站允许列表 (`networkPolicy.enabled: true`) 。只有 CNI 实际执行 NetworkPolicy 时，这些对象才会生效；在启用强制执行的 CNI 中，连接器不会产生任何出站流量，除非通过 `allowEgressCIDRs` 指定连接器 API 端点所在的 CIDR。
 
 ```yaml
 networkPolicy:
   enabled: true
-  # CIDRs behind your connector endpoint (--egress-cidrs at init).
+  # CIDRs behind your connector API endpoint. Required under an enforcing CNI.
   allowEgressCIDRs:
     - "203.0.113.0/24"
   # Ports opened to allowEgressCIDRs.
   allowEgressPorts:
     - 443
-  # Namespaces of ClickHouse you run yourself, matched by the
-  # kubernetes.io/metadata.name label. Namespaces the executor creates
-  # are admitted by the label it stamps on them and need no entry here.
-  clickhouseNamespaces: []
-  # Kubernetes API server CIDRs: your cluster VPC's ranges, staged by init
-  # from the EKS cluster. Never the API server's own addresses, which
-  # change over the cluster's life.
+  # Namespaces of your ClickHouse Services, matched by the
+  # kubernetes.io/metadata.name label. Empty allows no in-cluster
+  # ClickHouse access.
+  clickhouseNamespaces:
+    - "clickhouse"
+  # Kubernetes API server CIDRs. On managed Kubernetes the API server sits
+  # outside the cluster network, so it cannot be matched with a selector.
   apiserverCIDRs:
-    - "10.0.0.0/16"
+    - "172.16.0.0/28"
 ```
 
-这两个 CIDR 列表的来源不同：
+以下两项规则需要特别注意：
 
-* **`allowEgressCIDRs`** 需要你自行提供：即连接器端点背后的地址范围，可在安装时通过 `--egress-cidrs` 指定，或在提示时输入。所有组件都需要它才能访问你的连接器端点。在托管模式下，如果平台图表位于 Amazon ECR 中，还需添加所在区域的 ECR 和 STS 地址范围 (或你的 mirror 所在范围) 。否则在该策略下 executor 拉取图表会失败。
-* **`apiserverCIDRs`** 在托管模式下由 `init` 根据 EKS cluster 所在的 VPC 推导得出 (`eks:DescribeCluster` 和 `ec2:DescribeVpcs`) 。所有组件都会发起 Kubernetes 标记请求，executor 也通过 API 驱动 service，因此在强制执行的 CNI 下，未设置该项时这些操作全部都会被阻断。若 lookup 失败，`init` 会发出警告并将列表留空，由你填入自己 VPC 的 CIDR 块。
-
-服务命名空间有两种选取方式。由 executor 创建的命名空间带有标签 `clicklink.clickhouse.com/managed-by: executor`，策略会依据该标签放行，因此托管安装可以将 `clickhouseNamespaces` 留空。只有在 executor 之外创建的命名空间 (即你自行运行的 ClickHouse) 才需要按名称逐一列出。
-
-**稍后启用该策略。** 如果安装时跳过了端点 CIDR，`init` 会预置 `enabled: false` 和 `allowEgressCIDRs: []`，并输出完成该配置所需的步骤。确定 CIDR 后，在 `clicklink-values.yaml` 中设置 `enabled: true` 和 `allowEgressCIDRs`，确认 `apiserverCIDRs` 已包含你 VPC 的地址范围，然后执行 [配置方式](#configuration-surfaces) 中给出的 `helm upgrade`。
-
-启用会话网关后，还有一条出口规则需要注意：`clctl.gateway.jwksEgressCIDRs`。故障排查工具会拉取身份提供商的 JWKS 来校验运维人员 tokens，因此在默认拒绝策略下，空列表会阻断所有标记校验：
+* **`apiserverCIDRs`**：留空时，图表 不会生成 API server 出站规则。守护进程首次请求 Kubernetes 标记时将因网络错误而失败，这表明需要设置此项。在托管 Kubernetes 环境中，请使用 cluster 的 API server 端点 CIDR。
+* **`clctl.gateway.jwksEgressCIDRs`**：启用会话网关后，故障排查工具会拉取身份提供商的 JWKS，以验证运维人员 标记。在默认拒绝策略下，留空会导致所有标记检查被阻止：
 
 ```yaml
 clctl:
@@ -316,15 +223,17 @@ clctl:
       - "199.36.153.8/30"
 ```
 
-此示例使用的是 `private.googleapis.com` 地址范围，它涵盖通过 Private Google Access 访问的 Google 身份提供商。若使用其他身份提供商，请填入其对应的地址范围，或为其做前置转发的出站代理的 CIDR。
+示例为 `private.googleapis.com` 地址范围，其中包括通过 Private Google Access 访问的 Google 身份提供商；对于其他身份提供商，请提供相应提供商的地址范围 (或其前置出口代理的 CIDR) 。
 
-还剩两个入口相关的键：`metricsScrapeSelector` 按标签将指标抓取入口限制在单个 Prometheus 命名空间内；`kubeletProbeCIDRs` 则在严格的默认拒绝策略下显式放行 kubelet 节点代理的健康检查探针。完整的键列表请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)。
+另外还有两个入口相关配置：`metricsScrapeSelector` 通过标签将指标抓取入口限制为特定 Prometheus 命名空间，而 `kubeletProbeCIDRs` 则会在默认严格拒绝的环境中显式允许 kubelet 健康探针。完整的键列表请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)。
 
-## 脱敏规则 {#redaction-patterns}
+<div id="redaction-patterns">
+  ## 脱敏模式
+</div>
 
-故障排查工具 在输出离开您的边界之前会对其进行脱敏处理。内置规则涵盖 `ipv4`、`ipv6`、`bearer-token`、`aws-access-key`、`email`、`jwt`、`ssh-private-key` 和 `connection-string-credentials`。您可以在 YAML 文件中添加自定义规则。这些规则会先按文件中的顺序执行，然后再执行内置规则；如果某个条目使用了与内置规则相同的 `name`，则会替换该内置规则。
+故障排查工具 的输出在离开您的边界之前会进行脱敏处理。内置模式涵盖 `ipv4`、`ipv6`、`bearer-token`、`aws-access-key`、`email`、`jwt`、`ssh-private-key` 和 `connection-string-credentials`。您可以在 YAML 文件中添加自定义模式；这些模式会先按文件中的顺序执行，然后再执行内置模式。如果某个条目使用了与内置模式相同的 `name`，则会替换该内置模式。
 
-每个规则包含 `name` (必填且唯一) 、`regex` (必填，采用 Go RE2 语法) 、`replace` (默认为 `[REDACTED]`，支持 `$1` 捕获组引用) 和 `case_insensitive` (默认为 `false`) ：
+每个模式包含 `name` (必填且唯一) 、`regex` (必填，采用 Go RE2 语法) 、`replace` (默认为 `[REDACTED]`，支持 `$1` 捕获组引用) 和 `case_insensitive` (默认为 `false`) ：
 
 ```yaml
 version: 1
@@ -339,15 +248,17 @@ patterns:
     replace: '[REDACTED:ip]'
 ```
 
-在 VM 上，该文件位于 `/etc/clicklink/redaction-patterns.yaml`。安装程序会为其预置一组初始的活动规则 (第三方 API key、AWS 密钥等) 。您可以精简或扩展该集合；安装程序会在升级时保留您修改后的版本。在 Kubernetes 上，将 YAML 放入 ConfigMap，并使用键名 `redaction-patterns.yaml`，然后将 `troubleshooter.redaction.patternsConfigMap` 设置为该 ConfigMap 的名称；图表会将其挂载到相同路径。
+在 VM 上，该文件位于 `/etc/clicklink/redaction-patterns.yaml`；安装程序会创建一份带注释的默认文件，并在升级时保留您修改后的版本。在 Kubernetes 上，将 YAML 放入 ConfigMap，并使用键名 `redaction-patterns.yaml`，然后将 `troubleshooter.redaction.patternsConfigMap` 设置为该 ConfigMap 的名称；chart 会将其挂载到相同路径。
 
 <Warning>
-  如果规则文件存在但无效，故障排查工具 会拒绝启动，并记录无效条目。如果已配置但文件缺失，则仅记录一条警告并使用内置规则。`clicklink clctl preflight` 会验证该文件，因此请在重启守护进程前运行此命令。
+  如果 patterns 文件存在但无效，故障排查工具 会拒绝启动，并记录无效条目。`clicklink clctl preflight` 会验证该文件，因此请在重启守护进程前运行此命令。
 </Warning>
 
-## 私有镜像 和边界内端点 {#private-mirrors}
+<div id="private-mirrors">
+  ## 私有镜像 和边界内端点
+</div>
 
-已发布的图表将 `image.repository` 预设为公网、多架构且经 cosign 签名的连接器镜像，因此常规安装无需指定镜像配置值。要查看已发布的默认配置：
+已发布的图表将 `image.repository` 预设为公网、多架构且经 cosign 签名的 connector 镜像，因此常规安装无需指定镜像配置值。要查看已发布的默认配置：
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
@@ -363,20 +274,22 @@ image:
   repository: "registry.example.com/mirrors/clicklink"
 ```
 
-要从 mirror 安装图表本身，`init` 的 `--chart` 参数可指定为在 `--chart-repo` 中解析的图表名称，也可直接指定 `oci://` 引用、URL、本地归档文件或目录。`--chart-version` 默认使用命令行客户端自身的版本，以确保 binary 与图表保持同步。
+要从 mirror 安装图表本身，`init` 的 `--chart` 参数可指定为在 `--chart-repo` 中解析的图表名称，也可直接指定 `oci://` 引用、URL、本地归档文件或目录。`--chart-version` 默认使用命令行客户端自身的版本，以确保 binary 与图表保持同步：
 
 ```bash
-clicklink clctl init --handoff handoff.yaml --target helm --managed \
+clicklink clctl init --handoff handoff.yaml --target helm \
   --chart oci://registry.example.com/charts/clicklink-connector
 ```
 
-当连接器端点位于边界内并由私有 CA 保护时，请向 `init` 传入 `--api-private-ca`。这会设置 `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`，连接器将根据系统根证书以及注册包中的 CA 证书链来验证端点。在 VM 上，对应配置为 `/etc/clicklink/config.yaml` 中的 `api.tls.ca_file`：`init` 会将包中的证书链安装到 `/etc/clicklink/tls/ca.crt`，连接器也会以同样方式将其追加到系统根证书中。如需在完全隔离网络环境中进行注册和证书签名，请参阅 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)。
+当 connector API 端点位于边界内并由私有 CA 保护时，请向 `init` 传入 `--api-private-ca`：这会设置 `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`，使端点根据注册包中的 CA 证书链而非系统根证书进行验证。在 VM 上，对应配置为 `/etc/clicklink/config.yaml` 中的 `api.tls.ca_file`；`init` 会将包中的证书链安装到 `/etc/clicklink/tls/ca.crt`，并将其添加到系统根证书中用于验证。如需在完全隔离网络环境中进行注册和证书签名，请参阅 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)。
 
-## 存储 {#storage}
+<div id="storage">
+  ## 存储
+</div>
 
 <Tabs>
-  <Tab title="Kubernetes" id="storage-kubernetes">
-    有两个组件将状态保存在 PersistentVolumeClaim 上。故障排查工具的 PVC 保存 session 状态和审计记录：
+  <Tab title="Kubernetes">
+    故障排查工具会将其状态保存在 PersistentVolumeClaim 中，因此即使 pod (容器组) 被重新调度，会话状态和审计记录也能保留：
 
     ```yaml
     persistence:
@@ -385,21 +298,11 @@ clicklink clctl init --handoff handoff.yaml --target helm --managed \
       size: 5Gi
     ```
 
-    executor 的 PVC 保存其命令数据库以及它所管理的 服务的 registry：
-
-    ```yaml
-    executor:
-      persistence:
-        enabled: true
-        storageClass: "gp3"
-        size: 5Gi
-    ```
-
-    `init` 会将两处 `storageClass` 配置值都设为你选定的存储类。若 `storageClass` 留空，则使用 cluster 的默认 StorageClass；如果 cluster 未指定默认存储类，`init` 会通过 prompt 或 `--storage-class` 要求你提供一个。executor 的 claim 带有 `helm.sh/resource-policy: keep` 注解，因此执行 `helm uninstall` 时不会将其删除；参见 [uninstall](/zh/products/bring-your-own-cloud/connector/operations#uninstall)。
+    将 `storageClass` 留空会使用集群的默认存储类。如果集群未设置默认存储类，`init` 会要求通过提示或 `--storage-class` 指定一个存储类。
   </Tab>
 
-  <Tab title="Linux VM" id="storage-vm">
-    当连接器端点不可达时，抓取器会将指标暂存到 `/var/lib/clicklink/buffer`，以实现至少一次投递。默认最多保留 168 小时或 1024 MB 的数据，上传速率最高为 1 MB/s：
+  <Tab title="Linux VM">
+    当 API 端点不可访问时，抓取器会将指标暂存到 `/var/lib/clicklink/buffer`，以确保至少一次交付；数据最多保留 168 小时或 1024 MB，默认上传限速为 1 MB/s：
 
     ```yaml
     scraper:
@@ -409,8 +312,6 @@ clicklink clctl init --handoff handoff.yaml --target helm --managed \
         max_size_mb: 1024
     ```
 
-    executor 将其命令数据库保存在 `/var/lib/clicklink/executor.db`，服务 registry 保存在 `/var/lib/clicklink/instances.yaml`。两者在重启和升级后均会保留；除非传入 `--purge`，否则 `uninstall.sh` 也会保留它们。
-
-    `clicklink clctl preflight` 会对 buffer 目录和 `/var/log` 执行磁盘检查。
+    `clicklink clctl preflight` 会检查缓冲目录和 `/var/log` 的磁盘空间。
   </Tab>
 </Tabs>

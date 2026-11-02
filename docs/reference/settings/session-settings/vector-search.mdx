@@ -30,7 +30,7 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
 
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Alias for setting 'vector_search_postfilter_multiplier'"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting. At the time the setting was named `vector_search_postfilter_multiplier`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Alias for setting 'vector_search_postfilter_multiplier'"}]}]}/>
 
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'. Valid range: [1.0, 1000.0]. Values outside this range are rejected.
 

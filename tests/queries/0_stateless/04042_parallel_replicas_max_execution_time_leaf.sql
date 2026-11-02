@@ -55,23 +55,18 @@ SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_bl
 -- default 'throw' mode, so the query aborts even though the outer mode is 'break'.
 SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
--- `description = 0` is required, not cosmetic: with the plan-based implementation of parallel replicas
--- the `ReadFromParallelReplicas` step prints the shipped plan fragment inside its own description, and
--- that text contains `ReadFromMergeTree (db.table)`. A default `EXPLAIN` would make the probe below
--- match the remote fragment and report a local read that is not there.
---
 -- The local plan is disabled only when the leaf timeout contract is stricter than, or differs from, the
 -- initiator's own timeout contract. Equal timeouts with the same overflow mode already bound the local reading
 -- at least as tightly, so the local plan must be kept. (A profile that caps both settings to the same value -
 -- like the one used by the Fast test job - must not lose the local plan for every query.)
 -- 'parallel_replicas_local_plan' is pinned to 1 here because the test harness randomizes it.
-SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN description = 0 SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, max_execution_time_leaf = 60);
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, max_execution_time_leaf = 60);
 -- Equal timeouts with different overflow modes still require remote-only leaf reading: the local replica shares
 -- the initiator's `timeout_overflow_mode`, whereas remote replicas use `timeout_overflow_mode_leaf`.
-SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN description = 0 SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, timeout_overflow_mode = 'break', max_execution_time_leaf = 60, timeout_overflow_mode_leaf = 'throw');
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, timeout_overflow_mode = 'break', max_execution_time_leaf = 60, timeout_overflow_mode_leaf = 'throw');
 -- A stricter leaf timeout still disables the local plan so that all leaf reading happens on remote replicas
 -- where the leaf timeout is honored.
-SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN description = 0 SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, max_execution_time_leaf = 1);
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, max_execution_time_leaf = 1);
 
 -- The same contract holds on the planner-built parallel-replicas path for a NON-replicated 'MergeTree' table
 -- ('parallel_replicas_for_non_replicated_merge_tree = 1'). The top-level SETTINGS clause of the query is not
@@ -97,10 +92,10 @@ SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf_plain SETTINGS 
 DROP TABLE test_max_execution_time_leaf_plain SYNC;
 
 -- The leaf timeout is also effective for INSERT SELECT executed with parallel replicas. The local-pipeline
--- settings ('parallel_replicas_local_plan', 'parallel_replicas_prefer_local_replica') are intentionally
--- left at their defaults (1): when 'max_execution_time_leaf' is set, the local insert select pipeline is
--- skipped (it shares the initiator's query status and cannot be bounded by the leaf timeout), so all leaf
--- reading is bounded.
+-- settings ('parallel_replicas_local_plan', 'parallel_replicas_insert_select_local_pipeline',
+-- 'parallel_replicas_prefer_local_replica') are intentionally left at their defaults (1): when
+-- 'max_execution_time_leaf' is set, the local insert select pipeline is skipped (it shares the initiator's
+-- query status and cannot be bounded by the leaf timeout), so all leaf reading is bounded.
 DROP TABLE IF EXISTS test_max_execution_time_leaf_insert SYNC;
 CREATE TABLE test_max_execution_time_leaf_insert
 (
@@ -134,7 +129,7 @@ INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_executi
 -- When 'max_execution_time_leaf' is not set, the query text must not be rewritten at all: the nested subquery
 -- keeps its user-authored timeout on the remote replicas. The local pipeline is disabled so that the set is built
 -- (and the timeout can fire) only on the remote replicas.
-INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, parallel_replicas_local_plan = 0; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, parallel_replicas_insert_select_local_pipeline = 0; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 DROP TABLE test_max_execution_time_leaf_insert SYNC;
 DROP TABLE test_max_execution_time_leaf SYNC;

@@ -2,13 +2,11 @@
 
 #include <memory>
 #include <optional>
-#include <string>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
-#include <Core/Joins.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -26,8 +24,6 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
-
-class ISpillable;
 
 enum class JoinPipelineType : uint8_t
 {
@@ -86,59 +82,12 @@ inline void addMatchedRightRows(std::optional<size_t> & total, std::optional<siz
         *total += *part;
 }
 
-/// Says which build stream a build-side call works for, and whether the join checks the size limits.
-///
-/// The pipeline fills a join from N concurrent `FillingRightJoinSideTransform`s only when
-/// `supportParallelJoin` is true. It gives them the streams 0 to N - 1 (`forStream`), with N at most
-/// `getMaxBuildThreads` when that is not zero. Calls with the same stream never overlap. Calls with
-/// different streams can, so a join may keep unsynchronized state per stream, indexed by `getStream`.
-///
-/// A join that inserts into another join passes the context of the stream it works for, or
-/// `callerChecksLimits` of it. That covers the caller's own block, every block it converts, replays,
-/// re-buckets or drains during the call. It holds even when the join serializes those inserts under
-/// a lock of its own.
-///
-/// `serial` claims that no other insert into the join can overlap this one. Only an owner that fills a
-/// join one call at a time uses it. That is a single filler, join by layers, `StorageJoin` (its inserts
-/// take the table's write lock), and code that runs while no build stream can run (`onBuildPhaseFinish`,
-/// after the build phase, or a spill replay protected from concurrent inserts).
-class JoinBuildContext
-{
-public:
-    /// Stream `stream` of the `num_streams` streams that fill one join concurrently.
-    static JoinBuildContext forStream(size_t stream, size_t num_streams);
-
-    static JoinBuildContext serial() { return JoinBuildContext(0, 1, /*join_checks_limits_=*/true); }
-
-    /// The same stream, but the join does not check `max_rows_in_join` and `max_bytes_in_join`. For a
-    /// caller that checks the limits itself, or that re-inserts blocks the limits already admitted.
-    JoinBuildContext callerChecksLimits() const { return JoinBuildContext(stream, num_streams, /*join_checks_limits_=*/false); }
-
-    size_t getStream() const { return stream; }
-    /// The number of streams the pipeline started; 1 for `serial`. Wrappers forward it, so it is not the
-    /// receiver's real concurrency.
-    size_t getNumStreams() const { return num_streams; }
-    bool joinChecksLimits() const { return join_checks_limits; }
-
-private:
-    JoinBuildContext(UInt32 stream_, UInt32 num_streams_, bool join_checks_limits_)
-        : stream(stream_), num_streams(num_streams_), join_checks_limits(join_checks_limits_)
-    {
-    }
-
-    UInt32 stream;
-    UInt32 num_streams;
-    bool join_checks_limits;
-};
-
 class IJoin
 {
 public:
     virtual ~IJoin() = default;
 
     virtual std::string getName() const = 0;
-
-    virtual std::string getAlgorithm() const = 0;
 
     virtual const TableJoin & getTableJoin() const = 0;
 
@@ -170,11 +119,18 @@ public:
         SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
 
     /// Add block of data from right hand of JOIN.
-    /// `num_rows` is the number of rows in `block`. It differs from `Block::rows` only for a block
-    /// without columns, for example when `PREWHERE` consumes every right-side column of a `CROSS JOIN`.
-    /// `context` says which build stream makes the call and whether the join checks the size limits.
-    /// @returns false if the caller should stop adding blocks, for example because a limit was exceeded.
-    virtual bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) = 0;
+    /// @returns false, if some limit was exceeded and you should not insert more data.
+    virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
+
+    /// Overload that accepts the actual number of rows from the Chunk.
+    /// Needed because Block::rows() returns 0 when the block has no columns
+    /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
+    virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
+    {
+        /// Default implementation ignores num_rows; joins that need row-count-only blocks override it.
+        (void)num_rows;
+        return addBlockToJoin(block, check_limits);
+    }
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
@@ -198,7 +154,6 @@ public:
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
     virtual StepAnalysisReport getAnalysisReport() const = 0;
-    virtual ISpillable * getSpillable() { return nullptr; }
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
@@ -211,16 +166,9 @@ public:
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
 
-    /// Upper bound on the number of build streams. The pipeline reads it only when `supportParallelJoin`
-    /// is true and the right side has no totals. Zero leaves the choice to the pipeline.
-    virtual size_t getMaxBuildThreads() const { return 0; }
-
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
-    /// Runtime counterpart of `hasDelayedBlocks`: whether the delayed blocks are processed at all.
-    /// Decided at latest in `onBuildPhaseFinish`, after that the returned value should not change.
-    virtual bool isDelayedBlocksProcessingEnabled() const { return hasDelayedBlocks(); }
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;

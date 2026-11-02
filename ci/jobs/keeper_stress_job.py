@@ -64,14 +64,12 @@ def _ready_timeout():
     return max(DEFAULT_READY_TIMEOUT, env_int("KEEPER_READY_TIMEOUT"))
 
 
-def _abort(job_name, results, stopwatch, status=None, info=None, files=None):
+def _abort(job_name, results, stopwatch, status=None, info=None):
     opts = {"name": job_name, "results": results, "stopwatch": stopwatch}
     if status is not None:
         opts["status"] = status
     if info is not None:
         opts["info"] = info
-    if files is not None:
-        opts["files"] = files
     Result.create_from(**opts).complete_job()
 
 
@@ -181,10 +179,7 @@ def get_commit_sha(env):
         if os.environ.get(k):
             return os.environ.get(k)
     try:
-        _tools_dir = os.path.join(REPO_DIR, "ci", "tools")
-        if _tools_dir not in sys.path:
-            sys.path.insert(0, _tools_dir)
-        from pr_info import PRInfo
+        from tests.ci.pr_info import PRInfo
         if getattr(PRInfo(), "sha", None):
             return PRInfo().sha
     except Exception:
@@ -493,11 +488,7 @@ def main():
     files_to_attach = []
 
     if not setup_docker():
-        dind_log = "./ci/tmp/docker-in-docker.log"
-        _abort(
-            job_name, results, stop_watch, status=Result.Status.ERROR,
-            files=[dind_log] if Path(dind_log).exists() else None,
-        )
+        _abort(job_name, results, stop_watch, status=Result.Status.ERROR)
         return
 
     Shell.run("docker system prune -af --volumes || true; docker builder prune -af || true; docker network prune -f || true")
