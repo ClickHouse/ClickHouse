@@ -53,7 +53,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_alias_capture"
 
 # The alias of a substituted not inserted column is kept. The same as the inline insert: 5, 10.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_alias (a UInt32 DEFAULT 5, b UInt32 DEFAULT (a AS x) + x) ENGINE = Memory"
-printf '{"b":null}\n' > "${DATA_FILE}_alias.jsonl" "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl"
+printf '{"b":null}\n' > "${DATA_FILE}_alias.jsonl" "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl" "${DATA_FILE}_lambda_alias.jsonl"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_alias (b) FROM INFILE '${DATA_FILE}_alias.jsonl' FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_alias (b) FORMAT JSONEachRow {\"b\":null}"
 $CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_alias"
@@ -63,7 +63,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_alias"
 COLUMNS="a0 UInt64 DEFAULT 1"
 for i in $(seq 1 15); do COLUMNS="${COLUMNS}, a${i} UInt64 DEFAULT a$((i - 1)) + a$((i - 1))"; done
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_chain (${COLUMNS}) ENGINE = Memory"
-printf '{"a15":42}\n{"a15":null}\n' > "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl"
+printf '{"a15":42}\n{"a15":null}\n' > "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl" "${DATA_FILE}_lambda_alias.jsonl"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_chain (a15) FROM INFILE '${DATA_FILE}_chain.jsonl' FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_chain (a15) FORMAT JSONEachRow {\"a15\":42} {\"a15\":null}"
 $CLICKHOUSE_CLIENT -q "SELECT a14, a15 FROM t_chain ORDER BY a15"
@@ -73,10 +73,18 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_chain"
 COLUMNS="a0 UInt64 DEFAULT 1, b0 UInt64 DEFAULT 1"
 for i in $(seq 1 14); do COLUMNS="${COLUMNS}, a${i} UInt64 DEFAULT a$((i - 1)) + b$((i - 1)), b${i} UInt64 DEFAULT a$((i - 1)) + b$((i - 1))"; done
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_shared (${COLUMNS}) ENGINE = Memory"
-printf '{"a14":42}\n{"a14":null}\n' > "${DATA_FILE}_shared.jsonl"
+printf '{"a14":42}\n{"a14":null}\n' > "${DATA_FILE}_shared.jsonl" "${DATA_FILE}_lambda_alias.jsonl"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_shared (a14) FROM INFILE '${DATA_FILE}_shared.jsonl' FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_shared (a14) FORMAT JSONEachRow {\"a14\":42} {\"a14\":null}"
 $CLICKHOUSE_CLIENT -q "SELECT a14, b14 FROM t_shared ORDER BY a14"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_shared"
 
-rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl" "${DATA_FILE}_capture.jsonl" "${DATA_FILE}_alias_capture.jsonl" "${DATA_FILE}_alias.jsonl" "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl"
+# An alias defined in a lambda body hides the not inserted column with the same name. The same as the inline insert: 5, 11.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_lambda_alias (a UInt32 DEFAULT 5, b UInt32 DEFAULT arraySum(arrayMap(x -> (2 AS a) + a + x, [1, 2]))) ENGINE = Memory"
+printf '{"b":null}\n' > "${DATA_FILE}_lambda_alias.jsonl"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_lambda_alias (b) FROM INFILE '${DATA_FILE}_lambda_alias.jsonl' FORMAT JSONEachRow"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_lambda_alias (b) FORMAT JSONEachRow {\"b\":null}"
+$CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_lambda_alias"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lambda_alias"
+
+rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl" "${DATA_FILE}_capture.jsonl" "${DATA_FILE}_alias_capture.jsonl" "${DATA_FILE}_alias.jsonl" "${DATA_FILE}_chain.jsonl" "${DATA_FILE}_shared.jsonl" "${DATA_FILE}_lambda_alias.jsonl"

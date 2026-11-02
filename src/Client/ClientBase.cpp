@@ -2569,6 +2569,19 @@ void collectIdentifiersAndAliases(const ASTPtr & ast, NameSet & names)
         collectIdentifiersAndAliases(child, names);
 }
 
+/// Collects the aliases defined in `ast` out of lambda bodies: they are visible in the whole scope, an alias defined in a lambda body only in it.
+void collectScopeAliases(const ASTPtr & ast, NameSet & aliases)
+{
+    if (auto alias = ast->tryGetAlias(); !alias.empty())
+        aliases.insert(std::move(alias));
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+        return;
+
+    for (const auto & child : ast->children)
+        collectScopeAliases(child, aliases);
+}
+
 /// Generates the new names of lambda arguments and the aliases of definitions, which are different from the columns
 /// and from the identifiers and aliases in their default expressions, because any of them can be substituted.
 class UniqueNameGenerator
@@ -2606,6 +2619,7 @@ private:
 /// which are computed together, don't clash. An alias defined in a lambda body is not visible outside of it.
 /// The arguments of lambdas are renamed to unique names, so that they don't capture the columns of a definition
 /// which is substituted for an alias in a lambda body, and are not taken for columns themselves.
+/// An identifier which is an alias visible in its scope is not a column, as for the server.
 class NotInsertedColumnsDefaults
 {
 public:
@@ -2617,15 +2631,18 @@ public:
     void apply(ASTPtr & expression)
     {
         std::unordered_map<String, String> aliases;
-        rewrite(expression, aliases);
+        NameSet scope_aliases;
+        collectScopeAliases(expression, scope_aliases);
+        rewrite(expression, aliases, scope_aliases);
     }
 
 private:
-    /// `aliases` maps the defined not inserted columns to the aliases of their definitions,
-    /// `lambda_arguments` maps the arguments of the enclosing lambdas to their new names.
+    /// `aliases` maps the defined not inserted columns to the aliases of their definitions, `scope_aliases` are the aliases
+    /// of the expression visible in the scope, `lambda_arguments` maps the arguments of the enclosing lambdas to their new names.
     void rewrite(
         ASTPtr & ast,
         std::unordered_map<String, String> & aliases,
+        const NameSet & scope_aliases,
         const std::unordered_map<String, String> & lambda_arguments = {})
     {
         if (const auto * identifier = ast->as<ASTIdentifier>())
@@ -2642,7 +2659,8 @@ private:
             }
 
             const String name = identifier->name();
-            if (inserted_columns.contains(name) || !columns.has(name))
+            if (inserted_columns.contains(name) || !columns.has(name) || scope_aliases.contains(name)
+                || (identifier->compound() && scope_aliases.contains(identifier->name_parts.front())))
                 return;
 
             /// Keep the alias, the expression can refer to it.
@@ -2663,8 +2681,11 @@ private:
             ASTPtr default_value;
             if (column.default_desc.expression)
             {
+                /// The default is computed in the same scope, as the defaults of the server.
                 default_value = column.default_desc.expression->clone();
-                rewrite(default_value, aliases);
+                NameSet default_scope_aliases = scope_aliases;
+                collectScopeAliases(default_value, default_scope_aliases);
+                rewrite(default_value, aliases, default_scope_aliases);
             }
             else
                 default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
@@ -2694,12 +2715,14 @@ private:
             }
 
             auto body_aliases = aliases;
-            rewrite(function->arguments->children[1], body_aliases, body_lambda_arguments);
+            NameSet body_scope_aliases = scope_aliases;
+            collectScopeAliases(function->arguments->children[1], body_scope_aliases);
+            rewrite(function->arguments->children[1], body_aliases, body_scope_aliases, body_lambda_arguments);
             return;
         }
 
         for (auto & child : ast->children)
-            rewrite(child, aliases, lambda_arguments);
+            rewrite(child, aliases, scope_aliases, lambda_arguments);
     }
 
     const NameSet & inserted_columns;

@@ -71,6 +71,7 @@ static Names getColumnsRequiredForDefaults(
             continue;
 
         RequiredSourceColumnsVisitor::Data columns_context;
+        columns_context.mask_subcolumns_of_lambda_arguments = true;
         auto expression = it->second.expression->clone();
         RequiredSourceColumnsVisitor(columns_context).visit(expression);
 

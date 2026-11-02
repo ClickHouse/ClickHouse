@@ -36,6 +36,8 @@ struct RequiredSourceColumnsData
 
     bool has_table_join = false;
     bool has_array_join = false;
+    /// Do not interpret the subcolumns of lambda arguments, e.g. `a.x` in `a -> a.x`, as required columns either.
+    bool mask_subcolumns_of_lambda_arguments = false;
 
     bool addColumnAliasIfAny(const IAST & ast);
     void addColumnIdentifier(const ASTIdentifier & node);

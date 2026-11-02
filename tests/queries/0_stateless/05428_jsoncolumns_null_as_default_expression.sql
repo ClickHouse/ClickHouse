@@ -68,3 +68,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05428_present_dependency.json',
     SELECT * FROM values('a String, c UInt32, b Nullable(UInt32)', ('oops', 7, NULL)) SETTINGS engine_file_truncate_on_insert = 1;
 
 SELECT b FROM file(currentDatabase() || '_05428_present_dependency.json', JSONColumns, 'a String, d UInt32 DEFAULT toUInt32(a), c UInt32 DEFAULT d, b UInt32 DEFAULT c * 2');
+
+-- "a.x" of the lambda argument "a" is not the column "a": it is not read, and its default (which fails for "oops") is not computed.
+INSERT INTO FUNCTION file(currentDatabase() || '_05428_lambda_subcolumn.jsonl', LineAsString, 'line String')
+    SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"z":"oops","b":null}');
+
+SELECT b FROM file(currentDatabase() || '_05428_lambda_subcolumn.jsonl', JSONEachRow,
+    'z String, a Tuple(x UInt32) DEFAULT tuple(toUInt32(z)), b UInt32 DEFAULT arraySum(arrayMap(a -> a.x, [CAST(tuple(2) AS Tuple(x UInt32))]))');
