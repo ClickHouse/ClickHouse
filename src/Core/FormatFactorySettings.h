@@ -1750,7 +1750,7 @@ Buffering blocks can increase memory use and delay the first record batch until 
 )", 0, \
         {"26.9", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."}) \
     DECLARE(UInt64, output_format_arrow_max_record_batch_size_bytes, 2147483646, R"(
-Upper bound on the `Utf8`, `Binary` and `List` buffers of a single record batch in the `Arrow` and `ArrowStream` output formats. A block whose strings, binary values or list elements exceed this is written as several record batches.
+Upper bound on the `Utf8`, `Binary` and `List` buffers of a single record batch in the `Arrow` and `ArrowStream` output formats, and in the Arrow record batches the `Vortex` output format is written from. A block whose strings, binary values or list elements exceed this is written as several record batches.
 
 Unlike [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes), which is a target that combines small blocks, this is a limit that splits large ones. The default is the largest value Arrow can address, because it offsets those buffers with 32-bit integers; a larger value has no effect.
 
