@@ -8,6 +8,7 @@ as reading it through `icebergHDFS` does. Writing it would use the server's HDFS
 
 import json
 import os
+import time
 from urllib.parse import urlparse
 
 import pytest
@@ -156,3 +157,25 @@ def test_hdfs_location_is_read_only(started_cluster, hdfs_catalog):
         )
         assert "READONLY" in error, error
     assert list_hdfs_dir(started_cluster.hdfs_api, table_path) == files_before
+
+
+def test_hdfs_location_with_compaction_enabled(hdfs_catalog):
+    # Compaction would make the table stateful, with background jobs that cannot write to read-only HDFS.
+    readonly_errors = "SELECT sum(value) FROM system.errors WHERE name = 'READONLY'"
+    errors_before = node.query(readonly_errors)
+    node.query(f"""
+        DROP DATABASE IF EXISTS hdfs_catalog_compaction;
+        SET allow_database_iceberg = 1;
+        CREATE DATABASE hdfs_catalog_compaction
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1')
+        SETTINGS catalog_type = 'rest', warehouse = 'warehouse', allow_experimental_iceberg_compaction = 1
+        """)
+    try:
+        assert (
+            node.query("SELECT count() FROM hdfs_catalog_compaction.`ns.events`")
+            == "0\n"
+        )
+        time.sleep(5)
+        assert node.query(readonly_errors) == errors_before
+    finally:
+        node.query("DROP DATABASE IF EXISTS hdfs_catalog_compaction")

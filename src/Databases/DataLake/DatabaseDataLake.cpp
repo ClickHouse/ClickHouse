@@ -1196,8 +1196,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    /// A stateful table runs background compaction, which cannot write to the read-only HDFS storage below.
     const bool want_stateful = use_stateful_tables && !lightweight
         && !can_use_parallel_replicas
+        && storage_type != DatabaseDataLakeStorageType::HDFS
         && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction]
         && catalog->getTableFormat(table_metadata) == DataLake::DataLakeTableFormat::ICEBERG;
     if (want_stateful)
