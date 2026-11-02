@@ -122,7 +122,7 @@ void registerBackupEngineMemory(BackupFactory & factory)
     auto source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
         -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
 
-    factory.registerBackupEngine("Memory", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("Memory", creator_fn, destination_identity_fn, source_access_fn, credentialFreeBackupSecretArguments(1));
 }
 
 }

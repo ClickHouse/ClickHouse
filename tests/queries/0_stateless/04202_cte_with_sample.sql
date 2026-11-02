@@ -15,8 +15,6 @@ SETTINGS index_granularity = 1024;
 INSERT INTO t_cte_sample SELECT number, toString(number) FROM numbers(100000);
 OPTIMIZE TABLE t_cte_sample FINAL;
 
-SET enable_analyzer = 1;
-
 -- The query tree must show sample_size on the resolved table inside the CTE.
 EXPLAIN QUERY TREE passes=1
 WITH cte AS (

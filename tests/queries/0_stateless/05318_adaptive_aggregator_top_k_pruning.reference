@@ -1,0 +1,12 @@
+UInt64 key, count	1	1	1	1
+String key, count	1	1	1	1
+Two keys, count	1	1	1	1
+Fixed-width arguments	1	1	1	1
+Variable-width argument	1	1	1	1
+States with destructors	1	1	1	1
+Offset	1	1	1	1
+Spilled records	1	1	1	1
+Streams that never froze	1	1	1	1
+Ascending order	1	1	0	0
+Throw-mode group limit	1	1	0	0
+With ties	1	1	0	0

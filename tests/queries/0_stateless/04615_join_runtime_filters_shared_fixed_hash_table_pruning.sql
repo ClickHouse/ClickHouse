@@ -31,7 +31,6 @@ INSERT INTO rf_shared_dim SELECT number * 16 + 10 FROM numbers(500);
 INSERT INTO rf_shared_dim SELECT number * 16 + 12 FROM numbers(500);
 INSERT INTO rf_shared_dim SELECT number * 16 + 14 FROM numbers(500);
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET join_runtime_filter_from_fixed_hash_table = 1;

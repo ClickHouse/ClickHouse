@@ -66,7 +66,9 @@ expect "bash) "
 # that pace would hardly ever sleep, so nothing would turn yellow. The reads are 8 KB each, so
 # that the throttler sleeps on every read for a fraction of a second: the sleeps are reported to
 # the client often enough for the meter of the waited time to warm up within a few packets.
-send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_read_buffer_size 8192 --max_local_read_bandwidth 50000 --query_plan_join_swap_table false --query_plan_optimize_join_order_limit 0 --query 'SELECT count() FROM probe_side INNER JOIN (SELECT DISTINCT toUInt64(build_side.n) AS n FROM build_side INNER JOIN (SELECT pad.number AS number FROM (SELECT number FROM numbers(256) WHERE NOT ignore(sleep(1))) AS pause INNER JOIN (SELECT DISTINCT number % 256 AS number FROM numbers(310000)) AS pad ON pause.number = pad.number) AS gate ON toUInt64(build_side.n) = gate.number) AS build ON toUInt64(probe_side.n) = build.n' >/dev/null 2>&1\r"
+# The data was just written and is in the OS page cache: the `read` method cannot tell such reads
+# from the device reads, so the throttler accounts every one of them.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_read_buffer_size 8192 --max_local_read_bandwidth 50000 --local_filesystem_read_method read --query_plan_join_swap_table false --query_plan_optimize_join_order_limit 0 --query 'SELECT count() FROM probe_side INNER JOIN (SELECT DISTINCT toUInt64(build_side.n) AS n FROM build_side INNER JOIN (SELECT pad.number AS number FROM (SELECT number FROM numbers(256) WHERE NOT ignore(sleep(1))) AS pause INNER JOIN (SELECT DISTINCT number % 256 AS number FROM numbers(310000)) AS pad ON pause.number = pad.number) AS gate ON toUInt64(build_side.n) = gate.number) AS build ON toUInt64(probe_side.n) = build.n' >/dev/null 2>&1\r"
 
 # The first repaint with the bar, a yellow segment in it (`0;33` in the bar, or `30;43` in the
 # annotation rendered on top of it), and the query below 50%: the bar can be shown earlier, during

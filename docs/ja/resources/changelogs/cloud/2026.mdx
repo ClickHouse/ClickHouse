@@ -1,18 +1,50 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Cloud changelog - 2026'
-description: '各 ClickHouse Cloud リリースの新機能を紹介する ClickHouse Cloud changelog'
+title: 'Cloud 変更履歴 - 2026'
+description: 'ClickHouse Cloud の各リリースにおける新機能や変更点をまとめた変更履歴'
 doc_type: 'changelog'
-keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
+keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Cloud の変更点']
 rss: true
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-この ClickHouse Cloud changelog に加えて、[Cloud 互換性](/ja/products/cloud/guides/cloud-compatibility)ページも参照してください。
+この ClickHouse Cloud の変更履歴に加えて、[Cloud 互換性](/ja/products/cloud/guides/cloud-compatibility) ページもあわせてご参照ください。
 
-<Update label="2026-09-22">
+<Update label="Oct 5, 2026">
+  今週のリリースでは、複数の ClickHouse Cloud 組織をお持ちのお客様向けに請求管理を簡素化したほか、Kafka および Kinesis 向け ClickPipes のシリアライゼーション対応を拡充し、.NET 開発者向けに実験的なネイティブ TCP オプションを導入しました。組織間の前払いクレジットをコンソールで管理したり、残高をプログラムから取得したりできるようになりました。また、ストリーミング ClickPipes が一般的な Avro および Protobuf のワークフローに対応したほか、.NET ドライバーでは、より高速でメモリ割り当ての少ないネイティブクライアントを利用できるようになりました。
+
+  ## 新機能
+
+  ### 組織間での前払いクレジットの移動
+
+  複数の組織をお持ちのお客様は、サポートチケットを作成しなくても、コンソール上で組織間の前払いクレジットを移動できるようになりました。すべての組織の前払いクレジットを 1 つのビューで確認できるため、消費状況の把握や更新計画の立案に役立ちます。この操作を行うには、対象となる各組織で Org Admin、Billing Admin、または請求権限を持つカスタムロールが必要です。クレジットはティア間で分割できますが、Cloud 組織と BYOC 組織の間や、異なるクラウドマーケットプレイス間では分割できません。詳細は[セルフサービスによる前払いクレジット管理のドキュメント](/ja/products/cloud/reference/billing/self-service-prepaid-credit-management)を参照してください。
+
+  ## API
+
+  ### 組織のクレジット残高を取得する新しい API エンドポイント
+
+  ClickHouse Cloud OpenAPI に新たに追加された `GET /v1/organizations/{organizationId}/creditBalances` エンドポイントは、前払いクレジットやトライアルクレジットを含む、組織の有効なクレジット残高を返します。独自のツールからクレジットの消費状況を監視する際にご活用ください。詳細は[セルフサービスによる前払いクレジット管理のドキュメント](/ja/products/cloud/reference/billing/self-service-prepaid-credit-management)を参照してください。
+
+  ## ClickPipes
+
+  ### Kinesis ClickPipes で Avro および Protobuf をサポート
+
+  Kinesis ClickPipes が、JSON に加えて **Avro** と **Protobuf** をサポートするようになりました。スキーマは **AWS Glue Schema Registry** から取得するか、スキーマファイルをアップロードして指定できます。これにより、Kafka ClickPipes と Kinesis ClickPipes で同じ一般的なシリアライゼーションフォーマットを利用できるようになりました。この機能は UI、OpenAPI、Terraform で利用できます。詳細は [Kinesis ClickPipes のドキュメント](/ja/integrations/clickpipes/kinesis/)を参照してください。
+
+  ### Kafka ClickPipes で Protobuf スキーマファイルのアップロードに対応
+
+  Kafka ClickPipes で、`.proto` ファイルまたはファイルディスクリプタセット (`.desc`) としてアップロードした Protobuf スキーマを使用できるようになりました。スキーマレジストリを使用していない場合でも、デシリアライズ用のスキーマを単独で指定できます。詳細は [Kafka ClickPipes のドキュメント](/ja/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)を参照してください。
+
+  ## インテグレーション
+
+  ### .NET ドライバー v1.5.0 でネイティブ TCP クライアントを追加
+
+  ClickHouse .NET ドライバー v1.5.0 では、既存の HTTP クライアントに加えて、新たにネイティブ TCP クライアントが追加されました。接続プーリング、session、TLS、LZ4/ZSTD 圧縮、クエリパラメータ、OpenTelemetry トレーシングをサポートしています。ClickHouse Cloud でのベンチマークでは、読み取りと同時挿入がそれぞれ最大 2 倍高速化し、メモリ割り当ては桁違いに減少しました。TCP API は実験的な機能であり、今後変更される可能性があります。`ADO.NET`、ORM、および CSV や Parquet などの生フォーマットを使用する場合は、引き続き HTTP クライアントをご利用ください。詳細は [TCP クライアントのドキュメント](/ja/integrations/language-clients/csharp/tcp)および [NuGet パッケージ](https://www.nuget.org/packages/ClickHouse.Driver/1.5.0)を参照してください。
+</Update>
+
+<Update label="Sep 22, 2026">
   今週の更新では、ClickHouse Cloud のコンプライアンス対応範囲を新たな APAC リージョンへ拡大し、レプリカ対応ルーティングをパブリックベータとして追加、さらにメトリクス、コンピュート、dbt に関する新機能を導入しました。HIPAA および PCI 規制対応の cell が AWS ソウルおよびシドニーで利用可能になりました。対象のお客様は Prometheus 互換のメトリクスワークロードと On-Demand Compute を評価でき、ClickHouse は dbt Core v2 および dbt Platform から利用できます。
 
   ## セキュリティ
@@ -29,32 +61,32 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### PromQL サポートがプライベートプレビューに
 
-  Prometheus のメトリクスを `TimeSeries` テーブルエンジンに保存し、PromQL で ClickHouse サービスに対して直接クエリできるようになりました。トランスパイラやプロキシは不要なため、既存のコレクター、Grafana ダッシュボード、Prometheus ツールはそのまま動作し続けます。Prometheus remote-write v1 で書き込み、Prometheus HTTP API 経由で読み取るほか、`prometheusQuery` および `prometheusQueryRange` テーブル関数を使って SQL セッションから PromQL を実行することもできます。AWS、GCP、Azure 上の一部の ClickHouse Cloud および BYOC のお客様に、[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/promql-support-waitlist)経由で提供されます。[Prometheus インターフェイスのドキュメント](/ja/concepts/features/interfaces/prometheus)および[announcement](https://clickhouse.com/blog/introducing-promql)を参照してください。
+  Prometheus のメトリクスを `TimeSeries` テーブルエンジンに保存し、PromQL で ClickHouse サービスに対して直接クエリできるようになりました。トランスパイラやプロキシは不要なため、既存のコレクター、Grafana ダッシュボード、Prometheus ツールはそのまま動作し続けます。Prometheus remote-write v1 で書き込み、Prometheus HTTP API 経由で読み取るほか、`prometheusQuery` および `prometheusQueryRange` テーブル関数を使って SQL session から PromQL を実行することもできます。AWS、GCP、Azure 上の一部の ClickHouse Cloud および BYOC のお客様に、[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/promql-support-waitlist)経由で提供されます。[Prometheus インターフェイスのドキュメント](/ja/concepts/features/interfaces/prometheus)および[announcement](https://clickhouse.com/blog/introducing-promql)を参照してください。
 
   ### On-Demand Compute がプライベートプレビューに
 
   On-Demand Compute では、対象となるコンピュート負荷の高い `SELECT` クエリが、既存のサービスとエンドポイントを通じて追加の ClickHouse ワーカーを利用できます。リサイズや追加のプロビジョニングは不要です。オプトインはクエリ設定によりクエリ単位で行い、認証、プランニング、調整、結果の返却は引き続きサービスが担います。内部的には、オプティマイザと多段階クエリ実行を導入しています。頻度は高くないものの負荷の大きいアドホック読み取りや、大規模スキャン、`SharedMergeTree`、Apache Iceberg、Delta Lake データに対する結合や集計に適しています。[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/on-demand-compute-waitlist)経由で、一部のお客様にご利用いただけます。[On-Demand Compute のドキュメント](/ja/products/cloud/features/infrastructure/on-demand-compute)および[announcement](https://clickhouse.com/blog/on-demand-compute)を参照してください。
 
-  ## 統合
+  ## インテグレーション
 
   ### dbt v2 向け ClickHouse アダプターと dbt Platform での ClickHouse
 
   パブリックベータで提供される dbt v2 アダプターにより、新しい Rust ベースの Core v2 エンジン上で ClickHouse に対して dbt を実行できるようになりました。また、ClickHouse が初めて dbt Platform (Studio、ジョブ、環境) の接続先として利用可能になり、プライベートベータとしてアカウント単位で有効化されます。既存の v1 アダプター (`dbt-clickhouse`) も引き続き並行して完全にメンテナンスされます。[dbt Core](https://github.com/dbt-labs/dbt)、[dbt-clickhouse アダプターのプルリクエスト](https://github.com/ClickHouse/dbt-clickhouse/pull/739)、および [dbt Platform ドキュメントのプルリクエスト](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)を参照してください。
 </Update>
 
-<Update label="2026-09-08">
-  今週は、ClickHouse Cloud に本番環境で利用できるセキュリティおよびデータ統合の改善が加わりました。JWT authentication が Enterprise サービスで一般提供となり、ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが GA に到達し、スナップショットの高速化、より安全なデフォルト、オブザーバビリティの向上が実現しました。
+<Update label="Sep 8, 2026">
+  今週は、ClickHouse Cloud に本番環境で利用できるセキュリティおよびデータインテグレーションの改善が加わりました。JWT authentication が Enterprise サービスで一般提供となり、ClickPipes の MySQL CDC (変更データキャプチャ)  コネクタが GA に到達し、スナップショットの高速化、より安全なデフォルト、オブザーバビリティの向上が実現しました。
 
   ### ClickHouse サービス向けの JWT authentication が一般提供になりました
 
-  Okta、Auth0、Microsoft Entra ID、Keycloak、あるいは JWKS endpoint を公開している任意の provider を含む、独自の identity provider が発行した JWT を使用して ClickHouse サービスに認証できるようになりました。JWT authentication を使用すると、既存の identity provider を通じてアクセスを管理でき、ポリシーによってトークンの有効期限が強制されます。これにより、ClickHouse の個別のパスワードやローテーションが必要な共有シークレットが不要になります。この機能は、ClickHouse 26.4 以降を実行しているサービスの Enterprise plan で利用できます。**Service → Settings → Security → JWT authentication** から設定してください。[JWT authentication のセットアップガイド](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)をご覧ください。
+  Okta、Auth0、Microsoft Entra ID、Keycloak、あるいは JWKS エンドポイント を公開している任意の provider を含む、独自の identity provider が発行した JWT を使用して ClickHouse サービスに認証できるようになりました。JWT authentication を使用すると、既存の identity provider を通じてアクセスを管理でき、ポリシーによってトークンの有効期限が強制されます。これにより、ClickHouse の個別のパスワードやローテーションが必要な共有シークレットが不要になります。この機能は、ClickHouse 26.4 以降を実行しているサービスの Enterprise plan で利用できます。**Service → Settings → Security → JWT authentication** から設定してください。[JWT authentication のセットアップガイド](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)をご覧ください。
 
-  ### ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが一般提供になりました
+  ### ClickPipes の MySQL CDC (変更データキャプチャ)  コネクタが一般提供になりました
 
-  ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが本番環境で利用可能になりました。このリリースでは自動的な parallel snapshot が追加され、初期ロードが最大 27 倍高速化されます。あわせて、GTID ベースのレプリケーションや最低 72 時間の binlog retention period など、本番デプロイメントに適したより安全なデフォルトが導入されました。新しいリソース使用率およびラグのメトリクスにより、パイプラインの監視も容易になります。このコネクタは、ClickPipes UI、OpenAPI、Terraform を通じてすべての ClickHouse Cloud のお客様が利用できます。[MySQL ClickPipes のドキュメント](/ja/integrations/clickpipes/mysql)および [GA リリースのお知らせ](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)をご覧ください。
+  ClickPipes の MySQL CDC (変更データキャプチャ)  コネクタが本番環境で利用可能になりました。このリリースでは自動的な parallel snapshot が追加され、初期ロードが最大 27 倍高速化されます。あわせて、GTID ベースのレプリケーションや最低 72 時間の binlog retention period など、本番デプロイメントに適したより安全なデフォルトが導入されました。新しいリソース使用率およびラグのメトリクスにより、パイプラインの監視も容易になります。このコネクタは、ClickPipes UI、OpenAPI、Terraform を通じてすべての ClickHouse Cloud のお客様が利用できます。[MySQL ClickPipes のドキュメント](/ja/integrations/clickpipes/mysql)および [GA リリースのお知らせ](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)をご覧ください。
 </Update>
 
-<Update label="2026-08-31">
+<Update label="Aug 31, 2026">
   今週は、台北とマレーシアに新たな AWS リージョンを追加して ClickHouse Cloud のグローバルな対応範囲を拡大し、Private Service Connect の Global Access をサポートするとともに、SAML ユーザーが組織間を移動しやすくしました。
 
   ### 新しい AWS リージョン：台北とマレーシア
@@ -85,9 +117,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   請求通知は ClickHouse Cloud Notification Center で管理され、コンソール、メール、Slack を通じて配信されます。前払いまたはトライアルのクレジットがまもなく期限切れになる、または使い切られる場合に加え、クレジットの追加、支払い方法の変更、アカウントが未払い猶予期間に入った際にも事前通知を受け取れます。これにより、サービスが中断される前に、更新、クレジットの追加、支払いに関する問題の解決により多くの時間を確保できます。
 
-  ### ClickHouse Agents から Langfuse セッションのトレースを開く
+  ### ClickHouse Agents から Langfuse session のトレースを開く
 
-  組織管理者は、[ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents/index) のチャットから対応する Langfuse セッションを直接開き、会話全体のトレースを確認できるようになりました。これにより、エージェントの動作を調査し、複数ステップの実行をデバッグしやすくなります。この改善は、新しく作成されたチャットで パブリックベータ として利用可能です。
+  組織管理者は、[ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents/index) のチャットから対応する Langfuse session を直接開き、会話全体のトレースを確認できるようになりました。これにより、エージェントの動作を調査し、複数ステップの実行をデバッグしやすくなります。この改善は、新しく作成されたチャットで パブリックベータ として利用可能です。
 
   ### SAML リダイレクトによる重複アカウントの防止
 
@@ -99,7 +131,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### HTTPS 経由でのスティッキーなレプリカルーティング (プライベートプレビュー)
 
-  通常のサービス URL に `?session_id=` パラメーターを追加することで、特別なホスト名や DNS の変更なしに、標準 HTTPS 経由でクエリを特定のレプリカに固定できるようになりました。これにより、一時テーブルなどのセッションスコープのオブジェクトをクエリ間で利用可能な状態に保ち、繰り返しのクエリでウォーム状態のレプリカローカルキャッシュに到達しやすくなります。Enterprise のすべてのお客様と、ご要望に応じて Scale のお客様を対象に、プライベートプレビューとして順次提供されます。既存のサブドメインベースのルーティングは引き続き機能しますが、最終的にはこの方式に移行します。[レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing)のドキュメントをご覧ください。
+  通常のサービス URL に `?session_id=` パラメータを追加することで、特別なホスト名や DNS の変更なしに、標準 HTTPS 経由でクエリを特定のレプリカに固定できるようになりました。これにより、一時テーブルなどのsessionスコープのオブジェクトをクエリ間で利用可能な状態に保ち、繰り返しのクエリでウォーム状態のレプリカローカルキャッシュに到達しやすくなります。Enterprise のすべてのお客様と、ご要望に応じて Scale のお客様を対象に、プライベートプレビューとして順次提供されます。既存のサブドメインベースのルーティングは引き続き機能しますが、最終的にはこの方式に移行します。[レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing)のドキュメントをご覧ください。
 
   ### カスタム請求期間開始日
 
@@ -117,9 +149,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   [ClickPipes](/ja/integrations/clickpipes/kafka/index) のインポートフローで、Kafka インポートに対して exactly-once 配信を直接有効にできるようになりました。同じオプションは、プログラムによるセットアップ向けに公開 API からも利用できます。
 
-  ### CDC ソース向けの統一された TLS 制御
+  ### CDC (変更データキャプチャ)  ソース向けの統一された TLS 制御
 
-  TLS の有効化と検証レベルが、CDC ソース全体で統一されました。OpenAPI の create および update エンドポイントで `postgres_skip_cert_verification`、`postgres_disable_tls`、`mongo_skip_cert_verification` の各フィールドが反映されるようになり、API 経由で証明書の扱いを管理できます。
+  TLS の有効化と検証レベルが、CDC (変更データキャプチャ)  ソース全体で統一されました。OpenAPI の create および update エンドポイントで `postgres_skip_cert_verification`、`postgres_disable_tls`、`mongo_skip_cert_verification` の各フィールドが反映されるようになり、API 経由で証明書の扱いを管理できます。
 
   ### Replicated databases が ClickPipes picker に復帰
 
@@ -151,7 +183,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   詳細については、[ClickPipes 静的IPリスト](/ja/integrations/clickpipes/networking/static-ips)を参照してください。
 
-  ### ClickPipes for GCP Pub/Sub (プライベートプレビュー)
+  ### GCP Pub/Sub 向け ClickPipes (プライベートプレビュー)
 
   ClickPipes は、GCP Pub/Sub のトピックから ClickHouse Cloud へデータを直接ストリーミングできるようになりました。これにより、GCP ネイティブなチームは Cloud Logging、Cloud Monitoring、GKE などのデータを分析に活用するための直接的な経路を確保できます。ClickPipes の UI、OpenAPI、および Terraform 経由で利用可能です。プライベートプレビュー期間中は[サインアップ](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)が必要です。
 
@@ -159,7 +191,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### ClickHouse Agents: Claudeを活用したエージェント型アナリティクス (パブリックベータ)
 
-  ClickHouse Agents が [ai.clickhouse.cloud](http://ai.clickhouse.cloud) にてパブリックベータとして公開されました。Claude を基盤とするファーストパーティのエージェントプラットフォームで、ClickHouse Cloud のデータに対してスキーマを認識した会話形式の分析が行えます。ノーコードの AgentBuilder でカスタムエージェントを構築し、MCPサーバー (Slack、Linear、Notion など) を接続してサブエージェントワークフローを組み合わせ、会話を離れることなくクエリ、パイプライン、アプリを生成できます。AWS Bedrock AgentCore インテグレーションおよびマネージド LibreChat 基盤も含まれています。
+  ClickHouse Agents が [ai.clickhouse.cloud](http://ai.clickhouse.cloud) にてパブリックベータとして公開されました。Claude を基盤とするファーストパーティのエージェントプラットフォームで、ClickHouse Cloud のデータに対してスキーマを認識した会話形式の分析が行えます。ノーコードの AgentBuilder でカスタムエージェントを構築し、MCP サーバー (Slack、Linear、Notion など) を接続し、サブエージェントワークフローを組み合わせ、会話を離れることなくクエリ、パイプライン、アプリを生成できます。AWS Bedrock AgentCore インテグレーションおよびマネージド LibreChat 基盤も含まれています。
 
   詳細は、[ClickHouse Agentsのドキュメント](/ja/products/cloud/features/ai-ml/agents/index)をご覧ください。
 
@@ -290,7 +322,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### ClickPipes 向け Terraform と OpenAPI (一般提供)
 
-  ClickHouse の [Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) における ClickPipes リソースが、安定版リリースの一部として一般提供となりました。また、[OpenAPI エンドポイント](/ja/products/cloud/api-reference/organization/get-list-of-available-organizations) もベータ表記ではなくなりました。これには CDC コネクタ (Postgres、MySQL、MongoDB) の完全対応が含まれます。詳細は [Terraform ドキュメント](/ja/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI ドキュメント](/ja/integrations/clickpipes/programmatic-access/openapi)、および [ブログ記事](https://clickhouse.com/blog/terraform-ga) をご覧ください。
+  ClickHouse の [Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) における ClickPipes リソースが、安定版リリースの一部として一般提供となりました。また、[OpenAPI エンドポイント](/ja/products/cloud/api-reference/organization/get-list-of-available-organizations) もベータ表記ではなくなりました。これには CDC (変更データキャプチャ)  コネクタ (Postgres、MySQL、MongoDB) の完全対応が含まれます。詳細は [Terraform ドキュメント](/ja/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI ドキュメント](/ja/integrations/clickpipes/programmatic-access/openapi)、および [ブログ記事](https://clickhouse.com/blog/terraform-ga) をご覧ください。
 </Update>
 
 <Update label="2026年4月17日">
@@ -298,9 +330,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   Cloud コンソール の請求 UI で、すべての返金を直接確認できるようになりました。返金は処理されると表示されます。クレジットカードへの返金は、銀行によって明細への反映にさらに時間がかかる場合があります。
 
-  ### 組織の支出額アラート (プライベートプレビュー)
+  ### 組織の支出アラート (プライベートプレビュー)
 
-  組織の支出額アラートがプライベートプレビューで利用可能になりました。請求期間ごとに設定した組織の支出額に対して、50%、75%、100% の時点で通知を受け取れます。通知チャネルには、メール、Cloud コンソール、Slack を選択できます。アラートは組織の総利用額に基づき、1 時間ごとに発報され、請求期間ごとに自動的にリセットされます。Org Admin または Billing Admin ロールが必要です。
+  組織の支出アラートがプライベートプレビューで利用可能になりました。請求期間ごとに設定した組織の支出額に対して、50%、75%、100% の時点で通知を受け取れます。通知チャネルには、メール、Cloud コンソール、Slack を選択できます。アラートは組織の総利用額に基づき、1 時間ごとに発報され、請求期間ごとに自動的にリセットされます。Org Admin または Billing Admin ロールが必要です。
 
   ### AWS における ClickPipes のリージョン対応拡大
 
@@ -343,7 +375,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Update>
 
 <Update label="2026年2月20日">
-  * **ClickPipes:** 非アクティブ状態の Reverse private endpoints は、定義済みの猶予期間が経過すると自動的に削除されるようになりました。これにより、未使用または設定ミスの endpoints がバックエンドに無期限に残り続けることを防ぎます。詳細は、自動クリーンアップの[ドキュメント](/ja/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup)をご覧ください。
+  * **ClickPipes:** 非アクティブ状態の Reverse private エンドポイント は、定義済みの猶予期間が経過すると自動的に削除されるようになりました。これにより、未使用または設定ミスの エンドポイント がバックエンドに無期限に残り続けることを防ぎます。詳細は、自動クリーンアップの[ドキュメント](/ja/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup)をご覧ください。
 </Update>
 
 <Update label="2026年2月13日">

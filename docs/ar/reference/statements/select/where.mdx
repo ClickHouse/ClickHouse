@@ -26,9 +26,7 @@ keywords: ['WHERE']
   وهو مفعّل افتراضيًا حتى إذا لم تُحدَّد عبارة `PREWHERE` صراحةً.
 </Info>
 
-<div id="testing-for-null">
-  ## التحقق من `NULL`
-</div>
+## التحقق من `NULL` {#testing-for-null}
 
 إذا كنت بحاجة إلى التحقق مما إذا كانت قيمة هي [`NULL`](/ar/reference/syntax#null)، فاستخدم:
 
@@ -37,9 +35,7 @@ keywords: ['WHERE']
 
 وإلا فلن يطابق أي تعبير يحتوي على `NULL` أي شرط مطلقًا.
 
-<div id="filtering-data-with-logical-operators">
-  ## تصفية البيانات باستخدام العوامل المنطقية
-</div>
+## تصفية البيانات باستخدام العوامل المنطقية {#filtering-data-with-logical-operators}
 
 يمكنك استخدام [الدوال المنطقية](/ar/reference/functions/regular-functions/logical-functions#and) التالية مع عبارة `WHERE` لدمج عدة شروط:
 
@@ -48,54 +44,49 @@ keywords: ['WHERE']
 * [`or()`](/ar/reference/functions/regular-functions/logical-functions#or) أو `NOT`
 * [`xor()`](/ar/reference/functions/regular-functions/logical-functions#xor)
 
-<div id="using-uint8-columns-as-a-condition">
-  ## استخدام أعمدة `UInt8` كشرط
-</div>
+## استخدام أعمدة `UInt8` كشرط {#using-uint8-columns-as-a-condition}
 
 في ClickHouse، يمكن استخدام أعمدة `UInt8` مباشرةً كشروط منطقية، بحيث تمثّل `0` القيمة `false` وتمثّل أي قيمة غير صفرية (وغالبًا `1`) القيمة `true`.
 ويَرِد مثال على ذلك في القسم [أدناه](#example-uint8-column-as-condition).
 
-<div id="using-comparison-operators">
-  ## استخدام معاملات المقارنة
-</div>
+## استخدام عوامل المقارنة {#using-comparison-operators}
 
-يمكن استخدام [معاملات المقارنة](/ar/reference/operators/index#comparison-operators) التالية:
+يمكن استخدام [عوامل المقارنة](/ar/reference/operators/index#comparison-operators) التالية:
 
-| المعامل                 | الدالة                  | الوصف                                 | مثال                            |
-| ----------------------- | ----------------------- | ------------------------------------- | ------------------------------- |
-| `a = b`                 | `equals(a, b)`          | يساوي                                 | `price = 100`                   |
-| `a == b`                | `equals(a, b)`          | يساوي (صيغة بديلة)                    | `price == 100`                  |
-| `a != b`                | `notEquals(a, b)`       | لا يساوي                              | `category != 'Electronics'`     |
-| `a <> b`                | `notEquals(a, b)`       | لا يساوي (صيغة بديلة)                 | `category <> 'Electronics'`     |
-| `a < b`                 | `less(a, b)`            | أقل من                                | `price < 200`                   |
-| `a <= b`                | `lessOrEquals(a, b)`    | أقل من أو يساوي                       | `price <= 200`                  |
-| `a > b`                 | `greater(a, b)`         | أكبر من                               | `price > 500`                   |
-| `a >= b`                | `greaterOrEquals(a, b)` | أكبر من أو يساوي                      | `price >= 500`                  |
-| `a LIKE s`              | `like(a, b)`            | مطابقة النمط (حساسة لحالة الأحرف)     | `name LIKE '%top%'`             |
-| `a NOT LIKE s`          | `notLike(a, b)`         | عدم مطابقة النمط (حساسة لحالة الأحرف) | `name NOT LIKE '%top%'`         |
-| `a ILIKE s`             | `ilike(a, b)`           | مطابقة النمط (غير حساسة لحالة الأحرف) | `name ILIKE '%LAPTOP%'`         |
-| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | التحقق من النطاق (شامل)               | `price BETWEEN 100 AND 500`     |
-| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | التحقق من الخروج عن النطاق            | `price NOT BETWEEN 100 AND 500` |
+| المعامل                 | الدالة                  | الوصف                                               | مثال                              |
+| ----------------------- | ----------------------- | --------------------------------------------------- | --------------------------------- |
+| `a = b`                 | `equals(a, b)`          | يساوي                                               | `price = 100`                     |
+| `a == b`                | `equals(a, b)`          | يساوي (صيغة بديلة)                                  | `price == 100`                    |
+| `a != b`                | `notEquals(a, b)`       | لا يساوي                                            | `category != 'Electronics'`       |
+| `a <> b`                | `notEquals(a, b)`       | لا يساوي (صيغة بديلة)                               | `category <> 'Electronics'`       |
+| `a < b`                 | `less(a, b)`            | أقل من                                              | `price < 200`                     |
+| `a <= b`                | `lessOrEquals(a, b)`    | أقل من أو يساوي                                     | `price <= 200`                    |
+| `a > b`                 | `greater(a, b)`         | أكبر من                                             | `price > 500`                     |
+| `a >= b`                | `greaterOrEquals(a, b)` | أكبر من أو يساوي                                    | `price >= 500`                    |
+| `a LIKE s`              | `like(a, b)`            | مطابقة النمط (حساسة لحالة الأحرف)                   | `name LIKE '%top%'`               |
+| `a NOT LIKE s`          | `notLike(a, b)`         | عدم مطابقة النمط (حساسة لحالة الأحرف)               | `name NOT LIKE '%top%'`           |
+| `a ILIKE s`             | `ilike(a, b)`           | مطابقة النمط (دون حساسية لحالة الأحرف)               | `name ILIKE '%LAPTOP%'`           |
+| `a SIMILAR TO s`        | `similarTo(a, b)`       | مطابقة النمط وفق معيار SQL (حساسة لحالة الأحرف)     | `name SIMILAR TO 'Lap(top)?'`     |
+| `a NOT SIMILAR TO s`    | `notSimilarTo(a, b)`    | عدم مطابقة النمط وفق معيار SQL (حساسة لحالة الأحرف) | `name NOT SIMILAR TO 'Lap(top)?'` |
+| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | التحقق من النطاق (شامل)                             | `price BETWEEN 100 AND 500`       |
+| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | التحقق من الخروج عن النطاق                          | `price NOT BETWEEN 100 AND 500`   |
 
-<div id="pattern-matching-and-conditional-expressions">
-  ## مطابقة الأنماط والتعبيرات الشرطية
-</div>
+## مطابقة الأنماط والتعبيرات الشرطية {#pattern-matching-and-conditional-expressions}
 
-إلى جانب معاملات المقارنة، يمكنك استخدام مطابقة الأنماط والتعبيرات الشرطية في عبارة `WHERE`.
+إلى جانب عوامل المقارنة، يمكنك استخدام مطابقة الأنماط والتعبيرات الشرطية في عبارة `WHERE`.
 
-| الميزة      | الصياغة                        | مراعي لحالة الأحرف | الأداء | الأفضل لـ                           |
-| ----------- | ------------------------------ | ------------------ | ------ | ----------------------------------- |
-| `LIKE`      | `col LIKE '%pattern%'`         | نعم                | سريع   | مطابقة الأنماط مع تمييز حالة الأحرف |
-| `ILIKE`     | `col ILIKE '%pattern%'`        | لا                 | أبطأ   | البحث دون تمييز حالة الأحرف         |
-| `if()`      | `if(cond, a, b)`               | لا ينطبق           | سريع   | الشروط الثنائية البسيطة             |
-| `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | لا ينطبق           | سريع   | الشروط المتعددة                     |
-| `CASE`      | `CASE WHEN ... THEN ... END`   | لا ينطبق           | سريع   | منطق شرطي قياسي في SQL              |
+| الميزة       | الصياغة                        | حساس لحالة الأحرف | الأداء | الأفضل لـ                                                  |
+| ------------ | ------------------------------ | ------------------ | ------ | ---------------------------------------------------------- |
+| `LIKE`       | `col LIKE '%pattern%'`         | نعم                | سريع   | مطابقة الأنماط الحساسة لحالة الأحرف                        |
+| `ILIKE`      | `col ILIKE '%pattern%'`        | لا                 | أبطأ   | البحث دون حساسية لحالة الأحرف                                |
+| `SIMILAR TO` | `col SIMILAR TO 'p[ab]+%'`     | نعم                | أبطأ   | أنماط وفق معيار SQL تدعم المحارف الوصفية للتعبيرات النمطية |
+| `if()`       | `if(cond, a, b)`               | لا ينطبق           | سريع   | الشروط الثنائية البسيطة                                    |
+| `multiIf()`  | `multiIf(c1, r1, c2, r2, def)` | لا ينطبق           | سريع   | الشروط المتعددة                                            |
+| `CASE`       | `CASE WHEN ... THEN ... END`   | لا ينطبق           | سريع   | منطق شرطي قياسي في SQL                                     |
 
 راجع [&quot;مطابقة الأنماط والتعبيرات الشرطية&quot;](#examples-pattern-matching-and-conditional-expressions) للاطلاع على أمثلة الاستخدام.
 
-<div id="expressions-with-literals-columns-subqueries">
-  ## تعبير يتضمن قيماً حرفية أو أعمدة أو استعلامات فرعية
-</div>
+## تعبير يتضمن قيماً حرفية أو أعمدة أو استعلامات فرعية {#expressions-with-literals-columns-subqueries}
 
 يمكن أن يتضمن التعبير الذي يلي عبارة `WHERE` أيضاً [قيماً حرفية](/ar/reference/syntax#literals)، أو أعمدة، أو استعلامات فرعية، وهي عبارات `SELECT` متداخلة تُرجِع قيماً تُستخدم في الشروط.
 
@@ -125,13 +116,9 @@ WHERE (price > 100 OR category IN (SELECT category FROM featured))
   AND name LIKE '%Special%'
 ```
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
-<div id="examples-testing-for-null">
-  ### التحقق من `NULL`
-</div>
+### التحقق من `NULL` {#examples-testing-for-null}
 
 الاستعلامات التي تتضمن قيماً من نوع `NULL`:
 
@@ -152,9 +139,7 @@ SELECT * FROM t_null WHERE y != 0;
 └───┴───┘
 ```
 
-<div id="example-filtering-with-logical-operators">
-  ### تصفية البيانات باستخدام العوامل المنطقية
-</div>
+### تصفية البيانات باستخدام العوامل المنطقية {#example-filtering-with-logical-operators}
 
 بالنظر إلى الجدول والبيانات التاليين:
 
@@ -271,9 +256,7 @@ WHERE and(or(category = 'Electronics', price > 100), in_stock);
 
 تكون صيغة الكلمات المفتاحية في SQL (`AND`, `OR`, `NOT`, `XOR`) أوضح للقراءة عمومًا، لكن صيغة الدوال قد تكون مفيدة في التعبيرات المعقدة أو عند إنشاء استعلامات ديناميكية.
 
-<div id="example-uint8-column-as-condition">
-  ### استخدام أعمدة UInt8 كشرط
-</div>
+### استخدام أعمدة UInt8 كشرط {#example-uint8-column-as-condition}
 
 انطلاقًا من الجدول الوارد في [مثال سابق](#example-filtering-with-logical-operators)، يمكنك استخدام اسم العمود مباشرةً كشرط:
 
@@ -291,9 +274,7 @@ WHERE in_stock
    └────┴─────────┴────────┴─────────────┴──────────┘
 ```
 
-<div id="example-using-comparison-operators">
-  ### استخدام معاملات المقارنة
-</div>
+### استخدام معاملات المقارنة {#example-using-comparison-operators}
 
 تستخدم الأمثلة أدناه الجدول والبيانات من [المثال](#example-filtering-with-logical-operators) أعلاه. حُذفت النتائج للإيجاز.
 
@@ -368,15 +349,11 @@ SELECT * FROM products
 WHERE category = 'Electronics' AND in_stock = true;
 ```
 
-<div id="examples-pattern-matching-and-conditional-expressions">
-  ### مطابقة الأنماط والتعبيرات الشرطية
-</div>
+### مطابقة الأنماط والتعبيرات الشرطية {#examples-pattern-matching-and-conditional-expressions}
 
 تستخدم الأمثلة أدناه الجدول والبيانات الواردين في [المثال](#example-filtering-with-logical-operators) أعلاه. وحُذفت النتائج للاختصار.
 
-<div id="like-examples">
-  #### أمثلة على LIKE
-</div>
+#### أمثلة على LIKE {#like-examples}
 
 ```sql
 -- Find products with 'o' in the name
@@ -392,9 +369,7 @@ SELECT * FROM products WHERE name LIKE '____';
 -- Result: Desk, Lamp
 ```
 
-<div id="ilike-examples">
-  #### أمثلة على ILIKE
-</div>
+#### أمثلة على ILIKE {#ilike-examples}
 
 ```sql
 -- Case-insensitive search for 'LAPTOP'
@@ -406,9 +381,39 @@ SELECT * FROM products WHERE name ILIKE 'l%';
 -- Result: Laptop, Lamp
 ```
 
-<div id="if-examples">
-  #### أمثلة على IF
-</div>
+#### أمثلة على SIMILAR TO {#similar-to-examples}
+
+على خلاف `LIKE`، يقبل النمط في `SIMILAR TO` أيضًا المحارف الوصفية الخاصة بالتعبيرات النمطية `|` و`*` و`+` و`?` و`{` و`}` و`(` و`)` و`[` و`]`، ويجب أن يطابق القيمة بأكملها كما هو الحال في `LIKE`:
+
+```sql
+-- Alternation: either of two names
+SELECT * FROM products WHERE name SIMILAR TO 'Desk|Lamp';
+-- Result: Desk, Lamp
+
+-- A bracket expression combined with the LIKE wildcard `%`
+SELECT * FROM products WHERE name SIMILAR TO '[LM]%';
+-- Result: Laptop, Mouse, Monitor, Lamp
+
+-- Repetition: a name of five or more characters
+SELECT * FROM products WHERE name SIMILAR TO '_{5,}';
+-- Result: Laptop, Mouse, Chair, Monitor
+
+-- Negation
+SELECT * FROM products WHERE name NOT SIMILAR TO '(Desk|Lamp)';
+-- Result: Laptop, Mouse, Chair, Monitor
+```
+
+يمكن تحديد حرف إفلات مخصص باستخدام عبارة `ESCAPE`، وهي تعمل أيضًا مع `LIKE` و`ILIKE` و`NOT LIKE` و`NOT ILIKE` و`NOT SIMILAR TO`:
+
+```sql
+-- `#%` denotes a literal `%`, so this matches names containing a percent sign
+SELECT * FROM products WHERE name SIMILAR TO '%#%%' ESCAPE '#';
+-- Result: (none)
+```
+
+راجع [توثيق المعامل `SIMILAR TO`](/ar/reference/operators/index#similarto-function) للاطلاع على صياغة الأنماط كاملةً.
+
+#### أمثلة على IF {#if-examples}
 
 ```sql
 -- Different price thresholds by category
@@ -424,9 +429,7 @@ WHERE if(in_stock, price > 100, true);
 -- (In stock items over $100 OR all out-of-stock items)
 ```
 
-<div id="multiif-examples">
-  #### أمثلة على multiIf
-</div>
+#### أمثلة على multiIf {#multiif-examples}
 
 ```sql
 -- Multiple category-based conditions
@@ -449,9 +452,7 @@ WHERE multiIf(
 -- Result: Laptop, Chair, Monitor, Lamp
 ```
 
-<div id="case-examples">
-  #### أمثلة على CASE
-</div>
+#### أمثلة على CASE {#case-examples}
 
 **صيغة CASE البسيطة:**
 

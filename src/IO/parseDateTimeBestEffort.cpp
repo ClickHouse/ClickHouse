@@ -697,6 +697,9 @@ ReturnType parseDateTimeBestEffortImpl(
 
         if (num_digits == 0)
         {
+            if (in.eof())
+                break;
+
             char c = *in.position();
 
             /// 'T' is a separator between date and time according to ISO 8601.

@@ -126,6 +126,10 @@ URL のフォーマットは、ターゲットによって異なります。
 
 #### File {#file}
 
+<Important>
+  `file://` スキームは ClickHouse Cloud ではサポートされていません。
+</Important>
+
 Postgres サーバー上の絶対パスである必要があります。相対パスを指定した場合はエラーになります。Postgres ユーザーは、用途に応じて `pg_read_server_files` または `pg_write_server_files` ロールのメンバーである必要があります。また、Postgres のシステムユーザーには、用途に応じて対象ファイルへの読み取りまたは書き込みアクセス権が必要です。`COPY TO` の場合、パスが存在しなければ chdb&#95;hook が不足している親ディレクトリを作成しますが、そのためにはファイルシステム上の権限が必要です。例:
 
 ```
@@ -286,6 +290,17 @@ COPY users TO 'file:///tmp/users.parquet' (
 リクエストのタイムアウト (ミリ秒) 。HTTP、S3、GCS、Azure の URL に適用されます。
 デフォルトは `30000` (30秒) です。
 
+#### `encoding_check` {#encoding_check}
+
+chDB の String 値および JSON 値を変換する際に、[database encoding] で無効となる文字の扱い方を定義します。次のいずれかを指定します。
+
+* `fail` (デフォルト) : エラーを発生させます
+* `remove`: 無効なバイトを削除します
+* `replace`: UTF-8 エンコーディングの場合は、無効なバイトを
+  Unicode の置換文字 (`�`) に置き換えます。その他のエンコーディングでは
+  `remove` と同じ動作になります
+* `truncate`: 最初に現れた無効なバイトの位置でテキストを切り詰めます
+
 ### デバッグ {#debugging}
 
 エラー発生時、chdb&#95;hook の `COPY` コマンドは、実行を試みた [chDB] クエリをエラーコンテキストに含めます:
@@ -319,10 +334,11 @@ chdb&#95;hook は、SQL インジェクションの脆弱性を防ぎ、認証�
 
 chdb&#95;hook は [CREATE TABLE] にもフックするため、テーブルは URL からカラムを導出し、行を読み込むことができます。
 
-URL から導出した structure でテーブルを作成するには、`structure_from` オプションに URL を渡し、カラムリストを空のままにします:
+URL から導出した structure でテーブルを作成するには、`structure_from` オプションに URL を渡し、カラムリストを空のままにします (注意: この公開データファイルには 4,100 万行が含まれています) :
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -331,6 +347,7 @@ CREATE TABLE reviews () WITH (
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -345,15 +362,18 @@ CREATE TABLE times (
 ) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
 ```
 
-どちらのオプションも `COPY` と同じ [URL スキーム](#url-schemes) と[オプション](#options)をサポートしており、認証情報、format、圧縮、timeout、さらには明示的な [structure](#structure) まで、すべてそのまま利用できます。Postgres 側では、残った storage parameters がそのまま保持されます:
+`copy_from` がカラムを推論する場合、`DESCRIBE` が返すソースのスキーマを使用します。
+そのため、`Map`、`Tuple`、`Nested` の値はテキスト型の Array カラムとして読み込まれ、
+これらのカラムからは元の ClickHouse の型を識別できません。
+
+どちらのオプションも `COPY` と同じ [URL スキーム](#url-schemes) と[オプション](#options)をサポートしており、認証情報、フォーマット、圧縮、タイムアウト、さらには明示的な [structure](#structure) まで、すべてそのまま利用できます。Postgres 側では、残った storage parameters がそのまま保持されます:
 
 ```sql
-CREATE TABLE users () WITH (
-    copy_from     = 's3://my-bucket/users.csv',
-    access_key    = 'AKIAIOSFODNN7EXAMPLE',
-    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-    format        = 'CSVWithNames',
-    fillfactor    = 90
+CREATE TABLE logs () WITH (
+    copy_from  = 's3://chdb-lakedata-public/logs/logs-2026-08-26.csv',
+    format     = 'CSVWithNames',
+    timeout    = 60000,
+    fillfactor = 90
 );
 ```
 
@@ -364,6 +384,9 @@ CREATE TABLE users () WITH (
 Postgres と chDB の間でのいくつかの既知の問題およびデータ型の挙動の違いにより、chdb&#95;hook には以下の制限があります:
 
 * コピーを実行するロールに適用される [row-level security] policies が設定された relation は `COPY` できません。Postgres はこうした policies を適用する際に `COPY TO` をクエリへ書き換えますが、chdb&#95;hook はこれをサポートしていません。
+* `WHERE` 句を指定して URL から `COPY FROM` することはできません。
+* chDB には NULL の Array が存在しないため、`COPY TO` は NULL を空の Array (`[]`) として格納します。
+* chDB は `lseg`、`path`、`polygon` に相当するものを Array として表現します。そのため、これらの型の NULL 値も `COPY TO` では空の Array (`[]`) になります。
 * ClickHouse には NULL の Array が存在しないため、`COPY TO` は `NULL` を空の Array (`[]`) として格納します。
 * ClickHouse は `lseg`、`path`、`polygon` に相当するものを Array として表現します。そのため、これらの型の NULL 値も `COPY TO` では空の Array (`[]`) になります。
 * 指定した [structure](#structure) でカラムが Nullable として定義されていない場合、NULL 値はそのデフォルト値として出力されます。この変換を避けるため、[structure](#structure) では nullable columns を必ず明示的に定義してください。
@@ -371,13 +394,12 @@ Postgres と chDB の間でのいくつかの既知の問題およびデータ�
 * Protobuf の repeated field には null が存在しないため、Array 内の NULL 値は省略されます。
 * chDB の [JSON type] は JSON オブジェクトのみをサポートします。`json` および `jsonb` のデフォルトの `String` マッピングを `JSON` で上書きするのは、すべての値が JSON オブジェクトである場合に限ってください。(ClickHouse/ClickHouse#68428)
 * chDB の [JSON type] は `null` を無視するため、NULL 値を持つオブジェクトのキーは出力時に省略されます。`json` および `jsonb` のデフォルトの `String` マッピングを `JSON` で上書きするのは、オブジェクトの値が `null` でない場合、またはその欠落が許容できる場合に限ってください。(ClickHouse/ClickHouse#68428)
-* JSON、JSONCompact、JSONColumnsWithMetadata フォーマットは常に UTF-8 を検証するため、bytea 値は replacement characters を含んだ形で出力されます。
+* JSON、JSONCompact、JSONColumnsWithMetadata フォーマットは常に UTF-8 を検証するため、bytea 値は 置換文字 を含んだ形で出力されます。
 * `COPY FROM` は、空文字列またはゼロを含む Protobuf の `Nullable` フィールドを `NULL` として読み取ります。(chdb-io/chdb-core#152)
 * Parquet への `COPY TO` は、Nullable Tuple 自身の null マップから `NULL` を削除します。(ClickHouse/ClickHouse#112427)
 * Parquet、Arrow、ArrowStream、ORC、Avro、Protobuf、ProtobufList、MsgPack、BSONEachRow の各フォーマットには、Postgres の `time` や chDB の `Time64` に対応する型がありません。値を保持するには、明示的な [structure](#structure) で `time` カラムを `String` として設定してください。
 * Protobuf 出力では timestamp 値が秒単位に切り捨てられます。
 * Protobuf 出力は 1970-01-01 より前の日付をサポートしません。値を保持するには、明示的な [structure](#structure) で `time` カラムを `String` として設定してください。(ClickHouse/ClickHouse#111860)
-* CSVWithNames および CSVWithNamesAndTypes フォーマットは、現時点では `NULL` の box や circle の値をインポートできません。(ClickHouse/ClickHouse#115523)
 
 ## データ型 {#data-types}
 
@@ -388,61 +410,55 @@ Postgres と chDB の間でのいくつかの既知の問題およびデータ�
 ### Postgres から chDB へ {#postgres-to-chdb}
 
 明示的な [structure](#structure) オプションが指定されていない場合、chdb&#95;hook は
-Postgres の型を適切な chDB の同等な型にマッピングします。用途に合わない場合は、
-[structure](#structure) を指定して、生成された型を必要な型でオーバーライドしてください。
+Postgres の型を、それに相当する適切な chDB の型にマッピングします。これらがユースケースに
+合わない場合は、[structure](#structure) を指定し、生成された型を必要な型で
+オーバーライドしてください。
 
-| Postgres    | chDB                                     | 備考                                                   |
-| ----------- | ---------------------------------------- | ---------------------------------------------------- |
-| boolean     | Bool                                     |                                                      |
-| name        | String                                   |                                                      |
-| text        | String                                   |                                                      |
-| inet        | String                                   | データがどちらか一方のみを含む場合は `IPv4` または `IPv6` でオーバーライドしてください。 |
-| cidr        | String                                   |                                                      |
-| macaddr     | String                                   |                                                      |
-| macaddr8    | String                                   |                                                      |
-| interval    | String                                   | `IntervalDay` などの `Interval` 単位でオーバーライドしてください。       |
-| tsvector    | String                                   |                                                      |
-| tsquery     | String                                   |                                                      |
-| jsonpath    | String                                   |                                                      |
-| money       | String                                   |                                                      |
-| enum        | String                                   |                                                      |
-| varchar     | String                                   |                                                      |
-| varbit      | String                                   |                                                      |
-| char        | FixedString                              |                                                      |
-| bit         | FixedString                              |                                                      |
-| bpchar      | String                                   |                                                      |
-| int2        | Int16                                    |                                                      |
-| int4        | Int32                                    |                                                      |
-| int8        | Int64                                    |                                                      |
-| oid         | UInt32                                   |                                                      |
-| oid8        | UInt64                                   |                                                      |
-| xid8        | UInt64                                   |                                                      |
-| json        | String                                   | データがオブジェクトのみを含む場合は `JSON` でオーバーライドしてください。            |
-| jsonb       | String                                   | データがオブジェクトのみを含む場合は `JSON` でオーバーライドしてください。            |
-| float4      | Float32                                  |                                                      |
-| float8      | Float64                                  |                                                      |
-| date        | Date32                                   |                                                      |
-| time        | Time64(6)                                | 時刻をサポートしないフォーマットの場合は `String` でオーバーライドしてください。        |
-| timetz      | String                                   |                                                      |
-| timestamp   | DateTime64(6)                            | `UTC` タイムゾーンで宣言され、セッションのタイムゾーンから変換されます。              |
-| timestamptz | DateTime64(6)                            | `UTC` タイムゾーンで宣言されます。                                 |
-| numeric     | Decimal                                  |                                                      |
-| uuid        | UUID                                     |                                                      |
-| point       | `Point`                                  | Postgres と同じ 2 つの座標です。                               |
-| lseg        | `LineString`                             | 厳密に 2 点からなる線です。                                      |
-| path        | `LineString`                             | 閉じた path では最初の点が繰り返されます。                             |
-| polygon     | `Ring`                                   | Ring は polygon と同様に暗黙的に閉じます。                         |
-| box         | `Tuple(high Point, low Point)`           | 2 つの角で、Postgres と同じ順序でソートされます。                       |
-| circle      | `Tuple(center Point, radius Float64)`    |                                                      |
-| line        | `Tuple(a Float64, b Float64, c Float64)` | 方程式 `Ax + By + C = 0` です。                            |
+| PostgreSQL       | chDB                                   | 備考                                                      |
+| ---------------- | -------------------------------------- | ------------------------------------------------------- |
+| boolean          | Bool                                   |                                                         |
+| smallint         | Int16                                  |                                                         |
+| integer          | Int32                                  |                                                         |
+| bigint           | Int64                                  |                                                         |
+| oid              | UInt32                                 |                                                         |
+| xid8             | UInt64                                 |                                                         |
+| oid8             | UInt64                                 |                                                         |
+| real             | Float32                                |                                                         |
+| double precision | Float64                                |                                                         |
+| numeric          | Decimal256(38)                         | 精度が 76 桁を超える場合も同様です。                                    |
+| numeric(12,6)    | Decimal(12,6)                          | 精度とスケールはそのまま引き継がれます。                                    |
+| text             | String                                 |                                                         |
+| bytea            | String                                 |                                                         |
+| date             | Date32                                 |                                                         |
+| time             | Time64(6)                              | 時刻をサポートしないフォーマットでは `String` でオーバーライドしてください。             |
+| timestamp        | DateTime64(6, &#39;UTC&#39;)           | セッションのタイムゾーンから変換されます。                                   |
+| timestamptz      | DateTime64(6, &#39;UTC&#39;)           |                                                         |
+| interval         | String                                 | `IntervalDay` などの `Interval` 単位でオーバーライドしてください。          |
+| uuid             | UUID                                   |                                                         |
+| json             | String                                 | データがオブジェクトのみで構成される場合は `JSON` でオーバーライドしてください。            |
+| jsonb            | String                                 | データがオブジェクトのみで構成される場合は `JSON` でオーバーライドしてください。            |
+| inet             | String                                 | データがどちらか一方のみで構成される場合は `IPv4` または `IPv6` でオーバーライドしてください。 |
+| point            | Point                                  | Postgres と同じ 2 つの座標を持ちます。                               |
+| lseg             | LineString                             | ちょうど 2 点からなる線です。                                        |
+| path             | LineString                             | 閉じたパスでは最初の点が繰り返されます。                                    |
+| polygon          | Ring                                   | polygon と同様に、ring は暗黙的に閉じられます。                          |
+| box              | Tuple(high Point, low Point)           | 2 つの角を、Postgres と同じ順序でソートしたものです。                        |
+| circle           | Tuple(center Point, radius Float64)    |                                                         |
+| line             | Tuple(a Float64, b Float64, c Float64) | 方程式 `Ax + By + C = 0` を表します。                            |
 
-Array 型は、マッピング後の要素型の `Array` にマッピングされます。ClickHouse は
-カラム単位で NULL 許容を制約しますが、Postgres は array 単位で制約するため、要素は
+`name`、`varchar`、`char`、`bit`、`timetz`、`money`、enum など、
+この表にない型は `String` にマッピングされます。
+
+配列型は、マッピング後の要素型による `Array` にマッピングされます。ClickHouse は
+NULL 許容性をカラム単位で制約するのに対し、Postgres は配列単位で制約するため、要素は
 常に `Nullable` になります。
 
-`Map` や `Tuple` にマッピングされる Postgres 型はありませんが、[structure](#structure) で
-指定することは可能です。`Map` はキーと値のペアの array に変換でき、`Tuple` は
-array に変換されます。異種混在のデータをサポートするには `text[]` を使用してください。
+`Map`、`Tuple`、`Nested` に直接マッピングされる Postgres の型はありませんが、
+[structure](#structure) またはソースファイルでこれらを指定することはできます。`Tuple` は、タプルのフィールドごとに 1 要素を持つ
+`text[]` として読み込むことも、フィールドの型を保持するために対応する [複合型] として読み込むこともできます。`Map` または `Nested` は、キー・バリューのペアまたはネストされたタプルごとに 1 つの内部配列を持つ
+`text[][]` として読み込むことも、対応する 複合型 の配列として
+読み込むこともできます。例については [手動の型
+マッピング](#manual-type-mappings) を参照してください。
 
 ### Timestamp 変換 {#timestamp-conversion}
 
@@ -469,75 +485,129 @@ Timestamp TZ の例:
 
 ### chDB から Postgres へ {#chdb-to-postgres}
 
-chdb&#95;hook は、[`DESCRIBE`] が報告する ClickHouse の型を、次の Postgres の型にマッピングします:
+既存のテーブルでは、値は宣言されたカラム型に変換されます。
+それ以外のスカラー型には、可能な場合は PostgreSQL の明示的なキャストが使用され、
+配列の要素は宣言された要素型に変換されます。サポートされていない
+変換や範囲外の値はエラーになります。
 
-{/* `make type-table` で生成された TYPE-TABLE-BEGIN */}
+chDB の `Interval` 型を `smallint`、`integer`、または `bigint` にマッピングすると、
+その単位での数値として読み書きできます。例えば、`IntervalDay` の値 `3` は
+整数 `3` にマッピングされます。`IntervalNanosecond` を `bigint` にマッピングすると
+ナノ秒の精度が保持されますが、`interval` にマッピングするとマイクロ秒に切り捨てられます。
 
-| chDB                | Postgres                    | 備考                 |
-| ------------------- | --------------------------- | ------------------ |
-| Array(T)            | T[]                         | 深さごとにPGの配列型が1つ     |
-| BFloat16            | real                        | 書き込み時に下位の仮数ビットを破棄  |
-| Bool                | boolean                     |                    |
-| Date                | date                        |                    |
-| Date32              | date                        |                    |
-| DateTime            | timestamp with time zone    |                    |
-| DateTime64(P)       | timestamp(P) with time zone | Pが6を超える場合は6に丸められる  |
-| Decimal(P,S)        | numeric(P,S)                |                    |
-| Decimal32(S)        | numeric(9,S)                |                    |
-| Decimal64(S)        | numeric(18,S)               |                    |
-| Decimal128(S)       | numeric(38,S)               |                    |
-| Decimal256(S)       | numeric(76,S)               |                    |
-| Enum8               | text                        |                    |
-| Enum16              | text                        |                    |
-| FixedString(N)      | text                        | NはCHではバイト数、PGでは文字数 |
-| Float32             | real                        |                    |
-| Float64             | double precision            |                    |
-| IPv4                | inet                        |                    |
-| IPv6                | inet                        |                    |
-| Int8                | smallint                    |                    |
-| Int16               | smallint                    |                    |
-| Int32               | integer                     |                    |
-| Int64               | bigint                      |                    |
-| Int128              | numeric(39,0)               |                    |
-| Int256              | numeric(77,0)               |                    |
-| IntervalDay         | interval                    |                    |
-| IntervalHour        | interval                    |                    |
-| IntervalMicrosecond | interval                    |                    |
-| IntervalMillisecond | interval                    |                    |
-| IntervalMinute      | interval                    |                    |
-| IntervalMonth       | interval                    |                    |
-| IntervalNanosecond  | interval                    | マイクロ秒に切り捨て         |
-| IntervalQuarter     | interval                    |                    |
-| IntervalSecond      | interval                    |                    |
-| IntervalWeek        | interval                    |                    |
-| IntervalYear        | interval                    |                    |
-| JSON                | jsonb                       |                    |
-| LineString          | path                        |                    |
-| LowCardinality(T)   | T                           |                    |
-| Map(K,V)            | text[][]                    | 1ペアにつきテキスト項目1行     |
-| MultiLineString     | path[]                      |                    |
-| MultiPolygon        | polygon[][]                 |                    |
-| Nullable(T)         | T                           | カラムをnullableに設定    |
-| Point               | point                       |                    |
-| Polygon             | polygon[]                   |                    |
-| Ring                | polygon                     |                    |
-| String              | text                        |                    |
-| Time                | time without time zone      |                    |
-| Time64(P)           | time(P) without time zone   | Pが6を超える場合は6に丸められる  |
-| Tuple(...)          | text[]                      | 各フィールドがテキスト項目になる   |
-| UInt8               | smallint                    |                    |
-| UInt16              | integer                     |                    |
-| UInt32              | bigint                      |                    |
-| UInt64              | numeric(20,0)               |                    |
-| UInt128             | numeric(39,0)               |                    |
-| UInt256             | numeric(78,0)               |                    |
-| UUID                | uuid                        |                    |
+chdb&#95;hook は、[`DESCRIBE`] が返す ClickHouse の型をもとにテーブルを作成する際、
+以下のデフォルトの Postgres 型を使用します。追加の読み取り先の型は、
+明示的に宣言されたカラムに適用され、PostgreSQL の明示的なキャストでは対応できない変換も含まれます。
+空欄のセルでも、それらのキャストは引き続き使用できます。これらの型は読み取り時のものであり、
+書き込みには別の変換ルールが適用されます。
 
-{/* TYPE-TABLE-END */}
+| chDB                         | デフォルトの PostgreSQL 型         | 追加の読み取り先の型                              | 注記                                        |
+| ---------------------------- | --------------------------- | --------------------------------------- | ----------------------------------------- |
+| Array(T)                     | T[]                         |                                         | 深さごとに 1 つの PG 配列型                         |
+| BFloat16                     | real                        |                                         |                                           |
+| Bool                         | boolean                     |                                         |                                           |
+| Date                         | date                        |                                         |                                           |
+| Date32                       | date                        |                                         |                                           |
+| DateTime                     | timestamp with time zone    | time                                    |                                           |
+| DateTime64(P)                | timestamp(P) with time zone | time                                    | P が 6 を超える場合は 6 に制限                       |
+| Decimal(P,S)                 | numeric(P,S)                | xid8, oid8                              |                                           |
+| Decimal32(S)                 | numeric(9,S)                | xid8, oid8                              |                                           |
+| Decimal64(S)                 | numeric(18,S)               | xid8, oid8                              |                                           |
+| Decimal128(S)                | numeric(38,S)               | xid8, oid8                              |                                           |
+| Decimal256(S)                | numeric(76,S)               | xid8, oid8                              |                                           |
+| Enum8                        | text                        | bytea; 入力互換の型                           | ラベルにデコード。ラベルが一致する PG enum も対象             |
+| Enum16                       | text                        | bytea; 入力互換の型                           | ラベルにデコード。ラベルが一致する PG enum も対象             |
+| FixedString(N)               | text                        | bytea; 入力互換の型                           | 末尾の NUL を保持するのは bytea のみ                  |
+| Float32                      | real                        |                                         |                                           |
+| Float64                      | double precision            |                                         |                                           |
+| IPv4                         | inet                        |                                         |                                           |
+| IPv6                         | inet                        |                                         |                                           |
+| Int8                         | smallint                    | boolean                                 | 0 は false、0 以外は true                      |
+| Int16                        | smallint                    | boolean                                 | 0 は false、0 以外は true                      |
+| Int32                        | integer                     |                                         |                                           |
+| Int64                        | bigint                      |                                         |                                           |
+| Int128                       | numeric(39,0)               | xid8, oid8                              |                                           |
+| Int256                       | numeric(77,0)               | xid8, oid8                              |                                           |
+| IntervalDay                  | interval                    | smallint, integer, bigint               | 整数型の場合は単位数が格納される                          |
+| IntervalHour                 | interval                    | smallint, integer, bigint               | 整数型の場合は単位数が格納される                          |
+| IntervalMicrosecond          | interval                    | smallint, integer, bigint               | 整数型の場合は単位数が格納される                          |
+| IntervalMillisecond          | interval                    | smallint, integer, bigint               | 整数型の場合は単位数が格納される                          |
+| IntervalMinute               | interval                    | smallint, integer, bigint               | 整数型の場合は単位数が格納される                          |
+| IntervalMonth                | interval                    | smallint, integer, bigint               | 整数型には単位数が格納されます                           |
+| IntervalNanosecond           | interval                    | smallint, integer, bigint               | 整数型ではナノ秒が保持されます。interval ではマイクロ秒に切り捨てられます |
+| IntervalQuarter              | interval                    | smallint, integer, bigint               | 整数型には単位数が格納されます                           |
+| IntervalSecond               | interval                    | smallint, integer, bigint               | 整数型には単位数が格納されます                           |
+| IntervalWeek                 | interval                    | smallint, integer, bigint               | 整数型には単位数が格納されます                           |
+| IntervalYear                 | interval                    | smallint, integer, bigint               | 整数型には単位数が格納されます                           |
+| JSON                         | jsonb                       | json, text, bytea; 入力互換の型               | jsonb ではドキュメントが正規化されます                    |
+| LineString                   | path                        | lseg                                    | lseg には 2 点が必要です                          |
+| LowCardinality(T)            | T                           |                                         |                                           |
+| Map(K,V)                     | text[][]                    | composite[], T[][], text                | ペアごとに text 要素 1 行に変換されます                  |
+| MultiLineString              | path[]                      |                                         |                                           |
+| MultiPolygon                 | polygon[][]                 |                                         |                                           |
+| Nested(...)                  | text[][]                    | composite[], T[][], text                | ネストされた行ごとに text 要素 1 行に変換されます             |
+| Nullable(T)                  | T                           |                                         | カラムを nullable に設定します                      |
+| Point                        | point                       |                                         |                                           |
+| Polygon                      | polygon[]                   |                                         |                                           |
+| Ring                         | polygon                     | lseg                                    | lseg には 2 点が必要です                          |
+| SimpleAggregateFunction(f,T) | T                           |                                         | 値を T として格納します                             |
+| String                       | text                        | bytea; 入力互換の型                           | bytea では raw bytes がそのまま保持されます            |
+| Time                         | time without time zone      |                                         |                                           |
+| Time64(P)                    | time(P) without time zone   |                                         | P が 6 を超える場合は 6 に丸められます                   |
+| Tuple(...)                   | text[]                      | composite, T[], text; box, circle, line | 各フィールドが text 要素に変換されます                    |
+| UInt8                        | smallint                    | boolean                                 | 0 は false、0 以外は true になります                |
+| UInt16                       | integer                     |                                         |                                           |
+| UInt32                       | bigint                      |                                         |                                           |
+| UInt64                       | numeric(20,0)               | xid8, oid8                              |                                           |
+| UInt128                      | numeric(39,0)               | xid8, oid8                              |                                           |
+| UInt256                      | numeric(78,0)               | xid8, oid8                              |                                           |
+| UUID                         | uuid                        |                                         |                                           |
 
-この表に記載されていない chDB の型は、`Nested`、`Variant`、`Dynamic` を含めすべてエラーを送出します。これらをテキストとして読み取るには、`String` にマッピングする [structure](#structure) を使用してください。
+入力互換の型は、PostgreSQL の入力関数を使って文字列を読み取れます。
+複合型では、フィールドが同じ順序で対応している必要があります。タプルを配列として読み取るには、各フィールドが配列の要素型に変換できる必要があります。また、フィールド自体が配列であってはなりません。
+
+配列として読み取る場合、`Map` はキー・バリューのペアごとに 1 行、`Nested` はネストされた行ごとに 1 行を使用します。タプルを `box` として読み取るには 2 つの点を、`circle` の場合は点と半径を、`line` の場合は 3 つの係数を指定してください。
+
+この表に記載されていない chDB の型は、`Variant`、`Dynamic`、`AggregateFunction` を含めすべてエラーを送出します。これらをテキストとして読み取るには、`String` にマッピングする [structure](#structure) を使用してください。
 
 Postgres が扱える範囲は、これらの型のいくつかにおいて chDB より狭くなっています。そのため、24 時間を超える `Time` や `Time64`、および Postgres の日付範囲外の `Date32` については、コピー時にエラーが送出されます。
+
+### 手動での型マッピング {#manual-type-mappings}
+
+カラムの推論では、enum には `text` が、`Tuple`、`Map`、
+`Nested` の値にはテキストの配列が使用されます。フィールドの型を保持したり、enum の値を制限したりするには、
+PostgreSQL の enum 型および複合型を作成し、それらの型を使ってカラムを宣言してください。
+chDB の型は [structure](#structure) で指定できます。また、`structure 'auto'` を使用すると、
+Postgres のテーブルではなくソースデータから型を推論できます。たとえば、
+次の型を使用すると、イベントのステータス、座標、ラベル、
+ネストされた項目を読み込めます。
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE TABLE events (
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+);
+
+COPY events FROM 's3://chdb-lakedata-public/examples/events.parquet' (
+    structure $$
+        status Enum8('new' = 1, 'done' = 2),
+        point  Tuple(Int32, Int32),
+        labels Map(String, Int64),
+        items  Array(Tuple(id Int32, name String))
+    $$
+);
+```
+
+複合フィールドは、互換性のある PostgreSQL の型を使用し、chDB のフィールド順に宣言してください。`Map` の値については、キーフィールドを宣言し、その後に値フィールドを宣言します。各 `Tuple` は 1 つの複合値に、各 `Map` のペアまたは `Nested` の行は複合配列の 1 つの要素になります。
+
+chDB は、明示的な `structure` 内の `Nested` を、フィールドごとに 1 つの `Array` カラムへ分割します。ネストされた行を単一の複合配列カラムとして読み取るには、上記のように `Array(Tuple(...))` を使用してください。型情報を含む chDB のソースフォーマットであれば、`structure 'auto'` を使用することもできます。
 
 ### テキストエンコーディング {#text-encoding}
 
@@ -552,8 +622,8 @@ ERROR:  invalid byte sequence for encoding "UTF8": 0x00
 chDB が書き込んだままのバイト列を保持するには `bytea` にコピーしてください。これらの型に対しては [CREATE TABLE](#create-table-overloading) が `text` を導出するため、次のように名前を付けてください:
 
 ```sql
-CREATE TABLE logs (id bigint, payload bytea) WITH (
-    copy_from = 's3://my-bucket/logs.parquet'
+CREATE TABLE logs (req_id numeric(20,0), resource bytea) WITH (
+    copy_from = 's3://chdb-lakedata-public/logs/logs-2026-08-26.parquet'
 );
 ```
 
@@ -680,12 +750,16 @@ Copyright (c) 2026, ClickHouse
 
 [ClickHouse データ型]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: Data Types in ClickHouse"
 
+[複合型]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "PostgreSQL Docs: Declaring 複合型"
+
 [log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "PostgreSQL Docs: log_min_messages"
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
 
 [`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* session settings"
 
-[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* session settings"
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* セッション設定"
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: max_parsing_threads セッション設定"
+
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs: 文字セットのサポート"

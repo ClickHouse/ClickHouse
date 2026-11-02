@@ -5,7 +5,6 @@
 -- Regression test for issue #98822.
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
 -- Disable statistics-based part pruning so that randomly injected
 -- `auto_statistics_types` in CI does not add a Statistics section
 -- to the EXPLAIN output and break the reference file.

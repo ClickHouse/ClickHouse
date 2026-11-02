@@ -1,8 +1,6 @@
 -- Tests for https://github.com/ClickHouse/ClickHouse/issues/79966
 -- A column alias may coincide with the alias of a table expression in the FROM section.
 
-SET enable_analyzer = 1;
-
 SELECT number AS test_name
 FROM (SELECT * FROM numbers(3)) AS test_name
 ORDER BY test_name;

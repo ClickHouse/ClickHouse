@@ -15,7 +15,7 @@ INSERT INTO logs_04812 VALUES
     ('2024-01-01 10:30:00', 'bravo charlie', 'info', '30'),
     ('2024-01-01 20:00:00', 'delta', 'info', 'not-a-number');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04812';
 SET dialect = 'logsql';
 

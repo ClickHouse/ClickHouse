@@ -4,7 +4,6 @@
 -- The guard used to ask the condition type `isNullable`, which is false for a `LowCardinality` wrapper,
 -- so the rewrite fired for `LowCardinality(Nullable(...))` conditions and undercounted.
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_sum_if_to_count_if = 1;
 -- Isolate this pass: `optimize_rewrite_aggregate_function_with_if` can reach the same rewrite by another route.
 SET optimize_rewrite_aggregate_function_with_if = 0;

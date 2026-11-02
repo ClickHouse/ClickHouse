@@ -29,13 +29,14 @@
         </substitution>
     </substitutions>
 
+    <!-- Writes go to /dev/null: appending to a file would carry the earlier runs' dirty page cache into every run. -->
     <query>
-        INSERT INTO FUNCTION file('test_file', '{format}', 'key UInt64, value UInt64')
+        INSERT INTO FUNCTION file('/dev/null', '{format}', 'key UInt64, value UInt64')
         SELECT number, number FROM numbers(10000000)
     </query>
 
     <query>
-        INSERT INTO FUNCTION file('test_file', '{format}', 'key UInt64, value1 UInt64, value2 UInt64, value3 UInt64, value4 UInt64, value5 UInt64')
+        INSERT INTO FUNCTION file('/dev/null', '{format}', 'key UInt64, value1 UInt64, value2 UInt64, value3 UInt64, value4 UInt64, value5 UInt64')
         SELECT number, number, number, number, number, number FROM numbers(1000000)
     </query>
 

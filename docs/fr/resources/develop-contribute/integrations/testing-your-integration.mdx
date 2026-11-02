@@ -11,20 +11,16 @@ Validez votre intégration sur les deux modes de déploiement de ClickHouse, ain
 
 Consultez [Développer des intégrations](/fr/resources/develop-contribute/integrations/building-integrations) pour les modes d’ingestion et de consommation, et [Documenter votre intégration](/fr/resources/develop-contribute/integrations/documenting-your-integration) pour savoir comment publier vos résultats.
 
-<div id="test-matrix">
-  ## Matrice de test
-</div>
+## Matrice de test {#test-matrix}
 
 Couvrez les deux modes de déploiement. La plupart des clients utilisent l’un ou l’autre, et le comportement diffère sur certains points (authentification, réseau, fonctionnalités disponibles).
 
-* **ClickHouse Cloud :** inscrivez-vous pour un [essai gratuit](https://clickhouse.com/cloud). Aucune carte de crédit n’est requise pour le tier Development
-* **Auto-hébergé (open source) :** utilisez la version stable la plus récente depuis les [releases GitHub](https://github.com/ClickHouse/ClickHouse/releases). Le [guide d’installation](/fr/get-started/setup/install) est le moyen le plus rapide d’obtenir une instance locale avec Docker
+* **ClickHouse Cloud :** inscrivez-vous pour un [essai gratuit](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-testing-your-integration). Aucune carte de crédit n’est requise pour le tier Development
+* **Auto-hébergé (open source) :** utilisez la version stable la plus récente depuis les [versions GitHub](https://github.com/ClickHouse/ClickHouse/releases). Le [guide d’installation](/fr/get-started/setup/install) est le moyen le plus rapide d’obtenir une instance locale avec Docker
 
 Testez les deux et documentez tout écart fonctionnel sur votre page d’intégration.
 
-<div id="what-to-test">
-  ## Ce qu’il faut tester
-</div>
+## Ce qu’il faut tester {#what-to-test}
 
 **Correction fonctionnelle.** Testez chaque chemin de code exposé par votre intégration : ingestion des données, exécution de requêtes, découverte du schéma, gestion des erreurs et reconnexion. Si votre produit expose du SQL aux utilisateurs finaux, vérifiez que les requêtes générées par votre UI sont transmises et traitées correctement de bout en bout.
 
@@ -36,9 +32,7 @@ Testez les deux et documentez tout écart fonctionnel sur votre page d’intégr
 
 **Cycle de vie des connexions.** Vérifiez un comportement cohérent en cas de connexions interrompues, de redémarrages du serveur et de requêtes lentes. De nombreuses escalades de support proviennent de la gestion des connexions plutôt que de la sémantique des requêtes.
 
-<div id="recommended-example-datasets">
-  ## Jeux de données d’exemple recommandés
-</div>
+## Jeux de données d’exemple recommandés {#recommended-example-datasets}
 
 L’ensemble complet est disponible dans la section [**Jeux de données d’exemple**](/fr/get-started/sample-datasets/index). Les quatre jeux de données suivants couvrent la plupart des besoins en tests d’intégration :
 
@@ -49,9 +43,7 @@ L’ensemble complet est disponible dans la section [**Jeux de données d’exem
 
 Pour une validation à très grande échelle, utilisez **[WikiStat](/fr/get-started/sample-datasets/wikistat)** (~500 milliards d’enregistrements).
 
-<div id="what-to-capture-from-your-testing">
-  ## Ce qu’il faut retenir de vos tests
-</div>
+## Ce qu’il faut retenir de vos tests {#what-to-capture-from-your-testing}
 
 Lorsque vous soumettez votre intégration pour évaluation, partagez :
 
