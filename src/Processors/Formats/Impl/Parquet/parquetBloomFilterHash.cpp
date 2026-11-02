@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 
 #if USE_PARQUET
@@ -207,7 +208,12 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
 {
     const IColumn * column = data_column;
     if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column))
+    {
+        /// Bloom filters and dictionaries hold only non-null values, so a NULL can't be looked up in them.
+        if (!memoryIsZero(nullable_column->getNullMapData().data(), 0, nullable_column->size()))
+            return std::nullopt;
         column = nullable_column->getNestedColumnPtr().get();
+    }
 
     std::vector<uint64_t> hashes;
     /// Allocate the exact capacity up front rather than growing geometrically via `emplace_back`.
