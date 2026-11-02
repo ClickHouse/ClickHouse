@@ -165,11 +165,5 @@ class SparkDeltaWriter(Writer):
     def time_travel_settings(self, ref):
         return {"delta_lake_snapshot_version": ref}
 
-    def trivial_count_reliable(self):
-        return not (
-            self.model.options["deletion_vectors"]
-            and self.ctx.gates.active("delta_trivial_count_with_deletion_vectors")
-        )
-
     def cleanup(self):
         self.ctx.remove_prefix(self.prefix + "/")
