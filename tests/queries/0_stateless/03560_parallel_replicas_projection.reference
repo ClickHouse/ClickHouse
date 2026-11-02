@@ -37,3 +37,5 @@ reads_projection:    1
 reads_parts:         1
 reads_from_replicas: 1
 5
+03560_agg_only_projections	1
+03560_normal_only_projections	1

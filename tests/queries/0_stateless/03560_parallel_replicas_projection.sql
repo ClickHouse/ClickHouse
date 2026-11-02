@@ -45,7 +45,7 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree (p_normal)%') > 0 AS reads_proje
        countIf(explain LIKE '%ReadFrom%ParallelReplicas%') > 0 AS reads_from_replicas
 FROM (EXPLAIN SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010)
 FORMAT Vertical;
-SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010;
+SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010 SETTINGS log_comment = '03560_normal_only_projections';
 
 DROP TABLE normal;
 
@@ -80,7 +80,7 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree (p_agg)%') > 0 AS reads_projecti
        countIf(explain LIKE '%ReadFrom%ParallelReplicas%') > 0 AS reads_from_replicas
 FROM (EXPLAIN SELECT sum(value) AS v FROM agg where key > 90 AND key < 110)
 FORMAT Vertical;
-SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
+SELECT sum(value) AS v FROM agg where key > 90 AND key < 110 SETTINGS log_comment = '03560_agg_only_projections';
 DROP TABLE agg;
 
 DROP TABLE IF EXISTS x;
@@ -103,3 +103,11 @@ SELECT countIf(explain LIKE '%ReadFromPreparedSource (_exact_count_projection)%'
 FROM (EXPLAIN SELECT count() FROM x WHERE (i >= 3 AND i <= 6) OR i = 7)
 FORMAT Vertical;
 SELECT count() FROM x WHERE (i >= 3 AND i <= 6) OR i = 7;
+
+-- The checks above cannot tell whether the projection-only cases also read the base table: only the projection
+-- should be read, so a few rows, not the whole table.
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, read_rows < 100 AS reads_only_projection FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 HOUR AND current_database = currentDatabase()
+    AND type = 'QueryFinish' AND is_initial_query AND log_comment IN ('03560_normal_only_projections', '03560_agg_only_projections')
+ORDER BY log_comment;
