@@ -37,20 +37,21 @@ nodes = [
 # under-announces. Kept separate from the 24.3 cluster above so each test exercises
 # exactly one version skew. (Older PR<7 peers are filtered out at connection time by
 # `RemoteQueryExecutor`, so they never reach the split-stream code path.)
+# The second old node runs 26.10, which speaks protocol 9 but does not read in order through a `JOIN`.
 split_topology_nodes = [
     cluster.add_instance(
         f"split_node{num}",
         main_configs=["configs/clusters_split_topology.xml"],
         with_zookeeper=True,
         image="clickhouse/clickhouse-server",
-        tag="26.5",
+        tag=tag,
         stay_alive=True,
         with_installed_binary=True,
     )
-    for num in range(2)
+    for num, tag in enumerate(["26.5", "26.10"])
 ] + [
     # Third node intentionally uses the current build (no `image`/`tag`/`with_installed_binary`),
-    # so the cluster mixes 26.5 with the version under test — exactly the rolling-upgrade shape.
+    # so the cluster mixes 26.5 and 26.10 with the version under test — exactly the rolling-upgrade shape.
     cluster.add_instance(
         "split_node2",
         main_configs=["configs/clusters_split_topology.xml"],
@@ -256,8 +257,8 @@ def test_split_topology_rolling_upgrade(start_cluster):
 
 
 def test_read_in_order_through_join_rolling_upgrade(start_cluster):
-    # The version under test reads in order through a `LEFT JOIN` with parallel replicas, while 26.5
-    # reads such a stream in `Default` mode. Whichever node is the initiator, the replicas taking part
+    # The version under test reads in order through a `LEFT JOIN` with parallel replicas, while 26.5 and
+    # 26.10 read such a stream in `Default` mode. Whichever node is the initiator, the replicas taking part
     # must announce the same coordination mode: a newer initiator does not use the older replicas, and
     # a newer follower of an older initiator does not read in order through the join.
     for num in range(len(split_topology_nodes)):

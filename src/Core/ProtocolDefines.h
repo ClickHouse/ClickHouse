@@ -65,12 +65,10 @@ static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE = 8;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST = 9;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 9;
-/// Not a protocol change: reading in order through a `JOIN` is released together with version 9, so every
-/// replica of this version does it. An older one reads such a stream in `Default` mode, so it must not take
-/// part in a query whose initiator reads it in order.
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_IN_ORDER_THROUGH_JOIN
-    = DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST;
+/// No new field: a replica of this version reads in order through a `JOIN`. An older one reads such a stream
+/// in `Default` mode, so it must not take part in a query whose initiator reads it in order.
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_IN_ORDER_THROUGH_JOIN = 10;
+static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_IN_ORDER_THROUGH_JOIN;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
