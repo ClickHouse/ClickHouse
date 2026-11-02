@@ -142,7 +142,7 @@ void XMLPullParser::decodeEntity(String & out)
         for (size_t i = start; i < entity.size(); ++i)
         {
             char c = entity[i];
-            UInt32 digit;
+            UInt32 digit = 0;
             if (isNumericASCII(c))
                 digit = c - '0';
             else if (hex && c >= 'a' && c <= 'f')

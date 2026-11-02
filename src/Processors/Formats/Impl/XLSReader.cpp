@@ -484,7 +484,7 @@ public:
         std::vector<std::string_view> segments{first};
         while (pos + 4 <= stream.size() && readU16(stream, pos) == Record::CONTINUE)
         {
-            UInt16 type;
+            UInt16 type = 0;
             std::string_view data;
             next(type, data);
             segments.push_back(data);
@@ -499,7 +499,7 @@ private:
 
 double decodeRK(UInt32 rk)
 {
-    double value;
+    double value = 0;
     if (rk & 0x02)
         value = static_cast<Int32>(rk) >> 2;
     else
@@ -526,8 +526,8 @@ String errorText(UInt8 code)
 
 struct CellRecord
 {
-    UInt32 row;
-    UInt32 column;
+    UInt32 row = 0;
+    UInt32 column = 0;
     Cell cell;
 };
 
@@ -620,7 +620,7 @@ void XLSWorkbook::readString(std::string_view data, size_t offset, bool one_byte
 void XLSWorkbook::readGlobals()
 {
     RecordReader reader(stream, 0);
-    UInt16 type;
+    UInt16 type = 0;
     std::string_view data;
     if (!reader.next(type, data) || !isBOF(type))
         throwCorrupted("the workbook stream does not start with a BOF record");
@@ -716,7 +716,7 @@ std::unique_ptr<ISheetReader> XLSWorkbook::openSheet(const String & sheet)
     std::optional<size_t> pending_string_formula;
 
     RecordReader reader(stream, sheet_offsets[sheet_index]);
-    UInt16 type;
+    UInt16 type = 0;
     std::string_view data;
     if (!reader.next(type, data) || !isBOF(type))
         throwCorrupted(fmt::format("the sheet '{}' does not start with a BOF record", sheets[sheet_index].name));

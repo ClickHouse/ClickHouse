@@ -293,7 +293,7 @@ std::vector<NumberFormatKind> XLSXWorkbook::readStyles(const String & path)
             {
                 const auto * id = parser.getAttribute("numFmtId");
                 const auto * code = parser.getAttribute("formatCode");
-                UInt64 id_value;
+                UInt64 id_value = 0;
                 if (id && code && parseUInt(*id, id_value))
                     custom_formats[id_value] = *code;
                 parser.skipElement();
@@ -480,7 +480,7 @@ void XLSXSheetReader::readCell(Cell & cell, UInt32 & column)
 
     if (cell_type == "s")
     {
-        UInt64 index;
+        UInt64 index = 0;
         if (!parseUInt(value, index) || index >= shared_strings->size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid shared string index '{}' in an XLSX sheet", value);
         cell.type = CellType::String;

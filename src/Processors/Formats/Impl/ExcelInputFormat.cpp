@@ -307,6 +307,7 @@ void registerInputFormatExcel(FormatFactory & factory)
 {
 #if USE_MINIZIP
     registerExcelInputFormat(factory, ExcelFileFormat::XLSX);
+#endif
     factory.setDocumentation("XLSX", Documentation{
         .description = String(R"DOCS_MD(
 | Input | Output | Alias |
@@ -343,7 +344,6 @@ ClickHouse writes the result into a single sheet with the column names in the fi
 
 Excel stores numbers as 64-bit floating-point values, so it rounds integers with more than 15 significant digits for display. ClickHouse writes the exact value to the file, and reads it back exactly. `NaN` and infinite values, dates before 1900, and dates after 9999 are written as strings. Invalid UTF-8 sequences in strings are replaced with the replacement character `U+FFFD`, because Excel files cannot contain them.
 )DOCS_MD"});
-#endif
 
     registerExcelInputFormat(factory, ExcelFileFormat::XLS);
     factory.setDocumentation("XLS", Documentation{

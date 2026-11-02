@@ -263,8 +263,10 @@ void registerFormats()
     registerOutputFormatVortex(factory);
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
-    registerInputFormatExcel(factory);
+    /// The output format is registered first, because `registerInputFormatExcel` attaches the documentation of `XLSX`,
+    /// and the input format of `XLSX` is not available in builds without `minizip`.
     registerOutputFormatXLSX(factory);
+    registerInputFormatExcel(factory);
 #if USE_SQLITE
     registerInputFormatSQLite(factory);
     registerOutputFormatSQLite(factory);

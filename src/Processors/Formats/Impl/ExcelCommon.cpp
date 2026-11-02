@@ -87,9 +87,9 @@ void formatLocalDateTime(const LocalDateTime & value, NumberFormatKind kind, Str
 
     if (write_date)
     {
-        Int64 year;
-        UInt32 month;
-        UInt32 day;
+        Int64 year = 0;
+        UInt32 month = 0;
+        UInt32 day = 0;
         civilFromDays(value.days_since_epoch, year, month, day);
         out += fmt::format("{:04}-", year);
         writeTwoDigits(month, out);
@@ -153,9 +153,9 @@ LocalDateTime serialToLocalDateTimeOrThrow(double serial, bool date1904)
 
 Int64 makeDateTime(const DateLUTImpl & time_zone, const LocalDateTime & value)
 {
-    Int64 year;
-    UInt32 month;
-    UInt32 day;
+    Int64 year = 0;
+    UInt32 month = 0;
+    UInt32 day = 0;
     civilFromDays(value.days_since_epoch, year, month, day);
     UInt32 seconds = value.milliseconds_of_day / 1000;
     return time_zone.makeDateTime(
