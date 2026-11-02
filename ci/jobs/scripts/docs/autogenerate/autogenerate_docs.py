@@ -680,7 +680,9 @@ def transform_full_body(migrate, content, src_docu, dest_path, lk, title):
 
 def run_sql(binary, sql_path, cwd, params=None):
     # Run the generator SQL; it writes its INTO OUTFILE markdown into `cwd`.
-    cmd = [binary, "local", "--queries-file", sql_path]
+    # --tmp: a pure query helper must not share (and lock) the default designated
+    # data directory in the home directory.
+    cmd = [binary, "local", "--tmp", "--queries-file", sql_path]
     for k, v in (params or {}).items():
         cmd.append(f"--param_{k}={v}")
     subprocess.run(cmd, cwd=cwd, check=True)

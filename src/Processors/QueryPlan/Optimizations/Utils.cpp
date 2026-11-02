@@ -252,6 +252,55 @@ FilterResult filterResultForNotMatchedRows(
     return FilterResult::UNKNOWN;
 }
 
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
+{
+    while (node)
+    {
+        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+            return reading;
+        if (node->children.size() != 1)
+            return nullptr;
+        node = node->children.front();
+    }
+    return nullptr;
+}
+
+bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)
+{
+    for (size_t peeled = 0; peeled < max_peel; ++peeled)
+    {
+        const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
+        if (!expression_step)
+            return true;
+        if (node->children.size() != 1)
+            return false;
+
+        /// a moved sort changes the rows this step sees, e.g. `rowNumberInAllBlocks` would give other values
+        const ActionsDAG & dag = expression_step->getExpression();
+        if (dag.hasArrayJoin() || isSensitiveToEvaluationCount(dag))
+            return false;
+
+        for (auto & sort_column : description)
+        {
+            const auto * out_node = dag.tryFindInOutputs(sort_column.column_name);
+            if (!out_node)
+                return false;
+
+            while (out_node->type == ActionsDAG::ActionType::ALIAS)
+                out_node = out_node->children.front();
+
+            if (out_node->type != ActionsDAG::ActionType::INPUT)
+                return false;
+
+            sort_column.column_name = out_node->result_name;
+        }
+
+        node = node->children.front();
+    }
+
+    return true;
+}
+
 bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
     /// A STREAM read selects its parts and ranges during execution, so the range set captured

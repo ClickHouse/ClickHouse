@@ -58,6 +58,11 @@ struct TimeSeriesSettings
     /// Whether the table has the "time ranges" target.
     bool isTimeRangesTargetEnabled() const;
 
+    /// Whether the "samples" and "recent samples" tables store buckets of samples: a row keeps the samples of one time series
+    /// within one time bucket (tables of version MIN_WITH_BUCKETED_SAMPLES or later, see TimeSeriesVersion.h).
+    /// The tables of earlier versions store one sample per row.
+    bool hasBucketedSamples() const;
+
     /// Whether the "tags" table stores the columns `min_time` and `max_time`: tables of earlier versions
     /// with the `store_min_time_and_max_time` setting enabled (see TimeSeriesVersion.h).
     bool hasMinTimeAndMaxTimeInTagsTable() const;
