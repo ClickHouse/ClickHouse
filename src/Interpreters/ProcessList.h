@@ -506,7 +506,7 @@ protected:
     /// `notify_one` on its own CV.
 
     /// Stack-allocated by the thread admitting a query in `insert`. Its pointer lives in `admission_waiters`
-    /// from the end of the `replace_running_query` stage until the query is registered (or `insert` fails),
+    /// from the start of the `replace_running_query` stage until the query is registered (or `insert` fails),
     /// and in `admission_queue` while it waits for an admission slot.
     struct AdmissionWaiter
     {

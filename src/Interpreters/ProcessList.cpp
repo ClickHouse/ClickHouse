@@ -280,6 +280,24 @@ ProcessList::EntryPtr ProcessList::insert(
             return is_alive();
         };
 
+        /// From here until the registration below, the waits (starting with the `replace_running_query` wait)
+        /// can park the query for a long time while it is not reachable through `processes`. Publish it in
+        /// `admission_waiters`, so that the out-of-band cancellation paths and the bulk cancellation in
+        /// `killAllQueries` can still cancel it (see `cancelAdmissionWaitersLocked`).
+        AdmissionWaiter waiter{
+            .query_id = client_info.current_query_id, .user = client_info.current_user, .user_id = user_id, .interface = client_info.interface,
+            .is_ddl_backup_or_restore = is_ddl_or_on_cluster_internal
+                && (query_kind == IAST::QueryKind::Backup || query_kind == IAST::QueryKind::Restore),
+            .granted = false, .cancelled = false, .cv = {}};
+        admission_waiters.push_back(&waiter);
+        SCOPE_EXIT(std::erase(admission_waiters, &waiter));
+
+        auto throw_if_cancelled = [&]
+        {
+            if (waiter.cancelled)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for admission");
+        };
+
         /// Replacing a query must happen before taking an admission slot. The old query can take up to
         /// `replace_running_query_max_wait_ms` to leave the process list; occupying a FIFO slot during
         /// that wait would block unrelated queries despite no replacement query executing yet.
@@ -316,9 +334,14 @@ ProcessList::EntryPtr ProcessList::insert(
                                         "Query with id = {} is already running and can't be stopped",
                                         client_info.current_query_id);
 
+                    /// The wait also ends when this query is cancelled (`cancelAdmissionWaitersLocked` notifies
+                    /// `query_finished`), e.g. by the bulk cancellation at shutdown: otherwise it would start once
+                    /// the victim is gone, after the cancellation snapshot.
+                    auto replacement_wait_over = [&] { return waiter.cancelled || old_query_finished(); };
+
                     if (is_alive && alive_check_interval_ms > 0)
                     {
-                        while (!old_query_finished())
+                        while (!replacement_wait_over())
                         {
                             auto now = std::chrono::steady_clock::now();
                             if (now >= replace_deadline)
@@ -327,19 +350,21 @@ ProcessList::EntryPtr ProcessList::insert(
                             auto chunk = std::min(
                                 std::chrono::milliseconds(alive_check_interval_ms),
                                 std::chrono::duration_cast<std::chrono::milliseconds>(replace_deadline - now));
-                            query_finished.wait_for(lock, chunk, old_query_finished);
+                            query_finished.wait_for(lock, chunk, replacement_wait_over);
 
-                            if (!old_query_finished() && !client_alive())
+                            if (!replacement_wait_over() && !client_alive())
                                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
                                                 "Query replacement cancelled: client disconnected while waiting for the old query");
                         }
                     }
-                    else if (!query_finished.wait_until(lock, replace_deadline, old_query_finished))
+                    else if (!query_finished.wait_until(lock, replace_deadline, replacement_wait_over))
                     {
                         throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
                                         "Query with id = {} is already running and can't be stopped",
                                         client_info.current_query_id);
                     }
+
+                    throw_if_cancelled();
 
                     if (is_alive && !client_alive())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
@@ -365,23 +390,6 @@ ProcessList::EntryPtr ProcessList::insert(
         /// query in a queue that `setMaxSize` has already drained for the switch to unlimited, where no
         /// release would ever grant it a slot; a stale `0` would let it bypass a newly finite limit.
         const bool needs_admission = admission_tracked && max_size;
-
-        /// From here until the registration below, the waits can park the query for a long time while it is
-        /// not reachable through `processes`. Publish it in `admission_waiters`, so that the out-of-band
-        /// cancellation paths can still cancel it (see `cancelAdmissionWaitersLocked`).
-        AdmissionWaiter waiter{
-            .query_id = client_info.current_query_id, .user = client_info.current_user, .user_id = user_id, .interface = client_info.interface,
-            .is_ddl_backup_or_restore = is_ddl_or_on_cluster_internal
-                && (query_kind == IAST::QueryKind::Backup || query_kind == IAST::QueryKind::Restore),
-            .granted = false, .cancelled = false, .cv = {}};
-        admission_waiters.push_back(&waiter);
-        SCOPE_EXIT(std::erase(admission_waiters, &waiter));
-
-        auto throw_if_cancelled = [&]
-        {
-            if (waiter.cancelled)
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for admission");
-        };
 
         if (needs_admission && admission_running >= max_size)
         {
