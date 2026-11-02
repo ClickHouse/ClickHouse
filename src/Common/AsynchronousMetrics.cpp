@@ -719,6 +719,55 @@ std::optional<Value> saveJemallocProf(AsynchronousMetricValues & values,
 }
 #endif
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
+/// The host memory metrics are reported both from `/proc/meminfo` and from the Mach VM statistics,
+/// so their documentation is shared: `system.documentation` requires one description per metric name.
+#define OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION \
+    "The amount of free memory on the host system, in bytes." \
+    " This does not include the memory used by the OS page cache memory, in bytes." \
+    " The page cache memory is also available for usage by programs, so the value of this metric can be confusing." \
+    " See the `OSMemoryAvailable` metric instead." \
+    " For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable." \
+    " See also https://www.linuxatemyram.com/." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+#define OS_MEMORY_AVAILABLE_DOCUMENTATION \
+    "The amount of memory available to be used by programs, in bytes. This is very similar to the `OSMemoryFreePlusCached` metric." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+#define OS_MEMORY_CACHED_DOCUMENTATION \
+    "The amount of memory used by the OS page cache, in bytes. Typically, almost all available memory is used by the OS page cache - high values of this metric are normal and expected." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+#define OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION \
+    "The amount of free memory plus OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+namespace
+{
+
+#define LOAD_AVERAGE_DOCUMENTATION \
+    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
+    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
+    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
+    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
+
+void saveLoadAverageMetrics(AsynchronousMetricValues & values, Float64 loadavg1, Float64 loadavg5, Float64 loadavg15)
+{
+    values["LoadAverage1"] = { loadavg1,
+        "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
+    values["LoadAverage5"] = { loadavg5,
+        "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
+    values["LoadAverage15"] = { loadavg15,
+        "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
+}
+
+#undef LOAD_AVERAGE_DOCUMENTATION
+
+}
+#endif
+
 
 #if defined(OS_LINUX)
 
@@ -1628,12 +1677,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
     new_values["UntrackedMemory"] = { DB::UntrackedMemoryRegistry::instance().sum(), "Sum of per-thread buffers of recent allocations and deallocations that have not yet been propagated to TrackedMemory."};
 
-#define LOAD_AVERAGE_DOCUMENTATION \
-    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
-    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
-    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
-    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
-
 #if defined(OS_LINUX)
     if (loadavg)
     {
@@ -1657,12 +1700,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             assertChar('/', *loadavg);
             readText(threads_total, *loadavg);
 
-            new_values["LoadAverage1"] = { loadavg1,
-                "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
-            new_values["LoadAverage5"] = { loadavg5,
-                "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
-            new_values["LoadAverage15"] = { loadavg15,
-                "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
+            saveLoadAverageMetrics(new_values, loadavg1, loadavg5, loadavg15);
             new_values["OSThreadsRunnable"] = { threads_runnable,
                 "The total number of 'runnable' threads, as the OS kernel scheduler seeing it." };
             new_values["OSThreadsTotal"] = { threads_total,
@@ -2038,19 +2076,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 else if (name == "MemFree:")
                 {
                     free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryFreeWithoutCached"] = { bytes,
-                        "The amount of free memory on the host system, in bytes."
-                        " This does not include the memory used by the OS page cache memory, in bytes."
-                        " The page cache memory is also available for usage by programs, so the value of this metric can be confusing."
-                        " See the `OSMemoryAvailable` metric instead."
-                        " For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable."
-                        " See also https://www.linuxatemyram.com/."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["OSMemoryFreeWithoutCached"] = { bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
                 }
                 else if (name == "MemAvailable:")
                 {
-                    new_values["OSMemoryAvailable"] = { bytes, "The amount of memory available to be used by programs, in bytes. This is very similar to the `OSMemoryFreePlusCached` metric."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["OSMemoryAvailable"] = { bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
                 }
                 else if (name == "Buffers:")
                 {
@@ -2060,8 +2090,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 else if (name == "Cached:")
                 {
                     free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryCached"] = { bytes, "The amount of memory used by the OS page cache, in bytes. Typically, almost all available memory is used by the OS page cache - high values of this metric are normal and expected."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["OSMemoryCached"] = { bytes, OS_MEMORY_CACHED_DOCUMENTATION };
                 }
                 else if (name == "SwapCached:")
                 {
@@ -2072,8 +2101,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 skipToNextLineOrEOF(*meminfo);
             }
 
-            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, "The amount of free memory plus OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`."
-                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
         }
         catch (...)
         {
@@ -2863,21 +2891,15 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             /// Speculative pages are file-backed readahead, i.e. a part of the page cache, but the kernel counts them inside free_count
             /// (the `vm_stat` utility subtracts them from "Pages free" in the same way).
             UInt64 free_without_cached_bytes = static_cast<UInt64>(vm_stats.free_count - vm_stats.speculative_count) * page_size;
-            /// File-backed (external) and purgeable pages can be reclaimed at any moment,
-            /// similarly to the reclaimable page cache on Linux.
-            UInt64 available_bytes = free_without_cached_bytes
-                + (static_cast<UInt64>(vm_stats.external_page_count) + vm_stats.purgeable_count) * page_size;
+            /// External pages are file-backed, i.e. the equivalent of the Linux page cache.
+            UInt64 cached_bytes = static_cast<UInt64>(vm_stats.external_page_count) * page_size;
+            /// Purgeable pages are not file-backed, but the kernel is also free to reclaim them at any moment.
+            UInt64 available_bytes = free_without_cached_bytes + cached_bytes + static_cast<UInt64>(vm_stats.purgeable_count) * page_size;
 
-            new_values["OSMemoryFreeWithoutCached"] = { free_without_cached_bytes,
-                "The amount of free memory on the host system, in bytes."
-                " This does not include the memory used by the OS page cache memory, in bytes."
-                " The page cache memory is also available for usage by programs, so the value of this metric can be confusing."
-                " See the `OSMemoryAvailable` metric instead."
-                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-            new_values["OSMemoryAvailable"] = { available_bytes,
-                "The amount of memory available to be used by programs, in bytes."
-                " It is estimated as the free memory plus the file-backed and purgeable pages that the OS can reclaim at any moment."
-                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+            new_values["OSMemoryFreeWithoutCached"] = { free_without_cached_bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
+            new_values["OSMemoryCached"] = { cached_bytes, OS_MEMORY_CACHED_DOCUMENTATION };
+            new_values["OSMemoryFreePlusCached"] = { free_without_cached_bytes + cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
+            new_values["OSMemoryAvailable"] = { available_bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
         }
         else
             LOG_ERROR(log, "Cannot obtain memory statistics via host_statistics64: {}", mach_error_string(res));
@@ -2894,7 +2916,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             if (res == KERN_SUCCESS)
                 new_values["OSThreadsTotal"] = { static_cast<UInt64>(load_info.thread_count),
-                    "The total number of threads, as the OS kernel scheduler sees it." };
+                    "The total number of threads, as the OS kernel scheduler seeing it." };
             else
                 LOG_ERROR(log, "Cannot obtain the number of threads via processor_set_statistics: {}", mach_error_string(res));
         }
@@ -2907,14 +2929,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     {
         double loadavg_values[3] = {};
         if (3 == getloadavg(loadavg_values, 3))
-        {
-            new_values["LoadAverage1"] = { loadavg_values[0],
-                "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
-            new_values["LoadAverage5"] = { loadavg_values[1],
-                "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
-            new_values["LoadAverage15"] = { loadavg_values[2],
-                "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
-        }
+            saveLoadAverageMetrics(new_values, loadavg_values[0], loadavg_values[1], loadavg_values[2]);
         else
             LOG_ERROR(log, "Cannot obtain the load average via getloadavg");
     }
