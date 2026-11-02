@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -504,13 +505,23 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                         [](const MutationCommand & command) { return AlterConversions::isSupportedMetadataMutation(command.type); });
                 });
         };
+        /// A `UNIQUE KEY` read drops the rows superseded by later inserts through the delete bitmaps of its snapshot. They
+        /// are not `_row_exists` deletes and leave no mutation, but the part statistics still cover them. Ask for the
+        /// bitmap of each part, as the reader does: the analysis has already resolved them to drop fully dead granules,
+        /// and the snapshot memoizes them for the read.
+        const auto * delete_bitmap_snapshot = tryGetDeleteBitmapSnapshot(*reading->getStorageSnapshot());
+        const bool has_unique_key_deleted_rows = delete_bitmap_snapshot
+            && std::ranges::any_of(
+                analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts(),
+                [&](const RangesInDataPart & part) { return !delete_bitmap_snapshot->bitmapAt(part.data_part->info)->empty(); });
         /// Predicates cover explicit, deferred, row-policy and runtime filters; query modifiers cover `FINAL`,
-        /// `SAMPLE`, stream reads and trivial limits; deleted rows and vector-index selection can prune
-        /// rows without a filter step in the plan. A transaction snapshot is deliberately absent: the
-        /// visible parts are the exact input for that read.
+        /// `SAMPLE`, stream reads and trivial limits; deleted rows (lightweight or by a unique key) and vector-index
+        /// selection can prune rows without a filter step in the plan. A transaction snapshot is deliberately absent:
+        /// the visible parts are the exact input for that read.
         const bool has_row_subset = filter || prewhere_info || reading->getRowLevelFilter() || reading->getFilterActionsDAG()
             || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || has_final || query_info.isStream()
-            || query_info.trivial_limit || has_lightweight_deleted_rows || reading->getVectorSearchParameters().has_value()
+            || query_info.trivial_limit || has_lightweight_deleted_rows || has_unique_key_deleted_rows
+            || reading->getVectorSearchParameters().has_value()
             || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
         /// Non-throwing read limits end the read early without a step in the plan; it returns rows in read order.
         const bool may_stop_reading_early = mayStopReadingEarly(query_info);
