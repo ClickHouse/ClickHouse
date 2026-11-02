@@ -111,7 +111,9 @@ TEST(CHColumnToArrowColumn, ArraySplitAcrossRecordBatches)
         ASSERT_EQ(list.value_offset(0), 0);
         for (int64_t i = 0; i < list.length(); ++i, ++row)
         {
-            const auto & values = assert_cast<const arrow::StringArray &>(*list.value_slice(i));
+            /// `value_slice` returns a new array by value: keep it alive while it is inspected.
+            const auto values_holder = list.value_slice(i);
+            const auto & values = assert_cast<const arrow::StringArray &>(*values_holder);
             ASSERT_EQ(values.length(), 2);
             ASSERT_EQ(values.GetString(0), valueAt(row));
             ASSERT_EQ(values.GetString(1), valueAt(row));
