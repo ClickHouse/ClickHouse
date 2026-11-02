@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -253,6 +254,18 @@ bool rewriteDateTimeLiteralsWithTimezone(const ASTPtr & expression, const Column
     ASTPtr root = expression;
     RewriteDateTimeLiteralsMatcher::Data data{columns, session_timezone, false};
     RewriteDateTimeLiteralsVisitor(data).visit(root);
+
+    /// The assignments of `TTL ... GROUP BY ... SET` are not children of the element.
+    std::function<void(const ASTPtr &)> visit_group_by_assignments = [&](const ASTPtr & ast)
+    {
+        if (const auto * ttl_element = ast->as<ASTTTLElement>())
+            for (auto assignment : ttl_element->group_by_assignments)
+                RewriteDateTimeLiteralsVisitor(data).visit(assignment);
+        for (const auto & child : ast->children)
+            visit_group_by_assignments(child);
+    };
+    visit_group_by_assignments(root);
+
     return data.modified;
 }
 

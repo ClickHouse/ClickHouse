@@ -181,9 +181,10 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
     /// The `TTL` of a table is evaluated by background merges without the session, so a `DateTime` string literal in it
     /// would be read in the server time zone, not in `session_timezone`: make its time zone explicit, as for the mutations
     /// below. The type of a column in the `TTL` is the one that the preceding commands of the statement give it, such as
-    /// `MODIFY COLUMN event DateTime('UTC')`, so they are applied to a copy of the metadata as the commands are parsed.
+    /// `MODIFY COLUMN event DateTime('UTC')`, so their names and types are applied to a copy of the columns as the commands
+    /// are parsed. Only the columns are changed there, as the commands are validated later.
     const String & ttl_session_timezone = settings[Setting::session_timezone].value;
-    std::optional<StorageInMemoryMetadata> metadata_for_ttl;
+    std::optional<ColumnsDescription> columns_for_ttl;
     if (!ttl_session_timezone.empty() && std::ranges::any_of(alter.command_list->children, [](const auto & child)
         {
             const auto * command = child->template as<ASTAlterCommand>();
@@ -191,15 +192,15 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         }))
     {
         const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
-        metadata_for_ttl.emplace(*metadata_snapshot);
+        columns_for_ttl.emplace(metadata_snapshot->columns);
     }
 
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
 
-        if (metadata_for_ttl && command_ast->type == ASTAlterCommand::MODIFY_TTL && command_ast->ttl)
-            rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), metadata_for_ttl->columns, ttl_session_timezone);
+        if (columns_for_ttl && command_ast->type == ASTAlterCommand::MODIFY_TTL && command_ast->ttl)
+            rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), *columns_for_ttl, ttl_session_timezone);
 
         if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
         {
@@ -216,17 +217,20 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (reset_command)
                 alter_commands.push_back(std::move(reset_command.value()));
 
-            /// A command that does not apply to the columns, such as `MODIFY COLUMN` of a missing column with `IF EXISTS`, is
-            /// left to the validation of the statement.
-            if (metadata_for_ttl)
+            /// A command that does not fit the columns, such as `MODIFY COLUMN` of a missing column with `IF EXISTS` or
+            /// `ADD COLUMN` without a type, is left to the validation of the statement.
+            if (columns_for_ttl)
             {
-                const auto & columns = metadata_for_ttl->columns;
-                const bool applies = (alter_command->type == AlterCommand::ADD_COLUMN && !columns.has(alter_command->column_name))
-                    || ((alter_command->type == AlterCommand::MODIFY_COLUMN || alter_command->type == AlterCommand::DROP_COLUMN
-                         || alter_command->type == AlterCommand::RENAME_COLUMN)
-                        && columns.has(alter_command->column_name));
-                if (applies)
-                    alter_command->apply(*metadata_for_ttl, context);
+                auto & columns = *columns_for_ttl;
+                const auto & name = alter_command->column_name;
+                if (alter_command->type == AlterCommand::ADD_COLUMN && alter_command->data_type && !columns.has(name))
+                    columns.add(ColumnDescription(name, alter_command->data_type));
+                else if (alter_command->type == AlterCommand::MODIFY_COLUMN && alter_command->data_type && columns.has(name))
+                    columns.modify(name, [&](ColumnDescription & column) { column.type = alter_command->data_type; });
+                else if (alter_command->type == AlterCommand::RENAME_COLUMN && columns.has(name) && !columns.has(alter_command->rename_to))
+                    columns.rename(name, alter_command->rename_to);
+                else if (alter_command->type == AlterCommand::DROP_COLUMN && columns.has(name))
+                    columns.remove(name);
             }
 
             alter_commands.push_back(std::move(alter_command.value()));
