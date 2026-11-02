@@ -67,7 +67,6 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #if defined(OS_LINUX)
 
 #include <Common/ErrnoException.h>
-#include <Common/Exception.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
@@ -256,7 +255,7 @@ size_t countThreads()
     SCOPE_EXIT({ ::closedir(dir); });
 
     size_t threads = 0;
-    while (const dirent * entry = ::readdir(dir))
+    while (const dirent * entry = ::readdir(dir)) /// NOLINT(concurrency-mt-unsafe): the directory stream is not shared.
         if (entry->d_name[0] != '.')
             ++threads;
     return threads;
@@ -272,7 +271,7 @@ void checkNoOpenDirectories()
     SCOPE_EXIT({ ::closedir(dir); });
 
     const int own_fd = ::dirfd(dir);
-    while (const dirent * entry = ::readdir(dir))
+    while (const dirent * entry = ::readdir(dir)) /// NOLINT(concurrency-mt-unsafe): the directory stream is not shared.
     {
         if (entry->d_name[0] == '.')
             continue;
@@ -562,7 +561,7 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
         }
         catch (const Exception & e)
         {
-            const std::string message = e.message();
+            const std::string & message = e.message();
             [[maybe_unused]] ssize_t res = ::write(pipe_fds[1], message.data(), message.size());
             exit_code = 1;
         }
