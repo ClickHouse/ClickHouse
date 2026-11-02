@@ -2347,6 +2347,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.columns_list)
         visitor.visitTableExpressions(*create.columns_list);
 
+    /// A `TTL` that this query gives itself, as opposed to one that `CREATE TABLE ... AS` or `CLONE AS` copies from the source
+    /// table below, which keeps the meaning it has there.
+    const bool has_own_ttl = create.storage && create.storage->ttl_table;
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
@@ -2388,7 +2392,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// instead of `session_timezone`, and the rule removed other rows than it named. Make the time zone of such literals
     /// explicit in the definition, as `InterpreterAlterQuery` does for mutations.
     if (const String & session_timezone = getContext()->getSettingsRef()[Setting::session_timezone].value;
-        !session_timezone.empty() && !create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
+        !session_timezone.empty() && has_own_ttl && !create.attach_short_syntax && !is_restore_from_backup
         && create.storage && create.storage->ttl_table)
     {
         rewriteDateTimeLiteralsWithTimezone(create.storage->ttl_table->ptr(), properties.columns, session_timezone);
