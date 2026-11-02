@@ -109,7 +109,16 @@ void accumulateExtremes(MutableColumns & extremes_columns, const Chunk & chunk)
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (isColumnConst(*extremes_columns[i]))
-                continue;
+            {
+                /// A column that is constant in the header has the same value in every chunk, so the extremes stay as is.
+                /// But a column can also be constant only within a chunk (for example, `FilterTransform` replaces
+                /// a column with `ColumnConst` after `WHERE x = 1`), and its value can differ between chunks
+                /// (for example, between `UNION ALL` branches). In this case, materialize the extremes and accumulate them.
+                if (isColumnConst(*columns[i]) && columns[i]->compareAt(0, 0, *extremes_columns[i], 1) == 0)
+                    continue;
+
+                extremes_columns[i] = IColumn::mutate(extremes_columns[i]->convertToFullColumnIfConst());
+            }
 
             Field min_value = (*extremes_columns[i])[0];
             Field max_value = (*extremes_columns[i])[1];

@@ -270,7 +270,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the load stream continuous.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
             else
@@ -356,7 +356,7 @@ private:
                 || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
             /// SIMD-optimized path: one batched call over all rows keeps the column load stream continuous.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
             if (isArchSupported(TargetArch::x86_64_v4))
                 dotProductConstBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
             else

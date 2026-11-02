@@ -527,6 +527,7 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -546,6 +547,8 @@ public:
     /// the initiator does it only with a local plan and then does not use older remote replicas, and a follower
     /// only when its initiator is new enough to do that.
     bool canReadInOrderThroughJoinWithParallelReplicas() const;
+    void markReadingInOrderThroughJoin() { reading_in_order_through_join = true; }
+    bool isReadingInOrderThroughJoin() const { return reading_in_order_through_join; }
 
     /// A non-storage filter above this read, such as a join runtime `__applyFilter`, can affect the
     /// dynamic TopK threshold without participating in the PREWHERE query condition cache key.
@@ -555,7 +558,13 @@ public:
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
-    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
+    /// A deserialized read knows only its storage, so the initiator's own copy is coordinated under the
+    /// storage name too, also when it reads through a table function.
+    void enableParallelReadingFromReplicasForSerialization()
+    {
+        is_parallel_reading_from_replicas = true;
+        query_info.parallel_replicas_coordinated_under_storage_name = true;
+    }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
@@ -740,6 +749,9 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    /// The name this read is coordinated under, which every replica must announce identically.
+    String getParallelReplicasStreamId() const;
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
@@ -940,11 +952,13 @@ private:
     IndexReadTasks index_read_tasks;
 
     bool is_parallel_reading_from_replicas;
+    bool reading_in_order_through_join = false;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
+    bool allow_spreading_small_read = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool has_lazily_read_columns = false;

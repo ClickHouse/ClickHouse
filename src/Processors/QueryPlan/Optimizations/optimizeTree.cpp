@@ -7,7 +7,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -106,12 +105,11 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
     };
 }
 
-/// Whether a join in the plan keeps its left input in order, i.e. a read is done in order through it.
-static bool hasJoinKeepingLeftInOrder(const QueryPlan::Node * node)
+static bool hasReadingInOrderThroughJoin(const QueryPlan::Node * node)
 {
-    if (const auto * join = typeid_cast<const JoinStep *>(node->step.get()); join && join->keepsLeftPipelineInOrder())
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()); reading && reading->isReadingInOrderThroughJoin())
         return true;
-    return std::ranges::any_of(node->children, [](const QueryPlan::Node * child) { return hasJoinKeepingLeftInOrder(child); });
+    return std::ranges::any_of(node->children, [](const QueryPlan::Node * child) { return hasReadingInOrderThroughJoin(child); });
 }
 
 static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
@@ -769,7 +767,7 @@ void optimizeTreeSecondPass(
             /// An older remote replica would not read in order through the join and would announce another
             /// coordination mode.
             if (const auto & coordinator = read_from_local->getCoordinator();
-                coordinator && hasJoinKeepingLeftInOrder(local_plan->getRootNode()))
+                coordinator && hasReadingInOrderThroughJoin(local_plan->getRootNode()))
                 coordinator->requireReplicaProtocolVersion(DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_IN_ORDER_THROUGH_JOIN);
 
             auto * local_plan_node = frame.node;
@@ -1012,6 +1010,9 @@ void optimizeTreeSecondPass(
     /// distributed plans are re-optimized with `make_distributed_plan = false` and still get sharded.
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
+
+    /// After every pass that converts a full sorting or gives it partitions.
+    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
