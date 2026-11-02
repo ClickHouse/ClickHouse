@@ -76,3 +76,20 @@ $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO default
 $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO default_by_other_column(a, b, c) VALUES(1, 2, ('tuple', 3))";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM default_by_other_column ORDER BY a";
 $CLICKHOUSE_CLIENT --query="DROP TABLE default_by_other_column";
+
+echo 'JSONColumns, JSONCompactColumns, JSONColumnsWithMetadata'
+# https://github.com/ClickHouse/ClickHouse/issues/121905
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS null_as_default_json_columns";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE null_as_default_json_columns (a UInt32, b UInt32 DEFAULT a*2) ENGINE = Memory";
+$CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query='INSERT INTO null_as_default_json_columns FORMAT JSONCompactColumns [[7],[null]]';
+$CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query='INSERT INTO null_as_default_json_columns FORMAT JSONColumnsWithMetadata {"meta":[{"name":"a","type":"UInt32"},{"name":"b","type":"UInt32"}],"data":{"a":[8],"b":[null]}}';
+# Omitting the "b" column entirely gives a*2 as well.
+$CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query='INSERT INTO null_as_default_json_columns FORMAT JSONColumns {"a":[9]}';
+# Only the null rows take the DEFAULT, 100 stays.
+$CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query='INSERT INTO null_as_default_json_columns FORMAT JSONColumns {"a":[10,11,12],"b":[null,100,null]}';
+# With input_format_defaults_for_omitted_fields = 0 a null stays 0, as in JSONEachRow.
+$CLICKHOUSE_CLIENT --input_format_null_as_default=1 --input_format_defaults_for_omitted_fields=0 --query='INSERT INTO null_as_default_json_columns FORMAT JSONColumns {"a":[13],"b":[null]}';
+# An empty string with input_format_json_empty_as_default = 1 takes the DEFAULT too.
+$CLICKHOUSE_CLIENT --input_format_json_empty_as_default=1 --query='INSERT INTO null_as_default_json_columns FORMAT JSONColumns {"a":[14],"b":[""]}';
+$CLICKHOUSE_CLIENT --query="SELECT a, b FROM null_as_default_json_columns ORDER BY a";
+$CLICKHOUSE_CLIENT --query="DROP TABLE null_as_default_json_columns";

@@ -15,3 +15,11 @@ select * from file(currentDatabase() || '_data_02302.arrow', auto, 'x UInt8, xx 
 select count() from file(currentDatabase() || '_data_02302.parquet', auto, 'x UInt64, d UInt8 default 10') settings use_cache_for_count_from_files = 0, optimize_count_from_files = 1, optimize_trivial_count_query = 1, input_format_parquet_allow_missing_columns = 0;
 -- With the setting off no `default` expression is applied, so the columns keep their type defaults.
 select * from file(currentDatabase() || '_data_02302.parquet', auto, 'x UInt8, xx UInt8 default 10, y default 42, z default x + xx + y') settings input_format_parquet_allow_missing_columns=1, input_format_defaults_for_omitted_fields=0;
+
+-- https://github.com/ClickHouse/ClickHouse/issues/121905
+-- A DEFAULT which depends on a subcolumn reads its column.
+INSERT INTO FUNCTION file(currentDatabase() || '_02302_tuple.parquet', Parquet, 'a Tuple(x UInt32), b Nullable(UInt32)')
+    SELECT * FROM values('a Tuple(x UInt32), b Nullable(UInt32)', (tuple(6), NULL), (tuple(7), 3)) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT b FROM file(currentDatabase() || '_02302_tuple.parquet', Parquet, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');
+SELECT a.x, b FROM file(currentDatabase() || '_02302_tuple.parquet', Parquet, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');
