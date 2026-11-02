@@ -1536,6 +1536,13 @@ public:
     bool getWriteThroughDistributedCache() const;
     void setWriteThroughDistributedCache(bool write_through_distributed_cache) const;
 
+    /// Settings of the distributed cache connections for temporary data, applied without a restart.
+    DistributedCachePoolBehaviourOnLimit getDistributedCacheTemporaryDataPoolBehaviourOnLimit() const;
+    void setDistributedCacheTemporaryDataPoolBehaviourOnLimit(DistributedCachePoolBehaviourOnLimit value) const;
+
+    UInt64 getDistributedCacheTemporaryDataMaxConnectionsBypassingPool() const;
+    void setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(UInt64 value) const;
+
     /// The switches with this context's `force_*` setting applied. The global context ignores that setting:
     /// it is the startup snapshot serving operations without a query context, which follow the server switch.
     bool resolveReadThroughDistributedCache() const;
