@@ -1,0 +1,22 @@
+-- only bit 0 of flags (a float histogram) may be set
+-- counter_reset_hint is 0..3
+-- schema is -4..8 or -53
+-- the bucket indexes of a side increase strictly
+-- no count is negative
+-- the buckets and the zero bucket of an integer histogram add up to count_int, or to at most count_int when sum is NaN
+-- custom buckets: finite increasing bounds covering the positive side, no negative side, no zero bucket; exponential buckets have no bounds
+-- nothing of a rejected insert is written
+0	0	0
+-- the accepted histograms are stored as sent (one per timestamp)
+100000	0	0	0	0	0	0	0	[]	[]	0	[]	[]
+101000	0	3	0	0	0	0	0	[]	[]	0	[]	[]
+102000	0	0	-4	0	0	0	0	[]	[]	0	[]	[]
+103000	0	0	8	0	0	0	0	[]	[]	0	[]	[]
+104000	0	0	-53	0	0	0	0	[]	[]	0	[]	[]
+105000	0	0	0	0	0	3	1	[(0,2)]	[]	0	[]	[]
+106000	0	0	0	0	nan	5	0	[(0,1),(1,2)]	[]	0	[]	[]
+107000	0	0	0	0	0	1	0	[(0,0),(1,1),(2,0)]	[]	0	[]	[]
+108000	0	0	0	0	0	2	0	[(-5,1)]	[(3,1)]	0	[]	[]
+109000	1	0	0	0	0	0	0	[]	[]	100	[(0,1)]	[]
+110000	0	0	-53	0	0	15	0	[(0,1),(1,2),(2,4),(3,8)]	[]	0	[]	[0.1,0.5,1]
+111000	0	0	0	0	0	9223372036854775807	0	[(0,9223372036854775807)]	[]	0	[]	[]

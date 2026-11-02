@@ -1,5 +1,9 @@
 #include <Storages/TimeSeries/validateTimeSeriesHistograms.h>
 
+#include <Columns/ColumnArray.h>
+#include <Common/NaNUtils.h>
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
@@ -7,7 +11,6 @@
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
 #include <cmath>
-#include <limits>
 #include <span>
 
 
@@ -28,28 +31,43 @@ namespace
 
     constexpr UInt8 max_counter_reset_hint = 3;
 
-    using Spans = TimeSeriesHistogramsColumnsView::Spans;
+    using ColumnsView = TimeSeriesHistogramsColumnsView;
 
-    /// Throws INCORRECT_DATA about the histogram sample in the specified row.
+    /// Throws INCORRECT_DATA about the histogram sample in the specified row. The timestamps are the elements of the
+    /// `histograms.timestamp` arrays of the block, whose type gives their serialization.
     class InvalidHistogramThrower
     {
     public:
-        explicit InvalidHistogramThrower(const Block & block) : timestamp(block.getByName(TimeSeriesColumnNames::Timestamp)) { }
+        InvalidHistogramThrower(const Block & block, const IColumn & timestamps_)
+            : timestamps(timestamps_)
+            , timestamp_type(assert_cast<const DataTypeArray &>(
+                *block.getByName(TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp)).type).getNestedType())
+        {
+        }
 
         template <typename... Args>
         [[noreturn]] void fail(size_t row, fmt::format_string<Args...> format, Args &&... args) const
         {
             WriteBufferFromOwnString timestamp_text;
-            timestamp.type->getDefaultSerialization()->serializeText(*timestamp.column, row, timestamp_text, {});
+            timestamp_type->getDefaultSerialization()->serializeText(timestamps, row, timestamp_text, {});
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid histogram sample #{} with timestamp {}: {}",
                 row, timestamp_text.str(), fmt::format(format, std::forward<Args>(args)...));
         }
 
     private:
-        const ColumnWithTypeAndName & timestamp;
+        const IColumn & timestamps;
+        const DataTypePtr timestamp_type;
     };
 
     /// The rules, each applied to one row. `fail` is `InvalidHistogramThrower::fail` bound to the row.
+
+    /// Only the flavour bit may be set.
+    template <typename Fail>
+    void checkFlags(UInt8 flags, const Fail & fail)
+    {
+        if (TimeSeriesHistogramFlags::hasReservedBits(flags))
+            fail("flags {} has reserved bits set, only bit 0 (a float histogram) may be set", static_cast<UInt32>(flags));
+    }
 
     /// The reset hint is one of unknown, yes, no, gauge.
     template <typename Fail>
@@ -77,7 +95,7 @@ namespace
                 schema, exponential_schema_min, exponential_schema_max, custom_buckets_schema);
     }
 
-    /// `histograms_max_buckets` limits the number of buckets of both sides together.
+    /// `histograms_max_buckets` limits the number of buckets of both sides together, like Prometheus's `native_histogram_bucket_limit`.
     template <typename Fail>
     void checkMaxBuckets(size_t num_positive_buckets, size_t num_negative_buckets, UInt64 max_buckets, const Fail & fail)
     {
@@ -86,33 +104,26 @@ namespace
                 num_positive_buckets + num_negative_buckets, max_buckets);
     }
 
-    /// Prometheus's `checkHistogramSpans` for one side of a histogram with exponential buckets: the spans describe exactly
-    /// the given buckets and a span after the first doesn't go backwards. The bucket indexes must also fit in Int32:
-    /// they are relative in the spans and absolute at evaluation time.
-    template <typename Fail>
-    void checkExponentialSpans(const Spans & spans, size_t num_buckets, std::string_view side, const Fail & fail)
+    /// The buckets of one side: the indexes increase strictly (so they are unique and the pairs are sorted) and no count is negative
+    /// (Prometheus's `checkHistogramBuckets`). A count of 0 is allowed, as in Prometheus: the buckets are stored as sent.
+    template <typename Count, typename Fail>
+    void checkBuckets(const ColumnsView::Pairs<Count> & buckets, std::string_view side, const Fail & fail)
     {
-        size_t total_length = 0;
-        Int64 bucket_index = 0;
-        for (size_t i = 0; i != spans.size(); ++i)
+        for (size_t i = 0; i != buckets.size(); ++i)
         {
-            if ((i > 0) && (spans.offsets[i] < 0))
-                fail("{} side: span #{} has a negative offset {}", side, i, spans.offsets[i]);
-            bucket_index += spans.offsets[i];
-            bucket_index += spans.lengths[i];
-            if ((bucket_index < std::numeric_limits<Int32>::min()) || (bucket_index > std::numeric_limits<Int32>::max()))
-                fail("{} side: the bucket indexes overflow Int32", side);
-            total_length += spans.lengths[i];
+            if ((i > 0) && (buckets.indexes[i] <= buckets.indexes[i - 1]))
+                fail("{} side: the bucket indexes must be strictly increasing, but bucket #{} has index {} after index {}",
+                    side, i, buckets.indexes[i], buckets.indexes[i - 1]);
+            if (buckets.counts[i] < 0)
+                fail("{} side: bucket #{} with index {} has a negative count {}", side, i, buckets.indexes[i], buckets.counts[i]);
         }
-        if (total_length != num_buckets)
-            fail("{} side: the spans need {} buckets, but {} buckets are given", side, total_length, num_buckets);
     }
 
-    /// Prometheus's `checkHistogramCustomBounds`: the bounds are finite and strictly increasing without an explicit +Inf,
-    /// the spans of the (only) positive side describe exactly the given buckets going forwards from index 0, and the bounds
-    /// cover them - the last bucket goes up to +Inf and has no explicit bound, so n bounds define n + 1 buckets.
+    /// Prometheus's `checkHistogramCustomBounds`: the bounds are finite and strictly increasing without an explicit +Inf, and they
+    /// cover the (only) positive side: n bounds define n + 1 buckets with the indexes 0..n, the last bucket goes up to +Inf and has
+    /// no explicit bound.
     template <typename Fail>
-    void checkCustomBounds(std::span<const Float64> bounds, const Spans & spans, size_t num_buckets, const Fail & fail)
+    void checkCustomBounds(std::span<const Float64> bounds, std::span<const Int32> indexes, const Fail & fail)
     {
         for (size_t i = 0; i != bounds.size(); ++i)
         {
@@ -122,33 +133,27 @@ namespace
                 fail("custom_values must be strictly increasing, but custom_values[{}] = {} follows {}", i, bounds[i], bounds[i - 1]);
         }
 
-        size_t total_length = 0;
-        size_t total_span = 0;
-        for (size_t i = 0; i != spans.size(); ++i)
-        {
-            if (spans.offsets[i] < 0)
-                fail("positive side: span #{} has a negative offset {}", i, spans.offsets[i]);
-            total_length += spans.lengths[i];
-            total_span += static_cast<size_t>(spans.offsets[i]) + spans.lengths[i];
-        }
-        if (total_length != num_buckets)
-            fail("positive side: the spans need {} buckets, but {} buckets are given", total_length, num_buckets);
-        if (bounds.size() + 1 < total_span)
-            fail("only {} custom bounds are given, which is insufficient to cover the total span length of {}", bounds.size(), total_span);
+        if (indexes.empty())
+            return;
+        if (indexes.front() < 0)
+            fail("positive side: a bucket has the negative index {}, but the custom buckets start at index 0", indexes.front());
+        if (static_cast<size_t>(indexes.back()) > bounds.size())
+            fail("only {} custom bounds are given, which is insufficient for a bucket with index {}: {} bounds define the buckets 0..{}",
+                bounds.size(), indexes.back(), bounds.size(), bounds.size());
     }
 
     /// A histogram with custom buckets has no negative side and no zero bucket.
     template <typename Fail>
-    void checkCustomBucketsHaveNoNegativeSide(size_t num_negative_spans, size_t num_negative_buckets, const Fail & fail)
+    void checkCustomBucketsHaveNoNegativeSide(size_t num_negative_buckets, const Fail & fail)
     {
-        if (num_negative_spans || num_negative_buckets)
+        if (num_negative_buckets)
             fail("a histogram with custom buckets must not have negative buckets");
     }
 
-    template <typename Fail>
-    void checkCustomBucketsHaveNoZeroBucket(bool zero_count_is_zero, Float64 zero_threshold, const Fail & fail)
+    template <typename Count, typename Fail>
+    void checkCustomBucketsHaveNoZeroBucket(Count zero_count, Float64 zero_threshold, const Fail & fail)
     {
-        if (!zero_count_is_zero)
+        if (zero_count != 0)
             fail("a histogram with custom buckets must have a zero count of 0");
         if (zero_threshold != 0)
             fail("a histogram with custom buckets must have a zero threshold of 0");
@@ -162,60 +167,40 @@ namespace
             fail("a histogram with exponential buckets must not have custom_values");
     }
 
-    /// Prometheus's `checkHistogramBuckets` for a float histogram: no negative counts.
-    /// There is no check of `count_float` against the sum of the buckets: Prometheus skips it too, because
-    /// floating-point precision would give false positives.
-    template <typename Fail>
-    void checkFloatBuckets(std::span<const Float64> buckets, std::string_view side, const Fail & fail)
-    {
-        for (size_t i = 0; i != buckets.size(); ++i)
-        {
-            if (buckets[i] < 0)
-                fail("{} side: bucket #{} has a negative count {}", side, i, buckets[i]);
-        }
-    }
-
     /// The total count and the zero bucket can't be negative either.
-    template <typename Fail>
-    void checkFloatCount(Float64 count, std::string_view error_message, const Fail & fail)
+    template <typename Count, typename Fail>
+    void checkCount(Count count, std::string_view error_message, const Fail & fail)
     {
         if (count < 0)
             fail("{} {}", error_message, count);
     }
 
-    /// Prometheus keeps the bucket counts of an integer histogram as `int64` (they travel as `int64` deltas),
-    /// so a bucket count above the maximum `Int64` can't be read back by remote read.
+    /// Prometheus's check of the total count of an integer histogram: the buckets and the zero bucket add up to `count_int`, or to
+    /// at most `count_int` for a stale marker (`sum` is NaN), whose count may be bigger than its buckets. There is no such check for
+    /// a float histogram: Prometheus skips it too, because floating-point precision would give false positives.
     template <typename Fail>
-    void checkIntBuckets(std::span<const UInt64> buckets, std::string_view side, const Fail & fail)
+    void checkIntegerCountMatchesBuckets(
+        Int64 count, Int64 zero_count, const ColumnsView::IntPairs & positive, const ColumnsView::IntPairs & negative, Float64 sum, const Fail & fail)
     {
-        for (size_t i = 0; i != buckets.size(); ++i)
+        Int64 total = zero_count;
+        const auto add_counts = [&](const ColumnsView::IntPairs & buckets)
         {
-            if (buckets[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                fail("{} side: bucket #{} has a count {} above the maximum {}", side, i, buckets[i], std::numeric_limits<Int64>::max());
-        }
-    }
-
-    /// The count check of Prometheus's `Histogram.Validate`: the buckets and the zero bucket sum up to `count` exactly,
-    /// or to at most `count` when `sum` is NaN (NaN observations are counted but fall into no bucket).
-    /// The buckets are UInt64 here, so they can't be negative, but their sum can overflow.
-    template <typename Fail>
-    void checkIntCount(
-        UInt64 count, UInt64 zero_count, std::span<const UInt64> positive_buckets, std::span<const UInt64> negative_buckets, Float64 sum,
-        const Fail & fail)
-    {
-        UInt64 sum_of_buckets = zero_count;
-        const auto add = [&](UInt64 value)
-        {
-            if (__builtin_add_overflow(sum_of_buckets, value, &sum_of_buckets))
-                fail("the sum of the bucket counts overflows UInt64");
+            for (const Int64 bucket_count : buckets.counts)
+                if (__builtin_add_overflow(total, bucket_count, &total))
+                    fail("the counts of the buckets overflow Int64");
         };
-        for (const UInt64 value : positive_buckets)
-            add(value);
-        for (const UInt64 value : negative_buckets)
-            add(value);
+        add_counts(positive);
+        add_counts(negative);
 
-        if (std::isnan(sum) ? (sum_of_buckets > count) : (sum_of_buckets != count))
-            fail("{} observations are found in the buckets, but count_int is {}", sum_of_buckets, count);
+        if (isNaN(sum))
+        {
+            if (total > count)
+                fail("{} observations found in the buckets, but count_int is {}, which is less", total, count);
+        }
+        else if (total != count)
+        {
+            fail("{} observations found in the buckets, but count_int is {}", total, count);
+        }
     }
 
     /// Binds `InvalidHistogramThrower::fail` to a row.
@@ -234,56 +219,80 @@ namespace
         const InvalidHistogramThrower & thrower;
         const size_t row;
     };
+
+    /// The rules on the buckets and the counts of the flavour of the sample: `positive` and `negative` are the sides of that flavour,
+    /// `count` and `zero_count` its scalars.
+    template <typename Count, typename Fail>
+    void checkFlavour(
+        const ColumnsView::Pairs<Count> & positive,
+        const ColumnsView::Pairs<Count> & negative,
+        Count count,
+        Count zero_count,
+        Int8 schema,
+        Float64 zero_threshold,
+        std::span<const Float64> custom_values,
+        UInt64 max_buckets,
+        const Fail & fail)
+    {
+        checkMaxBuckets(positive.size(), negative.size(), max_buckets, fail);
+        checkBuckets(positive, "positive", fail);
+        checkBuckets(negative, "negative", fail);
+
+        if (isCustomBucketsSchema(schema))
+        {
+            checkCustomBounds(custom_values, positive.indexes, fail);
+            checkCustomBucketsHaveNoNegativeSide(negative.size(), fail);
+            checkCustomBucketsHaveNoZeroBucket(zero_count, zero_threshold, fail);
+        }
+        else
+        {
+            checkExponentialBucketsHaveNoCustomBounds(custom_values.size(), fail);
+        }
+
+        checkCount(count, "count is negative:", fail);
+        checkCount(zero_count, "the zero bucket has a negative count", fail);
+    }
 }
 
 
 void validateTimeSeriesHistograms(const Block & histograms_block, UInt64 max_buckets)
 {
-    const size_t num_rows = histograms_block.rows();
-    if (!num_rows)
+    if (!histograms_block.rows())
         return;
 
-    const TimeSeriesHistogramsColumnsView columns{histograms_block};
-    const InvalidHistogramThrower thrower{histograms_block};
+    const ColumnsView columns{histograms_block};
+    const InvalidHistogramThrower thrower{histograms_block, columns.timestamps};
+    const auto & schema = columns.schema.getData();
+    const auto & zero_threshold = columns.zero_threshold.getData();
+    const auto & sum = columns.sum.getData();
 
-    for (size_t row = 0; row != num_rows; ++row)
+    const size_t num_samples = columns.size();
+    for (size_t row = 0; row != num_samples; ++row)
     {
         const FailAtRow fail{thrower, row};
 
-        checkCounterResetHint(columns.counter_reset_hint[row], fail);
-        checkSchema(columns.schema[row], fail);
+        checkFlags(columns.flags.getData()[row], fail);
+        checkCounterResetHint(columns.counter_reset_hint.getData()[row], fail);
+        checkSchema(schema[row], fail);
 
-        const bool is_float = columns.is_float[row];
-        const size_t num_positive_buckets = columns.numPositiveBuckets(row);
-        const size_t num_negative_buckets = columns.numNegativeBuckets(row);
-        checkMaxBuckets(num_positive_buckets, num_negative_buckets, max_buckets, fail);
-
-        if (isCustomBucketsSchema(columns.schema[row]))
+        /// The elements of the other flavour are not checked: remote write leaves them 0 and empty by construction, a direct insert
+        /// is the user's responsibility, and the readers ignore them anyway.
+        const auto custom_values = ColumnsView::floatsAt(columns.custom_values, row);
+        if (columns.isFloatAt(row))
         {
-            checkCustomBounds(columns.custom_values[row], columns.positive_spans[row], num_positive_buckets, fail);
-            checkCustomBucketsHaveNoNegativeSide(columns.negative_spans.sizeAt(row), num_negative_buckets, fail);
-            checkCustomBucketsHaveNoZeroBucket(columns.zeroCountIsZero(row), columns.zero_threshold[row], fail);
+            checkFlavour(
+                ColumnsView::floatPairsAt(columns.positive_float, row), ColumnsView::floatPairsAt(columns.negative_float, row),
+                columns.count_float.getData()[row], columns.zero_count_float.getData()[row],
+                schema[row], zero_threshold[row], custom_values, max_buckets, fail);
         }
         else
         {
-            checkExponentialSpans(columns.positive_spans[row], num_positive_buckets, "positive", fail);
-            checkExponentialSpans(columns.negative_spans[row], num_negative_buckets, "negative", fail);
-            checkExponentialBucketsHaveNoCustomBounds(columns.custom_values.sizeAt(row), fail);
-        }
-
-        if (is_float)
-        {
-            checkFloatBuckets(columns.positive_values_float[row], "positive", fail);
-            checkFloatBuckets(columns.negative_values_float[row], "negative", fail);
-            checkFloatCount(columns.count_float[row], "count_float is negative:", fail);
-            checkFloatCount(columns.zero_count_float[row], "the zero bucket has a negative count", fail);
-        }
-        else
-        {
-            checkIntBuckets(columns.positive_values_int[row], "positive", fail);
-            checkIntBuckets(columns.negative_values_int[row], "negative", fail);
-            checkIntCount(columns.count_int[row], columns.zero_count_int[row],
-                columns.positive_values_int[row], columns.negative_values_int[row], columns.sum[row], fail);
+            const auto positive = ColumnsView::intPairsAt(columns.positive_int, row);
+            const auto negative = ColumnsView::intPairsAt(columns.negative_int, row);
+            const Int64 count = columns.count_int.getData()[row];
+            const Int64 zero_count = columns.zero_count_int.getData()[row];
+            checkFlavour(positive, negative, count, zero_count, schema[row], zero_threshold[row], custom_values, max_buckets, fail);
+            checkIntegerCountMatchesBuckets(count, zero_count, positive, negative, sum[row], fail);
         }
     }
 }

@@ -1,0 +1,7 @@
+-- 3 buckets over both sides pass, 4 are rejected, for either flavour
+-- a rejected insert writes nothing, the accepted histograms are stored
+2
+-- the limit applies to each histogram sample, not to an insert
+4
+-- 0 means no limit
+10

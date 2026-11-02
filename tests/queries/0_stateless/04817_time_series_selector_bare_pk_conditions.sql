@@ -30,11 +30,10 @@ INSERT INTO FUNCTION timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) (id, me
     (102, 'foo', map('env', 'dev')),
     (201, 'bar', map());
 
--- `sample_kinds` = 1 marks float samples: the selector reads only the data tables of the kinds stored in the time ranges.
-INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) (id, min_time, max_time, sample_kinds) VALUES
-    (101, toDateTime64(0, 3), toDateTime64(1000, 3), 1),
-    (102, toDateTime64(0, 3), toDateTime64(1000, 3), 1),
-    (201, toDateTime64(0, 3), toDateTime64(1000, 3), 1);
+INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) (id, min_time, max_time) VALUES
+    (101, toDateTime64(0, 3), toDateTime64(1000, 3)),
+    (102, toDateTime64(0, 3), toDateTime64(1000, 3)),
+    (201, toDateTime64(0, 3), toDateTime64(1000, 3));
 
 -- All the samples belong to the bucket starting at 0 (the default bucket step is 1 hour).
 INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) (id, samples, bucket, min_time, max_time) VALUES

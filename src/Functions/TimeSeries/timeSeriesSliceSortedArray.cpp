@@ -26,8 +26,9 @@ namespace ErrorCodes
 }
 
 /// Function timeSeriesSliceSortedArray(sorted_samples, min_time, max_time) returns the samples of a time series with timestamps
-/// in the interval [min_time, max_time]. The samples are passed as an array of tuples (timestamp, value) sorted by timestamp,
-/// the function finds the interval in the array with a binary search and returns a slice of the array.
+/// in the interval [min_time, max_time]. The samples are passed as an array of tuples (timestamp, ...) sorted by timestamp: the pairs
+/// (timestamp, value) of the `samples` column or the histogram tuples of the `histograms` column of a TimeSeries samples table.
+/// The function finds the interval in the array with a binary search on the first element and returns a slice of the array.
 class FunctionTimeSeriesSliceSortedArray final : public IFunction
 {
 public:
@@ -46,9 +47,9 @@ public:
         const auto & samples_type = arguments[0].type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(samples_type.get());
         const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
-        if (!tuple_type || (tuple_type->getElements().size() != 2))
+        if (!tuple_type || tuple_type->getElements().empty())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument #1 (sorted_samples) of function {} has wrong type {}, it must be Array(Tuple(timestamp, value))",
+                "Argument #1 (sorted_samples) of function {} has wrong type {}, it must be Array(Tuple(timestamp, ...))",
                 name, samples_type->getName());
 
         const auto & timestamp_type = tuple_type->getElements()[0];
@@ -67,7 +68,8 @@ public:
         }
 
         /// This function can be called with `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp_type, value_type)))`
-        /// as the first argument, in this case it should return `Array(Tuple(timestamp_type, value_type))`.
+        /// (or the `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, ...)` column) as the first argument, in this case it should
+        /// return the array type without the wrapper, e.g. `Array(Tuple(timestamp_type, value_type))`.
         if (tuple_type->hasExplicitNames())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type->getElements(), tuple_type->getElementNames()));
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type->getElements()));
@@ -83,8 +85,8 @@ public:
                 name, arguments[0].column->getName());
 
         const auto * tuples_column = checkAndGetColumn<ColumnTuple>(&samples_column->getData());
-        if (!tuples_column || (tuples_column->tupleSize() != 2))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #1 (sorted_samples) of function {} must be an array of tuples (timestamp, value), got {}",
+        if (!tuples_column || (tuples_column->tupleSize() == 0))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #1 (sorted_samples) of function {} must be an array of tuples (timestamp, ...), got {}",
                 name, arguments[0].column->getName());
 
         const auto & timestamp_type = typeid_cast<const DataTypeTuple &>(*typeid_cast<const DataTypeArray &>(*result_type).getNestedType()).getElement(0);
@@ -235,9 +237,10 @@ REGISTER_FUNCTION(TimeSeriesSliceSortedArray)
     FunctionDocumentation::Description description = R"(
 Returns the samples of a time series with timestamps in the interval `[min_time, max_time]`.
 
-The samples are passed as an array of tuples `(timestamp, value)` sorted by timestamp, for example a value of the
-`samples` column of the samples table of a `TimeSeries` table, or a result of the aggregate function `timeSeriesGroupArray`.
-The function finds the requested interval in the array with a binary search, so the array must be sorted by timestamp.
+The samples are passed as an array of tuples sorted by timestamp whose first element is the timestamp: for example the `(timestamp, value)`
+pairs of the `samples` column of the samples table of a `TimeSeries` table or a result of the aggregate function `timeSeriesGroupArray`,
+or the histogram tuples of the `histograms` column of the samples table. The function finds the requested interval in the array with
+a binary search on the timestamps, so the array must be sorted by timestamp.
 
 If the array is not sorted, the result is not specified: the function returns some part of the array, which can
 include samples outside of the interval and miss samples inside of it. The function doesn't check that the array is sorted.
@@ -250,11 +253,11 @@ This function is in private preview, enable it by setting `enable_time_series_ta
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesSliceSortedArray(sorted_samples, min_time, max_time)";
     FunctionDocumentation::Arguments arguments = {
-        {"sorted_samples", "Samples of a time series sorted by timestamp. The result is not specified if the array is not sorted.", {"Array(Tuple(DateTime64, Float*))", "Array(Tuple(DateTime, Float*))", "Array(Tuple(UInt32, Float*))"}},
+        {"sorted_samples", "Samples of a time series sorted by timestamp: tuples whose first element is the timestamp, e.g. `(timestamp, value)` pairs or the histogram tuples of the `histograms` column. The result is not specified if the array is not sorted.", {"Array(Tuple(DateTime64, ...))", "Array(Tuple(DateTime, ...))", "Array(Tuple(UInt32, ...))"}},
         {"min_time", "Start of the interval, inclusive. It is converted to the type of the timestamps.", {"DateTime64", "DateTime", "UInt32", "(U)Int*", "Float*", "Decimal*"}},
         {"max_time", "End of the interval, inclusive. It is converted to the type of the timestamps.", {"DateTime64", "DateTime", "UInt32", "(U)Int*", "Float*", "Decimal*"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the samples with timestamps in the interval `[min_time, max_time]`, in the same order as in `sorted_samples`.", {"Array(Tuple(T1, T2))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the samples with timestamps in the interval `[min_time, max_time]`, in the same order as in `sorted_samples`.", {"Array(Tuple(T1, ...))"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

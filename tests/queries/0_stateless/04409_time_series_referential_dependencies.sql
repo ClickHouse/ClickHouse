@@ -29,8 +29,7 @@ CREATE TABLE time_ranges_table
 (
     id UInt64,
     min_time DateTime64(3),
-    max_time DateTime64(3),
-    sample_kinds UInt8
+    max_time DateTime64(3)
 ) ENGINE = MergeTree() ORDER BY id;
 
 CREATE TABLE metrics_table

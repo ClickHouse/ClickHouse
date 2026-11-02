@@ -7,6 +7,8 @@
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+-- The histogram tuple type is printed in one line.
+SET print_pretty_type_names = 0;
 
 DROP TABLE IF EXISTS ts_buckets;
 DROP TABLE IF EXISTS ts_rows;

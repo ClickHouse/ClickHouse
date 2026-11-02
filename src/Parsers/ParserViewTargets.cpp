@@ -148,12 +148,6 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 }
 
-                case ViewTarget::Histograms:
-                {
-                    parsed |= tryParseViewTarget(kind, Keyword::HISTOGRAMS, pos, expected, res);
-                    break;
-                }
-
                 case ViewTarget::To:
                 case ViewTarget::Inner:
                 {

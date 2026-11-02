@@ -14,8 +14,12 @@ from .prometheus_test_utils import (
 )
 
 
-# Native histograms over the remote-write protocol: the requests are hand-crafted, so every corner of the protocol can be
-# exercised, including what a real Prometheus never sends. See test_native_histograms_prometheus.py for a real sender.
+# Native histograms over the remote-write and remote-read protocols: the requests are hand-crafted, so every corner of the protocol
+# can be exercised, including what a real Prometheus never sends. See test_native_histograms_prometheus.py for a real sender.
+# A TimeSeries table of the current version stores the histograms in the `histograms` column of its samples table, in the same
+# rows as the float samples (one row per series and bucket); the stored rows are checked through the inner tables, so the checks
+# of the writes don't depend on the outer read path. Remote read returns the stored histograms as Prometheus messages (the tests
+# at the end of the file).
 
 cluster = ClickHouseCluster(__file__)
 
@@ -30,14 +34,29 @@ STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 TIMESTAMP_MS = 1724112000000  # 2024-08-20 00:00:00 UTC
 
+# The stored shape of a histogram sample: the elements of the `histograms` tuple after `timestamp` (see TimeSeriesHistogramsColumns).
 HISTOGRAMS_QUERY = """
-    SELECT toUnixTimestamp64Milli(timestamp), is_float, counter_reset_hint, schema, zero_threshold, sum,
-           positive_spans, negative_spans, custom_values,
-           count_int, zero_count_int, positive_values_int, negative_values_int,
-           count_float, zero_count_float, positive_values_float, negative_values_float
-    FROM timeSeriesHistograms(prometheus)
-    {where}
-    ORDER BY timestamp
+    SELECT toUnixTimestamp64Milli(h.timestamp), h.flags, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
+           h.count_int, h.zero_count_int, h.positive_int, h.negative_int,
+           h.count_float, h.zero_count_float, h.positive_float, h.negative_float, h.custom_values
+    FROM timeSeriesSamples(prometheus) ARRAY JOIN histograms AS h
+    ORDER BY h.timestamp
+    FORMAT TSV
+"""
+
+# The rows of the samples table joined with the series: the number of samples of each kind in the row.
+ROWS_QUERY = """
+    SELECT t.metric_name, length(s.samples), length(s.histograms)
+    FROM timeSeriesSamples(prometheus) AS s JOIN timeSeriesTags(prometheus) AS t ON s.id = t.id
+    ORDER BY t.metric_name
+    FORMAT TSV
+"""
+
+TIME_RANGES_QUERY = """
+    SELECT t.metric_name, toUnixTimestamp64Milli(min(r.min_time)), toUnixTimestamp64Milli(max(r.max_time))
+    FROM timeSeriesTimeRanges(prometheus) AS r JOIN timeSeriesTags(prometheus) AS t ON r.id = t.id
+    GROUP BY t.metric_name
+    ORDER BY t.metric_name
     FORMAT TSV
 """
 
@@ -82,27 +101,16 @@ def send(write_request, path="/write"):
     send_protobuf_to_remote_write(node.ip_address, 9093, path, write_request)
 
 
-def read_histograms(where=""):
-    return node.query(HISTOGRAMS_QUERY.format(where=where))
+def read_histograms():
+    return node.query(HISTOGRAMS_QUERY)
 
 
-def check_histogram_round_trip(histogram, expected_row):
-    """Sends one histogram sample of one time series and checks everything it must leave behind: the stored row
-    (`expected_row` is its TSV form, see HISTOGRAMS_QUERY), the time series it is attached to, the time range of the series,
-    and the profile events."""
-    events_before = get_events()
-    send(make_write_request(({"__name__": "hist", "job": "api"}, [histogram])))
+def count_histograms():
+    return int(node.query("SELECT sum(length(histograms)) FROM timeSeriesSamples(prometheus)"))
 
-    assert read_histograms() == expected_row + "\n"
-    assert node.query("SELECT metric_name, tags['job'], length(histograms.timestamp), length(samples) FROM prometheus") == "hist\tapi\t1\t0\n"
-    assert node.query(
-        "SELECT t.metric_name, toUnixTimestamp64Milli(min(r.min_time)), toUnixTimestamp64Milli(max(r.max_time)) "
-        "FROM timeSeriesTimeRanges(prometheus) AS r INNER JOIN timeSeriesTags(prometheus) AS t ON r.id = t.id GROUP BY t.metric_name"
-    ) == f"hist\t{histogram.timestamp}\t{histogram.timestamp}\n"
 
-    events_after = get_events()
-    assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
-    assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"]
+def count_samples():
+    return int(node.query("SELECT sum(length(samples)) FROM timeSeriesSamples(prometheus)"))
 
 
 def get_event(name):
@@ -113,9 +121,26 @@ def get_events():
     return {name: get_event(name) for name in ("PrometheusRemoteWriteHistograms", "PrometheusRemoteWriteDroppedHistograms")}
 
 
+def check_histogram_round_trip(histogram, expected_row):
+    """Sends one histogram sample of one time series and checks everything it must leave behind: the stored element
+    (`expected_row` is its TSV form, see HISTOGRAMS_QUERY), the row of the samples table it is in, the time range of the series,
+    and the profile events."""
+    events_before = get_events()
+    send(make_write_request(({"__name__": "hist", "job": "api"}, [histogram])))
+
+    assert read_histograms() == expected_row + "\n"
+    assert node.query(ROWS_QUERY) == "hist\t0\t1\n"
+    assert node.query(TIME_RANGES_QUERY) == f"hist\t{histogram.timestamp}\t{histogram.timestamp}\n"
+
+    events_after = get_events()
+    assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
+    assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"]
+
+
 def test_integer_histogram():
-    # Two positive spans covering the bucket indexes -2, -1 and 1, one negative span covering the index 0.
-    # The deltas [3, -1, 1] decode to the absolute counts [3, 2, 3]; with the zero bucket they sum up to `count_int`.
+    # Two positive spans covering the bucket indexes -2, -1 and 1, one negative span covering the index 0 with an empty bucket.
+    # The deltas [3, -1, 1] decode to the absolute counts [3, 2, 3]; with the zero bucket they sum up to `count_int`. The spans
+    # become pairs of the bucket index and the count, the empty bucket included; the float flavour stays at zeros and empty arrays.
     histogram = types_pb2.Histogram(
         count_int=10,
         sum=12.5,
@@ -130,12 +155,12 @@ def test_integer_histogram():
         timestamp=TIMESTAMP_MS,
     )
     check_histogram_round_trip(
-        histogram, f"{TIMESTAMP_MS}\tfalse\t2\t3\t0.001\t12.5\t[(-2,2),(1,1)]\t[(0,1)]\t[]\t10\t2\t[3,2,3]\t[0]\t0\t0\t[]\t[]"
+        histogram, f"{TIMESTAMP_MS}\t0\t2\t3\t0.001\t12.5\t10\t2\t[(-2,3),(-1,2),(1,3)]\t[(0,0)]\t0\t0\t[]\t[]\t[]"
     )
 
 
 def test_float_histogram():
-    # Float bucket counts are copied as sent; the integer columns stay at their defaults.
+    # Float bucket counts are copied as sent into the float flavour (bit 0 of `flags`); the integer flavour stays at its defaults.
     histogram = types_pb2.Histogram(
         count_float=5.5,
         sum=3.25,
@@ -147,7 +172,7 @@ def test_float_histogram():
         reset_hint=types_pb2.Histogram.ResetHint.GAUGE,
         timestamp=TIMESTAMP_MS,
     )
-    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\ttrue\t3\t0\t0\t3.25\t[(0,2)]\t[]\t[]\t0\t0\t[]\t[]\t5.5\t0.5\t[2.5,2.5]\t[]")
+    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t1\t3\t0\t0\t3.25\t0\t0\t[]\t[]\t5.5\t0.5\t[(0,2.5),(1,2.5)]\t[]\t[]")
 
 
 def test_custom_buckets_histogram():
@@ -162,50 +187,45 @@ def test_custom_buckets_histogram():
         positive_deltas=[2, 1, 1],
         timestamp=TIMESTAMP_MS,
     )
-    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\tfalse\t0\t-53\t0\t4.2\t[(0,3)]\t[]\t[0.1,0.5,1]\t9\t0\t[2,3,4]\t[]\t0\t0\t[]\t[]")
+    check_histogram_round_trip(histogram, f"{TIMESTAMP_MS}\t0\t0\t-53\t0\t4.2\t9\t0\t[(0,2),(1,3),(2,4)]\t[]\t0\t0\t[]\t[]\t[0.1,0.5,1]")
 
 
 def test_stale_marker_and_unset_count():
     # A stale marker is a histogram whose `sum` is the stale NaN; Prometheus sends nothing else. The NaN payload must survive
     # bit-exactly, that is how staleness is detected. A histogram without a `count` arm is an integer histogram with count 0.
     stale = types_pb2.Histogram(sum=STALE_NAN, timestamp=TIMESTAMP_MS)
-    check_histogram_round_trip(stale, f"{TIMESTAMP_MS}\tfalse\t0\t0\t0\tnan\t[]\t[]\t[]\t0\t0\t[]\t[]\t0\t0\t[]\t[]")
-    assert node.query("SELECT hex(reinterpretAsUInt64(sum)) FROM timeSeriesHistograms(prometheus)") == "7FF0000000000002\n"
+    check_histogram_round_trip(stale, f"{TIMESTAMP_MS}\t0\t0\t0\t0\tnan\t0\t0\t[]\t[]\t0\t0\t[]\t[]\t[]")
+    assert node.query("SELECT hex(reinterpretAsUInt64(h.sum)) FROM timeSeriesSamples(prometheus) ARRAY JOIN histograms AS h") == "7FF0000000000002\n"
 
 
 def test_samples_and_histograms_together():
     histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS + 2000)
     send(
         make_write_request(
-            # A series with both kinds of samples: the time range of the series covers both.
+            # A series with both kinds of samples within one bucket: one row with both arrays, the time range covers both.
             ({"__name__": "mixed"}, [histogram], {TIMESTAMP_MS: 1.0, TIMESTAMP_MS + 1000: 2.0}),
-            # A float-only series in the same request gets an empty histograms group.
+            # A float-only series in the same request gets an empty `histograms` array.
             ({"__name__": "float_only"}, [], {TIMESTAMP_MS: 3.0}),
-            # A histogram-only series still gets its tags row.
+            # A histogram-only series gets its tags row, its time range and a row with an empty `samples` array.
             ({"__name__": "hist_only"}, [histogram]),
         )
     )
 
-    assert node.query("SELECT metric_name, length(samples), length(histograms.timestamp) FROM prometheus ORDER BY metric_name") == (
-        "float_only\t1\t0\n"
-        "hist_only\t0\t1\n"
-        "mixed\t2\t1\n"
-    )
-    assert node.query(
-        "SELECT t.metric_name, toUnixTimestamp64Milli(min(r.min_time)), toUnixTimestamp64Milli(max(r.max_time)) "
-        "FROM timeSeriesTimeRanges(prometheus) AS r INNER JOIN timeSeriesTags(prometheus) AS t ON r.id = t.id "
-        "GROUP BY t.metric_name ORDER BY t.metric_name"
-    ) == (
+    assert node.query(ROWS_QUERY) == "float_only\t1\t0\nhist_only\t0\t1\nmixed\t2\t1\n"
+    assert node.query(TIME_RANGES_QUERY) == (
         f"float_only\t{TIMESTAMP_MS}\t{TIMESTAMP_MS}\n"
         f"hist_only\t{TIMESTAMP_MS + 2000}\t{TIMESTAMP_MS + 2000}\n"
         f"mixed\t{TIMESTAMP_MS}\t{TIMESTAMP_MS + 2000}\n"
     )
     assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "3\n"
-    assert node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == "2\n"
+    assert node.query(
+        "SELECT toUnixTimestamp64Milli(s.min_time), toUnixTimestamp64Milli(s.max_time) "
+        "FROM timeSeriesSamples(prometheus) AS s JOIN timeSeriesTags(prometheus) AS t ON s.id = t.id WHERE t.metric_name = 'mixed'"
+    ) == f"{TIMESTAMP_MS}\t{TIMESTAMP_MS + 2000}\n"
 
 
 def test_integer_counts_are_exact():
-    # Integer counts are stored as UInt64, so counts which a Float64 can't represent read back exactly.
+    # Integer counts are stored as Int64, so counts which a Float64 can't represent read back exactly.
     bucket = (1 << 53) + 1
     zero_count = (1 << 60) + 3
     histogram = types_pb2.Histogram(
@@ -218,9 +238,9 @@ def test_integer_counts_are_exact():
     )
     send(make_write_request(({"__name__": "big"}, [histogram])))
 
-    assert node.query("SELECT count_int, zero_count_int, positive_values_int FROM timeSeriesHistograms(prometheus)") == (
-        f"{bucket + zero_count}\t{zero_count}\t[{bucket}]\n"
-    )
+    assert node.query(
+        "SELECT h.count_int, h.zero_count_int, h.positive_int FROM timeSeriesSamples(prometheus) ARRAY JOIN histograms AS h"
+    ) == f"{bucket + zero_count}\t{zero_count}\t[(0,{bucket})]\n"
 
 
 def test_async_insert():
@@ -229,8 +249,8 @@ def test_async_insert():
     histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
     send(make_write_request(({"__name__": "async_hist"}, [histogram], {TIMESTAMP_MS: 1.0})), path="/write?async_insert=1")
 
-    assert node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == "1\n"
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
+    assert count_histograms() == 1
+    assert count_samples() == 1
 
 
 def test_request_without_histograms_inserts_the_same_columns():
@@ -271,7 +291,9 @@ def test_many_histograms():
     events_after = get_events()
 
     total = num_series * num_histograms_per_series
-    assert node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == f"{total}\n"
+    assert count_histograms() == total
+    # The histograms of a series are within one bucket: one row per series.
+    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == f"{num_series}\n"
     assert node.query("SELECT count() FROM timeSeriesTags(prometheus)") == f"{num_series}\n"
     assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + total
 
@@ -283,12 +305,12 @@ def expect_rejected(histogram, expected_error):
     assert response.status_code == requests.codes.bad_request, response.text
     assert expected_error in response.text, response.text
     # The whole request is rejected before anything is written, the tags included.
-    for table_function in ("timeSeriesTags", "timeSeriesSamples", "timeSeriesHistograms"):
+    for table_function in ("timeSeriesTags", "timeSeriesTimeRanges", "timeSeriesSamples"):
         assert node.query(f"SELECT count() FROM {table_function}(prometheus)") == "0\n"
 
 
 def test_invalid_histograms_are_rejected():
-    # What the conversion itself rejects: things the columns can't represent.
+    # What the conversion to the columns rejects (see makePrometheusHistogramsBlock): things the columns can't represent.
     expect_rejected(
         types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 2)], positive_deltas=[1, -2], timestamp=TIMESTAMP_MS),
         "positive side: bucket #1 has a negative count -1 after decoding the deltas",
@@ -298,36 +320,31 @@ def test_invalid_histograms_are_rejected():
         "negative side: the bucket counts overflow Int64 while decoding the deltas",
     )
     expect_rejected(
-        types_pb2.Histogram(count_int=1, sum=1, zero_count_float=1, timestamp=TIMESTAMP_MS),
-        "an integer histogram (count_float is not set) has zero_count_float instead of zero_count_int",
+        types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 2)], positive_deltas=[1], timestamp=TIMESTAMP_MS),
+        "positive side: the spans need 2 buckets, but 1 buckets are given",
     )
     expect_rejected(
-        types_pb2.Histogram(count_float=1, sum=1, zero_count_int=1, timestamp=TIMESTAMP_MS),
-        "a float histogram (count_float is set) has zero_count_int instead of zero_count_float",
-    )
-    expect_rejected(
-        types_pb2.Histogram(count_float=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS),
-        "a float histogram (count_float is set) has integer bucket deltas instead of float bucket counts",
-    )
-    expect_rejected(
-        types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_counts=[1], timestamp=TIMESTAMP_MS),
-        "an integer histogram (count_float is not set) has float bucket counts instead of integer bucket deltas",
+        types_pb2.Histogram(
+            count_int=2, sum=1, positive_spans=[span(2147483647, 1), span(1, 1)], positive_deltas=[1, 0], timestamp=TIMESTAMP_MS
+        ),
+        "positive side: the bucket indexes overflow Int32",
     )
     # Values which would wrap into valid ones if they were cast to the column types without a check: -309 into -53, 260 into 4.
     expect_rejected(types_pb2.Histogram(sum=1, schema=-309, timestamp=TIMESTAMP_MS), "schema -309 is out of the range -128..127")
     expect_rejected(types_pb2.Histogram(sum=1, schema=300, timestamp=TIMESTAMP_MS), "schema 300 is out of the range -128..127")
     expect_rejected(types_pb2.Histogram(sum=1, reset_hint=260, timestamp=TIMESTAMP_MS), "reset_hint 260 is out of the range 0..255")
 
-    # What the validation of the sink rejects: the same rules apply to INSERT queries, see 05235_timeseries_histograms_validation.
+    # What the validation of the sink rejects: the same rules apply to INSERT queries, see 05459_timeseries_histograms_validation.
     expect_rejected(types_pb2.Histogram(sum=1, schema=9, timestamp=TIMESTAMP_MS), "schema 9 is invalid")
     expect_rejected(types_pb2.Histogram(sum=1, reset_hint=4, timestamp=TIMESTAMP_MS), "counter_reset_hint 4 is out of the range 0..3")
     expect_rejected(
-        types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 2)], positive_deltas=[1], timestamp=TIMESTAMP_MS),
-        "positive side: the spans need 2 buckets, but 1 buckets are given",
-    )
-    expect_rejected(
         types_pb2.Histogram(count_int=5, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS),
-        "1 observations are found in the buckets, but count_int is 5",
+        "1 observations found in the buckets, but count_int is 5",
+    )
+    # A span after the first one with a negative offset makes the bucket indexes go backwards.
+    expect_rejected(
+        types_pb2.Histogram(count_int=2, sum=1, positive_spans=[span(0, 1), span(-1, 1)], positive_deltas=[1, 0], timestamp=TIMESTAMP_MS),
+        "positive side: the bucket indexes must be strictly increasing",
     )
     expect_rejected(
         types_pb2.Histogram(
@@ -349,34 +366,34 @@ def test_max_buckets_setting():
             ({"__name__": "ok"}, [types_pb2.Histogram(count_int=2, sum=1, positive_spans=[span(0, 2)], positive_deltas=[1, 0], timestamp=TIMESTAMP_MS)])
         )
     )
-    assert node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == "1\n"
+    assert count_histograms() == 1
 
 
-def test_table_without_histograms_drops_them():
-    # A table of a version without the histograms table (see TimeSeriesVersion.h) has none. The histograms of a request
+def test_table_of_an_older_version_drops_histograms():
+    # A table of a version without the `histograms` column (see TimeSeriesVersion.h) can't store them. The histograms of a request
     # are dropped with a warning, the float samples of the same request are written and the request succeeds: rejecting it
     # would lose the samples too.
     node.query("DROP TABLE prometheus SYNC")
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 5")
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 11")
     histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
 
     events_before = get_events()
     send(make_write_request(({"__name__": "old_table"}, [histogram], {TIMESTAMP_MS: 1.0})))
     events_after = get_events()
 
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
+    assert count_samples() == 1
     assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
     assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"] + 1
-    # The message ends with the version which introduced the histograms table; it isn't pinned here because it changes with rebases.
-    assert node.contains_in_log("Dropped 1 native histogram samples: the table has no histograms table because its version 5 is older than ")
+    # The message ends with the version which introduced the column; it isn't pinned here because it changes with rebases.
+    assert node.contains_in_log("Dropped 1 native histogram samples: the table stores no histograms because its version 11 is older than ")
 
 
-def test_table_without_histograms_writes_no_phantom_series():
+def test_table_of_an_older_version_writes_no_phantom_series():
     # A series of the request with histograms only has nothing left to store once they are dropped: it must not become a
     # row of the tags table without any sample, visible through timeSeriesTags and the labels API. The other series of the
     # request are written as usual.
     node.query("DROP TABLE prometheus SYNC")
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 5")
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 11")
     histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
 
     events_before = get_events()
@@ -471,18 +488,21 @@ def test_remote_read_returns_stale_markers_bit_exactly():
 
 def test_remote_read_resolves_conflicting_samples():
     # Prometheus keeps the sample written first and rejects the others. ClickHouse doesn't keep the order of writes, so it
-    # resolves conflicts when reading: identical samples collapse into one, of different histograms the one with the greatest
-    # count wins regardless of the order of writes, and a float sample beats a histogram sample.
-    def histogram(count):
+    # resolves conflicts when reading, the same way whatever the order of the writes (the rule of TimeSeriesDuplicateTimestampRule):
+    # identical samples collapse into one, of different histograms the one with the greatest count wins, with equal counts the one
+    # with the greatest sum, and a float sample beats a histogram sample.
+    def histogram(count, total=1):
         return types_pb2.Histogram(
-            count_int=count, zero_count_int=0, sum=1, positive_spans=[span(0, 1)], positive_deltas=[count], timestamp=TIMESTAMP_MS
+            count_int=count, zero_count_int=0, sum=total, positive_spans=[span(0, 1)], positive_deltas=[count], timestamp=TIMESTAMP_MS
         )
 
     for request in [
         make_write_request(({"__name__": "identical"}, [histogram(3)]), ({"__name__": "smaller_first"}, [histogram(3)]),
-                           ({"__name__": "greater_first"}, [histogram(5)]), ({"__name__": "float_and_histogram"}, [histogram(3)])),
+                           ({"__name__": "greater_first"}, [histogram(5)]), ({"__name__": "float_and_histogram"}, [histogram(3)]),
+                           ({"__name__": "smaller_sum_first"}, [histogram(3, 1.5)]), ({"__name__": "greater_sum_first"}, [histogram(3, 2.5)])),
         make_write_request(({"__name__": "identical"}, [histogram(3)]), ({"__name__": "smaller_first"}, [histogram(5)]),
-                           ({"__name__": "greater_first"}, [histogram(3)]), ({"__name__": "float_and_histogram"}, [], {TIMESTAMP_MS: 7.0})),
+                           ({"__name__": "greater_first"}, [histogram(3)]), ({"__name__": "float_and_histogram"}, [], {TIMESTAMP_MS: 7.0}),
+                           ({"__name__": "smaller_sum_first"}, [histogram(3, 2.5)]), ({"__name__": "greater_sum_first"}, [histogram(3, 1.5)])),
     ]:
         send(request)
 
@@ -490,6 +510,8 @@ def test_remote_read_resolves_conflicting_samples():
     assert list(series[labels_key(__name__="identical")].histograms) == [histogram(3)]
     assert list(series[labels_key(__name__="smaller_first")].histograms) == [histogram(5)]
     assert list(series[labels_key(__name__="greater_first")].histograms) == [histogram(5)]
+    assert list(series[labels_key(__name__="smaller_sum_first")].histograms) == [histogram(3, 2.5)]
+    assert list(series[labels_key(__name__="greater_sum_first")].histograms) == [histogram(3, 2.5)]
 
     float_and_histogram = series[labels_key(__name__="float_and_histogram")]
     assert [(sample.timestamp, sample.value) for sample in float_and_histogram.samples] == [(TIMESTAMP_MS, 7.0)]

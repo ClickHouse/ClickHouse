@@ -13,7 +13,6 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsSettings.h>
 
 #include <gtest/gtest.h>
 
@@ -185,13 +184,36 @@ namespace
     const String DEFAULT_ID_TYPE = "Tuple(UInt64, LowCardinality(UUID))";
     const String DEFAULT_ID_GENERATOR = "tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))";
     const String DEFAULT_SAMPLES_TYPE = "SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))";
+
+    /// The type of the generated `histograms` column of the samples tables for the specified type of `timestamp`.
+    String histogramsInnerType(const String & timestamp_type)
+    {
+        return "SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp " + timestamp_type
+            + ", flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, "
+            "count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), "
+            "negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), "
+            "negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64))))";
+    }
+
+    const String DEFAULT_HISTOGRAMS_TYPE = histogramsInnerType("DateTime64(3)");
+    /// The codecs declared for the subcolumns of the generated `histograms` column, after the codecs of `samples`.
+    const String DEFAULT_HISTOGRAMS_CODECS = ", CODEC `histograms.timestamp` (Delta, T64, ZSTD(3)), CODEC `histograms.flags` (ZSTD(3)), "
+        "CODEC `histograms.counter_reset_hint` (ZSTD(3)), CODEC `histograms.schema` (ZSTD(3)), CODEC `histograms.zero_threshold` (ZSTD(3)), "
+        "CODEC `histograms.sum` (ZSTD(3)), CODEC `histograms.count_int` (T64, ZSTD(3)), CODEC `histograms.zero_count_int` (T64, ZSTD(3)), "
+        "CODEC `histograms.count_float` (ZSTD(3)), CODEC `histograms.zero_count_float` (ZSTD(3)), "
+        "CODEC `histograms.positive_int.index` (Delta, ZSTD(3)), CODEC `histograms.positive_int.count` (T64, ZSTD(3)), "
+        "CODEC `histograms.negative_int.index` (Delta, ZSTD(3)), CODEC `histograms.negative_int.count` (T64, ZSTD(3)), "
+        "CODEC `histograms.positive_float.index` (Delta, ZSTD(3)), CODEC `histograms.positive_float.count` (ZSTD(3)), "
+        "CODEC `histograms.negative_float.index` (Delta, ZSTD(3)), CODEC `histograms.negative_float.count` (ZSTD(3)), "
+        "CODEC `histograms.custom_values` (ZSTD(3))";
     /// The codecs declared for the elements of the generated `samples` column; the declarations follow the columns in the column list.
     const String DEFAULT_SAMPLES_CODECS = ", CODEC `samples.timestamp` (Delta, T64, ZSTD(3)), CODEC `samples.value` (ALP, ZSTD(3))";
     /// The codec of the generated `bucket`, `min_time` and `max_time` columns: the same as for the timestamps.
     const String DEFAULT_TIMESTAMP_CODEC = " CODEC(Delta, T64, ZSTD(3))";
-    const String DEFAULT_SAMPLES_COLUMNS = "`id` " + DEFAULT_ID_TYPE + ", `samples` " + DEFAULT_SAMPLES_TYPE + ", `bucket` DateTime64(3)" + DEFAULT_TIMESTAMP_CODEC
+    const String DEFAULT_SAMPLES_COLUMNS = "`id` " + DEFAULT_ID_TYPE + ", `samples` " + DEFAULT_SAMPLES_TYPE + ", `histograms` " + DEFAULT_HISTOGRAMS_TYPE
+        + ", `bucket` DateTime64(3)" + DEFAULT_TIMESTAMP_CODEC
         + ", `min_time` SimpleAggregateFunction(min, DateTime64(3))" + DEFAULT_TIMESTAMP_CODEC
-        + ", `max_time` SimpleAggregateFunction(max, DateTime64(3))" + DEFAULT_TIMESTAMP_CODEC + DEFAULT_SAMPLES_CODECS;
+        + ", `max_time` SimpleAggregateFunction(max, DateTime64(3))" + DEFAULT_TIMESTAMP_CODEC + DEFAULT_SAMPLES_CODECS + DEFAULT_HISTOGRAMS_CODECS;
     const String DEFAULT_SAMPLES_ENGINE = "AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC')) ORDER BY (id, bucket) "
         "SETTINGS index_granularity = 256, index_granularity_bytes = 524288";
     const String DEFAULT_RECENT_SAMPLES_ENGINE = "AggregatingMergeTree PARTITION BY toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5)) ORDER BY (id, bucket) "
@@ -631,10 +653,10 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, OuterColumns)
     /// The declared element types of `samples` propagate to the generated samples columns.
     auto definition = normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries");
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(UInt32, Float32))")) << definition;
-    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))), `bucket` UInt32")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))), `histograms` " + histogramsInnerType("UInt32") + ", `bucket` UInt32")) << definition;
 
     /// The outer columns are an IO interface which stores no data, so the declared ones are replaced with the canonical list.
-    definition = normalizeNewTable("CREATE TABLE db.ts (metric_name Int32, tags String, `histograms.is_float` Array(UInt64)) ENGINE = TimeSeries");
+    definition = normalizeNewTable("CREATE TABLE db.ts (metric_name Int32, tags String, `histograms.count_int` Array(UInt64)) ENGINE = TimeSeries");
     EXPECT_EQ(extractOuterColumns(definition),
         "`metric_name` String, `tags` Map(String, String), `samples` Array(Tuple(DateTime64(3), Float64)), "
         + histogramsOuterColumns("DateTime64(3)") + ", "
@@ -670,7 +692,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesOuterColumnNameDependsOnVersion
     /// of the version and keeps the declared type.
     definition = normalizeNewTable("CREATE TABLE db.ts (time_series Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries");
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(UInt32, Float32))")) << definition;
-    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))), `bucket` UInt32")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))), `histograms` " + histogramsInnerType("UInt32") + ", `bucket` UInt32")) << definition;
 
     definition = normalizeNewTable("CREATE TABLE db.ts (samples Array(Tuple(UInt32, Float32))) ENGINE = TimeSeries SETTINGS version = 2");
     EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(UInt32, Float32))")) << definition;
@@ -779,41 +801,44 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 }
 
 
-TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsTargetIsAbsentInEarlierVersions)
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsAreAbsentInEarlierVersions)
 {
-    for (UInt64 version = TimeSeriesVersion::MIN_SUPPORTED; version < TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET; ++version)
+    /// Neither the `histograms` column of the samples tables nor the `histograms.*` outer columns.
+    for (UInt64 version = TimeSeriesVersion::MIN_SUPPORTED; version < TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS; ++version)
     {
         auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS " + versionSetting(version));
-        EXPECT_FALSE(definition.contains("HISTOGRAMS")) << definition;
-        EXPECT_FALSE(definition.contains("`histograms.")) << definition;
+        EXPECT_FALSE(definition.contains("histograms")) << definition;
         EXPECT_EQ(normalizeExistingTable(definition), definition);
     }
 }
 
 
-TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsSettingsRequireHistogramsTarget)
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsSettingsRequireVersion)
 {
-    for (const auto & setting_name : TimeSeriesHistogramsSettings::getNames())
+    EXPECT_EQ(getExceptionCode([]
     {
-        EXPECT_EQ(getExceptionCode([&]
-        {
-            normalizeNewTable(fmt::format("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS {} = 4096, {}",
-                setting_name, versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1)));
-        }), ErrorCodes::INVALID_SETTING_VALUE) << setting_name;
-    }
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_max_buckets = 4096, "
+            + versionSetting(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS - 1));
+    }), ErrorCodes::INVALID_SETTING_VALUE);
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS histograms_max_buckets = 4096").contains("histograms_max_buckets = 4096"));
 }
 
 
-TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPinnedToEarlierVersionDropsHistogramsTarget)
+TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsPinnedToEarlierVersionDropsHistograms)
 {
-    const String src = normalizeNewTable(
-        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_index_granularity = 4096, histograms_max_buckets = 1000");
+    /// A copy pinned to a version without histograms drops the `histograms` column with the codecs declared for its elements,
+    /// the `histograms.*` outer columns and the settings of the histograms.
+    const String src = normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS histograms_max_buckets = 1000");
     auto definition = normalizeNewTableAs(
-        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET - 1), src);
-    EXPECT_FALSE(definition.contains("HISTOGRAMS")) << definition;
-    EXPECT_FALSE(definition.contains("`histograms.")) << definition;
-    for (const auto & setting_name : TimeSeriesHistogramsSettings::getNames())
-        EXPECT_FALSE(definition.contains(setting_name)) << definition;
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS - 1), src);
+    EXPECT_FALSE(definition.contains("histograms")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` " + DEFAULT_SAMPLES_TYPE + ", `bucket` DateTime64(3)")) << definition;
+
+    /// A copy of a table of version 11 gets the column: it's generated for the version of the copy.
+    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS " + versionSetting(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS - 1)));
+    EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
+    EXPECT_TRUE(definition.contains(histogramsOuterColumns("DateTime64(3)"))) << definition;
 }
 
 
@@ -1264,8 +1289,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, BucketedSamples)
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 10, samples_index_granularity = 65536 SAMPLES INNER COLUMNS (extra UInt8)"));
     EXPECT_TRUE(definition.contains(latest_version_setting)) << definition;
     EXPECT_TRUE(definition.contains("samples_bucket_step_seconds = 3600")) << definition;
-    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` " + DEFAULT_SAMPLES_TYPE + ", `bucket` DateTime64(3)")) << definition;
-    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains(", `extra` UInt8" + DEFAULT_SAMPLES_CODECS)) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` " + DEFAULT_SAMPLES_TYPE + ", `histograms` " + DEFAULT_HISTOGRAMS_TYPE + ", `bucket` DateTime64(3)")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains(", `extra` UInt8" + DEFAULT_SAMPLES_CODECS + DEFAULT_HISTOGRAMS_CODECS)) << definition;
     EXPECT_FALSE(extractInnerColumns(definition, "SAMPLES").contains("`timestamp`")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"),
@@ -1283,7 +1308,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesSubcolumnCodecs)
 
     /// A declared `samples` column keeps its own codec and gets no codecs for its elements; the recent samples table is generated as usual.
     definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES INNER COLUMNS (samples " + DEFAULT_SAMPLES_TYPE + " CODEC(ZSTD(5)))");
-    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` " + DEFAULT_SAMPLES_TYPE + " CODEC(ZSTD(5)), `bucket` DateTime64(3)")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains("`samples` " + DEFAULT_SAMPLES_TYPE + " CODEC(ZSTD(5)), `histograms` " + DEFAULT_HISTOGRAMS_TYPE + ", `bucket` DateTime64(3)")) << definition;
     EXPECT_FALSE(extractInnerColumns(definition, "SAMPLES").contains("CODEC `samples")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
 
@@ -1292,13 +1317,13 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesSubcolumnCodecs)
     const String src = normalizeNewTable(
         "CREATE TABLE db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (samples " + DEFAULT_SAMPLES_TYPE + ", "
         "CODEC samples.timestamp (DoubleDelta, ZSTD(1)), CODEC samples.value (Gorilla, ZSTD(1)))");
-    EXPECT_TRUE(extractInnerColumns(src, "SAMPLES").ends_with(declared_codecs)) << src;
+    EXPECT_TRUE(extractInnerColumns(src, "SAMPLES").contains(declared_codecs)) << src;
     EXPECT_FALSE(extractInnerColumns(src, "SAMPLES").contains(DEFAULT_SAMPLES_CODECS)) << src;
 
     /// A copy keeps the declared codecs of the source, and the generated codecs are generated again without duplicates.
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", src);
     const String copied_samples_columns = extractInnerColumns(definition, "SAMPLES");
-    EXPECT_TRUE(copied_samples_columns.ends_with(declared_codecs)) << definition;
+    EXPECT_TRUE(copied_samples_columns.contains(declared_codecs)) << definition;
     EXPECT_EQ(copied_samples_columns.find("CODEC `samples.timestamp`"), copied_samples_columns.rfind("CODEC `samples.timestamp`")) << definition;
 
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries"));
@@ -1307,7 +1332,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesSubcolumnCodecs)
     /// A codec declared for the `samples` column itself by a `CODEC samples (...)` entry (the same as an inline codec) is kept by a copy too.
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (samples " + DEFAULT_SAMPLES_TYPE + ", CODEC samples (ZSTD(5)))"));
-    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").ends_with(", CODEC `samples` (ZSTD(5))")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains(", CODEC `samples` (ZSTD(5))")) << definition;
     EXPECT_FALSE(extractInnerColumns(definition, "SAMPLES").contains("CODEC `samples.")) << definition;
 }
 

@@ -17,7 +17,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
-#include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -210,7 +209,7 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
 
     if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
     {
-        for (auto target_kind : getTimeSeriesTargetKinds())
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
         {
             if (!time_series->isInnerTable(target_kind))
                 continue;

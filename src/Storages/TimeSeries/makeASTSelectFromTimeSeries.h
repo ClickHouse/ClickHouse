@@ -13,9 +13,9 @@ struct SelectQueryInfo;
 struct TimeSeriesSettings;
 
 /// Builds an internal `SELECT` query that produces the requested outer columns of a TimeSeries table
-/// by reading from its target tables "tags", "samples", "histograms", "metric families". Only the target tables required by
-/// `requested_columns` are read (the `histograms.*` columns come from the "histograms" table, and only the requested ones
-/// are aggregated); when none of them requires another table (e.g. for `SELECT count()`
+/// by reading from its target tables "tags", "samples" (the column `samples` and, for a table storing native histogram
+/// samples, the `histograms.*` columns), "metric families". Only the target tables required by
+/// `requested_columns` are read; when none of them requires another table (e.g. for `SELECT count()`
 /// the planner requests just the smallest column, `metric_name`), the "tags" table is read, so the
 /// count equals the number of series.
 ///

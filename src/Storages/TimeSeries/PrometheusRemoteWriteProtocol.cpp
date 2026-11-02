@@ -22,10 +22,10 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/makePrometheusHistogramsBlock.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
@@ -236,8 +236,8 @@ Block makeBlock(
 
 /// The time series of a request to write, one row each: those with a sample the table stores. A series without one would
 /// get a row of the "tags" table only - a phantom series discoverable through `timeSeriesTags` and the labels API with
-/// nothing to read. That is a series with histograms only when the table has no histograms table (see
-/// `dropPrometheusHistograms`), or a series sent without any sample.
+/// nothing to read. That is a series with histograms only when the table stores no histograms (a version before
+/// `TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS`, see `dropPrometheusHistograms`), or a series sent without any sample.
 std::vector<const prometheus::TimeSeries *> selectTimeSeriesToWrite(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series, bool store_histograms)
 {
@@ -352,7 +352,7 @@ void PrometheusRemoteWriteProtocol::write(
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto version = time_series_storage->getVersion();
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(version);
-    const bool store_histograms = timeSeriesVersionSupportsHistograms(version);
+    const bool store_histograms = time_series_storage->getStorageSettings()->hasHistogramsInSamples();
     if (!store_histograms)
         dropPrometheusHistograms(time_series, *time_series_storage);
 

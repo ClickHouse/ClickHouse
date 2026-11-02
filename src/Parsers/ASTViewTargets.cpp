@@ -39,7 +39,6 @@ namespace
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
             case ViewTarget::TimeRanges: return Keyword::TIME_RANGES; /// TIME RANGES mydb.mytimeranges
             case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
-            case ViewTarget::Histograms: return Keyword::HISTOGRAMS; /// HISTOGRAMS mydb.myhistograms
         }
         UNREACHABLE();
     }

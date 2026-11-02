@@ -24,8 +24,14 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (samples, metric_name, tags, histograms.*, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, Histograms, MetricFamilies).
+/// Transforms outer columns (samples, histograms.*, metric_name, tags, metric_family, type, unit, help)
+/// into blocks for the target tables (Tags, TimeRanges, Samples, RecentSamples, MetricFamilies).
+/// For a table with buckets of samples (see `TimeSeriesSettings::hasBucketedSamples`) the samples of a series are sorted,
+/// deduplicated and split into time buckets, each bucket makes a row of the samples tables with the columns
+/// `id`, `samples`, `bucket`, `min_time`, `max_time`; a table of an earlier version gets a row per sample (`id`, `timestamp`, `value`).
+/// A table storing histogram samples (see `TimeSeriesSettings::hasHistogramsInSamples`) takes them from the outer columns
+/// `histograms.*`, sorted and split into the same buckets: a row holds the float samples and the histogram samples of one series
+/// within one bucket in `samples` and `histograms` (either array may be empty), `min_time` and `max_time` cover both.
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -81,22 +87,16 @@ private:
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
-    bool insert_histograms = false;
     bool insert_metric_families = false;
     bool async_insert = false;
 
+    /// Whether the samples tables store histogram samples (the table has the `histograms.*` outer columns),
+    /// and whether the INSERT writes them.
+    bool has_histograms_column = false;
+    bool insert_histograms = false;
+
     /// Source header for the tags pipeline WITHOUT the `id` column.
     Block tags_header_before_id;
-
-    /// Source header for the samples and the recent samples pipelines: `id`, `timestamp`, `value`.
-    Block samples_header;
-
-    /// Source header for the histograms pipeline: `id`, then the `histograms.*` outer columns under the names of the
-    /// inner table (`timestamp`, `is_float`, ...) with the types of their elements. Empty unless `insert_histograms` is set.
-    Block histograms_header;
-
-    /// The value of the `histograms_max_buckets` setting.
-    UInt64 histograms_max_buckets = 0;
 
     /// Type of the `id` column in the tags target table.
     DataTypePtr id_type;
@@ -119,11 +119,15 @@ private:
     Decimal64 samples_bucket_step{0};
     std::optional<Decimal64> recent_samples_bucket_step;
 
+    /// The type of the `histograms` column of the samples blocks (see `TimeSeriesHistogramsColumns::makeHistogramsArrayType`) and
+    /// the `histograms_max_buckets` setting. Set when `has_histograms_column` is set; only the type is used when `insert_histograms` is not.
+    DataTypePtr histograms_array_type;
+    UInt64 histograms_max_buckets = 0;
+
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> time_ranges_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
-    std::unique_ptr<TargetPipeline> histograms_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.

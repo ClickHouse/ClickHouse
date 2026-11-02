@@ -12,15 +12,14 @@ namespace DB
 class IColumn;
 
 /// Adds the histogram samples of one time series read by remote read to `time_series` as `prompb.Histogram`.
-/// `histograms_column` is `groupArrayIf((timestamp, histogram), notEmpty(histogram))` over `timeSeriesSelector` grouped by
-/// time series, `row` is the time series. Its float samples must already be in `time_series`.
+/// `histograms_column` is `timeSeriesGroupArrayHistograms(histograms)` over `timeSeriesSelector` grouped by time series (an array of
+/// histogram tuples sorted by timestamp and deduplicated by timestamp, see TimeSeriesHistogramsColumns), `row` is the time series.
+/// Its float samples must already be in `time_series`, sorted by timestamp.
 ///
-/// Histograms are returned as stored, the inverse of `makePrometheusHistogramsBlock`: `is_float` decides the flavour,
-/// integer bucket counts are encoded as deltas, the rest is copied.
-///
-/// Prometheus keeps the first of conflicting samples at one timestamp, which isn't known here, so: exact duplicates collapse,
-/// a float sample beats a histogram sample (as in Prometheus within one request), and of different histograms the one with
-/// the greatest count wins, then the greatest in the order of the stored columns.
+/// A histogram is returned as it was sent: an integer histogram with `count_int`, `zero_count_int` and the bucket deltas, a float one
+/// with the float fields; the pairs of a side become the spans and the buckets, adjacent indexes making one span. Prometheus keeps the
+/// first of conflicting samples at one timestamp, which isn't known here, so a float sample beats a histogram sample at the same
+/// timestamp (as in Prometheus within one request); histogram duplicates were resolved by the aggregate (the greatest count wins).
 void addPrometheusHistogramsToTimeSeries(
     const IColumn & histograms_column, size_t row, UInt32 timestamp_scale, prometheus::TimeSeries & time_series);
 

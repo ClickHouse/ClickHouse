@@ -54,6 +54,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "minMappedArrays",
         "maxMappedArrays",
         "timeSeriesGroupArray",
+        "timeSeriesGroupArrayHistograms",
     };
 
     // check function

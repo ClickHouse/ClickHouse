@@ -31,9 +31,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsSettings.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -120,6 +121,16 @@ namespace
     {
         const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
         return simple_aggregate_function && (simple_aggregate_function->getFunctionName() == "timeSeriesGroupArray");
+    }
+
+    /// The aggregate function merging the rows of the same series and bucket in the `histograms` column of a samples table.
+    constexpr std::string_view histograms_merge_function_name = "timeSeriesGroupArrayHistograms";
+
+    /// Whether `type` is `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, ...)`.
+    bool isTimeSeriesGroupArrayHistogramsSimpleAggregate(const DataTypePtr & type)
+    {
+        const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+        return simple_aggregate_function && (simple_aggregate_function->getFunctionName() == histograms_merge_function_name);
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -226,6 +237,16 @@ namespace
                         table_id.getNameForLogs(), TimeSeriesColumnNames::Samples, column_type->getName());
                 setOrCheckDataType(timestamp_type, timestamp_src, samples_timestamp_type, "samples inner column `samples`", "timestamp", table_id);
                 setOrCheckDataType(value_type, value_src, samples_value_type, "samples inner column `samples`", "value", table_id);
+            }
+            else if (column_declaration->name == TimeSeriesColumnNames::Histograms)
+            {
+                auto histograms_timestamp_type = TimeSeriesHistogramsColumns::tryGetTimestampType(column_type);
+                if (!histograms_timestamp_type || !isTimeSeriesGroupArrayHistogramsSimpleAggregate(column_type))
+                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                        "{}: Column `{}` must have type SimpleAggregateFunction({}, {}), got {}",
+                        table_id.getNameForLogs(), TimeSeriesColumnNames::Histograms, histograms_merge_function_name,
+                        TimeSeriesHistogramsColumns::makeHistogramsArrayType(std::make_shared<DataTypeDateTime64>(3))->getName(), column_type->getName());
+                setOrCheckDataType(timestamp_type, timestamp_src, histograms_timestamp_type, "samples inner column `histograms`", "timestamp", table_id);
             }
         }
     }
@@ -626,6 +647,25 @@ namespace
         return makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3})));
     }
 
+    /// Parses a codec written as `CODEC(...)`, e.g. `CODEC(ALP, ZSTD(3))`: the form the registry of the histogram elements uses.
+    ASTPtr parseCodec(std::string_view codec)
+    {
+        static constexpr std::string_view prefix = "CODEC";
+        chassert(codec.starts_with(prefix));
+        ParserCodec parser;
+        return parseQuery(parser, String{codec.substr(prefix.size())}, /* max_query_size = */ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+
+    /// The codecs of the generated `histograms` column of a samples table, declared for the subcolumns of its tuples
+    /// (see TimeSeriesHistogramsColumns::getCodecDeclarations), by the name of the subcolumn relative to the column.
+    std::vector<std::pair<String, ASTPtr>> getDefaultHistogramsSubcolumnCodecs()
+    {
+        std::vector<std::pair<String, ASTPtr>> result;
+        for (const auto & declaration : TimeSeriesHistogramsColumns::getCodecDeclarations())
+            result.emplace_back(declaration.subcolumn, parseCodec(declaration.codec));
+        return result;
+    }
+
     /// The value of `index_granularity` of an inner samples table generated for `settings`: the `*_index_granularity` setting if set,
     /// otherwise the default of the setting for a table with buckets of samples (its rows are much bigger than the rows
     /// of the tables of earlier versions, so the default is smaller), or the default of the earlier versions.
@@ -755,13 +795,6 @@ namespace
         if (new_version < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING)
             old_settings.removeSetting("id_type");
 
-        /// The settings of the histograms table aren't copied into a table pinned to a version without that table.
-        if (const auto * value = get_new_value("version"); value && !timeSeriesVersionSupportsHistograms(SettingFieldUInt64{*value}.value))
-        {
-            const auto & names = TimeSeriesHistogramsSettings::getNames();
-            old_settings.removeSettings(Strings{names.begin(), names.end()});
-        }
-
         /// The `id` type and the expression generating identifiers are declared in the inner columns from version
         /// MIN_WITHOUT_ID_SETTINGS (see TimeSeriesVersion.h), so the settings declaring them aren't copied into a table of
         /// that version: the `id` type is still inherited through the resolved types, the expression is generated for it.
@@ -785,6 +818,10 @@ namespace
         if (new_version < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
             old_settings.removeSettings({"samples_bucket_step_seconds", "samples_partition_by", "samples_index_granularity_bytes",
                                          "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes"});
+
+        /// The same for the settings of the histograms, which exist from version MIN_WITH_NATIVE_HISTOGRAMS.
+        if (new_version < TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS)
+            old_settings.removeSetting("histograms_max_buckets");
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
@@ -872,6 +909,10 @@ namespace
                 remove_column(TimeSeriesColumnNames::MinTime);
                 remove_column(TimeSeriesColumnNames::MaxTime);
             }
+
+            /// The `histograms` column exists from the version storing histogram samples (see TimeSeriesVersion.h).
+            if (!new_settings.hasHistogramsInSamples())
+                remove_column(TimeSeriesColumnNames::Histograms);
             return;
         }
 
@@ -995,6 +1036,33 @@ namespace
 
                         return timestamp_codec && value_codec
                             && same_ast(*timestamp_codec, *getDefaultTimestampCodec()) && same_ast(*value_codec, *getDefaultValueCodec());
+                    }
+
+                    /// The generated `histograms` column has no codec of its own either, the codecs are declared for the elements of its
+                    /// tuples: the column is generated if it has no codecs at all or exactly the generated ones.
+                    if (name == TimeSeriesColumnNames::Histograms)
+                    {
+                        if (!settings.hasHistogramsInSamples() || !isTimeSeriesGroupArrayHistogramsSimpleAggregate(type))
+                            return false;
+                        auto histograms_timestamp_type = TimeSeriesHistogramsColumns::tryGetTimestampType(type);
+                        if (!histograms_timestamp_type || !is_timestamp_type(*histograms_timestamp_type))
+                            return false;
+
+                        if (codec || getCodecDeclaration(inner_table_columns, column.name))
+                            return false;
+
+                        const auto default_codecs = getDefaultHistogramsSubcolumnCodecs();
+                        size_t num_declared = 0;
+                        for (const auto & [element_name, default_codec] : default_codecs)
+                        {
+                            ASTPtr declared_codec = getCodecDeclaration(inner_table_columns, column.name + "." + element_name);
+                            if (!declared_codec)
+                                continue;
+                            if (!same_ast(*declared_codec, *default_codec))
+                                return false;
+                            ++num_declared;
+                        }
+                        return (num_declared == 0) || (num_declared == default_codecs.size());
                     }
 
                     /// The generated `bucket`, `min_time` and `max_time` columns have the codec of the timestamps (see `normalizeInnerColumns`).
@@ -1467,6 +1535,18 @@ namespace
                     {
                         add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Timestamp, getDefaultTimestampCodec());
                         add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Value, getDefaultValueCodec());
+                    }
+
+                    /// The native histogram samples of the same series and bucket, sorted by timestamp, in the same row as the float
+                    /// samples (an empty array for a row without histograms). The elements of its tuples get the codecs of the registry.
+                    if (time_series_settings.hasHistogramsInSamples())
+                    {
+                        auto histograms_type = TimeSeriesHistogramsColumns::makeHistogramsArrayType(resolved_types.timestamp_type);
+                        if (add_column_if_missing(TimeSeriesColumnNames::Histograms, makeSimpleAggregate(String{histograms_merge_function_name}, histograms_type)))
+                        {
+                            for (const auto & [element_name, codec] : getDefaultHistogramsSubcolumnCodecs())
+                                add_codec_declaration(String{TimeSeriesColumnNames::Histograms} + "." + element_name, codec);
+                        }
                     }
 
                     /// `bucket` is computed on insertion from the `*_bucket_step_seconds` setting of the table. The three columns get the codec
@@ -2241,6 +2321,27 @@ namespace
                 resolved_types.value_type->getName());
         };
 
+        /// Accepts `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp <timestamp type>, ...)))`
+        /// with the elements of TimeSeriesHistogramsColumns.
+        auto check_column_histograms = [&](std::string_view column_name)
+        {
+            check_column(column_name);
+            const auto * col = target_table_columns.tryGet(String(column_name));
+            auto histograms_timestamp_type = TimeSeriesHistogramsColumns::tryGetTimestampType(col->type);
+            if (isTimeSeriesGroupArrayHistogramsSimpleAggregate(col->type) && histograms_timestamp_type
+                && histograms_timestamp_type->equals(*resolved_types.timestamp_type))
+                return;
+            throw Exception(
+                ErrorCodes::BAD_TYPE_OF_FIELD,
+                "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction({}, {})",
+                table_id.getNameForLogs(),
+                column_name,
+                target_kind,
+                col->type->getName(),
+                histograms_merge_function_name,
+                TimeSeriesHistogramsColumns::makeHistogramsArrayType(resolved_types.timestamp_type)->getName());
+        };
+
         /// Checks that a column of the layout of the other versions is not declared.
         auto check_column_not_exists = [&](std::string_view column_name)
         {
@@ -2289,6 +2390,8 @@ namespace
                 check_column_not_exists(TimeSeriesColumnNames::Value);
 
                 check_column_samples(TimeSeriesColumnNames::Samples);
+                if (time_series_settings.hasHistogramsInSamples())
+                    check_column_histograms(TimeSeriesColumnNames::Histograms);
                 check_column_type(TimeSeriesColumnNames::Bucket, resolved_types.timestamp_type);
                 check_column_bucket_bound(TimeSeriesColumnNames::MinTime, "min");
                 check_column_bucket_bound(TimeSeriesColumnNames::MaxTime, "max");
@@ -2333,15 +2436,6 @@ namespace
                 check_column_is_string(TimeSeriesColumnNames::Type);
                 check_column_is_string(TimeSeriesColumnNames::Unit);
                 check_column_is_string(TimeSeriesColumnNames::Help);
-                break;
-            }
-
-            case ViewTarget::Histograms:
-            {
-                check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
-                check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
-                for (const auto & column : TimeSeriesHistogramsColumns::getAll())
-                    check_column_type(TimeSeriesHistogramsColumns::getName(column), TimeSeriesHistogramsColumns::getDataType(column));
                 break;
             }
 
@@ -2540,8 +2634,8 @@ namespace
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type})));
 
         /// The `histograms` group is generated in its flattened form regardless of the `flatten_nested` setting,
-        /// so the definition doesn't depend on a query-level setting.
-        if (timeSeriesVersionSupportsHistograms(version))
+        /// so the definition doesn't depend on a query-level setting (see TimeSeriesHistogramsColumns).
+        if (version >= TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS)
         {
             const auto timestamp_column = TimeSeriesHistogramsColumns::getOuterTimestampColumn(timestamp_type);
             add_column(timestamp_column.name, timestamp_column.type);

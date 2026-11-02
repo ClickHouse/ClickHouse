@@ -39,16 +39,11 @@ struct TimeSeriesColumnNames
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
-    /// Contains the kinds of samples of a time series, see class TimeSeriesSampleKinds.
-    static constexpr const char * SampleKinds = "sample_kinds";
-
     /// The "metric families" table contains general information (metadata) about metric families:
     static constexpr const char * MetricFamily = "metric_family";
     static constexpr const char * Type = "type";
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
-
-    /// The columns of the "histograms" inner table besides `id` and `timestamp` are defined in TimeSeriesHistogramsColumns.h.
 
     /// The outer column with (timestamp, value) pairs of a time series, also returned by `prometheusQuery` and `prometheusQueryRange`,
     /// and the column of `timeSeriesSelector` with the sorted samples of a time series.
@@ -56,15 +51,12 @@ struct TimeSeriesColumnNames
     static constexpr const char * Samples = "samples";
     static constexpr const char * TimeSeries = "time_series";
 
-    /// The outer group of columns with the histogram samples of a time series: `histograms.timestamp`, `histograms.is_float`, ...
-    /// It's the flattened form of `histograms Nested(...)`, one array per column of the "histograms" inner table with `timestamp`
-    /// in place of `id`, see class TimeSeriesHistogramsColumns.
-    /// Tables of versions before `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET` have no such columns.
+    /// The column of the "samples" table of a table of version MIN_WITH_NATIVE_HISTOGRAMS or later with the native histogram
+    /// samples of one time series within one time bucket, sorted by timestamp, in the same row as the float samples (see class
+    /// TimeSeriesHistogramsColumns for its elements). The outer columns of the TimeSeries table with histogram samples form the
+    /// flattened group `histograms.timestamp`, `histograms.flags`, `histograms.counter_reset_hint`, ..., one array per element of the tuple.
+    /// Tables of earlier versions have neither.
     static constexpr const char * Histograms = "histograms";
-
-    /// The column with the histogram samples returned by `timeSeriesSelector` for tables of versions
-    /// `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET` and later, see `TimeSeriesHistogramsColumns::getHistogramColumnType`.
-    static constexpr const char * Histogram = "histogram";
 
     /// Internal columns used by steps of prometheus query evaluation.
     /// The function prometheusQuery() doesn't output them.

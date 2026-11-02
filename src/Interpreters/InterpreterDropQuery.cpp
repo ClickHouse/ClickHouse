@@ -17,7 +17,6 @@
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -687,7 +686,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                         = castStorage<StorageTimeSeries>(database->tryGetTable(id.getTableName(), table_context), DeferredTable::Skip);
                     if (!time_series || !time_series->hasInnerTables())
                         continue;
-                    for (auto target_kind : getTimeSeriesTargetKinds())
+                    for (auto target_kind : StorageTimeSeries::getTargetKinds())
                     {
                         if (!time_series->isInnerTable(target_kind))
                             continue;

@@ -34,6 +34,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesIDRange.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -49,6 +50,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -311,6 +314,9 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     config.table_id_type = std::move(table_id_type);
     config.table_timestamp_type = std::move(table_timestamp_type);
     config.table_value_type = std::move(table_value_type);
+    config.table_samples_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{config.table_timestamp_type, config.table_value_type}));
+    if (time_series_storage->getStorageSettings()->hasHistogramsInSamples())
+        config.table_histograms_type = TimeSeriesHistogramsColumns::makeHistogramsArrayType(config.table_timestamp_type);
     config.return_columns = return_columns;
     config.selector = std::move(selector);
     config.time_scale = parameters_scale;
@@ -717,6 +723,54 @@ namespace
         return conditions;
     }
 
+    /// A column of the samples table the selector reads (see `readImpl`) and casts to `type`, the type this storage declares for it.
+    /// An array type means an array of samples of a table with buckets of samples (`samples`, `histograms`): the array is cut to the
+    /// time range in the inner query, and a row is returned only when one of the read arrays has samples in the range (see
+    /// `makeSelectQuery`). A scalar type means a column of a table storing one sample per row (`timestamp`, `value`), read as is;
+    /// such rows are filtered by the time range conditions of the inner query.
+    struct SamplesColumnToRead
+    {
+        std::string_view name;
+        DataTypePtr type;
+    };
+
+    /// The columns of the samples table to read (see SamplesColumnToRead) for a query requesting `column_names` from this storage:
+    /// `timestamp` and `value` of a table storing one sample per row; `samples` of a table with buckets of samples, and `histograms`
+    /// when the table stores histogram samples and `return_columns = 'samples'`. The outer filter is `notEmpty` over the read arrays,
+    /// so the read arrays decide which rows exist: a consumer gets exactly the arrays it names, and a query naming none (e.g. `count()`
+    /// or `id` only) asks whether a row has samples of any kind, so every array is read.
+    std::vector<SamplesColumnToRead> getSamplesColumnsToRead(
+        const StorageTimeSeriesSelector::Configuration & config, bool has_bucketed_samples, const Names & column_names)
+    {
+        if (!has_bucketed_samples)
+            return {{TimeSeriesColumnNames::Timestamp, config.table_timestamp_type}, {TimeSeriesColumnNames::Value, config.table_value_type}};
+
+        const SamplesColumnToRead samples{TimeSeriesColumnNames::Samples, config.table_samples_type};
+        const bool histograms_returned
+            = config.table_histograms_type && (config.return_columns == StorageTimeSeriesSelector::Configuration::ReturnColumns::Samples);
+        if (!histograms_returned)
+            return {samples};
+
+        const SamplesColumnToRead histograms{TimeSeriesColumnNames::Histograms, config.table_histograms_type};
+        bool samples_requested = false;
+        bool histograms_requested = false;
+        for (const auto & column_name : column_names)
+        {
+            if (column_name == TimeSeriesColumnNames::Samples)
+                samples_requested = true;
+            else if (column_name == TimeSeriesColumnNames::Histograms)
+                histograms_requested = true;
+            if (samples_requested && histograms_requested)
+                break;
+        }
+
+        if (samples_requested && !histograms_requested)
+            return {samples};
+        if (histograms_requested && !samples_requested)
+            return {histograms};
+        return {samples, histograms};
+    }
+
     /// The bounds of `time_range_to_filter_samples` must have the scale of `table_timestamp_type`.
     /// `bucket_step_seconds` is the step of the buckets of the table being read, zero for a table storing one sample per row.
     ASTPtr makeWhereFilterForSamplesTable(
@@ -779,13 +833,17 @@ namespace
         return makeASTForLogicalAnd(std::move(conditions));
     }
 
-    /// Makes the query reading the samples of the selected time series from the samples table.
-    /// For a table with buckets of samples:
+    /// Makes the query reading the samples of the selected time series from the samples table: `id` and the `columns`
+    /// (see SamplesColumnToRead). For a table with buckets of samples:
     ///
     /// SELECT id, timeSeriesSliceSortedArray(samples, <min_time>, <max_time>) AS samples
+    ///        [, timeSeriesSliceSortedArray(histograms, <min_time>, <max_time>) AS histograms]
     /// FROM samples_table_id
     /// WHERE (bucket >= <min_bucket>) AND (bucket <= <max_time>) AND (max_time >= <min_time>) AND (min_time <= <max_time>)
     ///       AND (id IN <select_query_from_tags_table>)
+    ///
+    /// A row holds the float samples and the histogram samples of one series within one bucket, each array sorted by timestamp,
+    /// and `timeSeriesSliceSortedArray` cuts out the samples with timestamps in [min_time, max_time] of each read array.
     ///
     /// For a table of an earlier version storing one sample per row (`bucket_step_seconds` is zero):
     ///
@@ -799,6 +857,7 @@ namespace
                                            const TableTimeRange & time_range_to_filter_samples,
                                            const DataTypePtr & table_timestamp_type,
                                            UInt64 bucket_step_seconds,
+                                           const std::vector<SamplesColumnToRead> & columns,
                                            ASTPtr whole_metric_id_range_condition)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -814,24 +873,27 @@ namespace
 
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
 
-            if (bucket_step_seconds)
+            chassert(!columns.empty());
+            for (const auto & column : columns)
             {
-                /// timeSeriesSliceSortedArray(samples, <min_time>, <max_time>) AS samples
-                /// A row contains the samples of one series within one bucket sorted by timestamp,
-                /// the function cuts out the samples with timestamps in [min_time, max_time].
-                auto samples = makeASTFunction(
-                    "timeSeriesSliceSortedArray",
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples),
-                    timeSeriesTimestampToAST(time_range_to_filter_samples.min_time.value_or(minRepresentableTime(table_timestamp_type)), table_timestamp_type),
-                    timeSeriesTimestampToAST(time_range_to_filter_samples.max_time.value_or(maxRepresentableTime(table_timestamp_type)), table_timestamp_type));
-                samples->setAlias(TimeSeriesColumnNames::Samples);
-                select_list.push_back(std::move(samples));
-            }
-            else
-            {
-                /// timestamp, value
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                const String column_name{column.name};
+                if (isArray(column.type))
+                {
+                    /// timeSeriesSliceSortedArray(<array>, <min_time>, <max_time>) AS <array>
+                    /// A row contains the samples of one series within one bucket sorted by timestamp,
+                    /// the function cuts out the samples with timestamps in [min_time, max_time].
+                    auto sliced = makeASTFunction(
+                        "timeSeriesSliceSortedArray",
+                        make_intrusive<ASTIdentifier>(column_name),
+                        timeSeriesTimestampToAST(time_range_to_filter_samples.min_time.value_or(minRepresentableTime(table_timestamp_type)), table_timestamp_type),
+                        timeSeriesTimestampToAST(time_range_to_filter_samples.max_time.value_or(maxRepresentableTime(table_timestamp_type)), table_timestamp_type));
+                    sliced->setAlias(column_name);
+                    select_list.push_back(std::move(sliced));
+                }
+                else
+                {
+                    select_list.push_back(make_intrusive<ASTIdentifier>(column_name));
+                }
             }
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
@@ -867,13 +929,15 @@ namespace
     }
 
     /// Wraps the select query from the samples table into an outer SELECT which casts the columns to the data types
-    /// expected by this storage. For a table with buckets of samples:
+    /// expected by this storage (`table_id_type` and the types of the `columns`, see SamplesColumnToRead). For a table with
+    /// buckets of samples:
     ///
     /// SELECT _CAST(id, 'UInt64') AS id, _CAST(samples, 'Array(Tuple(DateTime64(3), Float64))') AS samples
+    ///        [, _CAST(histograms, 'Array(Tuple(timestamp DateTime64(3), flags UInt8, ...))') AS histograms]
     /// FROM (select_query_from_samples_table)
-    /// WHERE notEmpty(samples)
+    /// WHERE notEmpty(samples) [OR notEmpty(histograms)]
     ///
-    /// For a table of an earlier version storing one sample per row (`bucket_step_seconds` is zero):
+    /// For a table of an earlier version storing one sample per row:
     ///
     /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
     /// FROM (select_query_from_samples_table)
@@ -881,9 +945,7 @@ namespace
     /// The requested columns (see `Configuration::ReturnColumns`) are made from this query by convertToReturnColumns().
     ASTPtr makeSelectQuery(ASTPtr select_query_from_samples_table,
                            const DataTypePtr & table_id_type,
-                           const DataTypePtr & table_timestamp_type,
-                           const DataTypePtr & table_value_type,
-                           UInt64 bucket_step_seconds)
+                           const std::vector<SamplesColumnToRead> & columns)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -902,31 +964,27 @@ namespace
             "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(table_id_type->getName())));
         select_list.back()->setAlias(TimeSeriesColumnNames::ID);
 
-        if (bucket_step_seconds)
-        {
-            /// _CAST(samples, 'Array(Tuple(DateTime64(3), Float64))') AS samples
-            DataTypePtr samples_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{table_timestamp_type, table_value_type}));
-            select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples), make_intrusive<ASTLiteral>(samples_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Samples);
+        /// WHERE notEmpty(samples) [OR notEmpty(histograms)]: the conditions of the inner query select the rows of a table with
+        /// buckets of samples by `min_time` and `max_time`, so a row can match them without having samples in the requested range;
+        /// a row with samples of a read kind in the range is kept. A table storing one sample per row needs no such filter.
+        ASTs where_conditions;
 
-            /// WHERE notEmpty(samples)
-            /// The conditions of the inner query select the rows by `min_time` and `max_time`, so a row can match them
-            /// without having samples in the requested range.
-            select_query->setExpression(ASTSelectQuery::Expression::WHERE,
-                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)));
-        }
-        else
+        chassert(!columns.empty());
+        for (const auto & column : columns)
         {
-            /// _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
+            /// _CAST(<column>, '<type>') AS <column>
+            /// The cast of `histograms` keeps the names of the tuple elements, which the consumers use (e.g. `h.count_int`).
+            const String column_name{column.name};
             select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTLiteral>(table_timestamp_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                "_CAST", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(column.type->getName())));
+            select_list.back()->setAlias(column_name);
 
-            select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>(table_value_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+            if (isArray(column.type))
+                where_conditions.push_back(makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(column_name)));
         }
+
+        if (!where_conditions.empty())
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalOr(std::move(where_conditions)));
 
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
 
@@ -950,10 +1008,10 @@ namespace
     /// SELECT id, _CAST([(timestamp, value)], 'Array(Tuple(DateTime64(3), Float64))') AS samples
     /// FROM (select_query)
     ///
-    /// `bucket_step_seconds` is the step of the buckets of the table being read, zero for a table storing one sample per row.
+    /// `table_samples_type` is the type of the column `samples` (see `Configuration::table_samples_type`), `bucket_step_seconds` is
+    /// the step of the buckets of the table being read, zero for a table storing one sample per row.
     ASTPtr convertToReturnColumns(ASTPtr select_query,
-                                  const DataTypePtr & table_timestamp_type,
-                                  const DataTypePtr & table_value_type,
+                                  const DataTypePtr & table_samples_type,
                                   UInt64 bucket_step_seconds,
                                   StorageTimeSeriesSelector::Configuration::ReturnColumns return_columns)
     {
@@ -986,8 +1044,7 @@ namespace
             /// _CAST([(timestamp, value)], 'Array(Tuple(DateTime64(3), Float64))') AS samples
             auto samples = makeASTFunction("array", makeASTFunction("tuple",
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
-            DataTypePtr samples_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{table_timestamp_type, table_value_type}));
-            select_list.push_back(makeASTFunction("_CAST", std::move(samples), make_intrusive<ASTLiteral>(samples_type->getName())));
+            select_list.push_back(makeASTFunction("_CAST", std::move(samples), make_intrusive<ASTLiteral>(table_samples_type->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::Samples);
         }
 
@@ -1258,6 +1315,8 @@ void StorageTimeSeriesSelector::readImpl(
     auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
+    const auto columns_to_read = getSamplesColumnsToRead(config, bucket_step_seconds != 0, column_names);
+
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 
     /// The samples are compared with the bounds at the scale of the table, so the index of the samples table is used as is.
@@ -1293,6 +1352,21 @@ void StorageTimeSeriesSelector::readImpl(
     /// is disabled: otherwise the default threshold in rows (163840) would dominate the threshold in bytes.
     if (bucket_step_seconds && !context->getSettingsRef().isChanged("merge_tree_min_rows_for_concurrent_read"))
         modified_context->setSetting("merge_tree_min_rows_for_concurrent_read", UInt64{0});
+
+    /// The rows of a table with buckets of samples are big (a row of histograms is tens of KB), so a read step sized for the default
+    /// `preferred_block_size_bytes` (1 MiB) covers a couple of granules, and every step pays the fixed costs of the reader: the
+    /// per-substream stream and mark lookups, the PREWHERE chain evaluated and filtered per step on a nested column with ~25
+    /// substreams, the block assembly (measured on a prototype: ~0.27 ms per step, 40% of a whole-metric read). Bigger steps and one
+    /// PREWHERE step instead of a chain remove them (-30..40% CPU on whole-metric reads, no change on 20-series reads, ~+20 MB peak
+    /// memory); the conjuncts of the generated PREWHERE are cheap comparisons, so splitting them buys nothing.
+    if (bucket_step_seconds)
+    {
+        if (!context->getSettingsRef().isChanged("preferred_block_size_bytes"))
+            modified_context->setSetting("preferred_block_size_bytes", UInt64{4 * 1024 * 1024});
+
+        if (!context->getSettingsRef().isChanged("enable_multiple_prewhere_read_steps"))
+            modified_context->setSetting("enable_multiple_prewhere_read_steps", false);
+    }
 
     const auto metric_id_ranges = tryGetTimeSeriesIDRanges(
         matchers, getIDGenerator(*time_series_settings, tags_table_metadata->getColumns(), config.table_id_type), config.table_id_type);
@@ -1340,17 +1414,12 @@ void StorageTimeSeriesSelector::readImpl(
         time_range_to_filter_samples,
         config.table_timestamp_type,
         bucket_step_seconds,
+        columns_to_read,
         std::move(whole_metric_id_range_condition));
 
-    ASTPtr select_query = makeSelectQuery(
-        std::move(select_query_from_samples_table),
-        config.table_id_type,
-        config.table_timestamp_type,
-        config.table_value_type,
-        bucket_step_seconds);
+    ASTPtr select_query = makeSelectQuery(std::move(select_query_from_samples_table), config.table_id_type, columns_to_read);
 
-    select_query = convertToReturnColumns(
-        std::move(select_query), config.table_timestamp_type, config.table_value_type, bucket_step_seconds, config.return_columns);
+    select_query = convertToReturnColumns(std::move(select_query), config.table_samples_type, bucket_step_seconds, config.return_columns);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());

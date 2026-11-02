@@ -12,9 +12,12 @@ namespace DB
 /// Here instant_selector should be written in PromQL syntax, for example 'http_requests{job="prometheus"}',
 /// and table can be specified either as two arguments 'mydb', 'my_ts_table', or one argument mydb.my_ts_table, or just 'my_ts_table'.
 /// The argument `return_columns` chooses the returned columns besides `id`: 'samples' returns the column `samples` (an array of tuples
-/// (timestamp, value) sorted by timestamp; a time series can be returned in multiple rows, e.g. one per bucket of the samples table),
-/// 'timestamp_and_value' returns the columns `timestamp` and `value` with one sample per row. The samples are converted when
-/// the samples table stores them the other way (see `TimeSeriesSettings::hasBucketedSamples`).
+/// (timestamp, value) sorted by timestamp; a time series can be returned in multiple rows, e.g. one per bucket of the samples table)
+/// and, for a table storing native histogram samples (see `TimeSeriesSettings::hasHistogramsInSamples`), the column `histograms` with
+/// the histogram samples of the same rows as stored (an array of the tuples of the `histograms` column of the samples table, sorted by
+/// timestamp and cut to the time range; see TimeSeriesHistogramsColumns), 'timestamp_and_value' returns the columns `timestamp` and
+/// `value` with one float sample per row and no histogram samples. The samples are converted when the samples table stores them the
+/// other way (see `TimeSeriesSettings::hasBucketedSamples`). Only the requested columns are read from the samples table.
 class TableFunctionTimeSeriesSelector : public ITableFunction
 {
 public:

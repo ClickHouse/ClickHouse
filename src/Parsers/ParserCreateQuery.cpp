@@ -29,7 +29,6 @@
 #include <Poco/String.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
 #include <Core/UUID.h>
 
 
@@ -978,9 +977,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            const auto & time_series_target_kinds = getTimeSeriesTargetKinds();
-            ParserViewTargets(std::vector<ViewTarget::Kind>(time_series_target_kinds.begin(), time_series_target_kinds.end()))
-                .parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
         }
 
         return true;
