@@ -41,6 +41,7 @@ class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 struct Settings;
+struct TemporaryTableHolder;
 
 /// This is a structure for prepared sets cache.
 /// SetPtr can be taken from cache, so we should pass holder for it.
@@ -50,6 +51,8 @@ struct SetAndKey
     SetPtr set;
     std::shared_ptr<SetSpillState> spill_state = std::make_shared<SetSpillState>();
     StoragePtr external_table;
+    /// Owns `external_table` when it was attached by `FutureSetFromSubquery::setExternalTable`.
+    std::shared_ptr<TemporaryTableHolder> external_table_holder = nullptr;
     /// `GLOBAL IN` under the analyzer attaches `external_table` only at pipeline build time (see
     /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations
     /// that must know whether the set fill also feeds an external table.
@@ -241,7 +244,7 @@ public:
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
     void buildExternalTableFromInplaceSet(StoragePtr external_table_);
-    void setExternalTable(StoragePtr external_table_);
+    void setExternalTable(std::shared_ptr<TemporaryTableHolder> external_table_holder);
     void markExternalTableExpected() { set_and_key->external_table_expected = true; }
 
     const QueryPlan * getQueryPlan() const { return source.get(); }

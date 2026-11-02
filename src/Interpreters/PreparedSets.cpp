@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/Operators.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -372,8 +373,9 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     executor.finish();
 }
 
-void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
+void FutureSetFromSubquery::setExternalTable(std::shared_ptr<TemporaryTableHolder> external_table_holder)
 {
+    StoragePtr external_table_ = external_table_holder->getTable();
     if (set_and_key->set->isCreated())
     {
         if (!set_and_key->set->hasExplicitSetElements())
@@ -383,6 +385,7 @@ void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
     }
 
     set_and_key->external_table = std::move(external_table_);
+    set_and_key->external_table_holder = std::move(external_table_holder);
 }
 
 DataTypes FutureSetFromSubquery::getTypes() const
