@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/TypeTree.h>
 #include <Common/assert_cast.h>
 #include <Common/isValidUTF8.h>
 #include <Common/typeid_cast.h>
@@ -51,9 +50,7 @@ namespace JSONUtils
 
         while (loadAtPosition(in, memory, pos) && need_more_data)
         {
-            /// Not restricted to the inside of an object: input that never opens a bracket must be bounded too,
-            /// otherwise it is buffered until EOF.
-            if (max_row_size)
+            if (max_row_size && balance > 0)
             {
                 const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position()) - object_start_bytes;
                 if (current_object_size > max_row_size)
@@ -670,7 +667,10 @@ namespace JSONUtils
                     names.push_back(name);
         };
         for (const auto & type : header.getDataTypes())
-            forEachInTypeTree(*type, collect);
+        {
+            collect(*type);
+            type->forEachChild(collect);
+        }
 
         if (names.empty())
             return false;
@@ -1061,7 +1061,7 @@ namespace JSONUtils
             return ReturnType(true);
         };
 
-        PeekableReadBuffer peekable_buf(istr);
+        PeekableReadBuffer peekable_buf(istr, true);
         return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_nested_with_check);
     }
 

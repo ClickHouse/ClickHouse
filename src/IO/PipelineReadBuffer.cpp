@@ -138,11 +138,6 @@ void PipelineReadBuffer::setReadUntilEnd()
     executor->setReadUntil(std::nullopt);
 }
 
-void PipelineReadBuffer::setRequestMap(ByteRangeSet ranges)
-{
-    executor->setRequestMap(std::move(ranges));
-}
-
 std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
 {
     /// Unknown-size sources (S3 HEAD without Content-Length) must surface as

@@ -8,10 +8,8 @@ from .prometheus_test_utils import (
     execute_query_via_http_api,
     execute_range_query_via_http_api,
     get_response_to_http_api,
-    get_response_to_remote_write,
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
-    types_pb2,
 )
 
 
@@ -97,36 +95,6 @@ def test_main_http_prefixed_remote_read():
     assert metric_name in metric_names
 
 
-def test_remote_read_with_empty_matching_label_matcher():
-    timestamp = 1_700_001_150.0
-    metric_name = "remote_read_empty_matching_label_matcher"
-
-    send_to_clickhouse(
-        [({"__name__": metric_name, "job": "test"}, {timestamp: 12.0})]
-    )
-
-    read_request = convert_read_request_to_protobuf(
-        "",
-        timestamp,
-        timestamp,
-        [(types_pb2.LabelMatcher.Type.RE, "job", ".*")],
-    )
-    read_response = receive_protobuf_from_remote_read(
-        node.ip_address,
-        MAIN_HTTP_PORT,
-        "/prometheus/api/v1/read",
-        read_request,
-    )
-
-    assert len(read_response.results) == 1
-    assert len(read_response.results[0].timeseries) == 1
-    labels = {
-        label.name: label.value
-        for label in read_response.results[0].timeseries[0].labels
-    }
-    assert labels["__name__"] == metric_name
-
-
 def test_main_http_prefixed_query_api():
     timestamp = 1_700_001_200.0
     metric_name = "main_http_prefixed_query_target"
@@ -205,27 +173,6 @@ def test_main_http_prefixed_label_values_api():
     data = response.json()
     assert data["status"] == "success"
     assert data["data"] == [label_value]
-
-
-def test_main_http_prefixed_error_before_dispatch():
-    # The query API answers in JSON, while remote write keeps the plain text error.
-    response = get_response_to_http_api(
-        f"http://{node.ip_address}:{MAIN_HTTP_PORT}"
-        f"/prometheus/api/v1/query?query=vector(1)&no_such_setting=1"
-    )
-    assert response.status_code == 404, response.text
-    assert response.headers["Content-Type"] == "application/json"
-    assert response.json()["status"] == "error"
-    assert "UNKNOWN_SETTING" in response.json()["error"]
-
-    response = get_response_to_remote_write(
-        node.ip_address,
-        MAIN_HTTP_PORT,
-        "/prometheus/api/v1/write?no_such_setting=1",
-        convert_time_series_to_protobuf([({"__name__": "unused"}, {1.0: 1.0})]),
-    )
-    assert response.status_code == 404, response.text
-    assert response.text.startswith("Code: 115."), response.text
 
 
 def test_main_http_prefixed_and_bare_share_table():

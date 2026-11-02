@@ -13,22 +13,13 @@ namespace DB
 namespace
 {
 
-/// Sort key columns can be constant only at runtime (e.g. after `optimize_constant_columns_after_filter`),
-/// and a column can be constant in one chunk and full in another. Materialize them for the comparison with the threshold:
-/// `ColumnConst::compareColumn` ignores `row_indexes`, which breaks the multi-column comparison, and `ColumnConst::compareAt`
-/// expects the other column to be `ColumnConst` as well, which a threshold saved from a full column is not.
-/// `holder` keeps the materialized columns alive while the raw pointers are used.
-ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPositions & description, Columns & holder)
+ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPositions & description)
 {
     size_t size = description.size();
     ColumnRawPtrs result(size);
-    holder.resize(size);
 
     for (size_t i = 0; i < size; ++i)
-    {
-        holder[i] = block.safeGetByPosition(description[i].column_number).column->convertToFullColumnIfConst();
-        result[i] = holder[i].get();
-    }
+        result[i] = block.safeGetByPosition(description[i].column_number).column.get();
 
     return result;
 }
@@ -138,8 +129,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     if (!sort_description_threshold_columns.empty() && !threshold_tracker)
     {
         UInt64 rows_num = block.rows();
-        Columns block_columns_holder;
-        auto block_columns = extractRawColumns(block, description_with_positions, block_columns_holder);
+        auto block_columns = extractRawColumns(block, description_with_positions);
 
         size_t result_size_hint = getFilterMask(
                 block_columns, sort_description_threshold_columns,
@@ -168,8 +158,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
           * If min block value is less than current threshold value, update current threshold value.
           */
         size_t min_row_to_compare = limit - 1;
-        Columns raw_block_columns_holder;
-        auto raw_block_columns = extractRawColumns(block, description_with_positions, raw_block_columns_holder);
+        auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
             compareWithThreshold(raw_block_columns, min_row_to_compare, sort_description_threshold_columns, description))

@@ -27,6 +27,7 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO sales1 SELECT number, ['US', 'IN', 'JP', 'ZM'][number % 4 + 1], number * 10 FROM numbers(200);
 INSERT INTO sales2 SELECT number, ['US', 'IN', 'JP', 'ZM'][number % 4 + 1], ['AMER', 'APAC', 'EMEA'][number % 3 + 1] FROM numbers(200);
 
+SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 -- The asserted granule-pruning counts depend on which side builds the runtime filter, so the
@@ -35,9 +36,8 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_join_swap_table = 'false';
--- Under parallel replicas the pruning is split among the replicas, so the per-query counters this
--- test asserts would depend on the coordinator's assignment; pin PR off (the ParallelReplicas CI job
--- otherwise forces it on). `05153_join_runtime_filters_index_analysis_modes` covers parallel replicas.
+-- Left-side join pruning is intentionally disabled under parallel replicas, so pin PR off to
+-- exercise the feature (the ParallelReplicas CI job otherwise forces it on).
 SET enable_parallel_replicas = 0;
 SET join_runtime_filter_min_probe_rows = 0;
 

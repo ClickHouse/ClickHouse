@@ -13,13 +13,13 @@
 
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
-#include <Common/filesystemHelpers.h>
 #include <Processors/Sources/JemallocProfileSource.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <base/scope_guard.h>
+#include <filesystem>
 #include <optional>
 #endif
 
@@ -97,7 +97,12 @@ try
     }
 
     auto raw_file = std::string(Jemalloc::flushProfile("/tmp/jemalloc_keeper"));
-    SCOPE_EXIT({ FS::tryDelete(raw_file, getLogger("KeeperJemallocProfileHandler")); });
+    SCOPE_EXIT({
+        std::error_code ec;
+        std::filesystem::remove(raw_file, ec);
+        if (ec)
+            LOG_WARNING(getLogger("KeeperJemallocProfileHandler"), "Failed to remove temporary heap profile {}: {}", raw_file, ec.message());
+    });
 
     std::string output;
 

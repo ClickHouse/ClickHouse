@@ -113,7 +113,6 @@ void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry);
-void registerBypassExtremesSteps(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry);
 void registerShuffleSendStep(QueryPlanStepRegistry & registry);
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
@@ -127,14 +126,10 @@ void registerReadNothingStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
-void registerMergeRuntimeFiltersStep(QueryPlanStepRegistry & registry);
-void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry);
 void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
 
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
-void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry);
-void registerReadFromSystemNumbersStep(QueryPlanStepRegistry & registry);
 
 
 void QueryPlanStepRegistry::registerPlanSteps()
@@ -165,7 +160,6 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerFilterStep(registry);
     registerTotalsHavingStep(registry);
     registerExtremesStep(registry);
-    registerBypassExtremesSteps(registry);
     registerJoinStep(registry);
 
     registerShuffleSendStep(registry);
@@ -178,12 +172,8 @@ void QueryPlanStepRegistry::registerPlanSteps()
 
     registerReadNothingStep(registry);
     registerReadFromTableStep(registry);
-    registerReadFromSystemOneStep(registry);
-    registerReadFromSystemNumbersStep(registry);
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
-    registerMergeRuntimeFiltersStep(registry);
-    registerBlocksMarshallingStep(registry);
     registerObjectFilterStep(registry);
 
 
