@@ -18,7 +18,8 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 SET collect_hash_table_stats_during_aggregation = 0, log_processors_profiles = 1;
 
 -- Every table holds 67584 rows in a single part of 1056 granules of 64 rows, and the pilot samples every 32nd
--- granule.
+-- granule. A query that runs no pass reads blocks of 65536 rows, which leave its result unchanged: the
+-- executor takes locks for every block, and the thread fuzzer of the flaky check slows down every lock.
 DROP TABLE IF EXISTS t_bound;
 DROP TABLE IF EXISTS t_fallback;
 DROP TABLE IF EXISTS t_constant;
@@ -58,14 +59,14 @@ SETTINGS max_block_size = 100000, min_insert_block_size_rows = 100000, min_inser
 
 SELECT 'restricted and hot passes';
 SELECT g, s, count() AS c FROM t_bound GROUP BY g, s ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'outputs_01_restricted_and_hot';
-SELECT g, s, count() AS c FROM t_bound GROUP BY g, s ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0;
+SELECT g, s, count() AS c FROM t_bound GROUP BY g, s ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
 
 -- The run that learns keeps the groups of the fallback for the next run, which then proves the top at once.
 SELECT 'fallback';
 SELECT toNullable(k) AS nk, count() AS c FROM t_fallback GROUP BY nk ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'outputs_02_fallback';
 SELECT toNullable(k) AS nk, count() AS c FROM t_fallback GROUP BY nk ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'outputs_03_fallback_learns', collect_hash_table_stats_during_aggregation = 1;
 SELECT toNullable(k) AS nk, count() AS c FROM t_fallback GROUP BY nk ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'outputs_04_learned', collect_hash_table_stats_during_aggregation = 1;
-SELECT toNullable(k) AS nk, count() AS c FROM t_fallback GROUP BY nk ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0;
+SELECT toNullable(k) AS nk, count() AS c FROM t_fallback GROUP BY nk ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
 
 SELECT 'heaviest values hold most rows';
 SELECT k, s, count() AS c FROM t_constant GROUP BY k, s ORDER BY c DESC LIMIT 1 SETTINGS log_comment = 'outputs_05_single_value';
