@@ -48,6 +48,11 @@ extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
 }
 
+namespace DB::Setting
+{
+extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
+}
+
 namespace DB::DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
@@ -409,7 +414,7 @@ static bool writeMetadataFiles(
     for (const auto & [partition_key, _] : data_files.files_by_partition)
         touched_partitions.insert(partition_key);
 
-    auto result = MetadataGenerator(metadata).generateNextMetadata(
+    auto result = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
@@ -850,7 +855,7 @@ void alter(
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
-        auto metadata_json_generator = MetadataGenerator(metadata);
+        auto metadata_json_generator = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
 
         switch (params[0].type)
         {

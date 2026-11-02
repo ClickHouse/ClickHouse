@@ -170,6 +170,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_previous_versions_max, write.metadata.previous-versions-max);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_statistics, partition-statistics);
 DEFINE_ICEBERG_FIELD_ALIAS(statistics_path, statistics-path);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
