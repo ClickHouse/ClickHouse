@@ -16,7 +16,8 @@ CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_fi
 
 cleanup() {
     ${CH} -q "DROP TABLE IF EXISTS ${PFX}_nested; DROP TABLE IF EXISTS ${PFX}_deep; DROP TABLE IF EXISTS ${PFX}_size0;
-        DROP TABLE IF EXISTS ${PFX}_element; DROP TABLE IF EXISTS ${PFX}_struct; DROP TABLE IF EXISTS ${PFX}_legacy;" > /dev/null 2>&1
+        DROP TABLE IF EXISTS ${PFX}_element; DROP TABLE IF EXISTS ${PFX}_struct; DROP TABLE IF EXISTS ${PFX}_legacy;
+        DROP TABLE IF EXISTS ${PFX}_nestedarray; DROP TABLE IF EXISTS ${PFX}_nestedmap;" > /dev/null 2>&1
     rm -rf "${BASE_DIR}"
 }
 cleanup
@@ -49,7 +50,9 @@ data_file_order deep
 echo "-- not a sort source"
 for spec in "size0|x Int32, arr Array(Int32)|arr.size0" \
             "element|x Int32, arr Array(Tuple(element Int32))|arr.element" \
-            "struct|x Int32, t Tuple(u Tuple(a Int32))|t.u"; do
+            "struct|x Int32, t Tuple(u Tuple(a Int32))|t.u" \
+            "nestedarray|x Int32, t Tuple(arr Array(Int32))|t.arr" \
+            "nestedmap|x Int32, t Tuple(m Map(String, Int32))|t.m"; do
     IFS='|' read -r tag columns key <<< "${spec}"
     ${CH} -q "CREATE TABLE ${PFX}_${tag} (${columns}) ENGINE = IcebergLocal('${BASE_DIR}/${tag}/') ORDER BY ${key}" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
     ${CH} -q "EXISTS TABLE ${PFX}_${tag}"
@@ -65,6 +68,6 @@ metadata['sort-orders'][0]['fields'][0]['source-id'] = 0
 json.dump(metadata, open(path, 'w'))
 " "${BASE_DIR}/legacy/metadata/v1.metadata.json"
 ${CH} -q "SELECT x FROM icebergLocal('${BASE_DIR}/legacy/', 'Parquet') ORDER BY x"
-${CH} -q "INSERT INTO ${PFX}_legacy VALUES (2, tuple(1)), (1, tuple(2))"
+${CH} -q "INSERT INTO ${PFX}_legacy VALUES (2, tuple(3)), (3, tuple(1)), (1, tuple(2))"
 ${CH} -q "SELECT x FROM icebergLocal('${BASE_DIR}/legacy/', 'Parquet') ORDER BY x"
 data_file_order legacy
