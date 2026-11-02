@@ -9,6 +9,7 @@ primary-key half remains blocked on
 https://github.com/ClickHouse/ClickHouse/issues/113360.
 """
 
+import glob
 import os
 import shutil
 import time
@@ -19,6 +20,7 @@ from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_
 from helpers.paimon_utils import (
     create_paimon_table,
     drop_tables_at_exit,
+    get_creation_expression,
     get_uuid_str,
     id_array_str,
     incremental_settings,
@@ -152,6 +154,67 @@ def _pull_and_upload(started_cluster, table_name):
         ["docker", "cp", f"{flink}:{FLINK_WAREHOUSE}/default.db/{table_name}", local_dir]
     )
     upload_paimon_table(started_cluster, "s3", table_name)
+    return local_dir
+
+
+def _list_files(local_dir, pattern):
+    return sorted(
+        os.path.basename(path) for path in glob.glob(os.path.join(local_dir, pattern))
+    )
+
+
+@pytest.mark.parametrize(
+    "index_options",
+    [
+        pytest.param("", id="embedded"),
+        pytest.param(", 'file-index.in-manifest-threshold' = '1 b'", id="extra_file"),
+    ],
+)
+def test_flink_rewrite_file_index(started_cluster_paimon_flink, index_options):
+    """`rewrite_file_index` commits DELETE + ADD of every data file under the
+    same name and level, the ADD carrying the new index (in the manifest, or in
+    a separate file listed in `_EXTRA_FILES`). The file stays in the read."""
+    started_cluster = started_cluster_paimon_flink
+    instance = started_cluster.instances["node1"]
+    table_name = "flink_file_index_" + get_uuid_str()
+
+    _flink_sql(
+        started_cluster,
+        f"CREATE TABLE {table_name} (id INT NOT NULL, val STRING) "
+        f"WITH ('file.format' = 'parquet');\n"
+        + "".join(
+            f"INSERT INTO {table_name} VALUES "
+            + ", ".join(f"({i}, 'v{i}')" for i in ids)
+            + ";\n"
+            for ids in (range(0, 5), range(5, 10))
+        ),
+    )
+    local_dir = _pull_and_upload(started_cluster, table_name)
+    data_files = _list_files(local_dir, "bucket-0/data-*.parquet")
+    snapshots = _list_files(local_dir, "snapshot/snapshot-*")
+    assert len(data_files) == 2 and len(snapshots) == 2, (data_files, snapshots)
+
+    table_function = get_creation_expression(
+        "s3", table_name, started_cluster, table_function=True
+    )
+    query = f"SELECT * FROM {table_function} ORDER BY id"
+    expected = "".join(f"{i}\tv{i}\n" for i in range(10))
+    assert instance.query(query) == expected
+
+    _flink_sql(
+        started_cluster,
+        f"ALTER TABLE {table_name} SET ('file-index.bloom-filter.columns' = 'val', "
+        f"'file-index.bloom-filter.val.items' = '100'{index_options});\n"
+        f"CALL sys.rewrite_file_index('default.{table_name}');",
+    )
+    local_dir = _pull_and_upload(started_cluster, table_name)
+    assert _list_files(local_dir, "bucket-0/data-*.parquet") == data_files
+    assert len(_list_files(local_dir, "snapshot/snapshot-*")) == 3
+    index_files = _list_files(local_dir, "bucket-0/*.index")
+    assert index_files == (
+        [f"{data_file}.index" for data_file in data_files] if index_options else []
+    ), index_files
+    assert instance.query(query) == expected
 
 
 def test_flink_live_incremental(started_cluster_paimon_flink):

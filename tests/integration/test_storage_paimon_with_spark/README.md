@@ -65,7 +65,8 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
 - `test_reader_compat.py` — checked-in foreign-writer fixtures: Spark with
   Paimon 1.3.2 and Flink with paimon-flink 1.1.1 (see `fixtures/README.md`).
 - `test_flink_writer.py` — a live Flink 1.19 SQL client (sidecar) committing
-  snapshot-by-snapshot into a warehouse consumed by Keeper incremental reads.
+  snapshot-by-snapshot into a warehouse consumed by Keeper incremental reads,
+  and a file index rewritten in place by `rewrite_file_index`.
 - `test_hdfs.py` — `paimonHDFS` + `PaimonHDFS` against the HDFS namenode
   embedded in the Hive test image (amd64-only image, ARM runners skip).
 - `test_errors.py` — unsupported and supported

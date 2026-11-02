@@ -291,13 +291,18 @@ def test_deletion_vectors_enabled(started_cluster):
     ), error
 
 
-def test_level_zero_not_read(started_cluster):
+@pytest.mark.parametrize(
+    "properties",
+    [
+        pytest.param(", 'deletion-vectors.enabled' = 'true'", id="deletion-vectors"),
+        pytest.param(", 'merge-engine' = 'first-row'", id="first-row"),
+    ],
+)
+def test_level_zero_not_read(started_cluster, properties):
     node = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     name = create_table(
-        spark,
-        "pk_write_only",
-        properties=", 'deletion-vectors.enabled' = 'true', 'write-only' = 'true'",
+        spark, "pk_write_only", properties=properties + ", 'write-only' = 'true'"
     )
     spark.sql(f"INSERT INTO paimon.default.{name} VALUES (1, 'a'), (2, 'b')")
     table_dir = upload(node, name)
@@ -312,9 +317,14 @@ def test_level_zero_not_read(started_cluster):
     table_dir = upload(node, name)
     assert spark.sql(f"SELECT count(*) FROM paimon.default.{name}").first()[0] == 2
     assert_refused(node, table_dir, "bucket-0")
+
     spark.sql(
-        f"ALTER TABLE paimon.default.{name} UNSET TBLPROPERTIES ('batch-scan-mode')"
+        f"ALTER TABLE paimon.default.{name} SET TBLPROPERTIES ('batch-scan-mode' = 'none')"
     )
+    table_dir = upload(node, name)
+    assert_files_layout(spark, name, [("{}", 0, 0)])
+    assert_count_as_spark(node, spark, name, table_dir, 0)
+    assert_reads_as_spark(node, spark, name, table_dir, "")
 
     compact(spark, name)
     table_dir = upload(node, name)

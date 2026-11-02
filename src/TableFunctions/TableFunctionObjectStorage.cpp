@@ -2291,9 +2291,9 @@ A table with the specified structure for reading data in the specified Paimon ta
 
 Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
 read when all its data files are above level 0, have no retract rows, and are in one level. With `deletion-vectors.enabled`
-or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless `batch-scan-mode` is set, level-0 files
-are not read until they are compacted, as in Paimon. Reading any other bucket throws; a full compaction in Paimon
-(`compact_strategy => 'full'`) makes it readable.
+or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless `batch-scan-mode` is set to a mode other
+than `none`, level-0 files are not read until they are compacted, as in Paimon. Reading any other bucket throws; a full
+compaction in Paimon (`compact_strategy => 'full'`) makes it readable.
 
 Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
 contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
