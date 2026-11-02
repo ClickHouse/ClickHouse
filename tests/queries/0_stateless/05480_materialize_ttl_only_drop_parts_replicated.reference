@@ -1,0 +1,5 @@
+compact, after MATERIALIZE TTL	1	2
+wide, after MATERIALIZE TTL	1	2
+compact, after UPDATE	1	27
+wide, after UPDATE	1	27
+unfinished mutations	0

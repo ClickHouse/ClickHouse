@@ -4550,7 +4550,6 @@ private:
     void replacePartWithEmpty()
     {
         MergeTreePartInfo part_info = ctx->new_data_part->info;
-        part_info.level += 1;
 
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
