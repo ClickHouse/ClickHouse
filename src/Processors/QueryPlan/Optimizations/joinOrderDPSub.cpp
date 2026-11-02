@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <bit>
 #include <limits>
+#include <map>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -132,6 +133,18 @@ private:
     UInt64 mergeKeyClasses(
         const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask, JoinKind kind, JoinStrictness strictness) const;
     bool isReadInOrder(UInt32 relation_mask, Int32 order_class) const;
+
+    /// Cost model of a sort-merge join of two input plans on the equivalence class, see `computeMergeJoinCost`.
+    double mergeJoinCost(
+        MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
+        const SelectivityEstimate & selectivity) const;
+    /// The equivalence classes with columns on both sides: one key of the join each.
+    UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
+    /// The classes of all keys of a join, in the order a single relation can be read in, starting with the merge key;
+    /// empty if it cannot be read in an order that covers them.
+    std::vector<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
+    /// The number of distinct values of the class's columns in a set of relations, at most `rows`; 1 when unknown.
+    double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
     /// The fraction of a probe side a hash join's runtime filter lets it read: the overlap of the key range of the build side
     /// with the key range of a probe table sorted by the key, whose granules the filter prunes. 1 when unknown.
     double probeReadFraction(UInt32 probe_mask, UInt32 build_mask, Int32 order_class) const;
@@ -222,6 +235,7 @@ private:
         bool interesting_orders = false;
         std::vector<char> class_single_type;   /// per class: one type up to `Nullable` and `LowCardinality`
         std::vector<UInt64> rel_sorted_classes; /// per relation: classes it can be read in order of
+        std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: classes of `read_in_order_prefixes`
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
         TUInt prepared_storage_mask = 0;
 
@@ -409,11 +423,13 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.interesting_orders = query_graph.use_interesting_orders && num_classes <= std::numeric_limits<UInt64>::digits;
     dpsub_data.class_single_type.assign(num_classes, 0);
     dpsub_data.rel_sorted_classes.assign(num_relations, 0);
+    dpsub_data.rel_prefix_classes.assign(num_relations, {});
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
     dpsub_data.key_ranges.assign(dpsub_data.interesting_orders ? num_relations * num_classes : 0, {});
     if (dpsub_data.interesting_orders)
     {
+        std::map<std::pair<size_t, String>, Int32> column_class;
         for (size_t c = 0; c < num_classes; ++c)
         {
             const auto & columns = dpsub_data.class_members[c];
@@ -434,6 +450,9 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                     && query_graph.read_in_order_columns[relation].contains(column.getColumnName()))
                     dpsub_data.rel_sorted_classes[relation] |= static_cast<UInt64>(1) << c;
 
+                if (columns_per_relation[relation] == 1)
+                    column_class.emplace(std::make_pair(relation, column.getColumnName()), static_cast<Int32>(c));
+
                 const auto & column_stats = query_graph.relation_stats[relation].column_stats;
                 if (auto it = column_stats.find(column.getColumnName()); columns_per_relation[relation] == 1 && it != column_stats.end())
                 {
@@ -442,6 +461,17 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                     if (min && max && *min <= *max)
                         dpsub_data.key_ranges[relation * num_classes + c] = {*min, *max, true};
                 }
+            }
+        }
+
+        for (size_t relation = 0; relation < num_relations && relation < query_graph.read_in_order_prefixes.size(); ++relation)
+        {
+            for (const auto & name : query_graph.read_in_order_prefixes[relation])
+            {
+                auto it = column_class.find({relation, name});
+                if (it == column_class.end())
+                    break;
+                dpsub_data.rel_prefix_classes[relation].push_back(it->second);
             }
         }
 
@@ -744,6 +774,66 @@ bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_cl
     return (dpsub_data.rel_sorted_classes[std::countr_zero(relation_mask)] >> order_class) & 1;
 }
 
+double DPSubJoinOrderOptimizer::mergeJoinCost(
+    MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
+    const SelectivityEstimate & selectivity) const
+{
+    left.probe_fraction = probeReadFraction(left_mask, right_mask, order_class);
+    right.probe_fraction = probeReadFraction(right_mask, left_mask, order_class);
+
+    /// On several keys an input sorted by the merge key only is still sorted by the other keys within its groups.
+    /// The keys follow the order of the left input if it covers them (see `buildPhysicalPlan`), else of the right one.
+    const UInt64 key_classes = spanningClasses(left_mask, right_mask);
+    if (std::popcount(key_classes) > 1)
+    {
+        const auto left_order = left.sorted ? keyOrder(left_mask, key_classes, order_class) : std::vector<Int32>{};
+        const auto right_order = right.sorted ? keyOrder(right_mask, key_classes, order_class) : std::vector<Int32>{};
+        const auto & emitted_order = left_order.empty() ? right_order : left_order;
+        if (left.sorted && (left_order.empty() || left_order != emitted_order))
+            left.sort_groups = distinctValues(left_mask, order_class, left.rows);
+        if (right.sorted && (right_order.empty() || right_order != emitted_order))
+            right.sort_groups = distinctValues(right_mask, order_class, right.rows);
+    }
+    return computeMergeJoinCost(left, right, selectivity);
+}
+
+UInt64 DPSubJoinOrderOptimizer::spanningClasses(UInt32 left_mask, UInt32 right_mask) const
+{
+    UInt64 classes = 0;
+    for (size_t c = 0; c < dpsub_data.class_relations.size(); ++c)
+    {
+        const UInt32 relations = dpsub_data.class_relations[c];
+        if ((relations & left_mask) && (relations & right_mask))
+            classes |= static_cast<UInt64>(1) << c;
+    }
+    return classes;
+}
+
+std::vector<Int32> DPSubJoinOrderOptimizer::keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const
+{
+    if (std::popcount(relation_mask) != 1)
+        return {};
+    const auto & prefix = dpsub_data.rel_prefix_classes[std::countr_zero(relation_mask)];
+    const auto num_keys = static_cast<size_t>(std::popcount(key_classes));
+    if (prefix.size() < num_keys || prefix.front() != order_class)
+        return {};
+    UInt64 covered = 0;
+    for (size_t i = 0; i < num_keys; ++i)
+        covered |= static_cast<UInt64>(1) << prefix[i];
+    if (covered != key_classes)
+        return {};
+    return {prefix.begin(), prefix.begin() + num_keys};
+}
+
+double DPSubJoinOrderOptimizer::distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const
+{
+    UInt64 ndv = 0;
+    for (const auto & member : dpsub_data.equiv_classes[order_class])
+        if ((member.relation_bit & relations) && member.ndv)
+            ndv = std::max(ndv, *member.ndv);
+    return static_cast<double>(std::clamp<UInt64>(ndv, 1, std::max<UInt64>(rows, 1)));
+}
+
 double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 build_mask, Int32 order_class) const
 {
     if (!query_graph.runtime_filter_prunes_probe || std::popcount(probe_mask) != 1 || !isReadInOrder(probe_mask, order_class))
@@ -935,10 +1025,25 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     /// The merge key goes first, on the columns the inputs are sorted by; `cleanupJoinPredicates` drops the conditions it makes redundant.
     if (entry.method == JoinMethod::Merge)
     {
-        const auto & left_column = orderColumn(dptable, entry.left, entry.left_plan, entry.merge_class);
-        const auto & right_column = orderColumn(dptable, entry.right, entry.right_plan, entry.merge_class);
-        join_operator.expression.push_back(
-            JoinActionRef::transform({left_column, right_column}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+        auto add_key = [&](Int32 key_class)
+        {
+            const auto & left_column = orderColumn(dptable, entry.left, entry.left_plan, key_class);
+            const auto & right_column = orderColumn(dptable, entry.right, entry.right_plan, key_class);
+            join_operator.expression.push_back(
+                JoinActionRef::transform({left_column, right_column}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+        };
+        add_key(entry.merge_class);
+
+        /// On several keys, the others follow in the order an input is sorted by, as `mergeJoinCost` assumed.
+        const UInt64 key_classes = spanningClasses(entry.left, entry.right);
+        if (std::popcount(key_classes) > 1)
+        {
+            auto key_order = keyOrder(entry.left, key_classes, entry.merge_class);
+            if (key_order.empty())
+                key_order = keyOrder(entry.right, key_classes, entry.merge_class);
+            for (size_t i = 1; i < key_order.size(); ++i)
+                add_key(key_order[i]);
+        }
     }
 
     for (const auto * e : entry.edges)

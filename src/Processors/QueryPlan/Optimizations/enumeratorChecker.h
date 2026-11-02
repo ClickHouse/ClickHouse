@@ -78,7 +78,7 @@ private:
     };
     /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
     /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
-    MergeInputCandidates mergeInputCandidates(UInt subset, UInt other_subset, Int32 key) const;
+    MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
 
     DPTable dp_table;
     Optimizer & optimizer;
@@ -177,15 +177,14 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
 
 template <class TDPTable, class TOptimizer>
 typename EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::MergeInputCandidates
-EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UInt subset, const UInt other_subset, const Int32 key) const
+EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UInt subset, const Int32 key) const
 {
     const auto & entry = dp_table[subset];
-    const double probe_fraction = optimizer.probeReadFraction(static_cast<UInt32>(subset), static_cast<UInt32>(other_subset), key);
     MergeInputCandidates candidates;
     auto add = [&](const Plan & plan, Int8 plan_index, bool sorted)
     {
         if (plan.estimated_rows)
-            candidates.items[candidates.size++] = {plan_index, {plan.cost, *plan.estimated_rows, sorted, probe_fraction}};
+            candidates.items[candidates.size++] = {plan_index, {plan.cost, *plan.estimated_rows, sorted}};
     };
 
     const bool is_leaf = std::popcount(subset) == 1;
@@ -215,13 +214,14 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         const MergeInputCandidate * left = nullptr;
         const MergeInputCandidate * right = nullptr;
         double cost = std::numeric_limits<double>::infinity();
-        const auto left_candidates = mergeInputCandidates(lhs_subset, rhs_subset, key);
-        const auto right_candidates = mergeInputCandidates(rhs_subset, lhs_subset, key);
+        const auto left_candidates = mergeInputCandidates(lhs_subset, key);
+        const auto right_candidates = mergeInputCandidates(rhs_subset, key);
         for (const auto & left_candidate : left_candidates)
         {
             for (const auto & right_candidate : right_candidates)
             {
-                const double candidate_cost = computeMergeJoinCost(left_candidate.input, right_candidate.input, selectivity);
+                const double candidate_cost = optimizer.mergeJoinCost(
+                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, selectivity);
                 if (candidate_cost < cost)
                 {
                     cost = candidate_cost;

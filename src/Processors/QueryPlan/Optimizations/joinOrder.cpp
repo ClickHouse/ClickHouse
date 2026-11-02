@@ -452,7 +452,8 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     query_graph.use_interesting_orders = query_graph.use_interesting_orders && optimization_settings.enable_join_transitive_predicates;
     query_graph.reuse_join_output_order = optimization_settings.optimize_sorting_by_input_stream_properties;
     /// Not gated on `use_skip_indexes_on_data_read`, which `EXPLAIN` turns off: it would show another plan than the query runs.
-    query_graph.runtime_filter_prunes_probe = optimization_settings.enable_join_runtime_filters_index_analysis;
+    query_graph.runtime_filter_prunes_probe = optimization_settings.enable_join_runtime_filters
+        && optimization_settings.enable_join_runtime_filters_index_analysis;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),

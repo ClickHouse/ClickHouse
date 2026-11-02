@@ -243,6 +243,9 @@ struct MergeJoinInput
     bool sorted = false;
     /// The fraction of its rows a hash join reads if this input is the probe side, after its runtime filter prunes granules.
     double probe_fraction = 1.0;
+    /// For a sorted input of a join on several keys that is sorted by the merge key only: the number of groups of equal
+    /// merge keys the other keys are sorted within. 0 when it is sorted by all of them.
+    double sort_groups = 0;
 };
 
 /// A sort-merge join costs as much as the hash join of the same inputs plus the difference between the two methods,
@@ -252,7 +255,11 @@ inline double computeMergeJoinCost(const MergeJoinInput & left, const MergeJoinI
     auto input_cost = [](const MergeJoinInput & input)
     {
         const auto rows = static_cast<double>(input.rows);
-        const double sort = input.sorted ? 0.0 : SORT_ROW_COST * rows * static_cast<double>(std::bit_width(input.rows));
+        double sort = 0;
+        if (!input.sorted)
+            sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(input.rows));
+        else if (input.sort_groups > 0)
+            sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(static_cast<UInt64>(rows / std::max(input.sort_groups, 1.0))));
         return sort + MERGE_SORTED_ROW_COST * rows;
     };
     /// The hash table is built from the smaller input.

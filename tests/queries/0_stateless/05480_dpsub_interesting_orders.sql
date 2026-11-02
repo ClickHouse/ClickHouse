@@ -28,6 +28,10 @@ DROP TABLE IF EXISTS build_narrow;
 DROP TABLE IF EXISTS build_wide;
 DROP TABLE IF EXISTS float_a;
 DROP TABLE IF EXISTS float_b;
+DROP TABLE IF EXISTS two_keys_a;
+DROP TABLE IF EXISTS two_keys_b;
+DROP TABLE IF EXISTS two_sorted_a;
+DROP TABLE IF EXISTS two_sorted_b;
 
 CREATE TABLE sorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE sorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
@@ -41,6 +45,10 @@ CREATE TABLE build_narrow (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SET
 CREATE TABLE build_wide (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE float_a (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE float_b (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE two_keys_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE two_keys_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE two_sorted_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s) SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE two_sorted_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s) SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
 -- A merge join pays a fixed cost, so it wins only for inputs of a few million rows.
 INSERT INTO sorted1 SELECT number, number FROM numbers(3000000);
@@ -57,6 +65,11 @@ INSERT INTO build_wide SELECT number * 4, number FROM numbers(2500000);
 -- A merge join matches `-0.0` with `0.0`, as `=` does.
 INSERT INTO float_a SELECT if(number = 0, -0., toFloat64(number)), number FROM numbers(3000000);
 INSERT INTO float_b SELECT toFloat64(number), number FROM numbers(3000000);
+-- Two values of `k` and a shuffled `s`: sorted by `k` only, the merge join would sort each half by `s`.
+INSERT INTO two_keys_a SELECT number % 2, intHash64(number), number FROM numbers(3000000);
+INSERT INTO two_keys_b SELECT number % 2, intHash64(number), number FROM numbers(3000000);
+INSERT INTO two_sorted_a SELECT number % 2, intHash64(number), number FROM numbers(3000000);
+INSERT INTO two_sorted_b SELECT number % 2, intHash64(number), number FROM numbers(3000000);
 
 SELECT '-- both inputs sorted by the key: merge join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
@@ -87,6 +100,11 @@ SELECT '-- build keys in a narrow range: a hash join, whose runtime filter skips
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
 WHERE explain LIKE '%Algorithm:%';
 
+SELECT '-- build keys in a narrow range, but runtime filters disabled: nothing is skipped, a merge join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
+WHERE explain LIKE '%Algorithm:%'
+SETTINGS enable_join_runtime_filters = 0;
+
 SELECT '-- build keys spread over the probe range: the runtime filter skips nothing, a merge join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.k = build_wide.k)
 WHERE explain LIKE '%Algorithm:%';
@@ -94,6 +112,16 @@ WHERE explain LIKE '%Algorithm:%';
 SELECT '-- floating-point keys sorted by the key: a merge join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT count() FROM float_a JOIN float_b ON float_a.k = float_b.k)
 WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- two keys, sorted by a low-cardinality first key only: a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT count() FROM two_keys_a JOIN two_keys_b ON two_keys_a.k = two_keys_b.k AND two_keys_a.s = two_keys_b.s)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- two keys, sorted by both, written in another order: a merge join on the keys in sorting key order';
+SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN actions = 1
+    SELECT count() FROM two_sorted_a JOIN two_sorted_b ON two_sorted_a.s = two_sorted_b.s AND two_sorted_a.k = two_sorted_b.k)
+WHERE explain LIKE '%Algorithm:%' OR explain LIKE '%Join conditions:%';
 
 SELECT '-- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1
@@ -128,6 +156,8 @@ SELECT count(), sum(sorted1.v + tiny.v) FROM sorted1 JOIN tiny ON sorted1.k = ti
 SELECT count(), sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k;
 SELECT count(), sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.k = build_wide.k;
 SELECT count() FROM float_a JOIN float_b ON float_a.k = float_b.k;
+SELECT count(), sum(two_keys_a.v + two_keys_b.v) FROM two_keys_a JOIN two_keys_b ON two_keys_a.k = two_keys_b.k AND two_keys_a.s = two_keys_b.s;
+SELECT count(), sum(two_sorted_a.v + two_sorted_b.v) FROM two_sorted_a JOIN two_sorted_b ON two_sorted_a.s = two_sorted_b.s AND two_sorted_a.k = two_sorted_b.k;
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
     JOIN sorted3 ON sorted2.k = sorted3.k JOIN sorted4 ON sorted3.k = sorted4.k;
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
@@ -146,3 +176,7 @@ DROP TABLE build_narrow;
 DROP TABLE build_wide;
 DROP TABLE float_a;
 DROP TABLE float_b;
+DROP TABLE two_keys_a;
+DROP TABLE two_keys_b;
+DROP TABLE two_sorted_a;
+DROP TABLE two_sorted_b;

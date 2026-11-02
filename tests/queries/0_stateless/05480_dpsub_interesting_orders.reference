@@ -20,10 +20,17 @@ merge join
 3	6	6
 -- build keys in a narrow range: a hash join, whose runtime filter skips most of the sorted probe side
 hash join
+-- build keys in a narrow range, but runtime filters disabled: nothing is skipped, a merge join
+merge join
 -- build keys spread over the probe range: the runtime filter skips nothing, a merge join
 merge join
 -- floating-point keys sorted by the key: a merge join
 merge join
+-- two keys, sorted by a low-cardinality first key only: a hash join
+hash join
+-- two keys, sorted by both, written in another order: a merge join on the keys in sorting key order
+merge join
+Join conditions: k = k AND s = s
 -- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes
 hash join
 merge join
@@ -42,5 +49,7 @@ hash join
 2500000	6249997500000
 2500000	15624993750000
 3000000
+3000000	8999997000000
+3000000	8999997000000
 3000000	17999994000000
 3000000	17999994000000

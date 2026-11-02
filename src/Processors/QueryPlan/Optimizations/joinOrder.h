@@ -174,6 +174,8 @@ struct QueryGraph
 
     /// Per relation: the columns of its equi-join conditions that it can be read in order of.
     std::vector<NameSet> read_in_order_columns;
+    /// Per relation: the longest sequence of the columns of its equi-join conditions that it can be read in order of.
+    std::vector<Names> read_in_order_prefixes;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

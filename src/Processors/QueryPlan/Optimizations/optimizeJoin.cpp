@@ -1050,9 +1050,10 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-/// The columns of each relation's equi-join conditions that `optimizeReadInOrder` could read the relation in order of.
-static std::vector<NameSet> getReadInOrderColumns(
-    const QueryGraph & query_graph, const std::vector<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings)
+/// The columns of each relation's equi-join conditions that `optimizeReadInOrder` could read the relation in order of,
+/// and the longest sequence of them it could be read in order of, for joins on several keys.
+static void fillReadInOrderColumns(
+    QueryGraph & query_graph, const std::vector<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings)
 {
     std::vector<NameSet> candidates(inputs.size());
     for (const auto & edge : query_graph.edges)
@@ -1071,7 +1072,10 @@ static std::vector<NameSet> getReadInOrderColumns(
         }
     }
 
-    std::vector<NameSet> result(inputs.size());
+    auto & columns = query_graph.read_in_order_columns;
+    auto & prefixes = query_graph.read_in_order_prefixes;
+    columns.assign(inputs.size(), {});
+    prefixes.assign(inputs.size(), {});
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         if (candidates[i].empty())
@@ -1082,19 +1086,47 @@ static std::vector<NameSet> getReadInOrderColumns(
             continue;
 
         const auto & header = inputs[i]->step->getOutputHeader();
-        for (const auto & column : candidates[i])
+        /// Whether the relation can be read in order of all of `names`, not only of a prefix of them.
+        auto is_read_in_order = [&](const Names & names)
         {
-            if (!header->has(column))
-                continue;
             SortDescription sort_description;
-            sort_description.emplace_back(column);
+            for (const auto & name : names)
+                sort_description.emplace_back(name);
             SortingStep sorting(header, std::move(sort_description), 0, sorting_settings);
             auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), *inputs[i]);
-            if (order && order->direction == 1)
-                result[i].insert(column);
+            return order && order->direction == 1 && order->used_prefix_of_sorting_key_size >= names.size();
+        };
+
+        Names sorted_candidates(candidates[i].begin(), candidates[i].end());
+        std::ranges::sort(sorted_candidates);
+        for (const auto & column : sorted_candidates)
+        {
+            if (!header->has(column) || !is_read_in_order({column}))
+                continue;
+            columns[i].insert(column);
+
+            /// Extend the sequence greedily by the next column of the sorting key among the join keys.
+            Names prefix{column};
+            for (bool extended = true; extended;)
+            {
+                extended = false;
+                for (const auto & next : sorted_candidates)
+                {
+                    if (std::ranges::contains(prefix, next) || !header->has(next))
+                        continue;
+                    prefix.push_back(next);
+                    if (is_read_in_order(prefix))
+                    {
+                        extended = true;
+                        break;
+                    }
+                    prefix.pop_back();
+                }
+            }
+            if (prefix.size() > prefixes[i].size())
+                prefixes[i] = std::move(prefix);
         }
     }
-    return result;
 }
 
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
@@ -1129,7 +1161,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             || std::ranges::contains(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE);
         /// `CreateSetAndFilterOnTheFlyStep` (`max_rows_in_set_to_optimize_join`) prevents reading in order.
         if (query_graph.use_interesting_orders && context.optimization_settings.read_in_order && join_settings.max_rows_in_set_to_optimize_join == 0)
-            query_graph.read_in_order_columns = getReadInOrderColumns(query_graph, query_graph_builder.inputs, context.sorting_settings);
+            fillReadInOrderColumns(query_graph, query_graph_builder.inputs, context.sorting_settings);
     }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
