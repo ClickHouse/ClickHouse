@@ -169,12 +169,9 @@ inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
 }
 
-/// A lambda has observable side effects if any function in its body has them. Without this, a higher-order
-/// function like `arrayExists(x -> sleepEachRow(0.001) = 0, arr)` looks free of side effects, and the
-/// reordering of short-circuit arguments evaluates `sleepEachRow` on fewer rows than in the written order.
-inline bool isLambdaBodyWithObservableSideEffects(const ExpressionActions & expression_actions)
+inline bool isLambdaBodyExpensive(const ExpressionActions & expression_actions)
 {
-    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.hasObservableSideEffects(); });
+    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isExpensive(); });
 }
 
 /// Whether the body of a lambda can be evaluated once and its value reused for every row of the query.
@@ -264,7 +261,7 @@ public:
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
+    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
     bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -396,7 +393,8 @@ public:
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
+
+    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

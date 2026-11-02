@@ -8,8 +8,6 @@
 #include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 
-#include <algorithm>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -64,10 +62,7 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
 
     /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
     if (has_output_chunks && !pushOutputChunks())
-    {
-        input.setNotNeeded();
         return Status::PortFull;
-    }
 
     /// Try get chunk from input.
 
@@ -77,14 +72,6 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
             output.finish();
 
         return Status::Finished;
-    }
-
-    /// Request input only while an unfinished output needs data. Downstream processors may delay
-    /// requesting data until their other inputs are ready.
-    if (std::none_of(outputs.begin(), outputs.end(), [](const auto & output) { return !output.isFinished() && output.canPush(); }))
-    {
-        input.setNotNeeded();
-        return Status::PortFull;
     }
 
     input.setNeeded();
@@ -159,15 +146,6 @@ void ScatterByPartitionTransform::generateOutputChunks()
         /// The chunk is moved whole so its ChunkInfo (e.g. aggregation metadata) survives.
         output_chunks[*round_robin_bucket] = std::move(chunk);
         *round_robin_bucket = (*round_robin_bucket + 1) % output_size;
-        return;
-    }
-
-    /// A rowless chunk with a `ChunkInfo` is a marker for the consumer (e.g. a watermark of a streaming read),
-    /// which applies to every partition. The scatter below would lose it, so it is sent to all outputs.
-    if (num_rows == 0 && !chunk.getChunkInfos().empty())
-    {
-        for (auto & output_chunk : output_chunks)
-            output_chunk = chunk.clone();
         return;
     }
 

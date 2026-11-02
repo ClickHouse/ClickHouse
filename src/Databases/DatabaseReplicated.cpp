@@ -98,7 +98,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
-    extern const DatabaseReplicatedSettingsNonZeroUInt32 logs_to_keep;
+    extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
@@ -465,20 +465,7 @@ ClusterPtr DatabaseReplicated::updateCluster(bool all_groups, bool force_overwri
         cluster_name,
         cluster_auth_info.cluster_secret};
 
-    /// The shard-scope identity (see `Cluster::getShardScopeIdentity`) is keyed by the Keeper name and
-    /// path rather than by `cluster_name`: `<db>` and `all_groups.<db>` are two spellings of this one
-    /// database, and while both see the same ordered shards a `_shard_num` produced through either denotes
-    /// the same shard, so a parallel replicas read must not be declined for crossing from one spelling to
-    /// the other. The key also survives `RENAME DATABASE` and differing local names on other replicas,
-    /// and it separates two databases that happen to share a local name and their shard names. The path
-    /// alone is not enough: it is unique only inside one Keeper, and two unrelated databases mounted at
-    /// the same path on two auxiliary Keepers must not authenticate each other's shard numbers.
-    auto new_cluster = std::make_shared<Cluster>(
-        getContext()->getSettingsRef(),
-        shards,
-        params,
-        db_settings[DatabaseReplicatedSetting::internal_replication],
-        /* shard_scope_key = */ Cluster::makeKeeperScopeKey(zookeeper_name, zookeeper_path));
+    auto new_cluster = std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
 
     if (all_groups)
     {
@@ -496,7 +483,6 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     Strings unfiltered_hosts;
     Strings hosts;
     Strings host_ids;
-    Strings host_groups;
 
     auto zookeeper = getZooKeeper();
     constexpr int max_retries = 10;
@@ -505,7 +491,6 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     while (++iteration <= max_retries)
     {
         host_ids.resize(0);
-        host_groups.resize(0);
         Coordination::Stat stat;
         unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (unfiltered_hosts.empty())
@@ -513,42 +498,28 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
-        ::sort(unfiltered_hosts.begin(), unfiltered_hosts.end());
-
-        /// Read the replica group of every replica in a single batch; it's used to filter hosts
-        /// and/or to carry the group of every address of the cluster (e.g. `system.clusters` shows it).
-        /// Hosts are sorted beforehand so that `hosts`, `host_groups` and `host_ids` keep index alignment.
-        std::vector<String> group_paths;
-        group_paths.reserve(unfiltered_hosts.size());
-        for (const auto & host : unfiltered_hosts)
-            group_paths.emplace_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-        auto replica_groups = zookeeper->tryGet(group_paths);
-
         if (all_groups)
         {
-            /// The cluster consists of the replicas of all the groups.
             hosts = unfiltered_hosts;
-            host_groups.resize(hosts.size());
-            for (size_t i = 0; i < hosts.size(); ++i)
-            {
-                if (replica_groups[i].error == Coordination::Error::ZOK)
-                    host_groups[i] = std::move(replica_groups[i].data);
-            }
         }
         else
         {
-            /// The cluster consists of the replicas of the local replica group only.
             hosts.clear();
-            for (size_t i = 0; i < unfiltered_hosts.size(); ++i)
+            std::vector<String> paths;
+            for (const auto & host : unfiltered_hosts)
+                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+            auto replica_groups = zookeeper->tryGet(paths);
+
+            for (size_t i = 0; i < paths.size(); ++i)
             {
                 if (replica_groups[i].data == replica_group_name)
                     hosts.push_back(unfiltered_hosts[i]);
             }
-            host_groups.assign(hosts.size(), replica_group_name);
         }
 
         Int32 cversion = stat.cversion;
+        ::sort(hosts.begin(), hosts.end());
 
         std::vector<String> host_paths;
         host_paths.reserve(hosts.size());
@@ -583,7 +554,6 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
 
     chassert(!hosts.empty());
     chassert(hosts.size() == host_ids.size());
-    chassert(hosts.size() == host_groups.size());
     String current_shard;
     Shards shards;
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -600,7 +570,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
             shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}, std::move(host_groups[i])});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
     }
 
     if (shards.empty())
@@ -1055,18 +1025,6 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
             zkutil::KeeperMultiException::check(code, ops, ops_responses);
         }
     }
-}
-
-ASTPtr DatabaseReplicated::getCreateDatabaseQueryImpl() const
-{
-    ASTPtr ast = DatabaseOnDisk::getCreateDatabaseQueryImpl();
-
-    /// The metadata file may still hold a `logs_to_keep` above `MAX_LOGS_TO_KEEP`, if written by an older server.
-    auto * create = ast->as<ASTCreateQuery>();
-    if (create && create->storage && create->storage->settings)
-        DatabaseReplicatedSettings::checkOrClampLogsToKeep(*create->storage->settings, true /* clamp_on_overflow */);
-
-    return ast;
 }
 
 void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode)
@@ -1569,7 +1527,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.initial_query_id = query_context->getClientInfo().initial_query_id;
     entry.is_backup_restore = flags.distributed_backup_restore;
-    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags);
+    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags.internal);
 
     Strings hosts_to_wait;
     Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -1601,8 +1559,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     bool looks_like_replicated = metadata.contains("Replicated");
     bool looks_like_shared = metadata.contains("Shared");
     bool looks_like_merge_tree = metadata.contains("MergeTree");
-    bool looks_like_keeper_map = metadata.contains("KeeperMap");
-    if (!((looks_like_replicated || looks_like_shared) && looks_like_merge_tree) && !looks_like_keeper_map)
+    if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -1613,10 +1570,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
-    const String & engine_name = create.storage->engine->name;
-    bool is_replicated_merge_tree = (startsWith(engine_name, "Replicated") || startsWith(engine_name, "Shared"))
-        && endsWith(engine_name, "MergeTree");
-    if (!is_replicated_merge_tree && engine_name != "KeeperMap")
+    if (!(startsWith(create.storage->engine->name, "Replicated") || startsWith(create.storage->engine->name, "Shared"))
+        || !endsWith(create.storage->engine->name, "MergeTree"))
         return UUIDHelpers::Nil;
     chassert(create.uuid != UUIDHelpers::Nil);
     return create.uuid;
@@ -1646,7 +1601,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
-    /// KeeperMap tables are matched by UUID too: their data is stored in Keeper, so re-creating them would lose it.
     /// We need to handle renamed tables only.
     /// TODO maybe we should also update MergeTree SETTINGS if required?
     std::unordered_map<UUID, String> zk_replicated_id_to_name;
@@ -1680,8 +1634,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_TEST(log, "Existing table {}", name);
 
         UUID local_replicated_id = UUIDHelpers::Nil;
-        if (existing_tables_it->table()->supportsReplication()
-            || castStorage<StorageKeeperMap>(existing_tables_it->table(), DeferredTable::Load))
+        if (existing_tables_it->table()->supportsReplication())
         {
             /// Check if replicated tables have the same UUID
             local_replicated_id = existing_tables_it->table()->getStorageID().uuid;
@@ -2388,7 +2341,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor::visit(*create.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }
@@ -3159,16 +3112,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         const auto & initial_storage_settings = args.context->getDatabaseReplicatedSettings();
         DatabaseReplicatedSettings database_replicated_settings{initial_storage_settings};
         if (engine_define->settings)
-        {
-            /// Whether the definition is replayed from stored metadata (startup, short-syntax ATTACH, RESTORE)
-            /// rather than supplied by the user now. A full-syntax ATTACH is user input, validated like CREATE.
-            /// Not `args.internal`: wrappers such as `PARALLEL WITH` run fresh user statements as internal queries.
-            const bool loading_from_existing_metadata = args.is_metadata_replay
-                || args.create_query.attach_short_syntax
-                || args.is_restore_from_backup
-                || isLoadingFromExistingMetadata(args.mode);
-            database_replicated_settings.loadFromQuery(*engine_define, loading_from_existing_metadata);
-        }
+            database_replicated_settings.loadFromQuery(*engine_define);
 
         return std::make_shared<DatabaseReplicated>(
             args.database_name,
@@ -3180,7 +3124,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn, SecretArgumentsSpec{}, {.supports_arguments = true, .supports_settings = true, .has_builtin_setting_fn = DatabaseReplicatedSettings::hasBuiltin}, Documentation{
+    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true}, Documentation{
         .description = R"DOCS_MD(
 The engine is based on the [Atomic](/reference/engines/database-engines/atomic) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
@@ -3324,10 +3268,6 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ## Settings {#settings}
 The following settings are supported:
 
-<Note>
-The `default_replica_path`, `default_replica_shard_name` and `default_replica_name` settings were introduced in ClickHouse 25.10. On earlier versions these settings are not recognized, and configuring them fails with `Code: 115. DB::Exception: Unknown setting '<name>': in DatabaseReplicated config`.
-</Note>
-
 | Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                           |
 |------------------------------------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `max_broken_tables_ratio`                                                    | 1                              | Do not recover replica automatically if the ratio of staled tables to all tables is greater                                                                                                                                                                                                                                           |
@@ -3337,7 +3277,7 @@ The `default_replica_path`, `default_replica_shard_name` and `default_replica_na
 | `check_consistency`                                                          | true                           | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
 | `max_retries_before_automatic_recovery`                                      | 10                             | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
 | `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
-| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database. The value must not exceed `2147483647`; a larger value is rejected with `BAD_ARGUMENTS` in a user-supplied definition (`CREATE` or a full-syntax `ATTACH`) and clamped with a warning when existing metadata is replayed |
+| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database.                                                                                                                                                                                                                                                                  |
 | `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
 | `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
 | `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |

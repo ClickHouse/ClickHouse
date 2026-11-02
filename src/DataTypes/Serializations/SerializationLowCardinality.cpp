@@ -262,7 +262,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
 
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         return std::make_shared<DeserializeStateLowCardinality>(*this);
     }
@@ -397,9 +397,6 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         }
     }
 
-    /// All readers of this stream must share the state: only one of them decodes each range, the others take it
-    /// from the substreams cache.
-    addToSubstreamsDeserializeStatesCache(cache, dictionary_keys_path, new_state);
     state = std::move(new_state);
 }
 
@@ -704,6 +701,13 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         bool has_additional_keys = low_cardinality_state->index_type.has_additional_keys;
         bool column_is_empty = low_cardinality_column.empty();
+
+        /// Indexes come from the stream.
+        if (low_cardinality_state->index_type.need_global_dictionary)
+        {
+            const size_t num_additional_keys = additional_keys ? additional_keys->size() : 0;
+            ColumnLowCardinality::checkIndexesAreLimited(*indexes_column, global_dictionary->size() + num_additional_keys);
+        }
 
         if (!low_cardinality_state->index_type.need_global_dictionary)
         {

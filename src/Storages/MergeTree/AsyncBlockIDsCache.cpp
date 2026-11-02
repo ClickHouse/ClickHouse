@@ -118,40 +118,41 @@ void AsyncBlockIDsCache<TStorage>::truncate()
 {
     std::lock_guard lock(mu);
     cache_ptr.reset();
+    version = 0;
 }
 
+/// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.
 template <typename TStorage>
-typename AsyncBlockIDsCache<TStorage>::Conflicts
-AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 min_version)
+std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version)
 {
-    Conflicts conflicts;
     CachePtr cur_cache;
     {
         std::unique_lock lk(mu);
-        if (min_version)
-        {
-            cv.wait_for(lk, update_wait, [&]{ return version >= min_version; });
+        /// For first time access of this cache, the `last_version` is zero, so it will not block here.
+        /// For retrying request, We compare the request version and cache version, because zk only returns
+        /// incomplete information of duplication, we need to update the cache to find out more duplication.
+        cv.wait_for(lk, update_wait, [&]{return version != last_version;});
 
-            if (version < min_version)
-                LOG_INFO(log, "Read cache with a old version {}", version);
-        }
+        if (version == last_version)
+            LOG_INFO(log, "Read cache with a old version {}", last_version);
 
         cur_cache = cache_ptr;
-        conflicts.version = version;
+        last_version = version;
     }
 
     if (cur_cache == nullptr)
-        return conflicts;
+        return {};
 
+    std::vector<DeduplicationHash> conflicts;
     for (const auto & hash : deduplication_hashes)
     {
         if (cur_cache->contains(hash.getBlockId()))
         {
-            conflicts.hashes.push_back(hash);
+            conflicts.push_back(hash);
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits, !conflicts.hashes.empty());
+    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits, !conflicts.empty());
 
     return conflicts;
 }

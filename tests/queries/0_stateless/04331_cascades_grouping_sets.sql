@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- Shuffle and two-phase aggregation strategies must not be applied to
 -- `GROUPING SETS` aggregations: `params.keys` is the union of all sets' keys,
@@ -21,8 +23,7 @@ CREATE TABLE t_gsets (a UInt64, b UInt64, x UInt64) ENGINE = MergeTree() ORDER B
 INSERT INTO t_gsets SELECT number % 10000, intDiv(number, 10) % 10000, number FROM numbers(1000000);
 
 SELECT '-- 1. GROUPING SETS: aggregated totals must match the baseline';
-SELECT sum(s), count() FROM (SELECT a, b, sum(x) AS s FROM t_gsets GROUP BY GROUPING SETS ((a), (b)))
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(s), count() FROM (SELECT a, b, sum(x) AS s FROM t_gsets GROUP BY GROUPING SETS ((a), (b)));
 
 SELECT '-- 2. Baseline without Cascades';
 SELECT sum(s), count() FROM (SELECT a, b, sum(x) AS s FROM t_gsets GROUP BY GROUPING SETS ((a), (b)))

@@ -226,9 +226,6 @@ public:
     UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
     UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
 
-    /// Frees the buffers of the last query, so that the query that allocated them frees them, not the next one.
-    void releaseQueryBuffers() noexcept;
-
 private:
     String host;
     UInt16 port;
@@ -365,7 +362,6 @@ private:
 
     void cancel() noexcept;
     void reset() noexcept;
-    void resetQueryBuffers();
 
 #if USE_SSH
     void performHandshakeForSSHAuth();

@@ -18,13 +18,6 @@ SELECT damerauLevenshteinDistance(randomString(power(2, 17)), 'abc'); -- { serve
 SELECT jaroSimilarity(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 SELECT jaroWinklerSimilarity(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 
-SELECT '-- Empty input bypasses size limit';
-SELECT
-    jaroSimilarity('', repeat('a', 65537)),
-    jaroSimilarity(repeat('a', 65537), ''),
-    jaroWinklerSimilarity('', repeat('a', 65537)),
-    jaroWinklerSimilarity(repeat('a', 65537), '');
-
 DROP TABLE IF EXISTS t;
 CREATE TABLE t
 (

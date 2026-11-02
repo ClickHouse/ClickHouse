@@ -17,7 +17,6 @@
 #include <IO/Operators.h>
 #include <algorithm>
 #include <cstring> // memcpy
-#include <limits>
 
 
 namespace DB
@@ -426,72 +425,6 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     getOffsets().push_back(getOffsets().back() + size);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
-#else
-void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
-#endif
-{
-    /// Keep the same no-op behavior as IColumn::insertManyFrom, including for an invalid position.
-    if (length == 0)
-        return;
-
-    /// A single insertion does not benefit from bulk setup.
-    if (length == 1)
-    {
-        insertFrom(src_, position);
-        return;
-    }
-
-    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
-    const size_t source_size = src.sizeAt(position);
-
-    auto & offsets_data = getOffsets();
-    const size_t old_rows = offsets_data.size();
-    if (length > std::numeric_limits<size_t>::max() - old_rows)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
-
-    const size_t new_rows = old_rows + length;
-    const size_t old_offset = offsets_data.back();
-
-    auto insert_scalar = [&]
-    {
-        for (size_t i = 0; i < length; ++i)
-            insertFrom(src_, position);
-    };
-
-    /// Nested insertManyFrom repeats one value, so it can represent a repeated Array row
-    /// directly only when source_size == 1.
-    /// Keep the existing scalar implementation outside the narrow fast path.
-    if (getDataPtr().get() == src.getDataPtr().get()
-        || source_size > 1
-        || getData().hasDynamicStructure())
-    {
-        insert_scalar();
-        return;
-    }
-
-    if (new_rows > offsets_data.capacity())
-        offsets_data.reserve(new_rows);
-
-    if (source_size == 0)
-    {
-        offsets_data.resize_assume_reserved(new_rows);
-        std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
-        return;
-    }
-
-    /// source_size == 1
-    if (length > std::numeric_limits<Offset>::max() - old_offset)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", old_offset, length);
-
-    getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
-
-    offsets_data.resize_assume_reserved(new_rows);
-    for (size_t i = 0; i < length; ++i)
-        offsets_data[old_rows + i] = old_offset + i + 1;
-}
-
 
 void ColumnArray::insertDefault()
 {
@@ -737,8 +670,9 @@ void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t le
 
     const ColumnArray & src_concrete = assert_cast<const ColumnArray &>(src);
 
-    if (start > src_concrete.getOffsets().size() || length > src_concrete.getOffsets().size() - start)
-        throwInsertRangeFromOutOfBound("ColumnArray", start, length, src_concrete.getOffsets().size());
+    if (start + length > src_concrete.getOffsets().size())
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnArray::insertRangeFrom method. "
+            "[start({}) + length({}) > offsets.size({})]", start, length, src_concrete.getOffsets().size());
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
@@ -1447,14 +1381,12 @@ ColumnPtr ColumnArray::compress(bool force_compression) const
     ColumnPtr offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
-    Columns parts{data_compressed, offsets_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_data_compressed = std::move(data_compressed), my_offsets_compressed = std::move(offsets_compressed)]
         {
             return ColumnArray::create(my_data_compressed->decompress(), my_offsets_compressed->decompress());
-        },
-        std::move(parts));
+        });
 }
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
@@ -1758,10 +1690,4 @@ void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-ColumnPlanes ColumnArray::getPlanes() const
-{
-    ColumnPlanes planes(ColumnPlanes::Shape::Array, getOffsets().data());
-    planes.children = {&getData()};
-    return planes;
-}
 }
