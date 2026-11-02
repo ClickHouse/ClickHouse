@@ -1,14 +1,16 @@
 -- Tags: zookeeper
 
--- With `ttl_only_drop_parts`, `MATERIALIZE TTL` replaces a part whose rows have all expired with an empty part.
+-- With `ttl_only_drop_parts`, a mutation that rewrites a part whose rows have all expired replaces it with an empty part.
 -- On a replicated table the empty part must have the name from its `MUTATE_PART` entry. Otherwise the replication
 -- queue does not know the part, and every later mutation waits forever for the part named in the entry.
--- Compact and Wide parts are mutated by different tasks, so the test covers both.
+-- Compact and Wide parts are mutated by different tasks, so the test covers both with `MATERIALIZE TTL`.
+-- `t_update` covers an ordinary `UPDATE` of an expired part that a TTL merge has not dropped yet.
 
 SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_compact SYNC;
 DROP TABLE IF EXISTS t_wide SYNC;
+DROP TABLE IF EXISTS t_update SYNC;
 
 CREATE TABLE t_compact (d DateTime('UTC'), p UInt8, v UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_compact', 'r1')
@@ -41,7 +43,24 @@ ALTER TABLE t_wide UPDATE v = v + 10 WHERE 1 SETTINGS max_execution_time = 120;
 
 SELECT 'compact, after UPDATE', p, sum(v) FROM t_compact GROUP BY p ORDER BY p;
 SELECT 'wide, after UPDATE', p, sum(v) FROM t_wide GROUP BY p ORDER BY p;
-SELECT 'unfinished mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table IN ('t_compact', 't_wide') AND NOT is_done;
+
+CREATE TABLE t_update (d DateTime('UTC'), p UInt8, v UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_update', 'r1')
+PARTITION BY p ORDER BY d
+TTL d + INTERVAL 1 DAY
+SETTINGS ttl_only_drop_parts = 1, materialize_ttl_recalculate_only = 0;
+
+SYSTEM STOP TTL MERGES t_update;
+INSERT INTO t_update VALUES ('2000-01-01 00:00:00', 0, 1), ('2000-01-01 00:00:00', 0, 2), ('2100-01-01 00:00:00', 1, 3), ('2100-01-01 00:00:00', 1, 4);
+
+ALTER TABLE t_update UPDATE v = v + 10 WHERE v = 1;
+SELECT 'update, after UPDATE', p, sum(v) FROM t_update GROUP BY p ORDER BY p;
+
+DELETE FROM t_update WHERE v = 3 SETTINGS max_execution_time = 120;
+SELECT 'update, after DELETE', p, sum(v) FROM t_update GROUP BY p ORDER BY p;
+
+SELECT 'unfinished mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table IN ('t_compact', 't_wide', 't_update') AND NOT is_done;
 
 DROP TABLE t_compact SYNC;
 DROP TABLE t_wide SYNC;
+DROP TABLE t_update SYNC;
