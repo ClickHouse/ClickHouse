@@ -2049,6 +2049,9 @@ public:
     /// Turns off in the body of a `SQL SECURITY DEFINER` / `NONE` view the parallel replicas modes that would hand its reads
     /// to other replicas. Called once the settings of the body are applied, and again after each `SETTINGS` clause inside it.
     void restrictParallelReplicasInSQLSecurityOverriddenBody();
+    /// True for a secondary query that reads the slice of a `sampling_key` parallel replicas query
+    /// assigned to it by `parallel_replicas_count` / `parallel_replica_offset`.
+    bool isSamplingKeyParallelReplicasFollower() const;
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }

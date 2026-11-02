@@ -10244,10 +10244,8 @@ void Context::restrictParallelReplicasInSQLSecurityOverriddenBody()
 
     /// A `sampling_key` follower reads the slice it is assigned by `parallel_replicas_count` / `parallel_replica_offset`.
     /// Without the setting it would read the whole table, and the result would be multiplied by the number of replicas.
-    /// The body cannot fan out on its own: `updateSettingsAndClientInfoForCluster` turns parallel replicas off for its shards.
-    if (getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY
-        && settings_ref[Setting::parallel_replicas_count] > 1)
+    /// The body cannot fan out on its own: `updateSettingsAndClientInfoForCluster` keeps only the assigned slice for its shards.
+    if (isSamplingKeyParallelReplicasFollower())
         return;
 
     if (!settings_ref[Setting::parallel_replicas_custom_key].value.empty())
@@ -10259,6 +10257,15 @@ void Context::restrictParallelReplicasInSQLSecurityOverriddenBody()
     if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && !(canUseTaskBasedParallelReplicas() && settings_ref[Setting::parallel_replicas_plan_based]))
         setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+}
+
+bool Context::isSamplingKeyParallelReplicasFollower() const
+{
+    const auto & settings_ref = getSettingsRef();
+    return getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY
+        && settings_ref[Setting::parallel_replicas_count] > 1;
 }
 
 void Context::disableOffsetParallelReplicas()
