@@ -17,13 +17,14 @@
 #include <Interpreters/misc.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-#include <Storages/ReplaceAliasByExpressionVisitor.h>
 #include <Storages/extractKeyExpressionList.h>
 
 #include <Common/checkStackSize.h>
 
 #include <boost/rational.hpp>
 #include <fmt/ranges.h>
+
+#include <optional>
 
 #include <unordered_set>
 
@@ -109,45 +110,80 @@ bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescripti
     return false;
 }
 
-/// Replace identifiers that name an `ALIAS` column of the table with the plain name of that column, so
-/// that `ReplaceAliasByExpressionMatcher`, which matches the identifier as written, expands them too.
-/// This covers the table qualifier (`t.a`), the database and table qualifiers (`db.t.a`), and a subcolumn
-/// of the alias (`a.v`, `t.a.v`): the planner resolves all of them through the alias expression. The
-/// result is used only for validation, so replacing a subcolumn with its whole parent column is fine.
+/// The name of the `ALIAS` column that an identifier in the custom key refers to, if any. Besides the plain
+/// name (`a`), this covers the table qualifier (`t.a`), the database and table qualifiers (`db.t.a`), and a
+/// subcolumn of the alias (`a.v`, `t.a.v`): the planner resolves all of them through the alias expression.
+/// The result is used only for validation, so treating a subcolumn as its whole parent column is fine.
+std::optional<String> findAliasColumn(const ASTIdentifier & identifier, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    if (columns.hasAlias(identifier.name()))
+        return identifier.name();
+
+    const auto & parts = identifier.name_parts;
+    if (parts.size() < 2)
+        return {};
+
+    /// The analyzer may resolve `x.y` to the table `x.y` (`a IN default.set_rhs`), even when the table
+    /// has a column `y`. Keep such an identifier as is, so `isColumnIdentifier` rejects it.
+    if (parts.size() == 2 && DatabaseCatalog::instance().isTableExist(StorageID(parts[0], parts[1]), context))
+        return {};
+
+    /// Try the longest column name first, so an `ALIAS` column whose name contains a dot is preferred
+    /// over an `ALIAS` column named by its prefix. The first name that matches any column wins: a
+    /// physical column or its subcolumn (`z.b` of `z Tuple(b ...)`) is resolved as such, and an
+    /// unrelated `ALIAS` column named like its suffix (`b`) must not replace it.
+    constexpr auto not_alias_kinds = static_cast<GetColumnsOptions::Kind>(GetColumnsOptions::All & ~GetColumnsOptions::Aliases);
+    for (size_t num_qualifiers = 0; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
+    {
+        for (size_t name_end = parts.size(); name_end > num_qualifiers; --name_end)
+        {
+            String alias_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.begin() + name_end, "."));
+            if (columns.hasColumnOrSubcolumn(not_alias_kinds, alias_name))
+                return {};
+            if (columns.hasAlias(alias_name))
+                return alias_name;
+        }
+    }
+    return {};
+}
+
+void validateExpandedCustomKey(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context);
+
+/// Replace references to `ALIAS` columns (see `findAliasColumn`) with their expressions, recursively.
 /// An identifier rooted at an argument of an enclosing lambda, e.g. `z.a` in `arrayMap(z -> z.a, arrs)`,
-/// is a field of that argument, not a qualified column, so it is left as is.
-void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescription & columns, NameSet & lambda_arguments, bool & changed)
+/// is a field of that argument, not a column, so it is left as is. The expression of an `ALIAS` column
+/// is written at table scope, so it is expanded and validated at table scope before it is inserted:
+/// otherwise an argument of the enclosing lambda could shadow a column in it (`arrayMap(a -> b, arr)`
+/// with `b ALIAS a.v`), or make a table on the right-hand side of `IN` look like a lambda argument.
+void expandAliasColumns(
+    ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, NameSet & lambda_arguments, size_t depth)
 {
     checkStackSize();
 
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
-        const auto & parts = identifier->name_parts;
-        if (parts.size() < 2 || lambda_arguments.contains(parts.front()) || columns.hasAlias(identifier->name()))
+        if (lambda_arguments.contains(identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front()))
             return;
 
-        /// Try the longest column name first, so an `ALIAS` column whose name contains a dot is preferred
-        /// over an `ALIAS` column named by its prefix. The first name that matches any column wins: a
-        /// physical column or its subcolumn (`z.b` of `z Tuple(b ...)`) is resolved as such, and an
-        /// unrelated `ALIAS` column named like its suffix (`b`) must not replace it.
-        constexpr auto not_alias_kinds = static_cast<GetColumnsOptions::Kind>(GetColumnsOptions::All & ~GetColumnsOptions::Aliases);
-        for (size_t num_qualifiers = 0; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
-        {
-            for (size_t name_end = parts.size(); name_end > num_qualifiers; --name_end)
-            {
-                String alias_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.begin() + name_end, "."));
-                if (columns.hasColumnOrSubcolumn(not_alias_kinds, alias_name))
-                    return;
-                if (columns.hasAlias(alias_name))
-                {
-                    auto alias_identifier = make_intrusive<ASTIdentifier>(alias_name);
-                    alias_identifier->setAlias(identifier->tryGetAlias());
-                    ast = std::move(alias_identifier);
-                    changed = true;
-                    return;
-                }
-            }
-        }
+        auto alias_name = findAliasColumn(*identifier, columns, context);
+        if (!alias_name)
+            return;
+
+        /// A chain of `ALIAS` columns cannot be longer than the number of `ALIAS` columns unless it is cyclic.
+        if (depth >= columns.getAliases().size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot expand ALIAS columns in the custom key expression: too many nested ALIAS columns");
+
+        auto column_default = columns.getDefault(*alias_name);
+        if (!column_default || !column_default->expression)
+            return;
+
+        ASTPtr expanded = column_default->expression->clone();
+        NameSet table_scope;
+        expandAliasColumns(expanded, columns, context, table_scope, depth + 1);
+        validateExpandedCustomKey(expanded, columns, context);
+        ast = std::move(expanded);
         return;
     }
 
@@ -161,7 +197,7 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
 
         auto & body = func->arguments->children[1];
         auto * old_ptr = body.get();
-        removeQualifiersFromAliasColumnIdentifiers(body, columns, lambda_arguments, changed);
+        expandAliasColumns(body, columns, context, lambda_arguments, depth);
         if (body.get() != old_ptr)
             func->arguments->updatePointerToChild(old_ptr, body.get());
 
@@ -173,10 +209,27 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
     for (auto & child : ast->children)
     {
         auto * old_ptr = child.get();
-        removeQualifiersFromAliasColumnIdentifiers(child, columns, lambda_arguments, changed);
+        expandAliasColumns(child, columns, context, lambda_arguments, depth);
         if (child.get() != old_ptr)
             ast->updatePointerToChild(old_ptr, child.get());
     }
+}
+
+/// Check that the custom key, with `ALIAS` columns already expanded, contains neither subqueries or
+/// tables nor column matchers.
+void validateExpandedCustomKey(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    /// Unlike a DDL key, the setting is not rewritten by `AddDefaultDatabaseVisitor`, so `a IN arr`
+    /// arrives with a plain identifier on the right-hand side. It is a table only if it is neither
+    /// a column (possibly table-qualified, `a IN t.arr`) nor a lambda argument (`z -> a IN z`).
+    std::vector<String> lambda_arguments;
+    std::unordered_set<const IAST *> lambda_argument_identifiers;
+    collectInLambdaArgumentIdentifiers(*ast, lambda_arguments, lambda_argument_identifiers);
+    checkExpressionDoesntContainSubqueries(
+        *ast,
+        [&](const ASTIdentifier & identifier)
+        { return lambda_argument_identifiers.contains(&identifier) || isColumnIdentifier(identifier, columns, context); });
+    checkExpressionDoesntContainMatchers(*ast);
 }
 
 }
@@ -198,40 +251,10 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     /// is rejected too. The key is a setting of the current query, so there is no stored metadata to
     /// keep loading, unlike an index over such a column.
     {
-        using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
         ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
-        /// Alias expansion can introduce new qualified or subcolumn references to other `ALIAS` columns
-        /// (`b ALIAS a.v` expands to `a.v`), which `ReplaceAliasByExpressionMatcher` does not expand by
-        /// itself. Repeat both steps until normalization no longer changes anything. Each round expands
-        /// at least one more `ALIAS` column of a chain, and the chain cannot be longer than the number of
-        /// `ALIAS` columns unless it is cyclic.
-        const size_t max_rounds = columns.getAliases().size() + 1;
-        for (size_t round = 0;; ++round)
-        {
-            if (round > max_rounds)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot expand ALIAS columns in the custom key expression: too many nested ALIAS columns");
-
-            NameSet qualifier_lambda_arguments;
-            bool changed = false;
-            removeQualifiersFromAliasColumnIdentifiers(expanded_custom_key_ast, columns, qualifier_lambda_arguments, changed);
-            if (round > 0 && !changed)
-                break;
-            ReplaceAliasToExprVisitor::Data data{columns, {}};
-            ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
-        }
-        /// Unlike a DDL key, the setting is not rewritten by `AddDefaultDatabaseVisitor`, so `a IN arr`
-        /// arrives with a plain identifier on the right-hand side. It is a table only if it is neither
-        /// a column (possibly table-qualified, `a IN t.arr`) nor a lambda argument (`z -> a IN z`).
-        std::vector<String> lambda_arguments;
-        std::unordered_set<const IAST *> lambda_argument_identifiers;
-        collectInLambdaArgumentIdentifiers(*expanded_custom_key_ast, lambda_arguments, lambda_argument_identifiers);
-        checkExpressionDoesntContainSubqueries(
-            *expanded_custom_key_ast,
-            [&](const ASTIdentifier & identifier)
-            { return lambda_argument_identifiers.contains(&identifier) || isColumnIdentifier(identifier, columns, context); });
-        checkExpressionDoesntContainMatchers(*expanded_custom_key_ast);
+        NameSet lambda_arguments;
+        expandAliasColumns(expanded_custom_key_ast, columns, context, lambda_arguments, 0);
+        validateExpandedCustomKey(expanded_custom_key_ast, columns, context);
     }
 
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)

@@ -56,6 +56,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_AGGREGATION;
     extern const int UNKNOWN_IDENTIFIER;
 }
 
@@ -222,6 +223,39 @@ private:
     }
 
     ContextPtr context;
+};
+
+/// The synthetic `SELECT` accepts aggregate and window functions, but standalone actions have no
+/// aggregation or window step that would compute them: `PlannerActionsVisitor` would make their results
+/// inputs of the actions, and a key or an index over such an expression would fail on every block with
+/// `NOT_FOUND_COLUMN_IN_BLOCK`. Reject them, as `TreeRewriter` did. Subqueries are skipped: an `IN` set
+/// subquery may aggregate.
+class AssertNoAggregatesOrWindowsVisitor : public ConstInDepthQueryTreeVisitor<AssertNoAggregatesOrWindowsVisitor>
+{
+public:
+    static void visitImpl(const QueryTreeNodePtr & node)
+    {
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        if (function_node->isWindowFunction())
+            throw Exception(
+                ErrorCodes::ILLEGAL_AGGREGATION,
+                "Window function {} is found in a standalone expression",
+                function_node->formatASTForErrorMessage());
+
+        if (function_node->isAggregateFunction())
+            throw Exception(
+                ErrorCodes::ILLEGAL_AGGREGATION,
+                "Aggregate function {} is found in a standalone expression",
+                function_node->formatASTForErrorMessage());
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
+    {
+        return !child->as<QueryNode>() && !child->as<UnionNode>();
+    }
 };
 
 static CoreAnalysisResult buildExpressionCoreDAG(
@@ -393,6 +427,8 @@ static CoreAnalysisResult buildExpressionCoreDAG(
 
     query_node = std::static_pointer_cast<QueryNode>(query_tree);
     expression_list = query_node->getProjectionNode();
+
+    AssertNoAggregatesOrWindowsVisitor().visit(expression_list);
 
     RebuildFunctionsWithContextVisitor(context).visit(expression_list);
 
