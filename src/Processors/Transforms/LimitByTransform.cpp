@@ -178,11 +178,6 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
         if (row_idx == 5)
             FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
-        /// Grow `group_counts` before a key can be inserted: if the allocation threw between `emplaceKey` and
-        /// `setMapped`, the key would stay in the hash table without a group index.
-        if (group_counts.size() == group_counts.capacity())
-            group_counts.reserve(std::max<size_t>(16, group_counts.capacity() * 2));
-
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
         size_t row_group_idx = 0;
         if (key_emplace_result.isInserted()) /// New grouping key
@@ -254,6 +249,12 @@ void LimitByTransform::transform(Chunk & chunk)
             normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position])->convertToFullColumnIfConst());
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
+
+        /// Each row adds at most one group, so make room for all of them before `consumeImpl` inserts any key: if
+        /// `push_back` threw between `emplaceKey` and `setMapped`, the key would stay in the hash table without a group
+        /// index. This is done here rather than in `consumeImpl` to keep its row loop as it is.
+        if (group_counts.capacity() - group_counts.size() < row_count)
+            group_counts.reserve(std::max(group_counts.size() + row_count, group_counts.capacity() * 2));
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         switch (data.type)
