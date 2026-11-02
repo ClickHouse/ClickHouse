@@ -1,20 +1,14 @@
 <test>
     <!--
-        TPC-DS Q72 shape: two fact tables are joined by a low-cardinality key, and the WHERE
-        clause has cross-side ranges (`qty_on_hand < qty`, `ship_date > sold_date + 5`) plus
-        an equality on two dimension copies (`week = week`). Selective predicates sit on the
-        dimensions (`year`, `status`, `potential`).
+        Two large tables join on a low-cardinality key. `WHERE` has cross-side ranges and an
+        equality on two copies of a small lookup table; the selective predicates sit on lookups.
 
-        Each sales row matches about 325 inventory rows. While the ranges stay above that join,
-        it is one relation and the selective dimensions are applied only afterwards.
-        Merging the ranges into the JOIN condition lets join reorder filter sales through
-        those dimensions first, so the fact-fact join never sees the full cross product.
+        Each sales row matches about 325 inventory rows. With the ranges above that join, the
+        two facts stay one relation. Merging the ranges lets reorder filter sales first.
 
-        `sipHash64` of the 128-byte payloads is pushed to PREWHERE. It only has to keep the
-        reordered plan above 0.1s; a heavier per-row hash would be paid by both plans and
-        would hide the join-order speedup. One thread keeps the blocked plan under the 2s
-        per-run limit. Runtime filters and cached hash-table stats are off so the measured
-        difference is the reorder, and the plan does not flip between runs.
+        `sipHash64` of the 128-byte payloads is in `PREWHERE` so the reordered plan stays above
+        0.1s. One thread keeps the blocked plan under 2s. Runtime filters and cached hash-table
+        stats are off so the measured difference is the reorder.
     -->
     <settings>
         <max_threads>1</max_threads>

@@ -301,3 +301,29 @@ FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
     JOIN values('y UInt64, k UInt8', (0, 1)) AS r ON l.k = r.k
     WHERE l.x > r.y AND rn % 2 = 0
     SETTINGS max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+
+-- Do not merge extra predicates into a disjunctive `ON`.
+SELECT 'R20-or', 0, count()
+FROM values('f Float64, k Int64, g Int64, x Int64', (nan, 1, 1, 1), (1, 2, 1, 1)) AS l
+JOIN values('f Float64, k Int64, g Int64, x Int64', (nan, 3, 1, 2), (1, 4, 1, 2)) AS r
+    ON l.f = r.f OR l.k = r.k
+WHERE l.x < r.x
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R20-or', 1, count()
+FROM values('f Float64, k Int64, g Int64, x Int64', (nan, 1, 1, 1), (1, 2, 1, 1)) AS l
+JOIN values('f Float64, k Int64, g Int64, x Int64', (nan, 3, 1, 2), (1, 4, 1, 2)) AS r
+    ON l.f = r.f OR l.k = r.k
+WHERE l.x < r.x
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R20-or-and', 1, count()
+FROM values('f Float64, k Int64, g Int64, x Int64', (nan, 1, 1, 1), (1, 2, 1, 1)) AS l
+JOIN values('f Float64, k Int64, g Int64, x Int64', (nan, 3, 1, 2), (1, 4, 1, 2)) AS r
+    ON (l.f = r.f OR l.k = r.k) AND l.g = r.g
+WHERE l.x < r.x
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R20-or-eq', 1, count()
+FROM values('f Float64, k Int64, g Int64, x Int64', (nan, 1, 1, 1), (1, 2, 1, 1)) AS l
+JOIN values('f Float64, k Int64, g Int64, x Int64', (nan, 3, 1, 2), (1, 4, 1, 2)) AS r
+    ON l.f = r.f OR l.k = r.k
+WHERE l.g = r.g
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;

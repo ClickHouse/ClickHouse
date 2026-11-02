@@ -152,3 +152,7 @@ R18-plan	1
 R19-stateful	0	2	0	2
 R19-stateful	1	2	0	2
 R19-plan	1
+R20-or	0	2
+R20-or	1	2
+R20-or-and	1	2
+R20-or-eq	1	2

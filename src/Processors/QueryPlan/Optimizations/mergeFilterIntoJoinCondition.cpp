@@ -488,6 +488,10 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (is_storage_join)
         return 0;
 
+    /// A single top-level `or` is the hash-key form for disjunctive `ON`. Do not append to it.
+    if (join_operator.expression.size() == 1 && join_operator.expression.front().isFunction(JoinConditionOperator::Or))
+        return 0;
+
     const auto & join_header = child->getOutputHeader();
     const auto & left_stream_header = child->getInputHeaders().front();
     const auto & right_stream_header = child->getInputHeaders().back();
