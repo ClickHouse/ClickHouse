@@ -7,9 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Truncating this fixture to 289 bytes leaves byte 6 in the postscript's compression field. Codec 6
 # is BROTLI, which the ORC format declares but this reader does not implement. The reader rejects it
-# with orc::CompressionError, a std::runtime_error; it used to raise orc::NotImplementedYet, a
-# std::logic_error, which the exception formatter treats as an internal-invariant violation and
-# aborts on in debug and sanitizer builds.
+# with a NOT_IMPLEMENTED exception; it must never be a logical error, which aborts in debug and
+# sanitizer builds.
 DATA_FILE="$CLICKHOUSE_TMP/05036_orc_codec6_${CLICKHOUSE_DATABASE}.orc"
 head -c 289 "$CUR_DIR"/data_orc/orc_nested_union_type.orc > "$DATA_FILE"
 
@@ -29,19 +28,19 @@ do
     if [ -z "$OUT" ]; then
         echo "no output at all"
     else
-        echo "$OUT" | grep -o -m1 'orc::CompressionError\|Logical error' || echo "unexpected: $OUT"
+        echo "$OUT" | grep -o -m1 'BROTLI compression in ORC files is not supported\|Logical error' || echo "unexpected: $OUT"
     fi
 done
 
 # The message must name the codec, and must not call the file corrupt: a well-formed
 # Brotli-compressed ORC file takes this same path.
 $CLICKHOUSE_LOCAL --query "SELECT * FROM file('$DATA_FILE', ORC, 'x Int32') FORMAT Null" 2>&1 \
-    | grep -o -m1 'Unknown compression codec 6\|CORRUPTED\|INCORRECT_DATA'
+    | grep -o -m1 'BROTLI compression in ORC files is not supported\|CORRUPTED\|INCORRECT_DATA'
 
 # Neighbouring truncations are genuinely corrupt and must keep reporting corruption rather than the
 # codec gap. Schema inference wraps every non-retryable cause in one outer code, so that arm alone
 # cannot tell the two apart; the explicit-structure arm bypasses the wrapper and surfaces the inner
-# classification, and counting orc::CompressionError there pins them apart.
+# classification, and counting the codec error there pins them apart.
 for length in 200 400
 do
     NEIGHBOUR="$CLICKHOUSE_TMP/05036_orc_${length}_${CLICKHOUSE_DATABASE}.orc"
@@ -49,8 +48,8 @@ do
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('$NEIGHBOUR', ORC) FORMAT Null" 2>&1 \
         | grep -o -m1 'CANNOT_EXTRACT_TABLE_STRUCTURE\|Logical error'
     EXPLICIT=$($CLICKHOUSE_LOCAL --query "SELECT * FROM file('$NEIGHBOUR', ORC, 'x Int32') FORMAT Null" 2>&1)
-    echo "$EXPLICIT" | grep -o -m1 'orc::ParseError\|Logical error' || echo "unexpected: $EXPLICIT"
-    echo "$EXPLICIT" | grep -c 'orc::CompressionError'
+    echo "$EXPLICIT" | grep -o -m1 'INCORRECT_DATA\|Logical error' || echo "unexpected: $EXPLICIT"
+    echo "$EXPLICIT" | grep -c 'BROTLI compression'
     rm "$NEIGHBOUR"
 done
 
