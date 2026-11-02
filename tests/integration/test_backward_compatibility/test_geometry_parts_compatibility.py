@@ -28,6 +28,7 @@ QUERIES = {
     "t_compact": "SELECT id, g, variantType(g) FROM t_compact ORDER BY id",
     "t_arr": "SELECT id, a, arrayMap(x -> variantType(x), a) FROM t_arr ORDER BY id",
     "t_json": "SELECT id, j, j.p, variantType(j.p) FROM t_json ORDER BY id",
+    "t_nested": "SELECT id, n.g, arrayMap(x -> variantType(x), n.g) FROM t_nested ORDER BY id",
 }
 
 
@@ -85,6 +86,14 @@ def test_geometry_parts_without_multipoint(start_cluster):
     node.query("""INSERT INTO t_json SELECT 2, '{"p": [[1, 2], [3, 4]], "q": 7}'""")
     node.query("""INSERT INTO t_json SELECT 3, '{"q": 1}'""")
 
+    node.query(
+        f"CREATE TABLE t_nested (id UInt64, n Nested(g Geometry)) ENGINE = MergeTree ORDER BY id SETTINGS {WIDE}"
+    )
+    node.query("""
+        INSERT INTO t_nested VALUES (1, [(1., 2.)::Point, [(1., 2.), (3., 4.)]::LineString]), (2, []),
+            (3, [NULL, [(0., 0.), (1., 0.), (1., 1.)]::Ring])
+        """)
+
     expected = {table: node.query(query) for table, query in QUERIES.items()}
 
     node.restart_with_latest_version()
@@ -103,6 +112,10 @@ def test_geometry_parts_without_multipoint(start_cluster):
         == "[[],[]]\n[]\n[[],[]]\n"
     )
     assert node.query("SELECT groupUniqArray(j.p.MultiPoint) FROM t_json") == "[[]]\n"
+    assert (
+        node.query("SELECT n.g.MultiPoint FROM t_nested ORDER BY id")
+        == "[[],[]]\n[]\n[[],[]]\n"
+    )
 
     for table, query in QUERIES.items():
         assert node.query(query) == expected[table], table
@@ -119,5 +132,5 @@ def test_geometry_parts_without_multipoint(start_cluster):
             assert "MultiPoint" in substreams, substreams
 
     assert node.query(QUERIES["t"]) == expected["t"] + "8\t[(7,8),(9,10)]\tMultiPoint\n"
-    for table in ["t_compact", "t_arr", "t_json"]:
+    for table in ["t_compact", "t_arr", "t_json", "t_nested"]:
         assert node.query(QUERIES[table]) == expected[table], table

@@ -981,13 +981,19 @@ void MergeTreeReaderWide::addStreams(
         has_any_stream = true;
     };
 
-    /// Lets the serialization skip the substreams that the part has no data for by design,
-    /// for example a variant appended to the type of a `Variant` after the part was written.
+    /// Only the part's own serialization can tell the streams it lacks by design (a variant
+    /// appended to a type) from a subcolumn the part's type does not have.
     ISerialization::EnumerateStreamsSettings enumerate_settings;
-    enumerate_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path)
+    const auto & name_in_part = name_and_type.getNameInStorage();
+    auto column_in_part = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_part);
+    if (column_in_part
+        && (!name_and_type.isSubcolumn() || hasSubcolumnInPart(name_in_part, *column_in_part->type, name_and_type.getSubcolumnName())))
     {
-        return getStreamName(name_and_type, substream_path).has_value();
-    };
+        enumerate_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            return getStreamName(name_and_type, substream_path).has_value();
+        };
+    }
     serialization->enumerateStreams(enumerate_settings, callback, ISerialization::SubstreamData(serialization));
 
     if (has_any_stream && !has_all_streams)
