@@ -2343,8 +2343,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
 
-    /// Always false on this branch (`requestReadingInOrder` rejects reverse order with FINAL),
-    /// kept as a runtime value so the virtual-row helpers get the real flag.
+    /// Always false (`requestReadingInOrder` rejects reverse order with FINAL), kept as a value
+    /// so the virtual-row helpers take the real flag.
     const bool read_in_reverse = reader_settings.read_in_order && query_info.input_order_info && query_info.input_order_info->direction < 0;
 
     /// A virtual row after each `FINAL` merge announces the key its layer starts from, so the merge downstream
@@ -2495,7 +2495,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 auto in_order_reading_step_getter
                     = [this, &index_build_context, &column_names, &info, read_in_reverse,
                        use_virtual_row, &virtual_row_header, &reverse_flags, &merging_pipes_virtual_rows](auto parts)
-  
                 {
                     if (use_virtual_row)
                         merging_pipes_virtual_rows.push_back(getFinalMergeVirtualRow(parts, virtual_row_header, reverse_flags, read_in_reverse));
@@ -3962,6 +3961,20 @@ bool ReadFromMergeTree::canUseVirtualRowWithFinal() const
         return false;
 
     return true;
+}
+
+RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
+{
+    if (analyzed_result_ptr || !indexes)
+        return getParts();
+
+    /// Share all part filters with `selectRangesToRead`, including the snapshot boundary and statistics.
+    /// Keep this snapshot temporary: `PREWHERE` optimization can still change filters,
+    /// so execution must filter again with the final conditions.
+    IndexStats unused_stats;
+    return MergeTreeDataSelectExecutor::filterParts(
+        getParts(), *indexes, getStorageMetadata(), data, query_info, mutations_snapshot, getContext(),
+        max_block_numbers_to_read.get(), log, unused_stats);
 }
 
 bool ReadFromMergeTree::everyPartHasVirtualRowBound(bool read_in_reverse) const
