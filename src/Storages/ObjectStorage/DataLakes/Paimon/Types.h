@@ -4,7 +4,7 @@
 #include <utility>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -212,7 +212,7 @@ struct DataType
             else if (real_type == "DATE")
             {
                 type.root_type = RootDataType::DATE;
-                type.clickhouse_data_type = std::make_shared<DataTypeDate>();
+                type.clickhouse_data_type = std::make_shared<DataTypeDate32>();
             }
             else if (real_type.starts_with("TIME") && !real_type.starts_with("TIMESTAMP"))
             {
