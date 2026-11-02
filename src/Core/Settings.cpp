@@ -1675,7 +1675,7 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     DECLARE(UInt64, distributed_shard_retry_count, 0, R"(
-The maximum number of retries per shard after a replica returns a retryable exception in a distributed read. Retryable errors are `TOO_MANY_SIMULTANEOUS_QUERIES`, `CANNOT_OPEN_FILE`, and `NETWORK_ERROR` received in a server exception packet. Errors on the initiator's own connection, including connection loss and timeouts, are not retried by this setting.
+The maximum number of retries per shard after a replica returns a retryable exception in a distributed read. Retryable errors are `TOO_MANY_SIMULTANEOUS_QUERIES` and `CANNOT_OPEN_FILE` received in a server exception packet. Network errors, connection loss, and timeouts are not retried by this setting.
 
 Retries are supported for reads that select one replica per shard, including hedged requests, `remote`/`cluster` table functions, and lazy remote reads. Reads using multiple replicas or a task coordinator are not retried by this setting.
 

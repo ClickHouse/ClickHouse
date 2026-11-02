@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int CANNOT_OPEN_FILE;
-    extern const int NETWORK_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
@@ -934,13 +933,8 @@ bool RemoteQueryExecutor::isRetryableError(int error_code) const
     /// - CANNOT_OPEN_FILE: seen in practice when a replica hits its open file descriptor
     ///   limit (EMFILE/ENFILE) or transiently cannot open a part's file; another replica
     ///   usually has the data available.
-    /// - NETWORK_ERROR: only relevant here for distributed-over-distributed queries, where an
-    ///   intermediate server forwards the error to us inside an exception packet. A network
-    ///   error against our own direct connection is surfaced before processPacket() and is
-    ///   not handled by this retry path.
     return error_code == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES
-        || error_code == ErrorCodes::CANNOT_OPEN_FILE
-        || error_code == ErrorCodes::NETWORK_ERROR;
+        || error_code == ErrorCodes::CANNOT_OPEN_FILE;
 }
 
 void RemoteQueryExecutor::retryQuery()
