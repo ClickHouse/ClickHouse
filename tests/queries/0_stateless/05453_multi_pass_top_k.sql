@@ -7,16 +7,16 @@
 -- sketch pass, the first restricted pass over the values of the key with most rows, and the hot pass over the
 -- other values that may hold a group of the top.
 
--- The paths depend on the granules that the pilot samples and on its chunks, so the granules hold 64 rows
--- each and every chunk holds one granule. The settings that would turn the optimization off or change the
--- shape of the plan are pinned.
+-- The paths depend on the granules that the pilot samples and on the blocks that count runs, so the granules
+-- and the blocks hold 64 rows each. The settings that would turn the optimization off or change the shape of
+-- the plan are pinned. The injection that splits the ranges of a read is off: the read cannot estimate its
+-- bytes with it, so a limit of the bytes to read would keep the optimization off.
 SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1, adaptive_aggregator_top_k = 1;
-SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 64;
-SET optimize_aggregation_in_order = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0;
-SET max_bytes_to_read_leaf = 0, max_execution_speed = 0, max_execution_speed_bytes = 0, max_estimated_execution_time = 0;
+SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 64, optimize_aggregation_in_order = 0;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, serialize_query_plan = 0;
 SET group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 -- Without the hash table statistics, the declines of earlier runs are not kept, so every run takes its pilot.
 SET collect_hash_table_stats_during_aggregation = 0;
 
@@ -127,12 +127,13 @@ SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP
 -- with most rows, 4 for every group of the top. `g` is part of the primary key, so the restricted passes read
 -- only the granules of its values. Its copies are not part of it.
 -- These 20 values hold the 5 best groups of `(g, s)`, and no other value holds as many rows as the fifth best
--- group, so the first restricted pass proves the top.
+-- group, so the first restricted pass proves the top. The query of `g_i64` has a `PREWHERE` of its own, to
+-- which the restricted passes add their filter by the values of the key.
 SELECT 'bounded, certified by the first restricted pass';
 SELECT g, s, count() AS c FROM t_top_k GROUP BY g, s ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_12_bounded_uint32';
 SELECT g, s, count() AS c FROM t_top_k GROUP BY g, s ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0;
-SELECT g_i64, s, count() AS c FROM t_top_k GROUP BY g_i64, s ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_13_bounded_int64';
-SELECT g_i64, s, count() AS c FROM t_top_k GROUP BY g_i64, s ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0;
+SELECT g_i64, s, count() AS c FROM t_top_k PREWHERE id % 1000 != 999 GROUP BY g_i64, s ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_13_bounded_int64';
+SELECT g_i64, s, count() AS c FROM t_top_k PREWHERE id % 1000 != 999 GROUP BY g_i64, s ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0;
 
 -- These 20 values hold only small groups of `(g, t)`, so the other values may hold larger ones, and the hot
 -- pass aggregates them.
