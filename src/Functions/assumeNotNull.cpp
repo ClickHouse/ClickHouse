@@ -53,7 +53,7 @@ public:
     {
         /// assumeNotNull() is identity for non-Nullable values, so it preserves ordering and thus monotonic.
         /// For Nullable, treat it as monotonic only when the analyzed range is guaranteed to not contain
-        /// NULLs. A key range stands a NULL in as an infinity on either side, so neither bound may be infinite.
+        /// NULLs. A key range may represent NULL as an infinity on either side, so neither bound may be infinite.
         bool can_contain_null = canContainNull(type);
         if (can_contain_null && (left.isNull() || right.isNull()))
             return {};
