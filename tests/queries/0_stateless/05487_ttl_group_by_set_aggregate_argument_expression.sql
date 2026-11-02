@@ -6,6 +6,7 @@ CREATE TABLE t_ttl_argument_mutation (k UInt8, event DateTime, value UInt64, cnt
 INSERT INTO t_ttl_argument_mutation VALUES (1, '2020-01-01 00:00:00', 10, 0), (1, '2020-01-01 09:00:00', 20, 0);
 ALTER TABLE t_ttl_argument_mutation MODIFY TTL event + INTERVAL 1 SECOND GROUP BY k SET value = sum(value * 2), cnt = sum(1) SETTINGS mutations_sync = 2;
 SELECT value, cnt FROM t_ttl_argument_mutation;
+ALTER TABLE t_ttl_argument_mutation MODIFY TTL event + INTERVAL 1 SECOND GROUP BY k SET value = sumIf(value, value IN (SELECT 10)); -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_ttl_argument_mutation;
 
 DROP TABLE IF EXISTS t_ttl_argument_merge;
