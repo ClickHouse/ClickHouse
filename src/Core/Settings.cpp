@@ -10294,7 +10294,7 @@ With `bucket` split granularity, when the table metadata records the file size a
 
 Requires all servers of the cluster to support it: a task with a byte range cannot be sent to a server of an older version.
 )", 0, \
-        {"26.10", false, false, "New setting."}) \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
