@@ -32,11 +32,16 @@ OFF="use_top_k_dynamic_filtering = 0, use_top_k_dynamic_filtering_for_variable_l
 
 # 20 row groups of 1000 rows; every row group holds values from the whole range, so neither the statistics nor the
 # dictionary can skip it. `s` is unique and never empty, `e` is '' in one of ten rows, `t` repeats each value 4 times,
-# `k` is unique. p.parquet is PLAIN, d.parquet dictionary-encoded.
+# `r` has its 100 smallest values once and 300 others in every row group (a dictionary small enough for the
+# `ColumnReplicated` decoding of a single-column PREWHERE),
+# `k` is unique. p.parquet is PLAIN, d.parquet dictionary-encoded, dl.parquet and db.parquet DELTA_LENGTH_BYTE_ARRAY and
+# DELTA_BYTE_ARRAY.
 "${LOCAL[@]}" --query "
     INSERT INTO FUNCTION file('${DIR}/p.parquet', Parquet)
     SELECT leftPad(toString((number * 7919) % 20000), 6, '0') AS s, if(number % 10 = 3, '', s) AS e,
-        leftPad(toString(intDiv((number * 7919) % 20000, 4)), 6, '0') AS t, number AS k
+        leftPad(toString(intDiv((number * 7919) % 20000, 4)), 6, '0') AS t,
+        leftPad(toString(if((number * 7919) % 20000 < 100, (number * 7919) % 20000, 100 + (number * 7919) % 300)), 6, '0') AS r,
+        number AS k
     FROM numbers(20000)
     SETTINGS output_format_parquet_row_group_size = 1000, output_format_parquet_max_dictionary_size = 0, engine_file_truncate_on_insert = 1;
 
@@ -46,8 +51,18 @@ OFF="use_top_k_dynamic_filtering = 0, use_top_k_dynamic_filtering_for_variable_l
     INSERT INTO FUNCTION s3('${S3_P}', 'test', 'testtest', 'RawBLOB') SELECT * FROM file('${DIR}/p.parquet', 'RawBLOB')
     SETTINGS s3_truncate_on_insert = 1;"
 
+python3 -c "
+import pyarrow.parquet as pq
+table = pq.read_table('${DIR}/p.parquet')
+for name, encoding in (('dl', 'DELTA_LENGTH_BYTE_ARRAY'), ('db', 'DELTA_BYTE_ARRAY')):
+    pq.write_table(table, '${DIR}/' + name + '.parquet', use_dictionary=False, row_group_size=1000,
+                   column_encoding={'s': encoding, 'e': encoding, 't': encoding})
+"
+
 P="file('${DIR}/p.parquet')"
 D="file('${DIR}/d.parquet')"
+DL="file('${DIR}/dl.parquet')"
+DB="file('${DIR}/db.parquet')"
 # `d` is not in the files: it is computed from `s` for every row the source returns.
 TABLES="CREATE TABLE tp (s String, d UInt8 DEFAULT intDiv(100, length(s))) ENGINE = File(Parquet, '${DIR}/p.parquet');
     CREATE TABLE td (s String, d UInt8 DEFAULT intDiv(100, length(s))) ENGINE = File(Parquet, '${DIR}/d.parquet');"
@@ -82,9 +97,11 @@ for checked in (mode(1), mode(2)):
 }
 
 echo "-- results identical with and without the optimization"
-for F in "${P}" "${D}"; do
+for F in "${P}" "${D}" "${DL}" "${DB}"; do
     queries=(
         "SELECT s FROM ${F} WHERE s != '' ORDER BY s LIMIT 5"
+        "SELECT s FROM ${F} WHERE s != '' ORDER BY s DESC LIMIT 5 OFFSET 3"
+        "SELECT r FROM ${F} WHERE r != '' ORDER BY r DESC LIMIT 5 OFFSET 3"
         "SELECT s FROM ${F} PREWHERE s != '' ORDER BY s DESC LIMIT 5"
         "SELECT s FROM ${F} WHERE notEmpty(s) ORDER BY s LIMIT 5 OFFSET 7"
         "SELECT e FROM ${F} WHERE e != '' ORDER BY e LIMIT 5"
@@ -122,6 +139,8 @@ check "PLAIN, PREWHERE" "SELECT s FROM ${P} PREWHERE s != '' ORDER BY s DESC LIM
 check "PLAIN, ties" "SELECT t, k FROM ${P} WHERE t != '' ORDER BY t, k LIMIT 6" "replaced > 0"
 check "dictionary" "SELECT s FROM ${D} WHERE s != '' AND k % 3 != 0 ORDER BY s LIMIT 5" "replaced > 0"
 check "dictionary, PREWHERE" "SELECT s FROM ${D} PREWHERE s != '' AND k % 3 != 0 ORDER BY s DESC LIMIT 5" "replaced > 0"
+check "DELTA_LENGTH_BYTE_ARRAY" "SELECT s FROM ${DL} WHERE s != '' ORDER BY s LIMIT 5" "replaced > 0"
+check "DELTA_BYTE_ARRAY" "SELECT s FROM ${DB} WHERE s != '' ORDER BY s LIMIT 5" "replaced > 0"
 check "DEFAULT, PREWHERE moved" "SELECT s, d FROM tp WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0" "replaced > 0"
 # PREWHERE does not drop the replaced values before something else reads them.
 check "no PREWHERE" "SELECT s, d FROM tp WHERE s != '' ORDER BY s LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0" "replaced == 0"
@@ -140,6 +159,8 @@ echo "-- a single-column filter is moved to PREWHERE"
 "${LOCAL[@]}" --query "
     SELECT count() FROM (EXPLAIN actions = 1 SELECT s FROM ${P} WHERE s != '' ORDER BY s LIMIT 5) WHERE explain ILIKE '%Prewhere filter column%';
     SELECT count() FROM (EXPLAIN actions = 1 SELECT s FROM ${P} WHERE s != '' ORDER BY s LIMIT 5 SETTINGS use_top_k_dynamic_filtering = 0)
+        WHERE explain ILIKE '%Prewhere filter column%';
+    SELECT count() FROM (EXPLAIN actions = 1 SELECT s FROM ${P} WHERE s != '' ORDER BY s LIMIT 5 SETTINGS use_columns_cache = 1)
         WHERE explain ILIKE '%Prewhere filter column%';"
 
 # The column written to the columns cache keeps its values; the second query is served from the cache. The cache trusts

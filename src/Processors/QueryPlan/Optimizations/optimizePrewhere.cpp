@@ -25,9 +25,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool enable_writes_to_columns_cache;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
+    extern const SettingsBool use_columns_cache;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool vector_search_with_rescoring;
 }
@@ -343,9 +345,12 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
         columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
 
-    /// Set by `tryOptimizeTopK` in the first pass of the optimizations.
+    /// Set by `tryOptimizeTopK` in the first pass of the optimizations. Not when the columns cache may be written: the reader
+    /// keeps the values of a column it writes, and a top-K read outputs its sort column anyway, so the PREWHERE gains nothing.
     String top_k_string_sort_column;
-    if (const auto * top_k_filter = source_step_with_filter->getTopKFilter(); top_k_filter && !top_k_filter->filter_rows)
+    const Settings & source_settings = source_step_with_filter->getContext()->getSettingsRef();
+    if (const auto * top_k_filter = source_step_with_filter->getTopKFilter(); top_k_filter && !top_k_filter->filter_rows
+        && !(source_settings[Setting::use_columns_cache] && source_settings[Setting::enable_writes_to_columns_cache]))
         top_k_string_sort_column = top_k_filter->column_name;
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),

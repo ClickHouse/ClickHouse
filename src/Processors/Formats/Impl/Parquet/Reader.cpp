@@ -2433,9 +2433,6 @@ void Reader::decodeDictionaryPageImpl(
     /// most rows, and the mask is consulted only for the rows that passed them. Their number is not known
     /// when the dictionary is decoded (it is shared by all row subgroups), so do not credit the mask with
     /// the rows of the column chunk at all, only with one row per entry.
-    if (build_entry_masks && column_info.top_k_string_bound)
-        column.dictionary.initTopKMask();
-
     if (build_entry_masks && column_info.string_value_filter && column_info.string_value_filter->isEnabled())
     {
         Int64 non_null_values = 0;
@@ -2448,6 +2445,9 @@ void Reader::decodeDictionaryPageImpl(
         }
         column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter, size_t(non_null_values));
     }
+
+    if (build_entry_masks && column_info.top_k_string_bound)
+        column.dictionary.initTopKMask(*column_info.top_k_string_bound);
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
@@ -4027,13 +4027,6 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     return true;
 }
 
-/// See `TopKStringBound`. Only the values that pass `filter` are gathered through the dictionary.
-NO_INLINE static void refreshTopKMaskForPage(
-    Dictionary & dictionary, const TopKStringBound & bound, const UInt8 * filter, size_t filter_offset, size_t num_values)
-{
-    dictionary.refreshTopKMask(bound, filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values);
-}
-
 /// Advances page.{value_idx, next_row_idx}. The caller must advance page.data (encoded values).
 static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page)
 {
@@ -4456,8 +4449,6 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
             if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
                 filter = nullptr;
-            if (column_info.top_k_string_bound && !subchunk.dictionary_values) [[unlikely]]
-                refreshTopKMaskForPage(column.dictionary, *column_info.top_k_string_bound, filter, filter_offset, encoded_values_to_read);
             if (subchunk.dictionary_values)
                 page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when

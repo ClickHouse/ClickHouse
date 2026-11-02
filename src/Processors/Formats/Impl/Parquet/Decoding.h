@@ -92,6 +92,8 @@ struct Dictionary
     /// `index` materializes empty strings for the entries the mask excludes.
     struct TopKMask
     {
+        /// Owned by the reader's column info, which outlives the dictionary.
+        const TopKStringBound * bound = nullptr;
         /// `count` entries; `mask[i]` is 0 if the i-th entry is beyond the threshold of `version`.
         PaddedPODArray<UInt8> mask;
         /// `ITopKThresholdTracker::getVersion` of the threshold the mask was built from; 0 if not built yet.
@@ -101,19 +103,26 @@ struct Dictionary
         /// Values gathered through the current `mask`, and how many of them it replaced.
         size_t values_with_mask = 0;
         size_t replaced_with_mask = 0;
-        /// The mask replaced nothing for `count` values, e.g. because values arrive in the order of the sort:
-        /// the rest of the column chunk is decoded without it.
-        bool useless = false;
     };
     /// Created by `initTopKMask`. Out of line, so that reads without the bound keep their layout.
     std::unique_ptr<TopKMask> top_k;
 
+    /// The per-entry mask `index` applies: `string_value_filter_mask` or `top_k`, never both.
+    enum class EntryMask : UInt8
+    {
+        None,
+        StringValueFilter,
+        TopK,
+    };
+    EntryMask entry_mask = EntryMask::None;
+
     /// Allocates the mask (nothing excluded), see `decodedFootprintUpperBound`. Only in `StringPlain` mode.
-    void initTopKMask();
-    bool hasTopKMask() const { return top_k && top_k->version != 0 && !top_k->useless; }
-    /// Called before `num_values` values are decoded through the dictionary. Rebuilds the mask if the threshold
+    void initTopKMask(const TopKStringBound & bound);
+    /// Called before `num_values` values are gathered through the top-K mask. Rebuilds the mask if the threshold
     /// changed since it was built, but only after at least `count` values were decoded since the last build
-    /// (including these ones), so that the rebuilds cost at most one comparison per decoded value.
+    /// (including these ones), so that the rebuilds cost at most one comparison per decoded value. When the mask
+    /// replaced nothing for `count` values (e.g. the values arrive in the order of the sort), the rest of the
+    /// column chunk is decoded without it.
     void refreshTopKMask(const TopKStringBound & bound, size_t num_values);
 
     void reset();
