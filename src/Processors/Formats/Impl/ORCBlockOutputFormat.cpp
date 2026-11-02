@@ -45,24 +45,24 @@ namespace ErrorCodes
 namespace
 {
 
-orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
+ORC::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
 {
     if (method == FormatSettings::ORCCompression::NONE)
-        return orc::CompressionKind::CompressionKind_NONE;
+        return ORC::CompressionKind::NONE;
 
 #if USE_SNAPPY
     if (method == FormatSettings::ORCCompression::SNAPPY)
-        return orc::CompressionKind::CompressionKind_SNAPPY;
+        return ORC::CompressionKind::SNAPPY;
 #endif
 
     if (method == FormatSettings::ORCCompression::ZSTD)
-        return orc::CompressionKind::CompressionKind_ZSTD;
+        return ORC::CompressionKind::ZSTD;
 
     if (method == FormatSettings::ORCCompression::LZ4)
-        return orc::CompressionKind::CompressionKind_LZ4;
+        return ORC::CompressionKind::LZ4;
 
     if (method == FormatSettings::ORCCompression::ZLIB)
-        return orc::CompressionKind::CompressionKind_ZLIB;
+        return ORC::CompressionKind::ZLIB;
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
@@ -71,23 +71,23 @@ orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
 /// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, and a nested
 /// `UNION` reads as a `Variant`, which sorts its branches, while ORC keeps them positional.
 /// A field name is length-prefixed so a name containing `:` or `,` cannot forge another key.
-String orcTypeDedupKey(const orc::Type & type)
+String orcTypeDedupKey(const ORC::Type & type)
 {
     const auto kind = type.getKind();
-    if (kind == orc::TypeKind::BINARY || kind == orc::TypeKind::STRING)
+    if (kind == ORC::TypeKind::BINARY || kind == ORC::TypeKind::STRING)
         return "string";
-    if (kind == orc::TypeKind::DECIMAL)
+    if (kind == ORC::TypeKind::DECIMAL)
         return fmt::format("decimal({},{})", type.getPrecision(), type.getScale());
 
     std::vector<String> children;
     for (size_t i = 0; i < type.getSubtypeCount(); ++i)
     {
         auto child = orcTypeDedupKey(*type.getSubtype(i));
-        if (kind == orc::TypeKind::STRUCT)
+        if (kind == ORC::TypeKind::STRUCT)
             child = fmt::format("{}:{}:{}", type.getFieldName(i).size(), type.getFieldName(i), child);
         children.push_back(std::move(child));
     }
-    if (kind == orc::TypeKind::UNION)
+    if (kind == ORC::TypeKind::UNION)
         std::sort(children.begin(), children.end());
     /// Every remaining kind the writer emits is a parameterless primitive mapping to a distinct
     /// ClickHouse type, so for those the kind alone is the key and there are no children.
@@ -97,17 +97,6 @@ String orcTypeDedupKey(const orc::Type & type)
 }
 
 ORCOutputStream::ORCOutputStream(WriteBuffer & out_) : out(out_) {}
-
-uint64_t ORCOutputStream::getLength() const
-{
-    return out.count();
-}
-
-uint64_t ORCOutputStream::getNaturalWriteSize() const
-{
-    out.nextIfAtEnd();
-    return out.available();
-}
 
 void ORCOutputStream::write(const void* buf, size_t length)
 {
@@ -124,7 +113,7 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader head
         data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
-std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const String & column_path)
+std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const String & column_path)
 {
     /// Nullable(T) maps to the same ORC node as T; only the Iceberg `required` flag differs.
     /// A complex container (list/map/struct) is never wrapped in Nullable, so its Iceberg
@@ -135,63 +124,63 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         required = !column_mapper->isIcebergOptionalPath(column_path);
     const DataTypePtr unwrapped = removeNullable(type);
 
-    std::unique_ptr<orc::Type> result;
+    std::unique_ptr<ORC::Type> result;
     switch (unwrapped->getTypeId())
     {
         case TypeIndex::UInt8:
         {
             if (isBool(unwrapped))
-                result = orc::createPrimitiveType(orc::TypeKind::BOOLEAN);
+                result = ORC::Type::createPrimitiveType(ORC::TypeKind::BOOLEAN);
             else
-                result = orc::createPrimitiveType(orc::TypeKind::BYTE);
+                result = ORC::Type::createPrimitiveType(ORC::TypeKind::BYTE);
             break;
         }
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::BYTE);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::BYTE);
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::UInt16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::SHORT);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::SHORT);
             break;
         }
         case TypeIndex::UInt32: [[fallthrough]];
         case TypeIndex::IPv4: [[fallthrough]];
         case TypeIndex::Int32:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::INT);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::INT);
             break;
         }
         case TypeIndex::UInt64: [[fallthrough]];
         case TypeIndex::Int64:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::LONG);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::LONG);
             break;
         }
         case TypeIndex::Float32:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::FLOAT);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::FLOAT);
             break;
         }
         case TypeIndex::Float64:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::DOUBLE);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::DOUBLE);
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Date:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::DATE);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::DATE);
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::TIMESTAMP);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::TIMESTAMP);
             break;
         }
         case TypeIndex::Int128: [[fallthrough]];
@@ -199,7 +188,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::Int256: [[fallthrough]];
         case TypeIndex::UInt256: [[fallthrough]];
         case TypeIndex::Decimal256:
-            result = orc::createPrimitiveType(orc::TypeKind::BINARY);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::BINARY);
             break;
         case TypeIndex::String:
         {
@@ -208,7 +197,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             bool force_string = format_settings.orc.output_string_as_string;
             if (column_mapper && column_mapper->hasIcebergStringInfo())
                 force_string = column_mapper->isIcebergStringPath(column_path);
-            result = orc::createPrimitiveType(force_string ? orc::TypeKind::STRING : orc::TypeKind::BINARY);
+            result = ORC::Type::createPrimitiveType(force_string ? ORC::TypeKind::STRING : ORC::TypeKind::BINARY);
             break;
         }
         case TypeIndex::FixedString:
@@ -216,38 +205,38 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             /// Iceberg `fixed[L]` (FixedString) must stay ORC `binary`, so for Iceberg writes
             /// force `binary` regardless of the setting; keep the setting-driven choice otherwise.
             if (format_settings.orc.output_string_as_string && !column_mapper)
-                result = orc::createPrimitiveType(orc::TypeKind::STRING);
+                result = ORC::Type::createPrimitiveType(ORC::TypeKind::STRING);
             else
-                result = orc::createPrimitiveType(orc::TypeKind::BINARY);
+                result = ORC::Type::createPrimitiveType(ORC::TypeKind::BINARY);
             break;
         }
         case TypeIndex::IPv6:
         {
-            result = orc::createPrimitiveType(orc::TypeKind::BINARY);
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::BINARY);
             break;
         }
         case TypeIndex::Array:
         {
             const auto * array_type = assert_cast<const DataTypeArray *>(unwrapped.get());
-            result = orc::createListType(getORCType(array_type->getNestedType(), Nested::concatenateName(column_path, "element")));
+            result = ORC::Type::createListType(getORCType(array_type->getNestedType(), Nested::concatenateName(column_path, "element")));
             break;
         }
         case TypeIndex::Decimal32:
         {
             const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal32> *>(unwrapped.get());
-            result = orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
+            result = ORC::Type::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
             break;
         }
         case TypeIndex::Decimal64:
         {
             const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal64> *>(unwrapped.get());
-            result = orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
+            result = ORC::Type::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
             break;
         }
         case TypeIndex::Decimal128:
         {
             const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal128> *>(unwrapped.get());
-            result = orc::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
+            result = ORC::Type::createDecimalType(decimal_type->getPrecision(), decimal_type->getScale());
             break;
         }
         case TypeIndex::Tuple:
@@ -255,7 +244,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(unwrapped.get());
             const auto & nested_names = tuple_type->getElementNames();
             const auto & nested_types = tuple_type->getElements();
-            auto struct_type = orc::createStructType();
+            auto struct_type = ORC::Type::createStructType();
             for (size_t i = 0; i < nested_types.size(); ++i)
                 struct_type->addStructField(nested_names[i], getORCType(nested_types[i], Nested::concatenateName(column_path, nested_names[i])));
             result = std::move(struct_type);
@@ -264,7 +253,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::Map:
         {
             const auto * map_type = assert_cast<const DataTypeMap *>(unwrapped.get());
-            result = orc::createMapType(
+            result = ORC::Type::createMapType(
                 getORCType(map_type->getKeyType(), Nested::concatenateName(column_path, "key")),
                 getORCType(map_type->getValueType(), Nested::concatenateName(column_path, "value"))
                 );
@@ -273,7 +262,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::Variant:
         {
             const auto & variant_type = assert_cast<const DataTypeVariant &>(*unwrapped);
-            auto union_type = orc::createUnionType();
+            auto union_type = ORC::Type::createUnionType();
             /// ORC keeps one physical stream per union branch and identifies a branch only by its
             /// ORC type, so two variants that map to the same ORC type (e.g. `Int32` and `UInt32`,
             /// both ORC `int`) would produce a union with duplicate branches, which the reader
@@ -293,7 +282,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
                         "Type {} is not supported for ORC output format: variant {} is written as ORC type '{}' and variant {} as "
                         "'{}', which are read back as the same type, and ORC unions with duplicate branch types cannot be read back",
                         unwrapped->getName(), it->second.first, it->second.second, nested_type->getName(), child_type->toString());
-                union_type->addUnionChild(std::move(child_type));
+                union_type->addChild(std::move(child_type));
             }
             result = std::move(union_type);
             break;
@@ -318,406 +307,18 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
     return result;
 }
 
-template <typename NumberType, typename NumberVectorBatch, typename ConvertFunc>
-void ORCBlockOutputFormat::writeNumbers(
-        orc::ColumnVectorBatch & orc_column,
-        const IColumn & column,
-        const PaddedPODArray<UInt8> * /*null_bytemap*/,
-        ConvertFunc convert)
-{
-    NumberVectorBatch & number_orc_column = dynamic_cast<NumberVectorBatch &>(orc_column);
-    const auto & number_column = assert_cast<const ColumnVector<NumberType> &>(column);
-
-    number_orc_column.data.resize(number_column.size());
-    for (size_t i = 0; i != number_column.size(); ++i)
-        number_orc_column.data[i] = convert(number_column.getElement(i));
-}
-
-template <typename Decimal, typename DecimalVectorBatch, typename ConvertFunc>
-void ORCBlockOutputFormat::writeDecimals(
-        orc::ColumnVectorBatch & orc_column,
-        const IColumn & column,
-        DataTypePtr & type,
-        const PaddedPODArray<UInt8> * /*null_bytemap*/,
-        ConvertFunc convert)
-{
-    DecimalVectorBatch & decimal_orc_column = dynamic_cast<DecimalVectorBatch &>(orc_column);
-    const auto & decimal_column = assert_cast<const ColumnDecimal<Decimal> &>(column);
-    const auto * decimal_type = assert_cast<const DataTypeDecimal<Decimal> *>(type.get());
-    decimal_orc_column.precision = decimal_type->getPrecision();
-    decimal_orc_column.scale = decimal_type->getScale();
-    decimal_orc_column.resize(decimal_column.size());
-
-    decimal_orc_column.values.resize(decimal_column.size());
-    for (size_t i = 0; i != decimal_column.size(); ++i)
-        decimal_orc_column.values[i] = convert(decimal_column.getElement(i).value);
-}
-
-template <typename ColumnType>
-void ORCBlockOutputFormat::writeStrings(
-        orc::ColumnVectorBatch & orc_column,
-        const IColumn & column,
-        const PaddedPODArray<UInt8> * null_bytemap)
-{
-    orc::StringVectorBatch & string_orc_column = dynamic_cast<orc::StringVectorBatch &>(orc_column);
-    const auto & string_column = assert_cast<const ColumnType &>(column);
-
-    string_orc_column.data.resize(string_column.size());
-    string_orc_column.length.resize(string_column.size());
-    for (size_t i = 0; i != string_column.size(); ++i)
-    {
-        const std::string_view string = string_column.getDataAt(i);
-        string_orc_column.data[i] = (null_bytemap && (*null_bytemap)[i]) ? nullptr : const_cast<char *>(string.data());
-        string_orc_column.length[i] = string.size();
-    }
-}
-
-template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
-void ORCBlockOutputFormat::writeDateTimes(
-        orc::ColumnVectorBatch & orc_column,
-        const IColumn & column,
-        const PaddedPODArray<UInt8> * /*null_bytemap*/,
-        GetSecondsFunc get_seconds,
-        GetNanosecondsFunc get_nanoseconds)
-{
-    orc::TimestampVectorBatch & timestamp_orc_column = dynamic_cast<orc::TimestampVectorBatch &>(orc_column);
-    const auto & timestamp_column = assert_cast<const ColumnType &>(column);
-
-    timestamp_orc_column.data.resize(timestamp_column.size());
-    timestamp_orc_column.nanoseconds.resize(timestamp_column.size());
-    for (size_t i = 0; i != timestamp_column.size(); ++i)
-    {
-        timestamp_orc_column.data[i] = static_cast<int64_t>(get_seconds(timestamp_column.getElement(i)));
-        timestamp_orc_column.nanoseconds[i] = static_cast<int64_t>(get_nanoseconds(timestamp_column.getElement(i)));
-    }
-}
-
-void ORCBlockOutputFormat::writeColumn(
-    orc::ColumnVectorBatch & orc_column,
-    const IColumn & column,
-    DataTypePtr & type,
-    const PaddedPODArray<UInt8> * null_bytemap)
-{
-    size_t rows = column.size();
-    orc_column.resize(rows);
-    orc_column.numElements = rows;
-
-    /// Calculate orc_column.hasNulls
-    if (null_bytemap)
-        orc_column.hasNulls = !memoryIsZero(null_bytemap->data(), 0, null_bytemap->size());
-    else
-        orc_column.hasNulls = false;
-
-    /// Fill orc_column.notNull
-    if (orc_column.hasNulls)
-    {
-        for (size_t i = 0; i < rows; ++i)
-            orc_column.notNull[i] = !(*null_bytemap)[i];
-    }
-    else
-    {
-        for (size_t i = 0; i < rows; ++i)
-            orc_column.notNull[i] = 1;
-    }
-
-    /// ORC doesn't have unsigned types, so cast everything to signed and sign-extend to Int64 to
-    /// make the ORC library calculate min and max correctly.
-    switch (type->getTypeId())
-    {
-        case TypeIndex::Enum8: [[fallthrough]];
-        case TypeIndex::Int8:
-        {
-            /// Note: Explicit cast to avoid clang-tidy error: 'signed char' to 'long' conversion; consider casting to 'unsigned char' first.
-            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int8 & value){ return Int64(Int8(value)); });
-            break;
-        }
-        case TypeIndex::UInt8:
-        {
-            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt8 & value){ return Int64(Int8(value)); });
-            break;
-        }
-        case TypeIndex::Enum16: [[fallthrough]];
-        case TypeIndex::Int16:
-        {
-            writeNumbers<Int16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int16 & value){ return value; });
-            break;
-        }
-        case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::UInt16:
-        {
-            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return Int64(Int16(value)); });
-            break;
-        }
-        case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::Int32:
-        {
-            writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int32 & value){ return value; });
-            break;
-        }
-        case TypeIndex::UInt32:
-        {
-            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt32 & value){ return Int64(Int32(value)); });
-            break;
-        }
-        case TypeIndex::IPv4:
-        {
-            writeNumbers<IPv4, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const IPv4 & value){ return Int64(Int32(value.toUnderType())); });
-            break;
-        }
-        case TypeIndex::Int64:
-        {
-            writeNumbers<Int64, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int64 & value){ return value; });
-            break;
-        }
-        case TypeIndex::UInt64:
-        {
-            writeNumbers<UInt64,orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt64 & value){ return value; });
-            break;
-        }
-        case TypeIndex::Int128:
-        {
-            writeStrings<ColumnInt128>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::UInt128:
-        {
-            writeStrings<ColumnUInt128>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::Int256:
-        {
-            writeStrings<ColumnInt256>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::UInt256:
-        {
-            writeStrings<ColumnUInt256>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::Float32:
-        {
-            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return static_cast<double>(value); });
-            break;
-        }
-        case TypeIndex::Float64:
-        {
-            writeNumbers<Float64, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float64 & value){ return value; });
-            break;
-        }
-        case TypeIndex::FixedString:
-        {
-            writeStrings<ColumnFixedString>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::String:
-        {
-            writeStrings<ColumnString>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::IPv6:
-        {
-            writeStrings<ColumnIPv6>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::DateTime:
-        {
-            writeDateTimes<ColumnUInt32>(
-                    orc_column,
-                    column, null_bytemap,
-                    [](UInt32 value){ return value; },
-                    [](UInt32){ return 0; });
-            break;
-        }
-        case TypeIndex::DateTime64:
-        {
-            const auto * timestamp_type = assert_cast<const DataTypeDateTime64 *>(type.get());
-            UInt32 scale = timestamp_type->getScale();
-            writeDateTimes<DataTypeDateTime64::ColumnType>(
-                orc_column,
-                column,
-                null_bytemap,
-                [scale](Int64 value) { return value / Int64(std::pow(10, scale)); },
-                [scale](Int64 value) { return (value % Int64(std::pow(10, scale))) * Int64(std::pow(10, 9 - scale)); });
-            break;
-        }
-        case TypeIndex::Decimal32: {
-            writeDecimals<Decimal32, orc::Decimal64VectorBatch>(
-                    orc_column,
-                    column,
-                    type,
-                    null_bytemap,
-                    [](Int32 value){ return value; });
-            break;
-        }
-        case TypeIndex::Decimal64:
-        {
-            writeDecimals<Decimal64, orc::Decimal64VectorBatch>(
-                    orc_column,
-                    column,
-                    type,
-                    null_bytemap,
-                    [](Int64 value){ return value; });
-            break;
-        }
-        case TypeIndex::Decimal128:
-        {
-            writeDecimals<Decimal128, orc::Decimal128VectorBatch>(
-                    orc_column,
-                    column,
-                    type,
-                    null_bytemap,
-                    [](Int128 value){ return orc::Int128(static_cast<Int64>(value >> 64), static_cast<UInt64>((value << 64) >> 64)); });
-            break;
-        }
-        case TypeIndex::Decimal256:
-        {
-            writeStrings<ColumnDecimal<Decimal256>>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::Nullable:
-        {
-            chassert(!null_bytemap);
-            const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
-            const PaddedPODArray<UInt8> & new_null_bytemap = assert_cast<const ColumnVector<UInt8> &>(*nullable_column.getNullMapColumnPtr()).getData();
-            auto nested_type = removeNullable(type);
-            writeColumn(orc_column, nullable_column.getNestedColumn(), nested_type, &new_null_bytemap);
-            break;
-        }
-        case TypeIndex::Array:
-        {
-            orc::ListVectorBatch & list_orc_column = dynamic_cast<orc::ListVectorBatch &>(orc_column);
-            const auto & list_column = assert_cast<const ColumnArray &>(column);
-            auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
-            const ColumnArray::Offsets & offsets = list_column.getOffsets();
-
-            size_t column_size = list_column.size();
-            list_orc_column.offsets.resize(column_size + 1);
-
-            /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
-            list_orc_column.offsets[0] = 0;
-            for (size_t i = 0; i != column_size; ++i)
-                list_orc_column.offsets[i + 1] = offsets[i];
-
-            orc::ColumnVectorBatch & nested_orc_column = *list_orc_column.elements;
-            writeColumn(nested_orc_column, list_column.getData(), nested_type, nullptr);
-            break;
-        }
-        case TypeIndex::Tuple:
-        {
-            orc::StructVectorBatch & struct_orc_column = dynamic_cast<orc::StructVectorBatch &>(orc_column);
-            const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
-            auto nested_types = assert_cast<const DataTypeTuple *>(type.get())->getElements();
-            for (size_t i = 0; i != tuple_column.tupleSize(); ++i)
-            {
-                if (null_bytemap && nested_types[i]->isNullable())
-                {
-                    /// When both the struct and the element are nullable, we need to merge the two null bitmaps:
-                    /// a child value is null if either the struct row is null OR the element itself is null.
-                    const auto & nullable_col = assert_cast<const ColumnNullable &>(tuple_column.getColumn(i));
-                    const auto & element_null_map = nullable_col.getNullMapData();
-                    PaddedPODArray<UInt8> merged_null_map(element_null_map.size());
-                    for (size_t j = 0; j < element_null_map.size(); ++j)
-                        merged_null_map[j] = element_null_map[j] | (*null_bytemap)[j];
-
-                    auto nested_type = removeNullable(nested_types[i]);
-                    writeColumn(*struct_orc_column.fields[i], nullable_col.getNestedColumn(), nested_type, &merged_null_map);
-                }
-                else
-                {
-                    /// Propagate the struct-level null_bytemap to children so the ORC library correctly handles
-                    /// null struct rows (child values at null positions must also be marked null).
-                    writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], null_bytemap);
-                }
-            }
-            break;
-        }
-        case TypeIndex::Map:
-        {
-            orc::MapVectorBatch & map_orc_column = dynamic_cast<orc::MapVectorBatch &>(orc_column);
-            const auto & list_column = assert_cast<const ColumnMap &>(column).getNestedColumn();
-            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            const ColumnArray::Offsets & offsets = list_column.getOffsets();
-
-            size_t column_size = list_column.size();
-
-            map_orc_column.offsets.resize(column_size + 1);
-            /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
-            map_orc_column.offsets[0] = 0;
-            for (size_t i = 0; i != column_size; ++i)
-                map_orc_column.offsets[i + 1] = offsets[i];
-
-            const auto nested_columns = assert_cast<const ColumnTuple *>(list_column.getDataPtr().get())->getColumns();
-
-            orc::ColumnVectorBatch & keys_orc_column = *map_orc_column.keys;
-            auto key_type = map_type.getKeyType();
-            writeColumn(keys_orc_column, *nested_columns[0], key_type, nullptr);
-
-            orc::ColumnVectorBatch & values_orc_column = *map_orc_column.elements;
-            auto value_type = map_type.getValueType();
-            writeColumn(values_orc_column, *nested_columns[1], value_type, nullptr);
-            break;
-        }
-        case TypeIndex::Variant:
-        {
-            auto & union_orc_column = dynamic_cast<orc::UnionVectorBatch &>(orc_column);
-            const auto & variant_column = assert_cast<const ColumnVariant &>(column);
-            const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
-
-            /// The ORC union branches are created in the same order as the Variant's variants (see
-            /// getORCType), so a global discriminator is exactly the ORC tag. A Variant NULL row (the
-            /// NULL discriminator) is written as a NULL union row.
-            bool has_nulls = orc_column.hasNulls;
-            for (size_t i = 0; i < rows; ++i)
-            {
-                auto global_discr = variant_column.globalDiscriminatorAt(i);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || (null_bytemap && (*null_bytemap)[i]))
-                {
-                    union_orc_column.notNull[i] = 0;
-                    union_orc_column.tags[i] = 0;
-                    union_orc_column.offsets[i] = 0;
-                    has_nulls = true;
-                }
-                else
-                {
-                    union_orc_column.tags[i] = static_cast<unsigned char>(global_discr);
-                    union_orc_column.offsets[i] = variant_column.offsetAt(i);
-                }
-            }
-            union_orc_column.hasNulls = has_nulls;
-
-            /// Each branch column already contains exactly the rows routed to it (in offset order).
-            for (size_t i = 0; i < variant_types.size(); ++i)
-            {
-                auto nested_type = variant_types[i];
-                writeColumn(*union_orc_column.children[i], variant_column.getVariantByGlobalDiscriminator(i), nested_type, nullptr);
-            }
-            break;
-        }
-        default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
-    }
-}
-
 void ORCBlockOutputFormat::consume(Chunk chunk)
 {
     if (!writer)
         prepareWriter();
 
-    size_t columns_num = chunk.getNumColumns();
     size_t rows_num = chunk.getNumRows();
-
-    std::unique_ptr<orc::ColumnVectorBatch> batch = writer->createRowBatch(chunk.getNumRows());
-    orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
-
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveLowCardinality(column);
 
-    for (size_t i = 0; i != columns_num; ++i)
-        writeColumn(*root.fields[i], *columns[i], data_types[i], nullptr);
-
-    root.numElements = rows_num;
-    writer->add(*batch);
+    /// The values are encoded directly from the columns.
+    writer->add(columns, rows_num);
 }
 
 void ORCBlockOutputFormat::finalizeImpl()
@@ -736,20 +337,19 @@ void ORCBlockOutputFormat::resetFormatterImpl()
 void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
-    schema = orc::createStructType();
-    options.setMemoryPool(&getORCMemoryPool());
-    options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
-    options.setRowIndexStride(format_settings.orc.output_row_index_stride);
-    options.setDictionaryKeySizeThreshold(format_settings.orc.output_dictionary_key_size_threshold);
-    options.setCompressionBlockSize(format_settings.orc.output_compression_block_size);
-    options.setTimezoneName(format_settings.orc.writer_time_zone_name);
+    schema = ORC::Type::createStructType();
+    options.compression = getORCCompression(format_settings.orc.output_compression_method);
+    options.row_index_stride = format_settings.orc.output_row_index_stride;
+    options.dictionary_key_size_threshold = format_settings.orc.output_dictionary_key_size_threshold;
+    options.compression_block_size = format_settings.orc.output_compression_block_size;
+    options.timezone_name = format_settings.orc.writer_time_zone_name;
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
     {
         const auto & column_name = header.safeGetByPosition(i).name;
         schema->addStructField(column_name, getORCType(recursiveRemoveLowCardinality(data_types[i]), column_name));
     }
-    writer = orc::createWriter(*schema, &output_stream, options);
+    writer = std::make_unique<ORC::Writer>(*schema, data_types, output_stream, options);
 }
 
 void registerOutputFormatORC(FormatFactory & factory);
