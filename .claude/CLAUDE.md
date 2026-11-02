@@ -164,6 +164,8 @@ When writing C++ code, always use Allman-style braces (opening brace on a new li
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
+When a job runs on another thread (`ThreadPool`, `ThreadPoolCallbackRunnerLocal`, `ThreadFromGlobalPool`), it must not use by reference anything that can be destroyed before the job is joined, including when a later scheduling throws. Capture by value, or declare everything the job uses, including a lambda it calls, before whatever joins the job: objects are destroyed in reverse order of declaration.
+
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
 
 When writing messages, say ASan, not ASAN, and similar (because there are two words: Address Sanitizer).
