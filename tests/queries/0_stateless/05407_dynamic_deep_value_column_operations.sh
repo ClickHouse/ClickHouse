@@ -27,7 +27,9 @@ done
 # Writing a part and merging parts go through the dynamic structure helpers of the column.
 # Writing a part takes time quadratic in the nesting depth (every level adds substreams with longer names),
 # so a depth that exhausts the stack takes tens of seconds; use a moderate depth that checks the normal path.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE deep_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY tuple()"
+# The substream names of a deep value exceed the file name length limit of the filesystem in a wide part,
+# so they must be replaced with hashes regardless of the randomized MergeTree settings.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE deep_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY tuple() SETTINGS replace_long_file_name_to_hash = 1, max_file_name_length = 127"
 table=$(nested_value 300)
 for query in "INSERT INTO deep_dynamic SELECT d FROM $table" "INSERT INTO deep_dynamic SELECT d FROM $table" "OPTIMIZE TABLE deep_dynamic FINAL"; do
     out=$($CLICKHOUSE_CLIENT -q "$query" 2>&1)
