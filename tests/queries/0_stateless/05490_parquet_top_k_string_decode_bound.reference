@@ -15,6 +15,7 @@ PLAIN, PREWHERE: replaced > 0: True
 PLAIN, ties: replaced > 0: True
 dictionary: replaced > 0: True
 dictionary, PREWHERE: replaced > 0: True
+dictionary, single column: replaced > 0: True
 DELTA_LENGTH_BYTE_ARRAY: replaced > 0: True
 DELTA_BYTE_ARRAY: replaced > 0: True
 DEFAULT, PREWHERE moved: replaced > 0: True
