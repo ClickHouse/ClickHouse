@@ -67,6 +67,8 @@ from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
     dremio_user,
+    elasticsearch_pass,
+    elasticsearch_user,
     minio_access_key,
     minio_secret_key,
     mongo_pass,
@@ -235,6 +237,16 @@ CLICKHOUSE_START_COMMAND = (
 CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
+
+CLICKHOUSE_GDB_LOG_FILE = "/var/log/clickhouse-server/gdb.log"
+
+# Dolor runs its servers and Keepers in the foreground, where `BaseDaemon` does not chdir to `core_path`,
+# so a relative `kernel.core_pattern` writes a core to the working directory. Keep that on the host mount.
+DOLOR_CORE_DIR = "/var/log/clickhouse-server/cores"
+DOLOR_KEEPER_CORE_DIR = "/var/log/clickhouse-keeper/cores"
+
+# A backtrace is also taken on restarts in the middle of a run, so it is bounded.
+GDB_BACKTRACE_TIMEOUT_SECONDS = 300
 
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
@@ -836,6 +848,7 @@ class ClickHouseCluster:
         self.base_postgres_cmd = []
         self.base_mongo_cmd = []
         self.base_redis_cmd = []
+        self.base_elasticsearch_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
         self.base_hdfs_cmd = []
@@ -869,6 +882,7 @@ class ClickHouseCluster:
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
+        self.with_elasticsearch = False
         self.with_cassandra = False
         self.with_ldap = False
         self.with_jdbc_bridge = False
@@ -1010,6 +1024,10 @@ class ClickHouseCluster:
         # available when with_redis == True
         self.redis_host = "redis1"
         self._redis_port = 0
+
+        # available when with_elasticsearch == True
+        self.elasticsearch_host = "elasticsearch1"
+        self._elasticsearch_port = 0
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -1261,6 +1279,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def elasticsearch_port(self):
+        if self._elasticsearch_port:
+            return self._elasticsearch_port
+        self._elasticsearch_port = self.port_pool.get_port()
+        return self._elasticsearch_port
 
     @property
     def ldap_external_port(self):
@@ -1567,6 +1592,7 @@ class ClickHouseCluster:
         env_variables["image"] = "clickhouse/integration-test:" + DOCKER_BASE_TAG
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
+        env_variables["keeper_workdir"] = DOLOR_KEEPER_CORE_DIR if self.with_dolor else "/"
         for i in range(1, 4):
             keeper_instance_dir = self.keeper_instance_dir_prefix + f"{i}"
             logs_dir = os.path.join(keeper_instance_dir, "log")
@@ -1576,6 +1602,8 @@ class ClickHouseCluster:
             env_variables[f"keeper_config_dir{i}"] = configs_dir
             env_variables[f"keeper_db_dir{i}"] = coordination_dir
             self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
+            if self.with_dolor:
+                self.zookeeper_dirs_to_create.append(os.path.join(logs_dir, "cores"))
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
@@ -1895,6 +1923,23 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_redis.yml"),
         )
         return self.base_redis_cmd
+
+    def setup_elasticsearch_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_elasticsearch = True
+        env_variables["ELASTICSEARCH_HOST"] = self.elasticsearch_host
+        env_variables["ELASTICSEARCH_EXTERNAL_PORT"] = str(self.elasticsearch_port)
+        env_variables["ELASTICSEARCH_INTERNAL_PORT"] = "9200"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml")]
+        )
+        self.base_elasticsearch_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml"),
+        )
+        return self.base_elasticsearch_cmd
 
     def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_rabbitmq = True
@@ -2292,6 +2337,7 @@ class ClickHouseCluster:
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
+        with_elasticsearch=False,
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
@@ -2438,6 +2484,7 @@ class ClickHouseCluster:
             or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
+            with_elasticsearch=with_elasticsearch,
             with_minio=with_minio,
             with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
@@ -2660,6 +2707,13 @@ class ClickHouseCluster:
         if with_redis and not self.with_redis:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_elasticsearch and not self.with_elasticsearch:
+            cmds.append(
+                self.setup_elasticsearch_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
@@ -3556,6 +3610,14 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
+    def wait_elasticsearch_to_start(self, timeout=180):
+        password = urllib.parse.quote_plus(elasticsearch_pass)
+        self.wait_for_url(
+            f"http://{elasticsearch_user}:{password}@localhost:{self.elasticsearch_port}"
+            "/_cluster/health?wait_for_status=yellow",
+            timeout=timeout,
+        )
+
     def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
         ip = self.get_instance_ip(host)
         minio_client = Minio(
@@ -4331,6 +4393,12 @@ class ClickHouseCluster:
                 self.up_called = True
                 time.sleep(10)
 
+            if self.with_elasticsearch and self.base_elasticsearch_cmd:
+                logging.debug("Setup Elasticsearch")
+                subprocess_check_call(self.base_elasticsearch_cmd + common_opts)
+                self.up_called = True
+                self.wait_elasticsearch_to_start()
+
             if self.with_hive and self.base_hive_cmd:
                 logging.debug("Setup hive")
                 subprocess_check_call(self.base_hive_cmd + common_opts)
@@ -4525,10 +4593,13 @@ class ClickHouseCluster:
                     self.exec_in_container(
                         instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
                     )
-                    instance.exec_in_container(
+                    instance.clickhouse_exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
+                        use_cli=False,
+                        get_exec_id=True,
+                        workdir=DOLOR_CORE_DIR,
                     )
 
             start_timeout = 300.0  # seconds
@@ -4643,13 +4714,6 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                # Collect exit codes for later inspection
-                if self.with_dolor:
-                    container = self.docker_client.containers.get(instance.docker_id)
-                    res = container.wait()
-                    exit_code = res["StatusCode"]
-                    logging.info(f"The server {name} exited with code: {exit_code}")
-
                 if not ignore_sanitizer and instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -5207,6 +5271,7 @@ class ClickHouseInstance:
         with_secrets,
         with_mongo,
         with_redis,
+        with_elasticsearch,
         with_minio,
         with_remote_database_disk,
         with_azurite,
@@ -5337,6 +5402,7 @@ class ClickHouseInstance:
         )
         self.with_arrowflight = with_arrowflight
         self.with_redis = with_redis
+        self.with_elasticsearch = with_elasticsearch
         self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
@@ -5430,6 +5496,10 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.clickhouse_exec_id = ""
+        # How the last server exited, kept once its exec id is dropped; every start clears them.
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5930,6 +6000,48 @@ class ClickHouseInstance:
             )
         )
 
+    def capture_clickhouse_exit(self, timeout_sec=10):
+        """Record the exit code of the server exec. Docker fills it in asynchronously, so the
+        process can be gone while the exec still reads as running: wait for it, bounded."""
+        if not self.clickhouse_exec_id:
+            return
+        deadline = time.time() + timeout_sec
+        while True:
+            try:
+                info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
+            except Exception as e:
+                logging.warning(f"Could not inspect exec of {self.name}: {e}")
+                return
+            if not info["Running"] and info["ExitCode"] is not None:
+                self.clickhouse_last_exit_code = info["ExitCode"]
+                return
+            if time.time() >= deadline:
+                logging.warning(f"Exec of {self.name} has no exit code after {timeout_sec}s")
+                return
+            time.sleep(0.2)
+
+    def dump_backtrace(self, occasion: str) -> bool:
+        """Append `thread apply all backtrace` of the running server to gdb.log, headed by
+        the occasion and time, as `stop_server` in `tests/docker_scripts/stress_tests.lib`
+        does. Returns False when there is no process left to dump."""
+        pid = self.get_process_pid("clickhouse")
+        if pid is None:
+            return False
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f'echo "thread apply all backtrace ({occasion}) at $(date -u +%FT%TZ)"'
+                f" >> {CLICKHOUSE_GDB_LOG_FILE}; "
+                f"timeout {GDB_BACKTRACE_TIMEOUT_SECONDS}"
+                f" gdb -batch -ex 'thread apply all bt' -p {pid}"
+                f" >> {CLICKHOUSE_GDB_LOG_FILE} 2>&1",
+            ],
+            user="root",
+            nothrow=True,
+        )
+        return True
+
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception(
@@ -5976,6 +6088,10 @@ class ClickHouseInstance:
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
+                    self.capture_clickhouse_exit()
+                    # Kept until a code is recorded, so a later capture can still read it
+                    if self.clickhouse_last_exit_code is not None:
+                        self.clickhouse_exec_id = ""
                     return True
                 else:
                     time.sleep(1)
@@ -5989,14 +6105,10 @@ class ClickHouseInstance:
                 logging.warning(
                     f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
                 )
-                self.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                    ],
-                    user="root",
-                )
+                # Appended to gdb.log rather than written over the server's stdout.log
+                self.dump_backtrace("on stop")
+                # Only a graceful stop that timed out gets here, never a kill=True call
+                self.clickhouse_forced_stop = True
                 self.stop_clickhouse(kill=True)
             else:
                 ps_all = self.exec_in_container(
@@ -6031,6 +6143,10 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
+                self.clickhouse_last_exit_code = None
+                self.clickhouse_forced_stop = False
+                # Cleared first, so a start that throws leaves no exec of the previous server
+                self.clickhouse_exec_id = ""
                 exec_id = self.exec_in_container(
                     [
                         "bash",
@@ -6046,7 +6162,11 @@ class ClickHouseInstance:
                     use_cli=False,
                     get_exec_id=True,
                     environment=environment,
+                    **({"workdir": DOLOR_CORE_DIR} if self.cluster.with_dolor else {}),
                 )
+                # With `--daemon` the exec is a launcher that exits 0 once it has forked,
+                # so only a foreground start's exec says how the server went away.
+                self.clickhouse_exec_id = "" if daemon else exec_id
                 if not wait_start:
                     return exec_id
                 if expected_to_fail:
@@ -6114,12 +6234,7 @@ class ClickHouseInstance:
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
-        pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
-                user="root",
-            )
+        self.dump_backtrace("on start timeout")
         if last_err is not None:
             raise last_err
 
@@ -6852,7 +6967,12 @@ class ClickHouseInstance:
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
-        write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        if not self.cluster.with_dolor:
+            # The `Detect passwords in tests` rule throws when a password reaches the logs.
+            # La Casa del Dolor generates DDL with the integration-test credentials, and a
+            # query that fails to parse is logged before its arguments are masked, so the
+            # rule would turn fuzzer noise into a logical error.
+            write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
@@ -6948,6 +7068,8 @@ class ClickHouseInstance:
         logging.debug(f"Setup logs dir {logs_dir}")
         os.mkdir(logs_dir)
         self.logs_dir = logs_dir
+        if self.cluster.with_dolor:
+            os.mkdir(p.join(logs_dir, "cores"))
 
         depends_on = []
 
@@ -7026,7 +7148,7 @@ class ClickHouseInstance:
 
         if self.cluster.with_dolor:
             entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
-        if self.stay_alive:
+        elif self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
             entrypoint_cmd = self.clickhouse_start_command

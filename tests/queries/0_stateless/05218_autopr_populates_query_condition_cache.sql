@@ -24,7 +24,6 @@ INSERT INTO t_autopr_qcc SELECT number, number, repeat('x', 40) FROM numbers(100
 -- split; otherwise the optimization declines on some runs and the test measures nothing.
 OPTIMIZE TABLE t_autopr_qcc FINAL;
 
-SET enable_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET optimize_move_to_prewhere = 0;
 -- With one reading thread the cost model sees replicas as a win on a table of this size, which is what

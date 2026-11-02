@@ -9,6 +9,8 @@
 #include <Processors/Chunk.h>
 #include <Interpreters/SetSpillable.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -44,7 +46,8 @@ public:
         CoordinationMode mode,
         RangesInDataPartsDescription description,
         size_t mark_segment_size,
-        size_t min_marks_per_request) const;
+        size_t min_marks_per_request,
+        bool wants_analyzed_ranges) const;
 
     std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
 
@@ -88,7 +91,16 @@ using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
 struct MergeTreeIndexBuildContext
 {
     /// For each part, stores all ranges need to be read.
-    const RangesByIndex read_ranges;
+    RangesByIndex read_ranges;
+
+    /// Set on a parallel replicas follower that skipped its own index analysis and has a read-time skip-index reader
+    /// (`use_skip_indexes_on_data_read`, the join runtime filter or the top-K primary key pruning): the reader would
+    /// evaluate over `read_ranges`, which are whole parts until `addAnalyzedReadRanges` replaces them with the ranges
+    /// analyzed on the initiator.
+    bool needs_analyzed_ranges = false;
+
+    /// Parts whose `read_ranges` were replaced by `addAnalyzedReadRanges`.
+    std::unordered_set<size_t> parts_with_analyzed_ranges;
 
     /// For each part, stores a set of read ranges grouped by projection.
     const ProjectionRangesByIndex projection_read_ranges;
@@ -107,6 +119,11 @@ struct MergeTreeIndexBuildContext
         PartRemainingMarks part_remaining_marks_);
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+
+    /// Replaces the whole-part ranges the skip indexes of a part are evaluated over with the analyzed ones. Later calls
+    /// for the same part extend them: an in-order read splits a part between streams that share this context, and each
+    /// stream receives only its own ranges. Must be called before the first read task exists.
+    void addAnalyzedReadRanges(size_t part_index, const MarkRanges & ranges);
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

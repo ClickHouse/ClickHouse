@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1236355",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1312017",
       "email": "support@clickhouse.com"
     }
   },
@@ -1847,7 +1847,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-service` permission.\n\n</div>\n</div>"
+          "content": "Creates a new service in the organization, and returns the current service state and a password to access the service. The service is started asynchronously.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permissions</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:create-service`, `control-plane:service:manage` permissions.\n\n</div>\n</div>"
         }
       }
     },
@@ -8113,6 +8113,200 @@
         }
       }
     },
+    "/v1/organizations/{organizationId}/notifications": {
+      "get": {
+        "summary": "List of organization notifications",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns notifications for the organization, most recent first. Only notifications about resources the caller can access are returned, so two keys in the same organization can see different results. The [notification types endpoint](#tag/Notifications/operation/notificationTypesGetList) lists the types this organization can receive, so it shows what to expect here. Notifications are retained for 180 days. A page holds at most `limit` notifications (default 100, maximum 250; a larger value is clamped) and the server may return fewer. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
+        "operationId": "notificationGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization the notifications belong to.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "description": "Filter to notifications of this severity: 'info', 'warning', 'critical'.",
+            "schema": {
+              "type": "string",
+              "example": "warning"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "description": "Filter to notifications of this type. New types are added over time; the [notification types endpoint](#tag/Notifications/operation/notificationTypesGetList) lists the ones this organization can receive.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "description": "Filter to notifications about this resource. A service also matches the notifications of its ClickPipes; pass `resource_type` to narrow to one kind of resource.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type",
+            "description": "Filter to notifications about resources of this kind. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "schema": {
+              "type": "string",
+              "example": "service"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "description": "Return notifications created at or after this time. An RFC 3339 timestamp, not a bare date.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-10-01T00:00:00Z"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "description": "Return notifications created at or before this time. An RFC 3339 timestamp, not a bare date.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-10-08T00:00:00Z"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/notificationTypes": {
       "get": {
         "summary": "List notification types",
@@ -12488,6 +12682,132 @@
         ]
       }
     },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/validate": {
+      "post": {
+        "summary": "ClickStack: Validate Webhook",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Validates a webhook body against the same schema, URL rules, and body template check used by POST /api/v2/webhooks. The webhook is **never persisted**. Use this endpoint at plan time (e.g. from a Terraform provider) to check that a webhook configuration is valid before applying it. Name uniqueness is not checked.",
+        "operationId": "clickStackValidateWebhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackWebhookInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackValidateWebhookResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/{clickStackWebhookId}": {
       "put": {
         "summary": "ClickStack: Update Webhook",
@@ -15766,7 +16086,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/metrics": {
       "get": {
         "summary": "Get Postgres time-series metrics",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, and more). Use this to chart or analyze how a service behaved over time.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time.",
         "operationId": "postgresInstanceMetricsGet",
         "parameters": [
           {
@@ -15912,7 +16232,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/backups": {
       "get": {
         "summary": "List of Postgres service backups",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp rather than with a backup key from this list.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp between the service's `earliestRestoreTime` and now, rather than with a backup key from this list.",
         "operationId": "postgresServiceBackupGetList",
         "parameters": [
           {
@@ -27407,7 +27727,7 @@
             "example": "production_db"
           },
           "authentication": {
-            "description": "Authentication method for Postgres connection.",
+            "description": "Authentication method for Postgres connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27417,7 +27737,7 @@
             "example": "IAM_ROLE"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -27499,7 +27819,7 @@
             "$ref": "#/components/schemas/ClickPipePostgresPipeSettings"
           },
           "authentication": {
-            "description": "Authentication method for Postgres connection.",
+            "description": "Authentication method for Postgres connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27509,7 +27829,7 @@
             "example": "IAM_ROLE"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -27893,7 +28213,7 @@
             "example": 3306
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27903,7 +28223,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -27988,7 +28308,7 @@
             "$ref": "#/components/schemas/ClickPipeMySQLPipeSettings"
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27998,7 +28318,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -28069,7 +28389,7 @@
             "example": 3306
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": [
               "string",
               "null"
@@ -28082,7 +28402,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": [
               "string",
               "null"
@@ -28159,11 +28479,43 @@
       "ClickPipeBigQueryPipeSettings": {
         "properties": {
           "replicationMode": {
-            "description": "Replication mode. BigQuery only supports snapshot mode.",
+            "description": "Replication mode: \"cdc\" (change data capture with initial snapshot), \"snapshot\" (one-time snapshot only), or \"cdc_only\" (CDC without initial snapshot).",
             "type": "string",
-            "enum": [
-              "snapshot"
-            ]
+            "example": "cdc"
+          },
+          "replicationMethod": {
+            "description": "How changes are captured from BigQuery. \"query_based\" polls each table using a watermark timestamp column, \"events_based\" reads the BigQuery change history using the APPENDS or CHANGES table function. Required for \"cdc\" and \"cdc_only\" replication modes and not allowed for \"snapshot\".",
+            "type": "string",
+            "example": "query_based"
+          },
+          "syncIntervalSeconds": {
+            "description": "Interval in seconds between CDC syncs. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 60
+          },
+          "queryCdcPullSyncParallelism": {
+            "description": "Number of tables pulled in parallel during a CDC sync. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 4
+          },
+          "syncDelaySeconds": {
+            "description": "Each CDC sync reads data only up to now minus this delay, giving recently written rows time to become visible in BigQuery. Increase it if your tables are loaded via batch jobs or Google Cloud Dataflow; if set too low, late-visible rows may be skipped. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 0,
+            "example": 60
+          },
+          "pullWindowSizeSeconds": {
+            "description": "Maximum amount of time one pull (query) can cover. Applies when the pipe has fallen behind, e.g. on the first CDC sync or when resuming after a pause: with a 6 hour limit, a pipe that is 3 days behind catches up in 12 smaller pulls instead of one large query. If a pull fails, only that pull is retried. Not allowed for \"snapshot\" replication mode.",
+            "type": "integer",
+            "minimum": 1,
+            "example": 86400
+          },
+          "syncCron": {
+            "description": "Standard 5-field cron expression (or a descriptor such as \"@hourly\") that schedules CDC syncs, e.g. \"0 * * * *\" to sync every hour sharp. Evaluated in UTC unless prefixed with \"CRON_TZ=<zone>\". Must not fire more than once a minute. Syncs run on this schedule instead of every syncIntervalSeconds, so the two cannot both be set. Not allowed for \"snapshot\" replication mode.",
+            "type": "string",
+            "example": "0 * * * *"
           },
           "allowNullableColumns": {
             "description": "Allow nullable columns in the destination table.",
@@ -28226,6 +28578,15 @@
               "ReplacingMergeTree",
               "Null"
             ]
+          },
+          "queryCdcWatermarkColumn": {
+            "description": "Source column of type TIMESTAMP used as the CDC watermark. Required for every table when replicationMethod is \"query_based\"; not allowed otherwise.",
+            "type": "string"
+          },
+          "eventsFunction": {
+            "description": "BigQuery table function used to read changes: \"appends\" (newly appended rows) or \"changes\" (all row changes). Required for every table when replicationMethod is \"events_based\"; not allowed otherwise.",
+            "type": "string",
+            "example": "appends"
           }
         },
         "required": [
@@ -28484,6 +28845,87 @@
           }
         }
       },
+      "ClickPipeMongoDBPipeColumn": {
+        "properties": {
+          "name": {
+            "description": "Top-level document field name.",
+            "type": "string",
+            "example": "amount"
+          },
+          "type": {
+            "description": "ClickHouse type the field is replicated as. Must be a valid ClickHouse column type supported by structured ingestion.",
+            "type": "string",
+            "example": "Float64"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "ClickPipeMongoDBStructuredIngestion": {
+        "properties": {
+          "enabled": {
+            "description": "Replicate the collection into typed ClickHouse columns instead of a single JSON document column.",
+            "type": "boolean",
+            "example": true
+          },
+          "dropUnexpectedValues": {
+            "description": "When true, values that don't fit their column are reported with only the field name and reason, without the value.",
+            "type": "boolean",
+            "example": false,
+            "default": false
+          },
+          "columns": {
+            "type": "array",
+            "description": "Typed columns of the collection, taken as provided. When omitted, the columns are inferred from a sample of the collection documents. The _id document is always replicated and uses String type.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeMongoDBPipeColumn"
+            }
+          },
+          "excludedColumns": {
+            "type": "array",
+            "description": "Names of columns, provided or inferred, to leave out of replication. Names that match no column are ignored. Column names must be unique within this list.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "internal_notes"
+            ],
+            "uniqueItems": true
+          },
+          "sortingKeys": {
+            "type": "array",
+            "description": "Ordered list of column names to use as the sorting (ORDER BY) key in ClickHouse. When omitted, the sorting key is the _id document key.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "_id",
+              "created_at"
+            ],
+            "uniqueItems": true
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": "string",
+            "example": "toYYYYMM(created_at)"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "ClickPipeMongoDBTableConfig": {
+        "properties": {
+          "persistDeletedDocuments": {
+            "description": "Persist the full document as it was right before it was deleted, instead of only its _id. Requires changeStreamPreAndPostImages to be enabled on the source collection.",
+            "type": "boolean",
+            "example": false,
+            "default": false
+          }
+        }
+      },
       "ClickPipeMongoDBPipeTableMapping": {
         "properties": {
           "sourceDatabaseName": {
@@ -28510,6 +28952,12 @@
               "Null"
             ],
             "example": "ReplacingMergeTree"
+          },
+          "structuredIngestion": {
+            "$ref": "#/components/schemas/ClickPipeMongoDBStructuredIngestion"
+          },
+          "mongoConfig": {
+            "$ref": "#/components/schemas/ClickPipeMongoDBTableConfig"
           }
         },
         "required": [
@@ -29406,7 +29854,7 @@
             "example": 4
           },
           "clickhouse_parallel_distributed_insert_select": {
-            "description": "Parallel distributed insert select. Parallel distributed insert select setting",
+            "description": "Parallel distributed insert select. Only applies when object_storage_use_cluster_function is enabled. When disabled, this setting is ignored and the effective value is 0.",
             "type": [
               "integer",
               "null"
@@ -29704,7 +30152,7 @@
             "example": 4
           },
           "clickhouse_parallel_distributed_insert_select": {
-            "description": "Parallel distributed insert select. Parallel distributed insert select setting",
+            "description": "Parallel distributed insert select. Only applies when object_storage_use_cluster_function is enabled. When disabled, this setting is ignored and the effective value is 0.",
             "type": "integer",
             "minimum": 0,
             "maximum": 2,
@@ -30048,6 +30496,10 @@
           "iamRoleSessionName": {
             "description": "AWS  Role session name",
             "type": "string"
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role",
+            "type": "string"
           }
         }
       },
@@ -30128,6 +30580,10 @@
           "iamRoleSessionName": {
             "description": "AWS IAM Role",
             "type": "string"
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role",
+            "type": "string"
           }
         }
       },
@@ -30197,6 +30653,10 @@
           },
           "iamRoleSessionName": {
             "description": "AWS Role session name",
+            "type": "string"
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role",
             "type": "string"
           }
         }
@@ -30275,6 +30735,13 @@
           },
           "iamRoleSessionName": {
             "description": "AWS IAM Role session name",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "iamRoleExternalId": {
+            "description": "External ID the IAM role trust policy requires when the data plane assumes the role. Set to `null` to clear it.",
             "type": [
               "string",
               "null"
@@ -30485,6 +30952,65 @@
           }
         }
       },
+      "Notification": {
+        "properties": {
+          "id": {
+            "description": "Unique notification ID.",
+            "type": "string",
+            "format": "uuid",
+            "example": "1b7e0a94-2d0f-4c3a-8f1e-6c9b2d5a4e7f"
+          },
+          "type": {
+            "description": "Notification type. New types are added over time, so treat this as an open set.",
+            "type": "string",
+            "example": "service_backup_failed"
+          },
+          "severity": {
+            "description": "Severity of the notification. One of 'info', 'warning', 'critical'.",
+            "type": "string",
+            "example": "warning"
+          },
+          "resourceType": {
+            "description": "Kind of resource the notification is about. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "type": "string",
+            "example": "service"
+          },
+          "resourceId": {
+            "description": "ID of the resource the notification is about.",
+            "type": "string"
+          },
+          "resourceName": {
+            "description": "Name the resource had when the notification was created. Absent for most notification types; use `resourceId` to identify the resource.",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the notification was created. ISO-8601.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-07T09:30:00Z"
+          },
+          "title": {
+            "description": "Short human-readable summary.",
+            "type": "string",
+            "example": "Backup failed for analytics-prod"
+          },
+          "description": {
+            "description": "Human-readable body as plain text, with any links written as \"label (url)\".",
+            "type": "string",
+            "example": "A scheduled backup for analytics-prod did not complete. Review the backup settings (https://console.clickhouse.cloud/services/abc/backups)."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "severity",
+          "resourceType",
+          "resourceId",
+          "createdAt",
+          "title",
+          "description"
+        ]
+      },
       "SnapshotConfiguration": {
         "properties": {
           "enabled": {
@@ -30528,6 +31054,1159 @@
             "type": "boolean"
           }
         }
+      },
+      "ClickStackAlertChartConfigOverlay": {
+        "properties": {
+          "name": {
+            "description": "Display name for the alert query. Used in notification titles and as an alert-name fallback when the alert itself has no name.",
+            "type": "string",
+            "example": "Error Rate Query"
+          },
+          "where": {
+            "description": "Chart-level filter applied on top of every select item's own \"where\" (combined via AND). Builder variants only; rejected on Raw SQL variants (filter inside the sqlTemplate instead).",
+            "type": "string",
+            "example": "ServiceName:api"
+          },
+          "whereLanguage": {
+            "description": "Language of the chart-level \"where\" filter.",
+            "type": "string",
+            "enum": [
+              "sql",
+              "lucene"
+            ]
+          }
+        }
+      },
+      "ClickStackNumberFormat": {
+        "properties": {
+          "output": {
+            "description": "Output format applied to the number.",
+            "type": "string",
+            "enum": [
+              "currency",
+              "percent",
+              "byte",
+              "time",
+              "number",
+              "data_rate",
+              "throughput",
+              "duration"
+            ],
+            "example": "number"
+          },
+          "mantissa": {
+            "description": "Number of decimal places.",
+            "type": "integer",
+            "example": 2
+          },
+          "thousandSeparated": {
+            "description": "Whether to use thousand separators.",
+            "type": "boolean",
+            "example": true
+          },
+          "average": {
+            "description": "Whether to show as average.",
+            "type": "boolean",
+            "example": false
+          },
+          "decimalBytes": {
+            "description": "Use decimal bytes (1000) vs binary bytes (1024).",
+            "type": "boolean",
+            "example": false
+          },
+          "factor": {
+            "description": "Multiplication factor.",
+            "type": "number",
+            "example": 1
+          },
+          "currencySymbol": {
+            "description": "Currency symbol for currency format.",
+            "type": "string",
+            "example": "$"
+          },
+          "numericUnit": {
+            "description": "Numeric unit for data, data rate, or throughput formats.",
+            "type": "string",
+            "enum": [
+              "bytes_iec",
+              "bytes_si",
+              "bits_iec",
+              "bits_si",
+              "kibibytes",
+              "kilobytes",
+              "mebibytes",
+              "megabytes",
+              "gibibytes",
+              "gigabytes",
+              "tebibytes",
+              "terabytes",
+              "pebibytes",
+              "petabytes",
+              "packets_sec",
+              "bytes_sec_iec",
+              "bytes_sec_si",
+              "bits_sec_iec",
+              "bits_sec_si",
+              "kibibytes_sec",
+              "kibibits_sec",
+              "kilobytes_sec",
+              "kilobits_sec",
+              "mebibytes_sec",
+              "mebibits_sec",
+              "megabytes_sec",
+              "megabits_sec",
+              "gibibytes_sec",
+              "gibibits_sec",
+              "gigabytes_sec",
+              "gigabits_sec",
+              "tebibytes_sec",
+              "tebibits_sec",
+              "terabytes_sec",
+              "terabits_sec",
+              "pebibytes_sec",
+              "pebibits_sec",
+              "petabytes_sec",
+              "petabits_sec",
+              "cps",
+              "ops",
+              "rps",
+              "reads_sec",
+              "wps",
+              "iops",
+              "cpm",
+              "opm",
+              "rpm_reads",
+              "wpm"
+            ],
+            "example": "bytes_iec"
+          },
+          "unit": {
+            "description": "Custom unit label.",
+            "type": "string",
+            "example": "ms"
+          }
+        }
+      },
+      "ClickStackSelectItem": {
+        "properties": {
+          "aggFn": {
+            "description": "Aggregation function to apply. \"count\" does not require a valueExpression; \"quantile\" requires a level field indicating the desired percentile (e.g., 0.95).",
+            "type": "string",
+            "enum": [
+              "avg",
+              "count",
+              "count_distinct",
+              "last_value",
+              "max",
+              "min",
+              "quantile",
+              "sum",
+              "any",
+              "none"
+            ],
+            "example": "count"
+          },
+          "valueExpression": {
+            "description": "Expression for the column or value to aggregate. Must be omitted when aggFn is \"count\"; required for all other aggFn values.",
+            "type": "string",
+            "example": "Duration"
+          },
+          "alias": {
+            "description": "Display alias for this select item in chart legends.",
+            "type": "string",
+            "example": "Request Duration"
+          },
+          "level": {
+            "description": "Percentile level; only valid when aggFn is \"quantile\". Allowed values: 0.5, 0.9, 0.95, 0.99.",
+            "type": "number"
+          },
+          "where": {
+            "description": "SQL or Lucene filter condition applied before aggregation.",
+            "type": "string",
+            "example": "service:api"
+          },
+          "whereLanguage": {
+            "description": "Query language for the where clause.",
+            "type": "string",
+            "enum": [
+              "sql",
+              "lucene"
+            ]
+          },
+          "metricName": {
+            "description": "Name of the metric to aggregate; only applicable when the source is a metrics source.",
+            "type": "string",
+            "example": "http.server.duration"
+          },
+          "metricType": {
+            "description": "Metric type; only applicable when the source is a metrics source.",
+            "type": "string",
+            "enum": [
+              "sum",
+              "gauge",
+              "histogram",
+              "summary",
+              "exponential histogram"
+            ]
+          },
+          "periodAggFn": {
+            "description": "Optional period aggregation function for Gauge metrics (e.g., compute the delta over the period).",
+            "type": "string",
+            "enum": [
+              "delta"
+            ],
+            "example": "delta"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          }
+        },
+        "required": [
+          "aggFn"
+        ]
+      },
+      "ClickStackFormula": {
+        "properties": {
+          "expression": {
+            "description": "Arithmetic expression over the select items by position, e.g. \"A / (A + B) * 100\" for a success-rate percentage.",
+            "type": "string",
+            "example": "A / (A + B) * 100"
+          },
+          "alias": {
+            "description": "Display label for the formula series in chart legends and column headers. Falls back to the raw expression text when unset.",
+            "type": "string",
+            "example": "Success rate %"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
+      "ClickStackLineBuilderChartConfig": {
+        "properties": {
+          "displayType": {
+            "description": "Display type discriminator. Must be \"line\" for line charts.",
+            "type": "string",
+            "enum": [
+              "line"
+            ],
+            "example": "line"
+          },
+          "sourceId": {
+            "description": "ID of the data source to query.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "select": {
+            "type": "array",
+            "description": "One or more aggregated values to plot. When asRatio is true, exactly two select items are required.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "groupBy": {
+            "description": "Field expression to group results by (creates separate lines per group value).",
+            "type": "string",
+            "example": "host"
+          },
+          "asRatio": {
+            "description": "Plot select[0] / select[1] as a ratio. Requires exactly two select items.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "fitYAxisToData": {
+            "description": "Set the y-axis lower bound to the minimum of the displayed data instead of zero, making small fluctuations between series easier to see.",
+            "type": "boolean"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"smooth\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "compareToPreviousPeriod": {
+            "description": "Overlay the equivalent previous time period for comparison.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "displayType",
+          "sourceId",
+          "select"
+        ]
+      },
+      "ClickStackLineRawSqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "sql"
+            ],
+            "example": "sql"
+          },
+          "connectionId": {
+            "description": "ID of the ClickHouse connection to execute the query against.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "sqlTemplate": {
+            "description": "SQL query template to execute. Supports HyperDX template variables.",
+            "type": "string",
+            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
+          },
+          "sourceId": {
+            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a line time-series chart.",
+            "type": "string",
+            "enum": [
+              "line"
+            ],
+            "example": "line"
+          },
+          "compareToPreviousPeriod": {
+            "description": "Overlay the equivalent previous time period for comparison.",
+            "type": "boolean"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "fitYAxisToData": {
+            "description": "Set the y-axis lower bound to the minimum of the displayed data instead of zero, making small fluctuations between series easier to see.",
+            "type": "boolean"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"smooth\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          }
+        },
+        "required": [
+          "configType",
+          "connectionId",
+          "sqlTemplate",
+          "displayType"
+        ]
+      },
+      "ClickStackLineChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackLineBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackLineRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackAlertLineBuilderChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackLineBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertLineRawSqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertLineChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackAlertLineBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertLineRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackBarBuilderChartConfig": {
+        "properties": {
+          "displayType": {
+            "description": "Display type discriminator. Must be \"stacked_bar\" for stacked-bar charts.",
+            "type": "string",
+            "enum": [
+              "stacked_bar"
+            ],
+            "example": "stacked_bar"
+          },
+          "sourceId": {
+            "description": "ID of the data source to query.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "select": {
+            "type": "array",
+            "description": "One or more aggregated values to plot. When asRatio is true, exactly two select items are required.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "groupBy": {
+            "description": "Field expression to group results by (creates separate bars segments per group value).",
+            "type": "string",
+            "example": "service"
+          },
+          "asRatio": {
+            "description": "Plot select[0] / select[1] as a ratio. Requires exactly two select items.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Align the date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "displayType",
+          "sourceId",
+          "select"
+        ]
+      },
+      "ClickStackBarRawSqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "sql"
+            ],
+            "example": "sql"
+          },
+          "connectionId": {
+            "description": "ID of the ClickHouse connection to execute the query against.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "sqlTemplate": {
+            "description": "SQL query template to execute. Supports HyperDX template variables.",
+            "type": "string",
+            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
+          },
+          "sourceId": {
+            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a stacked-bar time-series chart.",
+            "type": "string",
+            "enum": [
+              "stacked_bar"
+            ],
+            "example": "stacked_bar"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configType",
+          "connectionId",
+          "sqlTemplate",
+          "displayType"
+        ]
+      },
+      "ClickStackBarChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackBarBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackBarRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackAlertBarBuilderChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackBarBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertBarRawSqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackBarRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertBarChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackAlertBarBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertBarRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackStackedLineBuilderChartConfig": {
+        "properties": {
+          "displayType": {
+            "description": "Display type discriminator. Must be \"stacked_line\" for stacked-line charts.",
+            "type": "string",
+            "enum": [
+              "stacked_line"
+            ],
+            "example": "stacked_line"
+          },
+          "sourceId": {
+            "description": "ID of the data source to query.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "select": {
+            "type": "array",
+            "description": "One or more aggregated values to plot. When asRatio is true, exactly two select items are required.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "groupBy": {
+            "description": "Field expression to group results by (creates separate stacked bands per group value).",
+            "type": "string",
+            "example": "service"
+          },
+          "asRatio": {
+            "description": "Plot select[0] / select[1] as a ratio. Requires exactly two select items.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Align the date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"linear\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "displayType",
+          "sourceId",
+          "select"
+        ]
+      },
+      "ClickStackStackedLineRawSqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "sql"
+            ],
+            "example": "sql"
+          },
+          "connectionId": {
+            "description": "ID of the ClickHouse connection to execute the query against.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "sqlTemplate": {
+            "description": "SQL query template to execute. Supports HyperDX template variables.",
+            "type": "string",
+            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
+          },
+          "sourceId": {
+            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a stacked-line time-series chart.",
+            "type": "string",
+            "enum": [
+              "stacked_line"
+            ],
+            "example": "stacked_line"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"linear\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          }
+        },
+        "required": [
+          "configType",
+          "connectionId",
+          "sqlTemplate",
+          "displayType"
+        ]
+      },
+      "ClickStackStackedLineChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLineBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLineRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackAlertStackedLineBuilderChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLineBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertStackedLineRawSqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertStackedLineChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackAlertStackedLineBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertStackedLineRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackNumericColorCondition": {
+        "properties": {
+          "operator": {
+            "description": "Numeric comparison operator.",
+            "type": "string",
+            "enum": [
+              "gt",
+              "gte",
+              "lt",
+              "lte"
+            ],
+            "example": "gt"
+          },
+          "value": {
+            "description": "Numeric bound the displayed value is compared against. Only finite numbers are accepted (Infinity and NaN are rejected).",
+            "type": "number",
+            "example": 100
+          },
+          "color": {
+            "description": "Color applied when the rule matches.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "label": {
+            "description": "Optional label describing the rule.",
+            "type": "string",
+            "example": "High"
+          }
+        },
+        "required": [
+          "operator",
+          "value",
+          "color"
+        ]
+      },
+      "ClickStackBetweenColorCondition": {
+        "properties": {
+          "operator": {
+            "description": "Range comparison operator.",
+            "type": "string",
+            "enum": [
+              "between"
+            ],
+            "example": "between"
+          },
+          "value": {
+            "type": "array",
+            "description": "Inclusive [min, max] range. Both bounds must be finite numbers.",
+            "items": {
+              "type": "number"
+            },
+            "example": [
+              100,
+              500
+            ]
+          },
+          "color": {
+            "description": "Color applied when the rule matches.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "label": {
+            "description": "Optional label describing the rule.",
+            "type": "string",
+            "example": "Warning"
+          }
+        },
+        "required": [
+          "operator",
+          "value",
+          "color"
+        ]
+      },
+      "ClickStackEqualityColorCondition": {
+        "properties": {
+          "operator": {
+            "description": "Equality comparison operator.",
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq"
+            ],
+            "example": "eq"
+          },
+          "value": {
+            "description": "A finite number, or a string up to 200 characters, to compare for equality.",
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "color": {
+            "description": "Color applied when the rule matches.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "label": {
+            "description": "Optional label describing the rule.",
+            "type": "string",
+            "example": "Healthy"
+          }
+        },
+        "required": [
+          "operator",
+          "value",
+          "color"
+        ]
+      },
+      "ClickStackNumberTileColorCondition": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackNumericColorCondition"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackBetweenColorCondition"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackEqualityColorCondition"
+          }
+        ]
+      },
+      "ClickStackBackgroundChart": {
+        "properties": {
+          "type": {
+            "description": "Sparkline shape.",
+            "type": "string",
+            "enum": [
+              "line",
+              "area"
+            ],
+            "example": "line"
+          },
+          "color": {
+            "description": "Optional palette-token override for the sparkline. When unset the sparkline inherits the tile's static color.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ClickStackNumberBuilderChartConfig": {
+        "properties": {
+          "displayType": {
+            "description": "Display type discriminator. Must be \"number\" for single big-number charts.",
+            "type": "string",
+            "enum": [
+              "number"
+            ],
+            "example": "number"
+          },
+          "sourceId": {
+            "description": "ID of the data source to query.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "select": {
+            "type": "array",
+            "description": "Exactly one aggregated value to display as a single number — unless \"formulas\" is set, in which case the select items are the formula's operands and the (single) formula value is displayed instead.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "formulas": {
+            "type": "array",
+            "description": "A single derived value computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Number tiles display the formula value and always hide the operand series.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "color": {
+            "description": "Optional static color applied to the displayed number.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "colorRules": {
+            "type": "array",
+            "description": "Ordered conditional color rules evaluated against the displayed value (last match wins). Falls back to color, then the default text color when no rule matches.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackNumberTileColorCondition"
+            }
+          },
+          "backgroundChart": {
+            "$ref": "#/components/schemas/ClickStackBackgroundChart"
+          }
+        },
+        "required": [
+          "displayType",
+          "sourceId",
+          "select"
+        ]
+      },
+      "ClickStackNumberRawSqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "sql"
+            ],
+            "example": "sql"
+          },
+          "connectionId": {
+            "description": "ID of the ClickHouse connection to execute the query against.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "sqlTemplate": {
+            "description": "SQL query template to execute. Supports HyperDX template variables.",
+            "type": "string",
+            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
+          },
+          "sourceId": {
+            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a single big-number chart.",
+            "type": "string",
+            "enum": [
+              "number"
+            ],
+            "example": "number"
+          },
+          "color": {
+            "description": "Optional static color applied to the displayed number.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "colorRules": {
+            "type": "array",
+            "description": "Ordered conditional color rules evaluated against the displayed value (last match wins). Falls back to color, then the default text color when no rule matches.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackNumberTileColorCondition"
+            }
+          }
+        },
+        "required": [
+          "configType",
+          "connectionId",
+          "sqlTemplate",
+          "displayType"
+        ]
+      },
+      "ClickStackNumberChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackNumberBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackNumberRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackAlertNumberBuilderChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackNumberBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertNumberRawSqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackNumberRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
+      "ClickStackAlertNumberChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackAlertNumberBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertNumberRawSqlChartConfig"
+          }
+        ]
+      },
+      "ClickStackAlertChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackAlertLineChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertBarChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertStackedLineChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertNumberChartConfig"
+          }
+        ]
       },
       "ClickStackAlertExecutionError": {
         "properties": {
@@ -30711,6 +32390,9 @@
             ],
             "example": "ServiceName"
           },
+          "chartConfig": {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfig"
+          },
           "threshold": {
             "description": "Threshold value for triggering the alert. For between and not_between threshold types, this is the lower bound.",
             "type": "number",
@@ -30725,7 +32407,7 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team. Anomaly alerts (detectionMode \"anomaly\") support only `5m`, `15m`, `30m`, and `1h`; other intervals are rejected with 400.",
             "type": "string",
             "enum": [
               "30s",
@@ -30762,7 +32444,8 @@
             "type": "string",
             "enum": [
               "saved_search",
-              "tile"
+              "tile",
+              "inline"
             ],
             "example": "tile"
           },
@@ -30788,12 +32471,12 @@
             "$ref": "#/components/schemas/ClickStackAlertChannels"
           },
           "name": {
-            "description": "Human-friendly alert name.",
+            "description": "Alert name template (Handlebars), rendered as the notification title. When omitted, a default title is generated from the display name, value and threshold.",
             "type": [
               "string",
               "null"
             ],
-            "example": "Test Alert"
+            "example": "Errors for {{group}} hit {{value}}"
           },
           "message": {
             "description": "Alert message template.",
@@ -30818,6 +32501,22 @@
               "null"
             ],
             "example": 3
+          },
+          "displayName": {
+            "description": "The display name for the alert in the UI. Derived from the saved search name, dashboard tile name, or inline chartConfig name when not explicitly set.",
+            "type": "string",
+            "example": "Checkout error spike"
+          },
+          "tags": {
+            "type": "array",
+            "description": "The tags for the alert. Derived from the tags of the referenced saved search or dashboard when not explicitly set; inline alerts default to an empty list.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "checkout",
+              "p1"
+            ]
           },
           "id": {
             "description": "Unique alert identifier.",
@@ -30876,7 +32575,11 @@
             "format": "date-time",
             "example": "2023-01-01T00:00:00.000Z"
           }
-        }
+        },
+        "required": [
+          "displayName",
+          "tags"
+        ]
       },
       "ClickStackCreateAlertRequest": {
         "properties": {
@@ -30912,6 +32615,9 @@
             ],
             "example": "ServiceName"
           },
+          "chartConfig": {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfig"
+          },
           "threshold": {
             "description": "Threshold value for triggering the alert. For between and not_between threshold types, this is the lower bound.",
             "type": "number",
@@ -30926,7 +32632,7 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team. Anomaly alerts (detectionMode \"anomaly\") support only `5m`, `15m`, `30m`, and `1h`; other intervals are rejected with 400.",
             "type": "string",
             "enum": [
               "30s",
@@ -30963,7 +32669,8 @@
             "type": "string",
             "enum": [
               "saved_search",
-              "tile"
+              "tile",
+              "inline"
             ],
             "example": "tile"
           },
@@ -30989,12 +32696,31 @@
             "$ref": "#/components/schemas/ClickStackAlertChannels"
           },
           "name": {
-            "description": "Human-friendly alert name.",
+            "description": "Alert name template (Handlebars), rendered as the notification title. When omitted, a default title is generated from the display name, value and threshold.",
             "type": [
               "string",
               "null"
             ],
-            "example": "Test Alert"
+            "example": "Errors for {{group}} hit {{value}}"
+          },
+          "displayName": {
+            "description": "Display name shown in the alerts list and in notification titles. Defaults to the name of the referenced saved search, dashboard tile, or inline chart when omitted or null.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Checkout error spike"
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags for the alert. Defaults to the tags of the referenced saved search or dashboard when omitted or null; inline alerts have no parent to inherit from and default to an empty list.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "checkout",
+              "p1"
+            ]
           },
           "message": {
             "description": "Alert message template.",
@@ -31020,7 +32746,12 @@
             ],
             "example": 3
           }
-        }
+        },
+        "required": [
+          "threshold",
+          "interval",
+          "thresholdType"
+        ]
       },
       "ClickStackUpdateAlertRequest": {
         "properties": {
@@ -31056,6 +32787,9 @@
             ],
             "example": "ServiceName"
           },
+          "chartConfig": {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfig"
+          },
           "threshold": {
             "description": "Threshold value for triggering the alert. For between and not_between threshold types, this is the lower bound.",
             "type": "number",
@@ -31070,7 +32804,7 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team. Anomaly alerts (detectionMode \"anomaly\") support only `5m`, `15m`, `30m`, and `1h`; other intervals are rejected with 400.",
             "type": "string",
             "enum": [
               "30s",
@@ -31107,7 +32841,8 @@
             "type": "string",
             "enum": [
               "saved_search",
-              "tile"
+              "tile",
+              "inline"
             ],
             "example": "tile"
           },
@@ -31133,12 +32868,31 @@
             "$ref": "#/components/schemas/ClickStackAlertChannels"
           },
           "name": {
-            "description": "Human-friendly alert name.",
+            "description": "Alert name template (Handlebars), rendered as the notification title. When omitted, a default title is generated from the display name, value and threshold.",
             "type": [
               "string",
               "null"
             ],
-            "example": "Test Alert"
+            "example": "Errors for {{group}} hit {{value}}"
+          },
+          "displayName": {
+            "description": "Display name shown in the alerts list and in notification titles. Defaults to the name of the referenced saved search, dashboard tile, or inline chart when omitted or null.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Checkout error spike"
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags for the alert. Defaults to the tags of the referenced saved search or dashboard when omitted or null; inline alerts have no parent to inherit from and default to an empty list.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "checkout",
+              "p1"
+            ]
           },
           "message": {
             "description": "Alert message template.",
@@ -31164,7 +32918,12 @@
             ],
             "example": 3
           }
-        }
+        },
+        "required": [
+          "threshold",
+          "interval",
+          "thresholdType"
+        ]
       },
       "ClickStackSqlSavedFilterValue": {
         "properties": {
@@ -31203,13 +32962,18 @@
           },
           "values": {
             "type": "array",
-            "description": "Selected values",
+            "description": "Selected values. Ignored when \"all\" is true.",
             "items": {
               "type": "string"
             },
             "example": [
               "hdx-oss-dev-api"
             ]
+          },
+          "all": {
+            "description": "Set to true to select every available value rather than a fixed list, which only SOURCE_FILTER filters offer (and only for columns their source declares with allowAll). Send an empty \"values\" alongside it. Allowed values: true.",
+            "type": "boolean",
+            "example": true
           }
         },
         "required": [
@@ -31225,318 +32989,6 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackVariableSavedFilterValue"
-          }
-        ]
-      },
-      "ClickStackNumberFormat": {
-        "properties": {
-          "output": {
-            "description": "Output format applied to the number.",
-            "type": "string",
-            "enum": [
-              "currency",
-              "percent",
-              "byte",
-              "time",
-              "number",
-              "data_rate",
-              "throughput",
-              "duration"
-            ],
-            "example": "number"
-          },
-          "mantissa": {
-            "description": "Number of decimal places.",
-            "type": "integer",
-            "example": 2
-          },
-          "thousandSeparated": {
-            "description": "Whether to use thousand separators.",
-            "type": "boolean",
-            "example": true
-          },
-          "average": {
-            "description": "Whether to show as average.",
-            "type": "boolean",
-            "example": false
-          },
-          "decimalBytes": {
-            "description": "Use decimal bytes (1000) vs binary bytes (1024).",
-            "type": "boolean",
-            "example": false
-          },
-          "factor": {
-            "description": "Multiplication factor.",
-            "type": "number",
-            "example": 1
-          },
-          "currencySymbol": {
-            "description": "Currency symbol for currency format.",
-            "type": "string",
-            "example": "$"
-          },
-          "numericUnit": {
-            "description": "Numeric unit for data, data rate, or throughput formats.",
-            "type": "string",
-            "enum": [
-              "bytes_iec",
-              "bytes_si",
-              "bits_iec",
-              "bits_si",
-              "kibibytes",
-              "kilobytes",
-              "mebibytes",
-              "megabytes",
-              "gibibytes",
-              "gigabytes",
-              "tebibytes",
-              "terabytes",
-              "pebibytes",
-              "petabytes",
-              "packets_sec",
-              "bytes_sec_iec",
-              "bytes_sec_si",
-              "bits_sec_iec",
-              "bits_sec_si",
-              "kibibytes_sec",
-              "kibibits_sec",
-              "kilobytes_sec",
-              "kilobits_sec",
-              "mebibytes_sec",
-              "mebibits_sec",
-              "megabytes_sec",
-              "megabits_sec",
-              "gibibytes_sec",
-              "gibibits_sec",
-              "gigabytes_sec",
-              "gigabits_sec",
-              "tebibytes_sec",
-              "tebibits_sec",
-              "terabytes_sec",
-              "terabits_sec",
-              "pebibytes_sec",
-              "pebibits_sec",
-              "petabytes_sec",
-              "petabits_sec",
-              "cps",
-              "ops",
-              "rps",
-              "reads_sec",
-              "wps",
-              "iops",
-              "cpm",
-              "opm",
-              "rpm_reads",
-              "wpm"
-            ],
-            "example": "bytes_iec"
-          },
-          "unit": {
-            "description": "Custom unit label.",
-            "type": "string",
-            "example": "ms"
-          }
-        }
-      },
-      "ClickStackBackgroundChart": {
-        "properties": {
-          "type": {
-            "description": "Sparkline shape.",
-            "type": "string",
-            "enum": [
-              "line",
-              "area"
-            ],
-            "example": "line"
-          },
-          "color": {
-            "description": "Optional palette-token override for the sparkline. When unset the sparkline inherits the tile's static color.",
-            "type": "string",
-            "enum": [
-              "chart-blue",
-              "chart-orange",
-              "chart-red",
-              "chart-cyan",
-              "chart-green",
-              "chart-pink",
-              "chart-purple",
-              "chart-light-blue",
-              "chart-brown",
-              "chart-gray",
-              "chart-success",
-              "chart-warning",
-              "chart-error"
-            ]
-          }
-        },
-        "required": [
-          "type"
-        ]
-      },
-      "ClickStackNumericColorCondition": {
-        "properties": {
-          "operator": {
-            "description": "Numeric comparison operator.",
-            "type": "string",
-            "enum": [
-              "gt",
-              "gte",
-              "lt",
-              "lte"
-            ],
-            "example": "gt"
-          },
-          "value": {
-            "description": "Numeric bound the displayed value is compared against. Only finite numbers are accepted (Infinity and NaN are rejected).",
-            "type": "number",
-            "example": 100
-          },
-          "color": {
-            "description": "Color applied when the rule matches.",
-            "type": "string",
-            "enum": [
-              "chart-blue",
-              "chart-orange",
-              "chart-red",
-              "chart-cyan",
-              "chart-green",
-              "chart-pink",
-              "chart-purple",
-              "chart-light-blue",
-              "chart-brown",
-              "chart-gray",
-              "chart-success",
-              "chart-warning",
-              "chart-error"
-            ]
-          },
-          "label": {
-            "description": "Optional label describing the rule.",
-            "type": "string",
-            "example": "High"
-          }
-        },
-        "required": [
-          "operator",
-          "value",
-          "color"
-        ]
-      },
-      "ClickStackBetweenColorCondition": {
-        "properties": {
-          "operator": {
-            "description": "Range comparison operator.",
-            "type": "string",
-            "enum": [
-              "between"
-            ],
-            "example": "between"
-          },
-          "value": {
-            "type": "array",
-            "description": "Inclusive [min, max] range. Both bounds must be finite numbers.",
-            "items": {
-              "type": "number"
-            },
-            "example": [
-              100,
-              500
-            ]
-          },
-          "color": {
-            "description": "Color applied when the rule matches.",
-            "type": "string",
-            "enum": [
-              "chart-blue",
-              "chart-orange",
-              "chart-red",
-              "chart-cyan",
-              "chart-green",
-              "chart-pink",
-              "chart-purple",
-              "chart-light-blue",
-              "chart-brown",
-              "chart-gray",
-              "chart-success",
-              "chart-warning",
-              "chart-error"
-            ]
-          },
-          "label": {
-            "description": "Optional label describing the rule.",
-            "type": "string",
-            "example": "Warning"
-          }
-        },
-        "required": [
-          "operator",
-          "value",
-          "color"
-        ]
-      },
-      "ClickStackEqualityColorCondition": {
-        "properties": {
-          "operator": {
-            "description": "Equality comparison operator.",
-            "type": "string",
-            "enum": [
-              "eq",
-              "neq"
-            ],
-            "example": "eq"
-          },
-          "value": {
-            "description": "A finite number, or a string up to 200 characters, to compare for equality.",
-            "oneOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              }
-            ]
-          },
-          "color": {
-            "description": "Color applied when the rule matches.",
-            "type": "string",
-            "enum": [
-              "chart-blue",
-              "chart-orange",
-              "chart-red",
-              "chart-cyan",
-              "chart-green",
-              "chart-pink",
-              "chart-purple",
-              "chart-light-blue",
-              "chart-brown",
-              "chart-gray",
-              "chart-success",
-              "chart-warning",
-              "chart-error"
-            ]
-          },
-          "label": {
-            "description": "Optional label describing the rule.",
-            "type": "string",
-            "example": "Healthy"
-          }
-        },
-        "required": [
-          "operator",
-          "value",
-          "color"
-        ]
-      },
-      "ClickStackNumberTileColorCondition": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/ClickStackNumericColorCondition"
-          },
-          {
-            "$ref": "#/components/schemas/ClickStackBetweenColorCondition"
-          },
-          {
-            "$ref": "#/components/schemas/ClickStackEqualityColorCondition"
           }
         ]
       },
@@ -31636,6 +33088,7 @@
             "type": "string",
             "enum": [
               "stacked_bar",
+              "stacked_line",
               "line"
             ],
             "example": "line"
@@ -31940,248 +33393,6 @@
           }
         ]
       },
-      "ClickStackSelectItem": {
-        "properties": {
-          "aggFn": {
-            "description": "Aggregation function to apply. \"count\" does not require a valueExpression; \"quantile\" requires a level field indicating the desired percentile (e.g., 0.95).",
-            "type": "string",
-            "enum": [
-              "avg",
-              "count",
-              "count_distinct",
-              "last_value",
-              "max",
-              "min",
-              "quantile",
-              "sum",
-              "any",
-              "none"
-            ],
-            "example": "count"
-          },
-          "valueExpression": {
-            "description": "Expression for the column or value to aggregate. Must be omitted when aggFn is \"count\"; required for all other aggFn values.",
-            "type": "string",
-            "example": "Duration"
-          },
-          "alias": {
-            "description": "Display alias for this select item in chart legends.",
-            "type": "string",
-            "example": "Request Duration"
-          },
-          "level": {
-            "description": "Percentile level; only valid when aggFn is \"quantile\".",
-            "type": "number",
-            "enum": [
-              "0.5",
-              "0.9",
-              "0.95",
-              "0.99"
-            ]
-          },
-          "where": {
-            "description": "SQL or Lucene filter condition applied before aggregation.",
-            "type": "string",
-            "example": "service:api"
-          },
-          "whereLanguage": {
-            "description": "Query language for the where clause.",
-            "type": "string",
-            "enum": [
-              "sql",
-              "lucene"
-            ]
-          },
-          "metricName": {
-            "description": "Name of the metric to aggregate; only applicable when the source is a metrics source.",
-            "type": "string",
-            "example": "http.server.duration"
-          },
-          "metricType": {
-            "description": "Metric type; only applicable when the source is a metrics source.",
-            "type": "string",
-            "enum": [
-              "sum",
-              "gauge",
-              "histogram",
-              "summary",
-              "exponential histogram"
-            ]
-          },
-          "periodAggFn": {
-            "description": "Optional period aggregation function for Gauge metrics (e.g., compute the delta over the period).",
-            "type": "string",
-            "enum": [
-              "delta"
-            ],
-            "example": "delta"
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          }
-        },
-        "required": [
-          "aggFn"
-        ]
-      },
-      "ClickStackFormula": {
-        "properties": {
-          "expression": {
-            "description": "Arithmetic expression over the select items by position, e.g. \"A / (A + B) * 100\" for a success-rate percentage.",
-            "type": "string",
-            "example": "A / (A + B) * 100"
-          },
-          "alias": {
-            "description": "Display label for the formula series in chart legends and column headers. Falls back to the raw expression text when unset.",
-            "type": "string",
-            "example": "Success rate %"
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          }
-        },
-        "required": [
-          "expression"
-        ]
-      },
-      "ClickStackLineBuilderChartConfig": {
-        "properties": {
-          "displayType": {
-            "description": "Display type discriminator. Must be \"line\" for line charts.",
-            "type": "string",
-            "enum": [
-              "line"
-            ],
-            "example": "line"
-          },
-          "sourceId": {
-            "description": "ID of the data source to query.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a111111"
-          },
-          "select": {
-            "type": "array",
-            "description": "One or more aggregated values to plot. When asRatio is true, exactly two select items are required.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackSelectItem"
-            }
-          },
-          "groupBy": {
-            "description": "Field expression to group results by (creates separate lines per group value).",
-            "type": "string",
-            "example": "host"
-          },
-          "asRatio": {
-            "description": "Plot select[0] / select[1] as a ratio. Requires exactly two select items.",
-            "type": "boolean"
-          },
-          "alignDateRangeToGranularity": {
-            "description": "Expand date range boundaries to the query granularity interval.",
-            "type": "boolean"
-          },
-          "fillNulls": {
-            "description": "Fill missing time buckets with zero instead of leaving gaps.",
-            "type": "boolean"
-          },
-          "fitYAxisToData": {
-            "description": "Set the y-axis lower bound to the minimum of the displayed data instead of zero, making small fluctuations between series easier to see.",
-            "type": "boolean"
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          },
-          "compareToPreviousPeriod": {
-            "description": "Overlay the equivalent previous time period for comparison.",
-            "type": "boolean"
-          },
-          "seriesLimit": {
-            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
-            "type": "integer",
-            "example": 5
-          },
-          "formulas": {
-            "type": "array",
-            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackFormula"
-            }
-          },
-          "showOperandSeries": {
-            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "displayType",
-          "sourceId",
-          "select"
-        ]
-      },
-      "ClickStackBarBuilderChartConfig": {
-        "properties": {
-          "displayType": {
-            "description": "Display type discriminator. Must be \"stacked_bar\" for stacked-bar charts.",
-            "type": "string",
-            "enum": [
-              "stacked_bar"
-            ],
-            "example": "stacked_bar"
-          },
-          "sourceId": {
-            "description": "ID of the data source to query.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a111111"
-          },
-          "select": {
-            "type": "array",
-            "description": "One or more aggregated values to plot. When asRatio is true, exactly two select items are required.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackSelectItem"
-            }
-          },
-          "groupBy": {
-            "description": "Field expression to group results by (creates separate bars segments per group value).",
-            "type": "string",
-            "example": "service"
-          },
-          "asRatio": {
-            "description": "Plot select[0] / select[1] as a ratio. Requires exactly two select items.",
-            "type": "boolean"
-          },
-          "alignDateRangeToGranularity": {
-            "description": "Align the date range boundaries to the query granularity interval.",
-            "type": "boolean"
-          },
-          "fillNulls": {
-            "description": "Fill missing time buckets with zero instead of leaving gaps.",
-            "type": "boolean"
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          },
-          "seriesLimit": {
-            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
-            "type": "integer",
-            "example": 5
-          },
-          "formulas": {
-            "type": "array",
-            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackFormula"
-            }
-          },
-          "showOperandSeries": {
-            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "displayType",
-          "sourceId",
-          "select"
-        ]
-      },
       "ClickStackOnClickTargetIdVariant": {
         "properties": {
           "mode": {
@@ -32444,74 +33655,6 @@
           "select"
         ]
       },
-      "ClickStackNumberBuilderChartConfig": {
-        "properties": {
-          "displayType": {
-            "description": "Display type discriminator. Must be \"number\" for single big-number charts.",
-            "type": "string",
-            "enum": [
-              "number"
-            ],
-            "example": "number"
-          },
-          "sourceId": {
-            "description": "ID of the data source to query.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a111111"
-          },
-          "select": {
-            "type": "array",
-            "description": "Exactly one aggregated value to display as a single number — unless \"formulas\" is set, in which case the select items are the formula's operands and the (single) formula value is displayed instead.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackSelectItem"
-            }
-          },
-          "formulas": {
-            "type": "array",
-            "description": "A single derived value computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Number tiles display the formula value and always hide the operand series.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackFormula"
-            }
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          },
-          "color": {
-            "description": "Optional static color applied to the displayed number.",
-            "type": "string",
-            "enum": [
-              "chart-blue",
-              "chart-orange",
-              "chart-red",
-              "chart-cyan",
-              "chart-green",
-              "chart-pink",
-              "chart-purple",
-              "chart-light-blue",
-              "chart-brown",
-              "chart-gray",
-              "chart-success",
-              "chart-warning",
-              "chart-error"
-            ]
-          },
-          "colorRules": {
-            "type": "array",
-            "description": "Ordered conditional color rules evaluated against the displayed value (last match wins). Falls back to color, then the default text color when no rule matches.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackNumberTileColorCondition"
-            }
-          },
-          "backgroundChart": {
-            "$ref": "#/components/schemas/ClickStackBackgroundChart"
-          }
-        },
-        "required": [
-          "displayType",
-          "sourceId",
-          "select"
-        ]
-      },
       "ClickStackPieBuilderChartConfig": {
         "properties": {
           "displayType": {
@@ -32632,7 +33775,7 @@
           "valueExpression"
         ]
       },
-      "ClickStackHeatmapChartConfig": {
+      "ClickStackHeatmapDistributionChartConfig": {
         "properties": {
           "displayType": {
             "description": "Display type discriminator. Must be \"heatmap\" for heatmap tiles.",
@@ -32641,6 +33784,14 @@
               "heatmap"
             ],
             "example": "heatmap"
+          },
+          "heatmapMode": {
+            "description": "Heatmap mode. \"distribution\" is the default when omitted.",
+            "type": "string",
+            "enum": [
+              "distribution"
+            ],
+            "example": "distribution"
           },
           "sourceId": {
             "description": "ID of the data source to query.",
@@ -32675,6 +33826,62 @@
           "displayType",
           "sourceId",
           "select"
+        ]
+      },
+      "ClickStackHeatmapSeriesChartConfig": {
+        "properties": {
+          "displayType": {
+            "description": "Display type discriminator. Must be \"heatmap\" for heatmap tiles.",
+            "type": "string",
+            "enum": [
+              "heatmap"
+            ],
+            "example": "heatmap"
+          },
+          "heatmapMode": {
+            "description": "Heatmap mode. Must be \"series\" for series heatmaps.",
+            "type": "string",
+            "enum": [
+              "series"
+            ],
+            "example": "series"
+          },
+          "sourceId": {
+            "description": "ID of the data source to query.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "select": {
+            "type": "array",
+            "description": "Exactly one aggregated value used to color each cell.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "groupBy": {
+            "description": "Field expression to group results by (one row per group value).",
+            "type": "string",
+            "example": "ServiceName"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          }
+        },
+        "required": [
+          "displayType",
+          "heatmapMode",
+          "sourceId",
+          "select"
+        ]
+      },
+      "ClickStackHeatmapChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackHeatmapDistributionChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackHeatmapSeriesChartConfig"
+          }
         ]
       },
       "ClickStackSearchChartConfig": {
@@ -32777,118 +33984,6 @@
           "displayType"
         ]
       },
-      "ClickStackLineRawSqlChartConfig": {
-        "properties": {
-          "configType": {
-            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
-            "type": "string",
-            "enum": [
-              "sql"
-            ],
-            "example": "sql"
-          },
-          "connectionId": {
-            "description": "ID of the ClickHouse connection to execute the query against.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a567890"
-          },
-          "sqlTemplate": {
-            "description": "SQL query template to execute. Supports HyperDX template variables.",
-            "type": "string",
-            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
-          },
-          "sourceId": {
-            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a567890"
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          },
-          "displayType": {
-            "description": "Display as a line time-series chart.",
-            "type": "string",
-            "enum": [
-              "line"
-            ],
-            "example": "line"
-          },
-          "compareToPreviousPeriod": {
-            "description": "Overlay the equivalent previous time period for comparison.",
-            "type": "boolean"
-          },
-          "fillNulls": {
-            "description": "Fill missing time buckets with zero instead of leaving gaps.",
-            "type": "boolean"
-          },
-          "alignDateRangeToGranularity": {
-            "description": "Expand date range boundaries to the query granularity interval.",
-            "type": "boolean"
-          },
-          "fitYAxisToData": {
-            "description": "Set the y-axis lower bound to the minimum of the displayed data instead of zero, making small fluctuations between series easier to see.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "configType",
-          "connectionId",
-          "sqlTemplate",
-          "displayType"
-        ]
-      },
-      "ClickStackBarRawSqlChartConfig": {
-        "properties": {
-          "configType": {
-            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
-            "type": "string",
-            "enum": [
-              "sql"
-            ],
-            "example": "sql"
-          },
-          "connectionId": {
-            "description": "ID of the ClickHouse connection to execute the query against.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a567890"
-          },
-          "sqlTemplate": {
-            "description": "SQL query template to execute. Supports HyperDX template variables.",
-            "type": "string",
-            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
-          },
-          "sourceId": {
-            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a567890"
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          },
-          "displayType": {
-            "description": "Display as a stacked-bar time-series chart.",
-            "type": "string",
-            "enum": [
-              "stacked_bar"
-            ],
-            "example": "stacked_bar"
-          },
-          "fillNulls": {
-            "description": "Fill missing time buckets with zero instead of leaving gaps.",
-            "type": "boolean"
-          },
-          "alignDateRangeToGranularity": {
-            "description": "Expand date range boundaries to the query granularity interval.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "configType",
-          "connectionId",
-          "sqlTemplate",
-          "displayType"
-        ]
-      },
       "ClickStackTableRawSqlChartConfig": {
         "properties": {
           "configType": {
@@ -32927,69 +34022,6 @@
           },
           "onClick": {
             "$ref": "#/components/schemas/ClickStackOnClick"
-          }
-        },
-        "required": [
-          "configType",
-          "connectionId",
-          "sqlTemplate",
-          "displayType"
-        ]
-      },
-      "ClickStackNumberRawSqlChartConfig": {
-        "properties": {
-          "configType": {
-            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
-            "type": "string",
-            "enum": [
-              "sql"
-            ],
-            "example": "sql"
-          },
-          "connectionId": {
-            "description": "ID of the ClickHouse connection to execute the query against.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a567890"
-          },
-          "sqlTemplate": {
-            "description": "SQL query template to execute. Supports HyperDX template variables.",
-            "type": "string",
-            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
-          },
-          "sourceId": {
-            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a567890"
-          },
-          "numberFormat": {
-            "$ref": "#/components/schemas/ClickStackNumberFormat"
-          },
-          "displayType": {
-            "description": "Display as a single big-number chart.",
-            "type": "string",
-            "enum": [
-              "number"
-            ],
-            "example": "number"
-          },
-          "color": {
-            "description": "Optional static color applied to the displayed number. Raw SQL number tiles do not support conditional colorRules.",
-            "type": "string",
-            "enum": [
-              "chart-blue",
-              "chart-orange",
-              "chart-red",
-              "chart-cyan",
-              "chart-green",
-              "chart-pink",
-              "chart-purple",
-              "chart-light-blue",
-              "chart-brown",
-              "chart-gray",
-              "chart-success",
-              "chart-warning",
-              "chart-error"
-            ]
           }
         },
         "required": [
@@ -33087,26 +34119,6 @@
           "displayType"
         ]
       },
-      "ClickStackLineChartConfig": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/ClickStackLineBuilderChartConfig"
-          },
-          {
-            "$ref": "#/components/schemas/ClickStackLineRawSqlChartConfig"
-          }
-        ]
-      },
-      "ClickStackBarChartConfig": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/ClickStackBarBuilderChartConfig"
-          },
-          {
-            "$ref": "#/components/schemas/ClickStackBarRawSqlChartConfig"
-          }
-        ]
-      },
       "ClickStackTableChartConfig": {
         "oneOf": [
           {
@@ -33114,16 +34126,6 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackTableRawSqlChartConfig"
-          }
-        ]
-      },
-      "ClickStackNumberChartConfig": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/ClickStackNumberBuilderChartConfig"
-          },
-          {
-            "$ref": "#/components/schemas/ClickStackNumberRawSqlChartConfig"
           }
         ]
       },
@@ -33154,6 +34156,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackBarChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLineChartConfig"
           },
           {
             "$ref": "#/components/schemas/ClickStackTableChartConfig"
@@ -33280,6 +34285,11 @@
             "type": "string",
             "example": "errors"
           },
+          "description": {
+            "description": "Short explanation of the tile, shown as a tooltip next to its name.",
+            "type": "string",
+            "example": "Share of API requests that returned a 5xx response."
+          },
           "id": {
             "description": "Unique tile ID assigned by the server.",
             "type": "string",
@@ -33335,6 +34345,11 @@
             "type": "string",
             "example": "errors"
           },
+          "description": {
+            "description": "Short explanation of the tile, shown as a tooltip next to its name.",
+            "type": "string",
+            "example": "Share of API requests that returned a 5xx response."
+          },
           "id": {
             "description": "Optional tile ID. Omit to generate a new ID.",
             "type": "string",
@@ -33363,10 +34378,10 @@
           "h"
         ]
       },
-      "ClickStackFilterInput": {
+      "ClickStackQueryExpressionFilterInput": {
         "properties": {
           "type": {
-            "description": "Filter type. Must be \"QUERY_EXPRESSION\".",
+            "description": "Filter type discriminator. Must be \"QUERY_EXPRESSION\".",
             "type": "string",
             "enum": [
               "QUERY_EXPRESSION"
@@ -33438,6 +34453,28 @@
             "description": "Token tiles reference this filter's selected value by, as `$variableName`. Must start with a letter and may contain only letters, numbers, and underscores. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed, so a variable-enabled filter whose name derives nothing usable must send this field explicitly. Variable names must be unique across a dashboard's variable-enabled filters. Names the variable only, so the field is rejected when isVariableEnabled is not true, and is omitted from responses for such a filter.",
             "type": "string",
             "example": "environment"
+          },
+          "minSelections": {
+            "description": "Minimum number of values that must be selected before tiles load. Set to 1 to make the filter required. Only 0 and 1 are accepted. Omit the field (or send 0) for the default optional behavior.",
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "isGlobalRequirement": {
+            "description": "Widens a required filter's block to every tile on the dashboard. False (the default) blocks only the tiles that read the filter: those referencing its variableName, and those its broadcast applies to. Ignored unless minSelections is 1.",
+            "type": "boolean",
+            "example": true
+          },
+          "maxSelections": {
+            "description": "Maximum number of values that can be selected at once. Set to 1 to make the filter single-select. Omit the field for the default multi-select behavior.",
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "example": 1
           }
         },
         "required": [
@@ -33447,74 +34484,40 @@
           "sourceId"
         ]
       },
-      "ClickStackFilter": {
+      "ClickStackStaticListFilterInput": {
         "properties": {
           "type": {
-            "description": "Filter type. Must be \"QUERY_EXPRESSION\".",
+            "description": "Discriminator. Must be \"STATIC_LIST\".",
             "type": "string",
             "enum": [
-              "QUERY_EXPRESSION"
+              "STATIC_LIST"
             ],
-            "example": "QUERY_EXPRESSION"
+            "example": "STATIC_LIST"
           },
           "name": {
             "description": "Display name for the dashboard filter key",
             "type": "string",
             "example": "Environment"
           },
-          "expression": {
-            "description": "SQL expression used when querying values for this filter, and when applying this dashboard filter to tiles.",
-            "type": "string",
-            "example": "environment"
-          },
-          "sourceId": {
-            "description": "Source ID this dashboard filter key applies to",
-            "type": "string",
-            "example": "65f5e4a3b9e77c001a111111"
-          },
-          "sourceMetricType": {
-            "description": "Metric type when source is metrics",
-            "type": "string",
-            "enum": [
-              "sum",
-              "gauge",
-              "histogram",
-              "summary",
-              "exponential histogram"
-            ],
-            "example": "gauge"
-          },
-          "where": {
-            "description": "Optional WHERE condition to scope which rows this filter key reads values from",
-            "type": "string",
-            "example": "ServiceName:api"
-          },
-          "whereLanguage": {
-            "description": "Language of the where condition",
-            "type": "string",
-            "enum": [
-              "sql",
-              "lucene"
-            ],
-            "example": "lucene"
-          },
-          "appliesToSourceIds": {
+          "options": {
             "type": "array",
-            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s). Scopes the broadcast condition only, so a non-empty array is rejected when isBroadcastEnabled is false, and is omitted from responses for such a filter.",
+            "description": "The values this filter's dropdown offers. Must be non-empty and free of duplicates.",
             "items": {
               "type": "string"
             },
             "example": [
-              "65f5e4a3b9e77c001a111111"
+              "prod",
+              "staging",
+              "dev"
             ]
           },
           "isBroadcastEnabled": {
-            "description": "Whether the selected value is applied as a filter condition on every builder tile this filter applies to (see appliesToSourceIds), and every raw sql tile using the $__filters macro. Omitting the field means enabled.",
+            "description": "Must be false — there is no expression to broadcast. Omit it and it is false. Allowed values: false.",
             "type": "boolean",
             "example": false
           },
           "isVariableEnabled": {
-            "description": "Whether the selected value is exposed to tile queries as a dashboard variable named by variableName. Tiles may reference it as `$variableName` or using the (preferred) `$__filter($<variableName>)` and `$__conditionalAll(<condition>, $<variableName>)` macros.",
+            "description": "Must be true if provided, and is true when omitted. Tiles reference the selection as `$variableName`, or with the `$__filter(<expression>, $<variableName>)` and `$__conditionalAll(<condition>, $<variableName>)` macros. The one-argument `$__filter($<variableName>)` form renders the filter's own expression, which this kind of filter does not have, so it reports that the expression must be passed explicitly. Allowed values: true.",
             "type": "boolean",
             "example": true
           },
@@ -33523,17 +34526,297 @@
             "type": "string",
             "example": "environment"
           },
-          "id": {
-            "description": "Unique dashboard filter key ID",
-            "type": "string"
+          "minSelections": {
+            "description": "Minimum number of values that must be selected before tiles load. Set to 1 to make the filter required. Only 0 and 1 are accepted. Omit the field (or send 0) for the default optional behavior.",
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "isGlobalRequirement": {
+            "description": "Widens a required filter's block to every tile on the dashboard. False (the default) blocks only the tiles that read the filter: those referencing its variableName, and those its broadcast applies to. Ignored unless minSelections is 1.",
+            "type": "boolean",
+            "example": true
+          },
+          "maxSelections": {
+            "description": "Maximum number of values that can be selected at once. Set to 1 to make the filter single-select. Omit the field for the default multi-select behavior.",
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "example": 1
           }
         },
         "required": [
           "type",
           "name",
-          "expression",
+          "options"
+        ]
+      },
+      "ClickStackPrometheusLabelFilterInput": {
+        "properties": {
+          "type": {
+            "description": "Discriminator. Must be \"PROMETHEUS_LABEL\".",
+            "type": "string",
+            "enum": [
+              "PROMETHEUS_LABEL"
+            ],
+            "example": "PROMETHEUS_LABEL"
+          },
+          "name": {
+            "description": "Display name for the dashboard filter",
+            "type": "string",
+            "example": "Pod"
+          },
+          "sourceId": {
+            "description": "Id of the PromQL source the label values are read from.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a123456"
+          },
+          "label": {
+            "description": "Label whose values populate the dropdown. Use \"__name__\" to list metric names.",
+            "type": "string",
+            "example": "pod"
+          },
+          "match": {
+            "description": "Optional Prometheus series selector narrowing which series the label values are read from.",
+            "type": "string",
+            "example": "up{job=\"api\"}"
+          },
+          "isBroadcastEnabled": {
+            "description": "Must be false or omitted. Allowed values: false.",
+            "type": "boolean",
+            "example": false
+          },
+          "isVariableEnabled": {
+            "description": "Must be true if provided, and is true when omitted. Tiles reference the selection as `$variableName`. Allowed values: true.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token that tiles reference this filter's selected value by, as `$variableName`. Must start with a letter and may contain only letters, numbers, and underscores. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed. Variable names must be unique across a dashboard's variable-enabled filters.",
+            "type": "string",
+            "example": "pod"
+          },
+          "minSelections": {
+            "description": "Minimum number of values that must be selected before tiles load. Set to 1 to make the filter required. Only 0 and 1 are accepted. Omit the field (or send 0) for the default optional behavior.",
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "isGlobalRequirement": {
+            "description": "Widens a required filter's block to every tile on the dashboard. False (the default) blocks only the tiles that read the filter: those referencing its variableName, and those its broadcast applies to. Ignored unless minSelections is 1.",
+            "type": "boolean",
+            "example": true
+          },
+          "maxSelections": {
+            "description": "Maximum number of values that can be selected at once. Set to 1 to make the filter single-select. Omit the field for the default multi-select behavior.",
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "example": 1
+          }
+        },
+        "required": [
+          "type",
+          "name",
           "sourceId",
-          "id"
+          "label"
+        ]
+      },
+      "ClickStackSourceFilterInput": {
+        "properties": {
+          "type": {
+            "description": "Discriminator. Must be \"SOURCE_FILTER\".",
+            "type": "string",
+            "enum": [
+              "SOURCE_FILTER"
+            ],
+            "example": "SOURCE_FILTER"
+          },
+          "name": {
+            "description": "Display name for the dashboard filter",
+            "type": "string",
+            "example": "Cluster"
+          },
+          "sourceId": {
+            "description": "Id of the source whose filterSettings declares this column. Read filterSettings from GET /api/v2/sources to see which columns a source declares.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "expression": {
+            "description": "Column this filter selects values for. Must match one of the source's filterSettings.columns[].name values, and is the expression the selection is broadcast on.",
+            "type": "string",
+            "example": "cluster"
+          },
+          "appliesToSourceIds": {
+            "type": "array",
+            "description": "Optional list of source IDs this filter broadcasts to. Omit or provide an empty array to apply the selection to ALL tiles regardless of source; a non-empty array restricts it to tiles whose source ID is in the list.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "65f5e4a3b9e77c001a111111"
+            ]
+          },
+          "isBroadcastEnabled": {
+            "description": "Must be true if provided, and is true when omitted — a source filter should always broadcast to at least its own source. Allowed values: true.",
+            "type": "boolean",
+            "example": true
+          },
+          "isVariableEnabled": {
+            "description": "Must be true if provided, and is true when omitted. Tiles reference the selection as `$variableName`. Allowed values: true.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token that tiles reference this filter's selected value by, as `$variableName`. Must start with a letter and may contain only letters, numbers, and underscores. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed. Variable names must be unique across a dashboard's variable-enabled filters.",
+            "type": "string",
+            "example": "cluster"
+          },
+          "minSelections": {
+            "description": "Minimum number of values that must be selected before tiles load. Set to 1 to make the filter required. Only 0 and 1 are accepted. Omit the field (or send 0) for the default optional behavior.",
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "isGlobalRequirement": {
+            "description": "Widens a required filter's block to every tile on the dashboard. False (the default) blocks only the tiles that read the filter: those referencing its variableName, and those its broadcast applies to. Ignored unless minSelections is 1.",
+            "type": "boolean",
+            "example": true
+          },
+          "maxSelections": {
+            "description": "Maximum number of values that can be selected at once. Set to 1 to make the filter single-select. Omit the field for the default multi-select behavior.",
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "example": 1
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "sourceId",
+          "expression",
+          "variableName"
+        ]
+      },
+      "ClickStackFilterInput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackQueryExpressionFilterInput"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackStaticListFilterInput"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackPrometheusLabelFilterInput"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackSourceFilterInput"
+          }
+        ]
+      },
+      "ClickStackQueryExpressionFilter": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackQueryExpressionFilterInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique dashboard filter key ID"
+              }
+            }
+          }
+        ]
+      },
+      "ClickStackStaticListFilter": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackStaticListFilterInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique dashboard filter key ID"
+              }
+            }
+          }
+        ]
+      },
+      "ClickStackPrometheusLabelFilter": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackPrometheusLabelFilterInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique dashboard filter key ID"
+              }
+            }
+          }
+        ]
+      },
+      "ClickStackSourceFilter": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackSourceFilterInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique dashboard filter key ID"
+              }
+            }
+          }
+        ]
+      },
+      "ClickStackFilter": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackQueryExpressionFilter"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackStaticListFilter"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackPrometheusLabelFilter"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackSourceFilter"
+          }
         ]
       },
       "ClickStackCreateDashboardRequest": {
@@ -33803,21 +35086,70 @@
           }
         }
       },
-      "ClickStackCASLPermissionConditions": {
+      "ClickStackMongoDBCASLPermissionConditions": {
         "type": "object",
-        "additionalProperties": true
+        "properties": {},
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "required": [
+                "$regex"
+              ],
+              "properties": {
+                "$regex": {
+                  "type": "string"
+                },
+                "$options": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
       },
-      "ClickStackCASLPermission": {
+      "ClickStackMongoDBCASLPermission": {
         "properties": {
           "action": {
             "description": "The action this permission grants or denies.",
             "type": "string",
+            "enum": [
+              "create",
+              "read",
+              "update",
+              "delete",
+              "manage"
+            ],
             "example": "read"
           },
           "subject": {
             "description": "The resource the action applies to.",
             "type": "string",
-            "example": "dashboard"
+            "enum": [
+              "Alert",
+              "Connection",
+              "Dashboard",
+              "SavedSearch",
+              "Source",
+              "Team",
+              "User",
+              "Webhook",
+              "Role",
+              "Notebook",
+              "SchemaMigration",
+              "all"
+            ],
+            "example": "Dashboard"
+          },
+          "fields": {
+            "type": "array",
+            "description": "Optional CASL field restriction limiting the rule to specific fields.",
+            "items": {
+              "type": "string"
+            }
           },
           "inverted": {
             "description": "When true, the rule denies rather than grants the action.",
@@ -33825,17 +35157,144 @@
             "example": false
           },
           "integration": {
-            "description": "The integration the permission is scoped to.",
+            "description": "Scopes the permission to the application (MongoDB) data plane.",
             "type": "string",
+            "enum": [
+              "mongodb"
+            ],
             "example": "mongodb"
           },
           "conditions": {
-            "$ref": "#/components/schemas/ClickStackCASLPermissionConditions"
+            "$ref": "#/components/schemas/ClickStackMongoDBCASLPermissionConditions"
           }
         },
         "required": [
           "action",
-          "subject"
+          "subject",
+          "integration"
+        ]
+      },
+      "ClickStackClickHouseCASLPermissionConditionsFrom": {
+        "properties": {
+          "databaseName": {
+            "description": "",
+            "type": "string",
+            "example": "default"
+          },
+          "tableName": {
+            "description": "",
+            "type": "string",
+            "example": "otel_logs"
+          }
+        },
+        "required": [
+          "databaseName",
+          "tableName"
+        ]
+      },
+      "ClickStackClickHouseCASLPermissionConditions": {
+        "properties": {
+          "connection": {
+            "description": "ID of the connection the row policy applies to.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "from": {
+            "$ref": "#/components/schemas/ClickStackClickHouseCASLPermissionConditionsFrom"
+          },
+          "where": {
+            "description": "The row-policy predicate, expressed in `whereLanguage`.",
+            "type": "string",
+            "example": "ServiceName = 'checkout'"
+          },
+          "whereLanguage": {
+            "description": "",
+            "type": "string",
+            "enum": [
+              "sql",
+              "lucene"
+            ],
+            "example": "sql"
+          }
+        },
+        "required": [
+          "connection",
+          "from",
+          "where",
+          "whereLanguage"
+        ]
+      },
+      "ClickStackClickHouseCASLPermission": {
+        "properties": {
+          "action": {
+            "description": "The action this permission grants or denies.",
+            "type": "string",
+            "enum": [
+              "create",
+              "read",
+              "update",
+              "delete",
+              "manage"
+            ],
+            "example": "read"
+          },
+          "subject": {
+            "description": "The resource the action applies to.",
+            "type": "string",
+            "enum": [
+              "Alert",
+              "Connection",
+              "Dashboard",
+              "SavedSearch",
+              "Source",
+              "Team",
+              "User",
+              "Webhook",
+              "Role",
+              "Notebook",
+              "SchemaMigration",
+              "all"
+            ],
+            "example": "Dashboard"
+          },
+          "fields": {
+            "type": "array",
+            "description": "Optional CASL field restriction limiting the rule to specific fields.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inverted": {
+            "description": "When true, the rule denies rather than grants the action.",
+            "type": "boolean",
+            "example": false
+          },
+          "integration": {
+            "description": "Scopes the permission to the ClickHouse data plane (row-level access).",
+            "type": "string",
+            "enum": [
+              "clickhouse"
+            ],
+            "example": "clickhouse"
+          },
+          "conditions": {
+            "$ref": "#/components/schemas/ClickStackClickHouseCASLPermissionConditions"
+          }
+        },
+        "required": [
+          "action",
+          "subject",
+          "integration"
+        ]
+      },
+      "ClickStackCASLPermission": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackMongoDBCASLPermission"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackClickHouseCASLPermission"
+          }
         ]
       },
       "ClickStackRole": {
@@ -33935,29 +35394,6 @@
         "required": [
           "permissions"
         ]
-      },
-      "ClickStackValidationErrorItemErrors": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "ClickStackValidationErrorItem": {
-        "properties": {
-          "type": {
-            "description": "Request part that failed validation.",
-            "type": "string",
-            "example": "Body"
-          },
-          "errors": {
-            "$ref": "#/components/schemas/ClickStackValidationErrorItemErrors"
-          }
-        }
-      },
-      "ClickStackValidationError": {
-        "type": "array",
-        "description": "zod-express-middleware validation failures.",
-        "items": {
-          "$ref": "#/components/schemas/ClickStackValidationErrorItem"
-        }
       },
       "ClickStackSavedSearchFilter": {
         "properties": {
@@ -34488,6 +35924,14 @@
             ],
             "example": "SeverityText"
           },
+          "severityNumberExpression": {
+            "description": "Expression for the numeric OpenTelemetry SeverityNumber (1-24).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "SeverityNumber"
+          },
           "bodyExpression": {
             "description": "Expression to extract the log message body.",
             "type": [
@@ -34495,6 +35939,14 @@
               "null"
             ],
             "example": "Body"
+          },
+          "eventNameExpression": {
+            "description": "Expression for the OpenTelemetry log EventName.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "EventName"
           },
           "eventAttributesExpression": {
             "description": "Expression to extract event-level attributes.",
@@ -34519,6 +35971,11 @@
               "null"
             ],
             "example": "TimestampTime"
+          },
+          "orderByExpression": {
+            "description": "Custom ORDER BY expression that overrides the default ordering. Leave empty to use the auto-detected default.",
+            "type": "string",
+            "example": "Timestamp DESC"
           },
           "metricSourceId": {
             "description": "HyperDX Source for metrics associated with logs. Optional",
@@ -34799,6 +36256,11 @@
             ],
             "example": "ResourceAttributes['service.version']"
           },
+          "sampleRateExpression": {
+            "description": "Column or expression for upstream sampling weight (1/N). When set, aggregations (count, avg, sum, quantile) are corrected for sampling. Percentiles use quantileTDigestWeighted, which is an approximation. Leave empty if spans are not sampled.",
+            "type": "string",
+            "example": "SampleRate"
+          },
           "resourceAttributesExpression": {
             "description": "Expression to extract resource-level attributes.",
             "type": [
@@ -34822,6 +36284,11 @@
               "null"
             ],
             "example": "Events"
+          },
+          "spanLinksValueExpression": {
+            "description": "Expression to extract span links. Used to capture links from a span to spans in other traces. Expected to be Nested ( TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String) )",
+            "type": "string",
+            "example": "Links"
           },
           "implicitColumnExpression": {
             "description": "Column used for full text search if no property is specified in a Lucene-based search. Typically the message body of a log.",
@@ -34865,6 +36332,16 @@
             "items": {
               "$ref": "#/components/schemas/ClickStackHighlightedAttributeExpression"
             }
+          },
+          "displayedTimestampValueExpression": {
+            "description": "This DateTime column is used to display and order search results.",
+            "type": "string",
+            "example": "Timestamp"
+          },
+          "orderByExpression": {
+            "description": "Custom ORDER BY expression that overrides the default ordering. Leave empty to use the auto-detected default.",
+            "type": "string",
+            "example": "Timestamp DESC"
           },
           "materializedViews": {
             "type": "array",
@@ -35040,6 +36517,11 @@
             "description": "HyperDX Source for traces associated with sessions.",
             "type": "string",
             "example": "507f1f77bcf86cd799439021"
+          },
+          "resourceAttributesExpression": {
+            "description": "Expression to extract resource-level attributes.",
+            "type": "string",
+            "example": "ResourceAttributes"
           }
         },
         "required": [
@@ -35412,14 +36894,18 @@
       },
       "ClickStackWebhookInputHeaders": {
         "type": "object",
+        "properties": {},
         "additionalProperties": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 4096
         }
       },
       "ClickStackWebhookInputQueryParams": {
         "type": "object",
+        "properties": {},
         "additionalProperties": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 4096
         }
       },
       "ClickStackWebhookInput": {
@@ -35450,7 +36936,7 @@
             "example": "Sends critical alerts to the #incidents channel"
           },
           "body": {
-            "description": "Optional request body template. Only for generic/incidentio; rejected for slack.",
+            "description": "Optional Handlebars request body template. Only for generic/incidentio; rejected for slack. Rejected with a 400 if it does not compile or calls a helper other than `eq` and the Handlebars built-ins.",
             "type": "string",
             "example": "{\"alert\": \"{{title}}\", \"severity\": \"{{level}}\"}"
           },
@@ -35465,6 +36951,55 @@
           "name",
           "service",
           "url"
+        ]
+      },
+      "ClickStackValidateWebhookResponseErrorsItem": {
+        "properties": {
+          "path": {
+            "description": "Dot-separated field path, or empty string for top-level errors.",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable error description.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ]
+      },
+      "ClickStackValidateWebhookResponseNormalized": {
+        "properties": {}
+      },
+      "ClickStackValidateWebhookResponse": {
+        "properties": {
+          "valid": {
+            "description": "True when the body passes all validation rules.",
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "description": "Validation errors. Empty when valid is true.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackValidateWebhookResponseErrorsItem"
+            }
+          },
+          "normalized": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickStackValidateWebhookResponseNormalized"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "valid",
+          "errors",
+          "normalized"
         ]
       },
       "AssignedRole": {
@@ -37574,6 +39109,61 @@
           }
         }
       },
+      "PostgresIpAccessListEntry": {
+        "properties": {
+          "id": {
+            "description": "Rule ID returned by the service. Include it when editing an existing rule; omit it when creating a rule.",
+            "type": "string"
+          },
+          "source": {
+            "description": "IPv4 address or CIDR allowed to connect. Returned as a canonical CIDR.",
+            "type": "string",
+            "example": "203.0.113.0/24"
+          },
+          "portRange": {
+            "description": "Port or inclusive range, from 1 to 65535. Use \"5432\" for Postgres, \"6432\" for PgBouncer, or a range such as \"5432..6432\".",
+            "type": "string",
+            "example": "5432"
+          },
+          "description": {
+            "description": "Optional description of the access list entry.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "portRange"
+        ]
+      },
+      "PostgresIpAccessListRuleReference": {
+        "properties": {
+          "id": {
+            "description": "Rule ID returned by the service.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "PostgresIpAccessListPatch": {
+        "properties": {
+          "add": {
+            "type": "array",
+            "description": "Rules to create or edit after removals. Omit id to create a TCP rule, or include the returned id to edit an existing rule. Updates can partially succeed; read the current list before retrying.",
+            "items": {
+              "$ref": "#/components/schemas/PostgresIpAccessListEntry"
+            }
+          },
+          "remove": {
+            "type": "array",
+            "description": "Rules to remove by their returned IDs before creating or editing rules.",
+            "items": {
+              "$ref": "#/components/schemas/PostgresIpAccessListRuleReference"
+            }
+          }
+        }
+      },
       "pgConfig": {
         "type": "object",
         "title": "Postgres Configuration",
@@ -37616,6 +39206,18 @@
               "TLSv1.1",
               "TLSv1.2",
               "TLSv1.3"
+            ]
+          },
+          "default_toast_compression": {
+            "type": "string",
+            "description": "Sets the default compression method for compressible values stored out of line (TOAST).",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/default_toast_compression/"
+            },
+            "example": "lz4",
+            "enum": [
+              "pglz",
+              "lz4"
             ]
           },
           "maintenance_work_mem": {
@@ -37726,6 +39328,147 @@
             "example": 2,
             "minimum": 0
           },
+          "shared_memory_percent": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Percent of VM memory reserved for the shared_memory, from 25% to 75%. shared_buffers sized to fit in it. Limited to 50% on VMs with memory less or equal 16GB",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/shared_buffers/"
+            },
+            "example": 25,
+            "minimum": 25,
+            "maximum": 75
+          },
+          "temp_buffers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the maximum memory each session uses for temporary table buffers.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/temp_buffers/"
+            },
+            "example": "8MB",
+            "minimum": 800
+          },
+          "hash_mem_multiplier": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Multiple of work_mem that hash-based operations may use.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/hash_mem_multiplier/"
+            },
+            "example": 2,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "enable_parallel_hash": {
+            "type": "string",
+            "description": "Enables the planner's use of parallel hash plans.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/enable_parallel_hash/"
+            },
+            "example": "on",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "maintenance_io_concurrency": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Number of concurrent disk I/O operations used for maintenance work such as vacuum.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/maintenance_io_concurrency/"
+            },
+            "example": 10,
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "io_method": {
+            "type": "string",
+            "description": "Selects the method used to perform asynchronous I/O.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_method/"
+            },
+            "example": "worker",
+            "enum": [
+              "sync",
+              "worker",
+              "io_uring"
+            ]
+          },
+          "io_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Number of I/O worker processes used when io_method is worker.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_workers/"
+            },
+            "example": 3,
+            "minimum": 1,
+            "maximum": 32
+          },
+          "bgwriter_delay": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sleep time between background writer activity rounds.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_delay/"
+            },
+            "example": "200ms",
+            "minimum": 10,
+            "maximum": 10000
+          },
+          "bgwriter_flush_after": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Amount of data written by the background writer after which the OS is asked to flush it to disk.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_flush_after/"
+            },
+            "example": "512kB",
+            "minimum": 0,
+            "maximum": 2048
+          },
+          "bgwriter_lru_maxpages": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of buffers the background writer writes per round.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_lru_maxpages/"
+            },
+            "example": 100,
+            "minimum": 0,
+            "maximum": 1073741823
+          },
+          "bgwriter_lru_multiplier": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Multiple of the average recent buffer demand that the background writer cleans per round.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_lru_multiplier/"
+            },
+            "example": 2,
+            "minimum": 0,
+            "maximum": 10
+          },
           "statement_timeout": {
             "type": [
               "string",
@@ -37834,6 +39577,19 @@
             "example": "5GB",
             "minimum": 32768
           },
+          "checkpoint_timeout": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the maximum time between automatic WAL checkpoints.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/checkpoint_timeout/"
+            },
+            "example": "5min",
+            "minimum": 30,
+            "maximum": 3600
+          },
           "max_slot_wal_keep_size": {
             "type": [
               "string",
@@ -37852,13 +39608,90 @@
             "externalDocs": {
               "url": "https://postgresqlco.nf/doc/en/param/wal_compression/"
             },
-            "example": "off",
+            "example": "lz4",
             "enum": [
               "off",
               "on",
               "lz4",
               "zstd"
             ]
+          },
+          "wal_buffers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the number of disk-page buffers in shared memory for WAL. A number without a unit is in 8 kB pages.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/wal_buffers/"
+            },
+            "example": "16MB",
+            "minimum": 32,
+            "maximum": 262144
+          },
+          "max_replication_slots": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of replication slots. Standbys and logical replication each use slots.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_replication_slots/"
+            },
+            "example": 10,
+            "minimum": 10,
+            "maximum": 262143
+          },
+          "max_wal_senders": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of simultaneously running WAL sender processes.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_wal_senders/"
+            },
+            "example": 10,
+            "minimum": 10,
+            "maximum": 262143
+          },
+          "max_logical_replication_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of logical replication workers for subscriptions on this server.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_logical_replication_workers/"
+            },
+            "example": 4,
+            "minimum": 0,
+            "maximum": 262143
+          },
+          "max_sync_workers_per_subscription": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of table synchronization workers per subscription.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_sync_workers_per_subscription/"
+            },
+            "example": 2,
+            "minimum": 0,
+            "maximum": 262143
+          },
+          "logical_decoding_work_mem": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum memory used for logical decoding before changes spill to disk.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/logical_decoding_work_mem/"
+            },
+            "example": "64MB",
+            "minimum": 64
           },
           "autovacuum_max_workers": {
             "type": [
@@ -37932,6 +39765,58 @@
             "example": 0.2,
             "minimum": 0
           },
+          "autovacuum_vacuum_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple updates or deletes prior to vacuum.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_vacuum_threshold/"
+            },
+            "example": 50,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "autovacuum_analyze_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple inserts, updates, or deletes prior to analyze.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_analyze_threshold/"
+            },
+            "example": 50,
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "autovacuum_vacuum_insert_threshold": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Minimum number of tuple inserts prior to vacuum, or -1 to disable insert vacuums.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_vacuum_insert_threshold/"
+            },
+            "example": 1000,
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "autovacuum_freeze_max_age": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Age at which to autovacuum a table to prevent transaction ID wraparound.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/autovacuum_freeze_max_age/"
+            },
+            "example": 200000000,
+            "minimum": 100000,
+            "maximum": 2000000000
+          },
           "autovacuum_vacuum_cost_limit": {
             "type": [
               "string",
@@ -37955,6 +39840,83 @@
             },
             "example": "2ms",
             "minimum": 0
+          },
+          "vacuum_cost_delay": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Time in milliseconds a manual VACUUM sleeps when its cost limit is exceeded. 0 disables cost-based delay.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/vacuum_cost_delay/"
+            },
+            "example": "0",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "log_min_duration_statement": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Logs statements that run at least this many milliseconds. 0 logs all statements; -1 disables.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_min_duration_statement/"
+            },
+            "example": 1000,
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "log_temp_files": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Logs temporary files of at least this size in kilobytes. 0 logs all temporary files; -1 disables.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_temp_files/"
+            },
+            "example": "-1",
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "log_lock_waits": {
+            "type": "string",
+            "description": "Logs a message when a session waits longer than deadlock_timeout to acquire a lock.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_lock_waits/"
+            },
+            "example": "off",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "log_parameter_max_length": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum bytes of each bind parameter value logged with statements. 0 disables; -1 logs values in full.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_parameter_max_length/"
+            },
+            "example": "-1",
+            "minimum": -1,
+            "maximum": 1073741823
+          },
+          "track_activity_query_size": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Bytes reserved to store the text of the currently running command of each session, shown in pg_stat_activity.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/track_activity_query_size/"
+            },
+            "example": 4096,
+            "minimum": 100,
+            "maximum": 1048576
           }
         },
         "additionalProperties": false,
@@ -38069,67 +40031,67 @@
           "r8gd.16xlarge",
           "r8gd.24xlarge",
           "r8gd.48xlarge",
-          "c4a-highmem-4",
-          "c4a-highmem-8",
-          "c4a-highmem-16",
-          "c4a-highmem-32",
-          "c4a-highmem-48",
-          "c4a-highmem-64",
-          "c4a-highmem-72",
-          "c4a-standard-4",
-          "c4a-standard-8",
-          "c4a-standard-16",
-          "c4a-standard-32",
-          "c4a-standard-48",
-          "c4a-standard-64",
-          "c4a-standard-72",
-          "c4-highmem-4",
-          "c4-highmem-8",
-          "c4-highmem-16",
-          "c4-highmem-24",
-          "c4-highmem-32",
-          "c4-highmem-48",
-          "c4-highmem-96",
-          "c4-highmem-144",
-          "c4-highmem-192",
-          "c4-highmem-288",
-          "c4-standard-4",
-          "c4-standard-8",
-          "c4-standard-16",
-          "c4-standard-24",
-          "c4-standard-32",
-          "c4-standard-48",
-          "c4-standard-96",
-          "c4-standard-144",
-          "c4-standard-192",
-          "c4-standard-288",
-          "c4d-highmem-8",
-          "c4d-highmem-16",
-          "c4d-highmem-32",
-          "c4d-highmem-48",
-          "c4d-highmem-64",
-          "c4d-highmem-96",
-          "c4d-highmem-192",
-          "c4d-highmem-384",
-          "c4d-standard-8",
-          "c4d-standard-16",
-          "c4d-standard-32",
-          "c4d-standard-48",
-          "c4d-standard-64",
-          "c4d-standard-96",
-          "c4d-standard-192",
-          "c4d-standard-384",
-          "z3-highlssd-8",
-          "z3-highlssd-16",
-          "z3-highlssd-22",
-          "z3-highlssd-32",
-          "z3-highlssd-44",
-          "z3-highlssd-88",
-          "z3-standardlssd-14",
-          "z3-standardlssd-22",
-          "z3-standardlssd-44",
-          "z3-standardlssd-88",
-          "z3-standardlssd-176"
+          "c4a-highmem-lssd-4",
+          "c4a-highmem-lssd-8",
+          "c4a-highmem-lssd-16",
+          "c4a-highmem-lssd-32",
+          "c4a-highmem-lssd-48",
+          "c4a-highmem-lssd-64",
+          "c4a-highmem-lssd-72",
+          "c4a-standard-lssd-4",
+          "c4a-standard-lssd-8",
+          "c4a-standard-lssd-16",
+          "c4a-standard-lssd-32",
+          "c4a-standard-lssd-48",
+          "c4a-standard-lssd-64",
+          "c4a-standard-lssd-72",
+          "c4-highmem-lssd-4",
+          "c4-highmem-lssd-8",
+          "c4-highmem-lssd-16",
+          "c4-highmem-lssd-24",
+          "c4-highmem-lssd-32",
+          "c4-highmem-lssd-48",
+          "c4-highmem-lssd-96",
+          "c4-highmem-lssd-144",
+          "c4-highmem-lssd-192",
+          "c4-highmem-lssd-288",
+          "c4-standard-lssd-4",
+          "c4-standard-lssd-8",
+          "c4-standard-lssd-16",
+          "c4-standard-lssd-24",
+          "c4-standard-lssd-32",
+          "c4-standard-lssd-48",
+          "c4-standard-lssd-96",
+          "c4-standard-lssd-144",
+          "c4-standard-lssd-192",
+          "c4-standard-lssd-288",
+          "c4d-highmem-lssd-8",
+          "c4d-highmem-lssd-16",
+          "c4d-highmem-lssd-32",
+          "c4d-highmem-lssd-48",
+          "c4d-highmem-lssd-64",
+          "c4d-highmem-lssd-96",
+          "c4d-highmem-lssd-192",
+          "c4d-highmem-lssd-384",
+          "c4d-standard-lssd-8",
+          "c4d-standard-lssd-16",
+          "c4d-standard-lssd-32",
+          "c4d-standard-lssd-48",
+          "c4d-standard-lssd-64",
+          "c4d-standard-lssd-96",
+          "c4d-standard-lssd-192",
+          "c4d-standard-lssd-384",
+          "z3-highmem-highlssd-8",
+          "z3-highmem-highlssd-16",
+          "z3-highmem-highlssd-22",
+          "z3-highmem-highlssd-32",
+          "z3-highmem-highlssd-44",
+          "z3-highmem-highlssd-88",
+          "z3-highmem-standardlssd-14",
+          "z3-highmem-standardlssd-22",
+          "z3-highmem-standardlssd-44",
+          "z3-highmem-standardlssd-88",
+          "z3-highmem-standardlssd-176"
         ]
       },
       "pgHaType": {
@@ -38261,6 +40223,13 @@
           "tags": {
             "$ref": "#/components/schemas/pgTags"
           },
+          "ipAccessList": {
+            "type": "array",
+            "description": "IPv4 access rules shown in the console. IPv6 rules are not included. Returned when reading or configuring access; omitted from other service updates.",
+            "items": {
+              "$ref": "#/components/schemas/PostgresIpAccessListEntry"
+            }
+          },
           "id": {
             "$ref": "#/components/schemas/pgIdProperty"
           },
@@ -38291,6 +40260,11 @@
           "hostname": {
             "description": "Hostname for the Postgres service",
             "type": "string"
+          },
+          "earliestRestoreTime": {
+            "description": "Earliest point in time the service can be restored to with the restore endpoint. ISO-8601. Only present for a primary service once its first backup has completed.",
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -38317,6 +40291,13 @@
           "tags": {
             "$ref": "#/components/schemas/pgTags"
           },
+          "ipAccessList": {
+            "type": "array",
+            "description": "IPv4 TCP access rules to apply when creating the service. Omit to allow all IPv4 and IPv6 addresses on Postgres (5432) and PgBouncer (6432). Provide an empty list to block public access. When provided, only these rules are allowed; include separate rules for each required port.",
+            "items": {
+              "$ref": "#/components/schemas/PostgresIpAccessListEntry"
+            }
+          },
           "pgConfig": {
             "$ref": "#/components/schemas/pgConfig"
           },
@@ -38333,6 +40314,9 @@
       },
       "PostgresServicePatchRequest": {
         "properties": {
+          "ipAccessList": {
+            "$ref": "#/components/schemas/PostgresIpAccessListPatch"
+          },
           "name": {
             "$ref": "#/components/schemas/pgNameProperty"
           },
@@ -38518,8 +40502,12 @@
             "type": "string",
             "example": "basebackups_005/000000010000000000000002_backup_stop_sentinel.json"
           },
+          "status": {
+            "description": "Status of the backup. Only completed backups are listed, so this is always `ready`.",
+            "type": "string"
+          },
           "lastModified": {
-            "description": "Time the backup was last written to. ISO-8601.",
+            "description": "Time the backup finished. ISO-8601. This is not the earliest point a service can be restored to; use `earliestRestoreTime` on the Postgres service for that.",
             "type": "string",
             "format": "date-time",
             "example": "2026-03-31T18:17:37Z"
@@ -38527,6 +40515,7 @@
         },
         "required": [
           "key",
+          "status",
           "lastModified"
         ]
       },
@@ -38549,7 +40538,7 @@
       "PostgresMetricSeries": {
         "properties": {
           "label": {
-            "description": "Distinguishing label for this series within the metric (for example a CPU mode, a database name, or \"Reads\").",
+            "description": "Distinguishing label for this series within the metric (for example a CPU mode, a database name, a wait event such as \"Lock:relation\", or \"Reads\").",
             "type": "string"
           },
           "dataPoints": {
@@ -38568,7 +40557,7 @@
       "PostgresMetric": {
         "properties": {
           "key": {
-            "description": "Stable metric identifier (for example cpu_usage, connection_count, cache_hit_ratio).",
+            "description": "Stable metric identifier (for example cpu_usage, connection_count, cache_hit_ratio, active_sessions_by_wait).",
             "type": "string"
           },
           "name": {
@@ -39237,14 +41226,6 @@
           },
           "backupEncryptionConfig": {
             "$ref": "#/components/schemas/BackupEncryptionConfig"
-          },
-          "encryptionKey": {
-            "description": "Optional customer provided disk encryption key",
-            "type": "string"
-          },
-          "encryptionAssumedRoleIdentifier": {
-            "description": "Optional role to use for disk encryption",
-            "type": "string"
           },
           "privateEndpointIds": {
             "type": "array",
@@ -40615,6 +42596,7 @@
               },
               "functionName": {
                 "type": "string",
+                "maxLength": 64,
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
             },
@@ -40724,6 +42706,7 @@
               },
               "functionName": {
                 "type": "string",
+                "maxLength": 64,
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
             },

@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/39855
-SET enable_analyzer=1;
 
 create table x(
     a UInt64,

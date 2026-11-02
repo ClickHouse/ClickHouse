@@ -1,4 +1,6 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-shared-merge-tree
+-- no-shared-merge-tree: `SYSTEM STOP REPLICATION QUEUES` does not keep the mutations of a `SharedMergeTree`
+-- pending, so an earlier mutation can run and change the parts a later `ALTER` is pruned against.
 -- https://github.com/ClickHouse/ClickHouse/issues/117115
 -- Mutation partition pruning refuses a predicate containing a query-time non-deterministic function,
 -- because the pruning pass folds it at submission time while the asynchronous execution evaluates it
