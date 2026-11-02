@@ -197,7 +197,6 @@ struct GroupArraySortedData
         }
     }
 
-
     ALWAYS_INLINE void insertResultInto(IColumn & to, size_t max_elements, Arena * arena)
     {
         auto & result_array = assert_cast<ColumnArray &>(to);
