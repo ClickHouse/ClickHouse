@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-msan
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
 -- Stress test for the `make_distributed_plan` fallback decision.

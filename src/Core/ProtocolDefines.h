@@ -54,10 +54,13 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELE
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX = 12;
 /// No new field: a worker of this version reads the table named in the forwarded query from the initiator's read tasks.
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS = 13;
+/// The number of rows of a data lake object recorded in the table metadata, to report `total_rows_approx` from the workers.
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS = 14;
+
 /// Distributed Web `urlCluster` tasks carry relative object keys plus `read_source_index`; workers
 /// predating this version execute secondary queries through `StorageURL` and interpret that key as
 /// a complete URL, which can read the wrong origin. Initiators must fail instead of downgrading.
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS = 14;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS = 15;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
