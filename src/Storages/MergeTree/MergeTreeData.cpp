@@ -11590,6 +11590,13 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     else
     {
         execution_context = Context::createCopy(query_context);
+        /// The analysis below resolves the predicate against a `TableNode`, which takes a storage
+        /// snapshot. With `enable_shared_storage_snapshot_in_query` it would be cached for the whole
+        /// query, and a lightweight update reads with the cached one - but it runs this analysis to
+        /// allocate its block numbers, i.e. before `update_sequential_consistency` waits for
+        /// committing inserts and pulls the replication queue. Parts arriving during that wait would
+        /// then be invisible to the update, which would leave their rows unchanged.
+        execution_context->setSetting("enable_shared_storage_snapshot_in_query", false);
     }
 
     /// The predicate comes from a serialized mutation command that was re-parsed, so its set
