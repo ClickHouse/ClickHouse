@@ -233,3 +233,28 @@ else
     echo 50
     echo "SNAPPY_UNCOMPRESS_FAILED"
 fi
+
+# Case S: Explicit tracing header row count cache partitioning
+echo "Case S: Explicit tracing header row count cache partitioning"
+url_trace_count="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(2)+WHERE+number+%3D+0+OR+getClientHTTPHeader('tracestate')+%3D+'vendor%3Dtwo'+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_count"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_trace_count', 'CSV', 'x UInt64', 'none', headers('tracestate' = 'vendor=one'))"
+$CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_trace_count', 'CSV', 'x UInt64', 'none', headers('tracestate' = 'vendor=two'))"
+
+# Case T: Explicit tracing header schema inference partitioning
+echo "Case T: Explicit tracing header schema inference partitioning"
+url_trace_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1+AS+col1%2C+if(getClientHTTPHeader('tracestate')+%3D+'vendor%3Dtwo'%2C+'string_val'%2C+'100')+AS+col2+FORMAT+CSVWithNames&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_schema"
+$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'CSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=one')) FORMAT TSV" | cut -f1,2
+$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'CSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=two')) FORMAT TSV" | cut -f1,2
+
+# Case U: Auto-tracing does not fragment schema cache
+echo "Case U: Auto-tracing does not fragment schema cache"
+url_autotrace="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(50)+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_autotrace"
+$CLICKHOUSE_CLIENT $url_settings --opentelemetry_start_trace_probability=1 -q "SELECT count() FROM url('$url_autotrace', 'CSV', 'x UInt64', 'none')"
+$CLICKHOUSE_CLIENT $url_settings --opentelemetry_start_trace_probability=1 -q "SELECT count() FROM url('$url_autotrace', 'CSV', 'x UInt64', 'none')"
+$CLICKHOUSE_CLIENT -q "
+SELECT storage, format, count()
+FROM system.schema_inference_cache
+WHERE storage = 'URL' AND source LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}_autotrace%'
+GROUP BY storage, format
+SETTINGS schema_inference_use_cache_for_url=0
+"

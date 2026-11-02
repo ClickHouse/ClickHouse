@@ -218,12 +218,6 @@ String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
         for (char c : trimmed_name)
             lower_name.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
 
-        /// OpenTelemetry traceparent and tracestate are auto-injected by ClickHouse
-        /// when OpenTelemetry tracing is enabled. Ignore them so trace propagation
-        /// does not fragment schema cache entries.
-        if (lower_name == "traceparent" || lower_name == "tracestate")
-            continue;
-
         auto trimmed_val = trim(entry.value);
 
         /// Never expose raw user-supplied header values in memory or system tables.
@@ -693,6 +687,7 @@ StorageURLSource::StorageURLSource(
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_, context_))
+    , request_headers(headers_)
     , request_headers_hash(hashRequestHeaders(headers_))
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
@@ -1440,14 +1435,14 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
     auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
+    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(request_headers));
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
     auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
+    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(request_headers));
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
         /// Some URLs could not have Last-Modified header, in this case we cannot be sure that

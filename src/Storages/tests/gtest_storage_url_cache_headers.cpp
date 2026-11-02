@@ -177,22 +177,31 @@ TEST(StorageURLCacheHeaders, KeyHashBoundaryCollisionResistance)
     EXPECT_NE(hasher(key_gzip), hasher(key_gz));
 }
 
-TEST(StorageURLCacheHeaders, OpenTelemetryHeadersIgnored)
+TEST(StorageURLCacheHeaders, ExplicitTraceStateHeadersPartitionCache)
 {
-    HTTPHeaderEntries entries1{{"Accept-Encoding", "gzip"}};
-    HTTPHeaderEntries entries2{
+    HTTPHeaderEntries entries_vendor_one{{"tracestate", "vendor=one"}};
+    HTTPHeaderEntries entries_vendor_two{{"tracestate", "vendor=two"}};
+
+    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_vendor_one), canonicalizeHTTPHeadersForSchemaCache(entries_vendor_two));
+    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_vendor_one), "");
+    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_vendor_two), "");
+
+    HTTPHeaderEntries entries_base{{"Accept-Encoding", "gzip"}};
+    HTTPHeaderEntries entries_with_trace{
         {"Accept-Encoding", "gzip"},
-        {"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"},
-        {"tracestate", "congo=t61rcWkgMzE"}
+        {"tracestate", "vendor=one"}
     };
+    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_base), canonicalizeHTTPHeadersForSchemaCache(entries_with_trace));
+}
 
-    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(entries1), canonicalizeHTTPHeadersForSchemaCache(entries2));
+TEST(StorageURLCacheHeaders, ExplicitTraceParentHeadersPartitionCache)
+{
+    HTTPHeaderEntries entries_trace1{{"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}};
+    HTTPHeaderEntries entries_trace2{{"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-02"}};
 
-    HTTPHeaderEntries telemetry_only{
-        {"traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"},
-        {"tracestate", "rojo=1"}
-    };
-    EXPECT_EQ(canonicalizeHTTPHeadersForSchemaCache(telemetry_only), "");
+    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_trace1), canonicalizeHTTPHeadersForSchemaCache(entries_trace2));
+    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_trace1), "");
+    EXPECT_NE(canonicalizeHTTPHeadersForSchemaCache(entries_trace2), "");
 }
 
 TEST(StorageURLCacheHeaders, SnappyWireModeDistinction)

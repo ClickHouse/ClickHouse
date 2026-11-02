@@ -54,3 +54,15 @@ SNAPPY_UNCOMPRESS_FAILED
 Case R: Snappy wire mode reverse order file count cache isolation
 50
 SNAPPY_UNCOMPRESS_FAILED
+Case S: Explicit tracing header row count cache partitioning
+1
+2
+Case T: Explicit tracing header schema inference partitioning
+col1	Nullable(Int64)
+col2	Nullable(Int64)
+col1	Nullable(Int64)
+col2	Nullable(String)
+Case U: Auto-tracing does not fragment schema cache
+50
+50
+URL	CSV	1
