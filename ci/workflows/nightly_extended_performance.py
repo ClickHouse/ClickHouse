@@ -64,7 +64,8 @@ workflow = Workflow.Config(
     name="NightlyExtendedPerformance",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
-    jobs=JobConfigs.nightly_extended_performance_jobs + JobConfigs.nightly_iceberg_performance_jobs,
+    # TEMPORARY, reverted in the next commit: only the Iceberg jobs, for a validation run on the branch.
+    jobs=JobConfigs.nightly_iceberg_performance_jobs,
     dockers=DOCKERS,
     disable_dockers_build=True,
     enable_cache=False,
