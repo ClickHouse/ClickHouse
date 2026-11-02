@@ -1340,6 +1340,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* no_destination */ false,
                     /* async_insert */ false,
                     is_initial_insert);
+                insert.setExplainOnly(true);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would not be executed

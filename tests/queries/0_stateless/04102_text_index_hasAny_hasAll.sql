@@ -4,7 +4,6 @@ DROP TABLE IF EXISTS tab_array;
 DROP TABLE IF EXISTS tab_split;
 DROP TABLE IF EXISTS tab_fallback;
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;

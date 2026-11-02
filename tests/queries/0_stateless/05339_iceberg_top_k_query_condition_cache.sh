@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-parallel-replicas
 # Tag no-fasttest: needs Parquet and Iceberg (USE_AVRO)
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache,
 # which a parallel sibling test can wipe at any moment (see 05243_query_condition_cache_top_k_parquet).
+# Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas use the query condition cache
 
 # The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads of Iceberg tables. The first run
 # records the row groups that hold no row of the result, a rerun of the same query skips them. The
