@@ -58,7 +58,7 @@ SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_shadow_mixed_pk SELECT number, map('k', toInt32(number)), 100 + number FROM numbers(100);
 SELECT count() FROM t_shadow_mixed_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 SETTINGS optimize_multiif_to_if = 1, force_primary_key = 1;
 SELECT count() FROM t_shadow_mixed_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 SETTINGS optimize_multiif_to_if = 1, use_primary_key = 0;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_shadow_mixed_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 SETTINGS optimize_multiif_to_if = 1)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_shadow_mixed_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 SETTINGS optimize_multiif_to_if = 1)
 WHERE explain LIKE '%Granules%';
 
 CREATE TABLE t_shadow_mixed_idx (id UInt32, m Map(String, Int32), `m.key_k` Int32, INDEX idx multiIf(m['k'] > 0, m['k'], 0) TYPE minmax GRANULARITY 1)
@@ -73,7 +73,7 @@ ENGINE = MergeTree PARTITION BY multiIf(m['k'] > 49, 1, 0) ORDER BY tuple()
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_shadow_mixed_part SELECT number, map('k', toInt32(number)), 100 + number FROM numbers(100);
 SELECT count() FROM t_shadow_mixed_part WHERE multiIf(m['k'] > 49, 1, 0) = 1 SETTINGS optimize_multiif_to_if = 1, force_index_by_date = 0;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_shadow_mixed_part WHERE multiIf(m['k'] > 49, 1, 0) = 1 SETTINGS optimize_multiif_to_if = 1)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_shadow_mixed_part WHERE multiIf(m['k'] > 49, 1, 0) = 1 SETTINGS optimize_multiif_to_if = 1)
 WHERE explain LIKE '%Parts:%';
 
 DROP TABLE t_shadow_mixed_pk;
