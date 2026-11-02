@@ -42,6 +42,14 @@ constexpr UInt64 min_candidate_rows = min_pilot_rank / candidate_rank_divisor;
 /// rows come in a run appears in one or two granules of the sample, the best keys of spread values in several.
 constexpr double min_spread_granules = 3;
 
+/// A run that keeps no candidates for the next runs pays a fallback, which reads the whole input again, on every run.
+/// Its pilot then also treats the best keys of the sample as runs when at least this many of the best n keys, and this
+/// share of them, appear in a single sampled granule. Their values come in runs shorter than the gaps between the
+/// sampled granules, which then hide other heavy keys from the sample. A few such keys are common in a sample that
+/// shows the top, as the heaviest keys span many granules.
+constexpr size_t min_single_granule_keys = 10;
+constexpr double min_single_granule_keys_share = 0.25;
+
 /// The candidate pass saves the aggregation of the rows of the other keys only, so the pilot declines when
 /// the candidates hold more than this share of the rows of its sample.
 constexpr double max_candidate_rows_share = 0.5;
@@ -247,8 +255,12 @@ public:
         const UInt64 nth_rank = ranks[best[top - 1]];
 
         double spread = 0;
+        size_t single_granule_keys = 0;
         for (size_t i = 0; i < top; ++i)
+        {
             spread += static_cast<double>(spreads[best[i]]);
+            single_granule_keys += spreads[best[i]] == 1;
+        }
         spread /= static_cast<double>(top);
 
         /// The candidates are the keys whose rank reaches a quarter of the n-th best one, at most
@@ -266,8 +278,8 @@ public:
         const double candidate_rows_share
             = static_cast<double>(candidate_rows) / static_cast<double>(std::max<UInt64>(1, sample_size->rows.load()));
 
-        LOG_DEBUG(log, "Pilot: {} keys in {} granules, rank {} of the {}-th best key, its best keys in {:.1f} granules on average, {} candidates with {:.3f} of the rows",
-            num_keys, sample_size->granules, nth_rank, top, spread, num_candidates, candidate_rows_share);
+        LOG_DEBUG(log, "Pilot: {} keys in {} granules, rank {} of the {}-th best key, its best keys in {:.1f} granules on average and {} of them in one granule, {} candidates with {:.3f} of the rows",
+            num_keys, sample_size->granules, nth_rank, top, spread, single_granule_keys, num_candidates, candidate_rows_share);
 
         /// The sample cannot show the best keys, but the n-th best rank of the sample bounds the values of the
         /// bounding key that may hold a group of the top.
@@ -278,7 +290,9 @@ public:
                 return {.next_mode = makeBoundingMode(templ, memo, nth_rank)};
             return {.decline = "the sample shows no clear top"};
         }
-        if (spread < min_spread_granules)
+        const bool many_keys_in_runs = single_granule_keys >= min_single_granule_keys
+            && static_cast<double>(single_granule_keys) >= min_single_granule_keys_share * static_cast<double>(top);
+        if (spread < min_spread_granules || (many_keys_in_runs && !memo->cachesCandidates()))
         {
             if (may_bound)
                 return {.next_mode = makeBoundingMode(templ, memo, nth_rank)};

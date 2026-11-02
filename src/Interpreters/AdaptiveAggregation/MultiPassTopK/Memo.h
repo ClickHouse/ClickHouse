@@ -69,8 +69,9 @@ public:
     bool startedFromMemo() const { return start != nullptr; }
     /// The run started with candidates that a fallback completed (see `TopKMemo::learned`).
     bool startedFromLearned() const { return start && start->learned; }
-    /// The setting `adaptive_aggregator_top_k_cache_candidates` lets the next runs reuse the candidates of the run.
-    bool cachesCandidates() const { return caches_candidates; }
+    /// The next runs may start from the candidates of the run: the hash table statistics identify them, and the setting
+    /// `adaptive_aggregator_top_k_cache_candidates` allows it.
+    bool cachesCandidates() const { return cache_key && caches_candidates; }
 
     /// The next runs of the query run the original aggregation, start with the candidate pass with `keys`, or start
     /// with the sketch pass.
