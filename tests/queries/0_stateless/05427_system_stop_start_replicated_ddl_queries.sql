@@ -30,7 +30,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t1 VALUES (1);
 SYSTEM START REPLICATED DDL QUERIES;
 
 CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_on_cluster ON CLUSTER test_shard_localhost (x UInt64) ENGINE = Memory;
-SELECT name FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 't_on_cluster';
+EXISTS TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_on_cluster;
 DROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_on_cluster ON CLUSTER test_shard_localhost;
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 (x UInt64) ENGINE = MergeTree ORDER BY x;
