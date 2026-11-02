@@ -15,6 +15,9 @@ struct DataLakeObjectMetadata
 
     /// Excluded rows indexes from selection vector
     ExcludedRowsPtr excluded_rows;
+
+    /// The number of rows of the object as the table metadata records it (before excluding `excluded_rows`), if known.
+    std::optional<UInt64> num_rows;
 };
 
 }

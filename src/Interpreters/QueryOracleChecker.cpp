@@ -105,6 +105,11 @@ const std::unordered_set<String> & nonDeterministicFunctions()
         /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
         /// the result legitimately.
         "indexHint",
+        /// These report whether a `JSON` path or a `Dynamic` value has its own subcolumn or sits in shared data,
+        /// which depends on the column holding the value (a join or a merge can change it), not on the value.
+        /// `byteSize` measures that representation, so it depends on it too.
+        "JSONDynamicPaths", "JSONDynamicPathsWithTypes", "JSONSharedDataPaths", "JSONSharedDataPathsWithTypes",
+        "isDynamicElementInSharedData", "byteSize",
         /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
         /// returns the query plan as rows. The plan text legitimately changes when
         /// DQP toggles an optimizer setting, so comparing such results is comparing
@@ -325,11 +330,14 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
-/// True if `name` resolves to a regular function or a user-defined function that is not deterministic.
+/// True if `name` resolves to a regular function that is not deterministic or that the backstop set lists,
+/// or to a user-defined function that is not deterministic.
 bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
 {
     if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
-        if (!resolver->isDeterministic())
+        if (!resolver->isDeterministic()
+            || nonDeterministicFunctionsLower().contains(Poco::toLower(name))
+            || nonDeterministicFunctionsLower().contains(Poco::toLower(resolver->getName())))
             return true;
     if (UserDefinedSQLFunctionFactory::instance().tryGet(name))
         /// SQL UDF determinism is not introspectable — treat as non-deterministic.
@@ -913,6 +921,7 @@ bool usesFinalAnywhere(const ASTPtr & ast)
 /// implementation-defined, so which right-side row a left row pairs with can
 /// change between plans — observed as a `Subquery wrap` false mismatch.
 /// `ANY` pairs with an arbitrary match (`ANY INNER` keeps one row per key), so it is plan-dependent too.
+/// `SEMI` takes the other side's columns from an arbitrary match, like `ANY`.
 /// A join written without a strictness gets `join_default_strictness`, or `ALL` if it is `LATERAL`.
 /// Checked recursively: such a join in any subquery taints the whole query.
 bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_strictness)
@@ -924,7 +933,8 @@ bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_
         auto strictness = join->strictness;
         if (strictness == JoinStrictness::Unspecified && !join->lateral && join->kind != JoinKind::Cross && join->kind != JoinKind::Comma)
             strictness = default_strictness;
-        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny)
+        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny
+            || strictness == JoinStrictness::Semi)
             return true;
     }
     return anyChild(ast, [&](const ASTPtr & child) { return hasNonDeterministicJoinAnywhere(child, default_strictness); });
@@ -2793,7 +2803,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     if (hasNonDeterministicJoinAnywhere(query_ast, context->getSettingsRef()[Setting::join_default_strictness]))
     {
-        LOG_TRACE(logger, "Oracle skip: ASOF or ANY JOIN (the matched row is plan-dependent)");
+        LOG_TRACE(logger, "Oracle skip: ASOF, ANY or SEMI JOIN (the matched row is plan-dependent)");
         return false;
     }
 
