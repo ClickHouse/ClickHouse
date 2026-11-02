@@ -2480,7 +2480,8 @@ static bool isAggregatedType(const DataTypePtr & type, bool allow_tuple_element_
 using ActionsDAGParents = std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>>;
 
 /// Whether the key reads aggregated values of the node `node` of a tuple type with an aggregated element. A key can read only its
-/// other elements, such as `metrics.1` (`tupleElement(metrics, 1)`), which merges do not aggregate.
+/// other elements, such as `metrics.1` (`tupleElement(metrics, 1)`, also with a default value as the third argument), which merges do
+/// not aggregate.
 static bool keyReadsAggregatedTupleElements(const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node)
 {
     if (!typeid_cast<const DataTypeTuple *>(node.result_type.get()))
@@ -2497,7 +2498,8 @@ static bool keyReadsAggregatedTupleElements(const KeyDescription & key, const Ac
     for (const auto * parent : it->second)
     {
         const bool is_element = parent->type == ActionsDAG::ActionType::FUNCTION && parent->function_base
-            && parent->function_base->getName() == "tupleElement" && parent->children.size() == 2 && parent->children[0] == &node
+            && parent->function_base->getName() == "tupleElement" && (parent->children.size() == 2 || parent->children.size() == 3)
+            && parent->children[0] == &node
             && parent->children[1]->type == ActionsDAG::ActionType::COLUMN;
         const bool is_alias = parent->type == ActionsDAG::ActionType::ALIAS;
         if (!is_element && !is_alias)

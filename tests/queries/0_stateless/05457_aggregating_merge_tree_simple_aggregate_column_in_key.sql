@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS t_modify_column;
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_tuple_other_element;
 DROP TABLE IF EXISTS t_tuple_alter;
+DROP TABLE IF EXISTS t_tuple_default;
 
 CREATE TABLE t_sorting (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree ORDER BY intDiv(c0, 55); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_partition (k UInt8, c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree PARTITION BY c0 % 2 ORDER BY k; -- { serverError BAD_ARGUMENTS }
@@ -26,6 +27,9 @@ PARTITION BY x.2 % 2 ORDER BY x.1 SETTINGS allow_tuple_element_aggregation = 1; 
 CREATE TABLE t_tuple_other_element (k UInt8, x Tuple(v SimpleAggregateFunction(sum, UInt64), w UInt64)) ENGINE = AggregatingMergeTree
 PARTITION BY x.w % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
 SELECT 'other tuple element created';
+CREATE TABLE t_tuple_default (x Tuple(UInt64, SimpleAggregateFunction(sum, UInt64))) ENGINE = AggregatingMergeTree
+ORDER BY tupleElement(x, 1, 0) SETTINGS allow_tuple_element_aggregation = 1;
+SELECT 'element with a default created';
 CREATE TABLE t_tuple_alter (k UInt8, x Tuple(v UInt64)) ENGINE = AggregatingMergeTree PARTITION BY x.v % 2 ORDER BY k
 SETTINGS allow_tuple_element_aggregation = 1;
 ALTER TABLE t_tuple_alter MODIFY COLUMN x Tuple(v SimpleAggregateFunction(sum, UInt64)); -- { serverError BAD_ARGUMENTS }
@@ -80,3 +84,4 @@ DROP TABLE t_modify_column;
 DROP TABLE t_plain;
 DROP TABLE t_tuple_other_element;
 DROP TABLE t_tuple_alter;
+DROP TABLE t_tuple_default;
