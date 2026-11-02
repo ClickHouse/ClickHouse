@@ -24,6 +24,9 @@ namespace DB
   * aggregation: it emits one row per group in the aggregation's header, the keys and then the
   * result of each aggregate, of which several may be of one column and a `count` of none. Without
   * keys, the rows are one group.
+  *
+  * Collecting, without keys and aggregates, it takes the place of the read itself: the device evaluates the `WHERE` and
+  * sends back only the rows it keeps, of `columns` as they are, the step's header.
   */
 class ReadFromGPUCompressedColumns : public ISourceStep
 {
@@ -35,13 +38,34 @@ public:
         GPU::GPUAggregationKind aggregation;
     };
 
-    /// An aggregate of a `GROUP BY`: of `columns[column]`, or of no column for a `count`.
+    /// A `Float64` the device computes from `columns` before it groups the rows, the argument of an aggregate.
+    struct DerivedColumn
+    {
+        GPU::GPUFilterProgram program;
+        /// Of `columns`, what the program loads as its column `i`.
+        std::vector<size_t> columns;
+        /// The expression as the plan names it.
+        String description;
+    };
+
+    /// An aggregate of a `GROUP BY`: of `columns[column]`, of `derived[derived]`, or of no column for a `count`.
     struct AggregateToCompute
     {
         GPU::GPUAggregationKind aggregation;
         std::optional<size_t> column;
+        std::optional<size_t> derived;
         DataTypePtr result_type;
         /// The aggregate as the plan names it.
+        String description;
+    };
+
+    /// A `HAVING` the device evaluates over the groups before it sends them back: of the step's output columns at
+    /// `columns`, the keys first and then the aggregates.
+    struct GroupFilter
+    {
+        GPU::GPUFilterProgram program;
+        std::vector<uint32_t> columns;
+        /// The predicate as the plan names it.
         String description;
     };
 
@@ -52,20 +76,37 @@ public:
         MarkRanges ranges;
     };
 
+    /// A `WHERE` the device evaluates before it groups a row, over columns read along with the
+    /// keys and the values.
+    struct DeviceFilter
+    {
+        GPU::GPUFilterProgram program;
+        std::vector<NameAndTypePair> columns;
+        /// The predicate as the plan names it.
+        String description;
+    };
+
     ReadFromGPUCompressedColumns(
         SharedHeader output_header_,
         std::vector<NameAndTypePair> keys_,
         std::vector<ColumnToReduce> columns_,
+        std::vector<DerivedColumn> derived_,
         std::vector<AggregateToCompute> aggregates_,
         std::optional<Columns> result_over_no_rows_,
+        std::optional<DeviceFilter> filter_,
         std::vector<PartToRead> parts_,
         StorageSnapshotPtr storage_snapshot_,
         ContextPtr context_,
         size_t batch_bytes_,
         size_t num_readers_,
-        GPUDecompressionMode decompression_);
+        GPUDecompressionMode decompression_,
+        bool collect_ = false);
 
     String getName() const override { return "ReadFromGPUCompressedColumns"; }
+
+    bool isCollecting() const { return collect; }
+
+    void setGroupFilter(GroupFilter group_filter_) { group_filter = std::move(group_filter_); }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
@@ -75,10 +116,13 @@ public:
 private:
     std::vector<NameAndTypePair> keys;
     std::vector<ColumnToReduce> columns;
+    std::vector<DerivedColumn> derived;
     std::vector<AggregateToCompute> aggregates;
     /// Of an aggregation without keys, the row it emits where no row is aggregated: none under
     /// `empty_result_for_aggregation_by_empty_set`.
     std::optional<Columns> result_over_no_rows;
+    std::optional<DeviceFilter> filter;
+    std::optional<GroupFilter> group_filter;
     std::vector<PartToRead> parts;
 
     StorageSnapshotPtr storage_snapshot;
@@ -90,6 +134,8 @@ private:
     size_t num_readers;
     /// Who expands a column of a part: see `gpu_aggregation_decompression`.
     GPUDecompressionMode decompression;
+    /// The rows the filter keeps are sent back, of `columns`, rather than aggregated.
+    bool collect;
 };
 
 }

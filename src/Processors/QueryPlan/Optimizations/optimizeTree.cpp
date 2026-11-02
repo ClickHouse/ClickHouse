@@ -610,6 +610,8 @@ void optimizeTreeSecondPass(
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 
                 optimizeAggregationFromGPUCompressedColumns(*frame.node, nodes, optimization_settings);
+                /// A read the aggregation above did not take.
+                optimizeReadFilteredOnGPU(*frame.node, nodes, optimization_settings);
 
                 /// Exchanges do not preserve the order an in-order aggregation needs, so keep
                 /// hash aggregation whenever a distributed plan is intended.

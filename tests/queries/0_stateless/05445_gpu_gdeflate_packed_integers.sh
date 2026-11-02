@@ -57,10 +57,10 @@ $CLICKHOUSE_CLIENT --query "
 # Grouped on the device from the compressed chunks, against the CPU over the other table.
 QUERY="SELECT k, sum(i8), sum(u16), sum(i32), sum(i64), sum(u64), min(d), max(t), sum(m), sum(z), sum(dz), count()"
 for mode in device host; do
-    on_cpu=$($CLICKHOUSE_CLIENT --query "$QUERY FROM gpu_plain GROUP BY k ORDER BY k")
+    on_cpu=$($CLICKHOUSE_CLIENT --query "$QUERY FROM gpu_plain WHERE d < '2024-06-01' GROUP BY k ORDER BY k")
     on_gpu=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 --query "
-        $QUERY FROM gpu_packed GROUP BY k ORDER BY k
-        SETTINGS gpu_aggregation_decompression = '$mode'")
+        $QUERY FROM gpu_packed WHERE d < toDate('2024-06-01') GROUP BY k ORDER BY k
+        SETTINGS optimize_move_to_prewhere = 1, gpu_aggregation_decompression = '$mode'")
     [ "$on_cpu" == "$on_gpu" ] && echo "$mode ok" || echo "$mode MISMATCH"
 done
 

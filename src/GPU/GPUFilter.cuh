@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-/// Evaluates a `GPUFilterProgram`, the `WHERE` of a GPU aggregation, for one row on the device.
+/// Evaluates a `GPUFilterProgram`, the `WHERE` of a GPU aggregation compiled by `GPUFilterCompiler`, for one row on the device.
 namespace DB::GPU::Filtering
 {
 

@@ -76,9 +76,10 @@ function compare_with_cpu()
     fi
 }
 
-# Whether the plan reads compressed blocks for a keyed aggregation, and leaves one alone with a
-# filter, which the device does not evaluate. On a machine without a device the plan is the CPU's,
-# and the two lines are printed as they are.
+# Whether the plan reads compressed blocks for a keyed aggregation, and leaves one alone whose
+# filter the device does not evaluate - a `WHERE` of comparisons and logical functions it takes,
+# which `05235_gpu_aggregation_device_filter` is about. On a machine without a device the plan is
+# the CPU's, and the two lines are printed as they are.
 function check_plan()
 {
     if [ "$HAS_GPU" == "1" ]; then
