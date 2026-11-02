@@ -59,3 +59,19 @@ CREATE TABLE t_values_composite_date (a Array(Date)) ENGINE = Memory;
 INSERT INTO t_values_composite_date VALUES ([toDate32('2300-01-01')]); -- { error ARGUMENT_OUT_OF_BOUND }
 SELECT count() FROM t_values_composite_date;
 DROP TABLE t_values_composite_date;
+
+-- An element of a `Nullable` type that does not fit gets NULL inside a value that stays non-NULL, so the value is rejected as well. A NULL
+-- of the source in such an element stays.
+DROP TABLE IF EXISTS t_values_composite_nested_nullable;
+CREATE TABLE t_values_composite_nested_nullable
+(
+    id UInt8,
+    m Map(String, Nullable(Tuple(UInt64, String))),
+    a Array(Nullable(Tuple(UInt64, String)))
+) ENGINE = Memory;
+INSERT INTO t_values_composite_nested_nullable VALUES (1, map('a', NULL), [NULL]);
+INSERT INTO t_values_composite_nested_nullable VALUES (2, map('a', tuple(-1, 'kept')), []); -- { error ARGUMENT_OUT_OF_BOUND }
+INSERT INTO t_values_composite_nested_nullable SETTINGS input_format_values_deduce_templates_of_expressions = 0
+VALUES (3, map(), [tuple(-1, 'kept')]); -- { error ARGUMENT_OUT_OF_BOUND }
+SELECT * FROM t_values_composite_nested_nullable ORDER BY id;
+DROP TABLE t_values_composite_nested_nullable;

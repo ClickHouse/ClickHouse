@@ -504,6 +504,32 @@ namespace
 
         return false;
     }
+
+    /// Whether the conversion of `source` gave NULL at any depth where `source` is not NULL: the element there does not fit its type.
+    /// An element of a `Nullable` type that does not fit becomes NULL inside a value that stays non-NULL.
+    bool hasNullFromFailedConversion(const Field & source, const Field & converted)
+    {
+        checkStackSize();
+
+        if (converted.isNull())
+            return !source.isNull();
+
+        auto any_element = [](const auto & source_elements, const auto & converted_elements)
+        {
+            for (size_t i = 0; i < std::min(source_elements.size(), converted_elements.size()); ++i)
+                if (hasNullFromFailedConversion(source_elements[i], converted_elements[i]))
+                    return true;
+            return false;
+        };
+
+        if (source.getType() == Field::Types::Array && converted.getType() == Field::Types::Array)
+            return any_element(source.safeGet<Array>(), converted.safeGet<Array>());
+        if (source.getType() == Field::Types::Tuple && converted.getType() == Field::Types::Tuple)
+            return any_element(source.safeGet<Tuple>(), converted.safeGet<Tuple>());
+        if (source.getType() == Field::Types::Map && converted.getType() == Field::Types::Map)
+            return any_element(source.safeGet<Map>(), converted.safeGet<Map>());
+        return false;
+    }
 }
 
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
@@ -716,13 +742,14 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
     Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
 
-    /// A value of a composite type with an element that does not fit, e.g. a `Map` with a negative value for `UInt64`, is converted to NULL.
-    /// It is not a NULL value: inserting NULL or the default instead would silently lose the whole value, so it is rejected as by `values`.
-    /// A NULL element that the type cannot hold is reported as a NULL below (with `input_format_null_as_default` it is replaced above),
-    /// but a NULL in a `Nullable` element is valid and does not explain the conversion failure.
+    /// A value of a composite type with an element that does not fit, e.g. a `Map` with a negative value for `UInt64`, is converted to NULL,
+    /// or, for an element of a `Nullable` type, gets NULL in place of that element, e.g. `map('a', tuple(-1, 'kept'))` for
+    /// `Map(String, Nullable(Tuple(UInt64, String)))`. It is not a NULL value: inserting NULL or the default instead would silently lose the
+    /// value, so it is rejected. A NULL element that the type cannot hold is reported as a NULL below (with `input_format_null_as_default` it
+    /// is replaced above), but a NULL in a `Nullable` element of the source is valid and stays.
     const auto nested_type = removeNullable(removeLowCardinality(type.getPtr()));
-    if (value.isNull() && !expression_value.isNull() && !hasNullThatTypeCannotHold(expression_value, type)
-        && (isArray(nested_type) || isMap(nested_type) || isTuple(nested_type)))
+    if ((isArray(nested_type) || isMap(nested_type) || isTuple(nested_type)) && !expression_value.isNull()
+        && !hasNullThatTypeCannotHold(expression_value, type) && hasNullFromFailedConversion(expression_value, value))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot convert value '{}' from {}: it cannot be represented as {}",
                         fieldToString(expression_value), value_raw.second->getName(), type.getName());
 
