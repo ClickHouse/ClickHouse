@@ -1255,27 +1255,23 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
     /// Serialize number of paths and then pairs (path, value).
     writeVarUInt(typed_paths.size() + non_null_dynamic_pats + (end - offset), ostr);
 
-    for (const auto & [path, column] : typed_paths)
+    /// Write paths in sorted order, so equal objects are serialized equally regardless of
+    /// the order of paths in the hash maps of the column (it can differ, for example, after filter).
+    for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
-        writeStringBinary(path, ostr);
-        typed_paths_serializations.at(path)->serializeBinary(*column, row_num, ostr, settings);
-    }
-
-    for (const auto & [path, column] : dynamic_paths)
-    {
-        if (!column->isNullAt(row_num))
+        writeStringBinary(it.getCurrentPath(), ostr);
+        if (it.getCurrentPathType() == ColumnObject::SortedPathsIterator::PathType::SHARED_DATA)
         {
-            writeStringBinary(path, ostr);
-            dynamic_serialization->serializeBinary(*column, row_num, ostr, settings);
+            auto value = it.getCurrentSharedDataValue();
+            ostr.write(value.data(), value.size());
+            continue;
         }
-    }
 
-    const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-    for (size_t i = offset; i != end; ++i)
-    {
-        writeStringBinary(shared_data_paths->getDataAt(i), ostr);
-        auto value = shared_data_values->getDataAt(i);
-        ostr.write(value.data(), value.size());
+        auto path_info = it.getCurrentPathInfo();
+        if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
+            typed_paths_serializations.at(String(path_info.path))->serializeBinary(*path_info.column, path_info.row, ostr, settings);
+        else
+            dynamic_serialization->serializeBinary(*path_info.column, path_info.row, ostr, settings);
     }
 }
 
