@@ -2080,7 +2080,7 @@ class JobConfigs:
             for job in NIGHTLY_PERF_BATCH_JOBS + sorted(set(NIGHTLY_PERF_PLACEMENT.values()) - {*NIGHTLY_PERF_BATCH_JOBS, "skip"})
         ]
     )
-    # The Iceberg configuration of `performance_comparison_iceberg_jobs`, every query of every test.
+    # The Iceberg configuration of `performance_comparison_iceberg_jobs` in `NightlyExtendedPerformance`, every query of every test.
     nightly_iceberg_performance_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
