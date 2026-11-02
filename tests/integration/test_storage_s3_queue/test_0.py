@@ -1338,10 +1338,105 @@ def test_ordered_threads_keep_the_pointer_below_a_rewritten_file(started_cluster
     )
 
 
+def test_ordered_parallel_inserts_keep_the_pointer_below_a_rewritten_file(started_cluster):
+    """Concurrent inserts of an ordered queue without buckets must not let one of them move the processed
+    pointer past a file whose new generation another one reads again."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"ordered_parallel_rewrite_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/b.csv", b"4,5,6\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={
+            "processing_threads_num": 2,
+            "parallel_inserts": 1,
+            "buckets": 1,
+            "max_processed_files_before_commit": 1,
+        },
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_LISTING_FAILPOINT)
+        # Both keys are listed; the read of a.csv is pinned to the listed generation and now fails.
+        put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"7,8,9\n")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+
+    wait_until(
+        lambda: node.query(
+            f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL"
+        )
+        == "4\t5\t6\n7\t8\t9\n",
+        timeout=90,
+    )
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (2, 0),
+        timeout=90,
+    )
+
+
+def test_ordered_rewrite_during_reader_construction_is_ingested(started_cluster):
+    """The reader of a JSON file with parallel parsing already reads the object while it is constructed.
+    A rewrite before that read must reset the claimed file, not move the pointer past it."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"ordered_construct_rewrite_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    put_s3_file_content(started_cluster, f"{files_path}/a.json", b'{"a":1,"b":2,"c":3}\n')
+    put_s3_file_content(started_cluster, f"{files_path}/b.json", b'{"a":4,"b":5,"c":6}\n')
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        file_format="JSONEachRow",
+        format="a UInt32, b UInt32, c UInt32",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={
+            "processing_threads_num": 1,
+            "max_processed_files_before_commit": 1,
+        },
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_LISTING_FAILPOINT)
+        # Both keys are listed; the first read of a.json, made while its reader is constructed, now fails.
+        put_s3_file_content(started_cluster, f"{files_path}/a.json", b'{"a":7,"b":8,"c":9}\n')
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+
+    wait_until(
+        lambda: node.query(f"SELECT a, b, c FROM {table_name}_dst ORDER BY ALL")
+        == "4\t5\t6\n7\t8\t9\n",
+        timeout=90,
+    )
+
+
 def test_ordered_direct_select_keeps_the_pointer_below_a_rewritten_file(started_cluster):
     """A committing direct `SELECT` from an ordered queue with two processing threads sharing one bucket
     must not move the processed pointer past a file whose new generation is read again."""
-    node = started_cluster.instances["instance"]
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
     token = generate_random_string().lower()
     table_name = f"ordered_select_rewrite_{token}"
     files_path = f"{table_name}_data"

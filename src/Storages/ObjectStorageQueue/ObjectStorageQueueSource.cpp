@@ -124,6 +124,41 @@ bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_in
     return true;
 }
 
+/// A pinned read fails with one of these codes when the object is rewritten: a race, not a bad file.
+static bool isGenerationChangedCode(int code)
+{
+    return code == ErrorCodes::FILE_CHANGED_DURING_READ
+        || code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
+        || code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+}
+
+namespace
+{
+
+/// `createReader` claims a file from the iterator before it builds the reader, and building the reader can already read
+/// the object (e.g. the prefix check of parallel JSON parsing). Remembers the claimed file, which is otherwise lost
+/// when the construction throws.
+class ClaimTrackingIterator : public IObjectIterator
+{
+public:
+    ClaimTrackingIterator(std::shared_ptr<IObjectIterator> iterator_, ObjectInfoPtr & claimed_)
+        : iterator(std::move(iterator_)), claimed(claimed_) {}
+
+    ObjectInfoPtr next(size_t processor) override
+    {
+        claimed = iterator->next(processor);
+        return claimed;
+    }
+
+    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+
+private:
+    std::shared_ptr<IObjectIterator> iterator;
+    ObjectInfoPtr & claimed;
+};
+
+}
+
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
     /// Copies the whole carrier, so that everything the iterator learned about the object - its
@@ -1289,22 +1324,50 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             const auto context = getContext();
-            reader = StorageObjectStorageSource::createReader(
-                processor_id,
-                storage_id,
-                /* query_condition_cache_table_id */ UUIDHelpers::Nil,
-                file_iterator,
-                configuration,
-                object_storage,
-                read_from_format_info,
-                format_settings,
-                context,
-                nullptr,
-                log,
-                max_block_size,
-                parser_shared_resources,
-                nullptr,
-                /* need_only_count */ false);
+            ObjectInfoPtr claimed_object;
+            try
+            {
+                reader = StorageObjectStorageSource::createReader(
+                    processor_id,
+                    storage_id,
+                    /* query_condition_cache_table_id */ UUIDHelpers::Nil,
+                    std::make_shared<ClaimTrackingIterator>(file_iterator, claimed_object),
+                    configuration,
+                    object_storage,
+                    read_from_format_info,
+                    format_settings,
+                    context,
+                    nullptr,
+                    log,
+                    max_block_size,
+                    parser_shared_resources,
+                    nullptr,
+                    /* need_only_count */ false);
+            }
+            catch (...)
+            {
+                const auto * claimed_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(claimed_object.get());
+                const auto code = getCurrentExceptionCode();
+                if (!claimed_info || !isGenerationChangedCode(code))
+                    throw;
+
+                /// The object was rewritten before the first read finished. Register the claimed file like a failed read,
+                /// so that it is reset and read again, and never counted as processed.
+                const auto message = getCurrentExceptionMessage(true);
+                LOG_DEBUG(log, "The generation of {} changed while its reader was created: {}. Will reset the file",
+                    claimed_info->file_metadata->getPath(), message);
+
+                processed_files.emplace_back(claimed_info->file_metadata);
+                processed_files.back().state = FileState::ErrorOnRead;
+                processed_files.back().exception_during_read = message;
+                processed_files.back().exception_during_read_code = code;
+
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    return {};
+
+                reader = {};
+                continue;
+            }
 
             if (!reader)
             {
@@ -1820,9 +1883,7 @@ bool ObjectStorageQueueSource::isRereadAfterRewrite(const ProcessedFile & file)
         return false;
     /// A pinned read fails with `*_OBJECT_CHANGED_DURING_READ` when the object is rewritten: a race, not a bad file,
     /// so reset the processing without charging the retry budget (else the path becomes `failed`).
-    const bool the_generation_was_rewritten = file.exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
-        || file.exception_during_read_code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
-        || file.exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+    const bool the_generation_was_rewritten = isGenerationChangedCode(file.exception_during_read_code);
     /// Resetting replays the path from offset 0 and duplicates rows already emitted (`deduplication_v2` tokens name the new
     /// generation), so a file that emitted rows keeps the ordinary failure handling.
     const bool a_replay_would_duplicate_rows = file.metadata->getFileStatus()->processed_rows > 0;
