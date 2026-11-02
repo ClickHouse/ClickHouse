@@ -200,16 +200,17 @@ A value of `0` means unlimited.
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing input.
 )", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(
-Maximum total number of threads to use for decoding Iceberg data manifest files.
-
-The pool is separate from the IO pool on purpose: a decode task can block until the query consumes the entries it has produced, while the delete manifest decode waits for its tasks on the IO pool before any entry is consumed - sharing one pool could deadlock.
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(Maximum total number of threads to use for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(NonZeroUInt64, ai_function_max_thread_pool_size, 1000, R"(
+Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of it.
 )", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(
-Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files.
+    DECLARE(UInt64, ai_function_max_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for requests to AI providers.
 )", 0) \
-    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
-The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+    DECLARE(UInt64, ai_function_thread_pool_queue_size, 10'000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for requests to AI providers.
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
@@ -642,7 +643,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Cache eviction policy for the mark cache (index of MergeTree family tables). Possible values: `LRU`, `SLRU`, `SIEVE`. See [`mark_cache_size`](#mark_cache_size) for cache capacity and [`mark_cache_size_ratio`](#mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
 Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
 
@@ -697,7 +698,7 @@ This setting can be modified at runtime and will take effect immediately.
 )", 0) \
     DECLARE(UInt64, text_index_tokens_cache_max_entries, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES, "Size of cache for text index tokens in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_tokens_cache_size_ratio, DEFAULT_TEXT_INDEX_TOKENS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index tokens cache relative to the cache's total size.", 0) \
-    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Cache eviction policy for the text index header cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`text_index_header_cache_size`](#text_index_header_cache_size) and [`text_index_header_cache_max_entries`](#text_index_header_cache_max_entries) for cache capacity and [`text_index_header_cache_size_ratio`](#text_index_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
 
 <Note>
@@ -778,7 +779,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Cache eviction policy for the secondary index mark cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`index_mark_cache_size`](#index_mark_cache_size) for cache capacity and [`index_mark_cache_size_ratio`](#index_mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, R"(
 Maximum size of cache for index marks.
 
@@ -792,7 +793,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, index_mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of index mark cache to fill during prewarm.)", 0) \
     DECLARE(UInt64, page_cache_history_window_ms, 1000, "Delay before freed memory can be used by userspace page cache.", 0) \
-    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Cache eviction policy for the userspace page cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`page_cache_max_size`](#page_cache_max_size) for cache capacity and [`page_cache_size_ratio`](#page_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(Double, page_cache_size_ratio, DEFAULT_PAGE_CACHE_SIZE_RATIO, "The size of the protected queue in the userspace page cache relative to the cache's total size.", 0) \
     DECLARE(UInt64, page_cache_min_size, DEFAULT_PAGE_CACHE_MIN_SIZE, "Minimum size of the userspace page cache.", 0) \
     DECLARE(UInt64, page_cache_max_size, DEFAULT_PAGE_CACHE_MAX_SIZE, "Maximum size of the userspace page cache. Set to 0 to disable the cache. If greater than page_cache_min_size, the cache size will be continuously adjusted within this range, to use most of the available memory while keeping the total memory usage below the limit (max_server_memory_usage[_to_ram_ratio]).", 0) \
@@ -824,7 +825,7 @@ The cache can also be cleared manually, without changing this limit, with the [`
 This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
-    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Cache eviction policy for the query condition cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`query_condition_cache_size`](#query_condition_cache_size) for cache capacity and [`query_condition_cache_size_ratio`](#query_condition_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
 Maximum size of the query condition cache.
 <Note>
@@ -832,7 +833,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
-    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Cache eviction policy for the encryption header cache used by the ReaderExecutor read path. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`encryption_header_cache_size`](#encryption_header_cache_size) for cache capacity and [`encryption_header_cache_size_ratio`](#encryption_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
 Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
 <Note>
@@ -3936,12 +3937,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"format_parsing_thread_pool_queue_size",
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_free_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"iceberg_manifest_decode_thread_pool_queue_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_free_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_thread_pool_queue_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 

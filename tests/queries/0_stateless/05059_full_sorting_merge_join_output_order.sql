@@ -224,7 +224,7 @@ FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fs
 SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10, query_plan_join_shard_by_pk_ranges = 1;
 SELECT 'swapped', count(), sum(a.v), sum(b.v), sum(c.v)
 FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.id = c.id
-SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10, enable_analyzer = 0;
+SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10;
 
 WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, b.v AS v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY a.id, b.v SETTINGS query_plan_join_swap_table = 'true', query_plan_optimize_join_order_limit = 10)) AS rows
 SELECT 'swapped order by result', length(rows), rows = arraySort(rows);

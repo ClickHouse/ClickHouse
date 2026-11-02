@@ -130,6 +130,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         "./ci/jobs/scripts/log_cluster.py",
         "./utils/prepare-time-trace/prepare-time-trace.sh",
+        "./utils/CMakeLists.txt",
+        "./utils/compact-symbols",
         # The build job also assembles the deb, rpm and tgz packages, so changes to
         # their definitions and to the packaging script have to schedule a rebuild.
         "./packages",
@@ -284,6 +286,9 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
+            # Runs the tests over the protocols other than native, see `clickhouse-test --protocols`.
+            "./tests/protocol_client.py",
+            "./utils/grpc-client/pb2",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
@@ -2073,6 +2078,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
+                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -2090,6 +2096,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
+                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -2157,6 +2164,31 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
+    )
+    # The data lake foreign-writer fuzzer (`tests/datalake_fuzzer`) on the integration test
+    # harness: Spark, PyIceberg, delta-rs and ClickHouse write Iceberg, Delta, Hudi and Paimon
+    # tables, and ClickHouse must read them back exactly as the writer does. Same runner image
+    # and docker-in-docker setup as the integration tests; random seeds every run.
+    datalake_fuzzer_jobs = (
+        common_integration_test_job_config.set_name(JobNames.DATALAKE_FUZZER)
+        .set_command("python3 ./ci/jobs/datalake_fuzzer_job.py")
+        # Not cacheable: every run draws new seeds, so a green run says nothing about the next.
+        .set_digest_config(None)
+        .set_post_hooks(["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"])
+        # 8 writers x 20 min (see NIGHTLY_BUDGET in the job script), shrinking and cluster start.
+        .set_timeout(3600 * 4)
+        .parametrize(
+            Job.ParamSet(
+                parameter="arm_release",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_RELEASE],
+            ),
+            Job.ParamSet(
+                parameter="arm_asan_ubsan",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            ),
+        )
     )
     sqltest_master_job = Job.Config(
         name=JobNames.SQL_TEST,

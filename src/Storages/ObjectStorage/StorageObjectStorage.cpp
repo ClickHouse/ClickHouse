@@ -1,5 +1,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -16,6 +19,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Interpreters/SetSerialization.h>
+#include <IO/ReadBufferFromString.h>
+#include <Common/Base64.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -23,12 +30,15 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
@@ -56,12 +66,16 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
+    extern const SettingsString cluster_table_function_pushed_down_filter;
     extern const SettingsBool throw_on_hive_partitioning_resolution_failure;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
     extern const SettingsBool iceberg_delete_data_on_drop;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool parallel_replicas_for_object_storage_tables;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 namespace ErrorCodes
@@ -445,6 +459,9 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
+    /// The files of a data lake snapshot can have other formats than the one new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context);
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
@@ -717,6 +734,80 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     return configuration->totalBytes(query_context);
 }
 
+StoragePtr StorageObjectStorage::getStorageForParallelReplicasRead(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const
+{
+    if (!has_cluster_variant || is_table_function || distributed_processing)
+        return nullptr;
+
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return nullptr;
+
+    const auto & settings = context->getSettingsRef();
+    if (!context->canReplaceClusterEngineWithClusterVariant() || !settings[Setting::parallel_replicas_for_object_storage_tables])
+        return nullptr;
+
+    /// `ReadFromCluster` uses every replica when `max_parallel_replicas` is 1, so such a query reads the table itself.
+    if (settings[Setting::max_parallel_replicas] <= 1)
+        return nullptr;
+
+    /// A materialized view reads the inserted block, not the table.
+    if (context->getViewSource())
+        return nullptr;
+
+    /// The replicas do not run the query as the current user when it is not the initial one (e.g. the
+    /// definer of a `SQL SECURITY DEFINER` view body), so such a query reads the table itself.
+    if (context->getUserName() != context->getClientInfo().initial_user)
+        return nullptr;
+
+    /// A row policy is not applied to a remote read.
+    if (getEffectiveRowPolicyFilter(*this, context))
+        return nullptr;
+
+    /// Server-internal tables are different on every server.
+    if (getStorageID().database_name == DatabaseCatalog::SYSTEM_DATABASE)
+        return nullptr;
+
+    if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
+        return nullptr;
+
+    if (settings[Setting::delta_lake_snapshot_start_version] != -1 || settings[Setting::delta_lake_snapshot_end_version] != -1)
+        return nullptr;
+
+    auto storage = std::make_shared<StorageObjectStorageCluster>(
+        settings[Setting::cluster_for_parallel_replicas].value,
+        configuration,
+        object_storage,
+        getStorageID(),
+        storage_snapshot->metadata,
+        hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path,
+        format_settings,
+        catalog,
+        shared_from_this());
+    storage->startup();
+    return storage;
+}
+
+bool StorageObjectStorage::isReadOnReplicaForInitiator(const ContextPtr & context, const SelectQueryInfo & query_info) const
+{
+    if (!has_cluster_variant || is_table_function)
+        return false;
+
+    const auto & client_info = context->getClientInfo();
+    if (client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY || !client_info.collaborate_with_initiator)
+        return false;
+
+    const auto * query_node = query_info.query_tree ? query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_info.is_secondary_query_root || !query_node)
+        return false;
+
+    const auto * table_expression = query_node->getJoinTreeNode().get();
+    while (const auto * array_join_node = table_expression->as<ArrayJoinNode>())
+        table_expression = array_join_node->getTableExpressionNode().get();
+
+    const auto * table_node = table_expression->as<TableNode>();
+    return table_node && resolveStorageProxy(table_node->getStorage()).get() == this;
+}
+
 void StorageObjectStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -789,7 +880,9 @@ void StorageObjectStorage::read(
         }
     }
 
-    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+    const bool read_tasks_from_initiator = distributed_processing || isReadOnReplicaForInitiator(local_context, query_info);
+
+    if (read_tasks_from_initiator && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
             local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
@@ -884,7 +977,7 @@ void StorageObjectStorage::read(
         query_info,
         storage_snapshot,
         modified_format_settings,
-        distributed_processing,
+        read_tasks_from_initiator,
         read_from_format_info,
         need_only_count,
         local_context,
@@ -892,6 +985,50 @@ void StorageObjectStorage::read(
         num_streams);
 
     query_plan.addStep(std::move(read_step));
+
+    if (distributed_processing)
+        addFilterPushedDownByInitiator(query_plan, local_context);
+}
+
+void StorageObjectStorage::addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & local_context)
+{
+    const String & serialized = local_context->getSettingsRef()[Setting::cluster_table_function_pushed_down_filter].value;
+    if (serialized.empty())
+        return;
+
+    const String decoded = base64Decode(serialized);
+    ReadBufferFromString in(decoded);
+    DeserializedSetsRegistry registry;
+    auto filter = ActionsDAG::deserialize(in, registry, local_context);
+    QueryPlan::deserializeAndMakeSets(registry, in, local_context);
+
+    const auto header = query_plan.getCurrentHeader();
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto * input : filter.getInputs())
+    {
+        const auto * column = header->findByName(input->result_name);
+        if (!column || !column->type->equals(*input->result_type))
+            return;
+        inputs.emplace(input->result_name, input);
+    }
+
+    const auto * filter_node = filter.getOutputs().at(0);
+    const String filter_column_name = filter_node->result_name;
+    const bool filter_is_read_column = filter_node->type == ActionsDAG::ActionType::INPUT;
+
+    ActionsDAG::NodeRawConstPtrs outputs{filter_node};
+    for (const auto & column : header->getColumnsWithTypeAndName())
+    {
+        auto it = inputs.find(column.name);
+        const auto * node = it != inputs.end() ? it->second : &filter.addInput(column.name, column.type);
+        if (node != filter_node)
+            outputs.push_back(node);
+    }
+    filter.getOutputs() = std::move(outputs);
+
+    auto filter_step = std::make_unique<FilterStep>(header, std::move(filter), filter_column_name, !filter_is_read_column);
+    filter_step->setStepDescription("Filter pushed down by the initiator");
+    query_plan.addStep(std::move(filter_step));
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
