@@ -40,6 +40,10 @@ struct KafkaConfigLoader
         size_t consumer_number;
         String client_id;
         size_t max_block_size;
+        /// Default for "statistics.interval.ms" if the user didn't configure it. Storages that don't drain
+        /// statistics events for idle consumers must pass "0" here, otherwise unconsumed statistics events
+        /// pile up in the librdkafka reply queue (a live memory leak, see pollEvents()).
+        String default_statistics_interval_ms = "3000";
     };
 
     struct ProducerConfigParams : public LoadConfigParams

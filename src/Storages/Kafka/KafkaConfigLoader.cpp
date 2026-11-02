@@ -523,13 +523,13 @@ void updateConfigurationFromConfig(
             }
         });
 
-    /// NOTE: statistics should be consumed, otherwise it creates too much
-    /// entries in the queue, that leads to memory leak and slow shutdown.
-    if (!kafka_config.has_property("statistics.interval.ms"))
-    {
-        // every 3 seconds by default. set to 0 to disable.
-        kafka_config.set("statistics.interval.ms", "3000");
-    }
+    /// NOTE: the statistics.interval.ms default is pre-seeded in getConsumerConfiguration()/
+    /// getProducerConfiguration() before this function applies the user configuration.
+    /// Statistics events are enqueued into the librdkafka reply queue and are only consumed when the handle
+    /// is polled; each storage is responsible for making sure this happens (StorageKafka bounds the
+    /// accumulation by closing idle consumer handles after kafka_consumers_pool_ttl_ms, StorageKafka2 drains
+    /// its idle consumers from the per-consumer background task).
+
     // Configure interceptor to change thread name
     //
     // TODO: add interceptors support into the cppkafka.
@@ -600,6 +600,15 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set("client.software.version", VERSION_DESCRIBE);
     conf.set("auto.offset.reset", "earliest"); // If no offset stored for this group, read all messages from the start
 
+    /// NOTE: statistics should be consumed, otherwise it creates too much entries in the queue,
+    /// that leads to memory leak and slow shutdown. Pre-seed the storage's default instead of checking
+    /// has_property() afterwards: rd_kafka_conf_get() (which has_property() uses) reports every known
+    /// property with its built-in default, so has_property("statistics.interval.ms") is always true and
+    /// cannot distinguish "not configured" from "explicitly disabled". Pre-seeding lets an explicitly
+    /// configured value (including an explicit "0") from updateConfigurationFromConfig() below win.
+    conf.set("statistics.interval.ms", params.default_statistics_interval_ms);
+
+
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance
     // significantly, but may lead to bigger memory consumption.
@@ -637,6 +646,10 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
     conf.set("client.id", params.client_id);
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
+    /// Pre-seeded for the same reason as in getConsumerConfiguration(); producers don't attach a
+    /// statistics callback, but they are short-lived: the events that librdkafka enqueues until the
+    /// handle is polled on flush or destroyed are negligible.
+    conf.set("statistics.interval.ms", "3000");
 
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 

@@ -699,10 +699,14 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         num_consumers > 1,
         consumer_number,
         client_id,
-        getMaxBlockSize()};
+        getMaxBlockSize(),
+        // Statistics are disabled by default: unlike StorageKafka, which closes idle consumer handles after
+        // kafka_consumers_pool_ttl_ms, StorageKafka2 keeps its consumers alive for the whole storage lifetime,
+        // and without an attached materialized view nobody polls them, so statistics events would pile up in
+        // the librdkafka reply queue indefinitely (a live memory leak). An explicitly configured
+        // statistics.interval.ms (e.g. <statistics_interval_ms> in the server config) is now honored.
+        "0"};
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
-    // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
-    kafka_config.set("statistics.interval.ms", "0");
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
     return kafka_config;
