@@ -1,0 +1,36 @@
+certified by runs, uniqExact
+a0	3924
+a1	3597
+a2	3270
+a3	2620
+a4	1968
+a0	3924
+a1	3597
+a2	3270
+a3	2620
+a4	1968
+certified by runs, uniqExactIf
+a0	2616
+a1	2397
+a2	2181
+a3	1746
+a4	1312
+a0	2616
+a1	2397
+a2	2181
+a3	1746
+a4	1312
+fallback, uniqExactIf with a Nullable condition
+a0	2616
+a1	2397
+a2	2181
+a3	1746
+a4	1312
+a0	2616
+a1	2397
+a2	2181
+a3	1746
+a4	1312
+uniq_01_runs	1	1	0	0
+uniq_02_runs_if	1	1	0	0
+uniq_03_fallback_nullable_condition	1	1	1	0

@@ -1,18 +1,13 @@
--- The multi-pass top-K aggregation of `GROUP BY ... ORDER BY <count or uniqExact> DESC LIMIT n` over
--- `MergeTree`. Every query runs with the optimization and without it, which must return the same rows, and
--- the profile events show which passes ran. In the candidate mode, the pilot is followed by the candidate
--- pass, and by the fallback for the cells that the candidate pass could not prove, unless the pilot declines.
--- For `uniqExact`, the cells without candidates count runs of repeated rows instead of rows, which certifies
--- more. When the sample cannot show the top and an integer key bounds the groups, the bounding mode runs the
--- sketch pass, the first restricted pass over the values of the key with most rows, and the hot pass over the
--- other values that may hold a group of the top.
+-- The multi-pass top-K aggregation of `GROUP BY ... ORDER BY count() DESC LIMIT n` over `MergeTree` in the
+-- candidate mode. Every query runs with the optimization and without it, which must return the same rows, and
+-- the profile events show which passes ran. The pilot is followed by the candidate pass, and by the fallback
+-- for the cells that the candidate pass could not prove, unless the pilot declines.
 
--- The paths depend on the granules that the pilot samples and on the blocks that count runs, so the granules
--- and the blocks hold 64 rows each. A query that runs no pass reads blocks of 65536 rows, which leave its
--- result unchanged: the executor takes locks for every block, and the thread fuzzer of the flaky check slows
--- down every lock. The settings that would turn the optimization off or change the shape of the plan are
--- pinned. The injection that splits the ranges of a read is off: the read cannot estimate its bytes with it,
--- so a limit of the bytes to read would keep the optimization off.
+-- The passes read blocks of 64 rows, one granule each, whatever streams read them. A query that runs no pass
+-- reads blocks of 65536 rows, which leave its result unchanged: the executor takes locks for every block, and
+-- the thread fuzzer of the flaky check slows down every lock. The settings that would turn the optimization
+-- off or change the shape of the plan are pinned. The injection that splits the ranges of a read is off: the
+-- read cannot estimate its bytes with it, so a limit of the bytes to read would keep the optimization off.
 SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1, adaptive_aggregator_top_k = 1;
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 64, optimize_aggregation_in_order = 0;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, serialize_query_plan = 0;
@@ -31,27 +26,13 @@ DROP TABLE IF EXISTS t_top_k;
 -- Every other key holds one row.
 -- `h`: `k`, but the rows of granules 1 to 40, except 32, hold the key `heavy`. It ranks fifth, and the pilot
 -- never samples it.
--- `r` and `v`: `k` and `id`, but the same rows hold the key `bot`, whose values in `v` repeat in runs of 64
--- rows. It has 2496 rows, but only 39 distinct values in 39 runs.
--- `g`, and its copies of the other integer types that a bounding key may have: the value `i` holds `2i + 1`
--- consecutive rows, so the values come in runs. The signed copies hold negative values, and the 64-bit copies
--- hold values beyond 32 bits.
--- `s`: a single value, so the groups of `(g, s)` are the runs of `g`.
--- `t`: splits each run of `g` from the value 200 on into 5 groups, so the values of `g` with most rows hold
--- only small groups.
+-- `g`: the value `i` holds `2i + 1` consecutive rows, so the values come in runs.
 CREATE TABLE t_top_k
 (
     id UInt64,
     g UInt32,
-    g_i32 Int32,
-    g_i64 Int64,
-    g_u64 UInt64,
     k String,
-    h String,
-    r String,
-    v UInt64,
-    s String,
-    t String
+    h String
 )
 ENGINE = MergeTree ORDER BY (g, id)
 SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
@@ -60,16 +41,9 @@ INSERT INTO t_top_k
 SELECT
     number AS id,
     toUInt32(sqrt(number)) AS g,
-    -toInt32(g) AS g_i32,
-    -toInt64(g) - 5000000000 AS g_i64,
-    toUInt64(g) + 0xF000000000000000 AS g_u64,
     multiIf(m < 12, 'a0', m < 23, 'a1', m < 33, 'a2', m < 41, 'a3', m < 47, 'a4', m < 51, 'a5', m < 54, 'a6', m < 56, 'a7',
         m < 57, 'a8', concat('tail', toString(number))) AS k,
-    if(in_block, 'heavy', k) AS h,
-    if(in_block, 'bot', k) AS r,
-    if(in_block, intDiv(number, 64), number) AS v,
-    'x' AS s,
-    if(g >= 200, toString(number % 5), 'x') AS t
+    if(in_block, 'heavy', k) AS h
 FROM (SELECT number, number % 199 AS m, number BETWEEN 64 AND 2623 AND intDiv(number, 64) != 32 AS in_block FROM numbers(67584))
 SETTINGS max_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
@@ -93,69 +67,28 @@ SELECT 'fallback';
 SELECT h, count() AS c FROM t_top_k GROUP BY h ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_05_fallback';
 SELECT h, count() AS c FROM t_top_k GROUP BY h ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
 
--- The cell of `bot` holds more rows than the fifth best key has distinct values, but fewer runs.
-SELECT 'certified by runs, uniqExact';
-SELECT r, uniqExact(v) AS x FROM t_top_k GROUP BY r ORDER BY x DESC LIMIT 5 SETTINGS log_comment = 'top_k_06_runs_uniq_exact';
-SELECT r, uniqExact(v) AS x FROM t_top_k GROUP BY r ORDER BY x DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-
--- A row that the condition drops ends a run and does not count.
-SELECT 'certified by runs, uniqExactIf';
-SELECT r, uniqExactIf(v, id % 3 != 0) AS x FROM t_top_k GROUP BY r ORDER BY x DESC LIMIT 5 SETTINGS log_comment = 'top_k_07_runs_uniq_exact_if';
-SELECT r, uniqExactIf(v, id % 3 != 0) AS x FROM t_top_k GROUP BY r ORDER BY x DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-
--- A condition that is not `UInt8` stays among the values. The rows of a `Nullable` column are not compared,
--- so they all count.
-SELECT 'fallback, uniqExactIf with a Nullable condition';
-SELECT r, uniqExactIf(v, toNullable(id % 3 != 0)) AS x FROM t_top_k GROUP BY r ORDER BY x DESC LIMIT 5 SETTINGS log_comment = 'top_k_08_fallback_nullable_condition';
-SELECT r, uniqExactIf(v, toNullable(id % 3 != 0)) AS x FROM t_top_k GROUP BY r ORDER BY x DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-
 -- A query of a single key has no bounding key, so the pilot declines.
 SELECT 'declined, runs';
-SELECT toString(g) AS runs, count() AS c FROM t_top_k GROUP BY runs ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_09_runs';
+SELECT toString(g) AS runs, count() AS c FROM t_top_k GROUP BY runs ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_06_runs';
 SELECT toString(g) AS runs, count() AS c FROM t_top_k GROUP BY runs ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
 
 -- The keys `0` to `4` hold 43 rows each, 40 of them in the first 200 rows, and the other keys at most 4. The
 -- sample holds 12 or 13 rows of each of them, so it shows no clear top.
 SELECT 'declined, no clear top';
-SELECT * FROM (SELECT toString(if(id < 200, id % 5, id % 20000)) AS flat, count() AS c FROM t_top_k GROUP BY flat ORDER BY c DESC LIMIT 5) ORDER BY flat SETTINGS log_comment = 'top_k_10_flat';
+SELECT * FROM (SELECT toString(if(id < 200, id % 5, id % 20000)) AS flat, count() AS c FROM t_top_k GROUP BY flat ORDER BY c DESC LIMIT 5) ORDER BY flat SETTINGS log_comment = 'top_k_07_flat';
 SELECT * FROM (SELECT toString(if(id < 200, id % 5, id % 20000)) AS flat, count() AS c FROM t_top_k GROUP BY flat ORDER BY c DESC LIMIT 5) ORDER BY flat SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
 
 -- 7 keys, so the candidates hold nearly all the rows.
 SELECT 'declined, few keys';
-SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_11_few';
+SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_08_few';
 SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-
--- The bounding mode by a key of each integer type. Its first restricted pass takes the 20 values of the key
--- with most rows, 4 for every group of the top. `g` is part of the primary key, so the restricted passes read
--- only the granules of its values. Its copies are not part of it.
--- These 20 values hold the 5 best groups of `(g, s)`, and no other value holds as many rows as the fifth best
--- group, so the first restricted pass proves the top. The query of `g_i64` has a `PREWHERE` of its own, to
--- which the restricted passes add their filter by the values of the key.
-SELECT 'bounded, certified by the first restricted pass';
-SELECT g, s, count() AS c FROM t_top_k GROUP BY g, s ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_12_bounded_uint32';
-SELECT g, s, count() AS c FROM t_top_k GROUP BY g, s ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-SELECT g_i64, s, count() AS c FROM t_top_k PREWHERE id % 1000 != 999 GROUP BY g_i64, s ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_13_bounded_int64';
-SELECT g_i64, s, count() AS c FROM t_top_k PREWHERE id % 1000 != 999 GROUP BY g_i64, s ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-
--- These 20 values hold only small groups of `(g, t)`, so the other values may hold larger ones, and the hot
--- pass aggregates them.
-SELECT 'bounded, hot pass';
-SELECT g_i32, t, count() AS c FROM t_top_k GROUP BY g_i32, t ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_14_hot_int32';
-SELECT g_i32, t, count() AS c FROM t_top_k GROUP BY g_i32, t ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-SELECT g_u64, t, count() AS c FROM t_top_k GROUP BY g_u64, t ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'top_k_15_hot_uint64';
-SELECT g_u64, t, count() AS c FROM t_top_k GROUP BY g_u64, t ORDER BY c DESC LIMIT 5 SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
 
 -- With the hash table statistics, the next run of a query whose pilot declined skips the pilot, and so runs
 -- no pass.
 SELECT 'declines of earlier runs';
 SET collect_hash_table_stats_during_aggregation = 1;
-SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'top_k_16_first';
-SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'top_k_17_again', max_block_size = 65536;
-
--- `EXPLAIN ANALYZE` reads the steps of the processors when the query has finished, also those of the passes.
-SELECT 'explain analyze of the passes';
-SELECT count() > 0 FROM (EXPLAIN ANALYZE SELECT g_u64, t, count() AS c FROM t_top_k GROUP BY g_u64, t ORDER BY c DESC LIMIT 5)
-SETTINGS collect_hash_table_stats_during_aggregation = 0, log_comment = 'top_k_18_explain_analyze';
+SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'top_k_09_first';
+SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'top_k_10_again', max_block_size = 65536;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT
@@ -163,8 +96,6 @@ SELECT
     ProfileEvents['AdaptiveAggregationMultiPassTopKPilotPasses'] AS pilot_passes,
     ProfileEvents['AdaptiveAggregationMultiPassTopKCandidatePasses'] AS candidate_passes,
     ProfileEvents['AdaptiveAggregationMultiPassTopKFallbackPasses'] AS fallback_passes,
-    ProfileEvents['AdaptiveAggregationMultiPassTopKSketchPasses'] AS sketch_passes,
-    ProfileEvents['AdaptiveAggregationMultiPassTopKRestrictedPasses'] AS restricted_passes,
     ProfileEvents['AdaptiveAggregationMultiPassTopKDeclines'] AS declines
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'top_k_%'

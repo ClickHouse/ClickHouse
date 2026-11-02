@@ -49,39 +49,6 @@ a1	3597
 a2	3270
 a3	2620
 heavy	2496
-certified by runs, uniqExact
-a0	3924
-a1	3597
-a2	3270
-a3	2620
-a4	1968
-a0	3924
-a1	3597
-a2	3270
-a3	2620
-a4	1968
-certified by runs, uniqExactIf
-a0	2616
-a1	2397
-a2	2181
-a3	1746
-a4	1312
-a0	2616
-a1	2397
-a2	2181
-a3	1746
-a4	1312
-fallback, uniqExactIf with a Nullable condition
-a0	2616
-a1	2397
-a2	2181
-a3	1746
-a4	1312
-a0	2616
-a1	2397
-a2	2181
-a3	1746
-a4	1312
 declined, runs
 258	517
 257	515
@@ -115,66 +82,14 @@ declined, few keys
 4	12411
 3	9657
 2	6900
-bounded, certified by the first restricted pass
-258	x	517
-257	x	515
-256	x	513
-255	x	511
-254	x	509
-258	x	517
-257	x	515
-256	x	513
-255	x	511
-254	x	509
--5000000258	x	516
--5000000257	x	515
--5000000256	x	512
--5000000255	x	511
--5000000254	x	508
--5000000258	x	516
--5000000257	x	515
--5000000256	x	512
--5000000255	x	511
--5000000254	x	508
-bounded, hot pass
--199	x	399
--198	x	397
--197	x	395
--196	x	393
--195	x	391
--199	x	399
--198	x	397
--197	x	395
--196	x	393
--195	x	391
-17293822569102704839	x	399
-17293822569102704838	x	397
-17293822569102704837	x	395
-17293822569102704836	x	393
-17293822569102704835	x	391
-17293822569102704839	x	399
-17293822569102704838	x	397
-17293822569102704837	x	395
-17293822569102704836	x	393
-17293822569102704835	x	391
 declines of earlier runs
-explain analyze of the passes
-1
-top_k_01_count	1	1	0	0	0	0
-top_k_02_two_keys_offset	1	1	0	0	0	0
-top_k_03_numeric_key_filter	1	1	0	0	0	0
-top_k_04_array_key	1	1	0	0	0	0
-top_k_05_fallback	1	1	1	0	0	0
-top_k_06_runs_uniq_exact	1	1	0	0	0	0
-top_k_07_runs_uniq_exact_if	1	1	0	0	0	0
-top_k_08_fallback_nullable_condition	1	1	1	0	0	0
-top_k_09_runs	1	0	0	0	0	1
-top_k_10_flat	1	0	0	0	0	1
-top_k_11_few	1	0	0	0	0	1
-top_k_12_bounded_uint32	1	0	0	1	1	0
-top_k_13_bounded_int64	1	0	0	1	1	0
-top_k_14_hot_int32	1	0	0	1	2	0
-top_k_15_hot_uint64	1	0	0	1	2	0
-top_k_16_first	1	0	0	0	0	1
-top_k_17_again	0	0	0	0	0	1
-top_k_18_explain_analyze	1	0	0	1	2	0
+top_k_01_count	1	1	0	0
+top_k_02_two_keys_offset	1	1	0	0
+top_k_03_numeric_key_filter	1	1	0	0
+top_k_04_array_key	1	1	0	0
+top_k_05_fallback	1	1	1	0
+top_k_06_runs	1	0	0	1
+top_k_07_flat	1	0	0	1
+top_k_08_few	1	0	0	1
+top_k_09_first	1	0	0	1
+top_k_10_again	0	0	0	1
