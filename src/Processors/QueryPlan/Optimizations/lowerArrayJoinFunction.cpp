@@ -79,8 +79,12 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     const auto & array_join_output = array_join_node.step->getOutputHeader();
     QueryPlanStepPtr after_step;
     if (filter_step)
-        after_step = std::make_unique<FilterStep>(
+    {
+        auto after_filter_step = std::make_unique<FilterStep>(
             array_join_output, std::move(extracted->after), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+        after_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+        after_step = std::move(after_filter_step);
+    }
     else
         after_step = std::make_unique<ExpressionStep>(array_join_output, std::move(extracted->after));
     after_step->setStepDescription(*parent);
