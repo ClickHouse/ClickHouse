@@ -3001,8 +3001,14 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     /// TODO: The following code doesn't look very reliable, probably we need to rewrite it somehow.
     auto timeout = std::chrono::milliseconds{timeout_ms};
     auto start_time = std::chrono::steady_clock::now();
+    /// Check for cancellation (`KILL QUERY`, or the cancellation of all backups and restores on shutdown)
+    /// as `RestorerFromBackup` does: otherwise a cancelled restore keeps waiting here for the whole timeout.
+    auto process_list_element = local_context->getProcessListElementSafe();
     while (!isTableExist(table_name, local_context))
     {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         waitForReplicaToProcessAllEntries(50);
 
         auto elapsed = std::chrono::steady_clock::now() - start_time;
