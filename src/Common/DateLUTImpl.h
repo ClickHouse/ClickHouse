@@ -935,14 +935,14 @@ public:
         }
 
         const Int64 index = day + daynum_offset_epoch;
-        if (unlikely(index < 0 || index >= DATE_LUT_SIZE))
+        if (unlikely(static_cast<UInt64>(index) >= DATE_LUT_SIZE))
             return timezoneOffsetAtLocalTimeOutOfRange(t);
 
         const Values & values = lut[index];
-        if (time_of_day >= values.time_at_offset_change())
-            time_of_day -= values.amount_of_offset_change();
-
-        return t - (values.date + time_of_day);
+        Time res = day * 86400 - values.date;
+        if (values.amount_of_offset_change() != 0 && time_of_day >= values.time_at_offset_change())
+            res += values.amount_of_offset_change();
+        return res;
     }
 
 

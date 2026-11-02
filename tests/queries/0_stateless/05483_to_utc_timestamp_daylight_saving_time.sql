@@ -44,3 +44,12 @@ SELECT
     countIf(toUnixTimestamp(toUTCTimestamp(w, 'America/Santiago')) != toUnixTimestamp(toDateTime(s, 'America/Santiago'))),
     countIf(toUnixTimestamp(toUTCTimestamp(w, 'Africa/Casablanca')) != toUnixTimestamp(toDateTime(s, 'Africa/Casablanca')))
 FROM (SELECT toDateTime('2026-01-01 00:00:00') + number * 900 AS w, formatDateTime(w, '%Y-%m-%d %H:%i:%s') AS s FROM numbers(35040));
+
+-- Outside the years 1900-2299 the conversion takes another code path and still matches `toDateTime64(s, 3, time_zone)`.
+SELECT
+    countIf(toUnixTimestamp64Milli(toUTCTimestamp(toDateTime64(s, 3), 'Europe/Berlin')) != toUnixTimestamp64Milli(toDateTime64(s, 3, 'Europe/Berlin'))),
+    countIf(toUnixTimestamp64Milli(toUTCTimestamp(toDateTime64(s, 3), 'America/New_York')) != toUnixTimestamp64Milli(toDateTime64(s, 3, 'America/New_York')))
+FROM (SELECT concat(formatDateTime(toDateTime64('2300-01-01 00:00:00', 0) + toIntervalSecond(number * 900), '%Y-%m-%d %H:%i:%s'), '.750') AS s FROM numbers(35040));
+SELECT
+    countIf(toUnixTimestamp64Milli(toUTCTimestamp(toDateTime64(s, 3), 'America/New_York')) != toUnixTimestamp64Milli(toDateTime64(s, 3, 'America/New_York')))
+FROM (SELECT concat(formatDateTime(toDateTime64('1883-01-01 00:00:00', 0) + toIntervalSecond(number * 900), '%Y-%m-%d %H:%i:%s'), '.750') AS s FROM numbers(35040));
