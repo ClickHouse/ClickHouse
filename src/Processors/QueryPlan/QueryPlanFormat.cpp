@@ -246,6 +246,7 @@ namespace QueryPlanFormat
         /// each printed as its own line with a budget of its own, so the quota is per class as well. The
         /// quota exceeds the atoms one budget can render, so on its own it never drops a printable atom.
         constexpr size_t MAX_CONJUNCTION_ATOMS_PER_CLASS = MAX_EXPRESSION_LENGTH / 2;
+        constexpr std::string_view CONJUNCTION_SEPARATOR = " AND ";
 
         bool isRuntimeFilterAtom(const ActionsDAG::Node * node)
         {
@@ -665,7 +666,7 @@ namespace QueryPlanFormat
                     break;
                 }
                 if (!parts.empty())
-                    budget.charge(std::string_view(" AND ").size());
+                    budget.charge(CONJUNCTION_SEPARATOR.size());
                 parts.push_back(
                     formatNodePrettyImpl(atom, pretty_names, runtime_filter_names, subquery_set_names, 4, budget));
             }
@@ -678,7 +679,7 @@ namespace QueryPlanFormat
         String expression;
         bool expression_truncated = user_truncated;
         if (!user_parts.empty())
-            expression = fmt::format(" {}", fmt::join(user_parts, " AND "));
+            expression = fmt::format(" {}", fmt::join(user_parts, CONJUNCTION_SEPARATOR));
         /// An empty condition is not printed at all, so a marker with nothing before it would read as
         /// "no condition" rather than "more to come": name the filter column to attach the marker to.
         if (expression.empty() && (rf_parts.empty() || expression_truncated))
@@ -691,7 +692,7 @@ namespace QueryPlanFormat
         if (!rf_parts.empty() || rf_truncated)
         {
             annotation = fmt::format("Runtime filters:{}{}",
-                rf_parts.empty() ? "" : " ", fmt::join(rf_parts, " AND "));
+                rf_parts.empty() ? "" : " ", fmt::join(rf_parts, CONJUNCTION_SEPARATOR));
             if (rf_truncated)
                 annotation += fmt::format(" {}", TRUNCATED_MARKER);
         }
