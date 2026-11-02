@@ -1619,14 +1619,15 @@ TTLDescription TTLDescription::getTTLFromAST(
                 /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
                 /// must be rejected here instead of failing during the TTL merge.
                 if (!skip_validation)
-                {
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
-                    if (auto arguments_expression = set_part.buildArgumentsExpression(expression_context))
-                        checkTTLExpressionForAggregateFunctions(arguments_expression, /*expression_kind=*/ "GROUP BY SET ");
-                }
 
                 if (validation_mode != TTLValidationMode::Attach)
+                {
+                    auto arguments_expression = set_part.buildArgumentsExpression(expression_context);
+                    if (arguments_expression && !skip_validation)
+                        checkTTLExpressionForAggregateFunctions(arguments_expression, /*expression_kind=*/ "GROUP BY SET ");
                     checkTTLExpressionPreservesRowCount(set_part.expression, value, /*expression_kind=*/ "GROUP BY SET ");
+                }
 
                 result.set_parts.emplace_back(set_part);
 

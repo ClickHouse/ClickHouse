@@ -40,3 +40,6 @@ CREATE TABLE t_ttl_argument_in (k UInt8, event DateTime, value UInt64) ENGINE = 
 TTL event + INTERVAL 1 SECOND GROUP BY k SET value = sumIf(value, k IN system.one); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_ttl_argument_in (k UInt8, event DateTime, value UInt64) ENGINE = MergeTree ORDER BY k
 TTL event + INTERVAL 1 SECOND GROUP BY k SET value = sum(value * (SELECT 2)); -- { serverError BAD_ARGUMENTS }
+SET allow_suspicious_ttl_expressions = 1;
+CREATE TABLE t_ttl_argument_in (k UInt8, event DateTime, value UInt64) ENGINE = MergeTree ORDER BY k
+TTL event + INTERVAL 1 SECOND GROUP BY k SET value = sumIf(value, value IN (SELECT 10)); -- { serverError BAD_ARGUMENTS }
