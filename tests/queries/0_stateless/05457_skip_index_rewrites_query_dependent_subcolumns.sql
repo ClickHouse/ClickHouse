@@ -24,10 +24,10 @@ SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_pk SELECT number, map('k', toInt32(number)) FROM numbers(100);
 
 SELECT 'primary key, subcolumn rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
 WHERE explain LIKE '%Granules:%/%';
 SELECT 'primary key, subcolumn not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
 WHERE explain LIKE '%Granules:%/%';
 SELECT id, mapKeys(m) FROM t_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 ORDER BY id;
 
@@ -37,7 +37,7 @@ SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_final SELECT number, map('k', toInt32(number)) FROM numbers(100);
 
 SELECT 'primary key, FINAL';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_final FINAL WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_final FINAL WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
 WHERE explain LIKE '%Granules:%/%';
 SELECT id FROM t_final FINAL WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 ORDER BY id;
 
@@ -47,7 +47,7 @@ SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_idx SELECT number, map('k', toInt32(number)) FROM numbers(100);
 
 SELECT 'skip index, subcolumn not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_idx WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_idx WHERE multiIf(m['k'] > 0, m['k'], 0) > 97)
 WHERE explain LIKE '%Granules:%/%' OR explain LIKE '%Name:%';
 
 CREATE TABLE t_part (id UInt32, m Map(String, Int32))
@@ -56,7 +56,7 @@ SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_part SELECT number, map('k', toInt32(number)) FROM numbers(100);
 
 SELECT 'partition key, subcolumn not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_part WHERE multiIf(m['k'] > 49, 1, 0) = 1)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_part WHERE multiIf(m['k'] > 49, 1, 0) = 1)
 WHERE explain LIKE '%Parts:%/%';
 
 CREATE TABLE t_mixed_pk (id UInt32, m Map(String, Int32), n Map(String, Int32))
@@ -65,7 +65,7 @@ SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_mixed_pk SELECT number, map('k', toInt32(number)), map('k', toInt32(number)) FROM numbers(100);
 
 SELECT 'primary key, subcolumn of one column not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_mixed_pk WHERE multiIf(m['k'] > 0, m['k'], 0) + multiIf(n['k'] > 0, n['k'], 0) > 194)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_mixed_pk WHERE multiIf(m['k'] > 0, m['k'], 0) + multiIf(n['k'] > 0, n['k'], 0) > 194)
 WHERE explain LIKE '%Granules:%/%';
 SELECT id, mapKeys(m) FROM t_mixed_pk WHERE multiIf(m['k'] > 0, m['k'], 0) + multiIf(n['k'] > 0, n['k'], 0) > 194 ORDER BY id;
 
@@ -76,7 +76,7 @@ SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_mixed_idx SELECT number, map('k', toInt32(number)), map('k', toInt32(number)) FROM numbers(100);
 
 SELECT 'skip index, subcolumn of one column not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_mixed_idx WHERE multiIf(m['k'] > 0, m['k'], 0) + multiIf(n['k'] > 0, n['k'], 0) > 194)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_mixed_idx WHERE multiIf(m['k'] > 0, m['k'], 0) + multiIf(n['k'] > 0, n['k'], 0) > 194)
 WHERE explain LIKE '%Granules:%/%' OR explain LIKE '%Name:%';
 
 CREATE TABLE t_mixed_part (id UInt32, m Map(String, Int32), n Map(String, Int32))
@@ -85,7 +85,22 @@ SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_mixed_part SELECT number, map('k', toInt32(number)), map('k', toInt32(number)) FROM numbers(100);
 
 SELECT 'partition key, subcolumn of one column not rewritten';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_mixed_part WHERE multiIf(m['k'] > 49, 1, 0) + multiIf(n['k'] > 49, 1, 0) = 2)
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_mixed_part WHERE multiIf(m['k'] > 49, 1, 0) + multiIf(n['k'] > 49, 1, 0) = 2)
+WHERE explain LIKE '%Parts:%/%';
+
+-- The filter reads the subcolumn `m.key_k` explicitly, but the indexed expression in it still reads
+-- `arrayElement(m, 'k')`, because `FunctionToSubcolumnsPass` declined the rewrite of `m`.
+SELECT 'primary key, subcolumn read explicitly, but not rewritten in the key expression';
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 AND `m.key_k` >= 0)
+WHERE explain LIKE '%Granules:%/%';
+SELECT id, mapKeys(m) FROM t_pk WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 AND `m.key_k` >= 0 ORDER BY id;
+
+SELECT 'skip index, subcolumn read explicitly, but not rewritten in the key expression';
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_idx WHERE multiIf(m['k'] > 0, m['k'], 0) > 97 AND `m.key_k` >= 0)
+WHERE explain LIKE '%Granules:%/%' OR explain LIKE '%Name:%';
+
+SELECT 'partition key, subcolumn read explicitly, but not rewritten in the key expression';
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_part WHERE multiIf(m['k'] > 49, 1, 0) = 1 AND `m.key_k` >= 0)
 WHERE explain LIKE '%Parts:%/%';
 
 DROP TABLE t_pk;

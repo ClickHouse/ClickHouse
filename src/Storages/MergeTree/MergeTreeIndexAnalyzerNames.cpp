@@ -411,10 +411,18 @@ bool collidesWithOtherTableColumn(
     return false;
 }
 
-/// The storage columns a filter reads, including subcolumns (e.g. `m.key_k`).
-NameSet getPredicateInputNames(const ActionsDAG::Node * predicate)
+/// The names a filter is built from.
+struct PredicateNames
 {
-    NameSet result;
+    /// The storage columns the filter reads, including subcolumns (e.g. `m.key_k`).
+    NameSet inputs;
+    /// The names of all nodes of the filter.
+    NameSet nodes;
+};
+
+PredicateNames getPredicateNames(const ActionsDAG::Node * predicate)
+{
+    PredicateNames result;
     std::unordered_set<const ActionsDAG::Node *> visited;
     std::vector<const ActionsDAG::Node *> stack{predicate};
     while (!stack.empty())
@@ -424,8 +432,9 @@ NameSet getPredicateInputNames(const ActionsDAG::Node * predicate)
         if (!node || !visited.insert(node).second)
             continue;
 
+        result.nodes.insert(node->result_name);
         if (node->type == ActionsDAG::ActionType::INPUT)
-            result.insert(node->result_name);
+            result.inputs.insert(node->result_name);
 
         for (const auto * child : node->children)
             stack.push_back(child);
@@ -438,20 +447,44 @@ NameSet getPredicateInputNames(const ActionsDAG::Node * predicate)
 /// without them:
 /// - the subcolumn's name, or a prefix of it other than the source column, is a column of the table:
 ///   `FunctionToSubcolumnsPass` does not rewrite to it then, see `collidesWithOtherTableColumn`;
-/// - the filter does not read the subcolumn (only checked if `predicate_inputs` is given).
+/// - the filter does not read the subcolumn (only checked if `predicate` is given);
+/// - the filter still has a function of the source column from the key (e.g. `arrayElement(m, 'k')`)
+///   that the replay rewrote to a subcolumn read. `FunctionToSubcolumnsPass` decides for every column
+///   once, for all its uses in the filter, so the rewrite of this column was not applied even if the
+///   filter reads the subcolumn elsewhere (e.g. `` `m.key_k` >= 0 `` written in the query).
 /// Returns nullopt if such a subcolumn cannot be attributed to a source column of the key.
 std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
     const AlternativeKeyExpression & alternative_key,
     const ExpressionActionsPtr & expression,
     const ColumnsDescription & table_columns,
-    const NameSet * predicate_inputs)
+    const PredicateNames * predicate)
 {
     NameSet key_source_columns;
     for (const auto & column : expression->getRequiredColumns())
         key_source_columns.insert(column);
 
+    const auto & alternative_dag = alternative_key.expression->getActionsDAG();
+    NameSet alternative_node_names;
+    for (const auto & node : alternative_dag.getNodes())
+        alternative_node_names.insert(node.result_name);
+
+    /// The source columns that have a function from the key, rewritten away by the replay, in the filter.
+    NameSet source_columns_not_rewritten_in_filter;
+    if (predicate)
+    {
+        for (const auto & node : expression->getActionsDAG().getNodes())
+        {
+            if (node.type != ActionsDAG::ActionType::FUNCTION || alternative_node_names.contains(node.result_name)
+                || !predicate->nodes.contains(node.result_name))
+                continue;
+            for (const auto * child : node.children)
+                if (child->type == ActionsDAG::ActionType::INPUT && key_source_columns.contains(child->result_name))
+                    source_columns_not_rewritten_in_filter.insert(child->result_name);
+        }
+    }
+
     NameSet result;
-    for (const auto & node : alternative_key.expression->getActionsDAG().getNodes())
+    for (const auto & node : alternative_dag.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::INPUT || key_source_columns.contains(node.result_name))
             continue;
@@ -465,7 +498,10 @@ std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
             shadowed = prefix != source_column && table_columns.has(prefix);
         }
 
-        if (!shadowed && (!predicate_inputs || predicate_inputs->contains(node.result_name)))
+        bool rewritten_in_query = !predicate
+            || (predicate->inputs.contains(node.result_name)
+                && (source_column.empty() || !source_columns_not_rewritten_in_filter.contains(source_column)));
+        if (!shadowed && rewritten_in_query)
             continue;
 
         if (source_column.empty())
@@ -555,15 +591,15 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     auto alternative_key = getAlternativeExpressionImpl(
         expression_list_ast, expression, column_names, {}, register_key, key_kind, description_for_log, context);
 
-    std::optional<NameSet> predicate_inputs;
+    std::optional<PredicateNames> predicate_names;
     if (predicate && context->getSettingsRef()[Setting::optimize_functions_to_subcolumns])
-        predicate_inputs = getPredicateInputNames(predicate);
+        predicate_names = getPredicateNames(predicate);
 
     /// Every iteration adds at least one source column, so this terminates.
     while (alternative_key)
     {
         auto excluded = getSourceColumnsOfSubcolumnsNotInQuery(
-            *alternative_key, expression, table_columns, predicate_inputs ? &*predicate_inputs : nullptr);
+            *alternative_key, expression, table_columns, predicate_names ? &*predicate_names : nullptr);
         if (!excluded)
             return nullptr;
         if (excluded->empty())

@@ -28,3 +28,15 @@ partition key, subcolumn of one column not rewritten
 Parts: 2/2
 Parts: 1/2
 Parts: 1/1
+primary key, subcolumn read explicitly, but not rewritten in the key expression
+Granules: 1/25
+98	['k']
+99	['k']
+skip index, subcolumn read explicitly, but not rewritten in the key expression
+Granules: 25/25
+Name: idx
+Granules: 1/25
+partition key, subcolumn read explicitly, but not rewritten in the key expression
+Parts: 2/2
+Parts: 1/2
+Parts: 1/1
