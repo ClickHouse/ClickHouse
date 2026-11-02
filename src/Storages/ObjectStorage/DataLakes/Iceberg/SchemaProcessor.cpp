@@ -58,7 +58,6 @@ namespace
 
 void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String, Int64> & result, const String & current_path)
 {
-    checkStackSize();
     auto type_str = type->getValue<String>(Iceberg::f_type);
     if (type_str == "map")
     {
@@ -98,6 +97,31 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
         }
         return;
     }
+}
+
+Int64 getMaxFieldIdOfType(Poco::JSON::Object::Ptr type)
+{
+    checkStackSize();
+    auto type_str = type->getValue<String>(Iceberg::f_type);
+    if (type_str == "map")
+    {
+        Int64 result = std::max(type->getValue<Int64>(Iceberg::f_key_id), type->getValue<Int64>(Iceberg::f_value_id));
+        if (type->isObject(Iceberg::f_key))
+            result = std::max(result, getMaxFieldIdOfType(type->getObject(Iceberg::f_key)));
+        if (type->isObject(Iceberg::f_value))
+            result = std::max(result, getMaxFieldIdOfType(type->getObject(Iceberg::f_value)));
+        return result;
+    }
+    if (type_str == "list")
+    {
+        Int64 result = type->getValue<Int64>(Iceberg::f_element_id);
+        if (type->isObject(Iceberg::f_element))
+            result = std::max(result, getMaxFieldIdOfType(type->getObject(Iceberg::f_element)));
+        return result;
+    }
+    if (type_str == "struct")
+        return Iceberg::IcebergSchemaProcessor::getMaxFieldId(type->getArray(Iceberg::f_fields));
+    return 0;
 }
 
 /// Collects the paths whose Iceberg logical type is exactly `string` (both `string` and `binary`
@@ -1014,6 +1038,19 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
         if (current_object->isObject(Iceberg::f_type))
             traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name);
         result[cur_name] = field_id;
+    }
+    return result;
+}
+
+Int64 IcebergSchemaProcessor::getMaxFieldId(Poco::JSON::Array::Ptr schema)
+{
+    Int64 result = 0;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto field = schema->getObject(i);
+        result = std::max(result, field->getValue<Int64>(Iceberg::f_id));
+        if (field->isObject(Iceberg::f_type))
+            result = std::max(result, getMaxFieldIdOfType(field->getObject(Iceberg::f_type)));
     }
     return result;
 }

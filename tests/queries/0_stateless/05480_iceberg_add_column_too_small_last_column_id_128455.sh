@@ -14,8 +14,18 @@ TABLE_A="t_${CLICKHOUSE_DATABASE}_${RANDOM}_a"
 TABLE_A_DIR="${USER_FILES_PATH}/${TABLE_A}"
 TABLE_B="t_${CLICKHOUSE_DATABASE}_${RANDOM}_b"
 TABLE_B_DIR="${USER_FILES_PATH}/${TABLE_B}"
-rm -rf "${TABLE_A_DIR}" "${TABLE_B_DIR}"
-trap 'rm -rf "${TABLE_A_DIR}" "${TABLE_B_DIR}"; ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_A}"; ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_B}"' EXIT
+TABLE_C="t_${CLICKHOUSE_DATABASE}_${RANDOM}_c"
+TABLE_C_DIR="${USER_FILES_PATH}/${TABLE_C}"
+TABLE_D="t_${CLICKHOUSE_DATABASE}_${RANDOM}_d"
+TABLE_D_DIR="${USER_FILES_PATH}/${TABLE_D}"
+rm -rf "${TABLE_A_DIR}" "${TABLE_B_DIR}" "${TABLE_C_DIR}" "${TABLE_D_DIR}"
+cleanup() {
+    rm -rf "${TABLE_A_DIR}" "${TABLE_B_DIR}" "${TABLE_C_DIR}" "${TABLE_D_DIR}"
+    for table in ${TABLE_A} ${TABLE_B} ${TABLE_C} ${TABLE_D}; do
+        ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${table}; DROP TABLE IF EXISTS ${table}_reopened"
+    done
+}
+trap cleanup EXIT
 
 # Publishes a new metadata version that differs from the latest one only by `last-column-id`, as 26.6 wrote it.
 # A new file rather than an in-place edit, because the server caches parsed metadata files by path.
@@ -71,13 +81,28 @@ CREATE TABLE ${TABLE_A} (id Int64, arr Array(Int64)) ENGINE = IcebergLocal('${TA
 INSERT INTO ${TABLE_A} VALUES (1, [1, 2]);
 "
 lower_last_column_id "${TABLE_A_DIR}" 2
+# A second table over the same path starts from the lowered value, as a newer server opening an old table does.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=0 --multiquery -q "
-ALTER TABLE ${TABLE_A} ADD COLUMN extra Nullable(String);
-SELECT * FROM ${TABLE_A} ORDER BY id;
-INSERT INTO ${TABLE_A} VALUES (2, [3], 'x');
-SELECT * FROM ${TABLE_A} ORDER BY id;
+CREATE TABLE ${TABLE_A}_reopened ENGINE = IcebergLocal('${TABLE_A_DIR}/');
+ALTER TABLE ${TABLE_A}_reopened ADD COLUMN extra Nullable(String);
+SELECT * FROM ${TABLE_A}_reopened ORDER BY id;
+INSERT INTO ${TABLE_A}_reopened VALUES (2, [3], 'x');
+SELECT * FROM ${TABLE_A}_reopened ORDER BY id;
 "
 field_ids "${TABLE_A_DIR}"
+
+# The same with a `Map`: ids id=1 m=2 m.key=3 m.value=4 m.value.element=5.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --multiquery -q "
+CREATE TABLE ${TABLE_D} (id Int64, m Map(String, Array(Int64))) ENGINE = IcebergLocal('${TABLE_D_DIR}/');
+INSERT INTO ${TABLE_D} VALUES (1, map('k', [1, 2]));
+"
+lower_last_column_id "${TABLE_D_DIR}" 2
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=0 --multiquery -q "
+CREATE TABLE ${TABLE_D}_reopened ENGINE = IcebergLocal('${TABLE_D_DIR}/');
+ALTER TABLE ${TABLE_D}_reopened ADD COLUMN extra Nullable(String);
+SELECT * FROM ${TABLE_D}_reopened ORDER BY id;
+"
+field_ids "${TABLE_D_DIR}"
 
 # A dropped column keeps its ids 2, 3, 4 in the first schema and in the data file, so they must not be reused either.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --multiquery -q "
@@ -87,9 +112,19 @@ ALTER TABLE ${TABLE_B} DROP COLUMN t;
 "
 lower_last_column_id "${TABLE_B_DIR}" 2
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=0 --multiquery -q "
-SELECT * FROM ${TABLE_B} ORDER BY id;
-ALTER TABLE ${TABLE_B} ADD COLUMN c Nullable(Int64);
-ALTER TABLE ${TABLE_B} ADD COLUMN d Nullable(Int64);
-SELECT * FROM ${TABLE_B} ORDER BY id;
+CREATE TABLE ${TABLE_B}_reopened ENGINE = IcebergLocal('${TABLE_B_DIR}/');
+SELECT * FROM ${TABLE_B}_reopened ORDER BY id;
+ALTER TABLE ${TABLE_B}_reopened ADD COLUMN c Nullable(Int64);
+ALTER TABLE ${TABLE_B}_reopened ADD COLUMN d Nullable(Int64);
+SELECT * FROM ${TABLE_B}_reopened ORDER BY id;
 "
 field_ids "${TABLE_B_DIR}"
+
+# A top-level column named `a.b` (id 2) and the field `b` of the tuple `a` (id 3) have the same dotted path.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE_C} (a Tuple(b Int64), \`a.b\` Int64) ENGINE = IcebergLocal('${TABLE_C_DIR}/')"
+lower_last_column_id "${TABLE_C_DIR}" 2
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=0 --multiquery -q "
+CREATE TABLE ${TABLE_C}_reopened ENGINE = IcebergLocal('${TABLE_C_DIR}/');
+ALTER TABLE ${TABLE_C}_reopened ADD COLUMN c Nullable(Int64);
+"
+field_ids "${TABLE_C_DIR}"

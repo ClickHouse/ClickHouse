@@ -143,8 +143,7 @@ Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
     Int64 result = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
     for (UInt32 i = 0; i < schemas->size(); ++i)
-        for (const auto & [_, field_id] : Iceberg::IcebergSchemaProcessor::traverseSchema(schemas->getObject(i)->getArray(Iceberg::f_fields)))
-            result = std::max(result, field_id);
+        result = std::max(result, Iceberg::IcebergSchemaProcessor::getMaxFieldId(schemas->getObject(i)->getArray(Iceberg::f_fields)));
     return static_cast<Int32>(result);
 }
 
