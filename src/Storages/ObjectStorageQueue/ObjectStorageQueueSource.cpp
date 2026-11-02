@@ -112,8 +112,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     LoggerPtr logger_,
     bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
-    std::atomic<bool> & shutdown_called_,
-    const std::optional<std::map<std::string, std::string>> & partitions_)
+    std::atomic<bool> & shutdown_called_)
     : WithContext(context_)
     , metadata(metadata_)
     , object_storage(object_storage_)
@@ -148,7 +147,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     if (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT)
     {
         object_storage_iterator = std::make_shared<ObjectStorageIteratorFromList>(RelativePathsWithMetadata{});
-        partition_key_by_prefix = partitions_ ? *partitions_ : metadata->getExplicitPartitions(prefix);
+        partition_key_by_prefix = metadata->getExplicitPartitions(prefix);
         Strings partition_keys;
         for (const auto & [_, partition_key] : partition_key_by_prefix)
             partition_keys.push_back(partition_key);
@@ -543,7 +542,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     if (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT)
     {
         for (const auto & path : paths)
-            partition_keys.push_back(getPartitionKey(path));
+            partition_keys.push_back(ObjectStorageQueueMetadata::getPartitionKeyForPath(partition_key_by_prefix, path));
     }
 
     const auto & zookeeper_name = metadata->getZooKeeperName();
@@ -634,7 +633,10 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, getPartitionKey(object_info->getPath()));
+            const auto partition_key = metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
+                ? ObjectStorageQueueMetadata::getPartitionKeyForPath(partition_key_by_prefix, object_info->getPath())
+                : "";
+            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, partition_key);
             try
             {
                 if (!file_metadata->trySetProcessing())
@@ -793,19 +795,6 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                   released_holders, processor, buckets_str,
                   holders->size(), holders->empty() ? "" : toString(holders->front()->getBucketInfo()->bucket));
     }
-}
-
-std::string ObjectStorageQueueSource::FileIterator::getPartitionKey(const std::string & path) const
-{
-    if (metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::EXPLICIT)
-        return {};
-    return ObjectStorageQueueMetadata::getPartitionKeyForPath(partition_key_by_prefix, path);
-}
-
-bool ObjectStorageQueueSource::FileIterator::hasKeysOfBucket(size_t bucket)
-{
-    std::lock_guard lock(mutex);
-    return !keys_cache_per_bucket.at(bucket)->keys.empty();
 }
 
 ObjectStorageQueueSource::BucketHolderPtr ObjectStorageQueueSource::FileIterator::tryAcquireBucket(
@@ -1012,7 +1001,18 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
             chassert(!file_metadata);
 
-            const auto bucket = metadata->getBucketForPath(object_info->getPath(), getPartitionKey(object_info->getPath()));
+            const auto bucket = metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
+                ? ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(
+                    object_info->getPath(),
+                    ObjectStorageQueueMetadata::getPartitionKeyForPath(partition_key_by_prefix, object_info->getPath()),
+                    buckets_num,
+                    metadata->getBucketingMode())
+                : ObjectStorageQueueMetadata::getBucketForPath(
+                    object_info->getPath(),
+                    buckets_num,
+                    metadata->getBucketingMode(),
+                    metadata->getPartitioningMode(),
+                    metadata->getFilenameParser());
             auto bucket_it = keys_cache_per_bucket.find(bucket);
             if (bucket_it == keys_cache_per_bucket.end())
             {

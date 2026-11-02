@@ -2715,7 +2715,7 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
 
     context->onQueryExecutionStarted();
-    queue->flushPath(query.queue_path, context);
+    queue->waitForPathToBeProcessed(query.queue_path, context);
 }
 
 void InterpreterSystemQuery::resetFileLog([[maybe_unused]] ASTSystemQuery & query)

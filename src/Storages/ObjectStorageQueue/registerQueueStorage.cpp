@@ -607,8 +607,6 @@ Each partition keeps its last processed file in every bucket it is processed in.
 
 With `bucketing_mode = 'partition'` all files of a partition go to one bucket: the partition has one last processed file, its listing starts exactly after it, and its files are processed strictly in order. With `bucketing_mode = 'path'` the files of a partition are spread over the buckets for parallelism, at the cost of listing again the files processed by faster buckets until the slowest one catches up. Changing `buckets` with `ALTER TABLE ... MODIFY SETTING` is not allowed.
 
-With long polling intervals (`polling_min_timeout_ms`, `polling_max_timeout_ms`), a producer can call [SYSTEM FLUSH OBJECT STORAGE QUEUE](/reference/statements/system#flush-object-storage-queue) with the path of a file after uploading it, so that the file is processed right away.
-
 ## SELECT from S3Queue table engine {#select}
 
 SELECT queries are forbidden by default on S3Queue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.

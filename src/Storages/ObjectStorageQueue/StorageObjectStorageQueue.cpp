@@ -705,7 +705,7 @@ void ReadFromObjectStorageQueue::createIterator(const ActionsDAG::Node * predica
     if (iterator)
         return;
 
-    iterator = storage->createFileIterator(context, predicate, /* partitions */ {});
+    iterator = storage->createFileIterator(context, predicate);
 }
 
 
@@ -929,7 +929,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 metadata->registerActive(storage_id);
 
-                if (streamToViews(streaming_tasks_index, cycle_epoch, nullptr))
+                if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
                     /// Reset the reschedule interval.
                     std::lock_guard lock(mutex);
@@ -982,7 +982,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::shared_ptr<FileIterator> file_iterator)
+bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch)
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -1034,13 +1034,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     if (is_deduplication_v2)
         queue_context->setSetting("async_insert_deduplicate", 1);
 
-    const bool is_flush = file_iterator != nullptr;
-    if (!file_iterator)
+    std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator;
     {
         std::lock_guard streaming_lock(streaming_mutex);
         if (!streaming_file_iterator || streaming_file_iterator->isFinished())
         {
-            streaming_file_iterator = createFileIterator(queue_context, nullptr, /* partitions */ {});
+            streaming_file_iterator = createFileIterator(queue_context, nullptr);
         }
         file_iterator = streaming_file_iterator;
     }
@@ -1215,9 +1214,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_commit);
 
         if (stream_control.isBlocked())
-            break;
-
-        if (is_flush && std::ranges::none_of(sources, [](const auto & source) { return source->hasProcessedFiles(); }))
             break;
     }
 
@@ -1967,8 +1963,7 @@ std::shared_ptr<ObjectStorageQueueMetadata> StorageObjectStorageQueue::tryGetFil
 }
 
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
-StorageObjectStorageQueue::createFileIterator(
-    ContextPtr local_context, const ActionsDAG::Node * predicate, const std::optional<std::map<std::string, std::string>> & partitions)
+StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::createFileIterator");
 
@@ -2002,8 +1997,7 @@ StorageObjectStorageQueue::createFileIterator(
         log,
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
-        shutdown_called,
-        partitions);
+        shutdown_called);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
@@ -2178,12 +2172,12 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 
-void StorageObjectStorageQueue::flushPath(
+void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const std::string & path,
     ContextPtr local_context,
-    std::optional<std::chrono::steady_clock::time_point> deadline)
+    std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::flushPath");
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::waitForPathToBeProcessed");
 
     /// Determine the Keeper paths we need to watch.
     /// For unordered mode each file gets its own node under processed/ and failed/.
@@ -2201,23 +2195,13 @@ void StorageObjectStorageQueue::flushPath(
     const bool is_ordered = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool is_exclusive = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::EXCLUSIVE;
 
-    std::map<std::string, std::string> partitions;
-    std::string partition_key;
-    if (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT)
-    {
-        partitions = metadata->getExplicitPartitions(configuration->getPathForRead().cutGlobs(configuration->supportsPartialPathPrefix()));
-        partition_key = ObjectStorageQueueMetadata::getPartitionKeyForPath(partitions, path);
-        std::erase_if(partitions, [&](const auto & partition) { return partition.second != partition_key; });
-    }
+    const auto partition_key = metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
+        ? ObjectStorageQueueMetadata::getPartitionKeyForPath(
+            metadata->getExplicitPartitions(configuration->getPathForRead().cutGlobs(configuration->supportsPartialPathPrefix())), path)
+        : "";
     auto file_metadata = metadata->getFileMetadata(path, /* bucket_info */ {}, partition_key);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
-    const bool run_cycles = is_ordered
-        && (metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
-            || metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::NONE);
-    const auto bucket = run_cycles && metadata->useBucketsForProcessing()
-        ? std::optional(metadata->getBucketForPath(path, partition_key))
-        : std::nullopt;
 
     LOG_DEBUG(log, "Waiting for path '{}' to be processed by {}", path, getStorageID().getNameForLogs());
 
@@ -2238,8 +2222,6 @@ void StorageObjectStorageQueue::flushPath(
     }
 
     auto event = std::make_shared<Poco::Event>();
-    bool run_cycle = run_cycles;
-    bool bucket_is_busy = false;
 
     while (true)
     {
@@ -2273,18 +2255,6 @@ void StorageObjectStorageQueue::flushPath(
                 "Timeout waiting for path '{}' to be processed by {}",
                 path, getStorageID().getNameForLogs());
 
-        if (run_cycle)
-        {
-            bucket_is_busy = false;
-            if (!stream_control.isBlocked())
-            {
-                auto file_iterator = createFileIterator(getContext(), nullptr, partitions);
-                streamToViews(0, stream_control.currentCancelEpoch(), file_iterator);
-                bucket_is_busy = bucket && file_iterator->hasKeysOfBucket(*bucket);
-            }
-        }
-
-        bool bucket_is_locked = false;
         if (!is_exclusive)
         {
             /// Register watches before checking state to avoid missing a transition
@@ -2318,11 +2288,6 @@ void StorageObjectStorageQueue::flushPath(
                 zk->existsWatch(
                     failed_node_path, nullptr,
                     Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
-
-                if (bucket_is_busy)
-                    bucket_is_locked = zk->existsWatch(
-                        fs::path(metadata->getPath()) / "buckets" / toString(*bucket) / "lock", nullptr,
-                        Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
             });
         }
 
@@ -2341,12 +2306,8 @@ void StorageObjectStorageQueue::flushPath(
                 path, getStorageID().getNameForLogs(), failure_message);
         }
 
-        run_cycle = bucket_is_busy && !bucket_is_locked;
-        if (run_cycle)
-            continue;
-
         constexpr UInt64 watch_timeout_ms = 1000;
-        run_cycle = event->tryWait(watch_timeout_ms) && bucket_is_busy;
+        event->tryWait(watch_timeout_ms);
         (*event).reset();
     }
 }

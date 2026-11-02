@@ -57,8 +57,7 @@ public:
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
-            std::atomic<bool> & shutdown_called_,
-            const std::optional<std::map<std::string, std::string>> & partitions_);
+            std::atomic<bool> & shutdown_called_);
 
         bool isFinished();
 
@@ -82,8 +81,6 @@ public:
         void refreshExpiringBucketLocks();
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
-
-        bool hasKeysOfBucket(size_t bucket);
 
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
@@ -116,7 +113,6 @@ public:
         std::deque<std::pair<std::string, std::string>> partitions_to_list TSA_GUARDED_BY(next_mutex);
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        std::string getPartitionKey(const std::string & path) const;
         void filterProcessableFiles(ObjectInfos & objects);
         void filterOutProcessedAndFailed(ObjectInfos & objects);
 
@@ -235,8 +231,6 @@ public:
     /// Called when a commit may have succeeded in ZK but the connection was lost before
     /// we received the response ("failed after operation").
     void setUncertainCommit();
-
-    bool hasProcessedFiles() const { return !processed_files.empty(); }
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(

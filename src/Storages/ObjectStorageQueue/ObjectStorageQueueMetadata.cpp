@@ -315,10 +315,8 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
     return mode == ObjectStorageQueueMode::ORDERED && (buckets_num > 1);
 }
 
-ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path, const std::string & partition_key) const
+ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
-    if (partitioning_mode == ObjectStorageQueuePartitioningMode::EXPLICIT)
-        return ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(path, partition_key, buckets_num, bucketing_mode);
     return getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, filename_parser.get());
 }
 
