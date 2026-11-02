@@ -683,6 +683,8 @@ public:
                 in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
                 resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
+                /// Final for the same reason as `equals` above: `rewriteIn` would rewrite it again.
+                rewritten_nodes.emplace(in_function_node, in_function_node);
                 node = preserveResultType(in_function_node, original_result_type);
                 return;
             }

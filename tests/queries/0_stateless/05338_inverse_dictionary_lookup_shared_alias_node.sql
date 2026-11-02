@@ -5,10 +5,12 @@
 DROP DICTIONARY IF EXISTS d1;
 DROP DICTIONARY IF EXISTS d2;
 DROP DICTIONARY IF EXISTS d3;
+DROP DICTIONARY IF EXISTS d4;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS src1;
 DROP TABLE IF EXISTS src2;
 DROP TABLE IF EXISTS src3;
+DROP TABLE IF EXISTS src4;
 
 CREATE TABLE t2 (s String, n UInt64) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t2 SELECT toString(number % 3), number FROM numbers(12);
@@ -18,9 +20,12 @@ CREATE TABLE src1 (id UInt64, a String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO src1 SELECT 7, 'x';
 CREATE TABLE src3 (id UInt64, flag UInt8 DEFAULT 5) ENGINE = MergeTree ORDER BY id;
 INSERT INTO src3 VALUES (1, 0), (2, 1);
+CREATE TABLE src4 (id UInt64, a String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO src4 VALUES (7, 'x'), (8, 'x');
 CREATE DICTIONARY d2 (id UInt64, b UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src2')) LAYOUT(HASHED()) LIFETIME(0);
 CREATE DICTIONARY d1 (id UInt64, a String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src1')) LAYOUT(HASHED()) LIFETIME(0);
 CREATE DICTIONARY d3 (id UInt64, flag UInt8 DEFAULT 5) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src3')) LAYOUT(HASHED()) LIFETIME(0);
+CREATE DICTIONARY d4 (id UInt64, a String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src4')) LAYOUT(HASHED()) LIFETIME(0);
 
 -- Nested `dictGet` chain.
 SELECT NOT (dictGet('d1', 'a', dictGet('d2', 'b', n)) = 'x') AS r FROM t2 GROUP BY r ORDER BY r;
@@ -35,10 +40,17 @@ SELECT dictGet('d3', 'flag', n) = (dictGet('d1', 'a', n) = 'zzz') AS r, count() 
 SELECT NOT (dictGet('d1', 'a', dictGet('d2', 'b', n)) = 'x') AS r1, NOT (dictGet('d2', 'b', n) = 7) AS r2, grouping(r1, r2) AS g, count()
 FROM t2 GROUP BY ROLLUP(r1, r2) ORDER BY g, r1, r2;
 
+-- Several keys: the outer comparison becomes `IN` over the keys, which is itself rewritable.
+SELECT NOT (dictGet('d4', 'a', dictGet('d2', 'b', n)) = 'x') AS r, count() FROM t2 GROUP BY r ORDER BY r;
+SELECT NOT (dictGet('d4', 'a', dictGet('d2', 'b', n)) = 'x') AS r1, NOT (dictGet('d2', 'b', n) IN (7, 8)) AS r2, grouping(r1, r2) AS g, count()
+FROM t2 GROUP BY ROLLUP(r1, r2) ORDER BY g, r1, r2;
+
 DROP DICTIONARY d1;
 DROP DICTIONARY d2;
 DROP DICTIONARY d3;
+DROP DICTIONARY d4;
 DROP TABLE t2;
 DROP TABLE src1;
 DROP TABLE src2;
 DROP TABLE src3;
+DROP TABLE src4;
