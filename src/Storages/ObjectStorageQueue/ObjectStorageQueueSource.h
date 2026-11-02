@@ -97,7 +97,6 @@ public:
         const StorageID storage_id;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
-        const size_t list_objects_batch_size;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -109,10 +108,10 @@ public:
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
-        std::map<std::string, std::string> partition_key_by_prefix;
-        std::deque<std::pair<std::string, std::string>> partitions_to_list TSA_GUARDED_BY(next_mutex);
+        std::optional<ObjectStorageQueueMetadata::ExplicitPartitions::Snapshot> explicit_partitions_snapshot;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
+        std::string getPartitionKey(const std::string & path) const;
         void filterProcessableFiles(ObjectInfos & objects);
         void filterOutProcessedAndFailed(ObjectInfos & objects);
 

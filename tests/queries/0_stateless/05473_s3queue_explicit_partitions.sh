@@ -56,17 +56,11 @@ $CLICKHOUSE_CLIENT -q "
         mode = 'ordered',
         partitioning_mode = 'explicit',
         bucketing_mode = 'path',
-        buckets = 2,
-        after_processing = 'keep',
-        commit_on_select = 1;
-    ALTER TABLE queue_path ADD OBJECT STORAGE QUEUE PARTITION 'a_', ADD OBJECT STORAGE QUEUE PARTITION 'b_';
-    SELECT 'path', * FROM queue_path ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1;
-    SELECT 'path', * FROM queue_path ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1;
+        buckets = 2; -- { serverError BAD_ARGUMENTS }
     CREATE TABLE queue_plain (s String)
     ENGINE = S3Queue('${S3_URL}/*.csv', 'CSV')
     SETTINGS keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05473_queue_plain', mode = 'ordered';
     ALTER TABLE queue_plain ADD OBJECT STORAGE QUEUE PARTITION 'a_'; -- { serverError BAD_ARGUMENTS }
     DROP TABLE queue;
-    DROP TABLE queue_path;
     DROP TABLE queue_plain;
 "

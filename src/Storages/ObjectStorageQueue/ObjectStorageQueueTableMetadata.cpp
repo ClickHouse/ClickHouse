@@ -108,6 +108,9 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
         if (mode != "ordered")
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "partitioning_mode='explicit' requires mode='ordered'");
+        if (bucketing_mode != "partition")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "partitioning_mode='explicit' requires bucketing_mode='partition'");
         if (!last_processed_path.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "last_processed_path is not supported with partitioning_mode='explicit'");

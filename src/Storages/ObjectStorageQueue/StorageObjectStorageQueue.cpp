@@ -1710,7 +1710,7 @@ void StorageObjectStorageQueue::checkAlterPartitionIsPossible(
         if (command.type != PartitionCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION
             && command.type != PartitionCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operation ALTER TABLE {} is not supported by {}", command.typeToString(), getName());
-        if (metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::EXPLICIT)
+        if (!metadata->getExplicitPartitions())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition operations are allowed for {} only with partitioning_mode='explicit'", getName());
         getPartitionPrefix(command);
     }
@@ -1726,12 +1726,23 @@ Pipe StorageObjectStorageQueue::alterPartition(
     if (!metadata)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
+    const auto & explicit_partitions = metadata->getExplicitPartitions();
+    if (!explicit_partitions)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition operations are allowed for {} only with partitioning_mode='explicit'", getName());
+
     for (const auto & command : commands)
     {
-        if (command.type == PartitionCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION)
-            metadata->addPartition(getPartitionPrefix(command));
-        else
-            metadata->forgetPartition(getPartitionPrefix(command));
+        switch (command.type)
+        {
+            case PartitionCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION:
+                explicit_partitions->add(getPartitionPrefix(command));
+                break;
+            case PartitionCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION:
+                explicit_partitions->forget(getPartitionPrefix(command));
+                break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected partition command {} for {}", command.typeToString(), getName());
+        }
     }
     return {};
 }
@@ -2196,10 +2207,10 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const bool is_ordered = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool is_exclusive = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::EXCLUSIVE;
 
-    const auto partition_key = metadata->getPartitioningMode() == ObjectStorageQueuePartitioningMode::EXPLICIT
-        ? ObjectStorageQueueMetadata::getPartitionKeyForPath(
-            metadata->getExplicitPartitions(configuration->getPathForRead().cutGlobs(configuration->supportsPartialPathPrefix())), path)
-        : "";
+    const auto & explicit_partitions = metadata->getExplicitPartitions();
+    const auto partition_key = explicit_partitions
+        ? explicit_partitions->read(configuration->getPathForRead().cutGlobs(configuration->supportsPartialPathPrefix())).getPartitionKey(path)
+        : metadata->getPartitionKey(path);
     auto file_metadata = metadata->getFileMetadata(path, /* bucket_info */ {}, partition_key);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();

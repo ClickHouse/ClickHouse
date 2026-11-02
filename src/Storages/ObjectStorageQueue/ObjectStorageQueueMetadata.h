@@ -176,10 +176,9 @@ public:
     Bucket getBucketForPath(const std::string & path) const;
     static Bucket getBucketForPath(
         const std::string & path,
+        const std::string & partition_key,
         size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode,
-        ObjectStorageQueuePartitioningMode partitioning_mode,
-        const ObjectStorageQueueFilenameParser * parser);
+        ObjectStorageQueueBucketingMode bucketing_mode);
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
@@ -192,16 +191,47 @@ public:
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
     ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
-    const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
+    std::string getPartitionKey(const std::string & path) const;
 
     /// Compute StartAfter for ordered S3 listing when it is safe.
     std::optional<std::string> getStartAfterForListing() const;
 
-    std::map<std::string, std::string> getExplicitPartitions(const std::string & prefix) const;
-    static std::string getPartitionKeyForPath(const std::map<std::string, std::string> & partition_key_by_prefix, const std::string & path);
-    Strings getStartAfterForPartitions(const Strings & partition_keys) const;
-    void addPartition(const std::string & partition);
-    void forgetPartition(const std::string & partition);
+    class ExplicitPartitions
+    {
+    public:
+        class Snapshot
+        {
+        public:
+            struct Partition
+            {
+                std::string prefix;
+                std::string key;
+            };
+
+            const std::vector<Partition> & getPartitions() const { return partitions; }
+            const std::string & getPartitionKey(const std::string & path) const;
+
+        private:
+            friend class ExplicitPartitions;
+
+            explicit Snapshot(std::vector<Partition> partitions_);
+
+            std::vector<Partition> partitions;
+        };
+
+        void add(const std::string & partition) const;
+        void forget(const std::string & partition) const;
+        Snapshot read(const std::string & table_prefix) const;
+
+    private:
+        friend class ObjectStorageQueueMetadata;
+
+        explicit ExplicitPartitions(const ObjectStorageQueueMetadata & metadata_) : metadata(metadata_) {}
+
+        const ObjectStorageQueueMetadata & metadata;
+    };
+
+    const std::optional<ExplicitPartitions> & getExplicitPartitions() const { return explicit_partitions; }
 
     void updateSettings(const SettingsChanges & changes);
 
@@ -244,6 +274,7 @@ private:
     const std::string zookeeper_name;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
+    const std::optional<ExplicitPartitions> explicit_partitions;
 
     const bool cleanup_processed_files = false;
     const bool cleanup_failed_files = false;

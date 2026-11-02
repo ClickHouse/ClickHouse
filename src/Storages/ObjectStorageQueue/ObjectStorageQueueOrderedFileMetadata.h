@@ -41,7 +41,6 @@ public:
         const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
-        const ObjectStorageQueueFilenameParser * parser_,
         const std::string & partition_key_,
         LoggerPtr log_);
 
@@ -61,33 +60,28 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
-    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
+    static std::string getPartitionKey(
         const std::string & path,
-        size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
 
+    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
+        const std::string & path,
+        const std::string & partition_key,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode);
+
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static Bucket getBucketForPartition(
-        const std::string & path,
-        const std::string & partition_key,
-        size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode);
-
-    static std::string getProcessedPathForPartition(
+    static std::vector<std::string> getProcessedBucketPaths(
         const std::filesystem::path & zk_path,
-        const std::string & path,
-        const std::string & partition_key,
-        size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode);
+        size_t buckets_num);
 
-    static std::vector<std::string> getProcessedPathsForPartition(
-        const std::filesystem::path & zk_path,
-        const std::string & partition_key,
-        size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode);
+    static bool getMaxProcessedFilesByPartition(
+        std::unordered_map<std::string, std::string> & last_processed_path_per_partition,
+        const std::string & processed_node_path_,
+        LoggerPtr log_,
+        const std::string & zookeeper_name_);
 
     static std::vector<std::string> getLastProcessedPaths(
         const std::filesystem::path & zk_path,
@@ -126,7 +120,6 @@ public:
         const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
-        const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
@@ -136,7 +129,7 @@ private:
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
-    const ObjectStorageQueueFilenameParser * parser;
+    const std::string partition_key;
     /// Bucket-level processed pointer node: `zk_path/processed` or
     /// `zk_path/buckets/<N>/processed`.  Stores NodeMetadata and is used for
     /// global version-pinning and for writes via doPrepareProcessedRequests.
@@ -169,12 +162,6 @@ private:
         std::optional<std::string> failed_node_path = std::nullopt,
         LoggerPtr log_ = nullptr,
         const std::string & zookeeper_name_ = {});
-
-    static bool getMaxProcessedFilesByPartition(
-        std::unordered_map<std::string, std::string> & last_processed_path_per_partition,
-        const std::string & processed_node_path_,
-        LoggerPtr log_,
-        const std::string & zookeeper_name_);
 
     void doPrepareProcessedRequests(
         Coordination::Requests & requests,

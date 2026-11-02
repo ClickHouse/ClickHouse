@@ -130,6 +130,9 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_name(zookeeper_name_)
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
+    , explicit_partitions(partitioning_mode == ObjectStorageQueuePartitioningMode::EXPLICIT
+        ? std::make_optional(ExplicitPartitions(*this))
+        : std::nullopt)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
     , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
     , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
@@ -271,7 +274,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 zookeeper_name,
                 bucketing_mode,
                 partitioning_mode,
-                filename_parser.get(),
                 partition_key,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
@@ -317,17 +319,21 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
-    return getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, filename_parser.get());
+    return getBucketForPath(path, getPartitionKey(path), buckets_num, bucketing_mode);
 }
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
     const std::string & path,
+    const std::string & partition_key,
     size_t buckets_num,
-    ObjectStorageQueueBucketingMode bucketing_mode,
-    ObjectStorageQueuePartitioningMode partitioning_mode,
-    const ObjectStorageQueueFilenameParser * parser)
+    ObjectStorageQueueBucketingMode bucketing_mode)
 {
-    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, parser);
+    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, partition_key, buckets_num, bucketing_mode);
+}
+
+std::string ObjectStorageQueueMetadata::getPartitionKey(const std::string & path) const
+{
+    return ObjectStorageQueueOrderedFileMetadata::getPartitionKey(path, partitioning_mode, filename_parser.get());
 }
 
 std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing() const
@@ -365,72 +371,40 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
     return min_path;
 }
 
-std::map<std::string, std::string> ObjectStorageQueueMetadata::getExplicitPartitions(const std::string & prefix) const
+ObjectStorageQueueMetadata::ExplicitPartitions::Snapshot::Snapshot(std::vector<Partition> partitions_)
+    : partitions(std::move(partitions_))
+{
+    std::ranges::sort(partitions, {}, &Partition::prefix);
+}
+
+const std::string & ObjectStorageQueueMetadata::ExplicitPartitions::Snapshot::getPartitionKey(const std::string & path) const
+{
+    auto it = std::ranges::upper_bound(partitions, path, {}, &Partition::prefix);
+    if (it == partitions.begin() || !path.starts_with(std::prev(it)->prefix))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} does not belong to any registered partition", path);
+    return std::prev(it)->key;
+}
+
+ObjectStorageQueueMetadata::ExplicitPartitions::Snapshot ObjectStorageQueueMetadata::ExplicitPartitions::read(const std::string & table_prefix) const
 {
     Strings partition_keys;
-    getKeeperRetriesControl(log).retryLoop([&]
+    getKeeperRetriesControl(metadata.log).retryLoop([&]
     {
-        partition_keys = getZooKeeper()->getChildren(zookeeper_path / "partitions");
+        partition_keys = metadata.getZooKeeper()->getChildren(metadata.zookeeper_path / "partitions");
     });
 
-    std::map<std::string, std::string> partition_key_by_prefix;
+    std::vector<Snapshot::Partition> partitions;
     for (auto & partition_key : partition_keys)
-        partition_key_by_prefix.emplace(prefix + unescapeForFileName(partition_key), std::move(partition_key));
-    return partition_key_by_prefix;
+        partitions.push_back({table_prefix + unescapeForFileName(partition_key), std::move(partition_key)});
+    return Snapshot(std::move(partitions));
 }
 
-std::string ObjectStorageQueueMetadata::getPartitionKeyForPath(
-    const std::map<std::string, std::string> & partition_key_by_prefix,
-    const std::string & path)
+void ObjectStorageQueueMetadata::ExplicitPartitions::add(const std::string & partition) const
 {
-    auto it = partition_key_by_prefix.upper_bound(path);
-    if (it == partition_key_by_prefix.begin() || !path.starts_with(std::prev(it)->first))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} does not belong to any registered partition", path);
-    return std::prev(it)->second;
-}
-
-Strings ObjectStorageQueueMetadata::getStartAfterForPartitions(const Strings & partition_keys) const
-{
-    Strings processed_paths;
-    for (const auto & partition_key : partition_keys)
-        std::ranges::move(
-            ObjectStorageQueueOrderedFileMetadata::getProcessedPathsForPartition(zookeeper_path, partition_key, buckets_num, bucketing_mode),
-            std::back_inserter(processed_paths));
-
-    zkutil::ZooKeeper::MultiTryGetResponse responses;
-    getKeeperRetriesControl(log).retryLoop([&]
+    const auto partitions_path = metadata.zookeeper_path / "partitions";
+    getKeeperRetriesControl(metadata.log).retryLoop([&]
     {
-        responses = getZooKeeper()->tryGet(processed_paths);
-    });
-
-    const size_t shards_num = partition_keys.empty() ? 0 : processed_paths.size() / partition_keys.size();
-    Strings start_after_per_partition;
-    for (size_t first = 0; first < processed_paths.size(); first += shards_num)
-    {
-        std::string start_after;
-        for (size_t i = first; i < first + shards_num; ++i)
-        {
-            if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
-                throw zkutil::KeeperException::fromPath(responses[i].error, processed_paths[i]);
-            if (responses[i].error == Coordination::Error::ZNONODE)
-            {
-                start_after.clear();
-                break;
-            }
-            if (i == first || responses[i].data < start_after)
-                start_after = responses[i].data;
-        }
-        start_after_per_partition.push_back(std::move(start_after));
-    }
-    return start_after_per_partition;
-}
-
-void ObjectStorageQueueMetadata::addPartition(const std::string & partition)
-{
-    const auto partitions_path = zookeeper_path / "partitions";
-    getKeeperRetriesControl(log).retryLoop([&]
-    {
-        auto zk_client = getZooKeeper();
+        auto zk_client = metadata.getZooKeeper();
         while (true)
         {
             Coordination::Stat stat;
@@ -461,15 +435,15 @@ void ObjectStorageQueueMetadata::addPartition(const std::string & partition)
     });
 }
 
-void ObjectStorageQueueMetadata::forgetPartition(const std::string & partition)
+void ObjectStorageQueueMetadata::ExplicitPartitions::forget(const std::string & partition) const
 {
     const auto partition_key = escapeForFileName(partition);
-    getKeeperRetriesControl(log).retryLoop([&]
+    getKeeperRetriesControl(metadata.log).retryLoop([&]
     {
-        auto zk_client = getZooKeeper();
-        zk_client->tryRemove(zookeeper_path / "partitions" / partition_key);
-        for (const auto & processed_path : ObjectStorageQueueOrderedFileMetadata::getProcessedPathsForPartition(zookeeper_path, partition_key, buckets_num, bucketing_mode))
-            zk_client->tryRemove(processed_path);
+        auto zk_client = metadata.getZooKeeper();
+        zk_client->tryRemove(metadata.zookeeper_path / "partitions" / partition_key);
+        for (const auto & processed_path : ObjectStorageQueueOrderedFileMetadata::getProcessedBucketPaths(metadata.zookeeper_path, metadata.buckets_num))
+            zk_client->tryRemove(std::filesystem::path(processed_path) / partition_key);
     });
 }
 
@@ -618,12 +592,6 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "It is not allowed to modify `buckets` settings "
                     "when it is already set to a non-zero value");
-            }
-            if (partitioning_mode == ObjectStorageQueuePartitioningMode::EXPLICIT)
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Changing `buckets` setting is not allowed with partitioning_mode='explicit'");
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;
@@ -784,8 +752,8 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
-                    parser.get(),
-                    /* partition_key */"",
+                    ObjectStorageQueueOrderedFileMetadata::getPartitionKey(
+                        table_metadata.last_processed_path, table_metadata.getPartitioningMode(), parser.get()),
                     log).prepareProcessedAtStartRequests(requests);
             }
 
