@@ -6,7 +6,6 @@
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <GPU/GPUAccumulator.h>
 #include <GPU/GPUColumns.h>
 #include <GPU/GPUTypeMapping.h>
@@ -32,7 +31,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <deque>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -54,20 +52,15 @@ namespace
 {
 
 using ColumnToReduce = ReadFromGPUCompressedColumns::ColumnToReduce;
-using DeviceFilter = ReadFromGPUCompressedColumns::DeviceFilter;
 using AggregateToCompute = ReadFromGPUCompressedColumns::AggregateToCompute;
-using DerivedColumn = ReadFromGPUCompressedColumns::DerivedColumn;
 using PartToRead = ReadFromGPUCompressedColumns::PartToRead;
 
 struct SharedState
 {
     std::vector<NameAndTypePair> keys;
     std::vector<ColumnToReduce> columns;
-    std::vector<DerivedColumn> derived;
     std::vector<AggregateToCompute> aggregates;
     std::optional<Columns> result_over_no_rows;
-    std::optional<DeviceFilter> filter;
-    std::optional<ReadFromGPUCompressedColumns::GroupFilter> group_filter;
     std::vector<ReadFromGPUCompressedColumns::PartToRead> parts;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
@@ -75,10 +68,6 @@ struct SharedState
     size_t batch_bytes;
     size_t num_readers = 1;
     GPUDecompressionMode decompression = GPUDecompressionMode::DEVICE;
-    bool collect = false;
-    /// Of each column of the filter: the key or the value column of the same name and type, among the keys and then
-    /// the values, which is read once for both.
-    std::vector<std::optional<uint32_t>> filter_aliases;
 
     std::atomic<size_t> next_part{0};
 };
@@ -106,12 +95,6 @@ GPU::GPUCodec codecOrThrow(UInt8 method, std::string_view payload, const String 
     return *codec;
 }
 
-const std::vector<NameAndTypePair> & filterColumnsOf(const SharedState & state)
-{
-    static const std::vector<NameAndTypePair> none;
-    return state.filter ? state.filter->columns : none;
-}
-
 DataTypes typesOf(const std::vector<NameAndTypePair> & columns)
 {
     DataTypes types;
@@ -125,8 +108,7 @@ DataTypes typesOf(const std::vector<NameAndTypePair> & columns)
 bool readsFixedWidthOnly(const SharedState & state)
 {
     const auto fixed = [](const NameAndTypePair & column) { return !isString(*column.type); };
-    return std::ranges::all_of(state.keys, fixed) && std::ranges::all_of(state.columns, [&](const auto & column) { return fixed(column.column); })
-        && std::ranges::all_of(filterColumnsOf(state), fixed);
+    return std::ranges::all_of(state.keys, fixed) && std::ranges::all_of(state.columns, [&](const auto & column) { return fixed(column.column); });
 }
 
 /// A piece smaller than this is not split: a reader gathers about a batch of rows before the device groups them.
@@ -217,45 +199,21 @@ public:
         , state(std::move(state_))
         , query_status(std::move(query_status_))
         , num_readers(std::max<size_t>(1, std::min(state->num_readers, state->parts.size())))
-        , output_queue(state->collect ? std::make_unique<ConcurrentBoundedQueue<Chunk>>(collect_queue_chunks) : nullptr)
         , accumulator(
               typesOf(state->keys),
               argumentTypesOf(state->columns),
               groupByAggregatesOf(state->columns, state->aggregates),
               state->batch_bytes,
               /*compressed=*/true,
-              num_readers,
-              typesOf(filterColumnsOf(*state)),
-              state->filter ? std::optional(state->filter->program) : std::nullopt,
-              derivedValuesOf(state->derived),
-              state->collect ? std::function<void(MutableColumns)>([this](MutableColumns columns) { pushCollected(std::move(columns)); })
-                             : std::function<void(MutableColumns)>{},
-              state->filter_aliases)
+              num_readers)
     {
-    }
-
-    ~GPUCompressedGroupBySource() override
-    {
-        if (output_queue)
-            output_queue->clearAndFinish();
-        if (reading_thread.joinable())
-            reading_thread.join();
     }
 
     String getName() const override { return "GPUCompressedGroupBy"; }
 
 protected:
-    void onCancel() noexcept override
-    {
-        if (output_queue)
-            output_queue->clearAndFinish();
-    }
-
     Chunk generate() override
     {
-        if (state->collect)
-            return generateCollected();
-
         if (generated)
             return {};
 
@@ -263,15 +221,13 @@ protected:
 
         readParts();
 
-        size_t num_groups = accumulator.finalize();
+        const size_t num_groups = accumulator.finalize();
 
         /// No row came to the device, and an aggregation without keys emits its results over none, which the `HAVING`
         /// above evaluates.
         if (num_groups == 0 && state->result_over_no_rows)
             return Chunk(*state->result_over_no_rows, 1);
 
-        if (num_groups != 0 && state->group_filter)
-            num_groups = accumulator.filterGroups(state->group_filter->program, state->group_filter->columns);
         if (num_groups == 0)
             return {};
 
@@ -308,73 +264,6 @@ protected:
     }
 
 private:
-    /// How many chunks of collected rows wait for the steps above before the grouping thread waits for them.
-    static constexpr size_t collect_queue_chunks = 4;
-
-    /// The rows the device collected, as the chunks the grouping thread hands over while the parts are read on a thread
-    /// of this source's own, and the rest once the read ends.
-    Chunk generateCollected()
-    {
-        if (!reading_started)
-        {
-            reading_started = true;
-            reading_thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup()]
-            {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::GPU_READER);
-                try
-                {
-                    readParts();
-                    if (accumulator.finalize() != 0)
-                    {
-                        MutableColumns no_keys;
-                        MutableColumns columns;
-                        columns.reserve(state->columns.size());
-                        for (const auto & column : state->columns)
-                            columns.push_back(column.column.type->createColumn());
-                        accumulator.copyGroupsTo(no_keys, columns);
-                        pushCollected(std::move(columns));
-                    }
-                }
-                catch (...)
-                {
-                    reading_error = std::current_exception();
-                }
-                output_queue->finish();
-            });
-        }
-
-        Chunk chunk;
-        if (output_queue->pop(chunk))
-            return chunk;
-
-        if (reading_thread.joinable())
-            reading_thread.join();
-        if (reading_error)
-            std::rethrow_exception(reading_error);
-        return {};
-    }
-
-    /// A column of each of `state->columns`, into the read's header, to the steps above. Waits for room.
-    void pushCollected(MutableColumns columns)
-    {
-        const Block & header = getPort().getHeader();
-        if (header.columns() != state->columns.size() || columns.size() != state->columns.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "A GPU read of {} columns emits {} columns, {} of them collected",
-                state->columns.size(),
-                header.columns(),
-                columns.size());
-
-        const size_t num_rows = columns.front()->size();
-        Columns result_columns(header.columns());
-        for (size_t i = 0; i < state->columns.size(); ++i)
-            result_columns[header.getPositionByName(state->columns[i].column.name)] = std::move(columns[i]);
-
-        if (!output_queue->push(Chunk(std::move(result_columns), num_rows)))
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The GPU read's rows are no longer taken");
-    }
-
     static DataTypes argumentTypesOf(const std::vector<ColumnToReduce> & columns)
     {
         DataTypes types;
@@ -389,7 +278,6 @@ private:
     {
         std::vector<GPU::GPUGroupByAggregate> result;
         result.reserve(aggregates.size());
-        static const DataTypePtr derived_type = std::make_shared<DataTypeFloat64>();
         for (const auto & aggregate : aggregates)
         {
             const IDataType * argument_type = nullptr;
@@ -399,34 +287,11 @@ private:
                 argument_type = columns.at(*aggregate.column).column.type.get();
                 column = static_cast<uint32_t>(*aggregate.column);
             }
-            else if (aggregate.derived)
-            {
-                argument_type = derived_type.get();
-                column = static_cast<uint32_t>(columns.size() + *aggregate.derived);
-            }
             result.push_back({
                 .aggregation = aggregate.aggregation,
                 .column = column,
                 .result_type = GPU::groupByResultTypeOrThrow(argument_type, *aggregate.result_type, aggregate.aggregation),
             });
-        }
-        return result;
-    }
-
-    static std::vector<GPU::GPUDerivedValue> derivedValuesOf(const std::vector<DerivedColumn> & derived)
-    {
-        std::vector<GPU::GPUDerivedValue> result;
-        result.reserve(derived.size());
-        for (const auto & column : derived)
-        {
-            if (column.columns.size() > GPU::max_filter_columns)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from {} columns", column.columns.size());
-            GPU::GPUDerivedValue value;
-            value.program = column.program;
-            for (size_t i = 0; i < column.columns.size(); ++i)
-                value.columns[i] = static_cast<uint32_t>(column.columns[i]);
-            value.num_columns = static_cast<uint32_t>(column.columns.size());
-            result.push_back(value);
         }
         return result;
     }
@@ -527,17 +392,16 @@ private:
         const IMergeTreeDataPart & part;
     };
 
-    /// Reads the part's columns, in the accumulator's order: the keys, the values, then the columns of the filter. The
-    /// rows of all the ranges of a part go to the device as the rows of one part, so that it groups them as they come,
-    /// however many ranges there are, rather than drain its work at the end of each.
+    /// Reads the part's columns, in the accumulator's order: the keys, then the values. The rows of all the ranges of a
+    /// part go to the device as the rows of one part, so that it groups them as they come, however many ranges there are,
+    /// rather than drain its work at the end of each.
     void readPart(size_t reader_index, const ReadFromGPUCompressedColumns::PartToRead & part_to_read)
     {
         const IMergeTreeDataPart & part = *part_to_read.part;
-        const std::vector<NameAndTypePair> & filter_columns = filterColumnsOf(*state);
 
         AccumulatorFeed feed(*this, reader_index, part);
         std::vector<NameAndTypePair> columns;
-        columns.reserve(state->keys.size() + state->columns.size() + filter_columns.size());
+        columns.reserve(state->keys.size() + state->columns.size());
 
         size_t column_index = 0;
         const auto add_column = [&](const NameAndTypePair & column)
@@ -552,14 +416,6 @@ private:
             add_column(key);
         for (const auto & column : state->columns)
             add_column(column.column);
-        /// A column of the filter that is a key or a value as well is read as that column.
-        for (size_t i = 0; i < filter_columns.size(); ++i)
-        {
-            if (state->filter_aliases[i])
-                ++column_index;
-            else
-                add_column(filter_columns[i]);
-        }
 
         MergeTreeCompressedColumnsReader reader(
             part, columns, state->reader_settings, expandsOnDevice(state->decompression), part_to_read.ranges);
@@ -579,8 +435,6 @@ private:
     SharedStatePtr state;
     QueryStatusPtr query_status;
     const size_t num_readers;
-    /// Of a collecting read: the chunks handed over, which `generate` takes. Before `accumulator`, which pushes into it.
-    std::unique_ptr<ConcurrentBoundedQueue<Chunk>> output_queue;
     GPU::GroupByGPUAccumulator accumulator;
     /// Only under `gpu_aggregation_decompression = 'auto'`.
     bool generated = false;
@@ -588,11 +442,6 @@ private:
     std::mutex reader_error_mutex;
     std::exception_ptr reader_error;
     std::atomic<bool> reader_failed{false};
-
-    /// Of a collecting read.
-    bool reading_started = false;
-    ThreadFromGlobalPool reading_thread;
-    std::exception_ptr reading_error;
 };
 
 }
@@ -601,36 +450,27 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     SharedHeader output_header_,
     std::vector<NameAndTypePair> keys_,
     std::vector<ColumnToReduce> columns_,
-    std::vector<DerivedColumn> derived_,
     std::vector<AggregateToCompute> aggregates_,
     std::optional<Columns> result_over_no_rows_,
-    std::optional<DeviceFilter> filter_,
     std::vector<PartToRead> parts_,
     StorageSnapshotPtr storage_snapshot_,
     ContextPtr context_,
     size_t batch_bytes_,
     size_t num_readers_,
-    GPUDecompressionMode decompression_,
-    bool collect_)
+    GPUDecompressionMode decompression_)
     : ISourceStep(std::move(output_header_))
     , keys(std::move(keys_))
     , columns(std::move(columns_))
-    , derived(std::move(derived_))
     , aggregates(std::move(aggregates_))
     , result_over_no_rows(std::move(result_over_no_rows_))
-    , filter(std::move(filter_))
     , parts(std::move(parts_))
     , storage_snapshot(std::move(storage_snapshot_))
     , context(std::move(context_))
     , batch_bytes(batch_bytes_)
     , num_readers(num_readers_)
     , decompression(decompression_)
-    , collect(collect_)
 {
-    if (collect && (!keys.empty() || !aggregates.empty() || !derived.empty() || columns.empty()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU read that collects rows of {} columns with keys or aggregates", columns.size());
-
-    if (!collect && aggregates.empty())
+    if (aggregates.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation over compressed columns of {} keys and no aggregates", keys.size());
 
     if (result_over_no_rows && (!keys.empty() || result_over_no_rows->size() != aggregates.size()))
@@ -647,11 +487,8 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     auto state = std::make_shared<SharedState>();
     state->keys = keys;
     state->columns = columns;
-    state->derived = derived;
     state->aggregates = aggregates;
     state->result_over_no_rows = result_over_no_rows;
-    state->filter = filter;
-    state->group_filter = group_filter;
     state->parts = std::move(parts);
     state->storage_snapshot = storage_snapshot;
     state->context = context;
@@ -659,21 +496,6 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->decompression = decompression;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
-    state->collect = collect;
-    if (filter)
-    {
-        for (const NameAndTypePair & column : filter->columns)
-        {
-            std::optional<uint32_t> alias;
-            for (size_t i = 0; i < keys.size() && !alias; ++i)
-                if (keys[i].name == column.name && keys[i].type->equals(*column.type))
-                    alias = static_cast<uint32_t>(i);
-            for (size_t i = 0; i < columns.size() && !alias; ++i)
-                if (columns[i].column.name == column.name && columns[i].column.type->equals(*column.type))
-                    alias = static_cast<uint32_t>(keys.size() + i);
-            state->filter_aliases.push_back(alias);
-        }
-    }
 
     /// A read of columns of a fixed width reads a large part in pieces, a reader each.
     if (readsFixedWidthOnly(*state))
@@ -689,8 +511,6 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
 void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_settings) const
 {
     format_settings.out << format_settings.detail_prefix << "Parts: " << parts.size() << "\n";
-    if (collect)
-        format_settings.out << format_settings.detail_prefix << "Rows the filter keeps sent back\n";
     if (const size_t ranged = std::ranges::count_if(parts, [](const auto & part) { return !part.ranges.empty(); }))
         format_settings.out << format_settings.detail_prefix << "Parts read in ranges of marks: " << ranged << "\n";
     if (!keys.empty())
@@ -704,13 +524,6 @@ void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_setti
     for (size_t i = 0; i < columns.size(); ++i)
         format_settings.out << (i == 0 ? "" : ", ") << columns[i].column.name;
     format_settings.out << "\n";
-    if (!derived.empty())
-    {
-        format_settings.out << format_settings.detail_prefix << "Computed on the device: ";
-        for (size_t i = 0; i < derived.size(); ++i)
-            format_settings.out << (i == 0 ? "" : ", ") << derived[i].description;
-        format_settings.out << "\n";
-    }
     if (!aggregates.empty())
     {
         format_settings.out << format_settings.detail_prefix << "Aggregates: ";
@@ -718,23 +531,11 @@ void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_setti
             format_settings.out << (i == 0 ? "" : ", ") << aggregates[i].description;
         format_settings.out << "\n";
     }
-    if (group_filter)
-        format_settings.out << format_settings.detail_prefix << "Filter of the groups on the device: " << group_filter->description << "\n";
-
-    if (filter)
-    {
-        format_settings.out << format_settings.detail_prefix << "Filter on the device: " << filter->description << "\n";
-        format_settings.out << format_settings.detail_prefix << "Filter columns: ";
-        for (size_t i = 0; i < filter->columns.size(); ++i)
-            format_settings.out << (i == 0 ? "" : ", ") << filter->columns[i].name;
-        format_settings.out << "\n";
-    }
 }
 
 void ReadFromGPUCompressedColumns::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Parts", parts.size());
-    map.add("Collected", collect);
     map.add("Parts Read In Ranges", std::ranges::count_if(parts, [](const auto & part) { return !part.ranges.empty(); }));
 
     if (!keys.empty())
@@ -750,33 +551,12 @@ void ReadFromGPUCompressedColumns::describeActions(JSONBuilder::JSONMap & map) c
         columns_array->add(column.column.name);
     map.add("Columns", std::move(columns_array));
 
-    if (!derived.empty())
-    {
-        auto derived_array = std::make_unique<JSONBuilder::JSONArray>();
-        for (const auto & column : derived)
-            derived_array->add(column.description);
-        map.add("Computed on the device", std::move(derived_array));
-    }
-
     if (!aggregates.empty())
     {
         auto aggregates_array = std::make_unique<JSONBuilder::JSONArray>();
         for (const auto & aggregate : aggregates)
             aggregates_array->add(aggregate.description);
         map.add("Aggregates", std::move(aggregates_array));
-    }
-
-    if (group_filter)
-        map.add("Filter of the groups on the device", group_filter->description);
-
-    if (filter)
-    {
-        map.add("Filter on the device", filter->description);
-
-        auto filter_columns_array = std::make_unique<JSONBuilder::JSONArray>();
-        for (const auto & column : filter->columns)
-            filter_columns_array->add(column.name);
-        map.add("Filter columns", std::move(filter_columns_array));
     }
 }
 

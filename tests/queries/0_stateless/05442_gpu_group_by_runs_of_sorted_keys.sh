@@ -65,7 +65,7 @@ function compare_with_cpu()
 # CPU's, and the expected line is printed as it is.
 if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
     echo "compressed"
-elif [[ "$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN SELECT k, sum(v) FROM gpu_runs WHERE f < 20000 GROUP BY k SETTINGS optimize_move_to_prewhere = 1")" == *"ReadFromGPUCompressedColumns"* ]]; then
+elif [[ "$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN SELECT k, sum(v) FROM gpu_runs GROUP BY k")" == *"ReadFromGPUCompressedColumns"* ]]; then
     echo "compressed"
 else
     echo "elsewhere"
