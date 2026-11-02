@@ -470,6 +470,7 @@ static bool writeConsolidatedManifestFile(
     CompressionMethod compression_method,
     const DataLakeStorageSettings & data_lake_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & base_catalog_metadata_location,
     const StorageID & table_id)
 {
     auto log = getLogger("IcebergManifestConsolidation");
@@ -1005,9 +1006,11 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot, base_catalog_metadata_location))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
+                    if (!catalog_writes_metadata_file)
+                        Iceberg::removeUncommittedMetadataFile(path_resolver, generated_metadata_info, object_storage);
                     cleanup();
                     return false;
                 }
@@ -1016,7 +1019,8 @@ static bool writeConsolidatedManifestFile(
     }
     catch (...)
     {
-        cleanup();
+        if (!Iceberg::isCommitStateUnknown())
+            cleanup();
         throw;
     }
 
@@ -1442,6 +1446,7 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
+        String base_catalog_metadata_location;
         const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
             catalog,
@@ -1453,7 +1458,8 @@ void compactIcebergManifests(
             log.get(),
             persistent_table_components.table_uuid,
             persistent_table_components.metadata_compression_method,
-            /* ignore_metadata_pointer_overrides */ true);
+            /* ignore_metadata_pointer_overrides */ true,
+            &base_catalog_metadata_location);
 
         auto metadata_object = deepCopy(getMetadataJSONObject(
             metadata_file_path,
@@ -1496,6 +1502,7 @@ void compactIcebergManifests(
                 persistent_table_components.metadata_compression_method,
                 data_lake_settings,
                 catalog,
+                base_catalog_metadata_location,
                 table_id))
         {
             // Invalidate metadata cache so the next reader picks up the new state

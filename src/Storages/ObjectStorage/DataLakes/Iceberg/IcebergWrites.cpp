@@ -1214,7 +1214,8 @@ IcebergStorageSink::IcebergStorageSink(
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
-        /* ignore_metadata_pointer_overrides */ true);
+        /* ignore_metadata_pointer_overrides */ true,
+        &base_catalog_metadata_location);
 
     metadata = deepCopy(getMetadataJSONObject(
         metadata_path,
@@ -1274,7 +1275,7 @@ IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
     /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed)
+    if (!committed && !commit_outcome_unknown)
         removeDataFilesAndManifests();
 }
 
@@ -1547,7 +1548,8 @@ bool IcebergStorageSink::initializeMetadata()
                 getLogger("IcebergWrites").get(),
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
-                /* ignore_metadata_pointer_overrides */ true);
+                /* ignore_metadata_pointer_overrides */ true,
+                &base_catalog_metadata_location);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
@@ -1723,8 +1725,10 @@ bool IcebergStorageSink::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location))
                 {
+                    if (!catalog_writes_metadata_file)
+                        Iceberg::removeUncommittedMetadataFile(resolver, metadata_info, object_storage);
                     cleanup(true);
                     return false;
                 }
@@ -1736,8 +1740,10 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
-        cleanup(false);
+        if (Iceberg::isCommitStateUnknown())
+            commit_outcome_unknown = true;
+        else
+            cleanup(false);
         throw;
     }
     return true;

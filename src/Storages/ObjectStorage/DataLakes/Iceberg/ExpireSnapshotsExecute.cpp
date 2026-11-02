@@ -655,6 +655,7 @@ ExpireSnapshotsResult expireSnapshots(
     {
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergExpireSnapshots");
+        String base_catalog_metadata_location;
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
@@ -665,7 +666,9 @@ ExpireSnapshotsResult expireSnapshots(
             context,
             log.get(),
             persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.metadata_compression_method,
+            /* ignore_metadata_pointer_overrides */ true,
+            &base_catalog_metadata_location);
 
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
@@ -792,12 +795,11 @@ ExpireSnapshotsResult expireSnapshots(
             {
                 auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
                 const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
+                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr, base_catalog_metadata_location))
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Failed to update catalog metadata after writing new metadata file. "
-                        "The table metadata may be in an inconsistent state");
+                    Iceberg::removeUncommittedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                    LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
+                    continue;
                 }
             }
         }

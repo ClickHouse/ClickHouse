@@ -372,6 +372,7 @@ static bool writeMetadataFiles(
     const DataLakeStorageSettings & data_lake_settings,
     String write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & base_catalog_metadata_location,
     StorageID table_id,
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr partititon_spec,
@@ -579,8 +580,10 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location))
             {
+                if (!catalog_writes_metadata_file)
+                    Iceberg::removeUncommittedMetadataFile(path_resolver, metadata_info, object_storage);
                 cleanup();
                 return false;
             }
@@ -588,7 +591,8 @@ static bool writeMetadataFiles(
     }
     catch (...)
     {
-        cleanup();
+        if (!Iceberg::isCommitStateUnknown())
+            cleanup();
         throw;
     }
     return true;
@@ -701,6 +705,7 @@ void mutate(
     {
         auto log = getLogger("IcebergMutations");
 
+        String base_catalog_metadata_location;
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
@@ -711,7 +716,9 @@ void mutate(
             context,
             log.get(),
             persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.metadata_compression_method,
+            /* ignore_metadata_pointer_overrides */ true,
+            &base_catalog_metadata_location);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
@@ -797,6 +804,7 @@ void mutate(
                     data_lake_settings,
                     write_format,
                     catalog,
+                    base_catalog_metadata_location,
                     storage_id,
                     metadata,
                     partititon_spec,
@@ -830,6 +838,7 @@ void alter(
     while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
+        String base_catalog_metadata_location;
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
@@ -840,7 +849,9 @@ void alter(
             context,
             log.get(),
             persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.metadata_compression_method,
+            /* ignore_metadata_pointer_overrides */ true,
+            &base_catalog_metadata_location);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
@@ -912,8 +923,11 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            if (!catalog->updateSchema(
+                    namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, base_catalog_metadata_location))
             {
+                if (!catalog_writes_metadata_file)
+                    Iceberg::removeUncommittedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                 ++i;
                 continue;
             }

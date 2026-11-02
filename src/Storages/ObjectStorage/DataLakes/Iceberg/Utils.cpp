@@ -86,6 +86,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -543,6 +544,26 @@ bool writeMetadataFileAndVersionHint(
         /* create */ try_write_version_hint,
         /* assert_version_exactly */ false);
     return true;
+}
+
+void removeUncommittedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    ObjectStoragePtr object_storage)
+{
+    try
+    {
+        object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_file_info.path)));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+bool isCommitStateUnknown()
+{
+    return getCurrentExceptionCode() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 
@@ -1814,7 +1835,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
 }
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier)
+String getCatalogMetadataFilePath(
+    const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier, String * catalog_metadata_location)
 {
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
@@ -1828,6 +1850,9 @@ String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & ca
             "Catalog did not return a metadata file location for table '{}.{}'",
             namespace_name, table_name);
 
+    if (catalog_metadata_location)
+        *catalog_metadata_location
+            = specific_properties->resolved_from_table_location ? "" : specific_properties->iceberg_metadata_file_location;
     return table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
 }
 
@@ -1842,7 +1867,8 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool ignore_metadata_pointer_overrides)
+    bool ignore_metadata_pointer_overrides,
+    String * catalog_metadata_location)
 {
     if (!catalog)
         return getLatestOrExplicitMetadataFileAndVersion(
@@ -1858,7 +1884,8 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             ignore_metadata_pointer_overrides);
 
     DataLakeStorageSettings effective_settings = data_lake_settings;
-    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path] = getCatalogMetadataFilePath(catalog, table_identifier);
+    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
+        = getCatalogMetadataFilePath(catalog, table_identifier, catalog_metadata_location);
 
     /// A catalog's pointer IS the committed state, so it is resolved rather than overridden.
     return getLatestOrExplicitMetadataFileAndVersion(
