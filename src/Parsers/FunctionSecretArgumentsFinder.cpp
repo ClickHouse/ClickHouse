@@ -631,6 +631,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
         if (maskAzureConnectionString(-1, true, 1))
             return;
+        maskUnshowableAzureConnectionOverrides(1);
         findSecretNamedArgument("account_key", 1);
         return;
     }
@@ -639,12 +640,16 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
         /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
         if (maskAzureConnectionString(-1, true, 2))
             return;
+        maskUnshowableAzureConnectionOverrides(2);
         findSecretNamedArgument("account_key", 2);
         return;
     }
 
     if (maskAzureConnectionString(url_arg_idx))
         return;
+
+    if (url_arg_idx < function->arguments->size())
+        maskUnshowableAzureConnectionValue(url_arg_idx, *function->arguments->at(url_arg_idx), /* argument_is_named= */ false);
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
@@ -706,6 +711,27 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
     }
 
     return false;
+}
+
+void FunctionSecretArgumentsFinder::maskUnshowableAzureConnectionValue(
+    size_t index, const AbstractFunction::Argument & value, bool argument_is_named)
+{
+    String text;
+    if (!value.tryGetString(&text, /* allow_identifier= */ false) || classifyAzureConnectionValue(text) == AzureConnectionValue::Unmaskable)
+        markSecretArgument(index, argument_is_named);
+}
+
+void FunctionSecretArgumentsFinder::maskUnshowableAzureConnectionOverrides(size_t start)
+{
+    for (const auto * key : {"connection_string", "storage_account_url"})
+    {
+        for (ssize_t i = findNamedArgument(nullptr, key, start); i >= 0; i = findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+        {
+            const auto index = static_cast<size_t>(i);
+            /// `findNamedArgument` returns only an `equals` function with two arguments.
+            maskUnshowableAzureConnectionValue(index, *function->arguments->at(index)->getFunction()->arguments->at(1), /* argument_is_named= */ true);
+        }
+    }
 }
 
 bool FunctionSecretArgumentsFinder::azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit)
