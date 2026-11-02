@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 
-#include <ranges>
-
 namespace DB
 {
 
@@ -48,34 +46,22 @@ public:
     /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
-    /// The same as `isColumnRenamed` above, asked of a part whose columns are given by
-    /// `part_has_column`: a rename the part already stores the result of does not have to be applied
-    /// to it. That is the case when the part holds the new name and no other pending rename takes
-    /// that name as its source. Such a part was written after the rename was carried out (a merge
-    /// does that while keeping the sources' data version, which is what decides pendingness), so
-    /// mapping back would look for a file that is not there. The second condition matters because a
-    /// freed name can be handed to another column, as in `RENAME A TO C, RENAME B TO A`, where a
-    /// part's `A` holds what is now `C`.
-    template <typename HasColumn>
-    bool isColumnRenamed(const std::string & new_name, HasColumn && part_has_column) const
-    {
-        if (!isColumnRenamed(new_name))
-            return false;
-
-        if (part_has_column(getColumnOldName(new_name)))
-            return true;
-
-        if (!part_has_column(new_name))
-            return true;
-
-        return std::ranges::any_of(rename_map, [&](const RenamePair & entry) { return entry.rename_from == new_name; });
-    }
-
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
 
+    /// Adds the columns changed on the fly by the command.
+    static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
+
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
+
+    /// The columns a skip index must not depend on to be usable for this part: the columns updated on
+    /// the fly (`getAllUpdatedColumns`) plus every name touched by a pending `DROP COLUMN` or
+    /// `RENAME COLUMN`. A name dropped or renamed away can be reused by a new column right away (and
+    /// an index with the old name can be added on it), while the part still holds the index file
+    /// built over the old column; which column that file was built over is not recorded, so any
+    /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
+    NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
@@ -136,6 +122,10 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+
+    /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
+    /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
+    NameSet columns_touched_by_metadata_mutations;
 
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;

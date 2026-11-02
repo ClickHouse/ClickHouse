@@ -15,6 +15,7 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -131,8 +132,12 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     bool is_size_known = true;
     /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
-    /// False only for the skip_object_metadata placeholder.
+    /// False for the skip_object_metadata placeholder and for metadata made by `fromTableRecords`.
     bool is_fetched = true;
+    /// Made without a request from the records of a table whose files are never overwritten; a known size is exact.
+    bool is_from_table_records = false;
+    /// Content identity for the caches when `etag` is unusable; set only if every reader may share the cached bytes.
+    String immutable_content_id{};
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
     /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
@@ -156,6 +161,17 @@ struct ObjectMetadata
     /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
+
+    std::optional<String> getContentCacheToken() const
+    {
+        if (isEtagUsableAsCacheKey())
+            return etag;
+        if (!immutable_content_id.empty())
+            return immutable_content_id;
+        return std::nullopt;
+    }
+
+    static ObjectMetadata fromTableRecords(std::optional<UInt64> size, String immutable_content_id = {});
 };
 
 struct DataLakeObjectMetadata;
@@ -167,6 +183,16 @@ struct RelativePathWithMetadata
     std::optional<String> path_for_glob_matching;
     std::optional<String> path_for_deduplication;
     bool derive_file_name_from_url_path = false;
+    /// For the caches of the decoded content of the object, such as the columns cache: the path that
+    /// identifies the object among all storages (with its namespace and connection, see
+    /// `StorageObjectStorageSource::getUniqueStoragePathIdentifier`), and the type of the storage,
+    /// which decides the source grant required to see the cached entries. Such caches are not used
+    /// for an object without them.
+    std::optional<String> path_for_content_cache;
+    ObjectStorageType storage_type_for_content_cache = ObjectStorageType::None;
+    /// The table the object is read by, which decides who may see the cached entries, or the nil
+    /// UUID for a table function. See `getColumnsCacheTableUUIDOfExternalFile`.
+    UUID table_uuid_for_content_cache = UUIDHelpers::Nil;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
@@ -272,6 +298,13 @@ public:
         size_t max_keys,
         bool with_tags,
         const std::optional<std::string> & start_after) const;
+
+    /// Whether `iterate` treats its argument as an arbitrary key prefix rather than as a directory path,
+    /// and honours `start_after`. A true object storage has no directories, so listing `pref` also returns
+    /// `prefix/a/b`; `LocalObjectStorage` instead walks a real directory tree and returns nothing unless
+    /// the argument names an existing directory, and `AzureObjectStorage` ignores `start_after`. Both are
+    /// silent, so a caller that splits one listing into several by key range must check this first.
+    virtual bool supportsPrefixListing() const { return false; }
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
@@ -382,7 +415,8 @@ public:
 
         /// Force the client to be rebuilt even if the stored settings did not change. Used to re-resolve
         /// credentials under a different accessing context (e.g. re-applying the server-credential opt-in to a
-        /// server-internal table whose client was built restricted at metadata load) without detaching the table.
+        /// server-internal table whose client was built restricted at metadata load) without detaching the table,
+        /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
     };
     virtual void applyNewSettings(
@@ -407,6 +441,11 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
+    /// Whether `writeObject` with `WriteSettings::object_storage_write_atomically` replaces an existing object atomically:
+    /// a concurrent reader sees either the previous complete object or the new complete one, and a failed write leaves
+    /// the previous object intact. Storages that create or truncate the destination before uploading the data do not.
+    virtual bool supportsAtomicWrite() const { return false; }
+
     /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
     /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
     /// of the same path can prove the object was not overwritten in between. Web origins may
@@ -429,7 +468,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
+    /// Returns a snapshot: `applyNewSettings` may swap the parameters together with the client.
+    virtual std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
@@ -456,6 +496,8 @@ public:
     /// `ReadBufferFromS3` / `getObjectMetadata` error handlers that normally invoke this.
     virtual bool tryRefreshCredentialsViaCallback() { return false; }
 
+    virtual bool hasCredentialsRefreshCallback() const { return false; }
+
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
     virtual void tagObjects( /// NOLINT
@@ -472,10 +514,34 @@ public:
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 
+    /// Creates a private copy of this object storage: same settings and an equivalent client, but
+    /// no shared mutable state, so `applyNewSettings` on the copy cannot affect the original.
+    /// Decorators (e.g. `CachedObjectStorage`) clone the wrapped storage and keep sharing the
+    /// immutable parts (the file cache object itself). Used by data-lake tables created on top of
+    /// a server disk (`SETTINGS disk = '...'`): the table works through a copy of the disk's
+    /// object storage, so per-table setting updates cannot corrupt the disk.
+    /// The only state shared with the copy on purpose is the IO scheduling resource names: they are a
+    /// property of the disk (see `DiskObjectStorage::propagateResourceNamesNoLock`) and change with
+    /// `CREATE RESOURCE` / `DROP RESOURCE`, so the copy keeps following the disk's resources.
+    ObjectStoragePtr clone() const;
+
+protected:
+    /// Creates the copy itself, see `clone`. The state of the base class is handled by `clone`.
+    virtual ObjectStoragePtr cloneImpl() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'clone' is not implemented for {}", getName());
+    }
+
 private:
-    mutable std::mutex io_scheduling_mutex;
-    String read_resource_name;
-    String write_resource_name;
+    /// Names of the workload scheduler resources for reads and writes. Set by the owning
+    /// `DiskObjectStorage`, shared with the copies created by `clone`.
+    struct IOSchedulingResourceNames
+    {
+        std::mutex mutex;
+        String read_resource_name;
+        String write_resource_name;
+    };
+    std::shared_ptr<IOSchedulingResourceNames> io_scheduling_resource_names = std::make_shared<IOSchedulingResourceNames>();
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

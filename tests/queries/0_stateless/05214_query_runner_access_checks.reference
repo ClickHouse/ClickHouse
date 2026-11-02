@@ -1,0 +1,15 @@
+-- without the CREATE DATABASE privilege, directly
+ACCESS_DENIED
+-- without the CREATE DATABASE privilege, queued into the QueryRunner table: the job is denied
+ExceptionBeforeStart	ACCESS_DENIED
+-- queued through two layers of QueryRunner tables: the inner job is denied as well
+QueryFinish	OK
+ExceptionBeforeStart	ACCESS_DENIED
+ExceptionBeforeStart	ACCESS_DENIED
+-- the database was not created
+0
+-- once the privilege is granted, the queued job runs
+ExceptionBeforeStart	ACCESS_DENIED
+ExceptionBeforeStart	ACCESS_DENIED
+QueryFinish	OK
+1

@@ -1,0 +1,10 @@
+=== a positional argument after a named one is not counted twice ===
+positional argument '<trace id>' after a named argument
+=== the usage message does not present query_id as positional ===
+or query_id = '...' in place of trace_id
+=== an unknown cluster fails before the internal query ===
+Requested cluster 'no_such_cluster' not found
+=== a malformed trace id is reported by the function ===
+cannot parse 'not-a-uuid' as a trace_id UUID
+=== the structure is static: CREATE TABLE AS traceView ===
+2	1

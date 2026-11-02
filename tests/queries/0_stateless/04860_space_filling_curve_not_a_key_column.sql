@@ -17,6 +17,17 @@ ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_curve_idx SELECT number, number FROM numbers(20000);
 SELECT count() FROM t_curve_idx WHERE x >= 10 AND x <= 256 AND y >= 20 AND y <= 30;
 
+SET analyze_index_with_space_filling_curves = 1;
+
+CREATE TABLE t_curve_direct_idx (x UInt32, y UInt32,
+    INDEX i_morton mortonEncode(x, y) TYPE minmax GRANULARITY 1,
+    INDEX i_hilbert hilbertEncode(x, y) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1;
+INSERT INTO t_curve_direct_idx VALUES (5, 7), (6, 8);
+SELECT x, y FROM t_curve_direct_idx WHERE x = 5;
+SELECT x, y FROM t_curve_direct_idx WHERE y = 7;
+
 -- Curve pruning still applies when the curve is a key column.
 CREATE TABLE t_curve_plain (x UInt32, y UInt32)
 ENGINE = MergeTree ORDER BY mortonEncode(x, y)
@@ -35,4 +46,4 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1
     SELECT count() FROM t_curve_nested_key WHERE x >= 10 AND x <= 256 AND y >= 20 AND y <= 30)
     WHERE explain ILIKE '%has args in%';
 
-DROP TABLE t_curve_nested, t_curve_part, t_curve_idx, t_curve_plain, t_curve_nested_key;
+DROP TABLE t_curve_nested, t_curve_part, t_curve_idx, t_curve_direct_idx, t_curve_plain, t_curve_nested_key;

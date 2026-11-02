@@ -1,8 +1,5 @@
 -- { echo }
 
-SET enable_analyzer = 1;
--- Analyzer
-
 -- Negative Limit By Only
 SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -1 BY g;
 12	0

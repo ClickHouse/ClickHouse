@@ -16,6 +16,7 @@ CREATE TABLE 04812_merge_dp_buffer ENGINE = Buffer(currentDatabase(), '04812_mer
 
 INSERT INTO 04812_merge_dp_rocksdb VALUES (1), (2);
 
+-- No fallback pin: the outer plan over a `Merge` table never distributes (`ReadFromMerge` is not serializable).
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 
 SELECT DISTINCT 42 FROM merge(currentDatabase(), '^04812_merge_dp_') QUALIFY materialize(42);

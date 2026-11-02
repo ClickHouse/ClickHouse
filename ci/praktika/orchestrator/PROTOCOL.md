@@ -11,63 +11,93 @@ doc_type: reference
 
 ## Components {#components}
 
-| Component | Runs on | SQS queues |
+| Component | Runs on | SQS / S3 |
 |---|---|---|
-| **Lambda** | AWS Lambda | produces → `praktika_clickhouse_workflows`, `praktika-wf-{pr}-{run_id}` |
-| **Orchestrator** | EC2 ASG `praktika-workflow-orchestrator` (×2) | consumes `praktika_clickhouse_workflows`, produces → `praktika-{runner-type}`, owns ↔ `praktika-wf-{pr}-{run_id}` |
-| **Job runner** | EC2 ASG `praktika-{runner-type}` (e.g. `praktika-arm-2xsmall`) | consumes `praktika-{runner-type}`, produces → `praktika-wf-{pr}-{run_id}` |
+| **Lambda** | AWS Lambda | produces → `praktika_clickhouse_workflows`; writes cancel signals to S3 |
+| **Orchestrator** | EC2 ASG `praktika-workflow-orchestrator` (×2) | consumes `praktika_clickhouse_workflows`, produces → `praktika-{runner-type}`; polls S3 for job completions / cancel / liveness |
+| **Job runner** | EC2 ASG `praktika-{runner-type}` (e.g. `praktika-arm-2xsmall`) | consumes `praktika-{runner-type}`; writes job completions / heartbeats to S3 |
 
-## Queue design {#queue-design}
+## Queues and channels {#queue-design}
+
+SQS carries only the *forward* dispatch, in two hops:
 
 | Queue | Purpose |
 |---|---|
 | `praktika_clickhouse_workflows` | Workflow triggers (one message per PR push / rerun). |
 | `praktika-{runner-type}` | Job tasks dispatched by the orchestrator to a specific runner pool. |
-| `praktika-wf-{pr}-{run_id}` | **Per-run** bidirectional queue owned by one orchestrator. Carries `job_completion` (from runners) and `cancel` (from Lambda). Created when the orchestrator starts, deleted when it finishes. `run_id` is the top-level GitHub check run ID. |
+
+Everything flowing *back* to the orchestrator — job completions, liveness, and
+cancel — goes through **S3**, not SQS, under `s3://<artifacts-bucket>/runs/<run_id>/`
+(plus `pr/<pr>/…` for new-push cancels); see [Liveness signals](#liveness-signals).
+There is **no per-run SQS queue**: an earlier design used a bidirectional
+`praktika-wf-{pr}-{run_id}` queue for `job_completion` and `cancel`; it was retired
+(Phase 2b) in favour of durable S3 keys, which survive an orchestrator restart the
+way an in-flight SQS message never could.
 
 ## Design notes {#design-notes}
 
-- **One queue per run, not per PR.** Every message on the queue is addressed to exactly one orchestrator, so `wait` needs no filtering — `cancel` means cancel, `job_completion` means advance the DAG. Concurrent runs for the same PR (e.g. a rerun while a push is in flight) use disjoint queues and never contend.
-- **`run_id` = top-level check run ID.** Encoding it in the queue name lets the Lambda address a specific run by name, using only the information GitHub puts in the webhook payload. No external run-id ↔ queue mapping is needed.
-- **Cancel dispatch is routing, not filtering.** UI Cancel hits exactly one queue (`praktika-wf-{pr}-{check_id}`); `synchronize` fans out via `list_queues(QueueNamePrefix="praktika-wf-{pr}-")`. A freshly pushed run hasn't created its queue yet, so the fan-out naturally excludes it.
-- **Re-run (`check_suite` / `check_run.rerequested`) never sends a cancel.** A rerun spawns a new check run (new `run_id`, new queue). There is no previous run for that same queue to cancel into.
-- **Orchestrator owns the queue.** `WorkflowState.__init__` creates it; `WorkflowState.cleanup` (in an `orchestrate` `finally`) deletes it on every exit path — normal, cancelled, or errored.
+- **One S3 prefix per run, not a queue.** Each run owns `runs/<run_id>/` on S3; completions (`<job>/final.json`), liveness (`<job>/heartbeat.json`), and the kill flag (`cancel`) all live under it. Concurrent runs for the same PR (e.g. a rerun while a push is in flight) use disjoint prefixes and never contend.
+- **`run_id` = top-level check run ID.** It's the suffix of the run's S3 prefix, so the Lambda can address a specific run's cancel key using only what GitHub puts in the webhook payload. No external run-id ↔ prefix mapping is needed.
+- **Cancel is a durable S3 write, not queue routing.** UI Cancel writes exactly one key (`runs/<run_id>/cancel-request`); `synchronize` writes a scoped `pr/<pr>/cancel-before-<scope>` marker that older in-scope orchestrators honour on their next sweep. A freshly pushed run stamps its own `event_ts` and so is excluded by the strict `event_ts <` comparison (see [Cancel semantics](#cancel-semantics)).
+- **Re-run (`check_suite` / `check_run.rerequested`) never sends a cancel.** A rerun spawns a new check run (new `run_id`, new S3 prefix). There is no previous run under that prefix to cancel into.
+- **Nothing to create or tear down.** There is no per-run queue to provision on start or delete on exit; the run's S3 keys are just written as work progresses and persist afterwards as build artifacts.
 - **Infra failures retry on a *fresh* orchestrator, not the same one.** The orchestrator distinguishes "couldn't run the workflow" (startup/infra, `INFRA_EXIT_CODE = 100`) from "ran it, jobs failed" (`rc = 1`) via exit code. On `100` the controller releases the workflow message (visibility → 0) and self-terminates so the ASG launches a replacement, which re-receives the redelivered message — the right cure for instance-local faults (stale runtime venv, corrupt clone, bad AMI) that an in-process retry on the same box would just hit again. Bounded by SQS `ApproximateReceiveCount` vs `PRAKTIKA_INFRA_FAILURE_MAX_RECEIVES` (default 3); past the cap the message is dropped. The orchestrator finalizes its own top-level check as `failure` on **every** attempt (so a crash never leaves the check stuck `in_progress`), and surfaces `attempt N/M`, the orchestrator instance id, and the lifecycle phase (`starting`/`ai_setup`/`planning`/`running`/`finalizing`) in the check output so retries are visible. An `rc = 1` red build is a real result and is **not** retried. (Transient blips are absorbed earlier by a small in-process startup retry, `Settings.MAX_RETRIES_ORCHESTRATOR`.)
 - **A job whose runner dies mid-job is re-run by SQS redelivery, not by the orchestrator.** A runner extends its `job_task`'s visibility while it lives and deletes the message on completion; a runner that dies mid-job (crash, OOM, spot reclaim) never deletes it, so the message reappears once the visibility window lapses and a fresh runner re-runs the job against the same `heartbeat.json` / `final.json` keys. RUNNING liveness is two-stage: at `HEARTBEAT_STALL_S = 300` the runner is flagged unresponsive and the check shows a pending retry (fast, visible), and only at `HEARTBEAT_TIMEOUT_S = 900` — held well above the runner queue's `visibility_timeout` (600) so the gap budgets the redelivery wait plus a cold ASG launch and boot, the re-run's first heartbeat being written at pickup *before* checkout — is the job declared dead. So the redelivered run's first heartbeat resets `last_heartbeat_ts` before the timeout, and the per-job check rides through the recovery `in_progress`. It falls to `failure` only when redelivery stops producing heartbeats: the job is genuinely stuck, or SQS has exhausted `maxReceiveCount` (default 3) and dead-lettered it. The pickup path is not covered — an un-received `job_task` is still sitting in the queue, so there is nothing to redeliver. A re-run is not silent: the runner stamps the SQS receive count as `attempt` on every heartbeat, and when it bumps the orchestrator prints a `[RETRY]` line and updates the per-job check output to `re-running ... after the previous runner was lost (attempt N)`, so a recovered job is visible in the checks and the run log rather than looking like one uninterrupted run. The top-level workflow check also surfaces it: `md_status_summary` appends `(N retried, M runner-unresponsive)` and the per-job table carries a Notes column (`attempt N` / `runner unresponsive`).
 
 ## Limitations {#limitations}
 
-- **Orphan queues on hard kills.** If an orchestrator crashes or its EC2 instance is terminated between queue creation and `cleanup`, the queue is leaked. There is no periodic sweeper yet: orphan queues sit empty (messages expire after `MessageRetentionPeriod = 1 h`) and cost nothing, but they accumulate in the SQS console over time. A scheduled sweeper (`list_queues` with `praktika-wf-*` prefix + delete by `LastModifiedTimestamp`) is a viable follow-up; the protocol does not depend on one.
-- **Cancel dropped in the startup window.** Between `CheckRun.start` (run_id exists in GitHub) and `WorkflowState.__init__` (queue exists in SQS) there is a sub-second window where a UI-triggered cancel hits `NonExistentQueue`. Too narrow to be triggerable in practice.
-- **Partial rerun — "Re-run failed checks" restarts the whole workflow.** `check_run.rerequested` and `check_suite.rerequested` currently enqueue a plain `pull_request` trigger and the orchestrator runs every job in the DAG. Intended design: the Lambda captures the rerun job set — the single check's name on `check_run.rerequested`, or the names of every failed/cancelled check from the previous attempt on `check_suite.rerequested` — and passes it in the workflow message as `rerun_jobs`; the orchestrator reruns those jobs plus everything transitively downstream of them (since the target's artifact may change), and marks all other jobs `SKIPPED` (their artifacts are already in S3). Config Workflow always runs regardless so `WORKFLOW_CONFIG` is refreshed.
+- **Partial rerun — "re-run all checks" still restarts the whole workflow.** A single-check re-run (`check_run.rerequested`) is now partial — see [Partial re-run](#partial-rerun) — but the check-suite "re-run all / failed checks" button (`check_suite.rerequested`, which carries no per-job `external_id`) still falls back to a full-workflow re-run. Scoping it to just the previously-failed set would mean the Lambda enumerating the suite's failed checks; not done yet.
+
+## Partial re-run {#partial-rerun}
+
+Re-running one failed check re-runs **only that job and its failed downstream**, in place on the existing run — not the whole DAG. It is modelled as a state mutation, and works whether the run is still going or already finished.
+
+- **Self-identifying checks.** Every per-job check carries `{run_id, job}` in its `external_id`, so a `check_run.rerequested` webhook tells the Lambda exactly which run and job to re-run — no GitHub API lookup.
+- **Persisted state.** The orchestrator writes `runs/<run_id>/state.json` each loop and at finalize: per-job `{status, check_id, rc, …}`, the cumulative `environment`, and a `finalized` flag. This snapshot is both the manipulable state and the **liveness signal** — the Lambda reads `finalized` (never the GitHub API) to tell a running run from a finished one.
+- **The mutation.** Reset the target job + its `FAILURE`/`CANCELLED` transitive dependents (and any terminal `always_run` downstream such as `Finish Workflow`, so merge-readiness/post-hooks re-fire) to `PENDING`, delete their `final.json` **and** `heartbeat.json`, and **drop the old per-job check** so `kick` posts a **new** check run. The normal `get_ready → kick` loop then re-drives them. Config Workflow is **not** re-run; the persisted `WORKFLOW_CONFIG`/environment is reused.
+- **Stale-head guard.** Runners check out the live PR head (`refs/pull/N/head`), not the check's sha, so the Lambda refetches the PR and rejects the re-run if the head has advanced (else it would run new, possibly unapproved, code under an old check); fork-PR re-runs additionally require a maintainer.
+- **Routing (running vs finished).** Every re-run first records the job under `runs/<run_id>/rerun-request/<delivery>.json` — the single request log both paths drain — **then** reads `finalized`. Writing before reading is what makes the finish-race safe (below).
+  - *Running* (`finalized=false`, or no snapshot yet) → nothing more to do; the live orchestrator's `sweep_rerun()` applies the request (and consumes it) each loop. Finalize is a **handshake**: the orchestrator writes `finalized=true` **first**, then does one more `sweep_rerun()`; if it finds a request it un-finalizes and keeps driving. Because the Lambda's request write happens-before its `finalized` read, a request this sweep misses must have had its Lambda read `false` (so this live sweep owns it) or `true` (so it spawns a resume) — never stranded.
+  - *Finished* (`finalized=true`) → the Lambda claims the per-run `runs/<run_id>/resume.lock` (atomic conditional create) and, only if it wins, enqueues one `type: "rerun"` message; a fresh orchestrator reopens the top-level check (reusing `run_id`), seeds from the snapshot, batch-drains **all** pending requests, writes `finalized=false`, then deletes the lock. The lock serializes the boot so concurrent clicks spawn exactly one resume (losers' requests are batch-drained by the winner). It needs no TTL — a crashed boot is recovered by SQS redelivery.
+- **Only failed jobs.** GitHub only shows the re-run button on completed checks, so the target is always terminal; a still-running job is never re-run.
+
+### Limitations {#partial-rerun-limitations}
+
+- **Per-job re-run checks post a new check run.** GitHub does not allow un-completing a check run (PATCHing a `completed` check back to `queued`/`in_progress` is silently ignored — status/timestamps stay frozen). So a per-job re-run **posts a new check run** with the same name + `external_id`; it goes `queued → in_progress → final`, and GitHub surfaces the latest check per name (the previous same-name check collapses).
+- **The top-level check still can't return to in-progress on a finished-run resume.** It's reopened via a PATCH (`retitle`), which GitHub ignores for a completed check, so the overall "CI" check keeps its prior conclusion while the resume runs. Fixing it would need a new top-level check run decoupled from `run_id` (which stays the S3 state prefix). Not done.
+- **Concurrent re-runs of a finished run.** Serialized by the per-run `resume.lock` (atomic conditional create), not a throttle: many simultaneous clicks each record a request, exactly one wins the lock and spawns a resume, and that resume batch-drains every pending request. Multi-select "re-run" therefore runs all selected jobs in one resume, with no per-PR rate-limit. Residual: a click landing in the tiny window between an orchestrator publishing `finalized=true` and its recheck sweep can both re-drive on the live orchestrator **and** spawn a resume — a rare redundant run, never a lost one.
+- **Repeated full re-runs are not deduplicated — don't mash the button.** The check-suite "re-run all / failed" path (below) mints a brand-new run per click and writes no cancel marker, so two rapid clicks spawn two independent full workflows for the same sha: double the compute and **duplicate per-job checks** (each run's checks carry a different `run_id` in their `external_id`, so GitHub does not collapse them). There is no throttle; a single click is expected.
+- **Check-suite "re-run all / failed" is still a full re-run** (that payload carries no per-job `external_id`); scoping it to the failed set is not done.
 
 ## Run lifecycle {#run-lifecycle}
 
 ```
 GitHub webhook
   → Lambda validates HMAC-SHA256 signature
-  → [on synchronize] list_queues(prefix=praktika-wf-{pr}-) → fan out cancel to every live run
+  → [on synchronize] writes pr/<pr>/cancel-before-<scope> to S3 → older in-scope
+    orchestrators self-cancel on their next sweep
   → enqueues workflow event to praktika_clickhouse_workflows
 
 Orchestrator (one instance picks up the message)
   → creates top-level check run (status=in_progress) → run_id = check.id
   → clones PR head
-  → creates praktika-wf-{pr}-{run_id}
+  → run_id = check.id → S3 prefix runs/<run_id>/ (nothing to provision)
   → builds DAG from workflow config, prints execution plan
   → Loop per DAG level:
       for each ready job:
         → creates per-job check run (status=queued)
-        → dispatches job_task{check_run_id, completions_queue_url, ...}
+        → dispatches job_task{check_run_id, heartbeat/final/cancel S3 keys, ...}
           to praktika-{runner-type}
         → stub jobs (no matching runner pool): orchestrator drives check lifecycle
-      wait() long-polls praktika-wf-{pr}-{run_id}:
-        cancel         → stop loop
-        job_completion → advance DAG
+      wait() sweeps S3 once per cycle:
+        sweep_cancel      → cancel-request / cancel-before → stop loop
+        sweep_completions → <job>/final.json → advance DAG
+        sweep_liveness    → <job>/heartbeat.json → detect dead runners
       on Config Workflow completion:
         → extracts WORKFLOW_CONFIG.filtered_jobs from returned environment
         → marks filtered jobs as SKIPPED, posts one aggregate "Skipped Jobs" check
   → completes top-level check run (neutral / failure / cancelled)
-  → finally: delete_queue(praktika-wf-{pr}-{run_id})
+  → the run's S3 keys persist as build artifacts (nothing to tear down)
   → exit code tells the controller what kind of outcome this was:
       0   = ran OK
       1   = ran the DAG, jobs legitimately failed (a real red build)
@@ -82,7 +112,8 @@ Job runner
   → builds environment.json from task + carried environment (WORKFLOW_CONFIG, etc.)
   → runs Runner.run (praktika job, optionally inside Docker)
   → PATCHes per-job check run → completed (success / failure)
-  → sends job_completion{rc, environment} to completions_queue_url
+  → writes job_completion{rc, environment, result} to
+    runs/<run_id>/<job>/final.json on S3
 ```
 
 ## Message formats {#message-formats}
@@ -246,7 +277,7 @@ running orchestrator that comes back picks the flag up on its next sweep.
 | 1 | Push a new commit while CI is running | Old run cancels (top-level check = `cancelled`); new run starts |
 | 2 | Push two commits in quick succession | Both old runs cancel; only the latest SHA runs to completion |
 | 3 | Click Cancel button on the `PR` check | That specific run cancels; no new run started |
-| 4 | Click Cancel on a run that already finished | Lambda sees `NonExistentQueue` (queue was deleted on exit) and logs `[skip]`; no effect |
+| 4 | Click Cancel on a run that already finished | Lambda writes `runs/<run_id>/cancel-request` to S3; the run's orchestrator is already gone so nothing consumes it; no effect (the key expires with the run's artifacts) |
 | 5 | Click Re-run all checks | Full workflow restarts for the same SHA; no self-cancel |
 | 6 | Click Re-run on a specific failed check | Full workflow restarts; new run on the same SHA with a fresh queue |
 | 7 | Two re-runs in quick succession | Each run uses its own queue; no cross-run traffic |
@@ -254,5 +285,5 @@ running orchestrator that comes back picks the flag up on its next sweep.
 | 9 | Config Workflow fails | All downstream jobs skipped; top-level check = `failure` |
 | 10 | Style check runs inside Docker | `docker run` succeeds; per-job check flips `queued` → `in_progress` → `success/failure` |
 | 11 | Runner instance is terminated mid-job | Visibility timeout expires; runner re-queues task; another runner picks it up |
-| 12 | Orchestrator instance is terminated mid-run | SQS visibility timeout expires; other orchestrator re-processes workflow event. The old run's queue is leaked (see Limitations). |
+| 12 | Orchestrator instance is terminated mid-run | SQS visibility timeout on the workflow-trigger message expires; another orchestrator re-processes the workflow event and picks up any already-written `final.json` from S3. |
 | 13 | Orchestrator startup/infra failure (e.g. bad AI provider, plan build can't reach S3) | Orchestrator exits `100`, finalizes the top-level check as `failure` with the phase + `attempt N/M`; controller releases the message and self-terminates; a fresh orchestrator retries. After `PRAKTIKA_INFRA_FAILURE_MAX_RECEIVES` attempts the message is dropped (last attempt's check shows the failure). A plain red build (`rc = 1`) is **not** retried. |

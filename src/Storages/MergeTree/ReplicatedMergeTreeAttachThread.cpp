@@ -44,16 +44,54 @@ ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
 
 void ReplicatedMergeTreeAttachThread::start()
 {
+    /// A `startup()` racing with a `DETACH` can get here after `shutdown()` has already run;
+    /// don't re-arm the task in that case (it would pointlessly re-run the initialization).
+    /// If `shutdown()` runs between this check and `activateAndSchedule`, the repeated
+    /// `shutdown()` call from `StorageReplicatedMergeTree::shutdown` deactivates the task again.
+    if (shutdown_called)
+    {
+        /// There will be no first try — unblock `waitFirstTry`.
+        if (!first_try_done.exchange(true))
+            first_try_done.notify_one();
+        return;
+    }
+
     task->activateAndSchedule();
+
+    /// Close the check-then-act race with `shutdown()`: if `shutdown()` ran entirely between the
+    /// `shutdown_called` check above and `activateAndSchedule()`, its `task->deactivate()` observed the
+    /// task still inactive and was a no-op, so the task we just re-armed would run its first try after
+    /// shutdown. Re-check and deactivate here. `shutdown()` deactivates unconditionally, so whichever
+    /// ordering wins, the task ends up deactivated:
+    ///   - `shutdown()` observed before this re-check: we deactivate the task we armed;
+    ///   - `shutdown()` observed after this re-check: its own `deactivate()` cancels the armed task.
+    /// `deactivate()` is idempotent, so a concurrent deactivate from both sides is safe. Unblock
+    /// `waitFirstTry` here too, so the waiter always wakes even if it observes our deactivation.
+    if (shutdown_called)
+    {
+        task->deactivate();
+        if (!first_try_done.exchange(true))
+            first_try_done.notify_one();
+    }
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()
 {
     if (!shutdown_called.exchange(true))
-    {
-        task->deactivate();
         LOG_INFO(log, "Attach thread finished");
-    }
+
+    /// Deactivate unconditionally, not only on the first call: a racing `start()` can re-activate
+    /// the task after the first `shutdown()` already deactivated it. Deactivation is idempotent.
+    task->deactivate();
+
+    /// After `deactivate()` returns, the task is guaranteed to be neither running nor scheduled, so the
+    /// first try will never run again. If `start()` had scheduled the first attempt but a racing
+    /// `shutdown()` cancelled it before the pool ever executed `run()`, `first_try_done` would still be
+    /// `false` and `StorageReplicatedMergeTree::startup`'s `waitFirstTry()` would block forever, turning
+    /// the `DETACH`-vs-startup race this class handles into a hang. Publish and notify `first_try_done`
+    /// here so the waiter always wakes on shutdown (this is a no-op if `run()` already set it).
+    if (!first_try_done.exchange(true))
+        first_try_done.notify_one();
 }
 
 void ReplicatedMergeTreeAttachThread::run()
@@ -97,7 +135,8 @@ void ReplicatedMergeTreeAttachThread::run()
     if (!first_try_done.exchange(true))
         first_try_done.notify_one();
 
-    if (shutdown_called)
+    /// Also stop retrying once the storage itself is being shut down: there is nothing to start up anymore.
+    if (shutdown_called || storage.shutdown_prepared_called || storage.shutdown_called)
     {
         if (std::exchange(storage.is_readonly_metric_set, false))
         {
@@ -128,7 +167,7 @@ void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const z
     if (!replica_metadata_exists || replica_metadata.empty())
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Upgrade from 20.3 and older to 22.9 and newer "
-                        "should be done through an intermediate version (failed to get metadata or metadata_version for {},"
+                        "should be done through an intermediate version (failed to get metadata or metadata_version for {}, "
                         "assuming it's because of upgrading)", replica_path);
     }
 }

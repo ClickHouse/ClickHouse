@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #include <arrow/flight/types.h>
 #include <arrow/type.h>
@@ -70,6 +71,11 @@ inline bool flightDescriptorIsArrowFlightSqlCommand(const arrow::flight::FlightD
         return false;
     return cmdIsArrowFlightSql(descriptor.cmd);
 }
+
+/// The Arrow conversion settings every Arrow Flight surface uses, resolved from a query context. The
+/// format settings are the query's own, so that a type with no Arrow mapping is serialized exactly as the
+/// native Arrow IPC writer would serialize it for the same query.
+CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context);
 
 /// commandSelector accepts arrow flight sql command buffer and produces either resulting arrow::Table
 /// (and if schema_only == true then table can be empty - only schema is requested) or set of sql query - which will be executed,

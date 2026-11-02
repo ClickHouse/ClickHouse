@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- The old analyzer rewrites the query before types are resolved and keeps the wrong results.
 -- https://github.com/ClickHouse/ClickHouse/issues/114784
 -- `uniq*` skips the rows where an argument is NULL. An injective function whose result cannot be Nullable

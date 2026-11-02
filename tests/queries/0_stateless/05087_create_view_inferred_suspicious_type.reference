@@ -1,0 +1,4 @@
+7
+LowCardinality(Int16)
+LowCardinality(DateTime)
+FixedString(300)

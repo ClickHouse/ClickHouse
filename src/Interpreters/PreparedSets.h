@@ -11,7 +11,9 @@
 #include <mutex>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/FutureSetSettings.h>
 #include <Interpreters/SetKeys.h>
+#include <Interpreters/SetSpillable.h>
 #include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
@@ -22,6 +24,11 @@ namespace DB
 {
 
 class QueryPlan;
+
+/// True if any step of `plan` - including the nested plans it owns through `getChildPlans` - holds a
+/// correlated `PLACEHOLDER` expression. Such a plan cannot be optimized or executed standalone: it
+/// has to be decorrelated first.
+bool planHasCorrelatedExpressions(const QueryPlan & plan);
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -41,6 +48,7 @@ struct SetAndKey
 {
     String key;
     SetPtr set;
+    std::shared_ptr<SetSpillState> spill_state = std::make_shared<SetSpillState>();
     StoragePtr external_table;
     /// `GLOBAL IN` under the analyzer attaches `external_table` only at pipeline build time (see
     /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations
@@ -187,17 +195,13 @@ public:
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-        bool transform_null_in,
-        SizeLimits size_limits,
-        size_t max_size_for_index);
+        FutureSetSettings set_settings_);
 
     FutureSetFromSubquery(
         Hash hash_,
         ASTPtr ast_,
         QueryTreeNodePtr query_tree_,
-        bool transform_null_in,
-        SizeLimits size_limits,
-        size_t max_size_for_index);
+        FutureSetSettings set_settings_);
 
     ~FutureSetFromSubquery() override;
 
@@ -218,9 +222,12 @@ public:
     /// Whether it is filled *yet* is a different question, answered by `get`.
     bool isMutableDuringQuery() const override { return false; }
 
+    /// `recoverable_build` marks the one in-place build whose result the deferred build can still redo;
+    /// see `CreatingSetStep::recoverable_build`. Deliberately not defaulted.
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
-        const PreparedSetsCachePtr & prepared_sets_cache);
+        const PreparedSetsCachePtr & prepared_sets_cache,
+        bool recoverable_build);
 
     /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
     /// retain the values, and make the source run as a distributed plan when its shape allows
@@ -229,6 +236,7 @@ public:
 
     void buildSetInplace(const ContextPtr & context);
 
+    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
@@ -246,6 +254,8 @@ public:
 private:
     Hash hash;
     ASTPtr ast;
+    /// The set and the step that fills it are made with these settings.
+    FutureSetSettings set_settings;
     SetAndKeyPtr set_and_key;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
@@ -324,7 +334,6 @@ public:
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
-    static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
 private:
     SetsFromTuple sets_from_tuple;

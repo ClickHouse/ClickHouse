@@ -4,7 +4,6 @@
 #include <Common/TargetSpecific.h>
 #include <Common/findExtreme.h>
 
-#include <cstring>
 #include <limits>
 #include <type_traits>
 
@@ -62,8 +61,12 @@ static NO_INLINE void findExtremeWideImpl(
     }
 }
 
-template <has_find_extreme_implementation T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
-static std::optional<T> findExtremeImpl(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
+MULTITARGET_FUNCTION_ARM_SVE(
+    MULTITARGET_FUNCTION_HEADER(
+        template <has_find_extreme_implementation T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
+        static std::optional<T>),
+    findExtremeImpl,
+    MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end) /// NOLINT
 {
     size_t count = row_end - row_begin;
     ptr += row_begin;
@@ -170,7 +173,7 @@ static std::optional<T> findExtremeImpl(const T * __restrict ptr, const UInt8 * 
         }
         return ret;
     }
-}
+}))
 
 
 /// Given a vector of T finds the extreme (MIN or MAX) value
@@ -178,6 +181,10 @@ template <has_find_extreme_implementation T, class ComparatorClass, bool add_all
 static std::optional<T>
 findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
 {
+#if USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+        return findExtremeImpl_ARM_SVE<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+#endif
     return findExtremeImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 }
 
@@ -236,69 +243,88 @@ std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __rest
     return findExtreme<T, MaxComparator<T>, false, false>(ptr, condition_map, start, end);
 }
 
+/// Returns the first position in [start, end) holding `value` (any NaN matches a NaN `value`), or `end`.
+template <typename T>
+static size_t findFirstEqual(const T * __restrict ptr, size_t start, size_t end, T value)
+{
+    if constexpr (is_floating_point<T>)
+    {
+        if (isNaN(value))
+        {
+            for (size_t i = start; i < end; ++i)
+                if (isNaN(ptr[i]))
+                    return i;
+            return end;
+        }
+    }
+
+    /// Compare whole blocks without an early exit so that the comparison is vectorized
+    constexpr size_t block_size = std::max<size_t>(8, 64 / sizeof(T));
+    size_t i = start;
+    for (; i + block_size <= end; i += block_size)
+    {
+        bool found = false;
+        for (size_t j = 0; j < block_size; ++j)
+            found |= ptr[i + j] == value;
+        if (found)
+            break;
+    }
+    for (; i < end; ++i)
+        if (ptr[i] == value)
+            return i;
+    return end;
+}
+
+/// Getting the MIN or MAX value is possible with SIMD, but getting its index isn't, so we find the value first and then
+/// search for its first occurrence. The value is found chunk by chunk, remembering the first chunk that reached it, so the
+/// second scan is limited to a single chunk that is still in cache.
+template <typename T, bool is_min>
+static std::optional<size_t> findExtremeIndex(const T * __restrict ptr, size_t start, size_t end)
+{
+    using U = NativeType<T>;
+    const U * __restrict data = reinterpret_cast<const U *>(ptr);
+
+    constexpr size_t chunk_size = 8192;
+    std::optional<U> best;
+    size_t best_chunk_begin = start;
+    for (size_t chunk_begin = start; chunk_begin < end; chunk_begin += chunk_size)
+    {
+        size_t chunk_end = std::min(end, chunk_begin + chunk_size);
+        std::optional<U> value = is_min ? findExtremeMin(data, chunk_begin, chunk_end) : findExtremeMax(data, chunk_begin, chunk_end);
+        chassert(value.has_value());
+
+        bool better = !best || (is_min ? *value < *best : *value > *best);
+        /// A chunk only returns NaN if all its values are NaN
+        if constexpr (is_floating_point<U>)
+            better = better || (isNaN(*best) && !isNaN(*value));
+        if (better)
+        {
+            best = value;
+            best_chunk_begin = chunk_begin;
+        }
+    }
+
+    if (!best)
+        return std::nullopt;
+
+    size_t best_chunk_end = std::min(end, best_chunk_begin + chunk_size);
+    size_t index = findFirstEqual(data, best_chunk_begin, best_chunk_end, *best);
+    chassert(index < best_chunk_end);
+    return index;
+}
+
 template <typename T>
 requires(has_find_extreme_index_implementation<T>)
 std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end)
 {
-    /// This is implemented based on findNumericExtreme and not the other way around (or independently) because getting
-    /// the MIN or MAX value of an array is possible with SIMD, but getting the index isn't.
-    /// So what we do is use SIMD to find the lowest value and then iterate again over the array to find its position
-    std::optional<T> opt = findExtremeMin(ptr, start, end);
-    if (!opt)
-        return std::nullopt;
-    T value = *opt;
-
-    /// We apply some minimal heuristics for the case the input is sorted
-    if constexpr (is_floating_point<T>)
-    {
-        /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
-        static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
-        if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
-            return {start};
-        for (size_t i = end - 1; i > start; i--)
-            if (std::memcmp(&ptr[i], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
-                return {i};
-    }
-    else
-    {
-        if (value == ptr[start])
-            return {start};
-        for (size_t i = end - 1; i > start; i--)
-            if (ptr[i] == *opt)
-                return {i};
-    }
-    return std::nullopt;
+    return findExtremeIndex<T, true>(ptr, start, end);
 }
 
 template <typename T>
 requires(has_find_extreme_index_implementation<T>)
 std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end)
 {
-    std::optional<T> opt = findExtremeMax(ptr, start, end);
-    if (!opt)
-        return std::nullopt;
-    T value = *opt;
-
-    /// We apply some minimal heuristics for the case the input is sorted
-    if constexpr (is_floating_point<T>)
-    {
-        /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
-        static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
-        if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
-            return {start};
-        for (size_t i = end - 1; i > start; i--)
-            if (std::memcmp(&ptr[i], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
-                return {i};
-    }
-    else
-    {
-        if (value == ptr[start])
-            return {start};
-        for (size_t i = end - 1; i > start; i--)
-            if (ptr[i] == *opt)
-                return {i};
-    }
-    return std::nullopt;
+    return findExtremeIndex<T, false>(ptr, start, end);
 }
 
 #define INSTANTIATION_VALUE(T) \

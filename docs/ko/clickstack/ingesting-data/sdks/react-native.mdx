@@ -6,21 +6,17 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'SDK', '로깅', '통합', '애플리케이션 모니터링']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack React Native SDK를 사용하면 React Native
 애플리케이션을 계측하여 ClickStack으로 이벤트를 전송할 수 있습니다. 이를 통해 단일 타임라인에서 모바일 네트워크
 요청과 예외를 백엔드 이벤트와 함께 확인할 수 있습니다.
 
-이 가이드에서 통합하는 항목은 다음과 같습니다:
+<ClickStackIntegrates signals={['traces']} />
 
-* **XHR/Fetch 요청**
+## 시작하기 {#getting-started}
 
-<div id="getting-started">
-  ## 시작하기
-</div>
-
-<div id="install-via-npm">
-  ### NPM으로 설치
-</div>
+### NPM으로 설치 {#install-via-npm}
 
 다음 명령을 사용하여 [ClickStack React Native 패키지](https://www.npmjs.com/package/@hyperdx/otel-react-native)를 설치하십시오.
 
@@ -28,9 +24,7 @@ ClickStack React Native SDK를 사용하면 React Native
 npm install @hyperdx/otel-react-native
 ```
 
-<div id="initialize-clickstack">
-  ### ClickStack 초기화
-</div>
+### ClickStack 초기화 {#initialize-clickstack}
 
 앱 수명 주기 초기에 가능한 한 빨리 라이브러리를 초기화하세요:
 
@@ -38,16 +32,14 @@ npm install @hyperdx/otel-react-native
 import { HyperDXRum } from '@hyperdx/otel-react-native';
 
 HyperDXRum.init({
-  url: 'http://your-otel-collector:4318',
+  url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
-  apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack의 경우 생략
-  tracePropagationTargets: [/api.myapp.domain/i], // 프론트엔드에서 백엔드 요청까지 traces를 연결하려면 설정하세요
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
+  tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
 
-<div id="attach-user-information-metadata">
-  ### 사용자 정보 또는 메타데이터 첨부(선택 사항)
-</div>
+### 사용자 정보 또는 메타데이터 첨부(선택 사항) {#attach-user-information-metadata}
 
 사용자 정보를 첨부하면 HyperDX에서 세션과 이벤트를 검색하거나 필터링할 수
 있습니다. 이는 클라이언트 세션 중 어느 시점에서나 호출할 수 있습니다. 현재
@@ -67,9 +59,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-<div id="instrument-lower-versions">
-  ### 하위 버전 계측
-</div>
+### 하위 버전 계측 {#instrument-lower-versions}
 
 0.68 미만 버전의 React Native에서 실행되는 애플리케이션을 계측하려면
 `metro.config.js` 파일을 수정하여 metro가 브라우저 전용
@@ -115,9 +105,7 @@ module.exports = {
 };
 ```
 
-<div id="view-navigation">
-  ## 화면 내비게이션
-</div>
+## 화면 내비게이션 {#view-navigation}
 
 [react-navigation](https://github.com/react-navigation/react-navigation) 버전 5와 6이 지원됩니다.
 

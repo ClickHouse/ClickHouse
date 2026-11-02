@@ -52,7 +52,7 @@ protected:
     /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
     bool acceptsIntervalArgument() const
     {
-        IntervalKind::Kind unused = IntervalKind::Kind::Second;
+        IntervalKind unused;
         return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
     }
 
@@ -119,10 +119,6 @@ public:
             const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
             const IFunction::Monotonicity is_not_monotonic;
 
-            const DateLUTImpl * date_lut = &DateLUT::instance();
-            if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(&type))
-                date_lut = &timezone->getTimeZone();
-
             if (left.isNull() || right.isNull())
                 return is_not_monotonic;
 
@@ -133,6 +129,11 @@ public:
 
             if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
                 type_ptr = nullable_type->getNestedType().get();
+
+            /// `LowCardinality` and `Nullable` carry no time zone of their own.
+            const DateLUTImpl * date_lut = &DateLUT::instance();
+            if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
+                date_lut = &timezone->getTimeZone();
 
             /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 

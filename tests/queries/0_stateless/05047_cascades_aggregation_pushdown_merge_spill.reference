@@ -7,7 +7,7 @@ Expression ((Project names + Projection))
           ReadFromMergeTree (default.t_spill_dims)
       GatherExchange
         Aggregating
-          Expression
+          Expression ((Apply runtime join filter + Change column names to column identifiers))
             ReadFromMergeTree (ParallelRead default.t_spill_facts)
 -- merge spilled to disk
 1

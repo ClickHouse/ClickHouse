@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- ANY/SEMI RIGHT JOIN emits every row of its right table at most once, and exactly once when the
 -- row has a match. With OR-ed conditions in ON a right row is reachable through several hash maps,
 -- so the row must be claimed per row and not per key.

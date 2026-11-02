@@ -59,7 +59,10 @@ endforeach(TIMEZONE)
 file(APPEND ${TIMEZONES_FILE} "    nullptr\n};\n\n")
 
 file(APPEND ${TIMEZONES_FILE} "#include <string_view>\n\n")
-file(APPEND ${TIMEZONES_FILE} "std::string_view getTimeZone(const char * name)\n{\n" )
+# Takes a `std::string_view`, not a `const char *`: a name is also the key of the `DateLUT` cache and
+# can come from a length-prefixed carrier (binary type decoding, a SQL literal), so a name with an
+# embedded `\0` must not silently match the built-in zone that its prefix names.
+file(APPEND ${TIMEZONES_FILE} "std::string_view getTimeZone(std::string_view name)\n{\n" )
 
 set (COUNTER 1)
 foreach(TIMEZONE ${TIMEZONES})

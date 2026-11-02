@@ -169,7 +169,7 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 **Decimal inputs**
 
 ```sql title=Query
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
+SELECT cast(number / 2 AS Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
 ```response title=Response

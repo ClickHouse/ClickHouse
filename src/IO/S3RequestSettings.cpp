@@ -43,12 +43,17 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
 }
 
+/// Settings marked with `AFFECTS_CLIENT` are baked into the S3 client when it is created (see `getClient` in
+/// `diskSettings.cpp`), so a change of such a setting requires rebuilding the client, which
+/// `S3ObjectStorage::applyNewSettings` does via `S3Settings::hasChangesAffectingClient`. Every request setting read
+/// by `getClient`, directly or through a derived object like `request_throttler`, must carry the flag.
 #define REQUEST_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, max_single_read_retries, 4, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, "", 0) \
     DECLARE(Bool, allow_native_copy, S3::DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
     DECLARE(Bool, check_objects_after_upload, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
+    DECLARE(Bool, use_idempotency_id, true, "", 0) \
     DECLARE(Bool, throw_on_zero_files_match, false, "", 0) \
     DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
@@ -60,16 +65,16 @@ namespace ErrorCodes
     DECLARE(UInt64, min_bytes_for_seek, S3::DEFAULT_MIN_BYTES_FOR_SEEK, "", 0) \
     DECLARE(UInt64, objects_chunk_size_to_delete, S3::DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE, "", 0) \
     DECLARE(Bool, read_only, false, "", 0) \
-    DECLARE(UInt64, max_get_rps, 0, "", 0) \
-    DECLARE(UInt64, max_get_burst, 0, "", 0) \
-    DECLARE(UInt64, max_put_rps, 0, "", 0) \
-    DECLARE(UInt64, max_put_burst, 0, "", 0) \
-    DECLARE(UInt64, max_redirects, S3::DEFAULT_MAX_REDIRECTS, "", 0) \
-    DECLARE(UInt64, retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "", 0) \
-    DECLARE(UInt64, retry_initial_delay_ms, S3::DEFAULT_RETRY_INITIAL_DELAY_MS, "", 0) \
-    DECLARE(UInt64, retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, "", 0) \
-    DECLARE(Bool, slow_all_threads_after_network_error, true, "", 0) \
-    DECLARE(Bool, enable_request_logging, false, "", 0)
+    DECLARE(UInt64, max_get_rps, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_get_burst, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_put_rps, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_put_burst, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_redirects, S3::DEFAULT_MAX_REDIRECTS, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, retry_initial_delay_ms, S3::DEFAULT_RETRY_INITIAL_DELAY_MS, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, "", AFFECTS_CLIENT) \
+    DECLARE(Bool, slow_all_threads_after_network_error, true, "", AFFECTS_CLIENT) \
+    DECLARE(Bool, enable_request_logging, false, "", AFFECTS_CLIENT)
 
 #define PART_UPLOAD_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, strict_upload_part_size, 0, "", 0) \
@@ -198,6 +203,11 @@ void S3RequestSettings::updateIfChanged(const S3RequestSettings & settings)
     }
 }
 
+bool S3RequestSettings::hasChangesAffectingClient(const S3RequestSettings & settings) const
+{
+    return impl->hasChangesAffectingClient(*settings.impl);
+}
+
 void S3RequestSettings::validateUploadSettings()
 {
     if (!(*this)[S3RequestSetting::max_part_number])
@@ -253,8 +263,8 @@ void S3RequestSettings::validateUploadSettings()
             "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
             upload_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
 
-    /// Only the name is validated: usability depends on the client (`s3_disable_checksum` and `GCS` send no
-    /// checksum at all), so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
+    /// Only the name is validated: usability depends on the client (`GCS` sends no flexible checksum at all),
+    /// so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.

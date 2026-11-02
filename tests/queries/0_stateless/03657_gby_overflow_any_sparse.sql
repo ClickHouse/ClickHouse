@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- With parallel replicas the order in which the rows reach `GROUP BY` is not fixed, so `group_by_overflow_mode = 'any'` keeps a different set of keys.
+
 DROP TABLE IF EXISTS 03657_gby_overflow;
 
 CREATE TABLE 03657_gby_overflow(key UInt64, val UInt16) ENGINE = MergeTree ORDER BY tuple()
