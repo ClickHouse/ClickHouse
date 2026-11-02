@@ -13,16 +13,17 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t VALUES (2);
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't';
+SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 SYSTEM STOP MERGES {CLICKHOUSE_DATABASE_1:Identifier}.t;
-SELECT 'stopped', engine, is_loaded FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't';
+SELECT 'stopped', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 OPTIMIZE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t FINAL; -- { serverError ABORTED }
-SELECT 'parts', count() FROM system.parts WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't' AND active;
+SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
 
 SYSTEM START MERGES {CLICKHOUSE_DATABASE_1:Identifier}.t;
 OPTIMIZE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t FINAL;
-SELECT 'parts', count() FROM system.parts WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't' AND active;
+SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
