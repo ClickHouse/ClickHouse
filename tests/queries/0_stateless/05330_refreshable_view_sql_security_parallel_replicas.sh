@@ -2,8 +2,10 @@
 # Tags: atomic-database
 # Tag atomic-database: a refreshable materialized view without APPEND and with a MergeTree target needs an Atomic database.
 
-# The refresh of a `SQL SECURITY DEFINER` refreshable materialized view runs as the definer even when its query asks for
-# parallel replicas: no replica can run the shipped read as the definer, so the refresh does not use parallel replicas.
+# The refresh of a `SQL SECURITY DEFINER` refreshable materialized view whose query asks for parallel replicas
+# returns only the rows that the definer's row policy allows. A refresh has no invoker, so the context that runs it
+# carries the definer as `initial_user` (https://github.com/ClickHouse/ClickHouse/pull/117798), and a replica applies the
+# row policies of that user. This is a regression test: it passes without the change of this pull request as well.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
