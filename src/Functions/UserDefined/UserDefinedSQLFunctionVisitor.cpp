@@ -33,6 +33,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool skip_redundant_aliases_in_udf;
+    extern const SettingsUUIDTypeVersion uuid_type_version;
 }
 
 namespace ErrorCodes
@@ -82,23 +83,46 @@ void UserDefinedSQLFunctionVisitor::visitImpl(
     /// The function of an `APPLY` transformer is not among its children either.
     if (auto * apply_transformer = ast->template as<ASTColumnsApplyTransformer>())
     {
+        /// The analyzer expands the SQL UDFs of `APPLY` by itself and names the resulting columns after the original
+        /// expression (`f(a)` for `APPLY f`), while an expansion here makes it name them after the expanded body.
+        /// So the expressions of `APPLY` are expanded here only when it is needed to materialize `uuid_type_version`
+        /// into the bodies of the UDFs (a bare `UUID` in the body of a UDF means `UUID2` with version 2): then
         /// `APPLY f` with a SQL UDF `f` is rewritten to `APPLY(x -> f(x))`, so that the body of `f` can be expanded.
         /// Not if a lambda named `f` is declared in the query: it takes precedence over the UDF in the analyzer.
-        const auto user_defined_function = apply_transformer->lambda || apply_transformer->parameters
-                || lambda_names.contains(apply_transformer->func_name)
-            ? nullptr : UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer->func_name);
-        if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
+        if (context_->getSettingsRef()[Setting::uuid_type_version] == 2)
         {
-            static constexpr auto lambda_argument = "x";
-            apply_transformer->lambda = makeASTFunction("lambda",
-                makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
-                makeASTFunction(apply_transformer->func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
-            apply_transformer->lambda_arg = lambda_argument;
-            apply_transformer->func_name.clear();
+            ASTPtr expanded_lambda;
+            String expanded_lambda_arg;
+            if (apply_transformer->lambda)
+            {
+                expanded_lambda = apply_transformer->lambda->clone();
+                expanded_lambda_arg = apply_transformer->lambda_arg;
+            }
+            else if (!apply_transformer->parameters && !lambda_names.contains(apply_transformer->func_name))
+            {
+                const auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer->func_name);
+                if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
+                {
+                    static constexpr auto lambda_argument = "x";
+                    expanded_lambda = makeASTFunction("lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
+                        makeASTFunction(apply_transformer->func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
+                    expanded_lambda_arg = lambda_argument;
+                }
+            }
+
+            if (expanded_lambda)
+            {
+                visitImpl(expanded_lambda, context_, lambda_names, /*inside_apply=*/true);
+                if (applyUUIDTypeVersionInPlace(*expanded_lambda->clone(), 2))
+                {
+                    apply_transformer->lambda = expanded_lambda;
+                    apply_transformer->lambda_arg = expanded_lambda_arg;
+                    apply_transformer->func_name.clear();
+                }
+            }
         }
 
-        if (apply_transformer->lambda)
-            visitImpl(apply_transformer->lambda, context_, lambda_names, /*inside_apply=*/true);
         /// The parameters of an aggregate function, as in `APPLY(quantile(f()))`.
         if (apply_transformer->parameters)
             visitImpl(apply_transformer->parameters, context_, lambda_names, /*inside_apply=*/true);

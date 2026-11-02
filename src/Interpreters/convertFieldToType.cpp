@@ -536,6 +536,8 @@ bool fieldContainsUUID(const Field & value)
             return std::ranges::any_of(value.safeGet<Tuple>(), fieldContainsUUID);
         case Field::Types::Map:
             return std::ranges::any_of(value.safeGet<Map>(), fieldContainsUUID);
+        case Field::Types::Object:
+            return std::ranges::any_of(value.safeGet<Object>(), [](const auto & path_value) { return fieldContainsUUID(path_value.second); });
         default:
             return false;
     }
@@ -546,8 +548,8 @@ bool isUUIDOrUUID2(const IDataType & t)
     return WhichDataType(t).isUUID() || WhichDataType(t).isUUID2();
 }
 
-/// A `Variant` value loses its discriminator when it becomes a `Field`, so the type of an array, a tuple or a map value
-/// of a `Variant` is its only alternative of this kind. Returns nullptr if there is no such alternative or several.
+/// A `Variant` value loses its discriminator when it becomes a `Field`, so the type of an array, a tuple, a map or
+/// a `JSON` value of a `Variant` is its only alternative of this kind. Returns nullptr if there is no such alternative or several.
 const IDataType * findVariantAlternativeOfFieldKind(const Field & value, const DataTypeVariant & variant_type, size_t & num_matching)
 {
     const auto has_kind = [&value](const IDataType & alternative)
@@ -558,6 +560,7 @@ const IDataType * findVariantAlternativeOfFieldKind(const Field & value, const D
             case Field::Types::Array: return typeid_cast<const DataTypeArray *>(unwrapped) != nullptr;
             case Field::Types::Tuple: return typeid_cast<const DataTypeTuple *>(unwrapped) != nullptr;
             case Field::Types::Map: return typeid_cast<const DataTypeMap *>(unwrapped) != nullptr;
+            case Field::Types::Object: return typeid_cast<const DataTypeObject *>(unwrapped) != nullptr;
             default: return false;
         }
     };

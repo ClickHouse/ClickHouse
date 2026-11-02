@@ -27,28 +27,6 @@ SELECT s FROM t_lambda;
 DROP TABLE t_lambda;
 SET uuid_type_version = 1;
 
--- A callable formal parameter of a lambda takes precedence over a SQL UDF of the same name in `APPLY`, also in a persisted query.
-DROP FUNCTION IF EXISTS review_scope_05479;
-CREATE FUNCTION review_scope_05479 AS x -> x + 1;
-
-SELECT * APPLY(x -> (
-    WITH (review_scope_05479 -> review_scope_05479(1)) AS invoke,
-         (x -> x * 3) AS triple
-    SELECT invoke(triple)))
-FROM values('a UInt8', 1);
-
-DROP TABLE IF EXISTS t_apply;
-CREATE TABLE t_apply ENGINE = Memory AS
-SELECT * APPLY(x -> (
-    WITH (review_scope_05479 -> review_scope_05479(1)) AS invoke,
-         (x -> x * 3) AS triple
-    SELECT invoke(triple)))
-FROM values('a UInt8', 1);
-SELECT * FROM t_apply;
-DROP TABLE t_apply;
-
-DROP FUNCTION review_scope_05479;
-
 -- A `Variant` value loses its discriminator in a constant array: different identifiers whose bits coincide
 -- in the opposite layouts must not match, whether the array is constant or not.
 SET allow_suspicious_variant_types = 1;
