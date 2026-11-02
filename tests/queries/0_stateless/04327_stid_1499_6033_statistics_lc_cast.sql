@@ -28,16 +28,14 @@ INSERT INTO stid_1499_6033 SELECT number+100, false, number + 100 FROM numbers(8
 
 -- LowCardinality(Bool) key column vs LowCardinality(Nullable(UInt8)) constant (original AST fuzzer crash shape).
 SELECT '-- LowCardinality(Bool) statistics pruning';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE b = toLowCardinality(toNullable(true)) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE b = toLowCardinality(toNullable(true)) SETTINGS enable_parallel_replicas = 0)
-    WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE b = toLowCardinality(toNullable(true)) SETTINGS enable_parallel_replicas = 0)
+   ;
 SELECT count() FROM stid_1499_6033 WHERE b = toLowCardinality(toNullable(true));
 
 -- Sibling shape: LowCardinality(UInt8) key column vs LowCardinality(Nullable(UInt8)) constant (ILLEGAL_COLUMN path).
 SELECT '-- LowCardinality(UInt8) statistics pruning';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50)) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50)) SETTINGS enable_parallel_replicas = 0)
-    WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50)) SETTINGS enable_parallel_replicas = 0)
+   ;
 SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50));
 
 -- Explicit monotonic wrapper over a LowCardinality statistics column. The user CAST builds its
@@ -45,18 +43,16 @@ SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50));
 -- and applied with the same LowCardinality-stripped invariant; otherwise the dictionary-unpack
 -- wrapper hits `Bad cast` at apply time.
 SELECT '-- explicit CAST over LowCardinality statistics column';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1 SETTINGS enable_parallel_replicas = 0)
-    WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1 SETTINGS enable_parallel_replicas = 0)
+   ;
 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1;
 
 -- Set-index (`IN`) path over the same explicit monotonic wrapper: the chain is applied through
 -- `MergeTreeSetIndex::checkInRange`, which keeps the column's raw LowCardinality runtime type.
 -- Assert the pruner still runs (Statistics prunes 1/2) instead of throwing `Bad cast`.
 SELECT '-- explicit CAST over LowCardinality statistics column (IN / set-index path)';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1) SETTINGS enable_parallel_replicas = 0)
-    WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1) SETTINGS enable_parallel_replicas = 0)
+   ;
 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1);
 
 DROP TABLE stid_1499_6033;
