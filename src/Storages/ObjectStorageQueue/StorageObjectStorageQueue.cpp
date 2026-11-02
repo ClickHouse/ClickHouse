@@ -780,6 +780,14 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage->getStorageID());
 
     size_t processing_threads_num = metadata->getTableMetadata().processing_threads_num;
+    /// Each source of a committing `SELECT` commits on its own. In ordered mode a source must not move the pointer
+    /// of a bucket past a file that another source is still reading, because that file can turn out to be rewritten
+    /// and has to be read again. A bucket is held by one source for the whole query, but without buckets all sources
+    /// share the single pointer, so read with one source.
+    if (commit_once_processed
+        && metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED
+        && !metadata->useBucketsForProcessing())
+        processing_threads_num = 1;
 
     createIterator(nullptr);
 

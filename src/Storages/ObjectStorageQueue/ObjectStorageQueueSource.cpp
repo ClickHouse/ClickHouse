@@ -2030,6 +2030,11 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     Coordination::Requests requests;
     StoredObjects successful_objects;
     PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
+    /// In ordered mode a file of this source that is read again bounds which key may move the pointer.
+    /// No other source of the query shares its bucket, see `ReadFromObjectStorageQueue::initializePipeline`.
+    std::map<size_t, String> reread_paths_per_bucket;
+    if (mode == ObjectStorageQueueMode::ORDERED)
+        collectRereadPaths(reread_paths_per_bucket);
     // `created_nodes` is nullptr here, because it is required only in mutithread case,
     // when `requests` is filled with several `prepareCommitRequests` calls.
     prepareCommitRequests(
@@ -2039,7 +2044,8 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         last_processed_file_per_partition,
         /* created_nodes */ nullptr,
         exception_message,
-        error_code);
+        error_code,
+        reread_paths_per_bucket);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())

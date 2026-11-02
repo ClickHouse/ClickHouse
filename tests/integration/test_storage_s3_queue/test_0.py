@@ -1338,6 +1338,63 @@ def test_ordered_threads_keep_the_pointer_below_a_rewritten_file(started_cluster
     )
 
 
+def test_ordered_direct_select_keeps_the_pointer_below_a_rewritten_file(started_cluster):
+    """A committing direct `SELECT` from an ordered queue with two processing threads sharing one bucket
+    must not move the processed pointer past a file whose new generation is read again."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"ordered_select_rewrite_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/b.csv", b"4,5,6\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={
+            "processing_threads_num": 2,
+            "buckets": 1,
+            "commit_on_select": 1,
+        },
+    )
+
+    def select_rows():
+        return [
+            list(map(int, l.split()))
+            for l in node.query(f"SELECT * FROM {table_name}").splitlines()
+        ]
+
+    rows = []
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            first_select = executor.submit(select_rows)
+            wait_failpoint_paused(node, PAUSE_AFTER_LISTING_FAILPOINT)
+            # Both keys are listed; the read of a.csv is pinned to the listed generation and now fails.
+            put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"7,8,9\n")
+            node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+            rows += first_select.result()
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+
+    # The failed read stops the ordered read, so b.csv may come with the new generation of a.csv.
+    def read_both_files():
+        rows.extend(select_rows())
+        return [4, 5, 6] in rows and [7, 8, 9] in rows
+
+    wait_until(read_both_files, timeout=90)
+    assert sorted(rows) == [[4, 5, 6], [7, 8, 9]]
+    assert move_counts(
+        started_cluster, "S3Queue", None, files_path, processed_prefix
+    ) == (2, 0)
+
+
 # Paths under `move_multipart_` are copied with a multipart copy (configs/s3_multipart_copy.xml),
 # which adds its idempotency id to the destination metadata.
 @pytest.mark.parametrize(
