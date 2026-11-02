@@ -7,7 +7,7 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 
 workflow = Workflow.Config(
     name="SyncClickStackSchemas",
-    engine=Workflow.Engine.PRAKTIKA,
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
