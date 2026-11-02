@@ -797,17 +797,24 @@ void StorageMergeTree::alter(
 
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
-            int64_t prev_mutation = 0;
+            /// Partition-scoped mutations can finish out of order: a newer mutation of one partition
+            /// may be done while an older one of another partition is still pending. So the completion
+            /// of the newest mutation does not imply completion of the earlier ones, and we have to wait
+            /// for every unfinished mutation, not only for the last one.
+            std::vector<Int64> mutations_to_wait;
             {
-                std::lock_guard lock(currently_processing_in_background_mutex);
-                auto it = current_mutations_by_version.rbegin();
-                if (it != current_mutations_by_version.rend())
-                    prev_mutation = it->first;
+                std::unique_lock lock(currently_processing_in_background_mutex);
+                for (const auto & [version, _] : current_mutations_by_version)
+                {
+                    auto status = getIncompleteMutationsStatusUnlocked(version, lock, nullptr, /* from_another_mutation */ true);
+                    if (status && !status->is_done)
+                        mutations_to_wait.push_back(version);
+                }
             }
 
             /// Always wait previous mutations synchronously, because alters
             /// should be executed in sequential order.
-            if (prev_mutation != 0)
+            for (Int64 prev_mutation : mutations_to_wait)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
                 wait_for_mutation_unguarded(prev_mutation);
