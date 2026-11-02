@@ -78,3 +78,6 @@ neither the top-K threshold nor the query condition cache skips rows before a de
 8192
 05297_row_set_qcc_1	0	1
 05297_row_set_qcc_2	0	0
+a default is checked against the settings of the ALTER that adds it, not of the read
+1	11
+2	12

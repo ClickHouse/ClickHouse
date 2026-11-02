@@ -193,3 +193,13 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05297_row_set_qcc_1', '05297_row_set_qcc_2') AND event_date >= yesterday()
 ORDER BY log_comment;
 DROP TABLE t_memory_add_default_row_set_qcc;
+
+SELECT 'a default is checked against the settings of the ALTER that adds it, not of the read';
+DROP TABLE IF EXISTS t_memory_add_default_gated;
+CREATE TABLE t_memory_add_default_gated (k UInt64) ENGINE = Memory;
+INSERT INTO t_memory_add_default_gated VALUES (1), (2);
+SET allow_suspicious_low_cardinality_types = 1;
+ALTER TABLE t_memory_add_default_gated ADD COLUMN c UInt64 DEFAULT toUInt64(CAST(k, 'LowCardinality(UInt8)')) + 10;
+SET allow_suspicious_low_cardinality_types = 0;
+SELECT k, c FROM t_memory_add_default_gated ORDER BY k;
+DROP TABLE t_memory_add_default_gated;
