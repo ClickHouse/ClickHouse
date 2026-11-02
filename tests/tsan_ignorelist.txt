@@ -11,6 +11,9 @@
 [thread]
 # https://github.com/ClickHouse/ClickHouse/issues/55629
 fun:rd_kafka_broker_set_nodename
+# Races between the `librdkafka` main thread and a broker thread on one `rd_kafka_toppar_t`, entirely inside `librdkafka`: the broker thread reads `rktp_op_version` in `rd_kafka_toppar_handle_Offset` without the toppar lock while the main thread bumps it under the lock in `rd_kafka_toppar_op_version_bump`, and the broker thread writes `rktp_ts_fetch_backoff` in `rd_kafka_toppar_fetch_backoff` without the lock while `rd_kafka_toppar_set_fetch_state` resets it under the lock. Both functions are static, hence the asterisks.
+fun:*rd_kafka_toppar_handle_Offset*
+fun:*rd_kafka_toppar_fetch_backoff*
 # `randomnessPid` in the SQLite amalgamation is read in `unixOpen` and written both there and in
 # `unixRandomness` without synchronization. SQLite documents the race as harmless right at the
 # access ("two or more threads all trying to open databases at the same instant might all reset
