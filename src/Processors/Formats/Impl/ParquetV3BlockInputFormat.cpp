@@ -439,8 +439,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
             }
         }
 
-        /// Values beyond the top-K threshold may have been decoded as empty strings, which the filter rejected
-        /// (see `TopKStringBound`): a row group that produced no rows may still hold rows matching the predicate.
+        /// With a `TopKStringBound` the filter rejected rows beyond the threshold, so a row group that produced none may still match.
         if (produced_rows || (top_k_statistics_only && row_group.skipped_by_top_k.load()) || reader->reader.top_k_string_bound_active)
             matched.push_back(row_group.row_group_idx);
     }

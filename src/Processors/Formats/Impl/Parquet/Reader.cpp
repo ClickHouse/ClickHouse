@@ -2160,14 +2160,12 @@ void Reader::preparePrewhere()
         }
     }
 
-    /// TopN dynamic filtering of a `String` sort column whose empty value PREWHERE rejects (see `TopKStringBound`): the replaced
-    /// values are dropped by PREWHERE here, before anything else can observe them.
+    /// See `TopKStringBound`: PREWHERE drops the replaced values before anything else can observe them.
     if (top_k_column_rejects_empty && !row_level_filter && prewhere_info && prewhere_info->need_filter)
     {
         PrimitiveColumnInfo & pc = primitive_columns[*top_k_primitive_idx];
         const String & column_name = format_filter_info->top_k_filter->column_name;
-        /// Behind an earlier step that filters rows, the column is decoded in short runs of the rows that passed it:
-        /// the checks would cost more than the copies they save.
+        /// Not in later steps: there the column is decoded in short runs, where the checks cost more than they save.
         if (pc.first_step_to_calculate == 1 && !pc.string_value_filter
             && filterReadsColumnOnlyInConjunctsRejectingEmptyString(
                 prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, column_name))

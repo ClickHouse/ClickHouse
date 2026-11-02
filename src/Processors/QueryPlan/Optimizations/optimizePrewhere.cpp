@@ -345,8 +345,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
         columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
 
-    /// Set by `tryOptimizeTopK` in the first pass of the optimizations. Not when the columns cache may be written: the reader
-    /// keeps the values of a column it writes, and a top-K read outputs its sort column anyway, so the PREWHERE gains nothing.
+    /// Set by `tryOptimizeTopK` in the first pass. Not with columns cache writes: the reader keeps the values of a column it writes.
     String top_k_string_sort_column;
     const Settings & source_settings = source_step_with_filter->getContext()->getSettingsRef();
     if (const auto * top_k_filter = source_step_with_filter->getTopKFilter(); top_k_filter && !top_k_filter->filter_rows

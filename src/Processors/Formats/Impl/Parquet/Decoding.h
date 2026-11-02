@@ -22,10 +22,9 @@ namespace DB::Parquet
 
 struct PageDecoderInfo;
 
-/// TopN dynamic filtering of a `String` sort column (`WHERE s != '' ORDER BY s LIMIT n`): a value beyond the
-/// current threshold of the top-K heap can never reach the result, because the threshold only moves towards it.
-/// When the filter above the read rejects the empty string, such a value is decoded as an empty string without
-/// copying its data, and the filter drops the row. Shared by all readers of the column within one query.
+/// TopN dynamic filtering of a `String` sort column whose empty value the filter rejects: a value beyond the threshold
+/// of the top-K heap never reaches the result (the threshold only moves towards it), so it is decoded as an empty string
+/// without copying its data, and the filter drops the row. Shared by all readers of the column within one query.
 struct TopKStringBound
 {
     std::shared_ptr<const ITopKThresholdTracker> tracker;
@@ -88,8 +87,7 @@ struct Dictionary
     PaddedPODArray<char> decompressed_buf;
     ColumnPtr col;
 
-    /// TopN dynamic filtering of a `String` sort column, only for `StringPlain` mode (see `TopKStringBound`):
-    /// `index` materializes empty strings for the entries the mask excludes.
+    /// `TopKStringBound` per entry, only in `StringPlain` mode: `index` materializes the excluded entries as empty strings.
     struct TopKMask
     {
         /// Owned by the reader's column info, which outlives the dictionary.
@@ -104,7 +102,6 @@ struct Dictionary
         size_t values_with_mask = 0;
         size_t replaced_with_mask = 0;
     };
-    /// Created by `initTopKMask`. Out of line, so that reads without the bound keep their layout.
     std::unique_ptr<TopKMask> top_k;
 
     /// The per-entry mask `index` applies: `string_value_filter_mask` or `top_k`, never both.
@@ -118,11 +115,8 @@ struct Dictionary
 
     /// Allocates the mask (nothing excluded), see `decodedFootprintUpperBound`. Only in `StringPlain` mode.
     void initTopKMask(const TopKStringBound & bound);
-    /// Called before `num_values` values are gathered through the top-K mask. Rebuilds the mask if the threshold
-    /// changed since it was built, but only after at least `count` values were decoded since the last build
-    /// (including these ones), so that the rebuilds cost at most one comparison per decoded value. When the mask
-    /// replaced nothing for `count` values (e.g. the values arrive in the order of the sort), the rest of the
-    /// column chunk is decoded without it.
+    /// Called before `num_values` values are gathered through the top-K mask. Rebuilds it for a newer threshold once `count`
+    /// values were decoded since the last build. Once it replaced none of `count` values, the rest of the chunk goes without it.
     void refreshTopKMask(const TopKStringBound & bound, size_t num_values);
 
     void reset();

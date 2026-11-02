@@ -225,8 +225,7 @@ struct Reader
         /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
 
-        /// TopN dynamic filtering of this `String` sort column: values beyond the threshold are decoded as empty
-        /// strings, which PREWHERE rejects. See `TopKStringBound`.
+        /// Values of this sort column beyond the top-K threshold are decoded as empty strings, see `TopKStringBound`.
         std::shared_ptr<const TopKStringBound> top_k_string_bound;
 
         PrimitiveColumnInfo() = default;
@@ -639,7 +638,6 @@ struct Reader
     bool top_k_dictionary_bound = false;
     /// The sort column is a `String` read without conversion, and the filter rejects every row whose value is empty.
     bool top_k_column_rejects_empty = false;
-    /// The sort column is decoded with `PrimitiveColumnInfo::top_k_string_bound`.
     bool top_k_string_bound_active = false;
     /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
     /// the reader only produces type defaults for it while the threshold comes from the values the

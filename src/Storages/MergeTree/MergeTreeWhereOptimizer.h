@@ -54,8 +54,7 @@ public:
     /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
-    /// `top_k_string_sort_column` is the `String` sort column of an `ORDER BY ... LIMIT` whose threshold a format source
-    /// uses only by statistics (`FormatTopKFilterInfo::filter_rows` is false), if any.
+    /// `top_k_string_sort_column`: the `String` sort column of an `ORDER BY ... LIMIT` a format source filters by statistics only.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
@@ -185,9 +184,8 @@ private:
     /// it involves all queried columns: the reader then skips copying the non-matching values.
     bool isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
-    /// Whether the condition rejects the empty string on `top_k_string_sort_column` (`s != ''`, `notEmpty(s)`, `s > ''`, `'' < s`).
-    /// Worth moving to PREWHERE even when it involves all queried columns: the reader then skips copying the values beyond
-    /// the top-K threshold (see `TopKStringBound`).
+    /// Whether the condition rejects the empty string on `top_k_string_sort_column` (`s != ''`, `notEmpty(s)`, `s > ''`, `'' < s`):
+    /// worth moving to PREWHERE even when it involves all queried columns, see `TopKStringBound`.
     bool isConditionRejectingEmptyTopKString(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
     bool isStringColumnNotReadBeforeFilter(

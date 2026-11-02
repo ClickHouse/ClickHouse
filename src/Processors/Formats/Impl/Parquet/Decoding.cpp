@@ -727,10 +727,8 @@ struct PlainStringDecoder : public PageDecoder
     }
 };
 
-/// Decides which values of a `String` page are beyond the threshold of a `TopKStringBound` (see there); the decoders with
-/// the bound append those as empty strings. The threshold is refreshed now and then: it only gets tighter. When a whole
-/// window of checked values has none beyond it (e.g. values arrive in the order of the sort), the checks only cost time,
-/// so they pause until the next refresh.
+/// Which values of a `String` page are beyond the threshold of a `TopKStringBound`. After a `WINDOW` of values with none
+/// beyond it (e.g. values in the order of the sort), the checks pause until the next refresh.
 struct TopKStringBoundChecker
 {
     static constexpr size_t REFRESH_INTERVAL = 4096;
@@ -747,7 +745,6 @@ struct TopKStringBoundChecker
 
     explicit TopKStringBoundChecker(const TopKStringBound * bound_) : bound(bound_) {}
 
-    /// At the start of every `decode` call.
     void start()
     {
         use_bound = bound->refresh(snapshot);
@@ -756,7 +753,7 @@ struct TopKStringBoundChecker
         window_replaced = 0;
     }
 
-    /// For every value that is appended. An empty value is never replaced.
+    /// For every value that is appended.
     ALWAYS_INLINE bool replace(const char * data, size_t len)
     {
         if (++values_since_refresh == REFRESH_INTERVAL) [[unlikely]]
@@ -779,7 +776,6 @@ struct TopKStringBoundChecker
         return res;
     }
 
-    /// At the end of every `decode` call.
     void flush()
     {
         if (!replaced)
@@ -791,7 +787,6 @@ struct TopKStringBoundChecker
     }
 };
 
-/// See `TopKStringBoundChecker`. Never used with `value_filter`.
 struct PlainStringDecoderWithTopKBound : public PlainStringDecoder
 {
     TopKStringBoundChecker top_k_checker;
@@ -1226,7 +1221,6 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
     }
 };
 
-/// See `TopKStringBoundChecker`. Never used with `value_filter`.
 struct DeltaLengthByteArrayDecoderWithTopKBound : public DeltaLengthByteArrayDecoder
 {
     TopKStringBoundChecker top_k_checker;
@@ -1493,7 +1487,6 @@ struct DeltaByteArrayDecoder : public PageDecoder
     }
 };
 
-/// See `TopKStringBoundChecker`. Only for BYTE_ARRAY, never used with `value_filter`.
 struct DeltaByteArrayDecoderWithTopKBound : public DeltaByteArrayDecoder
 {
     TopKStringBoundChecker top_k_checker;
@@ -1926,11 +1919,9 @@ void Dictionary::refreshTopKMask(const TopKStringBound & bound, size_t num_value
     chassert(mode == Mode::StringPlain && state.mask.size() == count);
     if (state.version != 0 && state.values_with_mask >= count && state.replaced_with_mask == 0)
     {
-        /// Lookups and rebuilds of a mask that replaces nothing only cost time.
         entry_mask = EntryMask::None;
         return;
     }
-    /// A rebuild compares every entry with the threshold, so it waits until enough values were decoded.
     /// Meanwhile the older mask stays valid: the threshold only gets tighter.
     state.values_since_build += num_values;
     if (state.values_since_build < count)
@@ -2171,7 +2162,6 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 }
                 else
                 {
-                    /// See `TopKStringBound`: rows referencing entries beyond the threshold are materialized as empty strings.
                     refreshTopKMask(*top_k->bound, n);
                     if (entry_mask == EntryMask::TopK && top_k->version != 0)
                     {
