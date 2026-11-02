@@ -99,6 +99,16 @@ private:
         Both,
     };
 
+    /// Which files of a primary-key table Paimon's batch scan reads without merging.
+    struct PrimaryKeyRead
+    {
+        /// Level-0 files are not read.
+        bool skip_level_zero = false;
+        /// A bucket whose files are all above level 0 needs no merge even when they are in several levels.
+        bool allow_several_levels = false;
+    };
+
+    /// With `primary_key_read`, throws if a bucket needs merge-on-read.
     Strings collectDataFilesFromManifests(
         const std::vector<PaimonTableStatePtr> & snapshots,
         const PaimonTableSchema & read_schema,
@@ -106,7 +116,8 @@ private:
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         bool deduplicate,
         bool track_deletes,
-        std::optional<Int64> incremental_cursor = {}) const;
+        std::optional<Int64> incremental_cursor = {},
+        const std::optional<PrimaryKeyRead> & primary_key_read = {}) const;
 
     /// Lock-free read of current state
     PaimonTableStatePtr getCurrentState() const;

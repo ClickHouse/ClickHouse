@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -15,6 +17,7 @@
 #include <Core/Settings.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
@@ -82,6 +85,27 @@ namespace
 PaimonSnapshotIdentity getSnapshotIdentity(const PaimonTableState & state)
 {
     return {state.commit_time_millis, state.base_manifest_list_path, state.delta_manifest_list_path};
+}
+
+/// Paimon's `FileEntry.Identifier`: an ADD and a DELETE entry cancel out only when all of these match.
+/// Compaction re-adds a file under the same name at another level, and a file index rewrite at the same level.
+String getManifestEntryIdentifier(const PaimonManifestEntry & entry)
+{
+    WriteBufferFromOwnString out;
+    writeStringBinary(entry.partition, out);
+    writeBinary(entry.bucket, out);
+    writeBinary(entry.file.level, out);
+    writeStringBinary(entry.file.file_name, out);
+    writeVarUInt(entry.file.extra_files.size(), out);
+    for (const auto & extra_file : entry.file.extra_files)
+        writeStringBinary(extra_file.safeGet<String>(), out);
+    for (const auto * value : {&entry.file.embedded_file_index, &entry.file.external_path})
+    {
+        writeBinary(static_cast<UInt8>(value->has_value()), out);
+        if (value->has_value())
+            writeStringBinary(**value, out);
+    }
+    return std::move(out.str());
 }
 
 /// Build a cache-key prefix that uniquely identifies a Paimon table instance.
@@ -602,16 +626,18 @@ ObjectIterator PaimonMetadata::iterate(
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", state->schema_id);
 
-    /// The read path below returns the raw union of the snapshot's data files: row versions
-    /// superseded by later upserts are not eliminated. Refuse rather than return wrong results.
-    auto primary_keys = persistent_components.schema_processor->getPrimaryKeys(state->schema_id);
-    if (!primary_keys.empty())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Reading Paimon primary-key table (primary keys: {}) is not supported: "
-            "merge-on-read is not implemented, so the result would contain row versions "
-            "superseded by later writes.",
-            fmt::join(primary_keys, ", "));
+    /// The delta of a primary-key table lists changes to its keys, not their state.
+    if (persistent_components.incremental_read_enabled)
+    {
+        auto primary_keys = persistent_components.schema_processor->getPrimaryKeys(state->schema_id);
+        if (!primary_keys.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental read of Paimon primary-key table (primary keys: {}) is not supported: "
+                "merge-on-read is not implemented, so the result would contain row versions "
+                "superseded by later writes.",
+                fmt::join(primary_keys, ", "));
+    }
 
     /// 3. Build partition pruner if needed
     std::optional<PartitionPruner> partition_pruner;
@@ -1137,13 +1163,23 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
     const std::optional<PartitionPruner> & partition_pruner,
     bool deduplicate,
     bool track_deletes,
-    std::optional<Int64> incremental_cursor) const
+    std::optional<Int64> incremental_cursor,
+    const std::optional<PrimaryKeyRead> & primary_key_read) const
 {
     for (const auto & snapshot_state : snapshots)
         if (snapshot_state)
             checkNoDeletionVectors(*snapshot_state, incremental_cursor);
 
-    std::vector<std::pair<String, Int64>> data_files;
+    struct DataFile
+    {
+        String identifier;
+        String path;
+        Int64 schema_id;
+        Int32 level;
+        String bucket_path;
+        std::optional<Int64> delete_row_count;
+    };
+    std::vector<DataFile> data_files;
     std::unordered_set<String> seen_files;
     std::unordered_set<String> delete_files;
 
@@ -1161,13 +1197,14 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
                 Paimon::checkPathIsRelativeToTable(entry.file.file_name, "data file");
                 String file_path = (std::filesystem::path(persistent_components.table_path)
                     / entry.file.bucket_path / entry.file.file_name);
+                String identifier = (deduplicate || track_deletes) ? getManifestEntryIdentifier(entry) : String{};
 
                 if (entry.kind == PaimonManifestEntry::Kind::DELETE)
                 {
                     if (track_deletes)
                     {
-                        delete_files.emplace(file_path);
-                        LOG_TEST(log, "{} delete file: {}", type, file_path);
+                        delete_files.emplace(std::move(identifier));
+                        LOG_TEST(log, "{} delete file: {}, level {}", type, file_path, entry.file.level);
                     }
                     continue;
                 }
@@ -1179,14 +1216,26 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
                     continue;
                 }
 
-                if (deduplicate && !seen_files.emplace(file_path).second)
+                if (primary_key_read && primary_key_read->skip_level_zero && entry.file.level == 0)
+                {
+                    LOG_TEST(log, "Skip level-0 {} data file: {}", type, file_path);
+                    continue;
+                }
+
+                if (deduplicate && !seen_files.emplace(identifier).second)
                 {
                     LOG_TEST(log, "Skip duplicated {} data file: {}", type, file_path);
                     continue;
                 }
 
-                data_files.emplace_back(std::move(file_path), entry.file.schema_id);
-                LOG_TEST(log, "{} data file: {}", type, data_files.back().first);
+                data_files.push_back(
+                    {std::move(identifier),
+                     std::move(file_path),
+                     entry.file.schema_id,
+                     entry.file.level,
+                     entry.file.bucket_path,
+                     entry.file.delete_row_count});
+                LOG_TEST(log, "{} data file: {}, level {}", type, data_files.back().path, entry.file.level);
             }
         }
     };
@@ -1205,16 +1254,55 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
             std::remove_if(
                 data_files.begin(),
                 data_files.end(),
-                [&](const auto & data_file) { return delete_files.contains(data_file.first); }),
+                [&](const auto & data_file) { return delete_files.contains(data_file.identifier); }),
             data_files.end());
+    }
+
+    if (primary_key_read)
+    {
+        struct Bucket
+        {
+            std::set<Int32> levels;
+            size_t files_with_delete_rows = 0;
+        };
+        std::map<String, Bucket> buckets;
+        for (const auto & data_file : data_files)
+        {
+            auto & bucket = buckets[data_file.bucket_path];
+            bucket.levels.insert(data_file.level);
+            /// An unknown count is treated as nonzero.
+            if (data_file.delete_row_count.value_or(1) != 0)
+                ++bucket.files_with_delete_rows;
+        }
+
+        for (const auto & [bucket_path, bucket] : buckets)
+        {
+            if (*bucket.levels.begin() > 0 && bucket.files_with_delete_rows == 0
+                && (primary_key_read->allow_several_levels || bucket.levels.size() == 1))
+                continue;
+
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Reading bucket '{}' of Paimon primary-key table '{}' at snapshot {} is not supported: merge-on-read is not "
+                "implemented, and the bucket needs it: its data files are in levels {}, and {} of them have retract rows or an "
+                "unknown count of them. A full compaction of the table in Paimon (compact_strategy 'full') makes it readable.",
+                bucket_path,
+                persistent_components.table_path,
+                snapshots.back()->snapshot_id,
+                fmt::join(bucket.levels, ", "),
+                bucket.files_with_delete_rows);
+        }
     }
 
     Strings result;
     result.reserve(data_files.size());
-    for (auto & [file_path, file_schema_id] : data_files)
+    std::unordered_set<String> result_paths;
+    for (auto & data_file : data_files)
     {
-        checkDataFileSchema(file_path, file_schema_id, read_schema, incremental_cursor);
-        result.emplace_back(std::move(file_path));
+        if (deduplicate && !result_paths.insert(data_file.path).second)
+            continue;
+        checkDataFileSchema(data_file.path, data_file.schema_id, read_schema, incremental_cursor);
+        result.emplace_back(std::move(data_file.path));
     }
     return result;
 }
@@ -1303,8 +1391,27 @@ Strings PaimonMetadata::collectFullScanDataFiles(
     const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner) const
 {
+    std::optional<PrimaryKeyRead> primary_key_read;
+    if (!read_schema.primary_keys.empty())
+    {
+        auto has_option = [&](const char * key, const char * value)
+        {
+            auto it = read_schema.options.find(key);
+            return it != read_schema.options.end() && boost::iequals(it->second, value);
+        };
+        const bool allow_several_levels
+            = has_option(PAIMON_DELETION_VECTORS_ENABLED, "true") || has_option(PAIMON_MERGE_ENGINE, PAIMON_MERGE_ENGINE_FIRST_ROW);
+        const bool level_filter = !read_schema.options.contains(PAIMON_BATCH_SCAN_MODE)
+            || has_option(PAIMON_BATCH_SCAN_MODE, PAIMON_BATCH_SCAN_MODE_NONE);
+        primary_key_read = PrimaryKeyRead{
+            .skip_level_zero = allow_several_levels && level_filter,
+            .allow_several_levels = allow_several_levels,
+        };
+    }
+
     /// Full scan: include base + delta, with dedup and tombstone handling.
-    return collectDataFilesFromManifests({state}, read_schema, ManifestKind::Both, partition_pruner, true, true);
+    return collectDataFilesFromManifests(
+        {state}, read_schema, ManifestKind::Both, partition_pruner, true, true, std::nullopt, primary_key_read);
 }
 
 }
