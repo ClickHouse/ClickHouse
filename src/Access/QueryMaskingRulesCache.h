@@ -19,7 +19,6 @@ public:
     ~QueryMaskingRulesCache();
 
     /// Re-reads all the rules from the access storages and publishes them.
-    /// Needed after adding a storage that loads its entities without sending notifications.
     /// Throws if a rule cannot be read, keeping the rules published before.
     void reload();
 
