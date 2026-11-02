@@ -4967,12 +4967,15 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
 void Reader::withdrawColumnsCacheWrites()
 {
     for (RowGroup & row_group : row_groups)
-    {
-        for (auto & write : row_group.columns_cache_writes)
-            if (write.active)
-                withdrawColumnsCacheWrite(write);
-        row_group.columns_cache_writes.clear();
-    }
+        withdrawColumnsCacheWrites(row_group);
+}
+
+void Reader::withdrawColumnsCacheWrites(RowGroup & row_group)
+{
+    for (auto & write : row_group.columns_cache_writes)
+        if (write.active)
+            withdrawColumnsCacheWrite(write);
+    row_group.columns_cache_writes.clear();
 }
 
 Reader::PrimitiveColumnInfo::~PrimitiveColumnInfo() = default;

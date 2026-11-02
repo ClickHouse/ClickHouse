@@ -16,6 +16,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/Context.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Hex.h>
 #include <Common/SipHash.h>
@@ -65,6 +66,21 @@ struct MergeTreeReaderParquet::State
     /// the columns as in the file, for rows [chunk_start, chunk_start + COLUMNS_CACHE_CHUNK_ROWS).
     Columns chunk_columns;
     size_t chunk_start = 0;
+
+    /// A row group not read to the end has written only some chunks of its columns to the columns cache, which
+    /// cannot serve any read without the rest (see `Parquet::Reader::initColumnsCache`), so they are taken back out
+    /// when the state is discarded: at the end of reading (e.g. with `LIMIT`), for the next task, or to go back.
+    ~State()
+    {
+        try
+        {
+            reader.withdrawColumnsCacheWrites();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("MergeTreeReaderParquet");
+        }
+    }
 };
 
 MergeTreeReaderParquet::MergeTreeReaderParquet(
@@ -441,6 +457,10 @@ void MergeTreeReaderParquet::finishRowGroup(size_t row_group)
         return;
 
     state->chunk_columns.clear();
+
+    /// The row group can be left before it is read to the end, e.g. by a forward seek to the next mark range.
+    /// Its columns are not written in full then, and the chunks written so far are of no use.
+    state->reader.withdrawColumnsCacheWrites(state->reader.row_groups[row_group]);
 
     /// Release the memory of the column chunks, they are not needed anymore.
     Parquet::MemoryUsageDiff diff(Parquet::ReadStage::ColumnData);

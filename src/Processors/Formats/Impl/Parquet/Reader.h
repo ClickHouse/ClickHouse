@@ -787,6 +787,8 @@ struct Reader
     /// Take back out of the columns cache the columns of the row groups that were not read to the end,
     /// e.g. because of `LIMIT`. Called when the reading is finished or abandoned.
     void withdrawColumnsCacheWrites();
+    /// The same for one row group, e.g. when a reader moves past it without reading it to the end.
+    void withdrawColumnsCacheWrites(RowGroup & row_group);
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
