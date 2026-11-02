@@ -657,6 +657,12 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
             full_table_name));
     }
 
+#if !USE_DELTA_KERNEL_RS
+    if (result.isDefaultReadableTable())
+        result.setTableIsNotReadable(fmt::format(
+            "Cannot read Delta Lake table `{}` because the server is built without delta-kernel-rs", full_table_name));
+#endif
+
     LOG_DEBUG(log, "Processing Delta table {} is default readable {}", full_table_name, result.isDefaultReadableTable());
 
     if (result.requiresSchema())

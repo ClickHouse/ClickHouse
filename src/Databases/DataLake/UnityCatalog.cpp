@@ -254,6 +254,12 @@ bool UnityCatalog::tryGetTableMetadata(
                     "It means that it's unreadable with Unity catalog in ClickHouse", full_table_name));
             }
 
+#if !USE_DELTA_KERNEL_RS
+            if (result.isDefaultReadableTable())
+                result.setTableIsNotReadable(fmt::format(
+                    "Cannot read Delta Lake table `{}` because the server is built without delta-kernel-rs", full_table_name));
+#endif
+
             LOG_DEBUG(log, "Processing table {} is default readable {}", table_name, result.isDefaultReadableTable());
 
             if (result.requiresSchema())

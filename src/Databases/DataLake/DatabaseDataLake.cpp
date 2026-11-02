@@ -662,6 +662,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                                     type);
             }
 #else
+            /// The Unity catalogs mark Delta Lake tables unreadable without `delta-kernel-rs`.
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Unity catalog requires the server to be built with delta-kernel-rs");
 #endif
         }
