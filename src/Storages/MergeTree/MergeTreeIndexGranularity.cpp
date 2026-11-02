@@ -222,9 +222,13 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     if (!constantGranularityUsesBytes(rows, settings, info, blocks_are_granules))
         return std::make_shared<MergeTreeIndexGranularityAdaptive>();
 
+    /// computeIndexGranularity uses the byte count only on the adaptive path; a non-adaptive part gets the fixed
+    /// row granularity, so do not pay for get_bytes_uncompressed (which may read a part's prefixes) there.
+    const size_t bytes_uncompressed = info.mark_type.adaptive ? get_bytes_uncompressed() : 0;
+
     size_t computed_granularity = computeIndexGranularity(
         rows,
-        get_bytes_uncompressed(),
+        bytes_uncompressed,
         settings[MergeTreeSetting::index_granularity_bytes],
         settings[MergeTreeSetting::index_granularity],
         blocks_are_granules,

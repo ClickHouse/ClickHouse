@@ -30,5 +30,21 @@ SELECT count(), sum(json.a::String = repeat('y', 500)) FROM t_json_gran_mrg;
 SELECT 2 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mrg' AND active)
     <= 3 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_ins' AND active);
 
+-- A full-rewrite DELETE mutation sizes its result through the same accounting. Deleting a slice forces a
+-- real rewrite; the mutated part's marks must stay within 1.5x of an insert of the same remaining rows.
+DROP TABLE IF EXISTS t_json_gran_mut_ins;
+DROP TABLE IF EXISTS t_json_gran_mut;
+CREATE TABLE t_json_gran_mut_ins AS t_json_gran_ins;
+CREATE TABLE t_json_gran_mut AS t_json_gran_ins;
+INSERT INTO t_json_gran_mut_ins SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(9000);
+INSERT INTO t_json_gran_mut SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(10000);
+ALTER TABLE t_json_gran_mut DELETE WHERE x >= 9000 SETTINGS mutations_sync = 2;
+
+SELECT count(), min(part_type = 'Wide') FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mut' AND active;
+SELECT 2 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mut' AND active)
+    <= 3 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mut_ins' AND active);
+
 DROP TABLE t_json_gran_ins;
 DROP TABLE t_json_gran_mrg;
+DROP TABLE t_json_gran_mut_ins;
+DROP TABLE t_json_gran_mut;

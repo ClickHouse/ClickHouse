@@ -3870,19 +3870,25 @@ ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsReadSize() const
 {
+    ColumnSize size;
+    for (const auto & column : getColumns())
+        size.add(getColumnReadSize(column));
+    return size;
+}
+
+ColumnSize IMergeTreeDataPart::getColumnReadSize(const NameAndTypePair & column) const
+{
     {
-        std::lock_guard lock(total_columns_read_size_mutex);
-        if (total_columns_read_size)
-            return *total_columns_read_size;
+        std::lock_guard lock(columns_read_sizes_mutex);
+        if (auto it = columns_read_sizes.find(column.name); it != columns_read_sizes.end())
+            return it->second;
     }
 
-    /// Calculated outside the lock, since it reads the part's prefixes.
-    auto size = calculateTotalColumnsReadSize();
+    /// Calculated outside the lock, since it may read the part's prefixes.
+    auto size = calculateColumnReadSize(column);
 
-    std::lock_guard lock(total_columns_read_size_mutex);
-    if (!total_columns_read_size)
-        total_columns_read_size = size;
-    return *total_columns_read_size;
+    std::lock_guard lock(columns_read_sizes_mutex);
+    return columns_read_sizes.emplace(column.name, size).first->second;
 }
 
 IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_index_name) const

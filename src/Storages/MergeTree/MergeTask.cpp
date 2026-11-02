@@ -1328,14 +1328,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     /// Sized by the data a read of the source parts decompresses rather than by their files, which may hold
-    /// a second representation of the same data, such as the copy of the shared data of Object.
+    /// a second representation of the same data, such as the copy of the shared data of Object. A fully expired
+    /// TTLDrop merge writes no rows and skips the read pipeline, so it keeps the cheap on-disk size and does not
+    /// read the source prefixes for a granularity its empty output will not use.
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
         [&]
         {
             size_t bytes = 0;
             for (const auto & part : global_ctx->future_part->parts)
-                bytes += part->getTotalColumnsReadSize().data_uncompressed;
+                bytes += global_ctx->ttl_drop_short_circuit
+                    ? part->getBytesUncompressedOnDisk()
+                    : part->getTotalColumnsReadSize().data_uncompressed;
             return bytes;
         },
         *merge_tree_settings,
