@@ -54,6 +54,12 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
     const ColumnDefaults & column_defaults, bool forbid_default_defaults = false, bool allow_reading_tables = true);
 
+/// Checks that the columns of `block` can be converted to `required_columns`, as `performRequiredConversions`
+/// would do, without changing `block`. It is meant for the validation of metadata (`ALTER`), so it never reads
+/// the tables of the defaults (`x IN table`): such a conversion is only resolved and type-checked, not executed.
+void checkRequiredConversions(const Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
+    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+
 void fillMissingColumns(
     Columns & res_columns,
     size_t num_rows,

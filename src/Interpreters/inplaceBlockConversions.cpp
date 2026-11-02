@@ -257,12 +257,24 @@ ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr 
     return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
 }
 
+/// What to do with the tables that the expressions read (`x IN table`).
+enum class TablesReading : uint8_t
+{
+    /// Build the sets right away, with the access of the context.
+    Read,
+    /// Throw `ACCESS_DENIED`, because there is no query on whose behalf to read.
+    Forbid,
+    /// Leave the sets unbuilt: the actions are only checked, not executed.
+    Skip,
+};
+
 std::optional<ActionsDAG> createExpressionsAnalyzer(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
     ContextPtr context,
-    bool allow_reading_tables = true)
+    TablesReading tables_reading,
+    bool * has_unbuilt_sets = nullptr)
 {
     if (!expr_list)
         return {};
@@ -289,13 +301,20 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     /// read them with the full access of the storage: that would store their contents in the new part.
     /// This includes the tables with `ENGINE = Set`, whose sets are ready and so are not subqueries.
     const auto & prepared_sets = planner_context->getPreparedSets();
-    if (!allow_reading_tables && (prepared_sets.hasSubqueries() || prepared_sets.hasSetsFromStorage()))
+    const bool reads_tables = prepared_sets.hasSubqueries() || prepared_sets.hasSetsFromStorage();
+    if (tables_reading == TablesReading::Forbid && reads_tables)
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot evaluate the default expression of a column without a reading query, "
             "because it reads a table (as in `x IN table`). Background merges and mutations are not authorized "
             "to read other tables on behalf of any user");
 
-    buildPreparedSetsInplace(planner_context, execution_context);
+    if (tables_reading == TablesReading::Skip)
+    {
+        if (has_unbuilt_sets)
+            *has_unbuilt_sets = prepared_sets.hasSubqueries();
+    }
+    else
+        buildPreparedSetsInplace(planner_context, execution_context);
 
     NamesWithAliases result_columns;
     for (size_t i = 0; i < expression->getChildren().size(); ++i)
@@ -330,12 +349,39 @@ void performRequiredConversions(
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context, allow_reading_tables);
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
+        block, conversion_expr_list, true, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid);
 
     if (dag)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
         expression->execute(block);
+    }
+}
+
+void checkRequiredConversions(
+    const Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults)
+{
+    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
+    if (conversion_expr_list->children.empty())
+        return;
+
+    bool has_unbuilt_sets = false;
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
+        block, conversion_expr_list, true, context, TablesReading::Skip, &has_unbuilt_sets);
+
+    /// Building the actions has already resolved the expressions and checked their types. Executing them,
+    /// even over an empty block, needs the sets of `x IN table` filled, which would read the tables just to
+    /// check the metadata, so the actions are executed only when they read no table.
+    if (dag && !has_unbuilt_sets)
+    {
+        Block block_copy = block;
+        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
+        expression->execute(block_copy);
     }
 }
 
@@ -375,7 +421,8 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context, allow_reading_tables);
+    return createExpressionsAnalyzer(
+        header, expr_list, save_unneeded_columns, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class

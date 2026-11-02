@@ -7192,8 +7192,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     if (!columns_to_check_conversion.empty())
     {
-        auto old_header = old_metadata.getSampleBlock();
-        performRequiredConversions(old_header, columns_to_check_conversion, local_context, new_metadata.getColumns().getDefaults(), true);
+        /// Only a check of the metadata: it must not read the tables of the defaults (`x IN table`), neither
+        /// with the access of the initiator nor with the internal context of a secondary DDL replay.
+        checkRequiredConversions(old_metadata.getSampleBlock(), columns_to_check_conversion, local_context, new_metadata.getColumns().getDefaults(), true);
     }
 
     if (old_metadata.hasSettingsChanges())
