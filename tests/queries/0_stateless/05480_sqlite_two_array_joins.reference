@@ -1,0 +1,19 @@
+two ARRAY JOINs
+3	0	1
+3	0	2
+3	1	1
+3	1	2
+3	2	1
+3	2	2
+LEFT ARRAY JOIN and ARRAY JOIN
+0	0	1
+0	0	1
+3	0	1
+3	1	1
+3	2	1
+one ARRAY JOIN with LIMIT
+2
+two ARRAY JOINs with LIMIT
+2
+query sent to SQLite
+Query: SELECT `id` FROM `t`

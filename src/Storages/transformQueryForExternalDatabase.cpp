@@ -976,7 +976,8 @@ bool isLimitPushDownSafe(const ASTSelectQuery & query)
         || query.limit_with_ties || query.limit_by_all)
         return false;
 
-    if (query.hasJoin() || query.final() || query.sampleSize() || query.arrayJoinExpressionList().first)
+    /// Every JOIN and ARRAY JOIN is a separate element of the TABLES list.
+    if ((query.tables() && query.tables()->children.size() > 1) || query.final() || query.sampleSize())
         return false;
 
     for (const auto & child : query.children)
