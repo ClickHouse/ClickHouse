@@ -1,0 +1,96 @@
+<!--
+    Output formats: the encoder of each format with its default settings (Parquet zstd, ORC zstd, Arrow lz4_frame, Avro without
+    codec), plus the Parquet compression methods, Parquet without bloom filter and page index, and ORC without compression.
+    No ArrowStream: its time varied by 30 % from run to run on ARM.
+    Input: a fixed tenth of `hits_10m_single` (1 M rows, 105 columns, about 0.75 GiB) in a `Memory` table, written by an `INSERT`
+    into a `File` table on `/dev/null`, so the encoder runs on the server (over TCP, `SELECT ... FORMAT X` would send Native
+    blocks). The writers are single-threaded: with all 10 M rows Avro takes 100 s, ORC 70 s. Parallel formatting (TSV, CSV,
+    JSONEachRow, RowBinary) is off: its per-thread output buffers (1.7 GiB for TSV, 6 GiB for JSONEachRow) were page-faulted
+    anew in every run, after the jemalloc purge, and made these formats noisy. A `File` table takes its format
+    settings from its `CREATE` only (session and query settings are ignored), so each variant has a table of its own. The timed
+    `INSERT`s are plain queries, not shell ones: `/dev/null` keeps nothing of a cut run.
+    The setup round-trips every timed variant through a real file read back with the schema of the source (count and fingerprint
+    of all columns against the source) and checks in the Parquet metadata that each variant wrote its codec and bloom filters.
+    Per server and invocation: 7.5 GB written into `user_files` by the setup (one round-trip file per timed variant, emptied after
+    the checks), nothing by the timed queries; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="30">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <output_format_parallel_formatting>0</output_format_parallel_formatting>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>format</name>
+        <values>
+            <value>Parquet</value>
+            <value>ORC</value>
+            <value>Arrow</value>
+            <value>Avro</value>
+            <value>Native</value>
+            <value>RowBinary</value>
+            <value>TSV</value>
+            <value>CSV</value>
+            <value>JSONEachRow</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>parquet_compression</name>
+        <values>
+            <value>none</value>
+            <value>snappy</value>
+            <value>lz4</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query>CREATE TABLE fmt_write_src ENGINE = Memory AS SELECT * FROM hits_10m_single WHERE WatchID % 10 = 0</create_query>
+<create_query>CREATE TABLE fmt_write_{format} ENGINE = File({format}, '/dev/null') AS hits_10m_single</create_query>
+<create_query>CREATE TABLE fmt_write_pq_{parquet_compression} ENGINE = File(Parquet, '/dev/null') SETTINGS output_format_parquet_compression_method = '{parquet_compression}' AS hits_10m_single</create_query>
+<create_query>CREATE TABLE fmt_write_pq_noindex ENGINE = File(Parquet, '/dev/null') SETTINGS output_format_parquet_write_bloom_filter = 0, output_format_parquet_write_page_index = 0 AS hits_10m_single</create_query>
+<create_query>CREATE TABLE fmt_write_orc_none ENGINE = File(ORC, '/dev/null') SETTINGS output_format_orc_compression_method = 'none' AS hits_10m_single</create_query>
+<create_query>CREATE TABLE fmt_check_{format} ENGINE = File({format}, 'formats_hits_write/check.{format}') AS hits_10m_single</create_query>
+<create_query>CREATE TABLE fmt_check_pq_{parquet_compression} ENGINE = File(Parquet, 'formats_hits_write/pq_{parquet_compression}.parquet') SETTINGS output_format_parquet_compression_method = '{parquet_compression}' AS hits_10m_single</create_query>
+<create_query>CREATE TABLE fmt_check_pq_noindex ENGINE = File(Parquet, 'formats_hits_write/pq_noindex.parquet') SETTINGS output_format_parquet_write_bloom_filter = 0, output_format_parquet_write_page_index = 0 AS hits_10m_single</create_query>
+<create_query>CREATE TABLE fmt_check_orc_none ENGINE = File(ORC, 'formats_hits_write/orc_none.orc') SETTINGS output_format_orc_compression_method = 'none' AS hits_10m_single</create_query>
+
+<fill_query>SELECT throwIf(count() != 10000000) FROM hits_10m_single</fill_query>
+<fill_query>SELECT throwIf(count() != 999742) FROM fmt_write_src</fill_query>
+<fill_query>INSERT INTO fmt_check_{format} SELECT * FROM fmt_write_src SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO fmt_check_pq_{parquet_compression} SELECT * FROM fmt_write_src SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO fmt_check_pq_noindex SELECT * FROM fmt_write_src SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO fmt_check_orc_none SELECT * FROM fmt_write_src SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>
+    SELECT throwIf(count() != 14 OR countIf((c, h) != (SELECT (count(), sum(cityHash64(*))) FROM fmt_write_src)) != 0)
+    FROM (SELECT _table, count() AS c, sum(cityHash64(*)) AS h FROM merge(currentDatabase(), '^fmt_check_') GROUP BY _table)
+</fill_query>
+<fill_query>
+    SELECT throwIf(groupArray((_file, arrayDistinct(arrayMap(c -> c.compression, columns)), arrayExists(r -> arrayExists(c -> c.bloom_filter_bytes > 0, r.columns), row_groups))) != [
+        ('check.Parquet', ['ZSTD'], 1), ('pq_lz4.parquet', ['LZ4'], 1), ('pq_noindex.parquet', ['ZSTD'], 0),
+        ('pq_none.parquet', ['UNCOMPRESSED'], 1), ('pq_snappy.parquet', ['SNAPPY'], 1)])
+    FROM (SELECT _file, columns, row_groups FROM file('formats_hits_write/*.{{Parquet,parquet}}', ParquetMetadata) ORDER BY _file)
+</fill_query>
+<fill_query>SELECT throwIf(maxIf(_size, _file = 'orc_none.orc') &lt;= maxIf(_size, _file = 'check.ORC')) FROM file('formats_hits_write/{{check.ORC,orc_none.orc}}', One)</fill_query>
+<fill_query>TRUNCATE TABLE fmt_check_{format}</fill_query>
+<fill_query>TRUNCATE TABLE fmt_check_pq_{parquet_compression}</fill_query>
+<fill_query>TRUNCATE TABLE fmt_check_pq_noindex</fill_query>
+<fill_query>TRUNCATE TABLE fmt_check_orc_none</fill_query>
+
+<query>INSERT INTO fmt_write_{format} SELECT * FROM fmt_write_src</query>
+<query>INSERT INTO fmt_write_pq_{parquet_compression} SELECT * FROM fmt_write_src</query>
+<query>INSERT INTO fmt_write_pq_noindex SELECT * FROM fmt_write_src</query>
+<query>INSERT INTO fmt_write_orc_none SELECT * FROM fmt_write_src</query>
+
+<drop_query>TRUNCATE TABLE IF EXISTS fmt_check_{format}</drop_query>
+<drop_query>TRUNCATE TABLE IF EXISTS fmt_check_pq_{parquet_compression}</drop_query>
+<drop_query>TRUNCATE TABLE IF EXISTS fmt_check_pq_noindex</drop_query>
+<drop_query>TRUNCATE TABLE IF EXISTS fmt_check_orc_none</drop_query>
+<drop_query>DROP TABLE IF EXISTS fmt_check_{format}, fmt_write_{format} SYNC</drop_query>
+<drop_query>DROP TABLE IF EXISTS fmt_check_pq_{parquet_compression}, fmt_write_pq_{parquet_compression} SYNC</drop_query>
+<drop_query>DROP TABLE IF EXISTS fmt_check_pq_noindex, fmt_write_pq_noindex, fmt_check_orc_none, fmt_write_orc_none, fmt_write_src SYNC</drop_query>
+
+</test>

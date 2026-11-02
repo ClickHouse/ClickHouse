@@ -200,7 +200,7 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMe
     return {};
 }
 
-PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(const PartsRange & range) const
+PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(PartsRangeView range) const
 {
     if (range.empty())
         return {};
