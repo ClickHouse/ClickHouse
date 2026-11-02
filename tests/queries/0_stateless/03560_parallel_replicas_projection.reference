@@ -36,7 +36,7 @@ reads_from_replicas: 1
 5
 03560_agg_only_projections	20
 03560_agg_projection_and_parts	110
-03560_exact_count_projection	8
-03560_minmax_projection	1
+03560_exact_count_projection	2
+03560_minmax_projection	0
 03560_normal_only_projections	11
 03560_normal_projection_and_parts	10010

@@ -82,8 +82,7 @@ SELECT sum(value) AS v FROM agg where key > 90 AND key < 110 SETTINGS log_commen
 DROP TABLE agg;
 
 DROP TABLE IF EXISTS x;
--- The exact-count read below reads 8 rows from a Compact part and 7 from a Wide one.
-CREATE TABLE x (i int) engine MergeTree ORDER BY i SETTINGS index_granularity = 3, min_bytes_for_wide_part = '1G';
+CREATE TABLE x (i int) engine MergeTree ORDER BY i SETTINGS index_granularity = 3;
 
 INSERT INTO x SELECT * FROM numbers(10);
 
@@ -103,10 +102,11 @@ FORMAT Vertical;
 SELECT count() FROM x WHERE (i >= 3 AND i <= 6) OR i = 7 SETTINGS log_comment = '03560_exact_count_projection';
 
 -- `EXPLAIN` cannot tell which parts each case reads: under plan-based parallel replicas the description of
--- `ReadFromParallelReplicas` dumps the shipped fragment, which names the table too. The rows read can: a case that
--- reads the parts without the projection reads the whole old part, one that reads only the projection a few rows.
+-- `ReadFromParallelReplicas` dumps the shipped fragment, which names the table too. The marks selected can: a case
+-- that reads the parts without the projection selects the whole old part, one that reads only the projection a few
+-- marks. Marks, not rows: on S3 storage a selected granule sometimes holds one row more.
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, read_rows FROM system.query_log
+SELECT log_comment, ProfileEvents['SelectedMarks'] AS selected_marks FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 HOUR AND current_database = currentDatabase()
     AND type = 'QueryFinish' AND is_initial_query
     AND log_comment IN ('03560_normal_projection_and_parts', '03560_normal_only_projections', '03560_agg_projection_and_parts',
