@@ -9,72 +9,45 @@ sidebarTitle: 'Deno'
 
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
+Use Deno's built-in OpenTelemetry support to send logs, metrics, and traces to ClickHouse Observability.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Set up OpenTelemetry {#set-up-opentelemetry}
+
+Follow the official [Deno OpenTelemetry setup instructions](https://docs.deno.com/runtime/fundamentals/open_telemetry/) to enable telemetry and instrument your application. Deno's integration is enabled with `OTEL_DENO=true`.
+
+Use the connection settings below for OTLP export over HTTP. Replace any example destinations or console-exporter settings from the upstream instructions, including signal-specific endpoint overrides.
+
+## Configure your destination {#configure-destination}
+
 <Tabs>
 <Tab title="ClickHouse Observability">
 
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
+Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
 
 </Tab>
 <Tab title="Self configured">
 
-<ClickStackIntegrates signals={['logs']} />
-
-<Note>
-Currently only supports OpenTelemetry Logging. For tracing support, [see the following guide](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
-</Note>
-
-## Logging {#logging-self-configured}
-
-Logging is supported by exporting a custom logger for the `std/log` module.
-
-**Example usage:**
-
-```typescript
-import * as log from 'https://deno.land/std@0.203.0/log/mod.ts';
-import { OpenTelemetryHandler } from 'npm:@hyperdx/deno';
-
-log.setup({
-  handlers: {
-    otel: new OpenTelemetryHandler('DEBUG'),
-  },
-
-  loggers: {
-    'my-otel-logger': {
-      level: 'DEBUG',
-      handlers: ['otel'],
-    },
-  },
-});
-
-log.getLogger('my-otel-logger').info('Hello from Deno!');
-```
-
-### Run the application {#run-the-application-self-configured}
-
-<Tabs>
-<Tab title="Managed ClickStack">
+Use your collector's OTLP HTTP endpoint and ingestion key. Use `http://` instead of `https://` if your collector does not have TLS configured. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
 
 ```shell
-OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
-deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
-```
-
-</Tab>
-
-<Tab title="ClickStack Open Source">
-
-```shell
-OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
-OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
-deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
 ```
 
 </Tab>
 </Tabs>
 
-</Tab>
-</Tabs>
+## Verify ingestion {#verify-ingestion}
+
+Start your instrumented application and generate activity. In ClickHouse Observability, select a recent time range and find your application's service name in Logs or Traces. If your application emits metrics, check Metrics after allowing time for export.
+
+For instrumentation and exporter troubleshooting, see the [Deno OpenTelemetry documentation](https://docs.deno.com/runtime/fundamentals/open_telemetry/).

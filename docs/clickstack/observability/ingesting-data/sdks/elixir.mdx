@@ -9,73 +9,45 @@ sidebarTitle: 'Elixir'
 
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
+Use the OpenTelemetry Erlang/Elixir SDK to send traces to ClickHouse Observability.
+
+<ClickStackIntegrates signals={['traces']} />
+
+## Set up OpenTelemetry {#set-up-opentelemetry}
+
+Follow the official [OpenTelemetry Erlang/Elixir setup instructions](https://opentelemetry.io/docs/languages/erlang/getting-started/) to initialize the SDK and instrument your application.
+
+Configure [OTLP export over HTTP](https://opentelemetry.io/docs/languages/erlang/exporters/) for traces, using the connection settings below. Replace any example destinations from the upstream instructions, including signal-specific endpoint overrides.
+
+## Configure your destination {#configure-destination}
+
 <Tabs>
 <Tab title="ClickHouse Observability">
 
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
+Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
 
 </Tab>
 <Tab title="Self configured">
 
-<ClickStackIntegrates signals={['logs']} />
-
-_🚧 OpenTelemetry metrics & tracing instrumentation coming soon!_
-
-## Getting started {#getting-started-self-configured}
-
-### Install ClickStack logger backend package {#install-hyperdx-logger-backend-package-self-configured}
-
-The package can be installed by adding `hyperdx` to your list of dependencies in
-`mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:hyperdx, "~> 0.1.6"}
-  ]
-end
-```
-
-### Configure logger {#configure-logger-self-configured}
-
-Add the following to your `config.exs` file:
-
-```elixir
-# config/releases.exs
-
-config :logger,
-  level: :info,
-  backends: [:console, {Hyperdx.Backend, :hyperdx}]
-```
-
-### Configure environment variables {#configure-environment-variables-self-configured}
-
-Afterwards you'll need to configure the following environment variables in your
-shell to ship telemetry to ClickStack via the OpenTelemetry collector:
-
-<Tabs>
-<Tab title="Managed ClickStack">
+Use your collector's OTLP HTTP endpoint and ingestion key. Use `http://` instead of `https://` if your collector does not have TLS configured. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
 
 ```shell
-OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-```
-
-</Tab>
-
-<Tab title="ClickStack Open Source">
-
-```shell
-export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
 ```
 
 </Tab>
 </Tabs>
 
-_The `OTEL_SERVICE_NAME` environment variable is used to identify your service
-in the HyperDX app, it can be any name you want._
+## Verify ingestion {#verify-ingestion}
 
-</Tab>
-</Tabs>
+Start your instrumented application and generate activity. In ClickHouse Observability, select a recent time range and find your application's service name in Traces.
+
+For instrumentation and exporter troubleshooting, see the [OpenTelemetry Erlang/Elixir documentation](https://opentelemetry.io/docs/languages/erlang/).
