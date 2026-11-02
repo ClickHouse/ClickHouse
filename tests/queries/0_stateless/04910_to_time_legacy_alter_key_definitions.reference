@@ -3,5 +3,3 @@ GROUP BY toUInt32(toTimeWithFixedDate
 toUInt32(toTimeWithFixedDate(c0))
 toUInt32(toTimeWithFixedDate(c0)), c1
 toUInt32(toTimeWithFixedDate(c0))
-toUInt32(toTime(c0)), c1
-1

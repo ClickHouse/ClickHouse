@@ -1,5 +1,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 
+#include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -143,7 +144,7 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
     granularity = r.getUInt("granularity");
     part_of_create_index_query = r.getBool("part_of_create_index_query");
 
-    auto expression = r.readChild("expression");
+    auto expression = r.readExpressionChild("expression");
     if (!expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration must have an expression during AST JSON deserialization");
     children.push_back(expression);
@@ -222,14 +223,19 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)
 {
+    /// Match the type name case-insensitively: it is lowercased everywhere downstream
+    /// (`IndicesDescription::getIndexFromAST`), so an uppercase `TEXT`/`VECTOR_SIMILARITY` must get the
+    /// same default granularity as the lowercase spelling.
+    const String type_name = type ? Poco::toLower(type->name) : String{};
+
     /// Text index is always built for the whole part and granularity is ignored.
-    if (type && type->name == "text")
+    if (type_name == "text")
         return ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
 
     if (granularity)
         return granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
 
-    if (type && type->name == "vector_similarity")
+    if (type_name == "vector_similarity")
         return ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
 
     return ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;

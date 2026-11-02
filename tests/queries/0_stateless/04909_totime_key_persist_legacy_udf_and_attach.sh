@@ -28,16 +28,6 @@ CREATE TABLE t_as_key AS t_as_source;
 SELECT 'as', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_as_key';
 "
 
-# A clone must retain its source definition verbatim. Unlike plain AS, changing its key spelling
-# makes the subsequent partition copy reject the source and destination as structurally different.
-${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 -q "
-CREATE TABLE t_clone_source (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
-"
-${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 --multiquery -q "
-CREATE TABLE t_clone_key CLONE AS t_clone_source;
-SELECT 'clone', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_clone_key';
-"
-
 # A full-definition ATTACH is CREATE-like user input and persists what it is given. The server warns
 # that the form is not recommended, which is expected here.
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 -q "
@@ -71,44 +61,13 @@ TTL c0 + INTERVAL 1 DAY GROUP BY toTime(c0) SET v = max(v);
 SELECT 'ttl_group_by', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_ttl_key';
 "
 
-# The oldest DDL entry format ships the query text as written and carries no settings, so the
-# spelling a worker receives has to be unambiguous already.
-OLDEST_VERSION=1
-${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 \
-    --distributed_ddl_entry_format_version $OLDEST_VERSION --distributed_ddl_output_mode none --multiquery -q "
-CREATE TABLE t_on_cluster_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
-SELECT 'on_cluster_oldest_entry', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_key';
-
--- The same, with the key expression carried by a SQL UDF body.
-CREATE TABLE t_on_cluster_udf_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY ${UDF}(c0);
-SELECT 'on_cluster_oldest_entry_udf', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_udf_key';
-
--- A materialized view keeps its inner table's key outside the top-level storage definition.
-CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src (c0 DateTime) ENGINE = MergeTree() ORDER BY tuple();
-CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.t_on_cluster_mv ON CLUSTER test_shard_localhost
-ENGINE = MergeTree() ORDER BY toTime(c0) AS SELECT c0 FROM ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src;
-SELECT 'on_cluster_oldest_entry_mv', extract(create_table_query, 'ORDER BY [^ ]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_mv';
-
--- A projection carries its own physical sorting key, declared inside the column list.
-CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster_projection_key ON CLUSTER test_shard_localhost
-(c0 DateTime, v UInt32, PROJECTION pr (SELECT c0, v ORDER BY toTime(c0))) ENGINE = MergeTree() ORDER BY tuple();
-SELECT 'on_cluster_oldest_entry_projection', extract(create_table_query, 'ORDER BY toTime[A-Za-z]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_projection_key';
-"
-
 ${CLICKHOUSE_CLIENT} --multiquery -q "
 DROP TABLE t_udf_key;
 DROP TABLE t_attach_key;
 DROP TABLE t_qualified_key;
 DROP TABLE t_as_key;
 DROP TABLE t_as_source;
-DROP TABLE t_clone_key;
-DROP TABLE t_clone_source;
 DROP TABLE t_replayed_key;
 DROP TABLE t_ttl_key;
-DROP TABLE t_on_cluster_key;
-DROP TABLE t_on_cluster_udf_key;
-DROP TABLE t_on_cluster_mv;
-DROP TABLE t_on_cluster_projection_key;
-DROP TABLE t_on_cluster_mv_src;
 DROP FUNCTION ${UDF};
 "

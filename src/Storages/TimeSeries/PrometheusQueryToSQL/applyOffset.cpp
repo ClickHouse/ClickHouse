@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 
 #include <Core/DecimalFunctions.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -8,11 +9,12 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -49,47 +51,74 @@ namespace
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// SELECT group, timestamp + INTERVAL X, value
-                /// FROM <raw_data>
+                /// SELECT group,
+                ///        arrayMap(sample -> (CAST(CAST(sample.1, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type'), sample.2), samples) AS samples
+                /// FROM <samples_data>
+                /// or
+                /// SELECT group, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
+                /// FROM <samples_data>
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-                ASTPtr new_timestamp;
-                if (isDateTime64(context.timestamp_data_type))
+                /// The interval functions don't accept Decimal arguments, so we choose the unit (milliseconds, microseconds
+                /// or nanoseconds) which is not longer than the tick of `result_timestamp_scale`, and pass an integer number of the units.
+                UInt32 result_scale = context.result_timestamp_scale;
+                chassert(result_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
+                UInt32 interval_scale = (result_scale + 2) / 3 * 3;
+                Int64 offset_in_interval_units = 0;
+                if (common::mulOverflow(offset_value.value, DecimalUtils::scaleMultiplier<Int64>(interval_scale - result_scale), offset_in_interval_units))
                 {
-                    /// timestamp + INTERVAL x MILLISECONDS
-                    chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
-                    /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    /// The interval functions do not accept Decimal arguments, so the literal must be
-                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
-                    /// scale >= timestamp_scale.
-                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is too big in expression {}",
+                                    toString(offset_value, result_scale), getPromQLText(expression, context));
+                }
 
-                    static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
-                    std::string_view to_interval_function = to_interval_functions[scale / 3];
+                static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
+                std::string_view to_interval_function = to_interval_functions[interval_scale / 3];
 
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
+                /// The timestamp of a sample is converted to `result_timestamp_type` before adding the interval because it can have
+                /// a type which doesn't support intervals (UInt32). Adding an interval can change the scale
+                /// (for example, DateTime64(4) + INTERVAL 1 MICROSECOND is DateTime64(6)), so we cast the sum back.
+                /// Both casts do nothing if the types already match.
+                const String result_timestamp_type_name = context.result_timestamp_type->getName();
+                auto shift_timestamp = [&](ASTPtr timestamp)
+                {
+                    return makeASTFunction(
+                        "CAST",
+                        makeASTFunction(
+                            "plus",
+                            makeASTFunction("CAST", std::move(timestamp), make_intrusive<ASTLiteral>(result_timestamp_type_name)),
+                            makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
+                        make_intrusive<ASTLiteral>(result_timestamp_type_name));
+                };
+
+                if (expression.store_method == StoreMethod::SAMPLES)
+                {
+                    /// arrayMap(sample -> (<shifted sample.1>, sample.2), samples) AS samples
+                    const String iterator_name = "sample";
+                    ASTPtr sample_timestamp = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{1}));
+                    ASTPtr sample_value = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{2}));
+                    auto new_samples = makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>(iterator_name)),
+                            makeASTFunction("tuple", shift_timestamp(std::move(sample_timestamp)), std::move(sample_value))),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Samples));
+                    new_samples->setAlias(ColumnNames::Samples);
+                    builder.select_list.push_back(std::move(new_samples));
                 }
                 else
                 {
-                    /// timestamp + x
-                    new_timestamp = makeASTFunction(
-                        "plus",
-                        make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        timeSeriesDurationToAST(offset_value, context.timestamp_data_type));
+                    /// <shifted timestamp> AS timestamp, value
+                    auto new_timestamp = shift_timestamp(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+                    new_timestamp->setAlias(ColumnNames::Timestamp);
+                    builder.select_list.push_back(std::move(new_timestamp));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
                 }
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
@@ -185,36 +214,11 @@ namespace
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// SELECT group,
-                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
-                ///        value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                auto new_timestamp = makeASTFunction(
-                    "arrayJoin",
-                    makeASTFunction(
-                        "timeSeriesRange",
-                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
-                return std::move(expression);
+                /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
+                throwUnexpectedStoreMethod(expression, context);
             }
         }
 

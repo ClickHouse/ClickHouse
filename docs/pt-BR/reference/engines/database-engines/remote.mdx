@@ -14,9 +14,9 @@ A lista de tabelas e suas estruturas são obtidas do servidor remoto sob demanda
 
 Isso é útil para federar vários clusters ClickHouse ou para conectar um cluster ClickHouse maior ao `clickhouse-local` ou a um cluster menor.
 
-<div id="creating-a-database">
-  ## Como criar um banco de dados
-</div>
+Para acessar um cluster definido na configuração do servidor pelo nome, em vez de usar endereços explícitos, use o motor de banco de dados [`Cluster`](/pt-BR/reference/engines/database-engines/cluster).
+
+## Como criar um banco de dados {#creating-a-database}
 
 <Tabs>
   <Tab title="Remote" id="remote">
@@ -56,20 +56,16 @@ CREATE DATABASE remote_db
 ENGINE = Remote(my_named_collection, database = 'default');
 ```
 
-<div id="notes">
-  ## Observações
-</div>
+## Observações {#notes}
 
 * O motor é uma view de leitura direta do servidor remoto: instruções DDL como `CREATE TABLE`, `DROP TABLE`, `ALTER` e semelhantes no banco de dados `Remote` não são compatíveis. Gerencie o esquema diretamente no servidor remoto.
 * Os direitos de acesso são aplicados no servidor remoto ao usuário remoto configurado e, localmente, pelos privilégios usuais no banco de dados e em suas tabelas.
 * Uma tabela de um shard local que o usuário não tem permissão para ver é reportada como ausente, e não como proibida; portanto, um banco de dados `Remote` não pode ser usado para sondar os nomes das tabelas de um banco de dados local para o qual o usuário não tem privilégios. Isso se aplica à listagem (`SHOW TABLES`, `EXISTS TABLE`) e à resolução (`DESCRIBE TABLE`, `SHOW CREATE TABLE`, `SELECT`), e essa tabela também não é disponibilizada pelas réplicas remotas de seu shard: o mecanismo de fallback descrito acima só é acionado quando a réplica local realmente não tem a tabela.
 * A listagem das tabelas de um banco de dados que existe na réplica local de um shard também inclui as tabelas presentes apenas nas réplicas remotas desse shard, para que `SHOW TABLES` e `system.tables` sejam consistentes com `EXISTS TABLE`, `DESCRIBE TABLE` e `SELECT`, que recorrem a essas réplicas. Quando nenhuma das réplicas remotas responde, a lista da réplica local é retornada como está, pois ela já é a resposta de uma réplica disponível.
 * Se o servidor remoto estiver indisponível, a listagem de suas tabelas (`SHOW TABLES`, `system.tables`) reportará o erro de conexão em vez de uma lista vazia de tabelas, assim como `EXISTS TABLE` e `SELECT` no mesmo banco de dados. Observe que um `SELECT` em `system.tables` que abrange todos os bancos de dados também falha enquanto esse banco de dados estiver inacessível.
-* Um banco de dados `Remote` pode apontar para outro banco de dados `Remote` no mesmo servidor. Listar e descrever as tabelas dessa cadeia não exige privilégios no banco de dados intermediário — ele não contém dados nem metadados próprios, e cada salto já verifica os direitos do chamador sobre os objetos para os quais atua como proxy. Em contrapartida, ler e gravar dados exige `SELECT` / `INSERT` em cada salto da cadeia, pois a consulta é realmente executada na tabela do banco de dados intermediário, exatamente como em uma tabela `Distributed` sobre outra tabela `Distributed`. A regra de visibilidade descrita acima se mantém ao longo da cadeia: uma tabela que o banco de dados intermediário oculta do chamador também não é disponibilizada pelas réplicas remotas do banco de dados externo. Se o banco de dados intermediário na réplica local não conseguir alcançar seu próprio destino, a réplica local do shard externo não poderá responder — exatamente como se a própria réplica estivesse inativa — e o banco de dados externo recorre às réplicas remotas do shard.
+* Um banco de dados `Remote` pode apontar para outro banco de dados `Remote` no mesmo servidor. Listar e descrever as tabelas dessa cadeia não exige privilégios no banco de dados intermediário — ele não contém dados nem metadados próprios, e cada salto já verifica os direitos do chamador sobre os objetos para os quais atua como proxy. Em contrapartida, ler e gravar dados exige `SELECT` / `INSERT` em cada salto da cadeia, pois a consulta é realmente executada na tabela do banco de dados intermediário, exatamente como em uma tabela `Distributed` sobre outra tabela `Distributed`. A regra de visibilidade descrita acima se mantém ao longo da cadeia: uma tabela que o banco de dados intermediário oculta do chamador também não é disponibilizada pelas réplicas remotas do banco de dados externo. Se o banco de dados intermediário na réplica local não conseguir alcançar seu próprio destino, a réplica local do shard externo não poderá responder — exatamente como se a própria réplica estivesse inativa — e o banco de dados externo recorre às réplicas remotas do shard. Uma cadeia no mesmo servidor que aponta de volta para si mesma (inclusive um banco de dados que aponta para si mesmo) é rejeitada com o erro `INFINITE_LOOP` quando o banco de dados que completa o ciclo é criado; um ciclo que, ainda assim, surja posteriormente (por exemplo, quando o recarregamento da configuração transforma um shard de um banco de dados [`Cluster`](/pt-BR/reference/engines/database-engines/cluster) em um shard local) não afeta outros bancos de dados — listagens de todo o servidor, como `system.tables`, ignoram a cadeia cíclica, que não lista nenhuma tabela, e a resolução de uma tabela nessa cadeia reporta `INFINITE_LOOP`.
 
-<div id="example">
-  ## Exemplo
-</div>
+## Exemplo {#example}
 
 Crie um banco de dados `Remote` que aponta para o banco de dados `system` de um servidor remoto e leia dados dele:
 

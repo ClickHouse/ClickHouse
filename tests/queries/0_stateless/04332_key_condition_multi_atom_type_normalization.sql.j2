@@ -1,0 +1,128 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key condition. -#}
+{% macro check(table, predicate, condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+-- Float literals against an integer key.
+CREATE TABLE test_tn_uint8 (x UInt8) ENGINE = MergeTree ORDER BY x
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_uint8 SELECT number FROM numbers(256);
+{{ check('test_tn_uint8', "x = 5.5") }}
+{{ check('test_tn_uint8', "x != 5.5") }}
+{{ check('test_tn_uint8', "x < 5.5", condition = true) }}
+{{ check('test_tn_uint8', "x > 5.5", condition = true) }}
+{{ check('test_tn_uint8', "x = 5.0") }}
+{{ check('test_tn_uint8', "x < -0.5") }}
+{{ check('test_tn_uint8', "x >= -0.5") }}
+{{ check('test_tn_uint8', "x < 256.5") }}
+{{ check('test_tn_uint8', "x > 256.5") }}
+
+-- An ALWAYS fold composes with prunable atoms from the other predicate.
+CREATE TABLE test_tn_compose (ts DateTime('UTC'), x UInt8) ENGINE = MergeTree ORDER BY (toDate(ts), x)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_compose SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR, number FROM numbers(12);
+{{ check('test_tn_compose', "x > 300.5 AND ts > toDateTime('2026-03-02 00:00:00', 'UTC')") }}
+{{ check('test_tn_compose', "x > -0.5 AND ts > toDateTime('2026-03-02 00:00:00', 'UTC')", condition = true) }}
+
+-- Supertype conversion appends an internal cast to the monotonic chain. Part pruning by statistics
+-- removes the only part for `k = 1000` before the primary key analysis, so its key condition is shown.
+CREATE TABLE test_tn_int8 (k Int8) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_int8 SELECT number - 5 FROM numbers(11);
+{{ check('test_tn_int8', "k < 1000") }}
+{{ check('test_tn_int8', "k = 1000", condition = true) }}
+{{ check('test_tn_int8', "k > -1000") }}
+
+-- The same with a Nullable key.
+CREATE TABLE test_tn_nullable (k Nullable(Int8)) ENGINE = MergeTree ORDER BY k
+SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_nullable SELECT number - 5 FROM numbers(11);
+INSERT INTO test_tn_nullable VALUES (NULL);
+{{ check('test_tn_nullable', "k < 1000") }}
+
+-- FixedString key with prefix patterns: the constant must not be padded.
+CREATE TABLE test_tn_fixed (s FixedString(3)) ENGINE = MergeTree ORDER BY s
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_fixed VALUES ('aaa'), ('abc'), ('abd'), ('xyz');
+{{ check('test_tn_fixed', "s LIKE 'ab%'", condition = true) }}
+{{ check('test_tn_fixed', "startsWith(s, 'ab')", condition = true) }}
+
+-- String column parsed into a Date key.
+CREATE TABLE test_tn_parse (s String) ENGINE = MergeTree ORDER BY toDate(s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_parse SELECT toString(toDate('2026-01-01') + intDiv(number, 2)) FROM numbers(10);
+{{ check('test_tn_parse', "s = '2026-01-03'", condition = true) }}
+-- Order comparisons must not use the parsed key: date parsing does not preserve the
+-- string order (for example, '2026-01-2' > '2026-01-10' as strings), so only equality
+-- goes through the deterministic transform, and `s >= const` builds no atom.
+{{ check('test_tn_parse', "s >= '2026-01-03'") }}
+SELECT count() FROM test_tn_parse WHERE s >= '2026-01-03' SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+-- Unparsable constants must not produce atoms or exceptions.
+{{ check('test_tn_parse', "s = 'garbage'", condition = true) }}
+{{ check('test_tn_parse', "s > 'garbage'") }}
+
+-- With session_timezone set, datetime-parsing chains over String are skipped per candidate;
+-- results must be unchanged.
+SET session_timezone = 'UTC';
+{{ check('test_tn_parse', "s = '2026-01-03'") }}
+{{ check('test_tn_parse', "s >= '2026-01-03'") }}
+SET session_timezone = DEFAULT;
+
+-- DateTime64 key vs DateTime constant and the reverse: compared accurately without cast.
+CREATE TABLE test_tn_dt64 (ts64 DateTime64(3, 'UTC'), ts DateTime('UTC')) ENGINE = MergeTree ORDER BY (ts64, ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_dt64 SELECT toDateTime64('2026-03-01 00:00:00', 3, 'UTC') + INTERVAL number HOUR, toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(8);
+{{ check('test_tn_dt64', "ts64 = toDateTime('2026-03-01 03:00:00', 'UTC')", condition = true) }}
+{{ check('test_tn_dt64', "ts >= toDateTime64('2026-03-01 03:00:00', 3, 'UTC')", condition = true) }}
+
+-- Date32 key with a pre-epoch constant.
+CREATE TABLE test_tn_date32 (d Date32) ENGINE = MergeTree ORDER BY d
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_date32 VALUES ('1900-01-01'), ('1950-06-15'), ('2000-01-01');
+{{ check('test_tn_date32', "d < toDate32('1950-01-01')", condition = true) }}
+
+-- toDate over DateTime64 overflows the Date range for far-future constants: the chain must be rejected
+-- instead of producing a wrapping value. Part pruning by statistics removes the only part before the
+-- primary key analysis, so only the key condition shows the rejection.
+CREATE TABLE test_tn_overflow (ts64 DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY toDate(ts64)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_overflow SELECT toDateTime64('2026-03-01 00:00:00', 3, 'UTC') + INTERVAL number DAY FROM numbers(4);
+{{ check('test_tn_overflow', "ts64 > toDateTime64('2200-01-01 00:00:00', 3, 'UTC')", condition = true) }}
+
+-- Type normalization through multi-atom candidates: each candidate normalizes its constant independently.
+-- Integer key with a monotonic conversion sibling. An integral float produces both atoms with per-candidate
+-- bounds: the direct atom is rewritten exactly (> 5.0 becomes >= 6), and the transformed candidate pushes
+-- the inclusive bound 6 through `toUInt64` (toUInt64(x) >= 6).
+CREATE TABLE test_tn_multi_int (x UInt8) ENGINE = MergeTree ORDER BY (toUInt64(x), x)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_multi_int SELECT number FROM numbers(20);
+{{ check('test_tn_multi_int', "x > 5.0", condition = true) }}
+{{ check('test_tn_multi_int', "x = 7.0") }}
+-- A fractional float cannot be cast accurately into the toUInt64 chain, so that
+-- candidate is rejected and only the rewritten direct atom remains.
+{{ check('test_tn_multi_int', "x > 5.5", condition = true) }}
+
+-- Date constant against a DateTime multi-expression key: the supertype conversion on
+-- the direct atom and the transformed constants of the other candidates coexist.
+CREATE TABLE test_tn_multi_date (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_multi_date SELECT toDateTime('2026-01-08 00:00:00', 'UTC') + INTERVAL number * 6 HOUR FROM numbers(16);
+{{ check('test_tn_multi_date', "ts >= toDate('2026-01-10')", condition = true) }}
+
+-- A key with a String-parsing chain candidate plus the direct String column: an order comparison builds
+-- only the direct String atom, because date parsing does not preserve the string order.
+CREATE TABLE test_tn_multi_parse (s String) ENGINE = MergeTree ORDER BY (toDate(s), s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tn_multi_parse SELECT toString(toDate('2026-01-01') + intDiv(number, 2)) FROM numbers(10);
+{{ check('test_tn_multi_parse', "s >= '2026-01-03'", condition = true) }}

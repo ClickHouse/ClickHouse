@@ -20,6 +20,8 @@ Toutes les valeurs des colonnes sont simplement copiées, à l’exception de ce
   Pour renvoyer une seule ligne contenant la valeur par défaut du type de tableau, vous pouvez l’imbriquer dans [emptyArrayToSingle](/fr/reference/functions/regular-functions/array-functions#emptyArrayToSingle), par exemple : `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (depuis la version 26.5) est un alias de `arrayJoin`, insensible à la casse, sous forme d’appel de fonction (`SELECT unnest(arr)`). La syntaxe PostgreSQL de source de table n’est pas prise en charge (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` et `LATERAL`). Utilisez la clause [`ARRAY JOIN`](/fr/reference/statements/select/array-join) pour ces requêtes.
+
 Par exemple :
 
 ```sql title="Query"

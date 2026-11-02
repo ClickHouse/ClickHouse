@@ -1,0 +1,406 @@
+---
+slug: /optimize/diagnose-slow-queries
+sidebarTitle: 'Diagnosticar consultas lentas'
+title: 'Diagnosticar consultas lentas'
+description: 'Aprenda a identificar consultas lentas de ClickHouse e inspeccionar el uso de recursos y los planes de consulta'
+doc_type: 'guide'
+keywords: ['optimización de consultas', 'registro de consultas', 'consultas lentas', 'EXPLAIN', 'rendimiento']
+---
+
+import NYCTaxiExampleDataset from '/snippets/es/_nyc_taxi_example_dataset.mdx';
+
+El diagnóstico de una consulta lenta comienza con los datos de su historial de consultas. Esta guía muestra cómo usar `system.query_log` para identificar patrones recurrentes de consultas lentas, elegir una ejecución representativa y revisar su uso de recursos. A continuación, usará `EXPLAIN` para inspeccionar el plan de consulta y formular una hipótesis sobre el cuello de botella antes de modificar la consulta o el esquema.
+
+<div id="before-you-begin">
+  ## Antes de empezar
+</div>
+
+Los ejemplos de esta guía utilizan la tabla `nyc_taxi.trips_small_inferred`. Para ejecutarlos tal como se muestran, cree y cargue la tabla si aún no lo ha hecho:
+
+<Accordion title="Configure el conjunto de datos de ejemplo">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+Para reproducir los resultados del registro de consultas de esta guía, ejecute las tres [consultas de carga de trabajo de ejemplo](/es/guides/clickhouse/performance-and-monitoring/query-optimization-example#define-the-baseline-workload) al menos dos veces después de cargar el conjunto de datos. A continuación, vacíe el registro de consultas para que las ejecuciones completadas estén disponibles para los ejemplos siguientes:
+
+```sql
+SYSTEM FLUSH LOGS;
+```
+
+Si no puede ejecutar `SYSTEM FLUSH LOGS`, espere a que el registro de consultas se vacíe automáticamente y vuelva a intentar la primera búsqueda. Al diagnosticar su propia carga de trabajo, asegúrese de que `system.query_log` contenga ejecuciones completadas dentro del intervalo de tiempo que desea inspeccionar.
+
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
+
+De forma predeterminada, ClickHouse registra información sobre las consultas completadas en la tabla [`system.query_log`](/es/reference/system-tables/query_log). Cada registro puede incluir la duración de la consulta, el número de filas leídas, el uso de CPU y memoria, y la actividad de la caché del sistema de archivos.
+
+Estas mediciones ayudan a identificar patrones de consultas lentas y a comprender cómo usan los recursos. Tras seleccionar una ejecución representativa, puede inspeccionar su plan de consulta para investigar en qué puntos podría estar invirtiendo tiempo la consulta.
+
+En un clúster, los datos del registro de consultas se mantienen localmente en cada nodo. Los ejemplos de esta guía usan [`clusterAllReplicas`](/es/reference/functions/table-functions/cluster) para consultar todas las réplicas y [`merge`](/es/reference/functions/table-functions/merge) para incluir la tabla `system.query_log` actual y cualquier tabla `query_log_N` versionada que se conserve tras cambios en el esquema de las tablas del sistema.
+
+Cada ejemplo del registro de consultas incluye pestañas para implementaciones en clúster y de un solo nodo. ClickHouse Cloud proporciona el clúster `default` utilizado en los ejemplos de clúster. En una implementación autogestionada, sustituya `default` por un clúster que figure en [`system.clusters`](/es/reference/system-tables/clusters).
+
+<Note>
+  Los ejemplos establecen [`skip_unavailable_shards`](/es/reference/settings/session-settings#skip_unavailable_shards) para que una réplica temporalmente no disponible no provoque un error en la consulta de diagnóstico. Esto resulta especialmente útil durante el escalado automático. Los registros de una réplica omitida no se incluyen, por lo que los resultados pueden estar incompletos.
+</Note>
+
+<div id="diagnose-a-slow-query">
+  ## Diagnostique una consulta lenta
+</div>
+
+Con ejecuciones completadas en el registro de consultas, siga estos tres pasos en orden. Identificará un patrón recurrente de consultas lentas, elegirá una ejecución representativa e inspeccionará el plan de ejecución de la consulta.
+
+<Steps titleSize="h3">
+  <Step title="Identifique las consultas problemáticas" id="identify-candidate-queries">
+    Comience agrupando las consultas iniciales completadas por `normalized_query_hash`. Esto permite distinguir los patrones de consulta recurrentes de las ejecuciones lentas puntuales. La siguiente consulta ordena los patrones según su duración mediana e incluye una consulta de ejemplo para cada patrón:
+
+    <Tabs>
+      <Tab title="Clúster">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1
+        ```
+      </Tab>
+
+      <Tab title="Nodo único">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        ```
+      </Tab>
+    </Tabs>
+
+    Utilice `executions` para distinguir un workload recurrente de queries aisladas. Un pattern con una duración mediana elevada, ejecuciones frecuentes o un uso elevado de recursos es un candidate más claro para la investigation que una única ejecución lenta.
+
+    A modo de inventario rápido, la siguiente consulta muestra la ejecución completada más lenta de hasta cinco query patterns distintos sobre el NYC Taxi dataset. Excluye las sentencias de carga del dataset y las ejecuciones repetidas del mismo patrón. En el paso siguiente, acotará el query history a las ejecuciones con el `normalized_query_hash` que seleccionó más arriba.
+
+    <Tabs>
+      <Tab title="Clúster">
+        ```sql
+        -- Busca las 5 consultas más largas de la base de datos nyc_taxi en la última hora
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        SETTINGS skip_unavailable_shards = 1
+        FORMAT VERTICAL
+        ```
+      </Tab>
+
+      <Tab title="Nodo único">
+        ```sql
+        -- Busca las 5 consultas más largas de la base de datos nyc_taxi en la última hora
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM merge('system', '^query_log')
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        FORMAT VERTICAL
+        ```
+      </Tab>
+    </Tabs>
+
+    ```response
+    Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+    Row 1:
+    ──────
+    normalized_query_hash: 11000678248135956062
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:36
+    query_duration_ms: 2967
+    query:             WITH
+      dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+      trip_distance / trip_time * 3600 AS speed_mph
+    SELECT
+      quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM
+      nyc_taxi.trips_small_inferred
+    WHERE
+      speed_mph > 30
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 2:
+    ──────
+    normalized_query_hash: 4194765292165295011
+    type:              QueryFinish
+    event_time:        2024-11-27 11:11:33
+    query_duration_ms: 2026
+    query:             SELECT
+        payment_type,
+        COUNT() AS trip_count,
+        formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+        AVG(total_amount) AS total_amount_avg,
+        AVG(tip_amount) AS tip_amount_avg
+    FROM
+        nyc_taxi.trips_small_inferred
+    WHERE
+        pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+    GROUP BY
+        payment_type
+    ORDER BY
+        trip_count DESC;
+
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 3:
+    ──────
+    normalized_query_hash: 1891814463795712754
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:17
+    query_duration_ms: 1860
+    query:             SELECT
+      avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+    FROM nyc_taxi.trips_small_inferred
+    WHERE passenger_count = 1 or passenger_count = 2
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+    ```
+
+    El campo `query_duration_ms` contiene la duración de la consulta en milisegundos. En estos resultados, la consulta de mayor duración tardó 2967 ms.
+
+    También puede identificar consultas candidatas según el uso de recursos en lugar de la duración de la consulta:
+
+    <Accordion title="Identifique las consultas que consumen muchos recursos">
+      Esta consulta ordena las consultas recientes por uso de memoria e incluye su uso de CPU. Los resultados varían según la carga de trabajo y la implementación:
+
+      <Tabs>
+        <Tab title="Clúster">
+          ```sql
+          -- Consultas con mayor uso de memoria
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM clusterAllReplicas('default', merge('system', '^query_log'))
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          SETTINGS skip_unavailable_shards = 1
+          ```
+        </Tab>
+
+        <Tab title="Nodo único">
+          ```sql
+          -- Consultas con mayor uso de memoria
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM merge('system', '^query_log')
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          ```
+        </Tab>
+      </Tabs>
+    </Accordion>
+  </Step>
+
+  <Step title="Elija una ejecución representativa de una consulta" id="choose-a-representative-query-run">
+    Una sola ejecución lenta podría ser un valor atípico causado por una consulta ad hoc o una carga temporal del sistema. Antes de inspeccionar el plan de consulta, revise varias ejecuciones completadas con el mismo [`normalized_query_hash`](/es/reference/system-tables/query_log#columns), que es idéntico para las consultas que solo difieren en valores literales. Elija una ejecución que represente la duración y el uso de recursos habituales del patrón.
+
+    Sustituya el valor asignado a `selected_hash` por el `normalized_query_hash` del patrón que desea investigar:
+
+    <Tabs>
+      <Tab title="Clúster">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1;
+        ```
+      </Tab>
+
+      <Tab title="Nodo único">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10;
+        ```
+      </Tab>
+    </Tabs>
+
+    1. Busque ejecuciones con valores similares de `read_rows` y `read_bytes`.
+    2. Compare `query_duration_ms` y `memory_usage` de esas ejecuciones.
+    3. Seleccione el `query_id` cuyo `query_duration_ms` sea más cercano a la mediana.
+
+    <Note>
+      Los resultados históricos del registro de consultas pueden variar según el estado de la caché y la carga del sistema; utilícelos para elegir una consulta que investigar, no para comparar cambios de optimización. Si el registro de consultas no contiene suficientes ejecuciones completadas, ejecute la consulta varias veces en condiciones similares. La siguiente guía, [Aislar cuellos de botella de las consultas](/es/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks), explica cómo recopilar mediciones controladas para comparar cambios.
+    </Note>
+
+    Los resultados de ejemplo del registro de consultas muestran que cada candidato leyó aproximadamente 329,04 millones de filas. Como referencia, confirme el número de filas de la tabla de ejemplo:
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    ```
+
+    ```response
+    Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+       ┌───count()─┐
+    1. │ 329044175 │ -- 329.04 million
+       └───────────┘
+    ```
+
+    La tabla contiene 329,04 millones de filas, aproximadamente la misma cantidad que se muestra en `read_rows` para cada candidato. Esto sugiere que las consultas examinaron la mayor parte o la totalidad de la tabla, pero no indica por qué se leyeron esas filas ni si esa cantidad es adecuada para la consulta. A continuación, inspeccione el plan de consulta para ver cómo ClickHouse seleccionó y procesó los datos.
+  </Step>
+
+  <Step title="Inspeccione el plan de ejecución" id="explain-statement">
+    Después de seleccionar una ejecución representativa, usa [`EXPLAIN`](/es/reference/statements/explain) para examinar cómo ClickHouse planifica la consulta sin ejecutarla. La salida muestra las operaciones que ClickHouse prevé realizar y cómo se mueven los datos entre ellas, lo que aporta más contexto a las mediciones del registro de consultas.
+
+    Para consultar una introducción detallada a los formatos de salida disponibles, consulta [Comprender la ejecución de consultas con el analyzer](/es/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). En este ejemplo, `EXPLAIN` muestra cómo ClickHouse planea leer y filtrar los datos, y si puede omitir alguno de ellos.
+
+    La salida es un árbol de operaciones que muestra cómo ClickHouse prevé leer, filtrar y procesar los datos. Las operaciones secundarias aparecen debajo de sus operaciones principales. Comienza con la operación de lectura más profunda y luego sigue el plan hacia arriba para ver cómo ClickHouse transforma los datos en el resultado final.
+
+    Para este ejemplo, examina la consulta de velocidad calculada de los resultados del registro de consultas:
+
+    ```sql
+    EXPLAIN actions = 1, compact = 1, pretty = 1, indexes = 1
+    WITH
+        dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+        (trip_distance / trip_time) * 3600 AS speed_mph
+    SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM nyc_taxi.trips_small_inferred
+    WHERE speed_mph > 30
+    ```
+
+    La salida incluye las siguientes operaciones. Detalles como el número de partes y gránulos dependen de cómo se almacenan los datos:
+
+    ```response
+    Output: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+
+    Aggregating
+    │  Aggregates: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    └──Filter
+       │  Filter column: trip_distance / dateDiff('s', pickup_datetime, dropoff_datetime) * 3600 > 30
+       └──ReadFromMergeTree (nyc_taxi.trips_small_inferred)
+    ```
+
+    De abajo hacia arriba, el plan se corresponde con la consulta de la siguiente manera:
+
+    1. `ReadFromMergeTree` lee de `nyc_taxi.trips_small_inferred`. La ausencia de la sección `Indexes`, junto con el hecho de que `read_rows` coincide con el número de filas de la tabla, muestra que ClickHouse lee toda la tabla.
+    2. `Filter` muestra la expresión expandida para `speed_mph > 30`. Para cada fila leída, ClickHouse calcula la duración y la velocidad del viaje, y conserva solo las filas con una velocidad superior a 30 millas por hora.
+    3. `Aggregating` calcula los cuantiles a partir de los valores filtrados de `trip_distance`.
+
+    Este plan identifica tres fuentes de trabajo que se deben evaluar: leer todas las filas, calcular `speed_mph` durante el filtrado y calcular los cuantiles.
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+A continuación, consulte [Aislar cuellos de botella en las consultas](/es/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) para aprender a probar posibles fuentes de carga en condiciones controladas. Compara formas de consulta cada vez más sencillas para identificar qué operaciones requieren una investigación más profunda.

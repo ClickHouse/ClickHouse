@@ -1,0 +1,77 @@
+-- { echoOn }
+
+-- Scalar correlated subquery over a body holding a partially matching IN set.
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+1	0
+2	1
+3	0
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+1	0
+2	1
+3	0
+-- An empty set must read as empty, not as a set that happens to match.
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 9 WHERE 0) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+1	0
+2	0
+3	0
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 9 WHERE 0) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+1	0
+2	0
+3	0
+-- A set matching every row, so a lost set flips every value rather than none.
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT arrayJoin([1, 2, 3])) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+1	1
+2	1
+3	1
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT arrayJoin([1, 2, 3])) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+1	1
+2	1
+3	1
+-- Two sets in one body: all of them must be re-attached, not just the first.
+SELECT * FROM (SELECT (SELECT x) AS s, m, n FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m, x IN (SELECT 3) AS n GROUP BY x, m, n)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+1	0	0
+2	1	0
+3	0	1
+SELECT * FROM (SELECT (SELECT x) AS s, m, n FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m, x IN (SELECT 3) AS n GROUP BY x, m, n)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+1	0	0
+2	1	0
+3	0	1
+-- EXISTS reaches the same decorrelation path as the scalar form.
+SELECT x, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m GROUP BY x, m) AS t WHERE EXISTS (SELECT 1 WHERE t.x > 1) ORDER BY x
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+2	1
+3	0
+SELECT x, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m GROUP BY x, m) AS t WHERE EXISTS (SELECT 1 WHERE t.x > 1) ORDER BY x
+SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+2	1
+3	0
+SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) AS x GROUP BY x, x IN (SELECT 2)) AS t WHERE NOT EXISTS (SELECT 1 WHERE t.x > 2)
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+2
+-- Both decorrelation join kinds duplicate the body, so neither arm may be relied on to build first.
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left';
+1	0
+2	1
+3	0
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'right';
+1	0
+2	1
+3	0
+-- Readiness is structural rather than a matter of scheduling: one set gate dominates the whole plan,
+-- so a duplicated body cannot leave behind a second gate with no builder under it.
+SELECT countIf(explain LIKE '%CreatingSet (Create set for subquery)%') AS builders, countIf(explain LIKE '%DelayedCreatingSets%') AS placeholders, countIf(explain LIKE '%CreatingSets (Create sets before main query execution)%') AS set_gates
+FROM (EXPLAIN PLAN SELECT (SELECT x) FROM (SELECT arrayJoin([1, 2, 3]) AS x GROUP BY x, x IN (SELECT 2)) SETTINGS correlated_subqueries_use_in_memory_buffer = 0);
+1	0	1
+SELECT countIf(explain LIKE '%CreatingSet (Create set for subquery)%') AS builders, countIf(explain LIKE '%DelayedCreatingSets%') AS placeholders, countIf(explain LIKE '%CreatingSets (Create sets before main query execution)%') AS set_gates
+FROM (EXPLAIN PLAN SELECT (SELECT x) FROM (SELECT arrayJoin([1, 2, 3]) AS x GROUP BY x, x IN (SELECT 2)) SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left');
+1	0	1

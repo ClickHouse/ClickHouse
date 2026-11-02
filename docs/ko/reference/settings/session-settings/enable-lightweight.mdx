@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 다음 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동으로 생성됩니다.
 
-<div id="enable_lightweight_delete">
-  ## enable_lightweight_delete
-</div>
+## enable_lightweight_delete {#enable_lightweight_delete}
 
 **별칭**: `allow_experimental_lightweight_delete`
 
@@ -24,9 +22,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 MergeTree 테이블에서 경량한 DELETE 뮤테이션을 사용할 수 있도록 합니다.
 
-<div id="enable_lightweight_update">
-  ## enable_lightweight_update
-</div>
+## enable_lightweight_update {#enable_lightweight_update}
 
 <BetaBadge />
 
@@ -34,7 +30,7 @@ MergeTree 테이블에서 경량한 DELETE 뮤테이션을 사용할 수 있도�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "경량 업데이트가 베타 상태로 변경되었습니다. 'allow_experimental_lightweight_update' 설정의 별칭이 추가되었습니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "경량 업데이트가 베타 상태로 변경되었습니다. 'allow_experimental_lightweight_update' 설정의 별칭이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "새로운 설정입니다. 당시에는 설정 이름이 `allow_experimental_lightweight_update`였으며, 현재는 이 설정의 별칭으로 사용됩니다."}]}]} />
 
 경량 업데이트를 사용할 수 있습니다.
 

@@ -60,7 +60,7 @@ PageCacheWriter::PageCacheWriter(
 {
 }
 
-size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim & claim)
+size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const FillRole & role)
 {
     /// A bypass tier populates nothing - skip before any `getOrSet`.
     if (bypass_if_missing)
@@ -107,22 +107,21 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
     return loaded ? range_member.size : 0;
 }
 
-CacheWriter::Lead PageCacheWriter::claimLeadRole(ByteRange range)
+CacheWriter::FillRole PageCacheWriter::takeFillRole()
 {
+    /// This tier elects no downloader, so the role only answers "is there anything left to fill".
     /// Re-probe read-only: if the block was cached by a concurrent query since `resolve`, adopt its cell
-    /// and report the whole block as `available`; otherwise hold the claim to fill it.
-    Lead lead;
-    lead.available = ByteRange{range.offset, 0};
-
+    /// (`committed()` then reports the whole block) and hold nothing; otherwise take the role to fill it.
+    /// Two readers can both take it and both fetch; `getOrSet` keeps the first write.
+    bool resident = false;
     if (auto got = cache->get(PageCacheByteRange{range_member.offset, range_member.size}.hash(file.baseHash()), inject_eviction))
     {
         std::lock_guard lock(committed_mutex);
         cell = std::move(got);
-        lead.available = range_member;
+        resident = true;
     }
 
-    lead.claim = makeClaim(/*held=*/lead.available.size == 0, /*release=*/nullptr);
-    return lead;
+    return makeFillRole(/*held=*/!resident, /*release=*/nullptr);
 }
 
 ChainedBuffers PageCacheWriter::read(ByteRange sub)
@@ -192,7 +191,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::res
         else
         {
             r.kind = CacheResolution::Kind::Miss;
-            if (populatesOnMiss())
+            if (!bypass_if_missing)
                 r.writer = std::make_unique<PageCacheWriter>(
                     cache, file, inject_eviction, bypass_if_missing, block);
         }

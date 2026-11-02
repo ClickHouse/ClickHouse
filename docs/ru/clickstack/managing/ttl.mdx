@@ -50,7 +50,7 @@ Time-to-Live (TTL) — важная возможность ClickStack для э�
 
 Чтобы изменить TTL, можно сделать одно из следующего:
 
-1. **Изменить схемы таблиц (рекомендуется)**. Для этого нужно подключиться к экземпляру ClickHouse, например с помощью [clickhouse-client](/ru/concepts/features/interfaces/cli) или [Cloud SQL Console](/ru/products/cloud/features/sql-console-features/sql-console). Например, TTL таблицы `otel_logs` можно изменить с помощью следующего DDL:
+1. **Изменить схемы таблиц (рекомендуется)**. Для этого нужно подключиться к экземпляру ClickHouse, например с помощью [clickhouse-client](/ru/concepts/features/interfaces/client) или [Cloud SQL Console](/ru/products/cloud/features/sql-console-features/sql-console). Например, TTL таблицы `otel_logs` можно изменить с помощью следующего DDL:
 
 ```sql
 ALTER TABLE default.otel_logs

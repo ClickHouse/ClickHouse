@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_table;
 }
 
 
@@ -29,12 +29,12 @@ namespace
     AggregateFunctionPtr createAggregateFunctionTimeSeriesTopKMasks(
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
     {
-        if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0
-            && (*settings)[Setting::allow_experimental_time_series_table] == 0)
+        if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0
+            && (*settings)[Setting::enable_time_series_table] == 0)
             throw Exception(
                 ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                "Aggregate function {} is experimental and disabled by default. "
-                "Enable it with setting allow_experimental_time_series_aggregate_functions",
+                "Aggregate function {} is in private preview and disabled by default. "
+                "Enable it with setting enable_time_series_aggregate_functions",
                 name);
 
         assertNoParameters(name, parameters);
@@ -106,9 +106,9 @@ preferring the series with the smaller `key`.
 This function implements the `topk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
 
-:::note
-This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions = 1`.
-:::
+<Note>
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions = 1`.
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_topk = R"(
 timeSeriesTopKMasks(k, key, values)
@@ -124,7 +124,7 @@ timeSeriesTopKMasks(k, key, values)
     {
         "Selecting the 2 greatest series per time step",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH [(1, [10., 1., NULL]), (2, [20., 2., 2.]), (3, [30., NULL, 1.])]::Array(Tuple(UInt64, Array(Nullable(Float64)))) AS series
 SELECT timeSeriesTopKMasks(2, s.1, s.2)
 FROM (SELECT arrayJoin(series) AS s);
@@ -152,9 +152,9 @@ preferring the series with the smaller `key`.
 This function implements the `bottomk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
 
-:::note
-This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions = 1`.
-:::
+<Note>
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions = 1`.
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_bottomk = R"(
 timeSeriesBottomKMasks(k, key, values)
@@ -163,7 +163,7 @@ timeSeriesBottomKMasks(k, key, values)
     {
         "Selecting the 2 smallest series per time step",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH [(1, [10., 1., NULL]), (2, [20., 2., 2.]), (3, [30., NULL, 1.])]::Array(Tuple(UInt64, Array(Nullable(Float64)))) AS series
 SELECT timeSeriesBottomKMasks(2, s.1, s.2)
 FROM (SELECT arrayJoin(series) AS s);
@@ -189,9 +189,9 @@ with non-NULL values at that step are selected. Sampling key ties are broken by 
 This function implements the `limitk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
 
-:::note
-This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions = 1`.
-:::
+<Note>
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions = 1`.
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_limitk = R"(
 timeSeriesLimitKMasks(k, key, sampling_key, values)
@@ -206,7 +206,7 @@ timeSeriesLimitKMasks(k, key, sampling_key, values)
     {
         "Selecting 2 series per time step by the smallest sampling keys",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH [(1, [10., 1., NULL], 300), (2, [20., 2., 2.], 100), (3, [30., NULL, 1.], 200)]::Array(Tuple(UInt64, Array(Nullable(Float64)), UInt64)) AS series
 SELECT timeSeriesLimitKMasks(2, s.1, s.3, s.2)
 FROM (SELECT arrayJoin(series) AS s);

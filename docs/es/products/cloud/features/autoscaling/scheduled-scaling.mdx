@@ -7,18 +7,18 @@ title: 'escalado programado'
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 Los servicios de ClickHouse Cloud escalan automáticamente en función del uso de CPU y memoria, pero muchas cargas de trabajo siguen patrones predecibles: picos diarios de ingestión, trabajos por lotes que se ejecutan por la noche o tráfico que disminuye drásticamente los fines de semana. Para estos casos de uso, escalado programado le permite definir exactamente cuándo debe escalar su servicio, ya sea hacia arriba o hacia abajo, independientemente de las métricas en tiempo real.
 
-Con escalado programado, configura un conjunto de reglas basadas en el tiempo directamente en la consola de ClickHouse Cloud. Cada regla especifica una hora, una recurrencia (diaria, semanal o personalizada) y el tamaño objetivo, ya sea el número de réplicas (horizontal) o el nivel de memoria (vertical). En el momento programado, ClickHouse Cloud aplica automáticamente el cambio, de modo que su servicio tenga el tamaño adecuado antes de que llegue la demanda, en lugar de reaccionar a ella después.
+Con escalado programado, configura un conjunto de reglas basadas en el tiempo directamente en la consola de ClickHouse Cloud. Cada regla especifica los días en que está activa, una hora de inicio y otra de finalización en UTC, y la configuración que se aplicará durante esa ventana: el número de réplicas (horizontal), la memoria mínima y máxima por réplica (vertical) y si se permite que el servicio permanezca inactivo. Mientras la ventana está activa, ClickHouse Cloud aplica esa configuración y, cuando termina, vuelve a su configuración de escalado predeterminada, de modo que su servicio tenga el tamaño adecuado antes de que llegue la demanda, en lugar de reaccionar a ella después.
 
 Esto es distinto del escalado automático basado en métricas, que responde dinámicamente a la presión sobre la CPU y la memoria. El escalado programado es determinista: sabe exactamente cuándo se producirá el escalado y a qué tamaño. Ambos enfoques son complementarios: un servicio puede tener una programación de escalado base y seguir beneficiándose del escalado automático dentro de esa ventana si las cargas de trabajo fluctúan de forma inesperada.
 
-Actualmente, el escalado programado está disponible en **vista previa privada**. Para habilitarlo en su organización, póngase en contacto con el equipo de soporte de ClickHouse.
+Actualmente, el escalado programado está disponible en **Beta**.
 
 <div id="setting-up-a-scaling-schedule">
   ## Configurar una programación de escalado
@@ -32,11 +32,11 @@ Para configurar una programación, ve a tu servicio en la consola de ClickHouse 
 
 Cada regla requiere:
 
-* **Time:** cuándo debe producirse la acción de escalado (en tu zona horaria local)
-* **Recurrence:** con qué frecuencia se repite la regla (p. ej., todos los días laborables, todos los domingos)
-* **Target size:** el número de réplicas o la cantidad de memoria a la que se debe escalar
+* **Días activos:** los días de la semana a los que se aplica la regla
+* **Hora de inicio y fin:** la ventana durante la cual se aplica la regla, indicado en **UTC** y en horas completas. Una ventana cuya hora de finalización sea anterior a la hora de inicio se extiende durante la noche hasta el día siguiente
+* **Configuración que se aplicará:** el número de réplicas, la memoria mínima y máxima por réplica, y el tiempo mínimo de inactividad (o sin entrar en estado inactivo) que se utilizarán mientras la ventana esté activa
 
-Se pueden combinar varias reglas para crear una programación semanal completa. Por ejemplo, podrías escalar hasta 5 réplicas todos los días laborables a las 6:00 a. m. y volver a 2 réplicas a las 8:00 p. m.
+Se pueden combinar varias reglas para crear una programación semanal completa, siempre que sus ventanas no se solapen. Por ejemplo, una única regla que abarque de lunes a viernes de 06:00 a 20:00 UTC puede mantener tu servicio en un tamaño mayor durante la jornada laboral, y tu configuración predeterminada se aplicará fuera de esa ventana.
 
 <div id="use-cases">
   ## Casos de uso

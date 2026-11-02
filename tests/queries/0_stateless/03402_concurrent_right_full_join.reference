@@ -38,8 +38,8 @@ Positions: 4 0 1
           Actions: INPUT : 0 -> __table1.id UInt32 : 0
                    INPUT : 1 -> __table1.value String : 1
                    FUNCTION toNullable(__table1.id : 0) -> toNullable(__table1.id) Nullable(UInt32) : 2
-                   FUNCTION toNullable(__table1.value : 1) -> toNullable(__table1.value) Nullable(String) : 3
-          Positions: 0 2 3 1
+                   FUNCTION toNullable(__table1.value :: 1) -> toNullable(__table1.value) Nullable(String) : 3
+          Positions: 0 2 3
             Expression (Change column names to column identifiers)
             Actions: INPUT : 0 -> id UInt32 : 0
                      INPUT : 1 -> value String : 1

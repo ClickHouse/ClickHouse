@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
@@ -35,6 +36,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -52,9 +54,27 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+    extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
+    extern const int ZSTD_DECODER_FAILED;
+}
+
+namespace
+{
+
+/// Writes an error of the Prometheus HTTP API in its JSON format.
+void writePrometheusError(WriteBuffer & out, std::string_view error_type, std::string_view message)
+{
+    writeString(R"({"status":"error","errorType":")", out);
+    writeString(error_type, out);
+    writeString(R"(","error":)", out);
+    writeJSONString(message, out, FormatSettings{});
+    writeChar('}', out);
+}
+
 }
 
 /// Base implementation of a prometheus protocol.
@@ -67,6 +87,7 @@ public:
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
+    virtual bool sendsJSONErrors() const { return false; }
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -328,8 +349,19 @@ public:
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
 
-            if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+            try
+            {
+                if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+            }
+            catch (const Exception & e)
+            {
+                /// A body this server cannot decode is the sender's to fix, and a sender resends a 5xx for ever.
+                /// The decoders' own codes also cover reading stored files, so only this request retags them.
+                if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED || e.code() == ErrorCodes::ZSTD_DECODER_FAILED)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                throw;
+            }
         }
 
         protocol.write(write_request.timeseries(), write_request.metadata());
@@ -371,8 +403,17 @@ public:
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
                 std::make_unique<SnappyBasicReadBuffer>(wrapReadBufferPointer(request.getStream()))};
 
-            if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+            try
+            {
+                if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                throw;
+            }
         }
 
         /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
@@ -430,6 +471,8 @@ public:
 
     bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
+    bool sendsJSONErrors() const override { return true; }
+
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
@@ -474,21 +517,33 @@ public:
 
         response.setContentType("application/json");
 
+        /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
+        StoragePtr table;
+        if (!Poco::URI(uri).getPath().ends_with("/format_query"))
+            table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+
         try
         {
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
+            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
+            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
+            const String uri_path = Poco::URI(uri).getPath();
+
+            if (uri_path.ends_with("/format_query"))
+            {
+                /// The format_query endpoint only parses and reformats the given PromQL expression,
+                /// so it doesn't need the TimeSeries table.
+                formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()
             {
                 getOutputStream(response).finalize();
             };
-
-            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
-            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
-            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
-            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
 
             if (uri_path.ends_with("/query_range"))
             {
@@ -536,10 +591,6 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
-            else if (uri_path.ends_with("/format_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
-            }
             else if (uri_path.ends_with("/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
@@ -573,11 +624,12 @@ public:
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
             }
             else
             {
@@ -598,12 +650,15 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
+            /// not with the query: report it as an internal error so that clients don't attribute it
+            /// to the PromQL expression.
+            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            response.setStatusAndReason(
+                server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
-            writeJSONString(e.message(), error_buf, FormatSettings{});
-            writeString("}", error_buf);
+            writePrometheusError(error_buf, server_side_error ? "internal" : "bad_data", e.message());
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
 
@@ -612,6 +667,19 @@ public:
     }
 
 private:
+    /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
+    /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
+    /// the comments removed, and the redundant parentheses dropped.
+    static void formatQuery(WriteBuffer & out, const String & query)
+    {
+        PrometheusQueryTree promql_tree;
+        promql_tree.parse(query);
+
+        writeString(R"({"status":"success","data":)", out);
+        writeJSONString(promql_tree.toString(), out, FormatSettings{});
+        writeChar('}', out);
+    }
+
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
     Int64 getMetadataLimitParam(const String & name) const
     {
@@ -690,6 +758,8 @@ public:
         if (current_impl)
             current_impl->onException();
     }
+
+    bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
 
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,
@@ -795,7 +865,26 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
-        getOutputStream(response).cancelWithException(request, status.code, status.message, nullptr);
+        String message = status.message;
+
+        /// Prometheus clients can parse an error of the query API only in its JSON format.
+        if (impl->sendsJSONErrors() && !response.sent())
+        {
+            response.setContentType("application/json");
+            auto http_status = exceptionCodeToHTTPStatus(status.code);
+            std::string_view error_type = "bad_data";
+            if (http_status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+                error_type = "not_found";
+            else if (http_status == Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE)
+                error_type = "unavailable";
+            else if (http_status >= Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR)
+                error_type = "internal";
+            WriteBufferFromOwnString json;
+            writePrometheusError(json, error_type, status.message);
+            message = json.str();
+        }
+
+        getOutputStream(response).cancelWithException(request, status.code, message, nullptr);
 
         tryCallOnException();
     }

@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
+#include <Storages/MergeTree/StreamBaseManifest.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
@@ -84,6 +85,15 @@ class MergeTask
 {
 public:
     static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
+    /// Marks the suffix of the throwaway temporary part of `OPTIMIZE ... DRY RUN`. Kept short:
+    /// it replaces the part name in the temporary directory name, so it is paid on every dry run.
+    static constexpr auto DRY_RUN_TEMP_INFIX = "dr_";
+
+    /// Assembles the temporary directory name of a merge.
+    static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
+
+    /// Whether `part` has a calculated rows TTL that has expired at `time` for all its rows.
+    static bool isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time);
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -282,6 +292,9 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
+        /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
+        /// per-column writer and MergeTextIndexesTask.
+        StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 

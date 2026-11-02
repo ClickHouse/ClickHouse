@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Desarrollo",
+      "group": "Compilación",
       "pages": [
         "es/resources/develop-contribute/build/build",
         "es/resources/develop-contribute/build/build-osx",
@@ -23,15 +23,13 @@
     {
       "group": "Protocolo nativo",
       "pages": [
-        "es/resources/develop-contribute/native-protocol/basics",
-        "es/resources/develop-contribute/native-protocol/client",
-        "es/resources/develop-contribute/native-protocol/server",
-        "es/resources/develop-contribute/native-protocol/columns",
+        "es/resources/develop-contribute/native-protocol/protocol",
+        "es/resources/develop-contribute/native-protocol/format",
         "es/resources/develop-contribute/native-protocol/hash"
       ]
     },
     {
-      "group": "Contribuir",
+      "group": "Contribuciones",
       "pages": [
         "es/resources/develop-contribute/contribute/tests",
         "es/resources/develop-contribute/contribute/continuous-integration",
