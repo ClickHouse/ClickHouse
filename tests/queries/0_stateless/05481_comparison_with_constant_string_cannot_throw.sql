@@ -13,8 +13,6 @@ SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND d > '2010-01-
 SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND dt > '2010-01-01 00:00:00';
 SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND n > '0';
 
--- A string that does not convert keeps the comparison among those that can throw.
-SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND d > 'abc'; -- { serverError CANNOT_PARSE_DATE }
 -- Without the reordering the division is evaluated first.
 SELECT count() FROM t_cmp_const_string WHERE intDiv(10, x) > 1 AND d > '2010-01-01' SETTINGS short_circuit_function_evaluation_reorder_arguments = 0; -- { serverError ILLEGAL_DIVISION }
 

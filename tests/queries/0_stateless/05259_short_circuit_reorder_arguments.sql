@@ -111,7 +111,7 @@ SELECT count() FROM numbers(10) WHERE intDiv(10, number % 10) > 1 AND number % 1
 SETTINGS short_circuit_function_evaluation = 'disable', short_circuit_function_evaluation_reorder_arguments = 1; -- { serverError ILLEGAL_DIVISION }
 
 -- A cheap atom of an AND chain in `WHERE` is moved only in front of heavy atoms: two cheap atoms keep the written order,
--- because the first one may be the more selective one (`notEmpty` does not describe whether it can throw, `less` does).
+-- because the first one may be the more selective one.
 SELECT trim(explain) FROM (EXPLAIN actions = 1, pretty = 0, compact = 1 SELECT count() FROM (SELECT toString(number) AS s, number FROM numbers(10)) WHERE notEmpty(s) AND s < 'abc')
 WHERE explain LIKE '%AND column%'
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
