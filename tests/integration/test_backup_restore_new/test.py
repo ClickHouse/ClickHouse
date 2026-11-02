@@ -12,7 +12,12 @@ from datetime import datetime
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
+from helpers.test_tools import (
+    TSV,
+    assert_eq_with_retry,
+    assert_logs_contain_with_retry,
+    wait_condition,
+)
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1930,6 +1935,34 @@ def test_restore_table_not_evaluate_table_defaults():
             [9, 10, -1],
         ]
     )
+
+
+def test_system_query_masking_rules():
+    instance.query(
+        "CREATE QUERY MASKING RULE backup_rule REGEXP 'BACKUPSECRET_[0-9]+' REPLACE '[backup-hidden]'"
+    )
+    try:
+        backup_name = new_backup_name()
+        instance.query(f"BACKUP TABLE system.query_masking_rules TO {backup_name}")
+
+        instance.query("DROP QUERY MASKING RULE backup_rule")
+        assert (
+            instance.query("SELECT count() FROM system.query_masking_rules") == "0\n"
+        )
+
+        instance.query(f"RESTORE TABLE system.query_masking_rules FROM {backup_name}")
+        assert (
+            instance.query("SELECT name, replace FROM system.query_masking_rules")
+            == "backup_rule\t[backup-hidden]\n"
+        )
+
+        # The REGEXP is hidden from SQL, so check that it was restored by masking with it.
+        instance.rotate_logs()
+        instance.query("SELECT 'BACKUPSECRET_1'")
+        assert_logs_contain_with_retry(instance, r"SELECT '\[backup-hidden\]'")
+        assert not instance.contains_in_log("BACKUPSECRET_1")
+    finally:
+        instance.query("DROP QUERY MASKING RULE IF EXISTS backup_rule")
 
 
 def test_system_functions():
