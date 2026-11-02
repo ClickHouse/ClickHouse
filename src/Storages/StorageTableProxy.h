@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <base/isSharedPtrUnique.h>
@@ -24,6 +25,7 @@ public:
         , get_nested(std::move(get_nested_))
         , engine_name(std::move(engine_name_))
         , stores_data_on_disk(engineStoresDataOnDisk(engine_name))
+        , supports_replication(engineSupportsReplication(engine_name))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -130,6 +132,14 @@ public:
         return nested ? nested->getActionLock(action_type) : ActionLock{};
     }
 
+    /// Nothing was locked in a table that was never started, but a loaded one has to resume its background work.
+    void onActionLockRemove(StorageActionBlockType action_type) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->onActionLockRemove(action_type);
+    }
+
     /// The answers that exist only once the storage does. An observer that walks every table gets
     /// the empty answer rather than loading one.
     template <typename Ask>
@@ -156,12 +166,7 @@ public:
     bool supportsReplication() const override
     {
         std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->supportsReplication();
-        /// The `Replicated` and `Shared` MergeTree engines are the replicating ones, so the answer
-        /// here matches what the storage itself would say once it exists.
-        return (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared"))
-            && engine_name.ends_with("MergeTree");
+        return nested ? nested->supportsReplication() : supports_replication;
     }
 
     /// Startup is deferred until first access via `getNested`.
@@ -333,6 +338,16 @@ private:
         return features && features->stores_data_on_disk;
     }
 
+    /// The replicated MergeTree engines are registered with `supports_replication`. A data lake engine replicates
+    /// as well, since its data is shared (`StorageObjectStorage::supportsReplication`), but it is not registered so,
+    /// and is recognized by the settings it declares instead. This is what the storage says once it exists.
+    static bool engineSupportsReplication(const String & engine_name_)
+    {
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(engine_name_);
+        return features
+            && (features->supports_replication || features->has_builtin_setting_fn == &DataLakeStorageSettings::hasBuiltin);
+    }
+
     /// The storage of a table that was never loaded, built without startup for `DROP` and kept so that
     /// `dropInnerTableIfAny` and `drop` work on the same one. Null when it cannot be built.
     StoragePtr tryGetNestedForDrop()
@@ -361,6 +376,7 @@ private:
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
     const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
+    const bool supports_replication; /// Whether the engine replicates, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     mutable StoragePtr built_for_drop; /// Built without startup for `DROP`, see `tryGetNestedForDrop`.
     LoggerPtr log;

@@ -1310,7 +1310,7 @@ def check_storage_proxy_forwards(files) -> str:
         "totalRowsByPartitionPredicate", "totalBytesUncompressed", "lifetimeRows", "lifetimeBytes",
         # A config reload sweeps every table, and an unloaded one picks up new disks when it loads.
         "initializeDiskOnConfigChange",
-        # Nothing is locked in a table that was never started.
+        # Nothing is locked in a table that was never started, so `StorageTableProxy` forwards it only once loaded.
         "onActionLockRemove",
         # Declared on the nested DataValidationTasksBase, not on IStorage itself.
         "size",
