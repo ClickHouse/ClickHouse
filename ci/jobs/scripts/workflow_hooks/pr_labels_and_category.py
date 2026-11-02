@@ -82,6 +82,9 @@ class Labels:
 
     CI_BUILD = "ci-build"
     CI_FORCE_ALL = "ci-force-all"
+    # Exempts a bug fix PR from the requirement to add new tests in `new_tests_check.py`,
+    # e.g. a dependency bump that has no meaningful regression test.
+    CI_SKIP_NEW_TESTS_CHECK = "ci-skip-new-tests-check"
 
     CI_PERFORMANCE = "ci-performance"
 
