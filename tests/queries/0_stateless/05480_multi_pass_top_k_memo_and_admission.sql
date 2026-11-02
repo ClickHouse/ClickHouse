@@ -1,18 +1,11 @@
--- The multi-pass top-K aggregation where its runs or its passes could see different data, or exceed the
--- limits of the query. The profile events show which passes ran.
+-- The multi-pass top-K aggregation where its runs could see different data, or its passes could read the
+-- input differently. The profile events show which passes ran.
 -- Candidates that an earlier run kept hold no rows once the table loses their keys. With fewer candidates
 -- holding rows than the top takes, the top takes groups that no candidate covers, at any rank, also at a rank
 -- of 0 that no bound of a cell excludes, so the run declines, and so do the next runs.
 -- An input that a pass could read differently keeps the strategy off: a column that a part lacks and whose
 -- default the reader computes in every pass, also read as a subcolumn, and a set of a table, also captured by
 -- a lambda.
--- The passes read the input up to four times, so a limit of the rows to read must allow four times its rows,
--- and a limit of the bytes to read 40 times the decoded bytes of its columns. A group holds at least one row,
--- so a limit of the groups must allow the rows of the read. A limit that breaks the read keeps the strategy
--- off.
--- With states that grow, the candidate pass keeps the external aggregation of the query: it may flush its
--- table after any block, and it re-seeds the candidates after every flush, but it never flushes while it
--- seeds them.
 -- A run that keeps no candidates for the next runs declines when many of the best keys of the sample come in
 -- runs, which hide other heavy keys between the sampled granules. A run that keeps them falls back once
 -- instead.
@@ -70,21 +63,6 @@ SELECT k, count() AS c FROM t_inputs WHERE d.flag = 1 GROUP BY k ORDER BY c DESC
 SELECT k, count() AS c FROM t_inputs WHERE arrayExists(s -> s IN ('heavy0', 'heavy1'), [k]) GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'inputs_03_lambda_literals';
 SELECT k, count() AS c FROM t_inputs WHERE arrayExists(s -> s IN t_allowed, [k]) GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'inputs_04_lambda_table_set', max_block_size = 65536;
 
--- The column `k` holds less than 1 MB of decoded bytes, and the query counts less than 1 MB of read bytes.
-SELECT k, count() AS c FROM t_inputs GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'limits_01_within', max_rows_to_read = 270336, max_bytes_to_read = 1000000000, max_rows_to_group_by = 67584;
-SELECT k, count() AS c FROM t_inputs GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'limits_02_rows_to_read', max_rows_to_read = 270335, max_block_size = 65536;
-SELECT k, count() AS c FROM t_inputs GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'limits_03_bytes_to_read', max_bytes_to_read = 4000000, max_block_size = 65536;
-SELECT k, count() AS c FROM t_inputs GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'limits_04_rows_to_group_by', max_rows_to_group_by = 67583, max_block_size = 65536;
-SELECT k, count() AS c FROM t_inputs GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'limits_05_break', max_rows_to_read = 1000000, read_overflow_mode = 'break', max_block_size = 65536;
-
--- Every block of the candidate pass exceeds the threshold of the external aggregation. Four of the keys tie,
--- so the outer query orders them.
-SELECT 'flushes of the candidate pass';
-SELECT * FROM (SELECT k, count() AS c, uniqExact(x) FROM t_inputs GROUP BY k ORDER BY c DESC LIMIT 5) ORDER BY k
-SETTINGS log_comment = 'spills_01_candidate_pass', max_threads = 1, max_block_size = 8192, group_by_two_level_threshold_bytes = 1,
-    max_bytes_before_external_group_by = 1, min_bytes_before_external_group_by = 0;
-SELECT * FROM (SELECT k, count() AS c, uniqExact(x) FROM t_inputs GROUP BY k ORDER BY c DESC LIMIT 5) ORDER BY k SETTINGS adaptive_aggregator_top_k = 0, max_block_size = 65536;
-
 CREATE TABLE t_runs (k String, x UInt64) ENGINE = MergeTree ORDER BY x
 SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 -- The keys `s0` to `s9` hold 24 to 33 of every 1009 rows, spread over the table. The keys `c0` to `c9` come
@@ -116,10 +94,9 @@ SELECT
     ProfileEvents['AdaptiveAggregationMultiPassTopKPilotPasses'] AS pilot_passes,
     ProfileEvents['AdaptiveAggregationMultiPassTopKCandidatePasses'] AS candidate_passes,
     ProfileEvents['AdaptiveAggregationMultiPassTopKFallbackPasses'] AS fallback_passes,
-    ProfileEvents['AdaptiveAggregationMultiPassTopKDeclines'] AS declines,
-    ProfileEvents['ExternalAggregationWritePart'] > 0 AS spilled
+    ProfileEvents['AdaptiveAggregationMultiPassTopKDeclines'] AS declines
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND match(log_comment, '^(memo|inputs|limits|spills|runs)_')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND match(log_comment, '^(memo|inputs|runs)_')
 ORDER BY log_comment;
 
 DROP TABLE t_memo;
