@@ -5,6 +5,8 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -161,27 +163,45 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
         {
             std::lock_guard lock(mutex);
 
-            ReservationPtr reservation;
-            for (size_t i = 0; i < disks.size() && !reservation; ++i)
+            const bool refresh_disks = (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms);
+            if (refresh_disks)
             {
-                if (i == 0 && (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms))
-                {
-                    disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
-                    least_used_update_watch.restart();
-
-                    DiskWithSize disk = disks_by_size.top();
-                    reservation = try_reserve(disk.disk);
-                }
-                else
-                {
-                    DiskWithSize disk = disks_by_size.top();
-                    disks_by_size.pop();
-
-                    reservation = try_reserve(disk.disk);
-                    disks_by_size.push(disk);
-                }
+                disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                least_used_update_watch.restart();
             }
 
+            if (disks_by_size.empty())
+                return {};
+
+            DiskWithSize disk = disks_by_size.top();
+            auto reservation = try_reserve(disk.disk);
+            if (reservation)
+            {
+                if (!refresh_disks)
+                {
+                    disks_by_size.pop();
+                    disks_by_size.push(disk);
+                }
+                return reservation;
+            }
+
+            /// Heap comparisons can query the disk. Keep the shared queue intact if a retry throws.
+            auto remaining_disks = disks_by_size;
+            remaining_disks.pop();
+            std::vector<DiskWithSize> tried_disks{disk};
+            while (!remaining_disks.empty())
+            {
+                auto candidate = remaining_disks.top();
+                remaining_disks.pop();
+                reservation = try_reserve(candidate.disk);
+                tried_disks.push_back(candidate);
+                if (reservation)
+                    break;
+            }
+
+            for (const auto & tried_disk : tried_disks)
+                remaining_disks.push(tried_disk);
+            disks_by_size.swap(remaining_disks);
             return reservation;
         }
     }
