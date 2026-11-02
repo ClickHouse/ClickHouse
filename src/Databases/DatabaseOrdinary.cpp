@@ -107,14 +107,15 @@ namespace
 
 /// Collects the names of the disks defined by the `disk(...)` functions in `ast` and the names of the disks they
 /// refer to (a `disk` argument with a name instead of a nested `disk(...)` function, as the disk wrapped by a `cache`
-/// or `encrypted` disk). A disk without a `name` argument gets a name generated from its definition, which is what
-/// other tables use to refer to it, so it is calculated as in `DiskFromAST::createCustomDisk`: `ast` must be a copy,
-/// and its nested `disk(...)` functions are replaced with the names of the disks they describe.
-void collectCustomDiskNames(ASTPtr & ast, NameSet & defined, NameSet & referenced)
+/// or `encrypted` disk). The names are resolved as in `DiskFromAST::createCustomDisk` (a numeric value, `from_env`,
+/// `from_zk`, or a name generated from the definition of a disk without a `name` argument), so `ast` must be a copy:
+/// its nested `disk(...)` functions are replaced with the names of the disks they describe.
+void collectCustomDiskNames(ASTPtr & ast, const ContextPtr & context, NameSet & defined, NameSet & referenced)
 {
     checkStackSize();
 
-    std::optional<String> explicit_name;
+    /// A disk wrapped by a nested `disk(...)` function is defined in the same definition, so it is not a reference.
+    bool wraps_nested_definition = false;
     if (isDiskFunction(ast))
     {
         const auto & function = ast->as<const ASTFunction &>();
@@ -127,37 +128,23 @@ void collectCustomDiskNames(ASTPtr & ast, NameSet & defined, NameSet & reference
                     continue;
 
                 const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
-                if (!key)
-                    continue;
-
-                String value;
-                const auto & value_ast = equals->arguments->children[1];
-                if (const auto * literal = value_ast->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-                    value = literal->value.safeGet<String>();
-                else if (const auto * identifier = value_ast->as<ASTIdentifier>())
-                    value = identifier->name();
-                else
-                    continue;
-
-                if (key->name() == "name")
-                    explicit_name = value;
-                else if (key->name() == "disk")
-                    referenced.insert(value);
+                if (key && key->name() == "disk" && isDiskFunction(equals->arguments->children[1]))
+                    wraps_nested_definition = true;
             }
         }
     }
 
-    /// The references above are collected before the nested `disk(...)` functions are replaced with their names,
-    /// so that the disks defined in the same definition are not counted as references.
     for (auto & child : ast->children)
-        collectCustomDiskNames(child, defined, referenced);
+        collectCustomDiskNames(child, context, defined, referenced);
 
     if (!isDiskFunction(ast))
         return;
 
-    String name = explicit_name ? *explicit_name : DiskFromAST::getGeneratedDiskName(ast->formatWithSecretsOneLine());
-    defined.insert(name);
-    ast = make_intrusive<ASTLiteral>(name);
+    auto names = DiskFromAST::resolveCustomDiskNames(ast, context);
+    if (!wraps_nested_definition && !names.wrapped_disk_name.empty())
+        referenced.insert(names.wrapped_disk_name);
+    defined.insert(names.name);
+    ast = make_intrusive<ASTLiteral>(names.name);
 }
 
 /// A table whose inline disk definition refers to other disks by name, see `DatabaseOrdinary::loadTablesMetadata`.
@@ -172,7 +159,7 @@ struct TableWithNamedDiskReferences
 /// Fills `defined` and `referenced` from the storage settings of the table: the inline `disk(...)` definition,
 /// a `disk` setting with the name of a disk, and the implicit storage policy of a disk (`storage_policy = '__<disk>'`),
 /// which may belong to a disk defined inline by another table.
-void collectCustomDiskNames(const ASTCreateQuery & create_query, NameSet & defined, NameSet & referenced)
+void collectCustomDiskNames(const ASTCreateQuery & create_query, const ContextPtr & context, NameSet & defined, NameSet & referenced)
 {
     if (!create_query.storage || !create_query.storage->settings)
         return;
@@ -201,7 +188,7 @@ void collectCustomDiskNames(const ASTCreateQuery & create_query, NameSet & defin
         return;
 
     auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast->clone();
-    collectCustomDiskNames(ast, defined, referenced);
+    collectCustomDiskNames(ast, context, defined, referenced);
 }
 
 /// Whether the storage settings of the table define a disk inline with `disk = disk(...)`.
@@ -654,7 +641,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 /// (as the disk wrapped by a `cache` disk, with the `disk` setting, or with the implicit storage policy
                 /// of the disk), so such a table is processed after all others, see below.
                 TableWithNamedDiskReferences table_with_references{.ast = ast, .file_name = file_name, .defined_disks = {}, .referenced_disks = {}};
-                collectCustomDiskNames(*create_query, table_with_references.defined_disks, table_with_references.referenced_disks);
+                collectCustomDiskNames(*create_query, local_context, table_with_references.defined_disks, table_with_references.referenced_disks);
                 if (!table_with_references.referenced_disks.empty())
                 {
                     /// The disks defined in the server configuration are always there, so only references to other disks are waited for.

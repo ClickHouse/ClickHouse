@@ -26,6 +26,18 @@ namespace DiskFromAST
     /// function formatted with `formatWithSecretsOneLine`, after its nested `disk(...)` functions were replaced
     /// with the names of the disks they describe.
     std::string getGeneratedDiskName(const std::string & serialization);
+
+    struct CustomDiskNames
+    {
+        /// The name of the disk described by the `disk(...)` function, generated if it has no `name` argument.
+        std::string name;
+        /// The value of its `disk` argument: the name of the disk it wraps, or empty.
+        std::string wrapped_disk_name;
+    };
+    /// Resolves the names of a `disk(...)` function by the same rules as `createCustomDisk` for a definition loaded from
+    /// existing metadata (including numeric values, `from_env` and `from_zk`), without creating the disk. The nested
+    /// `disk(...)` functions must already be replaced with the names of the disks they describe.
+    CustomDiskNames resolveCustomDiskNames(const ASTPtr & disk_function, ContextPtr context);
     CustomDiskFromAST createCustomDisk(const ASTPtr & disk_function, ContextPtr context, bool attach, bool for_system_database = false);
 }
 

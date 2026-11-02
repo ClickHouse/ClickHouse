@@ -29,6 +29,29 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Resolves `include`, `from_env` and `from_zk` in the configuration of a disk built by `getDiskConfigurationFromASTImpl`.
+static void processDiskConfigurationIncludes(Poco::AutoPtr<Poco::XML::Document> & xml_document, ContextPtr context, bool throw_on_bad_incl)
+{
+    std::string include_from_path = context->getConfigRef().getString("include_from", "");
+
+    Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
+    Poco::XML::DOMParser dom_parser(name_pool);
+
+    std::vector<std::pair<std::string, std::string>> substitutions;
+    zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
+
+    ConfigProcessor::processIncludes(
+        xml_document,
+        substitutions,
+        include_from_path,
+        throw_on_bad_incl,
+        dom_parser,
+        getLogger("getOrCreateCustomDisk"),
+        /*contributing_zk_paths=*/ {},
+        /*contributing_files=*/ {},
+        &zk_node_cache);
+}
+
 static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
@@ -47,31 +70,12 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     /// released, the existing disk would have been reused without creating it again.
     const bool existing_definition = attach || context->isCustomDiskLoadedFromExistingMetadata(disk_settings_hash);
 
-    const auto & server_config = context->getConfigRef();
-    std::string include_from_path = server_config.getString("include_from", "");
-
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
         DynamicS3DiskCredentialInfo s3_disk_info;
         auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database);
 
-        Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
-        Poco::XML::DOMParser dom_parser(name_pool);
-
-        std::vector<std::pair<std::string, std::string>> substitutions;
-        zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
-
-        ConfigProcessor::processIncludes(
-            xml_document,
-            substitutions,
-            include_from_path,
-            /* throw_on_bad_incl= */!attach,
-            dom_parser,
-            getLogger("getOrCreateCustomDisk"),
-            /*contributing_zk_paths=*/ {},
-            /*contributing_files=*/ {},
-            &zk_node_cache);
-
+        processDiskConfigurationIncludes(xml_document, context, /* throw_on_bad_incl= */!attach);
         config->load(xml_document);
 
         /// Applied after `processIncludes`. If the pre-resolution check already decided the disk must load
@@ -294,6 +298,48 @@ CustomDiskFromAST DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast
     CustomDiskRegistrationPtr registration = registrations.empty() ? nullptr : std::move(registrations.front());
 
     return {assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>(), std::move(registration)};
+}
+
+DiskFromAST::CustomDiskNames DiskFromAST::resolveCustomDiskNames(const ASTPtr & disk_function_ast, ContextPtr context)
+{
+    if (!isDiskFunction(disk_function_ast))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
+
+    /// Only the arguments that give the names are resolved, so that the restrictions on the other arguments
+    /// (credentials and so on) are applied once, when the disk is created.
+    const auto & function = disk_function_ast->as<const ASTFunction &>();
+    ASTs name_args;
+    if (function.arguments)
+    {
+        for (const auto & argument : function.arguments->children)
+        {
+            const auto * equals = argument->as<ASTFunction>();
+            if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.empty())
+                continue;
+            const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
+            if (key && (key->name() == "name" || key->name() == "disk"))
+                name_args.push_back(argument);
+        }
+    }
+
+    CustomDiskNames result;
+    bool has_name = false;
+    if (!name_args.empty())
+    {
+        auto xml_document = getDiskConfigurationFromASTImpl(name_args, context, /* is_loading_from_existing_metadata */ true);
+        processDiskConfigurationIncludes(xml_document, context, /* throw_on_bad_incl= */ false);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+        config->load(xml_document);
+        has_name = config->has("name");
+        if (has_name)
+            result.name = config->getString("name");
+        result.wrapped_disk_name = config->getString("disk", "");
+    }
+
+    if (!has_name)
+        result.name = getGeneratedDiskName(disk_function_ast->formatWithSecretsOneLine());
+
+    return result;
 }
 
 std::string DiskFromAST::getGeneratedDiskName(const std::string & serialization)
