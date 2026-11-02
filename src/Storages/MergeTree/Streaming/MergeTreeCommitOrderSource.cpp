@@ -45,8 +45,8 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 stream_max_rows_per_round;
-    extern const SettingsUInt64 stream_max_bytes_per_round;
+    extern const SettingsUInt64 stream_max_rows_to_read;
+    extern const SettingsUInt64 stream_max_bytes_to_read;
 }
 
 namespace ErrorCodes
@@ -153,15 +153,15 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , subscription(std::move(subscription_))
     , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
     , reading_context(makeReadRoundContext(storage_, query_info_, std::move(context_), std::move(user_requested_columns_), requested_num_streams_, max_block_size_, header))
-    , max_rows_per_round(reading_context.context->getSettingsRef()[Setting::stream_max_rows_per_round])
-    , max_bytes_per_round(reading_context.context->getSettingsRef()[Setting::stream_max_bytes_per_round])
+    , max_rows_per_round(reading_context.context->getSettingsRef()[Setting::stream_max_rows_to_read])
+    , max_bytes_per_round(reading_context.context->getSettingsRef()[Setting::stream_max_bytes_to_read])
     , log(getLogger(fmt::format("MergeTreeCommitOrderSource::{}", UUIDHelpers::generateV4())))
     , read_state(stream_settings)
 {
     /// A partition left out of a round must not be reported idle, which would let the watermark pass its unread rows.
     if (stream_settings.watermark && (max_rows_per_round || max_bytes_per_round))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Settings `stream_max_rows_per_round` and `stream_max_bytes_per_round` are not supported for a stream with a watermark");
+            "Settings `stream_max_rows_to_read` and `stream_max_bytes_to_read` are not supported for a stream with a watermark");
 }
 
 IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
