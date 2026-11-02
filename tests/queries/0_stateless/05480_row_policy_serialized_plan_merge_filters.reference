@@ -1,0 +1,8 @@
+atf on merge sqp=1 ONCE
+atf on merge sqp=0 ONCE
+policy on merge sqp=1 ONCE
+policy on merge sqp=0 ONCE
+max_columns_to_read sqp=1 10
+max_columns_to_read sqp=0 10
+granted x on merge sqp=1 20
+granted x on merge sqp=0 20

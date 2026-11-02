@@ -67,6 +67,10 @@ struct SelectQueryOptions
     /// column list is a read list and the limit was applied to the user's selection where it was planned.
     bool ignore_max_columns_to_read = false;
 
+    /// Do not apply the SELECT row policy of the table this query reads directly. Set only where a filter
+    /// step above this read already applies the policy.
+    bool skip_row_policy = false;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -116,6 +120,7 @@ struct SelectQueryOptions
         out.ignore_table_access_check = false;
         out.skip_additional_table_filters = false;
         out.ignore_max_columns_to_read = false;
+        out.skip_row_policy = false;
         /// A subquery's output is consumed through column identifiers, never by source column name.
         out.ignore_rename_columns = false;
         out.is_secondary_query_root = false;

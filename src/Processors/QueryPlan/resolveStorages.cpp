@@ -280,17 +280,24 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
 
-        auto interpreter_context = context;
-        if (needs_row_policy)
+        /// A sender that records the placement planned this read itself, as does one whose policy is replanned here.
+        const auto placement = reading_from_table ? reading_from_table->getRowPolicyPlacement() : ReadFromTableStep::RowPolicyPlacement::Unknown;
+        if (needs_row_policy || placement != ReadFromTableStep::RowPolicyPlacement::Unknown)
         {
-            /// `column_names` is the shipped read list widened by the policy's columns. Only the selected
+            /// `column_names` is the shipped read list widened by the filters' columns. Only the selected
             /// columns are the user's own, and those were authorized where the plan was built.
             options.ignore_table_access_check = true;
             /// This table's entry arrived as a filter step of the shipped plan, so resolving it here would filter twice.
             options.skip_additional_table_filters = true;
             /// The limit was applied to the selected columns where the read was planned; `column_names` is wider.
             options.ignore_max_columns_to_read = true;
+            /// The same holds for the policy itself, e.g. for a `Merge` table, whose policy is never pushed into a shipped read.
+            options.skip_row_policy = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep;
+        }
 
+        auto interpreter_context = context;
+        if (needs_row_policy)
+        {
             auto row_policy_context = Context::createCopy(context);
             /// Parallelism of the read is decided by the step, not by this node's setting.
             row_policy_context->setSetting(
