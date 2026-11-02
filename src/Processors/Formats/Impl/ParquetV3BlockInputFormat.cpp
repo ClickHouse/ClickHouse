@@ -176,12 +176,12 @@ void ParquetV3BlockInputFormat::prefetch()
 {
     if (need_only_count)
         return;
-    initializeIfNeeded();
+    readFileFooterIfNeeded();
 }
 
-void ParquetV3BlockInputFormat::initializeIfNeeded()
+void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
 {
-    if (!reader)
+    if (!reader && !reader_with_footer)
     {
         format_filter_info->initKeyConditionOnce(getPort().getHeader());
         parser_shared_resources->initOnce([&]
@@ -212,28 +212,39 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 parser_shared_resources->opaque = ext;
             });
 
+        auto new_reader = std::make_unique<Parquet::ReadManager>();
+        new_reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        footer_cache_key = getMetadataCacheKey();
+        if (footer_cache_key)
+        {
+            std::tie(footer_cache_cell, footer_cache_hit) = metadata_cache->getOrSetMetadata(
+                *footer_cache_key, [&] { return readFileFooter(new_reader->reader.prefetcher); });
+            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks);
+            if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+            {
+                metadata_cache_cell = footer_cache_cell;
+                metadata_cache_key = *footer_cache_key;
+            }
+        }
+        else
+        {
+            new_reader->reader.setFileFooter(readFileFooter(new_reader->reader.prefetcher));
+        }
+
+        std::lock_guard lock(reader_mutex);
+        reader_with_footer = std::move(new_reader);
+    }
+}
+
+void ParquetV3BlockInputFormat::initializeIfNeeded()
+{
+    if (!reader)
+    {
+        readFileFooterIfNeeded();
+
         {
             std::lock_guard lock(reader_mutex);
-            reader.emplace();
-            reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            auto cache_key = getMetadataCacheKey();
-            ParquetMetadataCache::MappedPtr cache_cell;
-            bool cache_hit = false;
-            if (cache_key)
-            {
-                std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(
-                    *cache_key, [&] { return readFileFooter(reader->reader.prefetcher); });
-                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
-                if (cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
-                {
-                    metadata_cache_cell = cache_cell;
-                    metadata_cache_key = *cache_key;
-                }
-            }
-            else
-            {
-                reader->reader.setFileFooter(readFileFooter(reader->reader.prefetcher));
-            }
+            reader = std::move(reader_with_footer);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition)
             {
@@ -254,8 +265,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             }
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
-            if (cache_hit)
-                metadata_cache->addColumnChunks(*cache_key, cache_cell, reader->reader.getColumnChunks());
+            if (footer_cache_hit)
+                metadata_cache->addColumnChunks(*footer_cache_key, footer_cache_cell, reader->reader.getColumnChunks());
+            footer_cache_cell.reset();
         }
     }
 }
@@ -498,6 +510,7 @@ void ParquetV3BlockInputFormat::resetReadBuffer()
         std::lock_guard lock(reader_mutex);
         if (reader)
             reader->shutdownTasks();
+        reader_with_footer.reset();
     }
     IInputFormat::resetReadBuffer();
 }
@@ -507,6 +520,10 @@ void ParquetV3BlockInputFormat::resetParser()
     {
         std::lock_guard lock(reader_mutex);
         reader.reset();
+        reader_with_footer.reset();
+        footer_cache_key.reset();
+        footer_cache_cell.reset();
+        footer_cache_hit = false;
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
         metadata_cache_key.reset();

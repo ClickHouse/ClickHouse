@@ -90,12 +90,17 @@ private:
     ParquetMetadataCachePtr metadata_cache;
     const std::optional<RelativePathWithMetadata> object_with_metadata;
 
-    /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
+    /// (This mutex is not important. It protects setting `reader` in a weird case where onCancel()
     ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
-    ///  but initializing vs checking the std::optional would race without this mutex.)
+    ///  but initializing vs checking the pointer would race without this mutex.)
     std::mutex reader_mutex;
 
-    std::optional<Parquet::ReadManager> reader;
+    std::unique_ptr<Parquet::ReadManager> reader;
+    /// Has the file footer, but is not initialized: initializing it starts reading and decoding the column chunks.
+    std::unique_ptr<Parquet::ReadManager> reader_with_footer;
+    std::optional<ParquetMetadataCacheKey> footer_cache_key;
+    ParquetMetadataCache::MappedPtr footer_cache_cell;
+    bool footer_cache_hit = false;
     bool reported_count = false; // if need_only_count
 
     /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
@@ -104,6 +109,7 @@ private:
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
 
+    void readFileFooterIfNeeded();
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
