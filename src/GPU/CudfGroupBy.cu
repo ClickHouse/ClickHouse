@@ -140,6 +140,11 @@ struct CudfGroupBy::State
 
     /// Without keys and aggregates, the rows a `WHERE` keeps are collected rather than grouped: the values of each batch's.
     const bool collect;
+    /// Without keys but with aggregates, the rows are grouped by a key of their own, the same for every row, which comes
+    /// first among the columns grouped and is gone from the groups once they are closed: every batch is then one run.
+    const bool keyless;
+    /// As many zero bytes as the largest batch had rows: the values of that key.
+    rmm::device_buffer keyless_key;
     std::vector<std::unique_ptr<cudf::table>> collected;
 
     /// Of the keys and of the values of varying width: their offsets widened for a view of the device's.
@@ -159,11 +164,13 @@ struct CudfGroupBy::State
         , aggregates(aggregates_.begin(), aggregates_.end())
         , stream(stream_)
         , collect(keys_.empty() && aggregates_.empty())
+        , keyless(keys_.empty() && !aggregates_.empty())
+        , keyless_key(0, stream_)
         , filter_mask(0, stream_)
         , all_true(0, stream_)
     {
-        key_indices.resize(keys.size());
-        for (size_t i = 0; i < keys.size(); ++i)
+        key_indices.resize(numKeyColumns());
+        for (size_t i = 0; i < key_indices.size(); ++i)
             key_indices[i] = static_cast<cudf::size_type>(i);
         for (size_t i = 0; i < derived.size(); ++i)
             derived_values.emplace_back(0, stream_);
@@ -173,6 +180,30 @@ struct CudfGroupBy::State
 
     __host__ size_t numBatchValues() const { return values.size() - derived.size(); }
 
+    /// The columns grouped by: the keys, or the key of its own of a `GROUP BY` without keys.
+    __host__ size_t numKeyColumns() const { return keys.size() + (keyless ? 1 : 0); }
+
+    /// The key of a `GROUP BY` without keys, of `rows` rows.
+    __host__ cudf::column_view keylessKey(size_t rows)
+    {
+        if (keyless_key.size() < rows)
+        {
+            keyless_key.resize(rows, stream);
+            checkCuda(cudaMemsetAsync(keyless_key.data(), 0, rows, stream.get()), "Cannot fill the key of a `GROUP BY` without keys");
+        }
+        return cudf::column_view(cudf::data_type{cudf::type_id::INT8}, static_cast<cudf::size_type>(rows), keyless_key.data(), nullptr, 0);
+    }
+
+    /// The groups of `table`, the keys and then the values, without the key of a `GROUP BY` without keys.
+    __host__ std::unique_ptr<cudf::table> withoutKeylessKey(std::unique_ptr<cudf::table> table) const
+    {
+        if (!keyless)
+            return table;
+        std::vector<std::unique_ptr<cudf::column>> columns = table->release();
+        columns.erase(columns.begin());
+        return std::make_unique<cudf::table>(std::move(columns));
+    }
+
     __host__ cudf::groupby::streaming_groupby make(size_t new_capacity) const
     {
         /// A `count` counts the rows of the first key, which has no nulls but what a `WHERE` leaves out.
@@ -180,7 +211,7 @@ struct CudfGroupBy::State
         requests.reserve(aggregates.size());
         for (const auto & aggregate : aggregates)
             requests.push_back({
-                .column_index = aggregate.column == GPUGroupByAggregate::no_column ? 0 : static_cast<cudf::size_type>(keys.size() + aggregate.column),
+                .column_index = aggregate.column == GPUGroupByAggregate::no_column ? 0 : static_cast<cudf::size_type>(numKeyColumns() + aggregate.column),
                 .aggregation = groupByAggregationFor(aggregate.aggregation),
             });
 
@@ -254,7 +285,7 @@ struct CudfGroupBy::State
             else
             {
                 guarded(
-                    "grouping " + std::to_string(slice_rows) + " rows by " + std::to_string(keys.size()) + " keys",
+                    "grouping " + std::to_string(slice_rows) + " rows by " + std::to_string(numKeyColumns()) + " keys",
                     [&] { grouping->aggregate(slice, stream); return 0; });
             }
             offset += slice_rows;
@@ -317,14 +348,14 @@ struct CudfGroupBy::State
     /// wherever a row's keys differ from the row's before, so that a key in several runs comes once for each.
     __host__ std::unique_ptr<cudf::table> reduceRuns(const std::vector<cudf::column_view> & columns) const
     {
-        const cudf::table_view batch_keys(std::vector<cudf::column_view>(columns.begin(), columns.begin() + keys.size()));
+        const cudf::table_view batch_keys(std::vector<cudf::column_view>(columns.begin(), columns.begin() + numKeyColumns()));
         cudf::groupby::groupby by_runs(batch_keys, cudf::null_policy::EXCLUDE, cudf::sorted::YES);
 
         std::vector<cudf::groupby::aggregation_request> requests(aggregates.size());
         for (size_t i = 0; i < aggregates.size(); ++i)
         {
             const GPUGroupByAggregate & aggregate = aggregates[i];
-            requests[i].values = aggregate.column == GPUGroupByAggregate::no_column ? columns[0] : columns[keys.size() + aggregate.column];
+            requests[i].values = aggregate.column == GPUGroupByAggregate::no_column ? columns[0] : columns[numKeyColumns() + aggregate.column];
             requests[i].aggregations.push_back(groupByAggregationFor(aggregate.aggregation));
         }
 
@@ -361,8 +392,8 @@ struct CudfGroupBy::State
             });
         const cudf::table_view all = concatenated ? concatenated->view() : views.front();
 
-        std::vector<cudf::size_type> key_columns(keys.size());
-        for (size_t i = 0; i < keys.size(); ++i)
+        std::vector<cudf::size_type> key_columns(numKeyColumns());
+        for (size_t i = 0; i < key_columns.size(); ++i)
             key_columns[i] = static_cast<cudf::size_type>(i);
         cudf::groupby::groupby by_keys(all.select(key_columns), cudf::null_policy::EXCLUDE);
 
@@ -371,7 +402,7 @@ struct CudfGroupBy::State
         for (size_t i = 0; i < aggregates.size(); ++i)
         {
             const GPUAggregationKind kind = aggregates[i].aggregation;
-            requests[i].values = all.column(static_cast<cudf::size_type>(keys.size() + i));
+            requests[i].values = all.column(static_cast<cudf::size_type>(numKeyColumns() + i));
             requests[i].aggregations.push_back(groupByAggregationFor(kind == GPUAggregationKind::Count ? GPUAggregationKind::Sum : kind));
         }
 
@@ -458,7 +489,7 @@ struct CudfGroupBy::State
         {
             const GPUElementType type = values[i];
             batch_values.push_back(
-                columnKindOf(type) == GPUColumnKind::Fixed ? deviceViewOf(columns[keys.size() + i], type) : DeviceFixedColumn{});
+                columnKindOf(type) == GPUColumnKind::Fixed ? deviceViewOf(columns[numKeyColumns() + i], type) : DeviceFixedColumn{});
         }
 
         for (size_t j = 0; j < derived.size(); ++j)
@@ -493,9 +524,6 @@ __host__ CudfGroupBy::CudfGroupBy(
         state = new State(keys, values, derived, aggregates, stream);
         return;
     }
-
-    if (keys.empty())
-        throwGPUError("a `GROUP BY` without keys");
 
     if (derived.size() > values.size())
         throwGPUError(("a `GROUP BY` of " + std::to_string(derived.size()) + " derived values among " + std::to_string(values.size())).c_str());
@@ -580,12 +608,15 @@ __host__ void CudfGroupBy::addBatch(
             ("a batch of " + std::to_string(keys.size()) + " keys and " + std::to_string(values.size()) + " values, expected "
             + std::to_string(state->keys.size()) + " and " + std::to_string(state->numBatchValues())).c_str());
 
-    size_t rows = keys[0].rows();
+    size_t rows = keys.empty() ? values[0].rows() : keys[0].rows();
     if (rows == 0)
         return;
 
     std::vector<cudf::column_view> columns;
-    columns.reserve(state->keys.size() + state->values.size());
+    columns.reserve(state->numKeyColumns() + state->values.size());
+
+    if (state->keyless)
+        columns.push_back(state->keylessKey(rows));
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
@@ -665,12 +696,12 @@ __host__ size_t CudfGroupBy::finalize()
         {
             return std::move(*state->grouping).finalize_and_release(state->stream);
         });
-        state->groups = state->tableOf(std::move(group_keys), std::move(results));
+        state->groups = state->withoutKeylessKey(state->tableOf(std::move(group_keys), std::move(results)));
     }
     else if (!state->reduced_runs.empty())
     {
         auto [group_keys, results] = state->combineRuns();
-        state->groups = state->tableOf(std::move(group_keys), std::move(results));
+        state->groups = state->withoutKeylessKey(state->tableOf(std::move(group_keys), std::move(results)));
     }
     state->grouping.reset();
     state->finalized = true;

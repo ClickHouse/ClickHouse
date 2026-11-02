@@ -214,11 +214,11 @@ std::vector<GPUElementType> valueTypesOrThrow(const DataTypes & value_types, boo
     return element_types;
 }
 
-std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_columns, std::vector<GPUGroupByAggregate> aggregates, bool collect)
+std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_columns, std::vector<GPUGroupByAggregate> aggregates, bool keyed)
 {
-    /// Without keys, the rows are collected, not aggregated.
-    if (collect != aggregates.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without aggregates");
+    /// Without aggregates, the rows are collected, not aggregated, which they are not by keys.
+    if (keyed && aggregates.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with keys and without aggregates");
 
     for (const auto & aggregate : aggregates)
     {
@@ -357,11 +357,11 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     std::vector<std::optional<uint32_t>> filter_aliases_)
     : group_keys(groupByKeysOrThrow(key_types))
     , key_element_types(keyElementTypesOf(group_keys))
-    , values(valueTypesOrThrow(value_types, key_types.empty()))
+    , values(valueTypesOrThrow(value_types, aggregates_.empty()))
     , value_data_types(value_types)
     , on_collected(std::move(on_collected_))
     , derived(std::move(derived_))
-    , aggregates(aggregatesOrThrow(values.size() + derived.size(), std::move(aggregates_), key_types.empty()))
+    , aggregates(aggregatesOrThrow(values.size() + derived.size(), std::move(aggregates_), !key_types.empty()))
     , variable_column_indices(variableColumnIndicesOf(group_keys, values))
     , filter_element_types(filterElementTypesOrThrow(filter_types))
     , filter(std::move(filter_))
@@ -389,8 +389,8 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     if (filter.has_value() != !filter_element_types.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with a `WHERE` and the columns of one do not go together");
 
-    if (on_collected && !group_keys.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with keys that hands rows over as collected");
+    if (on_collected && !aggregates.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with aggregates that hands rows over as collected");
 
     if (filter && filter->num_columns != filter_element_types.size())
         throw Exception(
@@ -1541,7 +1541,7 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
     const size_t rows = *num_groups;
 
     /// Of rows collected rather than grouped, the values are the columns collected.
-    const size_t num_values = group_keys.empty() ? values.size() : aggregates.size();
+    const size_t num_values = aggregates.empty() ? values.size() : aggregates.size();
     if (key_columns.size() != group_keys.size() || value_columns.size() != num_values)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

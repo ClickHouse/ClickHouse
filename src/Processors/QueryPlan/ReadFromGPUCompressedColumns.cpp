@@ -66,6 +66,7 @@ struct SharedState
     std::vector<ColumnToReduce> columns;
     std::vector<DerivedColumn> derived;
     std::vector<AggregateToCompute> aggregates;
+    std::optional<Columns> result_over_no_rows;
     std::optional<DeviceFilter> filter;
     std::optional<ReadFromGPUCompressedColumns::GroupFilter> group_filter;
     std::vector<ReadFromGPUCompressedColumns::PartToRead> parts;
@@ -269,253 +270,6 @@ size_t automaticReaders(const SharedState & state)
     return std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
 }
 
-class GPUCompressedColumnsSource : public ISource
-{
-public:
-    GPUCompressedColumnsSource(SharedHeader header_, SharedStatePtr state_, QueryStatusPtr query_status_)
-        : ISource(std::move(header_))
-        , state(std::move(state_))
-        , query_status(std::move(query_status_))
-        , accumulators(state->columns.size())
-    {
-    }
-
-    String getName() const override { return "GPUCompressedColumns"; }
-
-protected:
-    Chunk generate() override
-    {
-        const size_t part_idx = state->next_part.fetch_add(1);
-        if (part_idx >= state->parts.size())
-            return {};
-
-        checkNotCancelled();
-
-        /// Without keys, every row of each part is read.
-        const DataPartPtr & part = state->parts[part_idx].part;
-        chassert(state->parts[part_idx].ranges.empty());
-
-        MutableColumns result_columns = getPort().getHeader().cloneEmptyColumns();
-        chassert(result_columns.size() == state->columns.size());
-
-        for (size_t i = 0; i < state->columns.size(); ++i)
-            result_columns[i]->insert(reduceColumn(*part, i));
-
-        return Chunk(std::move(result_columns), 1);
-    }
-
-private:
-    struct ColumnAccumulator
-    {
-        std::optional<GPU::GPUCodec> codec;
-        GPU::GPUAccumulator accumulator;
-    };
-
-    GPU::GPUAccumulator & accumulatorFor(size_t column_idx, std::optional<GPU::GPUCodec> codec)
-    {
-        const ColumnToReduce & column = state->columns[column_idx];
-
-        std::optional<ColumnAccumulator> & slot = accumulators[column_idx];
-        if (!slot || slot->codec != codec)
-            slot.emplace(codec, GPU::GPUAccumulator(*column.column.type, *column.result_type, column.aggregation, state->batch_bytes, codec));
-
-        return slot->accumulator;
-    }
-
-    Field reduceColumn(const IMergeTreeDataPart & part, size_t column_idx)
-    {
-        const ColumnToReduce & column = state->columns[column_idx];
-        if (GPU::columnTypeOrThrow(*column.column.type) == GPU::GPUElementType::String)
-            return reduceVariableColumn(part, column_idx);
-
-        GPU::GPUAccumulator * accumulator = nullptr;
-        size_t bytes_read = 0;
-
-        if (expandsOnDevice(state->decompression))
-        {
-            const auto stream = openStream(part, column.column, state->reader_settings, {});
-
-            while (const auto block = stream->readCompressedBlock())
-            {
-                if (!accumulator)
-                    accumulator = &accumulatorFor(column_idx, codecOrThrow(block->method, block->payload, column.column.name, part));
-
-                accumulator->addBlock(block->method, block->payload, block->decompressed_bytes);
-                bytes_read += block->decompressed_bytes;
-
-                checkNotCancelled();
-            }
-        }
-        else
-        {
-            accumulator = &accumulatorFor(column_idx, std::nullopt);
-            const auto stream = openStream(part, column.column, state->reader_settings, {});
-            ReadBuffer & reader = *stream->getDataBuffer();
-
-            while (true)
-            {
-                const std::span<char> room = accumulator->reserveRaw(raw_piece_bytes);
-                const size_t read = reader.readBig(room.data(), room.size());
-                accumulator->commitRaw(read);
-                if (read == 0)
-                    break;
-                bytes_read += read;
-
-                checkNotCancelled();
-            }
-        }
-
-        const size_t element_size = column.column.type->getSizeOfValueInMemory();
-        if (bytes_read != part.rows_count * element_size)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Column {} of part {} holds {} bytes, where the part has {} rows of {} bytes",
-                column.column.name,
-                part.name,
-                bytes_read,
-                part.rows_count,
-                element_size);
-
-        if (!accumulator)
-            return column.result_type->getDefault();
-
-        return accumulator->finalize();
-    }
-
-    /// A column of values of varying width - a `String` - is two streams: its bytes, and the sizes of its rows in the
-    /// `.size` stream beside them. Expanded on the device, both go there as compressed blocks, the sizes a little ahead
-    /// of the bytes they cover, so that the device holds little of either without the other. Expanded on the host, the
-    /// rows are read into columns of strings a piece at a time.
-    Field reduceVariableColumn(const IMergeTreeDataPart & part, size_t column_idx)
-    {
-        const ColumnToReduce & column = state->columns[column_idx];
-        const size_t bytes_total = streamBytesOf(part, column.column, {});
-        const size_t sizes_total = streamBytesOf(part, column.column, stringSizesPath());
-        if (sizes_total != part.rows_count * sizeof(UInt64))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Column {} of part {} holds {} bytes of sizes, where the part has {} rows",
-                column.column.name,
-                part.name,
-                sizes_total,
-                part.rows_count);
-
-        GPU::GPUAccumulator * accumulator = nullptr;
-        size_t rows_read = 0;
-        size_t bytes_read = 0;
-
-        if (expandsOnDevice(state->decompression))
-        {
-            const auto bytes_stream = openStream(part, column.column, state->reader_settings, {});
-            const auto sizes_stream = openStream(part, column.column, state->reader_settings, {}, stringSizesPath());
-            size_t sizes_read = 0;
-
-            while (bytes_read < bytes_total || sizes_read < sizes_total)
-            {
-                /// The rows the bytes read cover, were every row as long as the average one.
-                const size_t rows_of_bytes = bytes_total == 0
-                    ? part.rows_count
-                    : static_cast<size_t>(static_cast<unsigned __int128>(bytes_read) * part.rows_count / bytes_total);
-                const bool reads_sizes = sizes_read < sizes_total && (bytes_read == bytes_total || sizes_read / sizeof(UInt64) <= rows_of_bytes);
-                const auto block = (reads_sizes ? sizes_stream : bytes_stream)->readCompressedBlock();
-                if (!block)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "A stream of column {} of part {} ended before its {} bytes", column.column.name, part.name, bytes_total);
-
-                const std::string_view payload = block->payload;
-                const UInt8 method = block->method;
-                const GPU::GPUCodec codec = codecOrThrow(method, payload, column.column.name, part);
-                if (!accumulator)
-                    accumulator = &accumulatorFor(column_idx, codec);
-                else if (accumulators[column_idx]->codec != codec)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The streams of column {} of part {} are compressed by different codecs", column.column.name, part.name);
-
-                if (reads_sizes)
-                {
-                    accumulator->addSizesBlock(method, payload, block->decompressed_bytes);
-                    sizes_read += block->decompressed_bytes;
-                }
-                else
-                {
-                    accumulator->addBlock(method, payload, block->decompressed_bytes);
-                    bytes_read += block->decompressed_bytes;
-                }
-
-                checkNotCancelled();
-            }
-
-            rows_read = sizes_read / sizeof(UInt64);
-        }
-        else
-        {
-            accumulator = &accumulatorFor(column_idx, std::nullopt);
-            const auto bytes_stream = openStream(part, column.column, state->reader_settings, {});
-            const auto sizes_stream = openStream(part, column.column, state->reader_settings, {}, stringSizesPath());
-            ReadBuffer & bytes_reader = *bytes_stream->getDataBuffer();
-            ReadBuffer & sizes_reader = *sizes_stream->getDataBuffer();
-
-            while (rows_read < part.rows_count)
-            {
-                auto strings = ColumnString::create();
-                auto & offsets = strings->getOffsets();
-                offsets.resize(std::min(string_piece_rows, part.rows_count - rows_read));
-                sizes_reader.readStrict(reinterpret_cast<char *>(offsets.data()), offsets.size() * sizeof(UInt64));
-
-                UInt64 piece_bytes = 0;
-                for (auto & offset : offsets)
-                {
-                    if (offset > bytes_total - bytes_read - piece_bytes)
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR, "The sizes of column {} of part {} add up to more than its {} bytes", column.column.name, part.name, bytes_total);
-                    piece_bytes += offset;
-                    offset = piece_bytes;
-                }
-
-                auto & chars = strings->getChars();
-                chars.resize(piece_bytes);
-                bytes_reader.readStrict(reinterpret_cast<char *>(chars.data()), piece_bytes);
-
-                accumulator->add(*strings);
-                rows_read += offsets.size();
-                bytes_read += piece_bytes;
-
-                checkNotCancelled();
-            }
-        }
-
-        if (rows_read != part.rows_count || bytes_read != bytes_total)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Column {} of part {} came to {} rows of {} bytes, where the part has {} rows of {} bytes",
-                column.column.name,
-                part.name,
-                rows_read,
-                bytes_read,
-                part.rows_count,
-                bytes_total);
-
-        if (!accumulator)
-            return column.result_type->getDefault();
-
-        return accumulator->finalize();
-    }
-
-    /// How many rows of a column of values of varying width the host expands at a time.
-    static constexpr size_t string_piece_rows = 64 * 1024;
-
-    void checkNotCancelled() const
-    {
-        if (isCancelled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-        if (query_status)
-            query_status->checkTimeLimit();
-    }
-
-    SharedStatePtr state;
-    QueryStatusPtr query_status;
-    std::vector<std::optional<ColumnAccumulator>> accumulators;
-};
-
 /// One `GROUP BY` on the device over every part, fed the parts' compressed blocks by several
 /// reading threads, each a part at a time.
 class GPUCompressedGroupBySource : public ISource
@@ -573,6 +327,12 @@ protected:
         readParts();
 
         size_t num_groups = accumulator.finalize();
+
+        /// No row came to the device, and an aggregation without keys emits its results over none, which the `HAVING`
+        /// above evaluates.
+        if (num_groups == 0 && state->result_over_no_rows)
+            return Chunk(*state->result_over_no_rows, 1);
+
         if (num_groups != 0 && state->group_filter)
             num_groups = accumulator.filterGroups(state->group_filter->program, state->group_filter->columns);
         if (num_groups == 0)
@@ -1168,12 +928,12 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     std::vector<ColumnToReduce> columns_,
     std::vector<DerivedColumn> derived_,
     std::vector<AggregateToCompute> aggregates_,
+    std::optional<Columns> result_over_no_rows_,
     std::optional<DeviceFilter> filter_,
     std::vector<PartToRead> parts_,
     StorageSnapshotPtr storage_snapshot_,
     ContextPtr context_,
     size_t batch_bytes_,
-    size_t num_streams_,
     size_t num_readers_,
     GPUDecompressionMode decompression_,
     bool collect_)
@@ -1182,12 +942,12 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     , columns(std::move(columns_))
     , derived(std::move(derived_))
     , aggregates(std::move(aggregates_))
+    , result_over_no_rows(std::move(result_over_no_rows_))
     , filter(std::move(filter_))
     , parts(std::move(parts_))
     , storage_snapshot(std::move(storage_snapshot_))
     , context(std::move(context_))
     , batch_bytes(batch_bytes_)
-    , num_streams(num_streams_)
     , num_readers(num_readers_)
     , decompression(decompression_)
     , collect(collect_)
@@ -1195,12 +955,16 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     if (collect && (!keys.empty() || !aggregates.empty() || !derived.empty() || columns.empty()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU read that collects rows of {} columns with keys or aggregates", columns.size());
 
-    if (filter && keys.empty() && !collect)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A keyless GPU aggregation over compressed columns with a `WHERE` for the device");
+    if (!collect && aggregates.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation over compressed columns of {} keys and no aggregates", keys.size());
 
-    if (keys.empty() != aggregates.empty())
+    if (result_over_no_rows && (!keys.empty() || result_over_no_rows->size() != aggregates.size()))
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "A GPU aggregation over compressed columns of {} keys and {} aggregates", keys.size(), aggregates.size());
+            ErrorCodes::LOGICAL_ERROR,
+            "A GPU aggregation over compressed columns of {} keys and {} aggregates with {} results over no rows",
+            keys.size(),
+            aggregates.size(),
+            result_over_no_rows->size());
 }
 
 void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -1210,6 +974,7 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->columns = columns;
     state->derived = derived;
     state->aggregates = aggregates;
+    state->result_over_no_rows = result_over_no_rows;
     state->filter = filter;
     state->group_filter = group_filter;
     state->parts = std::move(parts);
@@ -1235,25 +1000,11 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
         }
     }
 
-    /// A keyed or a collecting read, of columns of a fixed width, reads a large part in pieces, a reader each.
-    if ((!keys.empty() || collect) && readsFixedWidthOnly(*state))
+    /// A read of columns of a fixed width reads a large part in pieces, a reader each.
+    if (readsFixedWidthOnly(*state))
         splitPartsAmongReaders(state->parts, 2 * state->num_readers);
 
-    Pipes pipes;
-
-    if (!keys.empty() || collect)
-    {
-        pipes.emplace_back(std::make_shared<GPUCompressedGroupBySource>(getOutputHeader(), state, settings.process_list_element));
-    }
-    else
-    {
-        const size_t streams = std::max<size_t>(1, std::min(num_streams, state->parts.size()));
-        pipes.reserve(streams);
-        for (size_t i = 0; i < streams; ++i)
-            pipes.emplace_back(std::make_shared<GPUCompressedColumnsSource>(getOutputHeader(), state, settings.process_list_element));
-    }
-
-    auto pipe = Pipe::unitePipes(std::move(pipes));
+    Pipe pipe(std::make_shared<GPUCompressedGroupBySource>(getOutputHeader(), state, settings.process_list_element));
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 

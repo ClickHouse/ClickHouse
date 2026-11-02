@@ -13,6 +13,8 @@ namespace DB::GPU
 /// the batches: of keys of integers and strings, by the aggregates of value columns, several of one column or a `count` of
 /// none among them.
 ///
+/// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
+///
 /// Without keys and aggregates, it collects the rows of `values` that a batch's `WHERE` keeps instead, as they are, and
 /// `value` is of its collected columns.
 ///

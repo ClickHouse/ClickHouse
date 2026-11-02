@@ -34,8 +34,11 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <set>
@@ -146,7 +149,6 @@ struct ComputedArgument
 
 struct MatchedChain
 {
-    QueryPlan::Node * above_read = nullptr;
     ReadFromMergeTree * reading = nullptr;
     std::unordered_map<String, String> read_names;
     std::unordered_map<String, ComputedArgument> computed;
@@ -175,7 +177,6 @@ std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const
 
         if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
         {
-            matched.above_read = current;
             matched.reading = reading;
             return matched;
         }
@@ -249,10 +250,8 @@ bool deviceExpandsColumnCodec(const ColumnsDescription & columns, const String &
 struct ReadColumns
 {
     std::vector<NameAndTypePair> keys;
-    /// One per column the aggregates are of, once each. Without keys, every aggregate of a column must be by one
-    /// function, as the column is reduced into itself.
+    /// One per column the aggregates are of, once each.
     std::vector<ReadFromGPUCompressedColumns::ColumnToReduce> columns;
-    /// With keys only.
     std::vector<ReadFromGPUCompressedColumns::DerivedColumn> derived;
     std::vector<ReadFromGPUCompressedColumns::AggregateToCompute> aggregates;
 };
@@ -271,7 +270,6 @@ std::optional<ReadColumns> matchReducedColumns(
 
     const auto & aggregates = aggregating.getParams().aggregates;
 
-    std::unordered_map<String, GPU::GPUAggregationKind> aggregation_by_read_name;
     std::unordered_map<String, size_t> key_position_by_read_name;
     ReadColumns matched;
 
@@ -306,9 +304,7 @@ std::optional<ReadColumns> matchReducedColumns(
         matched.keys.emplace_back(name, read_column->type);
     }
 
-    const bool keyed = !keys.empty();
-
-    /// With keys, the position among `matched.columns` of each aggregated column, by its name in the read.
+    /// The position among `matched.columns` of each aggregated column, by its name in the read.
     std::unordered_map<String, size_t> column_position_by_read_name;
 
     for (size_t i = 0; i < aggregates.size(); ++i)
@@ -319,7 +315,7 @@ std::optional<ReadColumns> matchReducedColumns(
 
         if (aggregate.argument_names.empty())
         {
-            if (!keyed || !GPU::canGroupByOnDevice(nullptr, *result_type, aggregation))
+            if (!GPU::canGroupByOnDevice(nullptr, *result_type, aggregation))
                 GPU_COMPRESSED_REFUSE("an aggregate of no column the device does not compute");
             matched.aggregates.push_back({
                 .aggregation = aggregation,
@@ -334,7 +330,7 @@ std::optional<ReadColumns> matchReducedColumns(
         if (const auto computed_argument = computed.find(aggregate.argument_names.front()); computed_argument != computed.end())
         {
             static const DataTypePtr float64 = std::make_shared<DataTypeFloat64>();
-            if (!keyed || !GPU::canGroupByOnDevice(float64.get(), *result_type, aggregation))
+            if (!GPU::canGroupByOnDevice(float64.get(), *result_type, aggregation))
                 GPU_COMPRESSED_REFUSE("an aggregate of a computed argument the device does not group by");
 
             ReadFromGPUCompressedColumns::DerivedColumn derived{
@@ -406,39 +402,24 @@ std::optional<ReadColumns> matchReducedColumns(
         if (key_position_by_read_name.contains(name))
             GPU_COMPRESSED_REFUSE("a column that is both a key and an aggregated column");
 
-        if (keyed)
-        {
-            /// The device reads and sends a column once, however many aggregates are of it.
-            if (!GPU::canGroupByOnDevice(type.get(), *result_type, aggregation))
-                GPU_COMPRESSED_REFUSE("an aggregate the device does not group by");
+        /// The device reads and sends a column once, however many aggregates are of it.
+        if (!GPU::canGroupByOnDevice(type.get(), *result_type, aggregation))
+            GPU_COMPRESSED_REFUSE("an aggregate the device does not group by");
 
-            const auto [position, inserted] = column_position_by_read_name.emplace(name, matched.columns.size());
-            if (inserted)
-                matched.columns.push_back({
-                    .column = NameAndTypePair(name, type),
-                    .result_type = type,
-                    .aggregation = aggregation,
-                });
-            matched.aggregates.push_back({
+        const auto [position, inserted] = column_position_by_read_name.emplace(name, matched.columns.size());
+        if (inserted)
+            matched.columns.push_back({
+                .column = NameAndTypePair(name, type),
+                .result_type = type,
                 .aggregation = aggregation,
-                .column = position->second,
-                .derived = std::nullopt,
-                .result_type = result_type,
-                .description = aggregate.column_name,
             });
-            continue;
-        }
-
-        /// Without keys, the read emits one row per part in its own header, each column reduced into itself.
-        if (!result_type->equals(*type))
-            GPU_COMPRESSED_REFUSE("an aggregate whose result type differs from its argument's");
-
-        if (!GPU::canReduceOnDevice(*type, *type, aggregation))
-            GPU_COMPRESSED_REFUSE("an aggregated column of a type the device does not reduce into itself");
-
-        const auto [seen, inserted] = aggregation_by_read_name.emplace(name, aggregation);
-        if (!inserted && seen->second != aggregation)
-            GPU_COMPRESSED_REFUSE("a column that two aggregates reduce by different aggregate functions");
+        matched.aggregates.push_back({
+            .aggregation = aggregation,
+            .column = position->second,
+            .derived = std::nullopt,
+            .result_type = result_type,
+            .description = aggregate.column_name,
+        });
     }
 
     for (const auto & read_column : read_header)
@@ -453,25 +434,10 @@ std::optional<ReadColumns> matchReducedColumns(
         if (!GPU::columnTypeOf(*read_column.type))
             GPU_COMPRESSED_REFUSE("a column of a type the device has no element type for");
 
-        if (keyed)
-        {
-            if (!column_position_by_read_name.contains(read_column.name))
-                GPU_COMPRESSED_REFUSE("the read produces a column nothing aggregates or groups by");
-            continue;
-        }
-
-        const auto aggregation = aggregation_by_read_name.find(read_column.name);
-        if (aggregation == aggregation_by_read_name.end())
+        if (!column_position_by_read_name.contains(read_column.name))
             GPU_COMPRESSED_REFUSE("the read produces a column nothing aggregates or groups by");
-
-        matched.columns.push_back({
-            .column = NameAndTypePair(read_column.name, read_column.type),
-            .result_type = read_column.type,
-            .aggregation = aggregation->second,
-        });
     }
 
-    if (keyed)
     {
         DataTypes key_types;
         DataTypes argument_types;
@@ -489,7 +455,7 @@ std::optional<ReadColumns> matchReducedColumns(
         }
 
         if (matched.columns.empty())
-            GPU_COMPRESSED_REFUSE("a GROUP BY that aggregates no column");
+            GPU_COMPRESSED_REFUSE("an aggregation of no column");
 
         if (!GPU::canGroupByReduceOnDevice(key_types, argument_types, result_types, aggregate_kinds))
             GPU_COMPRESSED_REFUSE("keys or aggregated columns of types the device does not group by");
@@ -498,7 +464,7 @@ std::optional<ReadColumns> matchReducedColumns(
     return matched;
 }
 
-/// The `PREWHERE` of a keyed read as a program for the device, when the read has one and the
+/// The `PREWHERE` of the read as a program for the device, when the read has one and the
 /// device can evaluate it. The read's header is without the predicate's column, so the columns the
 /// predicate reads come along as a group of their own; `readIsOfWholeParts` still holds, since a
 /// `PREWHERE` filters rows, not parts.
@@ -507,14 +473,11 @@ struct MatchedFilter
     std::optional<ReadFromGPUCompressedColumns::DeviceFilter> filter;
 };
 
-std::optional<MatchedFilter> matchPrewhere(const ReadFromMergeTree & reading, bool keyed)
+std::optional<MatchedFilter> matchPrewhere(const ReadFromMergeTree & reading)
 {
     const PrewhereInfoPtr prewhere = reading.getPrewhereInfo();
     if (!prewhere)
         return MatchedFilter{};
-
-    if (!keyed)
-        GPU_COMPRESSED_REFUSE("a PREWHERE in a keyless read, whose one row per part would have to be filtered on the CPU");
 
     if (!prewhere->need_filter)
         GPU_COMPRESSED_REFUSE("a PREWHERE that does not filter");
@@ -574,7 +537,7 @@ bool readIsOfWholeParts(const ReadFromMergeTree & reading)
     if (reading.getDeferredPrewhereInfo() || reading.getDeferredRowLevelFilter())
         GPU_COMPRESSED_REFUSE("a deferred PREWHERE or row-level filter in the read");
 
-    /// `FINAL` collapses rows across parts, so a per-part result is not a partial result of anything.
+    /// `FINAL` collapses rows across parts, so the rows of the parts are not those of the table.
     /// Sampling reads a fraction of each part and scales the result.
     if (reading.isQueryWithFinal() || reading.isQueryWithSampling())
         GPU_COMPRESSED_REFUSE("the read is FINAL or sampled");
@@ -677,15 +640,14 @@ bool queryLimitsAllowReading(const ReadFromMergeTree & reading)
     return true;
 }
 
-/// The parts to read, each whole or in the ranges of marks the indexes left of it: in ranges only for a keyed
-/// aggregation without columns of varying width, which a part's every row needs the same from.
+/// The parts to read, each whole or in the ranges of marks the indexes left of it: in ranges only for an aggregation
+/// without columns of varying width, which a part's every row needs the same from.
 std::optional<std::vector<ReadFromGPUCompressedColumns::PartToRead>> matchParts(
     const ReadFromMergeTree & reading, const RangesInDataParts & parts_with_ranges, const ReadColumns & columns)
 {
     const auto is_variable = [](const NameAndTypePair & column) { return GPU::isStringKey(*column.type); };
     const bool fixed_width = std::ranges::none_of(columns.keys, is_variable)
         && std::ranges::none_of(columns.columns, [&](const auto & column) { return is_variable(column.column); });
-    const bool ranges_allowed = !columns.keys.empty() && fixed_width;
 
     const MergeTreeData::MutationsSnapshotPtr & mutations = reading.getMutationsSnapshot();
 
@@ -712,8 +674,8 @@ std::optional<std::vector<ReadFromGPUCompressedColumns::PartToRead>> matchParts(
             GPU_COMPRESSED_REFUSE("a projection part");
 
         const bool whole = part_with_ranges.getRowsCount() == part->rows_count;
-        if (!whole && !ranges_allowed)
-            GPU_COMPRESSED_REFUSE("a part of which less than every row is read, of an aggregation without keys or of strings");
+        if (!whole && !fixed_width)
+            GPU_COMPRESSED_REFUSE("a part of which less than every row is read, of an aggregation of strings");
 
         if (part->hasLightweightDelete())
             GPU_COMPRESSED_REFUSE("a part with a lightweight delete mask");
@@ -818,6 +780,26 @@ void pushGroupFilterToDevice(const FilterStep & filter, ReadFromGPUCompressedCol
 namespace
 {
 
+/// The row an aggregation without keys emits where no row is aggregated: the result of each aggregate over no rows.
+Columns resultOverNoRows(const Aggregator::Params & params)
+{
+    Arena arena;
+    Columns columns;
+    columns.reserve(params.aggregates.size());
+    for (const auto & aggregate : params.aggregates)
+    {
+        const IAggregateFunction & function = *aggregate.function;
+        AlignedBuffer place(function.sizeOfData(), function.alignOfData());
+        function.create(place.data());
+        SCOPE_EXIT(function.destroy(place.data()));
+
+        MutableColumnPtr column = function.getResultType()->createColumn();
+        function.insertResultInto(place.data(), *column, &arena);
+        columns.push_back(std::move(column));
+    }
+    return columns;
+}
+
 /// An aggregation that a rewrite made after the planner, such as the decorrelation of a subquery, is an `AggregatingStep`
 /// where the planner would have made a `GPUAggregatingStep`: it is made one here, where the device can run it, so that
 /// the device runs it as it would have, over the compressed columns where it can.
@@ -859,7 +841,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
         replaceWithGPUAggregating(child, settings);
         if (!typeid_cast<const GPUAggregatingStep *>(child.step.get()) || !optimizeAggregationFromGPUCompressedColumns(child, nodes, settings))
             return false;
-        if (auto * source = typeid_cast<ReadFromGPUCompressedColumns *>(child.step.get()); source && source->isGrouped())
+        if (auto * source = typeid_cast<ReadFromGPUCompressedColumns *>(child.step.get()); source && !source->isCollecting())
             pushGroupFilterToDevice(*filter, *source);
         return true;
     }
@@ -895,7 +877,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!columns)
         return false;
 
-    auto filter = matchPrewhere(*reading, !columns->keys.empty());
+    auto filter = matchPrewhere(*reading);
     if (!filter)
         return false;
 
@@ -932,51 +914,30 @@ bool optimizeAggregationFromGPUCompressedColumns(
         columns->columns.size(),
         filter->filter ? ", a PREWHERE over " + std::to_string(filter->filter->columns.size()) + " columns" : "");
 
-    const bool keyed = !columns->keys.empty();
+    const Aggregator::Params & params = aggregating->getParams();
+    std::optional<Columns> result_over_no_rows;
+    if (columns->keys.empty() && !params.empty_result_for_aggregation_by_empty_set)
+        result_over_no_rows = resultOverNoRows(params);
 
-    /// With keys, the read takes the place of the aggregation and emits its header; without, it emits its own and the
-    /// aggregation above folds a row per part.
-    SharedHeader header = keyed ? aggregating->getOutputHeader() : reading->getOutputHeader();
-
-    if (!keyed)
-    {
-        const SharedHeaders & headers_above_read = chain->above_read->step->getInputHeaders();
-        if (headers_above_read.size() != 1 || !blocksHaveEqualStructure(*headers_above_read.front(), *header))
-            GPU_COMPRESSED_REFUSE("the step above the read would see a different header");
-    }
-
-    auto & source_node = nodes.emplace_back();
-
-    source_node.step = std::make_unique<ReadFromGPUCompressedColumns>(
-        header,
+    /// The read groups every part on the device and emits the aggregation's result itself.
+    auto step = std::make_unique<ReadFromGPUCompressedColumns>(
+        aggregating->getOutputHeader(),
         std::move(columns->keys),
         std::move(columns->columns),
         std::move(columns->derived),
         std::move(columns->aggregates),
+        std::move(result_over_no_rows),
         std::move(filter->filter),
         std::move(*parts),
         reading->getStorageSnapshot(),
         context,
         context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
-        reading->getNumStreams(),
         context->getSettingsRef()[Setting::gpu_aggregation_readers],
         context->getSettingsRef()[Setting::gpu_aggregation_decompression]);
+    step->setStepDescription("Compressed columns decompressed and grouped on the device, one row per group", settings.max_step_description_length);
 
-    source_node.step->setStepDescription(
-        keyed ? "Compressed columns decompressed and grouped on the device, one row per group"
-              : "Compressed columns decompressed and reduced on the device, one row per part",
-        settings.max_step_description_length);
-
-    if (keyed)
-    {
-        /// The read groups every part on the device and emits the aggregation's result itself.
-        node.step = std::move(source_node.step);
-        node.children.clear();
-        nodes.pop_back();
-        return true;
-    }
-
-    chain->above_read->children.front() = &source_node;
+    node.step = std::move(step);
+    node.children.clear();
     return true;
 }
 
@@ -1245,12 +1206,12 @@ bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
         std::move(columns.columns),
         std::vector<ReadFromGPUCompressedColumns::DerivedColumn>{},
         std::vector<ReadFromGPUCompressedColumns::AggregateToCompute>{},
+        /*result_over_no_rows_=*/std::nullopt,
         std::move(split->device),
         std::move(*parts),
         reading->getStorageSnapshot(),
         context,
         context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
-        reading->getNumStreams(),
         context->getSettingsRef()[Setting::gpu_aggregation_readers],
         context->getSettingsRef()[Setting::gpu_aggregation_decompression],
         /*collect_=*/true);

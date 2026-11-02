@@ -137,6 +137,8 @@ private:
 /// that are there in every column over to the grouping thread, which groups them through the `CudfGroupBy`. So the
 /// device expands and copies the next rows while it groups those before, each on a stream of its own.
 ///
+/// Without keys, the aggregates are of every row, as one group, which there is none of where no row is grouped.
+///
 /// Without keys and aggregates, it groups nothing: it collects the rows of the values that the `WHERE` keeps. With
 /// `on_collected`, the grouping thread hands them over as they come, a column of each value at a time, so that they do
 /// not pile up on the device and the steps above take them while the rest is read; what is left at the end comes

@@ -16,15 +16,14 @@ namespace DB
 
 /** Reads the columns of `MergeTree` parts as the compressed blocks they are stored in and has the
   * device expand and aggregate them, so that the host neither decompresses nor sends the values at
-  * full width. A keyed aggregation reads the ranges of marks the indexes left of a part, whole
-  * compressed blocks from the one each range starts in, and the device leaves the rows outside the
-  * range out of the blocks it expands.
+  * full width. It reads the ranges of marks the indexes left of a part, whole compressed blocks
+  * from the one each range starts in, and the device leaves the rows outside the range out of the
+  * blocks it expands.
   *
-  * Without keys, each column of each part is reduced on its own and the step emits one row per
-  * part, in the read's own header; the aggregation above it folds those rows. With keys, every
-  * part's rows go through one `GROUP BY` on the device and the step takes the place of the
+  * Every part's rows go through one `GROUP BY` on the device and the step takes the place of the
   * aggregation: it emits one row per group in the aggregation's header, the keys and then the
-  * result of each aggregate, of which several may be of one column and a `count` of none.
+  * result of each aggregate, of which several may be of one column and a `count` of none. Without
+  * keys, the rows are one group.
   *
   * Collecting, without keys and aggregates, it takes the place of the read itself: the device evaluates the `WHERE` and
   * sends back only the rows it keeps, of `columns` as they are, the step's header.
@@ -93,19 +92,18 @@ public:
         std::vector<ColumnToReduce> columns_,
         std::vector<DerivedColumn> derived_,
         std::vector<AggregateToCompute> aggregates_,
+        std::optional<Columns> result_over_no_rows_,
         std::optional<DeviceFilter> filter_,
         std::vector<PartToRead> parts_,
         StorageSnapshotPtr storage_snapshot_,
         ContextPtr context_,
         size_t batch_bytes_,
-        size_t num_streams_,
         size_t num_readers_,
         GPUDecompressionMode decompression_,
         bool collect_ = false);
 
     String getName() const override { return "ReadFromGPUCompressedColumns"; }
 
-    bool isGrouped() const { return !keys.empty(); }
     bool isCollecting() const { return collect; }
 
     void setGroupFilter(GroupFilter group_filter_) { group_filter = std::move(group_filter_); }
@@ -120,6 +118,9 @@ private:
     std::vector<ColumnToReduce> columns;
     std::vector<DerivedColumn> derived;
     std::vector<AggregateToCompute> aggregates;
+    /// Of an aggregation without keys, the row it emits where no row is aggregated: none under
+    /// `empty_result_for_aggregation_by_empty_set`.
+    std::optional<Columns> result_over_no_rows;
     std::optional<DeviceFilter> filter;
     std::optional<GroupFilter> group_filter;
     std::vector<PartToRead> parts;
@@ -129,8 +130,7 @@ private:
     ContextPtr context;
 
     size_t batch_bytes;
-    size_t num_streams;
-    /// Threads that read parts for a keyed aggregation, each a part at a time.
+    /// Threads that read the parts, each a part at a time.
     size_t num_readers;
     /// Who expands a column of a part: see `gpu_aggregation_decompression`.
     GPUDecompressionMode decompression;
