@@ -49,7 +49,6 @@ class EnumeratorCheckerWithCosts
 public:
     EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_)
         : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_) {}
-    double computeJoinCost(UInt lhs, UInt rhs, const SelectivityEstimate & selectivity) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
@@ -79,22 +78,13 @@ private:
     /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
     /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
     MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
+    /// The cheapest plan of the subset for -1, else its plan in `ordered`.
+    const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
 
     DPTable dp_table;
     Optimizer & optimizer;
     const size_t num_relations;
 };
-
-template <class TDPTable, class TOptimizer>
-double
-EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const UInt lhs,
-                                                                  const UInt rhs,
-                                                                  const SelectivityEstimate & selectivity) const
-{
-    return dp_table[lhs].cost + dp_table[rhs].cost
-        + estimateJoinedRows(selectivity, dp_table[lhs].estimated_rows, dp_table[rhs].estimated_rows);
-}
-
 
 template <class TDPTable, class TOptimizer>
 void
@@ -145,7 +135,12 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         kind = JoinKind::Cross;
 
     auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
-    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
+    const auto & left_entry = dp_table[lhs_subset];
+    const auto & right_entry = dp_table[rhs_subset];
+    const double joined_rows = estimateJoinedRows(selectivity, left_entry.estimated_rows, right_entry.estimated_rows);
+    const double rows_cost = left_entry.rows_cost + right_entry.rows_cost + joined_rows;
+    const double plan_cost = left_entry.cost + right_entry.cost + joined_rows
+        + optimizer.hashJoinWork(left_mask, left_entry.estimated_rows, right_mask, right_entry.estimated_rows);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
              selectivity.value,
@@ -159,6 +154,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.left = lhs_subset;
         entry.right = rhs_subset;
         entry.cost = plan_cost;
+        entry.rows_cost = rows_cost;
         entry.sel = selectivity.reported_value;
         entry.kind = kind;
         entry.strictness = strictness;
@@ -249,6 +245,8 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         plan.left_plan = left->plan;
         plan.right_plan = right->plan;
         plan.cost = cost;
+        plan.rows_cost = planAt(lhs_subset, left->plan).rows_cost + planAt(rhs_subset, right->plan).rows_cost
+            + estimateJoinedRows(selectivity, left->input.rows, right->input.rows);
         plan.sel = selectivity.reported_value;
         plan.kind = kind;
         plan.strictness = strictness;

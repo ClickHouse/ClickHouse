@@ -123,6 +123,12 @@ FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(sorted1.k + sorted2.k + sorted3.k + sorted4.k) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
         JOIN sorted3 ON sorted2.k = sorted3.k JOIN sorted4 ON sorted3.k = sorted4.k);
 
+SELECT '-- two large sorted tables and a tiny one: joining the tiny one first beats merging the large ones, no merge join';
+SELECT countIf(explain LIKE '%Algorithm:%'), countIf(explain LIKE '%FullSortingMergeJoin%')
+FROM (EXPLAIN PLAN
+    SELECT sum(sorted1.v + sorted2.v + tiny.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k JOIN tiny ON sorted2.k = tiny.k)
+SETTINGS enable_join_runtime_filters = 0;
+
 SELECT '-- build keys in a narrow range: a hash join, whose runtime filter skips most of the sorted probe side';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
 WHERE explain LIKE '%Algorithm:%';

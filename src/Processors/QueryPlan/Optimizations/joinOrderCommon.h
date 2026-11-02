@@ -242,15 +242,22 @@ struct MergeJoinInput
     double cost = 0;
     UInt64 rows = 0;
     bool sorted = false;
-    /// The fraction of its rows a hash join reads if this input is the probe side, after its runtime filter prunes granules.
-    double probe_fraction = 1.0;
     /// For a sorted input of a join on several keys that is sorted by the merge key only: the number of groups of equal
     /// merge keys the other keys are sorted within. 0 when it is sorted by all of them.
     double sort_groups = 0;
 };
 
-/// A sort-merge join costs as much as the hash join of the same inputs plus the difference between the two methods,
-/// so it is comparable with `computeJoinCost`, and plans without sorted inputs keep their costs.
+/// The work of a hash join: building the table from the smaller input, and probing it with the `probe_fraction` of the
+/// larger one that its runtime filter lets it read. DPsub adds it to the cost of a hash join when merge joins compete.
+inline double computeHashJoinWork(UInt64 left_rows, UInt64 right_rows, double probe_fraction)
+{
+    const auto build = static_cast<double>(std::min(left_rows, right_rows));
+    const auto probe = static_cast<double>(std::max(left_rows, right_rows));
+    return HASH_BUILD_ROW_COST * build + HASH_PROBE_ROW_COST * probe_fraction * probe;
+}
+
+/// A sort-merge join charges its own work, on the scale of a hash join with `computeHashJoinWork`, so plans of different
+/// join trees compare, whichever methods they use.
 inline double computeMergeJoinCost(const MergeJoinInput & left, const MergeJoinInput & right, const SelectivityEstimate & selectivity)
 {
     auto input_cost = [](const MergeJoinInput & input)
@@ -263,13 +270,8 @@ inline double computeMergeJoinCost(const MergeJoinInput & left, const MergeJoinI
             sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(static_cast<UInt64>(rows / std::max(input.sort_groups, 1.0))));
         return sort + MERGE_SORTED_ROW_COST * rows;
     };
-    /// The hash table is built from the smaller input.
-    const auto & build = left.rows < right.rows ? left : right;
-    const auto & probe = left.rows < right.rows ? right : left;
-    const double hash_join = HASH_BUILD_ROW_COST * static_cast<double>(build.rows)
-        + HASH_PROBE_ROW_COST * probe.probe_fraction * static_cast<double>(probe.rows);
     const double merge_join = MERGE_JOIN_FIXED_COST + input_cost(left) + input_cost(right);
-    return left.cost + right.cost + estimateJoinedRows(selectivity, left.rows, right.rows) + merge_join - hash_join;
+    return left.cost + right.cost + estimateJoinedRows(selectivity, left.rows, right.rows) + merge_join;
 }
 
 }

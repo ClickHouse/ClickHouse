@@ -18,6 +18,8 @@ merge join
 merge join
 -- a chain of four, in whatever tree shape: every input of every merge join is already sorted
 3	6	6
+-- two large sorted tables and a tiny one: joining the tiny one first beats merging the large ones, no merge join
+2	0
 -- build keys in a narrow range: a hash join, whose runtime filter skips most of the sorted probe side
 hash join
 -- build keys in a narrow range, but runtime filters disabled: nothing is skipped, a merge join

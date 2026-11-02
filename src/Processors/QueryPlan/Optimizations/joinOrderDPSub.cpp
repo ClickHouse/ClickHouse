@@ -145,9 +145,12 @@ private:
     std::vector<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
     /// The number of distinct values of the class's columns in a set of relations, at most `rows`; 1 when unknown.
     double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
+    /// The work of a hash join of the two sides, see `computeHashJoinWork`. 0 without interesting orders, where costs
+    /// count output rows only.
+    double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
     /// The fraction of a probe side a hash join's runtime filter lets it read: the overlap of the key range of the build side
-    /// with the key range of a probe table sorted by the key, whose granules the filter prunes. 1 when unknown.
-    double probeReadFraction(UInt32 probe_mask, UInt32 build_mask, Int32 order_class) const;
+    /// with the key range of a probe table sorted by a key of the join, whose granules the filter prunes. 1 when unknown.
+    double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
     /// Whether a later join may still use a result sorted by the equivalence class.
     bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
     /// The column of the class that the result of a plan is sorted by, as `applyOrder` sees it: a merge join on the class
@@ -485,6 +488,9 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             if (auto it = class_index.find(lhs_class.get()); it != class_index.end())
                 dpsub_data.edge_class[i] = static_cast<Int32>(it->second);
         }
+
+        /// Without an input sorted by a join key no merge join beats a hash join, so costs stay as they are.
+        dpsub_data.interesting_orders = std::ranges::any_of(dpsub_data.rel_prefix_classes, [](const auto & prefix) { return !prefix.empty(); });
     }
 
     /// Connectivity: every predicate over two or more relations, every cross product (it links its two
@@ -775,9 +781,6 @@ double DPSubJoinOrderOptimizer::mergeJoinCost(
     MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
     const SelectivityEstimate & selectivity) const
 {
-    left.probe_fraction = probeReadFraction(left_mask, right_mask, order_class);
-    right.probe_fraction = probeReadFraction(right_mask, left_mask, order_class);
-
     /// On several keys an input sorted by the merge key only is still sorted by the other keys within its groups.
     /// The keys follow the order of the left input if it covers them (see `buildPhysicalPlan`), else of the right one.
     const UInt64 key_classes = spanningClasses(left_mask, right_mask);
@@ -831,10 +834,25 @@ double DPSubJoinOrderOptimizer::distinctValues(UInt32 relations, Int32 order_cla
     return static_cast<double>(std::clamp<UInt64>(ndv, 1, std::max<UInt64>(rows, 1)));
 }
 
-double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 build_mask, Int32 order_class) const
+double DPSubJoinOrderOptimizer::hashJoinWork(
+    UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const
 {
-    if (!query_graph.runtime_filter_prunes_probe || std::popcount(probe_mask) != 1 || !isReadInOrder(probe_mask, order_class))
+    if (!dpsub_data.interesting_orders)
+        return 0;
+    const UInt64 left = left_rows.value_or(0);
+    const UInt64 right = right_rows.value_or(0);
+    const double probe_fraction = left < right ? probeReadFraction(right_mask, left_mask) : probeReadFraction(left_mask, right_mask);
+    return computeHashJoinWork(left, right, probe_fraction);
+}
+
+double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const
+{
+    if (!query_graph.runtime_filter_prunes_probe || std::popcount(probe_mask) != 1)
         return 1.0;
+    const auto & prefix = dpsub_data.rel_prefix_classes[std::countr_zero(probe_mask)];
+    if (prefix.empty() || !(dpsub_data.class_relations[prefix.front()] & build_mask))
+        return 1.0;
+    const Int32 order_class = prefix.front();
 
     const size_t num_classes = dpsub_data.class_members.size();
     const auto & probe = dpsub_data.key_ranges[std::countr_zero(probe_mask) * num_classes + order_class];
@@ -1098,7 +1116,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     }
 
     return std::make_shared<DPJoinEntry>(
-        left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator), entry.method);
+        left, right, entry.rows_cost, entry.sel, entry.estimated_rows, std::move(join_operator), entry.method);
 }
 
 std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
@@ -1130,6 +1148,9 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
         double cost{.0};
+        /// What `EXPLAIN` reports: the output rows of its joins, as `EXPLAIN ANALYZE` measures them. `cost` adds the work
+        /// of the join methods when merge joins compete.
+        double rows_cost{.0};
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
