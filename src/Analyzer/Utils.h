@@ -304,6 +304,8 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
   * over a `TABLE` or `TABLE_FUNCTION` set is the same class: remotes can miss the table or see
   * different rows. Literal and tuple `IN` stay copyable. Executable and WebAssembly UDFs are
   * configured per server, so they also stay on the initiator even when deterministic.
+  * Functions that take or return a `DateTime` / `DateTime64` without an explicit time zone stay on
+  * the initiator as well: a remote node evaluates them in its own default time zone.
   */
 void removeExpressionsThatAreUnsafeToDuplicate(
     QueryTreeNodePtr & expression,

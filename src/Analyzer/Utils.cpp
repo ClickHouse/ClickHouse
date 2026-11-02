@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
@@ -1644,6 +1645,29 @@ bool isNodeLocalUserDefinedFunction(const String & function_name)
     return UserDefinedExecutableFunctionFactory::has(function_name, Context::getGlobalContextInstance());
 }
 
+/// A `DateTime` / `DateTime64` without an explicit time zone is interpreted in the default time zone
+/// of the server that evaluates the expression. The initiator and a remote node may have different
+/// default time zones, so a function that takes or returns such a value (`toHour(toDateTime(n))`,
+/// `dt >= '2024-01-01 00:00:00'`) may give a different result on the remote node.
+bool dependsOnImplicitTimeZone(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested)
+    {
+        const auto * time_zone_mixin = dynamic_cast<const TimezoneMixin *>(&nested);
+        return time_zone_mixin && !time_zone_mixin->hasExplicitTimeZone();
+    });
+}
+
+bool functionDependsOnImplicitTimeZone(const FunctionBasePtr & function_base)
+{
+    if (dependsOnImplicitTimeZone(*function_base->getResultType()))
+        return true;
+    for (const auto & argument_type : function_base->getArgumentTypes())
+        if (argument_type && dependsOnImplicitTimeZone(*argument_type))
+            return true;
+    return false;
+}
+
 }
 
 bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
@@ -1659,7 +1683,8 @@ bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
                 && !function_base->hasObservableSideEffects()
                 && !functionIsDictGet(function_base->getName())
                 && !functionIsJoinGet(function_base->getName())
-                && !isNodeLocalUserDefinedFunction(function_base->getName());
+                && !isNodeLocalUserDefinedFunction(function_base->getName())
+                && !functionDependsOnImplicitTimeZone(function_base);
         });
 }
 
