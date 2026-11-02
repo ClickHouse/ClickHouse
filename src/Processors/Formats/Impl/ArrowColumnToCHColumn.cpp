@@ -1,7 +1,7 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Common/Exception.h>
 
-#if USE_ARROW || USE_ORC || USE_PARQUET
+#if USE_ARROW || USE_PARQUET
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
