@@ -19,13 +19,13 @@ function create()
 }
 
 # use_statistics_for_part_pruning = 0: the statistics would skip the part with no match before the cache records it.
-# use_uncompressed_cache = 0: the uncompressed cache can return the blocks of the dropped table's files, which had the same paths.
+# use_uncompressed_cache = 0, min_bytes_to_use_mmap_io = 0: these caches are keyed by file path and can return the dropped table's data.
 function query()
 {
     for prewhere in 0 1; do
         $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE a < 50
             SETTINGS use_query_condition_cache = 1, use_statistics_for_part_pruning = 0, use_uncompressed_cache = 0,
-                optimize_move_to_prewhere = $prewhere"
+                min_bytes_to_use_mmap_io = 0, optimize_move_to_prewhere = $prewhere"
     done
 }
 
