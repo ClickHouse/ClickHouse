@@ -125,6 +125,32 @@ int sscanf(const char *restrict s, const char *restrict fmt, ...)
 
 int __isoc99_sscanf(const char *str, const char *format, ...) __attribute__((weak, nonnull, nothrow, alias("sscanf")));
 
+/// glibc 2.38 redirects strtol and friends to __isoc23_*, and g++ defines _GNU_SOURCE
+/// unconditionally, so anything compiled against a 2.38+ glibc with libstdc++ needs these.
+long int __isoc23_strtol(const char *nptr, char **endptr, int base)
+{
+    return strtol(nptr, endptr, base);
+}
+
+unsigned long int __isoc23_strtoul(const char *nptr, char **endptr, int base)
+{
+    return strtoul(nptr, endptr, base);
+}
+
+long long int __isoc23_strtoll(const char *nptr, char **endptr, int base)
+{
+    return strtoll(nptr, endptr, base);
+}
+
+unsigned long long int __isoc23_strtoull(const char *nptr, char **endptr, int base)
+{
+    return strtoull(nptr, endptr, base);
+}
+
+/// libstdc++ reads this glibc 2.32 flag to skip atomic reference counting in a single-threaded
+/// process. ClickHouse is multi-threaded from startup, so the answer is always no.
+char __libc_single_threaded = 0;
+
 int open(const char *path, int oflag);
 
 int __open_2(const char *path, int oflag)

@@ -142,6 +142,30 @@ SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algori
 DROP TABLE t04628_left;
 DROP TABLE t04628_right;
 
+SELECT '-- QBit sliced above a lazy ARRAY JOIN expansion';
+-- `arraySlice` opts out of the framework's replicated materialization and dispatches on the QBit type
+-- before any wrapper is peeled, so its QBit branch receives the `ColumnReplicated` the expansion built:
+-- `Bad cast from type DB::ColumnReplicated to DB::ColumnQBit` in `executeQBitSlice`.
+-- A QBit slice needs constant offset and length, so only the LIMIT barrier keeps it above the expansion.
+DROP TABLE IF EXISTS t04628_qbit;
+DROP TABLE IF EXISTS t04628_qbit_nullable;
+CREATE TABLE t04628_qbit (id UInt32, vec QBit(Float32, 32, 8)) ENGINE = Memory;
+CREATE TABLE t04628_qbit_nullable (id UInt32, vec Nullable(QBit(Float32, 32, 8))) ENGINE = Memory;
+INSERT INTO t04628_qbit SELECT 1, arrayMap(i -> toFloat32(i + 1), range(32))::QBit(Float32, 32, 8);
+INSERT INTO t04628_qbit_nullable SELECT 1, arrayMap(i -> toFloat32(i + 1), range(32))::QBit(Float32, 32, 8);
+INSERT INTO t04628_qbit_nullable SELECT 2, NULL;
+{% for i in range(2) -%}
+SELECT arraySlice(vec, 9, 8) AS aligned, toTypeName(aligned), arraySlice(vec, 2, 10) AS repacked, toTypeName(repacked), arraySlice(vec, 1) AS whole, vec[3]
+FROM (SELECT vec FROM t04628_qbit ARRAY JOIN [1, 2, 3] AS z LIMIT 3)
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0;
+SELECT id, arraySlice(vec, 9, 8) AS aligned, arraySlice(vec, 2, 10) AS repacked
+FROM (SELECT id, vec FROM t04628_qbit_nullable ARRAY JOIN [1, 2] AS z LIMIT 4)
+ORDER BY id
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0;
+{% endfor %}
+DROP TABLE t04628_qbit;
+DROP TABLE t04628_qbit_nullable;
+
 SELECT '-- large array is not materialized per joined row';
 {% for i in range(2) -%}
 SELECT sum(length(arraySlice(big, x, 2))) + sum(length(big[x]))

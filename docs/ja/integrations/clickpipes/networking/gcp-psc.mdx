@@ -19,27 +19,21 @@ GCP の [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/privat
   ClickPipes は、[グローバルアクセス](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)を介した**クロスリージョン** PSC 接続をサポートしています。ClickPipes インフラストラクチャが稼働するリージョンとは異なるリージョンにあるエンドポイントでは、グローバルアクセスが必要です。詳細については、[ClickPipes GCP リージョンのドキュメント](/ja/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)を確認してください。
 </Check>
 
-<div id="supported-patterns">
-  ## サポートされるパターン
-</div>
+## サポートされるパターン {#supported-patterns}
 
-| パターン               | 適用される場合                                                                                                       | サービス アタッチメント                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| **ネイティブ PSC**      | Google Cloud SQL、AlloyDB、Google Cloud Managed Service for Apache Kafka など、PSC サービス アタッチメントを自動的に公開するマネージドサービス。 | インスタンスで PSC を有効にすると自動的に作成されます。 |
-| **プロデューサー所有の PSC** | Compute Engine 上の Postgres や、プライベート IP 経由でのみアクセス可能なマネージドサービスなど、サービス アタッチメントを公開しないデータソース。                      | ユーザーが作成・管理します。                 |
+| パターン               | 適用される場合                                                                                                                                   | サービス アタッチメント                   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| **ネイティブ PSC**      | Google Cloud SQL、AlloyDB など、PSC サービス アタッチメントを自動的に公開し、そのコンシューマー承認リストを制御できるマネージドサービス。                                                       | インスタンスで PSC を有効にすると自動的に作成されます。 |
+| **プロデューサー所有の PSC** | Compute Engine 上の Postgres、Google Cloud Managed Service for Apache Kafka、プライベート IP 経由でのみアクセス可能なマネージドサービスなど、管理可能なサービス アタッチメントを公開しないデータソース。 | ユーザーが作成・管理します。                 |
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 * GCP でホストされる ClickHouse Cloud サービス。ClickPipes は、[一部の例外](/ja/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)を除き、ClickHouse Cloud サービスと同じリージョンで実行されます。
 * ソースで PSC を有効にし、PSC サービスアタッチメントを管理するための IAM 権限 (`roles/compute.networkAdmin`) 。
 * サービスアタッチメントへの接続を許可された**ClickPipes コンシューマープロジェクト** (`clickpipes-production`)。
 * ClickPipes をプログラムでプロビジョニングする場合: サービスを所有する組織の ClickHouse Cloud API キー。
 
-<div id="create-rpe">
-  ## リバース プライベート エンドポイントを作成する
-</div>
+## リバース プライベート エンドポイントを作成する {#create-rpe}
 
 RPE を作成するには、データソースについて次の情報が必要です。
 
@@ -52,7 +46,7 @@ RPE を作成するには、データソースについて次の情報が必要�
     2. 取り込み元のデータソースを選択します。
     3. **Setup your ClickPipe connection** で **Use secure connection** をオンにし、**+ Reverse private endpoint** をクリックして **GCP PSC service attachment** を選択します。
     4. **サービス アタッチメント URI**、**private DNS 名**、**説明** を入力します。
-    5. **Create** をクリックします。エンドポイントの状態は `Provisioning` → `Ready` と遷移します。 (ネイティブ PSC は自動承認されるため、`PendingAcceptance` は表示されません。)
+    5. **Create** をクリックします。エンドポイントの状態は `Provisioning` → `Ready` と遷移します。 (Cloud SQL や AlloyDB などのネイティブ PSC ソースでは、ClickPipes コンシューマープロジェクトを許可リストに登録すると接続が自動承認されるため、`PendingAcceptance` は表示されません。プロデューサー所有 PSC の場合は、[プロデューサー所有 接続の承認](#producer-owned)を参照してください。)
   </Tab>
 
   <Tab title="Terraform">
@@ -94,19 +88,15 @@ RPE を作成するには、データソースについて次の情報が必要�
   </Tab>
 </Tabs>
 
-<div id="custom-private-dns-rules">
-  ### カスタム プライベート DNS 名
-</div>
+### カスタム プライベート DNS 名 {#custom-private-dns-rules}
 
 GCP PSC では DNS が伝播されないため、ClickPipes がエンドポイントの静的な内部 IP に解決できるよう、すべての GCP PSC エンドポイントにカスタム private DNS マッピングが必要です。
 
-標準の ClickPipes [カスタム プライベート DNS 命名規則](/ja/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)が適用されます。ワイルドカードのサポート、service の リバースプライベートエンドポイント 間での一意性、予約済み接尾辞に関する制限は、すべての provider で同じように適用されます。ワイルドカードは特に便利です。*たとえば*、`*.<cluster>.<region>.managedkafka.<project>.cloud.goog` のような単一のマッピングで、Managed Kafka クラスター内のすべての broker を対象にできます。
+標準の ClickPipes [カスタム プライベート DNS 命名規則](/ja/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)が適用されます。ワイルドカードのサポート、サービス の リバースプライベートエンドポイント 間での一意性、予約済み接尾辞に関する制限は、すべての provider で同じように適用されます。Managed Kafka のように複数の broker を持つソースでは、クラスター全体に単一のワイルドカードを使用するのではなく、アドバタイズされているすべての broker に対して上記のセットアップを繰り返してください。具体的には、broker の サービスアタッチメント ごとにリバースプライベートエンドポイントを 1 つずつ作成し、その broker のホスト名に対するカスタム private DNS マッピングを設定します。ブートストラップ用のホスト名に専用のエンドポイントは不要です。いずれかの broker エンドポイントに追加のマッピングとして登録してください。完全な例については、[`gcp-managed-kafka` Terraform モジュール](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/gcp-managed-kafka)を参照してください。
 
 GCP PSC では、マッピングの `privateDnsName` のみが使用されます。PSC エンドポイントは、紐付ける DNS 名のない静的 IP を公開するため、`internalDNSName` フィールドはサポートされません。マッピングは常にその IP に解決されます。
 
-<div id="producer-owned">
-  ## プロデューサー所有の接続を承認する
-</div>
+## プロデューサー所有の接続を承認する {#producer-owned}
 
 プロデューサー所有 PSC では、接続を自動的に承認するため、ClickPipes コンシューマープロジェクト (`clickpipes-production`) をサービスアタッチメントの自動承認リストに追加します。これを省略すると、手動で承認するまで RPE は `PendingAcceptance` のままとなります。
 
@@ -135,9 +125,7 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
   ここでは、ClickPipes API/Terraform のレスポンスに含まれる `endpoint_id` を使用しないでください。この値は転送ルールの*名前*であり、GCP で必要な数値 ID ではないため、許可リストと一致しません。必ず、サービス アタッチメントの保留中の `endpointWithId` から数値 ID を取得してください。
 </Warning>
 
-<div id="managing-rpes">
-  ## リバース プライベート エンドポイントの管理
-</div>
+## リバース プライベート エンドポイントの管理 {#managing-rpes}
 
 既存のリバース プライベート エンドポイントは、ClickHouse Cloud サービスの設定で管理できます。
 
@@ -151,8 +139,6 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 
 エンドポイントに `Rejected` または `Failed` と表示される場合は、ステータスの下にあるメッセージを確認してください。これにより、プロデューサーによって拒否された接続なのか、切断された接続または対応が必要な接続なのかを判別できます。通常、どちらの場合も、サービスアタッチメントの許可リストに ClickPipes コンシューマープロジェクトが含まれていないことを示します。エンドポイントについて GCP が報告するステータスを確認するには、サービスアタッチメントの `connectedEndpoints` を記述します。
 
-<div id="limitations">
-  ## 既知の制限事項
-</div>
+## 既知の制限事項 {#limitations}
 
 * PSC サービス アタッチメントを一度に要求できる ClickHouse Cloud サービスは 1 つだけであり、複数のサービス間で再利用することはできません。サービス アタッチメントを別のサービスに移動するには、既存の要求を解除するため、[ClickHouse Support にお問い合わせください](https://clickhouse.com/support/program)。

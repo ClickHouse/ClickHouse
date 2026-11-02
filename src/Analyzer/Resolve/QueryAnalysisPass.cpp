@@ -11,11 +11,14 @@ QueryAnalysisPass::QueryAnalysisPass(TableExpressionNodePtr table_expression_, b
     , only_analyze(only_analyze_)
 {}
 
-QueryAnalysisPass::QueryAnalysisPass(bool only_analyze_) : only_analyze(only_analyze_) {}
+QueryAnalysisPass::QueryAnalysisPass(bool only_analyze_, bool positional_arguments_already_resolved_)
+    : only_analyze(only_analyze_)
+    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
+{}
 
 void QueryAnalysisPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    QueryAnalyzer analyzer(only_analyze);
+    QueryAnalyzer analyzer(only_analyze, positional_arguments_already_resolved);
     analyzer.resolve(query_tree_node, table_expression, context);
     createUniqueAliasesIfNecessary(query_tree_node, context);
 }

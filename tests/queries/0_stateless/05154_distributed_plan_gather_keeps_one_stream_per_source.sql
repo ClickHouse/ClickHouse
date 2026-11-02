@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-old-analyzer
+-- Tags: no-fasttest
 -- no-fasttest: needs the streaming exchange of the stateless worker configuration.
--- no-old-analyzer: distributed planning requires the analyzer.
 
 -- The merge of partial aggregation results after a gather expects the buckets of every sender on
 -- one input stream, in order. So the gather receive keeps one stream per source, however many

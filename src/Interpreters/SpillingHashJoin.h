@@ -9,6 +9,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/SpillableAdapter.h>
 #include <Common/SharedMutex.h>
 
 
@@ -39,7 +40,7 @@ class ConcurrentHashJoin;
 ///
 /// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
 /// transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin is used,
-/// getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
+/// isDelayedBlocksProcessingEnabled is false and the probe streams close those transforms after the build.
 /// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
 /// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
 /// GraceHashJoin), since spilling may reorder rows.
@@ -72,10 +73,11 @@ public:
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
+    std::string getAlgorithm() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     void initialize(const Block & sample_block) override;
     JoinResultPtr joinBlock(Block block) override;
@@ -88,6 +90,12 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     StepAnalysisReport getAnalysisReport() const override;
+
+    ISpillable * getSpillable() override { return &spillable; }
+    /// While collecting: the whole right side, spilled by switching to the grace join.
+    /// After the switch: the grace join and unconverted concurrent slots. Nothing once the build ended in memory.
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
@@ -105,6 +113,7 @@ public:
 
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool isDelayedBlocksProcessingEnabled() const override;
 
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
@@ -123,6 +132,8 @@ public:
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
+    SpillableAdapter<SpillingHashJoin> spillable{*this};
+
     enum class State
     {
         COLLECTING, // Right-side blocks are being collected in HashJoin / ConcurrentHashJoin, no spilling yet.
@@ -130,8 +141,8 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    void switchToGraceHashJoin();
-    void tryConvertSlots();
+    void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
+    void tryConvertSlots(JoinBuildContext context);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;

@@ -79,6 +79,8 @@ public:
     using IndexType = IT;
     using ValueType = VT;
 
+    static_assert(sizeof(IndexType) <= 4, "IndexType must be at most 32 bits in BSI format");
+
     static constexpr auto type = "BSI";
 
     /** For Float ValueType:
@@ -903,7 +905,7 @@ public:
                 UInt64 row = 0;
                 UInt64 col = val & 0x3f;
 #if defined(__BMI2__) && !defined(__e2k__)
-                ASM_SHIFT_RIGHT(val, shift, row);
+                CROARING_ASM_SHIFT_RIGHT(val, shift, row);
 #else
                 row = val >> shift;
 #endif
@@ -1018,7 +1020,7 @@ public:
                     UInt64 tmp_offset = 0;
                     UInt64 p = bit_buffer[i][j];
 #if defined(__BMI2__) && !defined(__e2k__)
-                    ASM_SHIFT_RIGHT(p, shift, tmp_offset);
+                    CROARING_ASM_SHIFT_RIGHT(p, shift, tmp_offset);
 #else
                     tmp_offset = p >> shift;
 #endif
@@ -1740,11 +1742,6 @@ public:
     void addValue(IndexType index, ValueType value)
     {
         checkValidValue(value);
-
-        if (sizeof(IndexType) > 4)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
-        }
 
         /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
         /// index through `make_unsigned` instead of sign-extending it to the storage width.

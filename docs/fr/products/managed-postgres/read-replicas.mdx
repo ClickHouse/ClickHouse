@@ -22,9 +22,7 @@ La boîte de dialogue du warehouse s’ouvre alors, où vous pouvez voir les ser
 
 <Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Boîte de dialogue de gestion des répliques de lecture" size="md" border />
 
-<div id="managing-read-replicas">
-  ## Gérer les répliques de lecture
-</div>
+## Gérer les répliques de lecture {#managing-read-replicas}
 
 La page **Répliques de lecture** propose deux vues, accessibles via les contrôles **Flux** et **Tableau** en haut à droite.
 
@@ -60,9 +58,7 @@ En dirigeant les requêtes analytiques et de business intelligence vers des rép
 
 Les répliques de lecture peuvent jouer un rôle crucial dans la reprise après sinistre. Si votre base de données primaire tombe en panne, une réplique de lecture peut être promue en primaire, ce qui limite au maximum l’indisponibilité et la perte de données. Cela apporte un niveau de résilience supplémentaire, au-delà de vos instances de secours haute disponibilité.
 
-<div id="how-read-replicas-work">
-  ## Fonctionnement des répliques de lecture
-</div>
+## Fonctionnement des répliques de lecture {#how-read-replicas-work}
 
 Dans ClickHouse Managed Postgres, les répliques de lecture reposent sur une architecture de WAL shipping plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l’impact sur votre base de données principale.
 
@@ -70,9 +66,9 @@ Dans ClickHouse Managed Postgres, les répliques de lecture reposent sur une arc
   ### WAL shipping depuis le stockage d’objets
 </div>
 
-Lorsque votre base de données principale traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets (S3). Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base principale.
+Lorsque votre base de données primaire traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets. Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base primaire.
 
-Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base principale.
+Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base primaire.
 
 <div id="why-we-chose-this-approach">
   ### Pourquoi nous avons choisi cette approche

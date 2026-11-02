@@ -4,8 +4,7 @@ description: 'ClickStack の言語 SDKs - The ClickHouse Observability Stack'
 title: '言語 SDKs'
 sidebarTitle: '概要'
 doc_type: 'guide'
-keywords: ['ClickStack SDKs', 'ClickStack 言語 SDKs', 'OpenTelemetry SDKs ClickStack', 'アプリケーション インストルメンテーション SDKs
-', 'テレメトリー収集 SDKs']
+keywords: ['ClickStack SDKs', 'ClickStack 言語 SDKs', 'OpenTelemetry SDKs ClickStack', 'アプリケーション インストルメンテーション SDKs', 'テレメトリー収集 SDKs']
 ---
 
 通常、データは **OpenTelemetry (OTel) collector** を介して ClickStack に送信されます。送信元は言語 SDKs から直接の場合もあれば、エージェントとして動作する中間の OpenTelemetry collector (たとえばインフラストラクチャのメトリクスやログを収集するもの) を経由する場合もあります。
@@ -14,17 +13,13 @@ keywords: ['ClickStack SDKs', 'ClickStack 言語 SDKs', 'OpenTelemetry SDKs Clic
 
 ブラウザベースの環境では、SDKs が **セッションデータ** (UI イベント、クリック、ナビゲーションなど) の収集も担い、ユーザーセッションのリプレイを可能にすることもあります。
 
-<div id="how-it-works">
-  ## 動作の仕組み
-</div>
+## 動作の仕組み {#how-it-works}
 
 1. アプリケーションは ClickStack SDK (例: Node.js、Python、Go) を使用します。これらの SDK は OpenTelemetry SDKs をベースにしており、追加機能と使いやすさの改善が加えられています。
 2. SDK は OTLP (HTTP または gRPC) 経由でトレースとログを収集し、エクスポートします。
 3. OpenTelemetry collector はテレメトリーを受信し、設定されたエクスポーターを通じて ClickHouse に書き込みます。
 
-<div id="supported-languages">
-  ## 対応言語
-</div>
+## 対応言語 {#supported-languages}
 
 <Info>
   **OpenTelemetry 互換性**
@@ -49,9 +44,7 @@ keywords: ['ClickStack SDKs', 'ClickStack 言語 SDKs', 'OpenTelemetry SDKs Clic
 | React Native | React Native モバイルアプリケーション          | [ドキュメント](/ja/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Ruby on Rails アプリケーションと Web サービス   | [ドキュメント](/ja/clickstack/ingesting-data/sdks/ruby)         |
 
-<div id="securing-api-key">
-  ## API key による保護
-</div>
+## API key による保護 {#securing-api-key}
 
 <Info>
   **Managed ClickStack では不要**
@@ -70,12 +63,10 @@ OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 OpenTelemetry をサポートするほとんどの [言語 SDKs](/ja/clickstack/ingesting-data/sdks/index) やテレメトリーライブラリでは、アプリケーションで `OTEL_EXPORTER_OTLP_ENDPOINT` 環境変数を設定するか、SDK の初期化時に指定するだけで済みます。
 
 ```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-<div id="kubernetes-integration">
-  ## Kubernetes インテグレーション
-</div>
+## Kubernetes インテグレーション {#kubernetes-integration}
 
 すべての SDK は、Kubernetes 環境で実行されている場合、Kubernetes のメタデータ (ポッド名、ネームスペース など) との自動相関をサポートしています。これにより、次のことが可能になります。
 

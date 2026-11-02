@@ -18,6 +18,8 @@ Database backups are designed to let you restore a service to a previous state f
 
 ClickHouse Cloud backups are a combination of "full" and "incremental" backups that constitute a backup chain. The chain starts with a full backup, and incremental backups are then taken over the next several scheduled time periods to create a sequence of backups. Once a backup chain reaches a certain length, a new chain is started. This entire chain of backups can then be utilized to restore data to a new service if needed. Once all backups included in a specific chain are past the retention time frame set for the service (more on retention below), the chain is discarded.
 
+The number of restorable points is not the same as the number of physical backup objects. The full backup and incremental backups that a restorable point depends on are retained together as a chain.
+
 In the screenshot below, the solid line squares show full backups and the dotted line squares show incremental backups that are part of the chain.
 
 On Day 1, a full backup is taken to start the backup chain. On Day 2, an incremental backup is taken, and both full and incremental backups are available to restore from. By Day 7, we have one full backup and six incremental backups in the chain, all visible and available to restore from. On Day 8, we take a new full backup, and on Day 9, once we have two backups in the new chain, the previous chain is discarded.
@@ -40,6 +42,8 @@ ClickHouse Cloud allows you to configure the schedule for your backups for **Sca
 - **Retention**: The duration of days, for which each backup will be retained. Retention can be specified as low as 1 day, and as high as 45 days with several values to pick in between.
 - **Frequency**: The frequency allows you to specify the time duration between subsequent backups. For instance, a frequency of "every 12 hours" means that backups will be spaced 12 hours apart. Frequency can range from "every 6 hours" to "every 48 hours" in the following hourly increments: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
 - **Start Time**: The start time for when you want to schedule backups each day. Specifying a start time implies that the backup "Frequency" will default to once every 24 hours.  ClickHouse Cloud will start the backup within an hour of the specified start time.
+
+Retention controls how long backup data is kept; frequency controls the age of the newest restore point and therefore the recovery point objective (RPO). For example, with a retention of 1 day and a frequency of every 48 hours, there is normally at least one restorable backup. The newest restorable backup can be almost 48 hours old, and the service can have one or two restorable points while preserving the backup chain needed to restore them.
 
 <Note>
 The custom schedule will override the default backup policy in ClickHouse Cloud for your given service.

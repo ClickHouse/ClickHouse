@@ -104,12 +104,12 @@ read_outcome() {
 
 echo '--- the host is listable, so index-page expansion has something to discover'
 run_local "
-    SET allow_experimental_url_wildcard_from_index_pages = 1;
+    SET allow_url_wildcard_from_index_pages = 1;
     SELECT 'adhoc', count() FROM url('${GLOB_URL}', TSV);"
 
 echo '--- created with the setting on, columns inferred through index-page expansion'
 run_local "
-    SET allow_experimental_url_wildcard_from_index_pages = 1;
+    SET allow_url_wildcard_from_index_pages = 1;
     CREATE DATABASE d;
     CREATE TABLE d.t AS url('${GLOB_URL}', TSV);
     SELECT 'created', engine FROM system.tables WHERE database = 'd' AND name = 't';
@@ -127,6 +127,6 @@ echo '--- reloaded with the setting on'
 # Metadata replay resolves the definition under the loading context, not the session, so turning
 # the setting back on changes nothing: before the fix the persisted table was unusable either way,
 # and a server never got as far as a session because loading its metadata aborted startup.
-read_outcome "SET allow_experimental_url_wildcard_from_index_pages = 1;"
+read_outcome "SET allow_url_wildcard_from_index_pages = 1;"
 
 rm -rf "${WORKING_FOLDER}"

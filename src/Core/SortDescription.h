@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
@@ -154,9 +156,15 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 /// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
 /// are ordered by value. A collated column is ordered by its collation key, not by value, so equal
 /// values are not adjacent; it stops the prefix (in-order DISTINCT / LIMIT BY rely on value-adjacency).
+/// A column whose values comparison cannot tell apart, such as a float column holding both `-0.0` and
+/// `0.0`, stops it as well: the groups of the in-order variants come from comparison, while every other
+/// variant groups by hash, and both must give the same answer. `header` provides the column types.
 /// If the result has `columns.size()` entries, then `columns` -- in any order -- form such a prefix, so
 /// grouping by them yields contiguous groups.
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns);
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header);
+
+/// True when every key of `description` is constant in `header`, so all rows compare equal under it.
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header);
 
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
@@ -184,8 +192,14 @@ class WriteBuffer;
 class ReadBuffer;
 
 /// `version` is the query-plan serialization version of the stream: a `WITH FILL` column carries its
-/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP.
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version);
+/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP. `for_cache_key` and
+/// `input_header` make the sort columns build-independent; see `writeCacheKeyColumnName`.
+void serializeSortDescription(
+    const SortDescription & sort_description,
+    WriteBuffer & out,
+    UInt64 version,
+    bool for_cache_key = false,
+    const Block * input_header = nullptr);
 void deserializeSortDescription(
     SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity = 0);
 

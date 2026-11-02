@@ -26,7 +26,7 @@ node2 = cluster.add_instance(
     ],
     with_zookeeper=True,
 )
-node4 = cluster.add_instance("node4")
+node4 = cluster.add_instance("node4", main_configs=["configs/encryption_codec.xml"])
 
 node5 = cluster.add_instance(
     "node5",
@@ -97,12 +97,12 @@ def test_default_codec_single(start_cluster):
     # ZSTD(10) and ZSTD(10) after merge
     node1.query("INSERT INTO compression_table VALUES (1, 'x')")
 
-    # ZSTD(10) and LZ4HC(10) after merge
+    # LZ4HC(5), chosen by the size of the inserted block, and after merge
     node1.query(
         "INSERT INTO compression_table VALUES (2, '{}')".format(get_random_string(2048))
     )
 
-    # ZSTD(10) and LZ4 after merge
+    # LZ4, chosen by the size of the inserted block, and after merge
     node1.query(
         "INSERT INTO compression_table VALUES (3, '{}')".format(
             get_random_string(22048)
@@ -121,7 +121,7 @@ def test_default_codec_single(start_cluster):
     node1.query("SYSTEM FLUSH LOGS")
     node2.query("SYSTEM FLUSH LOGS")
 
-    # Same codec for all
+    # The codec of an inserted part is chosen by the size of the inserted block
     assert (
         get_compression_codec_byte(node1, "compression_table", "1_0_0_0")
         == CODECS_MAPPING["ZSTD"]
@@ -141,36 +141,36 @@ def test_default_codec_single(start_cluster):
 
     assert (
         get_compression_codec_byte(node1, "compression_table", "2_0_0_0")
-        == CODECS_MAPPING["ZSTD"]
+        == CODECS_MAPPING["LZ4HC"]
     )
     assert (
         node1.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4HC(5)\n"
     )
     assert (
         node2.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4HC(5)\n"
     )
 
     assert (
         get_compression_codec_byte(node1, "compression_table", "3_0_0_0")
-        == CODECS_MAPPING["ZSTD"]
+        == CODECS_MAPPING["LZ4"]
     )
     assert (
         node1.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4\n"
     )
     assert (
         node2.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4\n"
     )
 
     # just to be sure that replication works
@@ -263,14 +263,14 @@ def test_default_codec_multiple(start_cluster):
     # ZSTD(10) and ZSTD(10) after merge
     node1.query("INSERT INTO compression_table_multiple VALUES (1, 'x')")
 
-    # ZSTD(10) and LZ4HC(10) after merge
+    # LZ4HC(5), chosen by the size of the inserted block, and after merge
     node1.query(
         "INSERT INTO compression_table_multiple VALUES (2, '{}')".format(
             get_random_string(2048)
         )
     )
 
-    # ZSTD(10) and LZ4 after merge
+    # LZ4, chosen by the size of the inserted block, and after merge
     node1.query(
         "INSERT INTO compression_table_multiple VALUES (3, '{}')".format(
             get_random_string(22048)
@@ -279,7 +279,7 @@ def test_default_codec_multiple(start_cluster):
 
     node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
 
-    # Same codec for all
+    # The codec of an inserted part is chosen by the size of the inserted block
     assert (
         get_compression_codec_byte(node1, "compression_table_multiple", "1_0_0_0")
         == CODECS_MAPPING["Multiple"]
@@ -307,19 +307,19 @@ def test_default_codec_multiple(start_cluster):
     )
     assert (
         get_second_multiple_codec_byte(node1, "compression_table_multiple", "2_0_0_0")
-        == CODECS_MAPPING["ZSTD"]
+        == CODECS_MAPPING["LZ4HC"]
     )
     assert (
         node1.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4HC(5)\n"
     )
     assert (
         node2.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '2_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4HC(5)\n"
     )
 
     assert (
@@ -328,19 +328,19 @@ def test_default_codec_multiple(start_cluster):
     )
     assert (
         get_second_multiple_codec_byte(node1, "compression_table_multiple", "3_0_0_0")
-        == CODECS_MAPPING["ZSTD"]
+        == CODECS_MAPPING["LZ4"]
     )
     assert (
         node1.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4\n"
     )
     assert (
         node2.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'"
         )
-        == "ZSTD(10)\n"
+        == "LZ4\n"
     )
 
     node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
@@ -420,11 +420,13 @@ def test_default_codec_multiple(start_cluster):
 
 
 def test_default_codec_for_compact_parts(start_cluster):
+    # The column must not be named `data`: that name coincides with the shared `data.bin` of a
+    # Compact part and made the per-column codec proof pass by accident (#118323).
     node4.query(
         """
     CREATE TABLE compact_parts_table (
         key UInt64,
-        data String
+        payload String
     )
     ENGINE MergeTree ORDER BY tuple()
     """
@@ -872,6 +874,58 @@ def test_default_codec_recovered_from_lz4hc_part(start_cluster):
     )
 
     node4.query("DROP TABLE lz4hc_default_codec SYNC")
+
+
+@pytest.mark.parametrize(
+    "default", ["AES_128_GCM_SIV", "AES_128_GCM_SIV, AES_256_GCM_SIV"]
+)
+def test_default_codec_recovered_from_encryption_only_default(start_cluster, default):
+    # With an encryption-only default every stream is an encryption frame or chain, which the recovery must accept as proof of the default.
+    node4.query(
+        f"""
+    CREATE TABLE encryption_only_default (n Nullable(UInt64))
+    ENGINE MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, default_compression_codec = '{default}'
+    """
+    )
+    node4.query(
+        "INSERT INTO encryption_only_default SELECT if(number % 3 = 0, NULL, number) FROM numbers(1000)"
+    )
+
+    part_name, codec = (
+        node4.query(
+            "SELECT name, default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='encryption_only_default' AND active"
+        )
+        .strip()
+        .split("\t")
+    )
+    assert codec == default
+
+    node4.query(f"ALTER TABLE encryption_only_default DETACH PART '{part_name}'")
+
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='encryption_only_default'"
+    ).strip()
+    node4.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    node4.query(f"ALTER TABLE encryption_only_default ATTACH PART '{part_name}'")
+
+    assert (
+        node4.query("SELECT count(), countIf(n IS NULL) FROM encryption_only_default")
+        == "1000\t334\n"
+    )
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='encryption_only_default' AND active"
+        ).strip()
+        == "UNKNOWN"
+    )
+
+    node4.query("DROP TABLE encryption_only_default SYNC")
 
 
 def test_mixed_codec_compact_part_fails_closed_without_codec_file(start_cluster):

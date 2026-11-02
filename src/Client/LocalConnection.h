@@ -29,15 +29,15 @@ struct LocalQueryState
 
     /// Query text.
     String query;
-    /// Parser-affecting settings captured when the query was received, before any query-local `SETTINGS`
-    /// from the query itself are applied during execution. The `input()` initializer reparses `query` and
-    /// must use the dialect/gate the query was originally accepted with — a JSON
-    /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... enable_json_ast_dialect = 0`)
-    /// would otherwise be reparsed with the changed settings and fail.
+    /// The dialect/gate the query text was sent in: the `input()` initializer reparses `query` and must
+    /// use the dialect the outbound text was pinned to (see `ClientBase::pinOutboundDialect`),
+    /// not the live session ones - a JSON `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'`
+    /// (or `... enable_json_ast_dialect = 0`) would otherwise be reparsed with the changed settings and fail.
     Dialect parsed_dialect = Dialect::clickhouse;
     bool enable_json_ast_dialect = false;
-    /// Parser limits and SQL parser flags captured at the same point. The `input()` initializer must
-    /// reparse with the settings that accepted the original query, not its query-local mutations.
+    /// Parser limits and parser flags captured when the query was received, before any query-local
+    /// `SETTINGS` from the query itself are applied. The `input()` initializer must reparse with the
+    /// settings that accepted the original query, not its query-local mutations.
     UInt64 max_query_size = 0;
     UInt64 max_parser_depth = 0;
     UInt64 max_parser_backtracks = 0;
@@ -47,6 +47,11 @@ struct LocalQueryState
     String promql_database;
     String promql_table;
     Field promql_evaluation_time;
+    String logsql_database;
+    String logsql_table;
+    String logsql_time_column;
+    String logsql_message_column;
+    bool enable_logsql_dialect = false;
     /// AST-size limits used only by the JSON dialect.
     UInt64 json_ast_max_depth = 0;
     UInt64 json_ast_max_elements = 0;

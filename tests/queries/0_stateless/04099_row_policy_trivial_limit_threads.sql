@@ -21,8 +21,6 @@ INSERT INTO t_row_policy_limit SELECT number FROM numbers(1000) SETTINGS insert_
 INSERT INTO t_row_policy_limit SELECT number FROM numbers(1000) SETTINGS insert_deduplicate=1;
 INSERT INTO t_row_policy_limit SELECT number FROM numbers(1000) SETTINGS insert_deduplicate=1;
 
-SET enable_analyzer = 1;
-
 -- Case 0: no row policies
 SELECT 'no_row_policy';
 SELECT *

@@ -36,11 +36,13 @@ public:
     };
 
     std::string getName() const override { return "PartialMergeJoin"; }
+
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARTIAL_MERGE); }
     /// PartialMergeJoin re-sorts left blocks by the join key (once per right block), so it does not
     /// preserve the left stream's original order. See issues #109216 and #110662.
     bool preservesLeftBlockOrder() const override { return false; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
     void joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed);

@@ -781,6 +781,8 @@ void registerStorageStripeLog(StorageFactory & factory)
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
+
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
@@ -797,7 +799,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.comment,
             args.mode,
             args.getContext());
-    }, features, Documentation{
+    }, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

@@ -6,24 +6,19 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 Браузерный SDK ClickStack позволяет добавить в ваше frontend-приложение
 инструментацию для отправки событий в ClickStack. Это дает возможность просматривать сетевые
-запросы и исключения вместе с серверными событиями на единой временной шкале.
+запросы и исключения вместе с событиями backend-соединения на единой временной шкале.
 
 Кроме того, SDK автоматически собирает и помогает коррелировать данные воспроизведения сеанса, чтобы
 вы могли пошагово просматривать и отлаживать то, что видел пользователь во время работы с вашим
 приложением.
 
-Это руководство включает интеграцию следующего:
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-* **Журналы консоли**
-* **Воспроизведение сеансов**
-* **Запросы XHR/Fetch/WebSocket**
-* **Исключения**
-
-<div id="getting-started">
-  ## Начало работы
-</div>
+## Начало работы {#getting-started}
 
 <br />
 
@@ -43,8 +38,8 @@ keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'fronten
     import HyperDX from '@hyperdx/browser';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // не указывайте для Управляемого ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // не указывайте для Управляемого ClickStack
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i], // Укажите, чтобы связывать трассировки из фронтенда с запросами к бэкенду
         consoleCapture: true, // Собирать журналы консоли (по умолчанию false)
@@ -66,8 +61,8 @@ keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'fronten
     <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
     <script>
       window.HyperDX.init({
-        url: 'http://localhost:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // не указывайте для Управляемого ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // не указывайте для Управляемого ClickStack
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i], // Укажите, чтобы связывать трассировки из фронтенда с запросами к бэкенду
       });
@@ -76,9 +71,7 @@ keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'fronten
   </Tab>
 </Tabs>
 
-<div id="options">
-  ### Параметры
-</div>
+### Параметры {#options}
 
 * `apiKey` - Ваш ключ API ClickStack для приёма данных.
 * `service` - Имя сервиса, под которым события будут отображаться в интерфейсе HyperDX.
@@ -98,13 +91,9 @@ keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'fronten
 * `disableIntercom` - (Необязательно) Отключить ли интеграцию с Intercom (по умолчанию `false`)
 * `disableReplay` - (Необязательно) Отключить ли воспроизведение сеанса (по умолчанию `false`)
 
-<div id="additional-configuration">
-  ## Дополнительная конфигурация
-</div>
+## Дополнительная конфигурация {#additional-configuration}
 
-<div id="attach-user-information-or-metadata">
-  ### Добавление информации о пользователе или метаданных
-</div>
+### Добавление информации о пользователе или метаданных {#attach-user-information-or-metadata}
 
 Добавление информации о пользователе позволит искать/фильтровать сеансы и события
 в интерфейсе HyperDX. Это можно вызвать в любой момент в течение клиентского сеанса. Текущий
@@ -125,9 +114,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-<div id="auto-capture-react-error-boundary-errors">
-  ### Автоматический перехват ошибок в границах ошибок React
-</div>
+### Автоматический перехват ошибок в границах ошибок React {#auto-capture-react-error-boundary-errors}
 
 Если вы используете React, вы можете автоматически перехватывать ошибки,
 которые возникают в границах ошибок React, передав компонент
@@ -143,9 +130,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-<div id="send-custom-actions">
-  ### Отправка пользовательских действий
-</div>
+### Отправка пользовательских действий {#send-custom-actions}
 
 Чтобы явно отслеживать конкретное событие в приложении (например, регистрацию, отправку формы и
 т. д.), можно вызвать функцию `addAction`, указав имя события и при необходимости
@@ -161,9 +146,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-<div id="enable-network-capture-dynamically">
-  ### Динамическое включение захвата сетевого трафика
-</div>
+### Динамическое включение захвата сетевого трафика {#enable-network-capture-dynamically}
 
 Чтобы динамически включать или отключать захват сетевого трафика, просто вызывайте функцию `enableAdvancedNetworkCapture` или `disableAdvancedNetworkCapture` по мере необходимости.
 
@@ -171,9 +154,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-<div id="enable-resource-timing-for-cors-requests">
-  ### Включение таймингов ресурсов для CORS-запросов
-</div>
+### Включение таймингов ресурсов для CORS-запросов {#enable-resource-timing-for-cors-requests}
 
 Если ваше фронтенд-приложение отправляет API-запросы на другой домен, вы можете
 при необходимости настроить отправку [заголовка](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) `Timing-Allow-Origin` вместе с запросом. Это позволит ClickStack собирать подробную

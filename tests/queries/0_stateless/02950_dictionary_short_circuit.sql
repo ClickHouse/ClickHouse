@@ -114,6 +114,8 @@ RANGE(MIN start MAX end);
 SELECT 'Range hashed dictionary';
 SELECT dictGetOrDefault('range_hashed_dictionary', 'val', id, toDate('2023-01-02'), intDiv(NULL, id))
 FROM range_dictionary_source_table;
+SELECT dictGetOrDefault('range_hashed_dictionary', 'val', id, toDate('2023-01-02'), intDiv(1, id))
+FROM range_dictionary_source_table;
 DROP DICTIONARY range_hashed_dictionary;
 DROP TABLE range_dictionary_source_table;
 

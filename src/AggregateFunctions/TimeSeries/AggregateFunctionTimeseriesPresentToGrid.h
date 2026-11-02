@@ -10,13 +10,15 @@
 namespace DB
 {
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 struct AggregateFunctionTimeseriesPresentToGridTraits
 {
+    using GridScaleTimestampType = DateTime64;
     using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+
+    /// The result is 1 if the window has samples and NULL otherwise.
+    using ResultType = UInt8;
 
     static String getName()
     {
@@ -68,45 +70,45 @@ struct AggregateFunctionTimeseriesPresentToGridTraits
     /// Sliding aggregator: the result at a grid point is 1 if the window contains at least one sample.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
-        void add(const Summary & summary, TimestampType bucket_end_timestamp)
+        void add(const Summary & summary, GridScaleTimestampType bucket_end_timestamp)
         {
             if (summary.count == 0)
                 return;
             sliding_sum.add(Summary{summary.count}, bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
-            const Summary combined = sliding_sum.getCurrentSum();
+            const Summary & combined = sliding_sum.getCurrentSum();
             if (combined.count == 0)
                 return std::nullopt;
-            return ValueType{1};
+            return UInt8{1};
         }
     };
 
     using Bucket = Summary;
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
+    static constexpr UInt16 FORMAT_VERSION = 2;
 };
 
 
 /// Aggregate function to check for presence of time series samples on the specified grid.
 /// Returns 1 for each grid point whose window contains at least one sample, NULL otherwise.
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 class AggregateFunctionTimeseriesPresentToGrid final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesPresentToGrid<TimestampType_, IntervalType_, ValueType_>,
-        AggregateFunctionTimeseriesPresentToGridTraits<TimestampType_, IntervalType_, ValueType_>>
+        AggregateFunctionTimeseriesPresentToGrid<TimestampType_, ValueType_>,
+        AggregateFunctionTimeseriesPresentToGridTraits<TimestampType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesPresentToGridTraits<TimestampType_, IntervalType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesPresentToGridTraits<TimestampType_, ValueType_>;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesPresentToGrid, Traits>;
     using Base::Base;

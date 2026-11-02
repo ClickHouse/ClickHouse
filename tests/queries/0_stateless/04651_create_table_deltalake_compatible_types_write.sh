@@ -19,7 +19,7 @@ rm -rf "$TABLE_PATH"
 # Create with compatible types; the table keeps the declared types.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_norm (n UInt8, s FixedString(3)) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_dl_norm' ORDER BY name;
@@ -32,7 +32,7 @@ SELECT n, s FROM t_dl_norm;
 # the declared types map to the same Delta types the table was stored with).
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_norm_reattach ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_dl_norm_reattach' ORDER BY name;

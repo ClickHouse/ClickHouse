@@ -37,7 +37,7 @@ INSERT INTO t3 VALUES (10);
 CREATE TABLE t3v (k Variant(Int64), tag String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO t3v VALUES (10::Int64, 'ten'), (NULL, 'null_key');
 
-SET enable_analyzer = 1, single_join_prefer_left_table = 0;
+SET single_join_prefer_left_table = 0;
 -- Pinned because the test asserts on the join plan shape.
 SET query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
 -- Make t1 look expensive so the detector prefers to reorder t2/t3 to the front.
@@ -59,7 +59,7 @@ SELECT 'cast-int64    cd_a ' AS arm, s AS step FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
         SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
-            query_plan_optimize_join_order_use_conflict_detector_a = 1
+            query_plan_optimize_join_order_conflict_detector = 'a'
     )
 ) WHERE s IN ('Join', 'Read(t1)', 'Read(t2)', 'Read(t3)');
 
@@ -70,7 +70,7 @@ SELECT 'cast-int64    cd_c ' AS arm, s AS step FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
         SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
-            query_plan_optimize_join_order_use_conflict_detector_c = 1
+            query_plan_optimize_join_order_conflict_detector = 'c'
     )
 ) WHERE s IN ('Join', 'Read(t1)', 'Read(t2)', 'Read(t3)');
 
@@ -81,7 +81,7 @@ SELECT 'cast-nullable cd_a ' AS arm, s AS step FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Nullable(Int64)) = t3.k
         SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
-            query_plan_optimize_join_order_use_conflict_detector_a = 1
+            query_plan_optimize_join_order_conflict_detector = 'a'
     )
 ) WHERE s IN ('Join', 'Read(t1)', 'Read(t2)', 'Read(t3)');
 
@@ -92,7 +92,7 @@ SELECT 'plain         cd_a ' AS arm, s AS step FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
         SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
-            query_plan_optimize_join_order_use_conflict_detector_a = 1
+            query_plan_optimize_join_order_conflict_detector = 'a'
     )
 ) WHERE s IN ('Join', 'Read(t1)', 'Read(t2)', 'Read(t3)');
 
@@ -107,13 +107,13 @@ SELECT count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3.k, -1))
 FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
 SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
     query_plan_optimize_join_order_algorithm = 'dpsub',
-    query_plan_optimize_join_order_use_conflict_detector_a = 1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+    query_plan_optimize_join_order_conflict_detector = 'a'; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
 SELECT count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3.k, -1))
 FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
 SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
     query_plan_optimize_join_order_algorithm = 'dpsub',
-    query_plan_optimize_join_order_use_conflict_detector_c = 1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+    query_plan_optimize_join_order_conflict_detector = 'c'; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
 -- The reordering that stays permitted must not change the result.
 SELECT 'rows cast-nullable noopt', count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3.k, -1))
@@ -124,7 +124,7 @@ SELECT 'rows cast-nullable cd_a ', count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3
 FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Nullable(Int64)) = t3.k
 SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
     query_plan_optimize_join_order_algorithm = 'dpsub',
-    query_plan_optimize_join_order_use_conflict_detector_a = 1;
+    query_plan_optimize_join_order_conflict_detector = 'a';
 
 -- The null-extended `t1` row reaches `t3v`'s NULL key through the cast, so the reordering the
 -- detector may not take here is the one that would drop that match. Both arms must agree.
@@ -136,7 +136,7 @@ SELECT 'rows variant  cd_a ', count(), countIf(t3v.tag = 'null_key'), countIf(t3
 FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3v ON CAST(t2.k AS Variant(Int64)) = t3v.k
 SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
     query_plan_optimize_join_order_algorithm = 'dpsub',
-    query_plan_optimize_join_order_use_conflict_detector_a = 1;
+    query_plan_optimize_join_order_conflict_detector = 'a';
 
 DROP TABLE t1;
 DROP TABLE t2;
