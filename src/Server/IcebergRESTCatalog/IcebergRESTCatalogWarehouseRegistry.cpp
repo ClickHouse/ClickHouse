@@ -34,7 +34,10 @@ IcebergRESTCatalogWarehousePtr IcebergRESTCatalogWarehouseRegistry::tryGet(const
     const auto path = keeper_config.warehousePath(name);
     String data;
     Coordination::Stat stat;
-    const bool exists = keeper_config.getZooKeeper(*context)->tryGet(path, data, &stat);
+    /// A plain read may lag behind a write from another catalog server.
+    auto zookeeper = keeper_config.getZooKeeper(*context);
+    zookeeper->sync(path);
+    const bool exists = zookeeper->tryGet(path, data, &stat);
 
     if (!exists)
     {
