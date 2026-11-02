@@ -18,6 +18,8 @@
             <function>in</function>
             <!-- Handled by the legacy `ExpressionAnalyzer` before the function is looked up. -->
             <function>indexHint</function>
+            <!-- `in` is replaced by it under `transform_null_in`. -->
+            <function>nullIn</function>
         </functions_requiring_grant>
     </access_control_improvements>
 </clickhouse>

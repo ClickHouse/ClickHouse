@@ -1480,8 +1480,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// built-in or user defined. Check the grant here, before any of the rewrites below can replace the
     /// call (`if` with a constant condition, `IN` with an array, the early short-circuit of `and`/`or`, ...)
     /// or rename it.
+    const String written_function_name = function_name;
     if (!lambda_expression_untyped)
-        checkFunctionAccess(scope.context, function_name);
+        checkFunctionAccess(scope.context, written_function_name);
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
@@ -3239,6 +3240,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         return result_projection_names;
     }
+
+    /// The special cases above may have replaced the written function with another one, e.g. `in` with `nullIn`
+    /// under `transform_null_in`. The function which is actually executed requires its own grant too.
+    if (function_name != written_function_name)
+        checkFunctionAccess(scope.context, function_name);
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.

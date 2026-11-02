@@ -224,6 +224,18 @@ def test_values_expression_requires_grant():
     assert instance.query("SELECT x FROM t") == "1\n1\n"
 
 
+def test_rewrite_target_requires_grant():
+    """`transform_null_in` replaces `in` with `nullIn`, which requires its own grant."""
+    instance.query("CREATE USER A")
+    instance.query("GRANT FUNCTION ON in TO A")
+
+    query = "SELECT materialize(1) IN (1, 2) SETTINGS transform_null_in = 1"
+    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
+
+    instance.query("GRANT FUNCTION ON nullIn TO A")
+    assert instance.query(query, user="A") == "1\n"
+
+
 def test_query_cache_does_not_outlive_grant():
     """The query cache serves a hit before the query is analyzed, so it must not keep the result
     of a call that needs a grant: the next run after the revoke would skip the check."""
