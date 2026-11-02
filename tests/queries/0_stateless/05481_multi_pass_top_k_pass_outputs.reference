@@ -1,0 +1,26 @@
+restricted and hot passes
+99	heavy99	139
+98	heavy98	138
+97	heavy97	137
+96	heavy96	136
+95	heavy95	135
+99	heavy99	139
+98	heavy98	138
+97	heavy97	137
+96	heavy96	136
+95	heavy95	135
+fallback
+h29	1680
+h28	1660
+h27	1640
+h26	1620
+h25	1600
+h29	1680
+h28	1660
+h27	1640
+h26	1620
+h25	1600
+outputs_01_restricted_and_hot	1	0	0	1	2	0	43
+outputs_02_fallback	1	1	1	0	0	0	15
+outputs_03_fallback_learns	1	1	1	0	0	0	52
+outputs_04_learned	0	1	0	0	0	0	35

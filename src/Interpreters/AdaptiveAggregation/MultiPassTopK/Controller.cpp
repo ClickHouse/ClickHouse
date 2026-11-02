@@ -268,7 +268,7 @@ private:
     Processors new_processors;
     std::vector<QueryPlanResourceHolder> resources;
 
-    /// The output of the running pass, collected for its end.
+    /// The output of the running pass, collected for its end, which its mode bounds (see `TopKMode`).
     Chunks collected;
 
     /// The chunks to emit on the first output.

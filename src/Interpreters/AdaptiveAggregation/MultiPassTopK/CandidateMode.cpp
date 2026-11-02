@@ -187,12 +187,14 @@ QueryPlan makeCandidatePlan(const MultiPassTopKTemplate & templ, const TopKCandi
     return plan;
 }
 
-/// The fallback: the original aggregation of the rows whose keys fall into `hot_cells` (see `TopKCandidates`).
-QueryPlan makeFallbackPlan(const MultiPassTopKTemplate & templ, std::shared_ptr<const TopKCellSet> hot_cells)
+/// The fallback: the original aggregation of the rows whose keys fall into `hot_cells` (see `TopKCandidates`), of which
+/// the mode reads the groups of the `best_groups` best ranks.
+QueryPlan makeFallbackPlan(const MultiPassTopKTemplate & templ, std::shared_ptr<const TopKCellSet> hot_cells, size_t best_groups)
 {
     QueryPlan plan = makeInputPlan(templ, cloneRead(templ, templ.input->context));
     plan.addStep(std::make_unique<TopKHotCellsStep>(plan.getCurrentHeader(), templ.aggregating->getParams().keys, std::move(hot_cells)));
     plan.addStep(templ.aggregating->cloneWithParams(plan.getCurrentHeader(), paramsOfSubsetPass(*templ.aggregating)));
+    keepBestGroups(plan, templ, best_groups);
     return plan;
 }
 
@@ -305,7 +307,9 @@ private:
         else
             memo->keepOriginal();
         pass = Pass::Fallback;
-        next.next_pass = makeFallbackPlan(*templ, std::move(proof.hot_cells));
+        /// The top takes at most `top` groups of the fallback, and the learning at most `max_candidates` (see
+        /// `learnCandidates`).
+        next.next_pass = makeFallbackPlan(*templ, std::move(proof.hot_cells), learning ? max_candidates : templ->top);
         return next;
     }
 

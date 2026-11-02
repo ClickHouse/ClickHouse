@@ -19,7 +19,8 @@ struct TopKNext;
 
 /// A mode of a multi-pass top-K aggregation, or the pilot that chooses one: the passes that it runs over the input, one
 /// at a time, and what it concludes from the output of each. The controller runs the passes and emits the result (see
-/// `MultiPassTopKController`).
+/// `MultiPassTopKController`). It holds the whole output of a pass until the pass finishes, so a pass outputs no more
+/// groups than its mode reads (see `keepBestGroups`).
 class TopKMode
 {
 public:

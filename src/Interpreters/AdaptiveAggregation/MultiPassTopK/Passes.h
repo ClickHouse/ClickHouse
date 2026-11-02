@@ -3,13 +3,12 @@
 #include <Interpreters/AdaptiveAggregation/MultiPassTopK/MultiPassTopKImpl.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Aggregator.h>
-#include <Processors/Chunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <algorithm>
 
 /// What the modes of a multi-pass top-K aggregation plan their passes with: their parameters, the copies of the input
-/// they read, and the ranges they read; and what the modes read the outputs of the passes with.
+/// they read, the ranges they read and the groups they output; and what the modes read the outputs of the passes with.
 
 namespace DB::MultiPassTopKImpl
 {
@@ -48,6 +47,11 @@ std::unique_ptr<ReadFromMergeTree> cloneRead(const MultiPassTopKTemplate & templ
 /// the input over it. The copy may output other columns than the original read, or in another order, which the steps
 /// over it find by name.
 QueryPlan makeInputPlan(const MultiPassTopKTemplate & templ, std::unique_ptr<ReadFromMergeTree> read);
+
+/// Keeps of the groups of `plan`, a pass that aggregates by the template, the `limit` of the best ranks: the mode reads
+/// at most these. Nothing else bounds the groups that a pass outputs, as the aggregation selects the best groups of its
+/// top only for some keys (see `Aggregator::Params::bucket_top_k`).
+void keepBestGroups(QueryPlan & plan, const MultiPassTopKTemplate & templ, size_t limit);
 
 /// Replaces the ranges of every part of `analysis` by `select(part)`, which may take the ranges of the part, drops the
 /// parts left without ranges, and updates the totals. The exact ranges, whose rows the primary key counts without
@@ -92,9 +96,6 @@ const PaddedPODArray<UInt64> & countsOf(const Block & block, const String & name
 
 /// The n-th best of `ranks`, or 0 when there are fewer.
 UInt64 nthBest(const PaddedPODArray<UInt64> & ranks, size_t n);
-
-/// The rows of `block` whose `rank_column` reaches `min_rank`.
-Chunk rowsOfRankFrom(const Block & block, const String & rank_column, UInt64 min_rank);
 
 /// Keeps in `positions` at most `max_candidates` of them, those of the best `ranks`.
 template <typename Ranks>

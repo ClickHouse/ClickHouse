@@ -39,8 +39,7 @@ constexpr size_t first_restricted_values_per_top = 4;
 constexpr double max_restricted_rows_share = 0.5;
 
 /// The rows of every value of the bounding key that a restricted pass aggregates, counted before its aggregation: the
-/// aggregation may output only the best groups of every bucket (see `Aggregator::Params::bucket_top_k`), whose rows
-/// miss those of the other groups.
+/// pass outputs only its best groups (see `keepBestGroups`), whose rows miss those of the other groups.
 class TopKValueRows
 {
 public:
@@ -196,6 +195,8 @@ QueryPlan makeHotFineCellsPlan(
     }
     plan.addStep(templ.aggregating->cloneWithParams(plan.getCurrentHeader(), std::move(params)));
     filterByMinRank(plan, templ, min_rank);
+    /// Its groups compete for the places of the top with the groups of the first restricted pass.
+    keepBestGroups(plan, templ, templ.top);
     return plan;
 }
 
@@ -211,6 +212,9 @@ QueryPlan makeRestrictedPlan(const MultiPassTopKTemplate & templ, ColumnPtr valu
     QueryPlan plan = makeInputPlan(templ, std::move(read));
     plan.addStep(std::make_unique<TopKValueRowsStep>(plan.getCurrentHeader(), key.name, value_rows));
     plan.addStep(templ.aggregating->cloneWithParams(plan.getCurrentHeader(), paramsOfSubsetPass(*templ.aggregating)));
+    /// The top takes at most `top` groups of the pass, and the mode reads the n-th best rank of these (see
+    /// `afterFirstRestricted`).
+    keepBestGroups(plan, templ, templ.top);
     return plan;
 }
 
@@ -283,15 +287,15 @@ private:
         return {.next_pass = makeRestrictedPlan(*templ, std::move(values), first_rows)};
     }
 
-    /// After the first restricted pass: emits its groups that reach its n-th best rank, which prove the top when no
-    /// other value of the bounding key may hold more rows than that rank (see `TopKKeySketch::boundsOfOtherValues`).
-    /// Otherwise the hot pass aggregates the other values of the fine cells that may hold more (see
-    /// `TopKKeySketch::hotFineCells`).
+    /// After the first restricted pass: emits its groups, the best `top` groups of its values, which prove the top
+    /// when no other value of the bounding key may hold more rows than their n-th best rank (see
+    /// `TopKKeySketch::boundsOfOtherValues`). Otherwise the hot pass aggregates the other values of the fine cells
+    /// that may hold more (see `TopKKeySketch::hotFineCells`).
     TopKNext afterFirstRestricted(const Block & result)
     {
         const UInt64 nth_rank = nthBest(countsOf(result, rankColumnOf(*templ)), templ->top);
         Chunks found;
-        found.push_back(rowsOfRankFrom(result, rankColumnOf(*templ), nth_rank));
+        found.emplace_back(result.getColumns(), result.rows());
 
         const auto bounds = sketch->boundsOfOtherValues(first_values, first_rows->get());
         restricted_rows += bounds.rows_of_taken;

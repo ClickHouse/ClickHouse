@@ -4,6 +4,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/assert_cast.h>
 
@@ -47,6 +51,42 @@ MarkRanges intersectRanges(MarkRanges lhs, MarkRanges rhs)
 /// split into entries of at least `min_marks_per_entry` marks, up to `entries` of them, which lets the analysis of a few
 /// large parts use as many threads. An entry searches its own ranges only, so the entries find the ranges of the part.
 constexpr size_t min_marks_per_entry = 512;
+
+const ITransformingStep::Traits best_groups_traits{
+    .data_stream_traits = {.returns_single_stream = true, .preserves_number_of_streams = false, .preserves_sorting = false},
+    .transform_traits = {.preserves_number_of_rows = false}};
+
+/// Keeps of its input the `limit` groups of the best ranks, the values of `rank_column`, in one stream (see
+/// `keepBestGroups`).
+class TopKBestGroupsStep final : public ITransformingStep
+{
+public:
+    TopKBestGroupsStep(const SharedHeader & input_header, const String & rank_column, size_t limit_, SortingStep::Settings sort_settings_)
+        : ITransformingStep(input_header, input_header, best_groups_traits)
+        , limit(limit_)
+        , sort_settings(std::move(sort_settings_))
+    {
+        best_first.emplace_back(rank_column, /*direction_=*/-1);
+    }
+
+    String getName() const override { return "TopKBestGroups"; }
+
+    /// One stream sorts all the groups of the pass. It keeps at most `limit` rows of every block, a few thousand at
+    /// most, which costs little. A sort of every stream would add two processors for every stream to the running
+    /// pipeline, which costs more than the sorting itself.
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        pipeline.resize(1);
+        SortingStep::fullSortStreams(pipeline, sort_settings, best_first, limit);
+    }
+
+private:
+    void updateOutputHeader() override { output_header = input_headers.front(); }
+
+    SortDescription best_first;
+    const size_t limit;
+    const SortingStep::Settings sort_settings;
+};
 
 }
 
@@ -116,6 +156,12 @@ QueryPlan makeInputPlan(const MultiPassTopKTemplate & templ, std::unique_ptr<Rea
         plan.addStep(std::move(clone));
     }
     return plan;
+}
+
+void keepBestGroups(QueryPlan & plan, const MultiPassTopKTemplate & templ, size_t limit)
+{
+    plan.addStep(std::make_unique<TopKBestGroupsStep>(
+        plan.getCurrentHeader(), rankColumnOf(templ), limit, SortingStep::Settings(templ.input->context->getSettingsRef())));
 }
 
 void keepEveryNthGranule(ReadFromMergeTree::AnalysisResult & analysis, size_t period)
@@ -194,23 +240,6 @@ UInt64 nthBest(const PaddedPODArray<UInt64> & ranks, size_t n)
     std::vector<UInt64> best(ranks.begin(), ranks.end());
     std::nth_element(best.begin(), best.begin() + (n - 1), best.end(), std::greater<>());
     return best[n - 1];
-}
-
-Chunk rowsOfRankFrom(const Block & block, const String & rank_column, UInt64 min_rank)
-{
-    const auto & ranks = countsOf(block, rank_column);
-    IColumn::Filter filter(ranks.size());
-    size_t kept = 0;
-    for (size_t i = 0; i < ranks.size(); ++i)
-    {
-        filter[i] = ranks[i] >= min_rank;
-        kept += filter[i];
-    }
-    Columns columns = block.getColumns();
-    if (kept < ranks.size())
-        for (auto & column : columns)
-            column = column->filter(filter, kept);
-    return Chunk(std::move(columns), kept);
 }
 
 }
