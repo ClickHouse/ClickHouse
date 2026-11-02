@@ -981,8 +981,7 @@ void MergeTreeReaderWide::addStreams(
         has_any_stream = true;
     };
 
-    /// Only the part's own serialization can tell the streams it lacks by design (a variant
-    /// appended to a type) from a subcolumn the part's type does not have.
+    /// Only the part's own serialization tells a stream it lacks by design from a subcolumn its type lacks.
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     const auto & name_in_part = name_and_type.getNameInStorage();
     auto column_in_part = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_part);
