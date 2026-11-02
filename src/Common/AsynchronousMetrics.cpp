@@ -31,6 +31,7 @@
 #include <boost/locale/date_time_facet.hpp>
 
 #include <charconv>
+#include <cstdlib>
 #include <ranges>
 #include <string_view>
 
@@ -1627,6 +1628,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
     new_values["UntrackedMemory"] = { DB::UntrackedMemoryRegistry::instance().sum(), "Sum of per-thread buffers of recent allocations and deallocations that have not yet been propagated to TrackedMemory."};
 
+#define LOAD_AVERAGE_DOCUMENTATION \
+    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
+    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
+    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
+    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
+
 #if defined(OS_LINUX)
     if (loadavg)
     {
@@ -1649,12 +1656,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             readText(threads_runnable, *loadavg);
             assertChar('/', *loadavg);
             readText(threads_total, *loadavg);
-
-#define LOAD_AVERAGE_DOCUMENTATION \
-    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
-    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
-    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
-    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
 
             new_values["LoadAverage1"] = { loadavg1,
                 "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
@@ -2901,6 +2902,21 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             LOG_ERROR(log, "Cannot obtain the default processor set via processor_set_default: {}", mach_error_string(res));
 
         mach_port_deallocate(mach_task_self(), host_port);
+    }
+
+    {
+        double loadavg_values[3] = {};
+        if (3 == getloadavg(loadavg_values, 3))
+        {
+            new_values["LoadAverage1"] = { loadavg_values[0],
+                "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
+            new_values["LoadAverage5"] = { loadavg_values[1],
+                "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
+            new_values["LoadAverage15"] = { loadavg_values[2],
+                "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
+        }
+        else
+            LOG_ERROR(log, "Cannot obtain the load average via getloadavg");
     }
 #endif
 
