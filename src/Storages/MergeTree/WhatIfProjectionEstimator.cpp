@@ -9,6 +9,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
@@ -93,8 +94,11 @@ struct ProjectionPartData
     PaddedPODArray<UInt32> row_bytes;
     /// some stored column has values of different sizes
     bool variable_width = false;
-    /// a merge sized some states by the memory it built them in, which grows with merges that the part does not record
-    bool merge_memory_unknown = false;
+    /// a merge sized some states by what the part does not record: the memory it built them in, or the states of the parts it merged
+    bool merge_history_unknown = false;
+    /// for a merged wide part under a constant granularity: the bytes the part stores, and the least its merged parts can store for its rows
+    size_t stored_bytes = 0;
+    size_t stored_bytes_floor = 0;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
     std::vector<UInt32> granule_rows;
 };
@@ -124,7 +128,7 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
             }
             out.variable_width = true;
             /// a state built from one state, more merges can leave more memory
-            out.merge_memory_unknown |= merged && function.allocatesMemoryInArena();
+            out.merge_history_unknown |= merged && function.allocatesMemoryInArena();
             auto rebuilt = merged ? states->cloneEmpty() : nullptr;
             for (size_t i = 0; i < rows; ++i)
             {
@@ -154,6 +158,37 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
         row_bytes[offset + i] += fixed;
 }
 
+/// a merge under a constant granularity sizes the granule of a wide part from the bytes that its merged parts store
+/// a group of the part is in one or more of them, and a state there is at least an empty state
+/// a state that is not of a fixed size can be of any size there
+void setStoredBytes(ProjectionPartData & out, const Block & block)
+{
+    ISerialization::SerializeBinaryBulkSettings settings;
+    for (const auto & elem : block)
+    {
+        NullWriteBuffer stored;
+        settings.getter = [&](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &stored; };
+        const auto serialization = elem.type->getDefaultSerialization();
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        serialization->serializeBinaryBulkStatePrefix(*elem.column, settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*elem.column, 0, 0, settings, state);
+        serialization->serializeBinaryBulkStateSuffix(settings, state);
+        out.stored_bytes += stored.count();
+
+        size_t least = stored.count();
+        if (const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
+        {
+            const auto & function = *states->getAggregateFunction();
+            out.merge_history_unknown |= !function.hasTrivialDestructor() || function.allocatesMemoryInArena();
+            auto empty = states->cloneEmpty();
+            empty->insertDefault();
+            NullWriteBuffer empty_state;
+            function.serialize(assert_cast<const ColumnAggregateFunction &>(*empty).getData()[0], empty_state);
+            least = std::min(least, empty_state.count() * block.rows());
+        }
+        out.stored_bytes_floor += least;
+    }
+}
 
 /// the whole part, or a sample of its granules
 MarkRanges marksToScan(const DataPartPtr & part, size_t sample_step)
@@ -408,7 +443,10 @@ String buildProjectionPart(
         if (merged_part && constant_granularity
             && read_step->getMergeTreeData().choosePartFormat(merged.bytes(), merged.rows(), part->info.level, &projection).part_type
                 == MergeTreeDataPartType::Wide)
+        {
             merged_by_blocks = false;
+            setStoredBytes(out, merged);
+        }
         add(std::move(merged));
     }
 
@@ -579,6 +617,26 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     std::vector<std::vector<size_t>> layouts;
     for (const auto & [rows_limit, bytes_limit] : chunkings)
         layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+    /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes) rows,
+    /// at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that for fewer
+    if (data.stored_bytes != 0 && !granularity_per_block)
+    {
+        const auto rows = static_cast<double>(whole_part.rows);
+        const auto bytes = static_cast<double>(granule_bytes);
+        const double widest = static_cast<double>(data.stored_bytes) / rows;
+        const double narrowest = std::max(static_cast<double>(data.stored_bytes_floor) / rows, 1.0);
+        const double granules = std::floor(rows * narrowest / bytes);
+        auto constant = [&](double granule_rows)
+        {
+            const auto rows_per_mark = static_cast<size_t>(
+                std::clamp(granule_rows, 1.0, static_cast<double>(mt_settings[MergeTreeSetting::index_granularity])));
+            std::vector<size_t> rows_per_marks(whole_part.rows / rows_per_mark, rows_per_mark);
+            if (whole_part.rows % rows_per_mark != 0)
+                rows_per_marks.push_back(whole_part.rows % rows_per_mark);
+            return rows_per_marks;
+        };
+        layouts = {constant(bytes / widest), constant(bytes / narrowest * (granules >= 1 ? (granules + 1) / granules : 2))};
+    }
 
     auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
@@ -705,7 +763,7 @@ struct Scenarios
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
     UInt64 uneven_width_parts = 0;
-    UInt64 merge_memory_parts = 0;
+    UInt64 merge_history_parts = 0;
     std::vector<SampledPart> samples;
 };
 
@@ -777,7 +835,7 @@ bool buildScenarios(
         }
         if (uneven_rows)
             ++out.uneven_width_parts;
-        out.merge_memory_parts += part_data.merge_memory_unknown;
+        out.merge_history_parts += part_data.merge_history_unknown;
         /// no row passes the filter of the projection, so the writer writes no projection part
         if (part_data.rows == 0)
         {
@@ -923,15 +981,16 @@ void setVerdict(
             built.uneven_width_parts,
             built.scanned_parts);
     }
-    else if (built.merge_memory_parts != 0)
+    else if (built.merge_history_parts != 0)
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, but on {} of the {} parts read a merge sized the granules by the memory of the "
-            "aggregate states, which grows with merges that a part does not record, so the mark count is a model, not a measurement",
+            "{} against {} from the base table, but on {} of the {} parts read a merge sized the granules from aggregate states that "
+            "a part does not record (the memory that the merge built them in, or the states of the merged parts), so the mark count "
+            "is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,
-            built.merge_memory_parts,
+            built.merge_history_parts,
             built.scanned_parts);
     }
     else if ((chosen_in != 0 && chosen_in != weighed) || beats_base(marks_low) != beats_base(marks_high))

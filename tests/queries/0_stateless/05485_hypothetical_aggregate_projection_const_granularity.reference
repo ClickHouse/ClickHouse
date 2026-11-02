@@ -1,3 +1,20 @@
+-- sum states of a merged wide part
+Baseline (after PK + partition + existing indexes):
+marks: 10
+With p (aggregate projection, hypothetical):
+marks: 8
+marks_span: 7 to 8
+verdict: chosen
+real projection part: 8 marks
+real: 8 marks
+-- groupArray states of the same width in a merged wide part, the states of the merged parts are not recorded
+Baseline (after PK + partition + existing indexes):
+marks: 10
+With p_a (aggregate projection, hypothetical):
+marks: 8
+marks_span: 2 to 8
+verdict: too close to call
+real projection part: 5 marks
 -- groupArray and uniqExact states of a merged compact part
 part types: [\'Compact\']
 Baseline (after PK + partition + existing indexes):
