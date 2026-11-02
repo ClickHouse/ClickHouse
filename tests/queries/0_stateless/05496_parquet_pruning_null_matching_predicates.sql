@@ -51,11 +51,11 @@ SELECT '-- Nullable MergeTree key: a decreasing step moves a NULL to -inf';
 DROP TABLE IF EXISTS t_nullable_key;
 CREATE TABLE t_nullable_key (id Nullable(Int64)) ENGINE = MergeTree ORDER BY id SETTINGS allow_nullable_key = 1, index_granularity = 8192;
 INSERT INTO t_nullable_key SELECT if(number = 0, NULL, -1) FROM numbers(20000);
-SELECT count() FROM t_nullable_key WHERE ifNull(-id, toInt64(42)) IN (42, 43);
-SELECT count() FROM t_nullable_key WHERE intDiv(-id, 10) IN (NULL, 5) SETTINGS transform_null_in = 1;
+SELECT count() FROM t_nullable_key WHERE ifNull(-id, toInt64(42)) IN (42, 43) SETTINGS log_comment = '05496_mt_ifnull';
+SELECT count() FROM t_nullable_key WHERE intDiv(-id, 10) IN (NULL, 5) SETTINGS transform_null_in = 1, log_comment = '05496_mt_null_set';
 DROP TABLE t_nullable_key;
 
-SELECT '-- row groups and pages are still pruned where no NULL can match';
+SELECT '-- row groups, pages and granules are still pruned where no NULL can match';
 SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nullable(Int64)') WHERE id > 0
     SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 0, log_comment = '05496_prune_check';
 SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nullable(Int64)') WHERE id > 0
@@ -64,4 +64,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ParquetPrunedRowGroups'], ProfileEvents['ParquetPrunedPages'] FROM system.query_log
     WHERE current_database = currentDatabase() AND (startsWith(log_comment, '05496_prune_') OR startsWith(log_comment, '05496_page_'))
         AND type = 'QueryFinish'
+    ORDER BY log_comment;
+SELECT log_comment, ProfileEvents['SelectedMarks'] < ProfileEvents['SelectedMarksTotal'] FROM system.query_log
+    WHERE current_database = currentDatabase() AND startsWith(log_comment, '05496_mt_') AND type = 'QueryFinish'
     ORDER BY log_comment;
