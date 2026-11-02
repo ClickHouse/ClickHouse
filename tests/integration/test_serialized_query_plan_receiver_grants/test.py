@@ -121,6 +121,19 @@ def test_receiver_applies_its_own_additional_table_filters(
     assert select("SELECT sum(x) FROM dist", serialize_query_plan) == "10\n"
 
 
+# The entry of the query reaches the receiver too, where `getSetting` reads the receiver's own value.
+@pytest.mark.parametrize("serialize_query_plan", [0, 1])
+def test_receiver_resolves_additional_table_filters_with_its_own_settings(
+    receiver_profile, serialize_query_plan
+):
+    receiver_profile("max_threads = 1")
+    filters = {
+        "additional_table_filters": "{'default.m': 'x < getSetting(\\'max_threads\\')'}",
+        "max_threads": 2,
+    }
+    assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
+
+
 @pytest.mark.parametrize("serialize_query_plan", [0, 1])
 def test_receiver_checks_its_own_max_columns_to_read(
     receiver_profile, serialize_query_plan

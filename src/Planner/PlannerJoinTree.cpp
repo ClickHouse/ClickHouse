@@ -1116,6 +1116,16 @@ std::optional<String> parseAdditionalFilterAstIfNeeded(const StoragePtr & storag
     return {};
 }
 
+/// Equal for two `additional_table_filters` entries only if they resolve to the same predicate, including the
+/// constants folded from settings.
+std::pair<UInt64, UInt64> additionalFilterHash(
+    const ASTPtr & filter_ast, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context)
+{
+    auto hash = buildFilterQueryTree(filter_ast, table_expression, query_context, /*check_access_rights=*/ false)
+                    ->getTreeHash({.compare_aliases = false});
+    return {hash.low64, hash.high64};
+}
+
 /// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the
 /// query tree. A function that is not found in `FunctionFactory` is treated as volatile (fail-close).
 bool astContainsFunctionVolatileInScopeOfQuery(const ASTPtr & ast, const ContextPtr & context)
@@ -1996,9 +2006,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         {
             additional_filter = parseAdditionalFilterAstIfNeeded(
                 storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
-            /// A step of the shipped plan applies the sender's entry, and an entry of this node that differs is applied too.
-            if (const auto & shipped_read = select_query_options.shipped_read;
-                shipped_read && (!shipped_read->additional_filter_recorded || additional_filter == shipped_read->additional_filter_in_plan))
+            /// A step of the shipped plan applies the sender's entry, and an entry of this node that resolves to another
+            /// predicate is applied too.
+            const auto & shipped_read = select_query_options.shipped_read;
+            if (shipped_read && table_expression_query_info.additional_filter_ast
+                && (!shipped_read->additional_filter_recorded
+                    || (shipped_read->additional_filter_in_plan
+                        && *shipped_read->additional_filter_in_plan
+                            == additionalFilterHash(table_expression_query_info.additional_filter_ast, table_expression, query_context))))
                 table_expression_query_info.additional_filter_ast = nullptr;
 
             /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
@@ -2834,6 +2849,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                         /// A policy built for this read is a filter step of the plan unless it was pushed into the read.
                         const bool row_policy_in_plan = table_expression_data.getRowLevelFilterActions() && !row_level_filter;
+                        std::optional<ReadFromTableStep::AdditionalFilter> additional_filter_in_plan;
+                        if (const auto & filter_ast = table_expression_query_info.additional_filter_ast; filter_ast && additional_filter)
+                            additional_filter_in_plan = ReadFromTableStep::AdditionalFilter{
+                                *additional_filter, additionalFilterHash(filter_ast, table_expression, query_context)};
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
@@ -2843,7 +2862,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                                : ReadFromTableStep::RowPolicyPlacement::NotInPlan,
                             table_expression_data.getAuthorizedColumnsNames(),
                             table_expression_data.getColumnsToReadCount(),
-                            table_expression_query_info.additional_filter_ast ? additional_filter : std::nullopt);
+                            std::move(additional_filter_in_plan));
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

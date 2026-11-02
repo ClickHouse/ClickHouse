@@ -2,6 +2,7 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <optional>
+#include <utility>
 
 namespace DB
 {
@@ -55,15 +56,14 @@ struct SelectQueryOptions
     /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
     bool check_subquery_table_access = false;
 
-    /// Set where a read of a serialized query plan is planned again (`resolveStorages.cpp`). For the table this query
-    /// reads directly, the caller checks the grants and `max_columns_to_read`, and the filters that steps of the plan
-    /// apply are not applied again: the row policy if `row_policy_in_plan`, and the `additional_table_filters` entry
-    /// `additional_filter_in_plan`, or any entry if the sender did not record it.
+    /// A read of a serialized query plan planned again (`resolveStorages.cpp`): the caller checks the grants and
+    /// `max_columns_to_read`, and the planner skips the row policy if `row_policy_in_plan` and an `additional_table_filters`
+    /// entry resolving to the tree hash `additional_filter_in_plan` (any entry if the sender did not record it).
     struct ShippedRead
     {
         bool row_policy_in_plan = false;
         bool additional_filter_recorded = false;
-        std::optional<String> additional_filter_in_plan;
+        std::optional<std::pair<UInt64, UInt64>> additional_filter_in_plan;
     };
     std::optional<ShippedRead> shipped_read;
 

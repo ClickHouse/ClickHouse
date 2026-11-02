@@ -21,7 +21,7 @@ ReadFromTableStep::ReadFromTableStep(
     RowPolicyPlacement row_policy_placement_,
     std::optional<Names> selected_columns_,
     std::optional<size_t> columns_to_read_,
-    std::optional<String> additional_filter_)
+    std::optional<AdditionalFilter> additional_filter_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
@@ -77,7 +77,11 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
     }
 
     if (flags & 64)
-        writeStringBinary(*additional_filter, ctx.out);
+    {
+        writeStringBinary(additional_filter->text, ctx.out);
+        writeIntBinary(additional_filter->hash.first, ctx.out);
+        writeIntBinary(additional_filter->hash.second, ctx.out);
+    }
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -108,7 +112,7 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     auto row_policy_placement = RowPolicyPlacement::Unknown;
     std::optional<Names> selected_columns;
     std::optional<size_t> columns_to_read;
-    std::optional<String> additional_filter;
+    std::optional<AdditionalFilter> additional_filter;
     if (ctx.step_version >= 1)
     {
         row_policy_placement = (flags & 16) ? RowPolicyPlacement::FilterStep : RowPolicyPlacement::NotInPlan;
@@ -124,7 +128,12 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
             columns_to_read = count;
         }
         if (flags & 64)
-            readStringBinary(additional_filter.emplace(), ctx.in);
+        {
+            auto & filter = additional_filter.emplace();
+            readStringBinary(filter.text, ctx.in);
+            readIntBinary(filter.hash.first, ctx.in);
+            readIntBinary(filter.hash.second, ctx.in);
+        }
     }
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);

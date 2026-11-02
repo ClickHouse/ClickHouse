@@ -301,7 +301,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
                     ParserExpression parser;
                     auto filter_ast = parseQuery(
                         parser,
-                        *additional_filter,
+                        additional_filter->text,
                         settings[Setting::max_query_size],
                         settings[Setting::max_parser_depth],
                         settings[Setting::max_parser_backtracks]);
@@ -319,7 +319,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             options.shipped_read = SelectQueryOptions::ShippedRead{
                 .row_policy_in_plan = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep,
                 .additional_filter_recorded = placement != ReadFromTableStep::RowPolicyPlacement::Unknown,
-                .additional_filter_in_plan = reading_from_table->getAdditionalFilter()};
+                .additional_filter_in_plan = reading_from_table->getAdditionalFilter()
+                    ? std::optional(reading_from_table->getAdditionalFilter()->hash) : std::nullopt};
         }
 
         auto interpreter_context = context;
