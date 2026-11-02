@@ -2515,11 +2515,11 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 ```sql
 -- Account key
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
 
 -- Workload identity (mutually exclusive with account_name / account_key)
 CREATE TABLE table_name
-ENGINE = DeltaLake(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
+ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
 ```
 
 **Arguments**
@@ -2551,7 +2551,7 @@ CREATE NAMED COLLECTION azure_wi AS
     tenant_id = '<tenant-id>';
 
 CREATE TABLE azureDeltaLake
-ENGINE = DeltaLake(azure_wi)
+ENGINE = DeltaLakeAzure(azure_wi)
 ```
 
 </TabItem>

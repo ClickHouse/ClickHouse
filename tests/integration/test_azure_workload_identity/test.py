@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import uuid
 
 import pytest
 import requests
@@ -171,8 +172,9 @@ def test_delta_lake_follows_the_session(started_cluster):
     kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
     delta_node.query("DROP TABLE IF EXISTS t_delta SYNC")
     # `ATTACH` loads the table lazily, so nothing is read before the first query and no Delta log is needed.
+    # An Atomic database takes a full-definition `ATTACH` only with a UUID.
     delta_node.query(
-        f"ATTACH TABLE t_delta (c UInt64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'table/')",
+        f"ATTACH TABLE t_delta UUID '{uuid.uuid4()}' (c UInt64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'table/')",
         settings=allow,
     )
 
