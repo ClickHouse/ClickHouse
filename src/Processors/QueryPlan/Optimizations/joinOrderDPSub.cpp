@@ -55,10 +55,6 @@ bool entriesCarryStrictness(const QueryGraph & query_graph)
     return query_graph.semi_anti_flattened && is_semi_or_anti;
 }
 
-/// Whether a join may have its inputs swapped. Inner and cross joins commute, and an `ALL`
-/// outer join is mirrored through `reverseJoinKind` (`Left` <-> `Right`), the same equivalence the
-/// enumeration uses. Semi/anti joins keep their sides, and so do `ANY` joins: `ANY LEFT` keeps one
-/// match per left row, `ANY RIGHT` one per right row.
 /// A numeric statistics value as a double, for estimating the share of a key range.
 std::optional<double> toNumber(const std::optional<Field> & value)
 {
@@ -73,6 +69,10 @@ std::optional<double> toNumber(const std::optional<Field> & value)
     }
 }
 
+/// Whether a join may have its inputs swapped. Inner and cross joins commute, and an `ALL`
+/// outer join is mirrored through `reverseJoinKind` (`Left` <-> `Right`), the same equivalence the
+/// enumeration uses. Semi/anti joins keep their sides, and so do `ANY` joins: `ANY LEFT` keeps one
+/// match per left row, `ANY RIGHT` one per right row.
 bool canSwap(JoinKind kind, JoinStrictness strictness)
 {
     if (isInner(kind) || isCrossOrComma(kind))
