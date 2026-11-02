@@ -13,3 +13,5 @@
 -- both data files read under the current names
 5	5	\N
 1005	1005	1005
+-- swapped names: the filter reaches the data file under the name its column had there
+100	0	99

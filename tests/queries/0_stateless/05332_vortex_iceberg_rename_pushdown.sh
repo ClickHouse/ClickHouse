@@ -60,3 +60,13 @@ run "SELECT count() FROM t WHERE b >= 995 AND a > 1000 SETTINGS input_format_vor
 
 echo '-- both data files read under the current names'
 run "SELECT b, s, a FROM t WHERE b IN (5, 1005) ORDER BY b"
+
+${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg 1 --query "
+    CREATE TABLE r (a Int64, b Int64) ENGINE = IcebergLocal('${LOCAL_DIR}/r/', 'Vortex');
+    INSERT INTO r SELECT number, 999 - number FROM numbers(1000);
+    ALTER TABLE r RENAME COLUMN a TO tmp;
+    ALTER TABLE r RENAME COLUMN b TO a;
+    ALTER TABLE r RENAME COLUMN tmp TO b;
+"
+echo '-- swapped names: the filter reaches the data file under the name its column had there'
+${CLICKHOUSE_LOCAL} --query "CREATE TABLE r ENGINE = IcebergLocal('${LOCAL_DIR}/r/', 'Vortex'); SELECT count(), min(b), max(b) FROM r WHERE b < 100 SETTINGS use_iceberg_partition_pruning = 0"

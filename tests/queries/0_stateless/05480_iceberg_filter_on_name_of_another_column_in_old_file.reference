@@ -12,6 +12,9 @@ NOT (c != 1)
 indexHint(c = 1)
 1	2	x
 \N	3	y
+indexHint(indexHint(c = 1))
+1	2	x
+\N	3	y
 engine table: c = 1
 1	2	x
 -- ORC, rotated names
@@ -27,4 +30,5 @@ a IS NULL
 a = 1
 -- Row groups are still pruned
 rot	1
+hint	1
 tuple	1

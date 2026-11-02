@@ -305,7 +305,8 @@ static ActionsDAG substituteIdentityPartitionColumns(
 }
 
 /// Returns `filter` rewritten to read the columns `schema_transform` reads (the data file's own), or nullptr
-/// if the filter reads by name a column that the transform changes beyond a rename.
+/// if the filter reads a subcolumn of a column that the transform changes beyond a rename. An indexHint reading
+/// a renamed or changed column is replaced by 1.
 static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsDAG & filter, const ActionsDAG & schema_transform)
 {
     std::unordered_map<std::string_view, const ActionsDAG::Node *> current_columns;
@@ -352,23 +353,33 @@ static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsD
             renamed_subcolumns.emplace_back(source->result_name + String(subcolumn), input->result_type, input->result_name);
     }
 
-    for (const auto & node : filter.getNodes())
+    auto reads_changed_column = [&](this const auto & self, const ActionsDAG & actions) -> bool
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION)
-            continue;
-        const auto * index_hint = FunctionIndexHint::tryGet(node.function_base);
-        if (!index_hint)
-            continue;
-        for (const auto * hint_input : index_hint->getActions().getInputs())
+        for (const auto * input : actions.getInputs())
         {
-            const auto * column = find_column(hint_input->result_name).first;
+            const auto * column = find_column(input->result_name).first;
             if (!column)
                 continue;
             const auto * source = file_column(column);
             if (!source || source->result_name != column->result_name)
-                return nullptr;
+                return true;
         }
-    }
+        for (const auto & node : actions.getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION)
+                if (const auto * index_hint = FunctionIndexHint::tryGet(node.function_base); index_hint && self(index_hint->getActions()))
+                    return true;
+        return false;
+    };
+
+    auto filter_copy = filter.clone();
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> hints_over_changed_columns;
+    for (const auto & node : filter_copy.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+            if (const auto * index_hint = FunctionIndexHint::tryGet(node.function_base); index_hint && reads_changed_column(index_hint->getActions()))
+                hints_over_changed_columns.emplace(
+                    &node,
+                    ColumnWithTypeAndName{DataTypeUInt8().createColumnConst(1, 1u), std::make_shared<DataTypeUInt8>(), node.result_name});
+    filter_copy.substitute(hints_over_changed_columns);
 
     auto file_to_current = ActionsDAG::cloneSubDAG(needed, /*remove_aliases=*/ false);
     for (const auto & [file_name, type, current_name] : renamed_subcolumns)
@@ -378,7 +389,7 @@ static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsD
     }
 
     const size_t num_filter_outputs = filter.getOutputs().size();
-    auto composed = ActionsDAG::merge(std::move(file_to_current), filter.clone());
+    auto composed = ActionsDAG::merge(std::move(file_to_current), std::move(filter_copy));
     ActionsDAG::NodeRawConstPtrs outputs(composed.getOutputs().begin(), composed.getOutputs().begin() + num_filter_outputs);
     return std::make_shared<const ActionsDAG>(ActionsDAG::cloneSubDAG(outputs, /*remove_aliases=*/ true));
 }

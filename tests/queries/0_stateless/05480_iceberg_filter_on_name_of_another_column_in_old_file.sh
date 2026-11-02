@@ -35,7 +35,7 @@ for format in Parquet ORC; do
 done
 
 echo "-- Parquet, rotated names"
-for condition in "c = 1" "a = 2" "b = 'x'" "c IS NULL" "NOT (c != 1)" "indexHint(c = 1)"; do
+for condition in "c = 1" "a = 2" "b = 'x'" "c IS NULL" "NOT (c != 1)" "indexHint(c = 1)" "indexHint(indexHint(c = 1))"; do
     echo "${condition}"
     ${CLICKHOUSE_CLIENT} --query "SELECT c, a, b FROM icebergLocal('${ROT_PATH}') WHERE ${condition} ORDER BY a SETTINGS ${READ_SETTINGS}"
 done
@@ -68,9 +68,10 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg=1 --allow_insert_i
     ALTER TABLE t_tuple ADD COLUMN z Nullable(Int32);
 "
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${ROT_PATH}') WHERE c = 999 SETTINGS ${READ_SETTINGS}, use_iceberg_partition_pruning = 0, log_comment = '${CLICKHOUSE_DATABASE}_prune_rot'"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${ROT_PATH}') WHERE a = 999 AND indexHint(c = 1) SETTINGS ${READ_SETTINGS}, use_iceberg_partition_pruning = 0, log_comment = '${CLICKHOUSE_DATABASE}_prune_hint'"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${TUPLE_PATH}') WHERE id = 999 AND t.x = 999 SETTINGS ${READ_SETTINGS}, use_iceberg_partition_pruning = 0, log_comment = '${CLICKHOUSE_DATABASE}_prune_tuple'"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-for suffix in rot tuple; do
+for suffix in rot hint tuple; do
     ${CLICKHOUSE_CLIENT} --query "
         SELECT '${suffix}', ProfileEvents['ParquetPrunedRowGroups'] > 0 FROM system.query_log
         WHERE current_database = currentDatabase() AND log_comment = '${CLICKHOUSE_DATABASE}_prune_${suffix}' AND type = 'QueryFinish'
