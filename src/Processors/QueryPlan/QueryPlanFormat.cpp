@@ -124,7 +124,15 @@ namespace QueryPlanFormat
 
     void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
     {
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        /// A sink, such as the send step at the root of a query fragment, has no output header: its output is the
+        /// data it sends, which is its input.
+        SharedHeader header;
+        if (step.hasOutputHeader())
+            header = step.getOutputHeader();
+        else if (step.getInputHeaders().size() == 1)
+            header = step.getInputHeaders().front();
+
+        if (!header || header->empty())
         {
             out << prefix << "Output: Empty\n";
             return;
@@ -132,7 +140,7 @@ namespace QueryPlanFormat
 
         out << prefix << "Output: ";
         bool first = true;
-        for (const auto & elem : *step.getOutputHeader())
+        for (const auto & elem : *header)
         {
             if (!first)
                 out << ", ";
@@ -811,7 +819,23 @@ namespace QueryPlanFormat
         }
     }
 
-    static String findSourceTableName(const QueryPlan::Node * node)
+    /// The fragments of a cut plan that are reached from a receive step while the names are built.
+    struct FragmentWalk
+    {
+        const FragmentInputs & inputs;
+        std::unordered_set<const QueryPlan *> visited;
+    };
+
+    /// The root of the fragment that sends to `node`, if `node` is a receive step of a cut plan.
+    static const QueryPlan::Node * findSendingFragmentRoot(const QueryPlan::Node * node, const FragmentInputs * fragment_inputs)
+    {
+        if (!fragment_inputs || !node->children.empty())
+            return nullptr;
+        auto it = fragment_inputs->find(node->step.get());
+        return it == fragment_inputs->end() ? nullptr : it->second->getRootNode();
+    }
+
+    static String findSourceTableName(const QueryPlan::Node * node, const FragmentInputs * fragment_inputs)
     {
         while (node)
         {
@@ -828,6 +852,8 @@ namespace QueryPlanFormat
                 return static_cast<const ReadFromTableStep *>(node->step.get())->getTable();
             if (node->children.size() == 1)
                 node = node->children[0];
+            else if (const auto * sending_root = findSendingFragmentRoot(node, fragment_inputs))
+                node = sending_root;
             else
                 break;
         }
@@ -840,7 +866,8 @@ namespace QueryPlanFormat
         const QueryPlan::Node * node,
         PrettyColumnNameMap & pretty_names,
         PrettyRuntimeFilterNameMap & runtime_filter_names,
-        PrettySetNameMap & subquery_set_names)
+        PrettySetNameMap & subquery_set_names,
+        const FragmentWalk * fragment_walk)
     {
         const auto & step = node->step;
         const auto & step_name = step->getName();
@@ -898,7 +925,7 @@ namespace QueryPlanFormat
             else
                 build_column = trimColumnIdentifier(filter_col);
 
-            String build_table = findSourceTableName(node);
+            String build_table = findSourceTableName(node, fragment_walk ? &fragment_walk->inputs : nullptr);
             runtime_filter_names.try_emplace(rf_step->getFilterName(),
                 RuntimeFilterInfo{std::move(pretty_name), std::move(build_column), std::move(build_table)});
         }
@@ -956,13 +983,15 @@ namespace QueryPlanFormat
         PrettyColumnNameMap & root_columns,
         PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
-        PerPlanColumnMaps & per_plan_columns)
+        PerPlanColumnMaps & per_plan_columns,
+        FragmentWalk * fragment_walk = nullptr)
     {
         struct Frame
         {
             const QueryPlan::Node * node;
             PrettyColumnNameMap * columns;
             size_t children_taken = 0;
+            bool sending_fragment_taken = false;
             bool child_plans_taken = false;
         };
 
@@ -983,6 +1012,25 @@ namespace QueryPlanFormat
                 continue;
             }
 
+            /// Continue into the fragment that sends to a receive step, so that the fragments are walked in the order of the
+            /// plan before the cut, as plain `EXPLAIN` walks it, and in the same naming scope.
+            if (!stack.back().sending_fragment_taken)
+            {
+                stack.back().sending_fragment_taken = true;
+                if (fragment_walk)
+                {
+                    if (auto it = fragment_walk->inputs.find(node->step.get()); it != fragment_walk->inputs.end())
+                    {
+                        const auto * sending_plan = it->second;
+                        if (fragment_walk->visited.insert(sending_plan).second && sending_plan->getRootNode())
+                        {
+                            stack.push_back({sending_plan->getRootNode(), columns});
+                            continue;
+                        }
+                    }
+                }
+            }
+
             if (!stack.back().child_plans_taken)
             {
                 stack.back().child_plans_taken = true;
@@ -1000,8 +1048,24 @@ namespace QueryPlanFormat
             }
 
             stack.pop_back();
-            buildPrettyNamesForOneNode(node, *columns, runtime_filter_names, subquery_set_names);
+            buildPrettyNamesForOneNode(node, *columns, runtime_filter_names, subquery_set_names, fragment_walk);
         }
+    }
+
+    static PrettyNamesPerPlan makePrettyNamesPerPlan(
+        PerPlanColumnMaps per_plan_columns,
+        const PrettyRuntimeFilterNameMap & runtime_filter_names,
+        const PrettySetNameMap & subquery_set_names)
+    {
+        PrettyNamesPerPlan result;
+        for (auto & [plan_ptr, columns] : per_plan_columns)
+        {
+            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
+            for (const auto & [hash, name] : subquery_set_names)
+                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
+        }
+        return result;
     }
 
     PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
@@ -1018,15 +1082,27 @@ namespace QueryPlanFormat
         if (root)
             buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
 
-        PrettyNamesPerPlan result;
-        for (auto & [plan_ptr, columns] : per_plan_columns)
-        {
-            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
-            for (const auto & [hash, name] : subquery_set_names)
-                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
-            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
-        }
-        return result;
+        return makePrettyNamesPerPlan(std::move(per_plan_columns), runtime_filter_names, subquery_set_names);
+    }
+
+    PrettyNamesPerPlan buildPrettyNamesForFragments(const std::vector<const QueryPlan *> & fragment_plans, const FragmentInputs & fragment_inputs)
+    {
+        PrettyRuntimeFilterNameMap runtime_filter_names;
+        PrettySetNameMap subquery_set_names;
+        PerPlanColumnMaps per_plan_columns;
+        /// The fragments were one plan before the cut, so they share one column naming scope.
+        PrettyColumnNameMap fragment_columns;
+
+        FragmentWalk fragment_walk{.inputs = fragment_inputs, .visited = {}};
+        for (const auto * plan : fragment_plans)
+            if (fragment_walk.visited.insert(plan).second && plan->getRootNode())
+                buildPrettyNamesForNode(
+                    plan->getRootNode(), fragment_columns, runtime_filter_names, subquery_set_names, per_plan_columns, &fragment_walk);
+
+        for (const auto * plan : fragment_plans)
+            per_plan_columns[plan] = fragment_columns;
+
+        return makePrettyNamesPerPlan(std::move(per_plan_columns), runtime_filter_names, subquery_set_names);
     }
 
 }

@@ -29,6 +29,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -279,6 +280,18 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::postJSONRequest(
     });
 }
 
+void UnityV2Catalog::deleteRequest(const std::string & route) const
+{
+    requestWithRetry([&](bool force_refresh)
+    {
+        auto buf = createReadBuffer(
+            base_url / route, getContext(), /* bearer_token = */ "", {}, getAuthHeaders(force_refresh),
+            Poco::Net::HTTPRequest::HTTP_DELETE);
+        /// The response body carries no useful data.
+        buf->ignoreAll();
+    });
+}
+
 DataLakeTableFormat UnityV2Catalog::detectTableFormat(const Poco::JSON::Object::Ptr & table_json) const
 {
     /// Checked before the format, because managed Iceberg tables report `data_source_format` == `DELTA`.
@@ -431,7 +444,7 @@ std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
     checkNamespaceExists(namespace_name);
 
     auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, namespace_name)).first;
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    const auto & object = json.extract<Poco::JSON::Object::Ptr>();
 
     /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
     /// and then the table engine arguments have to name the location explicitly.
@@ -447,6 +460,46 @@ std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
 void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     checkNamespaceExists(namespace_name);
+}
+
+void UnityV2Catalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
+{
+    auto full_table_name = fmt::format("{}.{}.{}", warehouse, namespace_name, table_name);
+
+    /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
+    /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
+    const auto table_type = getTableType(full_table_name);
+    const bool data_will_be_deleted = table_type == "MANAGED";
+    if (data_will_be_deleted != delete_data)
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Table {}.{} has table_type {} in Unity catalog, so Databricks {} its data on drop. "
+            "Set `iceberg_delete_data_on_drop` to {} to drop it",
+            namespace_name, table_name, table_type, data_will_be_deleted ? "deletes" : "keeps", data_will_be_deleted ? 1 : 0);
+
+    LOG_DEBUG(log, "Dropping table {} from Unity catalog", full_table_name);
+
+    try
+    {
+        deleteRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+    }
+    catch (...)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Failed to drop table {}.{} from Unity catalog: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
+}
+
+String UnityV2Catalog::getTableType(const String & full_table_name) const
+{
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    if (!hasValueAndItsNotNone("table_type", object))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unity catalog did not report the table_type of table {}", full_table_name);
+    return object->get("table_type").extract<String>();
 }
 
 bool UnityV2Catalog::updateMetadata(
@@ -505,7 +558,19 @@ bool UnityV2Catalog::tryGetTableMetadata(
 {
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
 
-    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    Poco::Dynamic::Var json;
+    try
+    {
+        json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            throw;
+
+        LOG_DEBUG(log, "Unity table {} does not exist", full_table_name);
+        return false;
+    }
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
     if (!hasValueAndItsNotNone("name", object) || object->get("name").extract<String>() != table_name)

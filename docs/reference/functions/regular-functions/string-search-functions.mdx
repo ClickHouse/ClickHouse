@@ -374,7 +374,7 @@ extractAllGroupsHorizontal(s, regexp)
 **Arguments**
 
 - `s` — Input string to extract from. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
-- `regexp` — Regular expression to match by. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
+- `regexp` — Regular expression to match by. Must contain between 1 and 127 capturing groups. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
 
 **Returned value**
 
@@ -413,7 +413,7 @@ extractGroups(s, regexp)
 **Arguments**
 
 - `s` — Input string to extract from. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
-- `regexp` — Regular expression. Must contain at least one capturing group. Constant. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
+- `regexp` — Regular expression. Must contain between 1 and 127 capturing groups. Constant. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
 
 **Returned value**
 

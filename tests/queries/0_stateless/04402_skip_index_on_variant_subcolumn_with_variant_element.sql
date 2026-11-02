@@ -9,7 +9,6 @@
 
 -- The rewrite is done by FunctionToSubcolumnsPass (analyzer only) under
 -- optimize_functions_to_subcolumns; a single part keeps the granule count stable.
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET max_insert_threads = 1;
 SET allow_experimental_variant_type = 1;

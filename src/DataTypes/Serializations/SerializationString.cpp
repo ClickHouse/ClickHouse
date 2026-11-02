@@ -910,20 +910,53 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
     }
 }
 
+void serializeStringOffsets(const ColumnString::Offsets & offsets, WriteBuffer & ostr, size_t offset, size_t limit)
+{
+    const ColumnString::Offset base = offsets[offset - 1];
+    if (base == 0)
+    {
+        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, ostr, offset, limit);
+        return;
+    }
+
+    if (limit == 0)
+        return;
+
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(offsets[i] - base, ostr);
+    }
+    else
+    {
+        PaddedPODArray<ColumnString::Offset> rebased;
+        rebased.resize(limit);
+
+        for (size_t i = 0; i < limit; ++i)
+            rebased[i] = offsets[offset + i] - base;
+
+        ostr.write(reinterpret_cast<const char *>(rebased.data()), sizeof(ColumnString::Offset) * limit);
+    }
+}
+
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
-
-    offsets.reserve(offsets.size() + rows);
 
     /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
     /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
     /// total is enough: below it every offset is exact.
     unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
+
+    /// Resize once and write through a pointer: `push_back` checks the capacity on every row.
+    const size_t old_size = offsets.size();
+    offsets.resize(old_size + rows);
+    IColumn::Offset * out = offsets.data() + old_size;
+    const UInt64 * in = sizes + start;
     for (size_t i = 0; i < rows; ++i)
     {
-        offset += sizes[start + i];
-        offsets.push_back(static_cast<IColumn::Offset>(offset));
+        offset += in[i];
+        out[i] = static_cast<IColumn::Offset>(offset);
     }
 
     if (unlikely(offset > MAX_TOTAL_STRING_SIZE))
@@ -993,12 +1026,11 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     const auto & offsets = column_string.getOffsets();
 
     /// On disk (position independent) the stream carries per-row sizes so a granule reads on its own.
-    /// Over the network it carries the cumulative offsets directly (like Array offsets) for exact
-    /// reader preallocation.
+    /// Over the network it carries cumulative offsets counted from the first written row, for exact reader preallocation.
     if (settings.position_independent_encoding)
         serializeStringSizes(column, *size_stream, offset, limit);
     else
-        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, *size_stream, offset, limit);
+        serializeStringOffsets(offsets, *size_stream, offset, limit);
 
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);

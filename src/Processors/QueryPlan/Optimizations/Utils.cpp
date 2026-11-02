@@ -10,6 +10,7 @@
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <utility>
 
@@ -250,5 +251,82 @@ FilterResult filterResultForNotMatchedRows(
 
     return FilterResult::UNKNOWN;
 }
+
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
+{
+    while (node)
+    {
+        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+            return reading;
+        if (node->children.size() != 1)
+            return nullptr;
+        node = node->children.front();
+    }
+    return nullptr;
+}
+
+bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)
+{
+    for (size_t peeled = 0; peeled < max_peel; ++peeled)
+    {
+        const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
+        if (!expression_step)
+            return true;
+        if (node->children.size() != 1)
+            return false;
+
+        /// a moved sort changes the rows this step sees, e.g. `rowNumberInAllBlocks` would give other values
+        const ActionsDAG & dag = expression_step->getExpression();
+        if (dag.hasArrayJoin() || isSensitiveToEvaluationCount(dag))
+            return false;
+
+        for (auto & sort_column : description)
+        {
+            const auto * out_node = dag.tryFindInOutputs(sort_column.column_name);
+            if (!out_node)
+                return false;
+
+            while (out_node->type == ActionsDAG::ActionType::ALIAS)
+                out_node = out_node->children.front();
+
+            if (out_node->type != ActionsDAG::ActionType::INPUT)
+                return false;
+
+            sort_column.column_name = out_node->result_name;
+        }
+
+        node = node->children.front();
+    }
+
+    return true;
+}
+
+bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
+{
+    /// A STREAM read selects its parts and ranges during execution, so the range set captured
+    /// here is not the one that will be read.
+    if (reading->getQueryInfo().isStream())
+        return false;
+
+    /// Allow FINAL only for ReplacingMergeTree.
+    if (reading->isQueryWithFinal()
+        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
+        return false;
+
+    if (reading->isQueryWithSampling())
+        return false;
+
+    if (reading->getMutationsSnapshot()->hasPatchParts())
+        return false;
+
+    /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
+    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
+    const auto & columns = reading->getStorageMetadata()->getColumns();
+    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
+        return false;
+
+    return true;
+}
+
 }
 }

@@ -9,6 +9,7 @@ import zlib
 from collections.abc import Mapping
 from pathlib import Path
 
+from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.bugfix_validation import (
     bugfix_build_types,
     download_master_builds,
@@ -20,7 +21,7 @@ from ci.jobs.scripts.test_selection_manifest import (
     SELECTION_MANIFEST,
     selection_manifest,
 )
-from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.find_tests import GitHubUnavailableError, Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -35,7 +36,6 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
 # job name. Sanitizer builds get the tighter server memory cap (see the
 # `set_memory_ratio` logic in `main`).
-SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 # Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
 # server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
@@ -196,13 +196,21 @@ def run_tests(
     global_time_limit_arg = (
         f" --global_time_limit {global_time_limit}" if global_time_limit > 0 else ""
     )
+    test_list_arg = ""
+    if tests:
+        # A file, not argv: `bash -c` gets the whole command as one argument, which Linux caps at 128 KiB.
+        test_list_file = f"{temp_dir}/test_list.txt"
+        Path(test_list_file).write_text(
+            "".join(f"{test}\n" for test in tests), encoding="utf-8"
+        )
+        test_list_arg = f'--test-list-file "{test_list_file}"'
     # `set -o pipefail` is required so that the pipeline's exit code reflects
     # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
     # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} {test_list_arg} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -948,12 +956,19 @@ def main():
             )
             selection_result.files = [str(SELECTION_MANIFEST)]
             results.append(selection_result)
-        except CIDBTimeoutError as ex:
-            # CIDB is overloaded (typically while the coverage export inserts).
+        except (CIDBTimeoutError, GitHubUnavailableError) as ex:
+            # CIDB is overloaded (typically while the coverage export inserts),
+            # or the GitHub API keeps failing.
             # Skip rather than fail: an ERROR here would skip every job that
             # waits for the core blocking jobs. Not cached, so a rerun or the
             # next commit selects again.
-            message = f"Targeted tests were not run: test selection timed out in CIDB: {ex}"
+            if isinstance(ex, CIDBTimeoutError):
+                cause = "test selection timed out in CIDB"
+                comment = "CIDB timeout in test selection, rerun to test"
+            else:
+                cause = "the GitHub API failed during test selection"
+                comment = "GitHub API error in test selection, rerun to test"
+            message = f"Targeted tests were not run: {cause}: {ex}"
             print(f"WARNING: {message}")
             info.add_workflow_warning(message)
             skipped = Result.create_from(
@@ -961,7 +976,7 @@ def main():
                 info=f"{message}\n{traceback.format_exc()}",
                 results=results,
             )
-            skipped.set_comment("CIDB timeout in test selection, rerun to test")
+            skipped.set_comment(comment)
             skipped.complete_job(do_not_cache=True)
         except Exception as ex:
             Result.create_from(

@@ -94,7 +94,12 @@ size_t TablesDependencyGraph::getNumberOfTables() const
 void TablesDependencyGraph::addDependency(const StorageID & table_id, const StorageID & dependency)
 {
     auto * table_node = addOrUpdateNode(table_id);
+
+    /// Adding `dependency` removes `table_node` from the graph if it gives the name of `table_node` to another node.
+    NodeSharedPtr table_node_holder = *nodes.find(table_node);
     auto * dependency_node = addOrUpdateNode(dependency);
+    if (!nodes.contains(table_node))
+        table_node = dependency_node; /// It has the name `table_node` had, so it's the node of `table_id` now.
 
     bool inserted = table_node->dependencies.insert(dependency_node).second;
     if (!inserted)

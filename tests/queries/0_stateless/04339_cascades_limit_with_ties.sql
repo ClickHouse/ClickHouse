@@ -4,7 +4,6 @@
 -- streams. A `LIMIT ... WITH TIES` on top must merge them into one stream first, or
 -- `LimitTransform` throws "Cannot use LimitTransform with multiple ports and ties".
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

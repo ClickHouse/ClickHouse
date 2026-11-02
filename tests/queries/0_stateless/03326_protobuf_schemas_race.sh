@@ -34,7 +34,7 @@ INSERT_PID=$!
 # the time limit of the test in a sanitizer build - the connections, not the cache clearing, were
 # the slow part.
 CLEAR_BATCH=$(yes "SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Protobuf;" | head -n 100)
-while true
+while clickhouse_test_time_left
 do
     $CLICKHOUSE_CLIENT -m -q "$CLEAR_BATCH"
     kill -0 "$INSERT_PID" 2>/dev/null || break

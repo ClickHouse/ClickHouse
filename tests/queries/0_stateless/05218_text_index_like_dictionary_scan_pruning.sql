@@ -5,7 +5,6 @@
 -- tokens by the pattern's mandatory literal changes which rows are returned. Every scenario is compared
 -- against the same query with use_skip_indexes = 0.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
@@ -65,8 +64,6 @@ SELECT 'two prefixes, no index', groupArray(id) FROM tab WHERE message LIKE 'toa
 SELECT 'prefix and infix', groupArray(id) FROM tab WHERE message LIKE 'toaa%' AND message LIKE '%toaa0%' SETTINGS log_comment = '05218_prefix_infix';
 SELECT 'prefix and infix, no index', groupArray(id) FROM tab WHERE message LIKE 'toaa%' AND message LIKE '%toaa0%' SETTINGS use_skip_indexes = 0;
 
--- No ILIKE needle here may contain 'k' or 'K': such a needle is refused before the scan starts, because
--- U+212A folds onto 'k', so the scenario would assert nothing about the dictionary scan.
 SELECT 'ilike infix', groupArray(id) FROM tab WHERE message ILIKE '%TOAA0%' SETTINGS log_comment = '05218_ilike';
 SELECT 'ilike infix, no index', groupArray(id) FROM tab WHERE message ILIKE '%TOAA0%' SETTINGS use_skip_indexes = 0;
 
@@ -240,8 +237,8 @@ SELECT 'Empty mandatory literal';
 DROP TABLE IF EXISTS tab_no_literal;
 
 -- Every literal run of 'a%b%c%d' is one byte, below the three the regexp analysis needs, so the compiled
--- pattern has no mandatory literal and can match a token anywhere in the dictionary; the array tokenizer
--- admits it by counting the four non-wildcard characters. Block first tokens: 'a1b1c1d', 'a5b5c5d', 'tocc0'.
+-- pattern has no mandatory literal. The automaton still recognizes its anchored prefix and skips the last
+-- block. Block first tokens: 'a1b1c1d', 'a5b5c5d', 'tocc0'.
 CREATE TABLE tab_no_literal
 (
     id UInt32,
@@ -264,7 +261,7 @@ SELECT 'no mandatory literal, no index', groupArray(id) FROM tab_no_literal WHER
 SELECT 'no mandatory literal with a prefix', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' OR message LIKE 'toaa%' SETTINGS log_comment = '05218_no_literal_mixed';
 SELECT 'no mandatory literal with a prefix, no index', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' OR message LIKE 'toaa%' SETTINGS use_skip_indexes = 0;
 
--- That same prefix on its own is narrowed to one block, so the full count above is the all-or-nothing decline.
+-- That same prefix on its own is narrowed to one block by the existing literal range seek.
 SELECT 'prefix alone', groupArray(id) FROM tab_no_literal WHERE message LIKE 'toaa%' SETTINGS log_comment = '05218_no_literal_prefix';
 SELECT 'prefix alone, no index', groupArray(id) FROM tab_no_literal WHERE message LIKE 'toaa%' SETTINGS use_skip_indexes = 0;
 
