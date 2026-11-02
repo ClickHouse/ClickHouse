@@ -400,7 +400,7 @@ SELECT
 │ {1:10,2:20,3:30,4:5} │
 └──────────────────────┘
                 )"}};
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseMax>(documentation);
@@ -437,7 +437,7 @@ SELECT
 │ {1:10,2:15,3:25,4:5} │
 └──────────────────────┘
                 )"}};
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseMin>(documentation);
@@ -488,7 +488,7 @@ SELECT numericIndexedVectorGetMaxValue(numericIndexedVectorBuild(mapFromArrays([
 │  30 │
 └─────┘
             )"}};
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorGetMaxValue>(documentation);
@@ -514,7 +514,7 @@ SELECT numericIndexedVectorGetMinValue(numericIndexedVectorBuild(mapFromArrays([
 │  10 │
 └─────┘
             )"}};
-        FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorGetMinValue>(documentation);
