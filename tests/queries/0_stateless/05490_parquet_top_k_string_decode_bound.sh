@@ -108,6 +108,8 @@ for F in "${P}" "${D}" "${DL}" "${DB}"; do
         "SELECT e FROM ${F} WHERE e > '' ORDER BY e DESC LIMIT 5"
         "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t, k LIMIT 6"
         "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t DESC, k LIMIT 6"
+        "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t, k DESC LIMIT 1"
+        "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t DESC, k DESC LIMIT 1"
         "SELECT s, k FROM ${F} WHERE s != '' ORDER BY s LIMIT 5"
         "SELECT s, k FROM ${F} WHERE s != '' AND k % 3 != 0 ORDER BY s LIMIT 5"
         "SELECT e FROM file('${DIR}/p.parquet', Parquet, 'e Nullable(String), k UInt64') WHERE e != '' ORDER BY e LIMIT 5"
@@ -177,7 +179,7 @@ touch -d '2020-01-01 00:00:00' "${DIR}/pc.parquet"
     SELECT count(), sum(length(s)) FROM file('${DIR}/pc.parquet') WHERE s != '' SETTINGS use_columns_cache = 0;"
 
 # The query condition cache of a server, which trusts the version of a file with an mtime in the past: a row group whose
-# values were all replaced by '' still holds rows that match the filter.
+# values were all replaced by '' still holds rows that match the filter. A filter on the sort column alone writes no entry.
 echo "-- query condition cache"
 mkdir -p "${USER_FILES_PATH}/${DATA_DIR}"
 cp "${DIR}/p.parquet" "${USER_FILES_PATH}/${DATA_DIR}/p.parquet"
@@ -188,4 +190,6 @@ QCC="${ST}, use_query_condition_cache = 1, query_plan_max_limit_for_top_k_optimi
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_05490 (s String, k UInt64) ENGINE = File(Parquet, '${DATA_DIR}/p.parquet');
     SELECT s FROM t_05490 WHERE s != '' ORDER BY s DESC LIMIT 5 SETTINGS ${QCC}, ${ON};
-    SELECT count(), sum(length(s)) FROM t_05490 WHERE s != '' SETTINGS ${QCC}, use_top_k_dynamic_filtering = 0;"
+    SELECT count(), sum(length(s)) FROM t_05490 WHERE s != '' SETTINGS ${QCC}, use_top_k_dynamic_filtering = 0;
+    SELECT s FROM t_05490 WHERE s != '' AND k % 3 != 0 ORDER BY s DESC LIMIT 5 SETTINGS ${QCC}, ${ON};
+    SELECT count(), sum(length(s)) FROM t_05490 WHERE s != '' AND k % 3 != 0 SETTINGS ${QCC}, use_top_k_dynamic_filtering = 0;"
