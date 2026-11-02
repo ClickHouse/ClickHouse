@@ -59,6 +59,11 @@ def test_cache_layers_of_one_disk_in_separate_policies():
             "encrypted_1",
             "encrypted_2",
         ),
+        (
+            "<main><disk>encrypted_subdir</disk><disk>encrypted_subdir_dot</disk></main>",
+            "encrypted_subdir",
+            "encrypted_subdir_dot",
+        ),
     ],
 )
 def test_policy_with_two_disks_over_one_disk_is_rejected(

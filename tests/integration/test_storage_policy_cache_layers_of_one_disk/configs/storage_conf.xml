@@ -40,6 +40,12 @@
                 <path>encrypted/</path>
                 <key>1234567812345678</key>
             </encrypted_subdir>
+            <encrypted_subdir_dot>
+                <type>encrypted</type>
+                <disk>cache_2</disk>
+                <path>encrypted/./</path>
+                <key>1234567812345678</key>
+            </encrypted_subdir_dot>
         </disks>
         <policies>
             <cache_1_only>

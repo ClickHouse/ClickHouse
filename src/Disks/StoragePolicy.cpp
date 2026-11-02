@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <filesystem>
 #include <map>
 #include <ranges>
 #include <set>
@@ -501,12 +502,13 @@ void StoragePolicy::buildVolumeIndices()
 
             if (auto metadata_storage = unwrapEncryptedAndCacheLayers(disk))
             {
-                auto [it, inserted] = policy_disk_by_directory.emplace(std::pair{metadata_storage.get(), disk->getPath()}, disk_name);
+                String directory = std::filesystem::path(disk->getPath()).lexically_normal().string();
+                auto [it, inserted] = policy_disk_by_directory.emplace(std::pair{metadata_storage.get(), directory}, disk_name);
                 if (!inserted)
                     throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                     "Disks {} and {} in storage policy {} store data in the same directory {}, "
                                     "so a table would load each of its parts twice",
-                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(disk->getPath()));
+                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(directory));
             }
 
             volume_index_by_disk_name[disk_name] = index;
