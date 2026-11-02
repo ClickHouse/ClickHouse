@@ -22,18 +22,18 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 你的 AWS 账户 ID、region 以及 EKS 集群名称
 * 连接器是运行在 Linux VM 上，还是运行在集群中
 * 用于平台 components 的 node group
-* services 的命名空间 prefix (默认为 `ns-`)
-* 你的集群以何种方式拉取 ClickHouse images：通过 ClickHouse Cloud 为你的 account 配置的 registry access，还是使用你自己的 mirror
+* 服务的命名空间 prefix (默认为 `ns-`)
+* 你的集群以何种方式拉取 ClickHouse 镜像：通过 ClickHouse Cloud 为你的 account 配置的 registry access，还是使用你自己的 mirror
 
-随后，ClickHouse Cloud 会为你签发连接器端点和一个一次性注册标记。该标记本身即可标识你的环境，因此注册时无需额外的 ID。
+随后，ClickHouse Cloud 会为你签发连接器端点、一个一次性注册标记，以及 ClickHouse 集群 chart 的 ECR 仓库 ARN (即 [Terraform roots](/zh/products/bring-your-own-cloud/connector/terraform-aws) 的 `chart_repository_arn` 输入项) 。如果通过 Terraform 安装，还会在此阶段一并获得平台支持包：使用 Helm 时，由 `clicklink clctl init --managed --from-terraform --platform-bundle` 应用该支持包；使用 VM 时，则在注册完成后通过 `clicklink clctl platform approve --bundle` 应用。其他托管安装会在之后才获得首个支持包：该支持包先由 executor 暂存，再按照[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)中的说明，通过 `clicklink clctl platform approve` 应用；使用 `--no-managed` 的安装则无需支持包。该标记本身即可标识你的环境，因此注册时无需额外的 ID。
 
 ### 所有安装方式通用 {#prerequisites-every-install}
 
 * **连接器 v0.17.0 或更高版本。** 更早的发行版没有托管模式、`platform` 命令或 `instances create`。除非你传入 `--version`，安装程序会提供最新发行版。
 * **你的连接器端点和注册标记**，在[注册](#registration)时提供。
 * **443 端口出站访问权限**，目标为 `https://<subdomain>.<connector-domain>` 和 `https://<subdomain>.enroll.<connector-domain>`，以及安装时访问 `releases.clicklink.clickhouse.com` 和 Amazon ECR Public。在托管模式下，当平台同步或创建操作从 ECR 拉取 chart 时，executor 还会访问 Amazon ECR 和 STS。若其中任何一项无法访问，请参阅[隔离网络与 mirror 安装](#air-gapped-and-mirrored-installs)。
-* **一个 Amazon EKS 集群**，用于托管模式。在其他任何集群上，`init` 都会拒绝启用托管模式，并提示使用 `--no-managed` 在不安装 executor 的情况下完成安装。
-* **用于 executor 授权的集群管理员权限。** 该授权会创建一个集群角色、一个 ClusterRoleBinding 和一个 ValidatingAdmissionPolicy，将 executor 限制在你的前缀下的命名空间内。在 Kubernetes 上，运行 `init` 时使用的 kubeconfig 需要该权限。在虚拟机上，则是主机的 kubeconfig 需要该权限；若主机不具备管理员权限，`init` 会打印出应在具备该权限的主机上运行的命令。
+* **一个 Amazon EKS 集群**，用于托管模式。在其他任何集群上，`init` 都会拒绝启用托管模式，并提示使用 `--no-managed` 在不安装 executor 的情况下完成安装。[在 AWS 上使用 Terraform](/zh/products/bring-your-own-cloud/connector/terraform-aws) 提供了分别适用于新集群和现有集群的根模块，以及在其之上安装平台层的 `init` 命令。
+* **用于 executor 授权的集群管理员权限。** 该授权会创建一个集群角色、一个 ClusterRoleBinding 和一个 ValidatingAdmissionPolicy，将 executor 限制在你的前缀下的命名空间内。在 Kubernetes 上，运行 `init` 时使用的 kubeconfig 需要该权限。在 VM 上，则是主机的 kubeconfig 需要该权限；若主机不具备管理员权限，`init` 会打印出应在具备该权限的主机上运行的命令。
 * **尚未部署 ClickHouse。** 托管安装从零个服务开始；由 executor 创建的服务会自行注册。在托管模式下，`init` 不会注册任何你自行运行的 ClickHouse (在 Kubernetes 上会拒绝 `--instance` 和 `--instance-namespace`) 。若要观测这类集群，请使用 `--no-managed` 单独安装一套连接器部署。借助 `--ch-user-suffix`，两套部署可以共用同一个实例，而不会在连接器的用户上发生冲突。该部署需要一个可访问的原生监听端口，安全端口 9440 或明文端口 9000，在 Kubernetes 上会自动检测。它还需要用于预配的 ClickHouse 管理员访问权限：一个无密码的 `default` 用户、通过 `--ch-admin-password-stdin` 或在提示符处输入的密码，或者对由 operator 管理的实例使用 CR 注入。
 * **cosign**，凡是下载发行制品的位置都需要。安装程序始终会校验 SHA-256 校验和。若已安装 cosign，还会校验发行版签名；设置 `CLICKLINK_REQUIRE_COSIGN=1` 后，缺少 cosign 时将拒绝继续执行。
 

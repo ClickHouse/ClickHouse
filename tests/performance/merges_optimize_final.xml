@@ -1,0 +1,79 @@
+<!--
+    `OPTIMIZE TABLE ... FINAL` of many small parts (30 columns of `hits_100m_single`, 10 M rows): one partition of 100
+    parts merged by one merge, and 16 partitions of 40 parts each merged by 16 merges that `OPTIMIZE FINAL` runs in
+    parallel. Each run restores the many-parts state and merges, in one shell query: `TRUNCATE`, `ATTACH PARTITION ALL FROM`
+    the pristine copy (hard links), `OPTIMIZE FINAL`. Background merges of the targets are disabled by
+    `max_bytes_to_merge_at_max_space_in_pool = max_bytes_to_merge_at_min_space_in_pool = 1` (`SYSTEM STOP MERGES` would
+    block the `OPTIMIZE` too); the sources keep the `SYSTEM STOP MERGES` of the setup (`perf.py` starts merges before it).
+    The setup runs each restore and merge once and checks the parts and the data against the source.
+    Per server and invocation: about 5 GB written by the setup and 1.3 GB per merge run (up to about 21 GB); peak disk
+    about 5 GB; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="90">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<create_query>
+    CREATE TABLE merge_src_1p
+    (
+        WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32,
+        ClientIP UInt32, RegionID UInt32, UserID UInt64, OS UInt8, UserAgent UInt8, URL String, Referer String,
+        ResolutionWidth UInt16, ResolutionHeight UInt16, IsMobile UInt8, MobilePhoneModel String, SearchEngineID UInt16,
+        SearchPhrase String, AdvEngineID UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, Refresh UInt8,
+        PageCharset String, CodeVersion UInt32, FUniqID UInt64, OriginalURL String, HID UInt32, ParamOrderID String
+    )
+    ENGINE = MergeTree ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+    SETTINGS old_parts_lifetime = 10
+</create_query>
+<create_query>CREATE TABLE merge_src_16p AS merge_src_1p ENGINE = MergeTree PARTITION BY intHash32(UserID) % 16 ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SETTINGS old_parts_lifetime = 10</create_query>
+<create_query>CREATE TABLE merge_1p AS merge_src_1p ENGINE = MergeTree ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SETTINGS old_parts_lifetime = 10, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1</create_query>
+<create_query>CREATE TABLE merge_16p AS merge_src_1p ENGINE = MergeTree PARTITION BY intHash32(UserID) % 16 ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SETTINGS old_parts_lifetime = 10, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1</create_query>
+
+<fill_query>SYSTEM STOP MERGES merge_src_1p</fill_query>
+<fill_query>SYSTEM STOP MERGES merge_src_16p</fill_query>
+<fill_query>
+    INSERT INTO merge_src_1p
+    SELECT WatchID, JavaEnable, Title, GoodEvent, EventTime, EventDate, CounterID, ClientIP, RegionID, UserID, OS, UserAgent, URL, Referer,
+        ResolutionWidth, ResolutionHeight, IsMobile, MobilePhoneModel, SearchEngineID, SearchPhrase, AdvEngineID, WindowClientWidth, WindowClientHeight,
+        Refresh, PageCharset, CodeVersion, FUniqID, OriginalURL, HID, ParamOrderID
+    FROM hits_100m_single WHERE intHash64(WatchID) % 10 &lt; 2 LIMIT 10000000
+    SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0
+</fill_query>
+<fill_query>
+    INSERT INTO merge_src_16p
+    SELECT WatchID, JavaEnable, Title, GoodEvent, EventTime, EventDate, CounterID, ClientIP, RegionID, UserID, OS, UserAgent, URL, Referer,
+        ResolutionWidth, ResolutionHeight, IsMobile, MobilePhoneModel, SearchEngineID, SearchPhrase, AdvEngineID, WindowClientWidth, WindowClientHeight,
+        Refresh, PageCharset, CodeVersion, FUniqID, OriginalURL, HID, ParamOrderID
+    FROM hits_100m_single WHERE intHash64(WatchID) % 10 BETWEEN 2 AND 6 LIMIT 10000000
+    SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 250000, max_insert_block_size = 250000, min_insert_block_size_rows = 250000, min_insert_block_size_bytes = 0, max_partitions_per_insert_block = 0
+</fill_query>
+
+<fill_query>SELECT throwIf(count() != 10000000) FROM merge_src_1p</fill_query>
+<fill_query>SELECT throwIf(count() != 10000000) FROM merge_src_16p</fill_query>
+<fill_query>SELECT throwIf(count() != 100) FROM system.parts WHERE database = 'default' AND table = 'merge_src_1p' AND active</fill_query>
+<fill_query>SELECT throwIf(count() != 640) FROM system.parts WHERE database = 'default' AND table = 'merge_src_16p' AND active</fill_query>
+<fill_query>ALTER TABLE merge_1p ATTACH PARTITION ALL FROM merge_src_1p</fill_query>
+<fill_query>SELECT throwIf(count() != 100 OR sum(rows) != 10000000) FROM system.parts WHERE database = 'default' AND table = 'merge_1p' AND active</fill_query>
+<fill_query>OPTIMIZE TABLE merge_1p FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+<fill_query>SELECT throwIf(count() != 1 OR sum(rows) != 10000000) FROM system.parts WHERE database = 'default' AND table = 'merge_1p' AND active</fill_query>
+<fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM merge_1p) != (SELECT (count(), sum(cityHash64(*))) FROM merge_src_1p))</fill_query>
+<fill_query>ALTER TABLE merge_16p ATTACH PARTITION ALL FROM merge_src_16p</fill_query>
+<fill_query>SELECT throwIf(count() != 640 OR sum(rows) != 10000000) FROM system.parts WHERE database = 'default' AND table = 'merge_16p' AND active</fill_query>
+<fill_query>OPTIMIZE TABLE merge_16p FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+<fill_query>SELECT throwIf(count() != 16 OR sum(rows) != 10000000) FROM system.parts WHERE database = 'default' AND table = 'merge_16p' AND active</fill_query>
+<fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM merge_16p) != (SELECT (count(), sum(cityHash64(*))) FROM merge_src_16p))</fill_query>
+
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE merge_1p; ALTER TABLE merge_1p ATTACH PARTITION ALL FROM merge_src_1p; OPTIMIZE TABLE merge_1p FINAL SETTINGS optimize_throw_if_noop = 1"
+]]></query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE merge_16p; ALTER TABLE merge_16p ATTACH PARTITION ALL FROM merge_src_16p; OPTIMIZE TABLE merge_16p FINAL SETTINGS optimize_throw_if_noop = 1"
+]]></query>
+
+<drop_query>DROP TABLE IF EXISTS merge_1p, merge_16p, merge_src_1p, merge_src_16p SYNC</drop_query>
+
+</test>

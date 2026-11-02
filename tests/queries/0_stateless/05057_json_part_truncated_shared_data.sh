@@ -58,8 +58,25 @@ function truncate_streams()
     fi
 }
 
+# The part has no `checksums.txt`, so it is checked on load against its marks, and the marks of the
+# truncated stream point past its end: the part is detached as broken. That load has already written
+# the recalculated `checksums.txt` into it, so move it back: the next load trusts these checksums, and
+# the truncated stream reaches the reader.
+function reattach_broken_part()
+{
+    local detached
+    detached=$($CLICKHOUSE_LOCAL --path "$DATA_DIR" -q "SELECT path FROM system.detached_parts WHERE database = currentDatabase() AND table = 't'")
+    if [ -z "$detached" ]
+    then
+        echo "the truncated part was not detached"
+        return
+    fi
+    mv "$detached" "$PART"
+}
+
 function read_part()
 {
+    reattach_broken_part
     $CLICKHOUSE_LOCAL --path "$DATA_DIR" -q "SELECT count(), sum(length(toString(json))) FROM t" 2>&1 \
         | grep -m1 -oE "ATTEMPT_TO_READ_AFTER_EOF|CANNOT_READ_ALL_DATA"
 }

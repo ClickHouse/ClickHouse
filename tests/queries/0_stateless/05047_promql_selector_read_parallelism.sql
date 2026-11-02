@@ -1,50 +1,35 @@
 -- Tags: no-fasttest, no-parallel-replicas, no-object-storage, no-random-settings, no-random-merge-tree-settings
 
-DROP TABLE IF EXISTS tags_table;
-DROP TABLE IF EXISTS samples_table;
 DROP TABLE IF EXISTS prometheus;
 
 SET session_timezone = 'UTC';
 SET allow_experimental_time_series_table = 1;
 SET max_threads = 4;
 
-CREATE TABLE tags_table
-(
-    id UInt64,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
-    min_time DateTime64(3),
-    max_time DateTime64(3)
-) ENGINE = MergeTree() ORDER BY id;
-
-CREATE TABLE samples_table
-(
-    id UInt64,
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp)
-SETTINGS index_granularity = 32768, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-
-CREATE TABLE prometheus ENGINE = TimeSeries SAMPLES samples_table TAGS tags_table;
+-- A row of the samples table contains the samples of one series within a 60-second bucket, so the table has 12000 rows below.
+-- The samples table is written in wide parts, so that its columns can be read in parallel.
+CREATE TABLE prometheus ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60
+TAGS INNER COLUMNS (id UInt64)
+SAMPLES INNER ENGINE = AggregatingMergeTree ORDER BY (id, bucket) SETTINGS index_granularity = 64, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 INSERT INTO prometheus (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);
-INSERT INTO samples_table SELECT (SELECT id FROM tags_table LIMIT 1), toDateTime64(number, 3), number FROM numbers(720000);
-ALTER TABLE tags_table UPDATE max_time = toDateTime64(720000, 3) WHERE 1 SETTINGS mutations_sync = 2;
-OPTIMIZE TABLE samples_table FINAL;
+INSERT INTO prometheus (metric_name, tags, samples) SELECT 'm', map('host', 'h1'), groupArray((toDateTime64(number, 3), toFloat64(number))) FROM numbers(720000);
+OPTIMIZE TABLE prometheus FINAL;
 
 SELECT max(toUInt64OrNull(extract(explain, '× (\\d+)'))) > 1 AS is_parallel
-FROM (EXPLAIN PIPELINE SELECT count() FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000))
+FROM (EXPLAIN PIPELINE SELECT count() FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000, 'samples'))
 WHERE explain LIKE '%MergeTreeSelect%';
 
+-- The thresholds set by the user are respected. Both thresholds are set here: the greater of the two applies,
+-- and the threshold in rows is set to zero by the selector unless the user sets it.
 SELECT sum(explain LIKE '%MergeTreeSelect%') = 1 AS has_single_read,
        maxIf(toUInt64OrNull(extract(explain, '× (\\d+)')), explain LIKE '%MergeTreeSelect%') IS NULL AS is_single_stream
-FROM (EXPLAIN PIPELINE SELECT count() FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000)
-      SETTINGS merge_tree_min_bytes_for_concurrent_read = 251658240);
+FROM (EXPLAIN PIPELINE SELECT count() FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000, 'samples')
+      SETTINGS merge_tree_min_bytes_for_concurrent_read = 251658240, merge_tree_min_rows_for_concurrent_read = 1000000);
 
-SELECT count(), sum(value) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000);
-SELECT count(), sum(value) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000)
-SETTINGS merge_tree_min_bytes_for_concurrent_read = 251658240;
+-- The duplicate sample at the timestamp 0 is removed, so the table has 720000 samples.
+SELECT sum(length(samples)), sum(arraySum(sample -> sample.2, samples)) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000, 'samples');
+SELECT sum(length(samples)), sum(arraySum(sample -> sample.2, samples)) FROM timeSeriesSelector(prometheus, 'm{host="h1"}', 0, 720000, 'samples')
+SETTINGS merge_tree_min_bytes_for_concurrent_read = 251658240, merge_tree_min_rows_for_concurrent_read = 1000000;
 
 DROP TABLE prometheus;
-DROP TABLE samples_table;
-DROP TABLE tags_table;

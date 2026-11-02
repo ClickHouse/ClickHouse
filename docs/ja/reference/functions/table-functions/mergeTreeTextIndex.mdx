@@ -13,17 +13,13 @@ MergeTree テーブルのテキスト索引の Dictionary を表します。
 トークンとそのポスティングリストメタデータを返します。
 イントロスペクションに利用できます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 mergeTreeTextIndex(database, table, index_name)
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 | 引数           | 説明                    |
 | ------------ | --------------------- |
@@ -31,15 +27,13 @@ mergeTreeTextIndex(database, table, index_name)
 | `table`      | テキスト索引を読み取る元のテーブル名。   |
 | `index_name` | 読み取るテキスト索引の名前。        |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 トークンとそれに対応するポスティングリストメタデータを含むテーブルオブジェクト。
 
-<div id="usage-example">
-  ## 使用例
-</div>
+索引で `keyValuePairs` トークナイザーを使用している場合、各トークンは `Map` カラムの `(key, value)` ペアであり、結果にはトークンをデコードした各部分を格納する `token_key` と `token_value` の2つのカラムが追加されます。
+
+## 使用例 {#usage-example}
 
 ```sql title="Query"
 CREATE TABLE tab

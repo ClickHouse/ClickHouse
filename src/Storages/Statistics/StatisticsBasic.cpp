@@ -139,6 +139,21 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
+void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    row_count = rows;
+    if (tracks_numeric)
+    {
+        min = min_value;
+        max = max_value;
+    }
+    /// A summary has no byte lengths.
+    tracks_string = false;
+    /// For any other type the default count would count zeros, which a summary does not give.
+    has_default_count = is_nullable;
+    default_count = is_nullable ? null_count : 0;
+}
+
 void StatisticsBasic::serialize(WriteBuffer & buf)
 {
     writeIntBinary(row_count, buf);
@@ -148,8 +163,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::NumericMinMax;
     if (tracks_string)
         mask |= BasicFeatureMask::StringLengthSum;
-
-    mask |= BasicFeatureMask::DefaultCount;
+    if (has_default_count)
+        mask |= BasicFeatureMask::DefaultCount;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -159,8 +174,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
-
-    writeIntBinary(default_count, buf);
+    if (has_default_count)
+        writeIntBinary(default_count, buf);
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -228,6 +243,11 @@ std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
     return static_cast<Float64>(default_count);
 }
 
+size_t StatisticsBasic::allocatedBytes() const
+{
+    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
+}
+
 String StatisticsBasic::getNameForLogs() const
 {
     String result = "Basic: ";
@@ -281,6 +301,17 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
     return tracks_numeric == other_basic->tracks_numeric
         && tracks_string == other_basic->tracks_string
         && has_default_count == other_basic->has_default_count;
+}
+
+void StatisticsBasic::copyStructureFrom(const IStatistics & other)
+{
+    const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
+    if (!other_basic)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy the structure of Basic statistics from a different type");
+    /// The flags `isCompatibleWith` compares; a summary built without string lengths (see `build`) differs from its type.
+    tracks_numeric = other_basic->tracks_numeric;
+    tracks_string = other_basic->tracks_string;
+    has_default_count = other_basic->has_default_count;
 }
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)

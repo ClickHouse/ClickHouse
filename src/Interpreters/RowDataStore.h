@@ -5,6 +5,7 @@
 #include <Common/PODArray.h>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 
@@ -44,6 +45,12 @@ public:
     /// Compute the row-major layout for `columns` in input order.
     static RowLayoutPtr computeLayout(const Columns & columns, const DataTypes & types);
 
+    /// The row length every store built from `layout` has.
+    static size_t rowLengthOf(const RowLayout & layout) { return layout.empty() ? 0 : layout.back().offset + layout.back().size; }
+
+    /// Cache misses that reading one row from a store built from `layout` saves over reading it column by column.
+    static size_t cacheMissReduction(const RowLayout & layout);
+
     /// Create the row-major buffer and fills it with rows from `columns` in input order.
     static std::shared_ptr<RowDataStore> create(const RowLayoutPtr & layout, const Columns & columns);
 
@@ -51,14 +58,19 @@ public:
     MutableColumns scatterRows(size_t start, size_t length) const;
     MutableColumns scatterRows(const PaddedPODArray<UInt64> & row_nums) const;
 
-    const FieldLayout & getFieldLayout(size_t input_col_index) const;
+    /// Gathers selected fixed-width values into existing rows. A nullable field stores its null byte
+    /// followed by the value bytes. The source is a full column without `LowCardinality`, not a
+    /// constant, sparse or replicated one. Both spans must describe the same number of rows.
+    static void gatherFieldToRows(
+        const IColumn & source,
+        std::span<const UInt32> source_rows,
+        std::span<char * const> destination_rows,
+        size_t field_offset);
 
-    /// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
-    std::optional<size_t> getBatchSize() const;
+    const FieldLayout & getFieldLayout(size_t input_col_index) const;
 
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
-    size_t byteSizeAt(size_t /*n*/) const { return row_length; }
     size_t allocatedBytes() const { return chars.empty() ? 0 : chars.allocated_bytes(); }
 
 private:
@@ -75,5 +87,8 @@ private:
 };
 
 bool isRowStorageUseful(const ColumnPtr & column);
+
+/// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
+size_t rowStoreBatchSize(size_t row_length);
 
 }

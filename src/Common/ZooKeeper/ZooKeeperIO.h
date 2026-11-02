@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 #include <array>
@@ -103,9 +104,17 @@ void read(std::vector<T> & arr, ReadBuffer & in)
         throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Negative size while reading array from ZooKeeper");
     if (size > MAX_STRING_OR_ARRAY_SIZE)
         throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Too large array size while reading from ZooKeeper");
-    arr.resize(size);
-    for (auto & elem : arr)
+
+    /// Memory must track bytes actually read, not the declared element count:
+    /// do not pre-allocate for an attacker-controlled size.
+    arr.clear();
+    arr.reserve(std::min<size_t>(static_cast<size_t>(size), static_cast<size_t>(MAX_ARRAY_PREALLOCATION)));
+    for (int32_t i = 0; i < size; ++i)
+    {
+        T elem{};
         read(elem, in);
+        arr.push_back(std::move(elem));
+    }
 }
 
 }

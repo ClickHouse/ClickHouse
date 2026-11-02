@@ -66,8 +66,14 @@ public:
 
         const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
 
-        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
-        const DateLUTImpl & date_lut = DateLUT::instance();
+        /// The function is executed with the time zone taken from its argument's type
+        /// (`extractTimeZoneFromFunctionArguments`), so the factor comparison below has to use that same
+        /// time zone: a range that lies inside one week of the server time zone can straddle a week
+        /// boundary of the column's time zone, and there the function is not monotonic.
+        const DateLUTImpl * date_lut_ptr = &DateLUT::instance();
+        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
+            date_lut_ptr = &timezone->getTimeZone();
+        const DateLUTImpl & date_lut = *date_lut_ptr;
 
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 

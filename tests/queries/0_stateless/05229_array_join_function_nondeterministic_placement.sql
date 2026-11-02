@@ -26,10 +26,13 @@ SELECT countIf(c NOT IN (0, 3)) > 0 FROM (SELECT number, count() AS c FROM (SELE
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e, rand64() AS r FROM numbers(2) SETTINGS serialize_query_plan = 0);
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e, rand64() AS r FROM numbers(2) SETTINGS serialize_query_plan = 0, legacy_array_join_function_nondeterministic_evaluation = 1);
 
--- a stateful function keeps the function form: one block for the whole expansion, computed before it when independent
+-- a stateful function sees the blocks of the step
 SELECT groupArray(rn) FROM (SELECT arrayJoin(range(3)) AS x, rowNumberInBlock() AS rn FROM numbers(2));
+SELECT groupArray(rn) FROM (SELECT arrayJoin(range(3)) AS x, rowNumberInBlock() AS rn FROM numbers(2)) SETTINGS legacy_array_join_function_nondeterministic_evaluation = 1;
 SELECT uniqExact(d), max(d) FROM (SELECT runningDifference(arrayJoin(range(50000))) AS d FROM numbers(2)) SETTINGS allow_deprecated_error_prone_window_functions = 1, max_block_size = 65505, max_threads = 1;
+SELECT uniqExact(d), max(d) FROM (SELECT runningDifference(arrayJoin(range(50000))) AS d FROM numbers(2)) SETTINGS allow_deprecated_error_prone_window_functions = 1, max_block_size = 65505, max_threads = 1, legacy_array_join_function_nondeterministic_evaluation = 1;
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e, rowNumberInBlock() AS rn FROM numbers(2) SETTINGS serialize_query_plan = 0);
+SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e, rowNumberInBlock() AS rn FROM numbers(2) SETTINGS serialize_query_plan = 0, legacy_array_join_function_nondeterministic_evaluation = 1);
 
 -- two joins: a draw under the second join stays behind both, the order of the joins does not change
 SELECT groupArray((a, b)), uniqExact(r), count() FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, rand64(b) AS r) SETTINGS legacy_array_join_function_nondeterministic_evaluation = 1;
