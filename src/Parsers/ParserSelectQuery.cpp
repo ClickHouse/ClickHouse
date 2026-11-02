@@ -3137,7 +3137,7 @@ The random choices are made just in time: no random values are generated or stor
 
 Without `LIMIT`, `SHUFFLE` keeps all rows in memory. Unlike `ORDER BY`, it does not spill data to disk.
 
-`ORDER BY rand()` and `ORDER BY rand64()` are executed the same way as `SHUFFLE` (the setting `query_plan_use_shuffle_for_order_by_rand`) when the random value is not used anywhere else in the query, and when there is a `LIMIT` or the external sorting is disabled.
+`ORDER BY rand()` and `ORDER BY rand64()` can be executed the same way as `SHUFFLE` (the setting `query_plan_use_shuffle_for_order_by_rand`) when the random value is not used anywhere else in the query and external sorting is disabled. When external sorting is configured, this optimization is disabled even with a finite `LIMIT`, because the sample may still exceed memory and `SHUFFLE` cannot spill to disk. `ORDER BY rand64()` with a finite limit retains sorting to preserve all bits of the random values.
 
 ## Examples {#examples}
 

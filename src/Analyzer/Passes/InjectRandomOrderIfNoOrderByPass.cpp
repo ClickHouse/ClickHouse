@@ -43,7 +43,12 @@ static void wrapWithSelectShuffle(QueryTreeNodePtr & query_root, ContextPtr cont
     /// Wrapper: SELECT <inner columns referenced by UUID alias> FROM (inner) SHUFFLE.
     /// The wrapper's projection columns keep the ORIGINAL names so CTAS/VIEW and named
     /// output formats produce user-expected column names.
-    auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
+    /// The injected `SHUFFLE` is sent as SQL to replicas, where `QueryTreeBuilder` checks its gate again.
+    /// Carry the setting on this generated wrapper, without relaxing validation of the original query.
+    auto wrapper_context = Context::createCopy(context);
+    wrapper_context->setSetting("allow_experimental_shuffle_query", true);
+    auto new_root = std::make_shared<QueryNode>(
+        std::move(wrapper_context), SettingsChanges{{"allow_experimental_shuffle_query", true}});
     new_root->getJoinTreeNode() = query_root;
 
     NamesAndTypes outer_projection_columns;

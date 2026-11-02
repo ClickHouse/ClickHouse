@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Exception.h>
 #include <Common/RadixSort.h>
 #include <Common/randomSeed.h>
@@ -404,6 +405,9 @@ void ReservoirSampleTransform::compact()
 void ReservoirSampleTransform::consume(Chunk chunk)
 {
     const size_t num_rows = chunk.getNumRows();
+    if (read_rows)
+        read_rows->add(num_rows);
+
     if (num_rows == 0)
         return;
 

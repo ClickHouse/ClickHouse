@@ -1548,8 +1548,9 @@ void pushOrderByIntoView(
     if (!sel)
         return;
 
-    /// View must not have transformations that change ORDER BY semantics
-    if (sel->hasJoin() || sel->groupBy() || sel->distinct)
+    /// View must not have transformations that change `ORDER BY` semantics.
+    /// Injecting `ORDER BY` into a `SHUFFLE` query would also create incompatible clauses.
+    if (sel->hasJoin() || sel->groupBy() || sel->distinct || sel->shuffle)
         return;
 
     /// Window functions partition/order globally; with ORDER BY/LIMIT pushed

@@ -39,8 +39,9 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
     const UInt64 limit = sorting->getLimit();
     const auto & sort_settings = sorting->getSettings();
 
-    /// Without a limit, the shuffle keeps all rows in memory, and it does not spill to disk as the sorting does.
-    if (!limit && (sort_settings.max_bytes_in_block_before_external_sort || sort_settings.max_bytes_in_query_before_external_sort))
+    /// `ShuffleStep` cannot spill to disk, even with a finite `LIMIT`.
+    /// Preserve external sorting whenever it is configured, since the sample may still exceed memory.
+    if (sort_settings.max_bytes_in_block_before_external_sort || sort_settings.max_bytes_in_query_before_external_sort)
         return;
 
     /// The limits for sorting are checked by the sorting transforms.
@@ -94,6 +95,11 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
 
     WhichDataType which(key_node->result_type);
     if (!which.isUInt32() && !which.isUInt64())
+        return;
+
+    /// Limited samples generate order statistics with floating-point arithmetic, which cannot preserve all
+    /// observable bits of `rand64`. Keep the original keys and sorting until an integer-accurate generator is available.
+    if (limit && which.isUInt64())
         return;
 
     auto shuffle = std::make_unique<ShuffleStep>(

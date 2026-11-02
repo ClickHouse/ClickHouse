@@ -91,6 +91,12 @@ struct HasNonDeterministicFunctionsMatcher
         if (data.has_non_deterministic_functions)
             return;
 
+        if (const auto * select = node->as<ASTSelectQuery>(); select && select->shuffle)
+        {
+            data.has_non_deterministic_functions = true;
+            return;
+        }
+
         if (const auto * function = node->as<ASTFunction>())
         {
             /// The `eval` table function hides its real query inside an opaque string argument, so the

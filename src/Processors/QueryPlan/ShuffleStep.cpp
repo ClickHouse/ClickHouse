@@ -2,10 +2,15 @@
 
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <Processors/Transforms/ShuffleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -18,6 +23,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -195,9 +201,70 @@ void ShuffleStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Limit", limit);
 }
 
+void ShuffleStep::serialize(Serialization & ctx) const
+{
+    UInt8 flags = 0;
+    if (key)
+    {
+        flags |= 1;
+        if (key->replace)
+            flags |= 2;
+        if (key->direction < 0)
+            flags |= 4;
+    }
+    writeIntBinary(flags, ctx.out);
+    if (key)
+        ctx.writeColumnName(key->column_name);
+    writeVarUInt(limit, ctx.out);
+    writeVarUInt(max_block_size, ctx.out);
+}
+
+QueryPlanStepPtr ShuffleStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ShuffleStep must have one input stream");
+
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    if ((flags & ~7) || (!(flags & 1) && flags))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ShuffleStep flags {}", static_cast<UInt64>(flags));
+
+    std::optional<Key> key;
+    if (flags & 1)
+    {
+        key.emplace();
+        readStringBinary(key->column_name, ctx.in);
+        key->replace = flags & 2;
+        key->direction = (flags & 4) ? -1 : 1;
+        const auto & header = *ctx.input_headers.front();
+        if (key->replace)
+        {
+            if (!header.has(key->column_name))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Missing ShuffleStep key column {}", key->column_name);
+            WhichDataType type(header.getByName(key->column_name).type);
+            if (!type.isUInt32() && !type.isUInt64())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "ShuffleStep key must be UInt32 or UInt64");
+        }
+        else if (header.has(key->column_name))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "ShuffleStep appended key column {} already exists", key->column_name);
+    }
+
+    UInt64 limit = 0;
+    UInt64 max_block_size = 0;
+    readVarUInt(limit, ctx.in);
+    readVarUInt(max_block_size, ctx.in);
+    return std::make_unique<ShuffleStep>(ctx.input_headers.front(), std::move(key), limit, max_block_size);
+}
+
 QueryPlanStepPtr ShuffleStep::clone() const
 {
     return std::make_unique<ShuffleStep>(*this);
+}
+
+void registerShuffleStep(QueryPlanStepRegistry & registry);
+void registerShuffleStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Shuffle", ShuffleStep::deserialize);
 }
 
 }

@@ -50,6 +50,10 @@ public:
     const std::optional<Key> & getKey() const { return key; }
     UInt64 getLimit() const { return limit; }
 
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
     bool hasCorrelatedExpressions() const override { return false; }
 

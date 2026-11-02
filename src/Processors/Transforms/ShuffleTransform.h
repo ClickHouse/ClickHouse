@@ -74,8 +74,8 @@ private:
     bool is_uint32 = false;
     int direction = 1;
 
-    /// For order statistics: 1 - the last generated key (as a fraction of the range), and the number of generated keys.
-    double remaining_fraction = 1.0;
+    /// For order statistics: log(1 - the last generated key), initially log(1) = 0, and the number of generated keys.
+    double remaining_fraction = 0.0;
     UInt64 num_generated = 0;
 };
 
@@ -139,6 +139,8 @@ public:
 
     String getName() const override { return "ReservoirSampleTransform"; }
 
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { read_rows.swap(counter); }
+
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;
@@ -150,6 +152,8 @@ private:
 
     const UInt64 limit;
     const size_t max_block_size;
+
+    RowsBeforeStepCounterPtr read_rows;
 
     pcg64 rng;
 
