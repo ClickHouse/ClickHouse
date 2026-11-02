@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: the Parquet format is not built in the fast-test image.
+-- Random settings limits: use_lightweight_primary_key_index_analysis=(1, None)
 
 -- Parquet min/max statistics stand a NULL in as -inf, and a decreasing step moves the +inf NULL of a Nullable
 -- MergeTree key there too. A row group, page or granule holding NULLs must be kept for a predicate that maps
