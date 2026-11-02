@@ -12,6 +12,7 @@ data_dir="${CLICKHOUSE_TMP}/data_${CLICKHOUSE_DATABASE}"
 rm -rf "$data_dir"
 
 $CLICKHOUSE_LOCAL --path "$data_dir" --query "
+    SET enable_time_series_table = 1;
     CREATE DATABASE a;
     CREATE TABLE a.good (x UInt64) ENGINE = MergeTree ORDER BY x;
     INSERT INTO a.good VALUES (1);
@@ -23,6 +24,10 @@ $CLICKHOUSE_LOCAL --path "$data_dir" --query "
     CREATE MATERIALIZED VIEW a.rmv REFRESH EVERY 1 YEAR APPEND TO a.broken EMPTY AS SELECT x FROM a.good;
     CREATE TABLE a.merge (x UInt64) ENGINE = Merge(a, '^broken');
     CREATE TABLE a.alias ENGINE = Alias(a, broken);
+    CREATE TABLE a.alias_merge ENGINE = Alias(a, merge);
+    CREATE TABLE a.broken_families (metric_family String, type String, unit String, help String) ENGINE = MergeTree ORDER BY metric_family SETTINGS object_shared_data_serialization_version = 'advanced';
+    CREATE DATABASE b;
+    CREATE TABLE b.ts ENGINE = TimeSeries SETTINGS version = 9 METRIC FAMILIES a.broken_families;
     CREATE TABLE good_in_default (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE broken_in_default (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS object_shared_data_serialization_version = 'advanced';
 "
@@ -47,6 +52,8 @@ $CLICKHOUSE_LOCAL --path "$data_dir" --query "
     SELECT table, sum(rows) FROM system.parts WHERE database = 'a' AND active GROUP BY table;
     SELECT table, name FROM system.columns WHERE database = 'a' ORDER BY table, name;
     SELECT * FROM system.columns FORMAT Null;
+    SELECT table, name, data_compressed_bytes FROM system.columns WHERE database = 'a' AND table = 'alias_merge';
+    SELECT name, data_paths FROM system.tables WHERE database = 'b' AND name = 'ts';
     SELECT 'parts_columns', count() FROM system.parts_columns WHERE database = 'a' AND active;
     SELECT 'projection_parts', count() FROM system.projection_parts WHERE database = 'a';
     SELECT 'mutations', count() FROM system.mutations WHERE database = 'a';

@@ -311,7 +311,7 @@ public:
         if (!target)
             return std::nullopt;
 
-        return target->getColumnSizes();
+        return target->tryGetColumnSizes();
     }
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }

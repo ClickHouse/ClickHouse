@@ -53,6 +53,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ASYNC_LOAD_WAIT_FAILED;
     extern const int NOT_IMPLEMENTED;
 }
 namespace Setting
@@ -747,7 +748,18 @@ protected:
                     if (can_expose_metadata)
                     {
                         chassert(lock != nullptr);
-                        if (auto paths = table->tryGetDataPaths())
+                        std::optional<Strings> paths;
+                        try
+                        {
+                            paths = table->tryGetDataPaths();
+                        }
+                        catch (const Exception & e)
+                        {
+                            /// The paths may include those of other tables (`TimeSeries` targets), which may have failed to load.
+                            if (e.code() != ErrorCodes::ASYNC_LOAD_WAIT_FAILED)
+                                throw;
+                        }
+                        if (paths)
                         {
                             table_paths_array.reserve(paths->size());
                             for (const String & path : *paths)
