@@ -236,13 +236,13 @@ fi
 
 # Case S: Explicit tracing header row count cache partitioning
 echo "Case S: Explicit tracing header row count cache partitioning"
-url_trace_count="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(2)+WHERE+number+%3D+0+OR+getClientHTTPHeader('tracestate')+%3D+'vendor%3Dtwo'+FORMAT+CSV&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_count"
+url_trace_count="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+FROM+numbers(2)+WHERE+number+%3D+0+OR+getClientHTTPHeader(%27tracestate%27)+%3D+%27vendor%3Dtwo%27+FORMAT+CSV&allow_get_client_http_header=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_count"
 $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_trace_count', 'CSV', 'x UInt64', 'none', headers('tracestate' = 'vendor=one'))"
 $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_trace_count', 'CSV', 'x UInt64', 'none', headers('tracestate' = 'vendor=two'))"
 
 # Case T: Explicit tracing header schema inference partitioning
 echo "Case T: Explicit tracing header schema inference partitioning"
-url_trace_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1+AS+col1%2C+if(getClientHTTPHeader('tracestate')+%3D+'vendor%3Dtwo'%2C+'string_val'%2C+'100')+AS+col2+FORMAT+CSVWithNames&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_schema"
+url_trace_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1+AS+col1%2C+if(getClientHTTPHeader(%27tracestate%27)+%3D+%27vendor%3Dtwo%27%2C+%27string_val%27%2C+%27100%27)+AS+col2+FORMAT+CSVWithNames&allow_get_client_http_header=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_schema"
 $CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'CSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=one')) FORMAT TSV" | cut -f1,2
 $CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'CSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=two')) FORMAT TSV" | cut -f1,2
 
