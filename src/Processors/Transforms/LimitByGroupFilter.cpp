@@ -7,6 +7,7 @@
 #include <Processors/IProcessor.h>
 #include <base/PackedStringRef.h>
 #include <base/arithmeticOverflow.h>
+#include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/Exception.h>
@@ -122,20 +123,59 @@ private:
     size_t position = 0;
 };
 
-/// Bounds the bytes that the rows `[start_row, start_row + num_rows)` can copy into the key arena: their values
-/// plus a length prefix per key column, which serialized keys write.
+/// The stride of the rows that `estimateSerializedBytes` serializes. Serializing every row would cost as
+/// much as hashing them, while the rows of a chunk mostly share the paths and types that make their
+/// serialized form larger than their memory, so a sample of the rows estimates the others.
+constexpr size_t serialized_bytes_sample_step = 256;
+
+/// Estimates the bytes that the serialized values of the rows `[start_row, start_row + num_rows)` of `column`
+/// take, from every `serialized_bytes_sample_step`-th row, starting with the first. Every sampled value is
+/// serialized into a scratch arena and rolled back, so the scratch holds one value at a time. Requires at
+/// least one row. Only keys of dynamic structure need it, so the call stays out of the estimates of the
+/// other keys.
+NO_INLINE size_t estimateSerializedBytes(const IColumn & column, size_t start_row, size_t num_rows)
+{
+    chassert(num_rows > 0);
+    Arena scratch;
+    const IColumn::SerializationSettings settings;
+    size_t sampled_rows = 0;
+    size_t sampled_bytes = 0;
+    for (size_t row = start_row; row < start_row + num_rows; row += serialized_bytes_sample_step)
+    {
+        const char * begin = nullptr;
+        const size_t value_bytes = column.serializeValueIntoArena(row, scratch, begin, &settings).size();
+        scratch.rollback(value_bytes);
+        sampled_bytes += value_bytes;
+        ++sampled_rows;
+    }
+
+    size_t scaled_bytes = 0;
+    if (common::mulOverflow(sampled_bytes, num_rows, scaled_bytes))
+        return std::numeric_limits<size_t>::max();
+    return scaled_bytes / sampled_rows;
+}
+
+/// Estimates the bytes that the rows `[start_row, start_row + num_rows)` can copy into the key arena. A
+/// serialized key writes the value of each column with a length prefix, so a column takes about its memory
+/// plus a prefix per row. A column of dynamic structure (`JSON`, `Dynamic`) also writes into every value what
+/// its values share in the column, such as the path of a `JSON` value or the type of a `Dynamic` one, so its
+/// serialized size is estimated from sampled rows as well, and the larger estimate counts.
 size_t estimateKeyBytes(const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows)
 {
-    size_t bytes = num_rows * key_columns.size() * sizeof(UInt64);
+    size_t bytes = 0;
     for (const auto * column : key_columns)
     {
+        size_t column_bytes = num_rows * sizeof(UInt64);
         if (start_row == 0 && num_rows == column->size())
-            bytes += column->byteSize();
+            column_bytes += column->byteSize();
         else
         {
             for (size_t row = start_row; row < start_row + num_rows; ++row)
-                bytes += column->byteSizeAt(row);
+                column_bytes += column->byteSizeAt(row);
         }
+        if (column->hasDynamicStructure())
+            column_bytes = std::max(column_bytes, estimateSerializedBytes(*column, start_row, num_rows));
+        bytes += column_bytes;
     }
     return bytes;
 }
