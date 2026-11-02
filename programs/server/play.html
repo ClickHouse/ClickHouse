@@ -10540,7 +10540,11 @@ function checkCredentials() {
     /// The indication this request is about to produce belongs to the tuple it is sent with.
     checked_connection = connectionTuple();
     const [server_address, user, password] = [url_elem.value, user_elem.value, password_elem.value];
-    getServerStatus(server_address, user, password).then(json => {
+    /// Admitted like the query of a run (`admitRunQuery`): the check is a query of the user, so with
+    /// `max_concurrent_queries_for_user = 1` an implicit-user probe in flight would make the server
+    /// reject it with `TOO_MANY_SIMULTANEOUS_QUERIES`, and valid credentials would be shown as failed.
+    admitRunQuery(server_address, new AbortController().signal,
+        () => getServerStatus(server_address, user, password)).then(json => {
         if (json && !user && json.u) rememberImplicitUser(server_address, json.u);
         if (current_check_credentials_request_num == check_credentials_request_num) {
             if (json) {

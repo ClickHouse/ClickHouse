@@ -83,7 +83,9 @@ function makeStorage() {
 /// for the autofill detection (`isAutofilled`), which reports the field as autofilled while
 /// `autofilled` is set.
 function makeField() {
-    const field = { value: '', autofilled: false, classList: { add() {}, remove() {} } };
+    const classes = new Set();
+    const field = { value: '', autofilled: false, classList: {
+        add(c) { classes.add(c); }, remove(c) { classes.delete(c); }, contains: c => classes.has(c) } };
     field.matches = selector => selector === ':autofill' && field.autofilled;
     return field;
 }
@@ -642,6 +644,59 @@ scenario('run-and-store-share-one-probe', async js => {
     assertEqual(ctx.fetched.filter(f => String(f.options.body).includes('currentUser()')).length, 1, 'the probes are coalesced');
     assertEqual(ctx.stored.length, 1, 'the login is offered to the password manager');
     assertEqual(ctx.stored[0].id, 'alice', 'remembered under the implicit user');
+});
+
+/// The check of the connection fields (`checkCredentials`) is a query of the user too: with
+/// `max_concurrent_queries_for_user = 1` a check sent while the implicit-user probe after a Run is in
+/// flight is rejected with `TOO_MANY_SIMULTANEOUS_QUERIES`, and valid credentials would be shown as
+/// failed. The check must be sent only after the probe has settled, and show the credentials as valid.
+scenario('credentials-check-waits-for-probe', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.url_elem.value = 'http://host:8123/';
+    ctx.user_elem.value = '';
+    ctx.password_elem.value = 'secret';
+    ctx.server = ctx.url_elem.value;
+    const fetch = ctx.fetch;
+    let in_flight = 0;
+    let rejected = 0;
+    let release_probe;
+    const probe_held = new Promise(resolve => { release_probe = resolve; });
+    let probe_started = false;
+    ctx.fetch = async (url, options) => {
+        if (in_flight) {
+            ++rejected;
+            ctx.fetched.push({ url, options });
+            return { ok: false, status: 500, headers: { get: () => null }, json: async () => ({}), text: async () => 'TOO_MANY_SIMULTANEOUS_QUERIES' };
+        }
+        ++in_flight;
+        try {
+            const is_probe = !probe_started;
+            probe_started = true;
+            const response = await fetch(url, options);
+            if (is_probe) await probe_held;
+            return response;
+        } finally {
+            --in_flight;
+        }
+    };
+    let dropdowns = 0;
+    ctx.openConnectionDropdown = () => { ++dropdowns; };
+    const probe = vm.runInContext("learnImplicitUser(server, 'secret')", ctx);
+    await settle();
+    assertEqual(ctx.fetched.length, 1, 'the probe is in flight');
+    vm.runInContext('checkCredentials()', ctx);
+    await settle();
+    assertEqual(ctx.fetched.length, 1, 'no credential check while the probe is in flight');
+    release_probe();
+    assertEqual(await probe, 'alice', 'the probe learns the implicit user');
+    await settle();
+    assertEqual(ctx.fetched.length, 2, 'the credential check is sent once the probe has settled');
+    assertEqual(rejected, 0, 'no query is rejected for the single slot');
+    assertEqual(ctx.user_elem.classList.contains('ok'), true, 'the valid credentials are shown as valid');
+    assertEqual(ctx.user_elem.classList.contains('fail'), false, 'and not as failed');
+    assertEqual(dropdowns, 0, 'the connection menu is not opened');
 });
 
 /// A Download and a database-panel query (`auxiliaryQuery`) are queries of the user too, so with
