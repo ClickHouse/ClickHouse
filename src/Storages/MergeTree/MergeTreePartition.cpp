@@ -191,13 +191,6 @@ namespace
             hash.update(result.size());
             hash.update(result.data(), result.size());
         }
-        void operator() (const NumberLiteral & x) const
-        {
-            UInt8 type = Field::Types::Number;
-            hash.update(type);
-            hash.update(x.value.size());
-            hash.update(x.value.data(), x.value.size());
-        }
         void operator() (const bool & x) const
         {
             UInt8 type = Field::Types::Bool;
@@ -206,16 +199,42 @@ namespace
         }
     };
 
-}
-
-MergeTreePartition::MergeTreePartition(Row value_) : value(std::move(value_))
-{
     /// During INSERT, partition values are extracted from columns via `column->get()`,
     /// which produces UInt64 Fields for Bool columns (ColumnUInt8 → NearestFieldType → UInt64).
     /// But the query path (ALTER TABLE DROP/DETACH/ATTACH PARTITION) uses `convertFieldToType`,
     /// which faithfully produces Bool-typed Fields. Since `LegacyFieldVisitorHash` hashes
     /// Bool (type tag 28) differently from UInt64 (type tag 1), partition IDs won't match.
-    /// We cannot change the INSERT path or the hash without breaking existing partition IDs on disk.
+    /// We cannot change the INSERT path or the hash without breaking existing partition IDs on disk,
+    /// so normalize Bool → UInt64 recursively to cover Tuple/Array/Map containers.
+    void normalizeBoolFields(Field & field)
+    {
+        if (field.getType() == Field::Types::Bool)
+        {
+            field = field.safeGet<UInt64>();
+        }
+        else if (field.getType() == Field::Types::Tuple)
+        {
+            auto & tuple = field.safeGet<Tuple>();
+            for (auto & elem : tuple)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Array)
+        {
+            auto & array = field.safeGet<Array>();
+            for (auto & elem : array)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Map)
+        {
+            auto & map = field.safeGet<Map>();
+            for (auto & elem : map)
+                normalizeBoolFields(elem);
+        }
+    }
+}
+
+MergeTreePartition::MergeTreePartition(Row value_) : value(std::move(value_))
+{
     for (auto & field : value)
         normalizeBoolFields(field);
 }
@@ -372,8 +391,9 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
     return res;
 }
 
-void MergeTreePartition::serializeText(const Block & partition_key_sample, WriteBuffer & out, const FormatSettings & format_settings) const
+void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const
 {
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
 
     // In some cases we create empty parts and then value is empty.
@@ -407,38 +427,13 @@ void MergeTreePartition::serializeText(const Block & partition_key_sample, Write
     }
 }
 
-String MergeTreePartition::serializeToString(const Block & partition_key_sample) const
+String MergeTreePartition::serializeToString(StorageMetadataPtr metadata_snapshot) const
 {
     static FormatSettings format_settings{};
 
     WriteBufferFromOwnString out;
-    serializeText(partition_key_sample, out, format_settings);
+    serializeText(metadata_snapshot, out, format_settings);
     return out.str();
-}
-
-String MergeTreePartition::serializeToString(const IMergeTreeDataPart & part) const
-{
-    PartitionKeySamples partition_key_samples;
-    return serializeToString(partition_key_samples.get(part));
-}
-
-const Block & PartitionKeySamples::get(const IMergeTreeDataPart & part)
-{
-    if (part.info.isPatch())
-    {
-        patch_sample = part.getMetadataSnapshot()->getPartitionKey().sample_block;
-        return patch_sample;
-    }
-
-    if (table != &part.storage)
-    {
-        auto context = part.storage.getContext();
-        const auto metadata = part.storage.getInMemoryMetadataPtr(context, false);
-        table_sample = MergeTreePartition::adjustPartitionKey(metadata, context).sample_block;
-        table = &part.storage;
-    }
-
-    return table_sample;
 }
 
 void MergeTreePartition::load(const IMergeTreeDataPart & part)

@@ -120,12 +120,9 @@ ObjectAttributes getObjectTags(
         const auto & error = tag_outcome.GetError();
         throw S3Exception(
             error.GetErrorType(),
-            "Failed to get object tags of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-            key,
-            bucket,
+            "Failed to get object tags: {}. HTTP response code: {}.{}",
             error.GetMessage(),
-            error.GetResponseCode(),
-            error.GetErrorType(),
+            static_cast<size_t>(error.GetResponseCode()),
             getAuthenticationErrorHint(error.GetErrorType()));
     }
 
@@ -154,12 +151,9 @@ ObjectInfo getObjectInfoIfExists(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key,
-        bucket,
+        "Failed to get object info: {}. HTTP response code: {}.{}",
         error.GetMessage(),
-        error.GetResponseCode(),
-        error.GetErrorType(),
+        static_cast<size_t>(error.GetResponseCode()),
         getAuthenticationErrorHint(error.GetErrorType()));
 }
 
@@ -180,12 +174,9 @@ ObjectInfo getObjectInfo(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key,
-        bucket,
+        "Failed to get object info: {}. HTTP response code: {}.{}",
         error.GetMessage(),
-        error.GetResponseCode(),
-        error.GetErrorType(),
+        static_cast<size_t>(error.GetResponseCode()),
         getAuthenticationErrorHint(error.GetErrorType()));
 }
 
@@ -216,7 +207,7 @@ bool objectExists(
 
     throw S3Exception(error.GetErrorType(),
         "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key, bucket, error.GetMessage(), error.GetResponseCode(),
+        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()),
         error.GetErrorType(), getAuthenticationErrorHint(error.GetErrorType()));
 }
 

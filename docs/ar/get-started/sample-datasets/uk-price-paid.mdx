@@ -1,192 +1,205 @@
 ---
-description: 'استكشف ClickHouse من خلال بيانات أسعار العقارات في المملكة المتحدة'
+description: 'تعرّف على كيفية استخدام الإسقاطات لتحسين أداء الاستعلامات التي تشغّلها
+  بشكل متكرر باستخدام مجموعة بيانات العقارات في المملكة المتحدة، التي تتضمن بيانات
+  عن الأسعار المدفوعة للعقارات في إنجلترا وويلز'
 sidebarTitle: 'أسعار العقارات في المملكة المتحدة'
-title: 'استعلامات تحليلية على بيانات أسعار العقارات في المملكة المتحدة'
+slug: /getting-started/example-datasets/uk-price-paid
+title: 'مجموعة بيانات أسعار العقارات في المملكة المتحدة'
 doc_type: 'guide'
 keywords: ['مجموعة بيانات نموذجية', 'عقارات المملكة المتحدة', 'بيانات نموذجية', 'العقارات', 'البدء']
 ---
 
-في هذا الدليل العملي، ستستكشف ClickHouse باستخدام <Tooltip headline="مجموعة بيانات UK Property Price" tip="تحتوي على بيانات HM Land Registry © حقوق التاج (Crown copyright) وحقوق قاعدة البيانات 2021. هذه البيانات مرخّصة بموجب Open Government Licence v3.0." cta="زيارة المصدر" href="https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads">مجموعة بيانات UK Property Price</Tooltip>، التي تضم بيانات أسعار بيع العقارات في إنجلترا وويلز منذ عام 1995.
+import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
 
-## المتطلبات الأساسية {#prerequisites}
+تتضمن هذه البيانات الأسعار المدفوعة لشراء العقارات في إنجلترا وويلز. والبيانات متاحة منذ عام 1995، ويبلغ حجم مجموعة البيانات في صورتها غير المضوطة نحو 4 GiB (بينما لن تشغل في ClickHouse سوى نحو 278 MiB).
 
-لإكمال هذا الدليل العملي، ستحتاج إلى ما يلي:
+* المصدر: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* وصف الحقول: https://www.gov.uk/guidance/about-the-price-paid-data
+* تتضمن بيانات HM Land Registry © حقوق النشر التابعة للتاج وحق قاعدة البيانات لعام 2021. وهذه البيانات مرخّصة بموجب Open Government Licence v3.0.
 
-* [حساب ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-uk-property-price) (تحصل على رصيد مجاني بقيمة 300 دولار عند التسجيل)
-* [خدمة ClickHouse Cloud](/ar/get-started/setup/cloud#1-create-a-clickhouse-service)
+<div id="create-table">
+  ## إنشاء الجدول
+</div>
 
-<Steps titleSize="h2">
-  <Step title="أنشئ الجدول">
-    1. اختر **SQL console** من القائمة الجانبية اليسرى
-    2. انقر على علامة التبويب **+** بجوار أيقونة الصفحة الرئيسية لإنشاء استعلام جديد
-    3. في محرر SQL، اكتب الاستعلام التالي، ثم انقر على **Run**:
+```sql
+CREATE DATABASE uk;
 
-    ```sql
-    CREATE DATABASE uk;
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
 
-    CREATE TABLE uk.uk_price_paid
-    (
-      price UInt32,
-      date Date,
-      postcode1 LowCardinality(String),
-      postcode2 LowCardinality(String),
-      type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
-      is_new UInt8,
-      duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
-      addr1 String,
-      addr2 String,
-      street LowCardinality(String),
-      locality LowCardinality(String),
-      town LowCardinality(String),
-      district LowCardinality(String),
-      county LowCardinality(String)
-    )
-    ENGINE = MergeTree
-    ORDER BY (postcode1, postcode2, addr1, addr2);
-    ```
+<div id="preprocess-import-data">
+  ## معالجة البيانات مسبقًا وإدراجها
+</div>
 
-    <Tip>
-      انتبه إلى `ORDER BY (postcode1, postcode2, addr1, addr2)` الذي يحدد كيفية ترتيب ClickHouse
-      للبيانات على القرص. إن اختيار مفتاح أساسي فعّال في ClickHouse يتوافق مع أنماط الوصول لديك أمر بالغ الأهمية لأداء الاستعلامات وكفاءة التخزين.
-      راجع [&quot;اختيار مفتاح أساسي&quot;](/ar/concepts/best-practices/choosing-a-primary-key) لمزيد من التفاصيل.
-    </Tip>
+سنستخدم الدالة `url` لدفق البيانات إلى ClickHouse. نحتاج أولًا إلى إجراء بعض المعالجة المسبقة على البيانات الواردة، ويشمل ذلك:
 
-    راجع [https://www.gov.uk](https://www.gov.uk/guidance/about-the-price-paid-data) للاطلاع على وصف الحقول.
-  </Step>
+* تقسيم `postcode` إلى عمودين مختلفين: `postcode1` و`postcode2`، لأن ذلك أفضل للتخزين والاستعلامات
+* تحويل الحقل `time` إلى تاريخ لأنه لا يحتوي إلا على الوقت 00:00
+* تجاهل الحقل [UUid](/ar/reference/data-types/uuid) لأننا لا نحتاج إليه في التحليل
+* تحويل `type` و`duration` إلى حقول `Enum` أسهل قراءةً باستخدام الدالة [transform](/ar/reference/functions/regular-functions/other-functions#transform)
+* تحويل الحقل `is_new` من سلسلة نصية مكوّنة من محرف واحد (`Y`/`N`) إلى حقل [UInt8](/ar/reference/data-types/int-uint) بقيمة 0 أو 1
+* حذف العمودين الأخيرين لأن قيمتهما متطابقة دائمًا (وهي 0)
 
-  <Step title="عالِج البيانات مسبقًا ثم أدرِجها" id="preprocess-import-data">
-    يمكنك استخدام الدالة `url` لتدفق البيانات إلى ClickHouse، لكن يلزم إجراء بعض المعالجة المسبقة أولاً.
-    يُدرج الاستعلام أدناه أكثر من 25 مليون صف في الجدول `uk_price_paid`، وينفّذ خطوات المعالجة المسبقة التالية:
+تقوم الدالة `url` بدفق البيانات من خادم الويب إلى جدول ClickHouse الخاص بك. يُدرِج الأمر التالي 5 ملايين صف في جدول `uk_price_paid`:
 
-    * يقسّم الحقل `postcode` إلى عمودين منفصلين هما `postcode1` و`postcode2`، وهو الأنسب للتخزين والاستعلامات
-    * يحوّل الحقل `time` إلى تاريخ لأنه لا يحتوي إلا على الوقت `00:00`
-    * يتجاهل حقل [UUID](/ar/reference/data-types/uuid) لأنه لا حاجة إليه في التحليل
-    * يحوّل الحقلين `type` و`duration` إلى حقلين من النوع `Enum` أسهل قراءةً باستخدام الدالة [transform](/ar/reference/functions/regular-functions/other-functions#transform)
-    * يحوّل الحقل `is_new` من سلسلة نصية مكوّنة من حرف واحد (`Y`/`N`) إلى حقل من النوع [UInt8](/ar/reference/data-types/int-uint) قيمته 0 أو 1
-    * يحذف العمودين الأخيرين لأن جميع قيمهما متطابقة (وهي 0)
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
 
-    ```sql
-    INSERT INTO uk.uk_price_paid
-    SELECT
-      toUInt32(price_string) AS price,
-      parseDateTimeBestEffortUS(time) AS date,
-      splitByChar(' ', postcode)[1] AS postcode1,
-      splitByChar(' ', postcode)[2] AS postcode2,
-      transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
-      b = 'Y' AS is_new,
-      transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
-      addr1,
-      addr2,
-      street,
-      locality,
-      town,
-      district,
-      county
-    FROM url(
-      'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
-      'CSV',
-      'uuid_string String,
-      price_string String,
-      time String,
-      postcode String,
-      a String,
-      b String,
-      c String,
-      addr1 String,
-      addr2 String,
-      street String,
-      locality String,
-      town String,
-      district String,
-      county String,
-      d String,
-      e String'
-    ) SETTINGS max_http_get_redirects=10;
-    ```
+انتظر حتى يتم إدراج البيانات — فقد يستغرق ذلك دقيقة أو دقيقتين حسب سرعة الشبكة.
 
-    انتظر حتى يكتمل إدراج البيانات، وقد يستغرق ذلك دقيقة أو دقيقتين تبعًا لسرعة الشبكة.
-  </Step>
+<div id="validate-data">
+  ## تحقّق من البيانات
+</div>
 
-  <Step title="تحقّق من صحة البيانات" id="validate-data">
-    لنتحقق من نجاح العملية بالاطلاع على عدد الصفوف التي أُدرجت:
+لنتأكد من أن العملية نجحت عبر معرفة عدد الصفوف التي أُدرجت:
 
-    ```sql
-    SELECT count()
-    FROM uk.uk_price_paid
-    ```
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
 
-    في وقت تشغيل هذا الاستعلام، كانت مجموعة البيانات تضم 27,450,499 صفًا. لنتحقق الآن من حجم التخزين الذي يشغله الجدول في ClickHouse:
+وقت تشغيل هذا الاستعلام، كانت مجموعة البيانات تحتوي على 27,450,499 صفًا. لنرَ حجم تخزين هذا الجدول في ClickHouse:
 
-    ```sql
-    SELECT formatReadableSize(total_bytes)
-    FROM system.tables
-    WHERE name = 'uk_price_paid'
-    ```
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
 
-    لاحظ أن حجم الجدول لا يتجاوز 221.43 MiB، في حين يبلغ حجم مجموعة البيانات الأصلية قبل ضغطها نحو 4 GiB.
-    يوفّر ClickHouse ضغطًا ممتازًا للبيانات دون أي إعداد مسبق، كما يتيح لك [ضبط الضغط بدقة أكبر لكل عمود](/ar/reference/statements/create/table#column_compression_codec) عند الحاجة.
-  </Step>
+لاحظ أن حجم الجدول لا يتجاوز 221.43 MiB!
 
-  <Step title="نفّذ بعض الاستعلامات" id="run-queries">
-    بعد تحميل البيانات، جرّب الاستعلامات التالية لتلمس مدى السرعة التي تُعيد بها الاستعلامات التحليلية نتائجها.
-    يحسب الاستعلام أدناه متوسط السعر لكل سنة على مستوى البيانات كاملةً:
+<div id="run-queries">
+  ## نفّذ بعض الاستعلامات
+</div>
 
-    ```sql
-    SELECT
-      toYear(date) AS year,
-      round(avg(price)) AS price,
-      bar(price, 0, 1000000, 80
-    )
-    FROM uk.uk_price_paid
-    GROUP BY year
-    ORDER BY year
-    ```
+لننفّذ بعض الاستعلامات لتحليل البيانات:
 
-    يطبّق الاستعلام التالي عامل تصفية لحساب متوسط السعر لكل سنة في لندن:
+<div id="average-price">
+  ### الاستعلام 1: متوسط السعر لكل سنة
+</div>
 
-    ```sql
-    SELECT
-      toYear(date) AS year,
-      round(avg(price)) AS price,
-      bar(price, 0, 2000000, 100
-    )
-    FROM uk.uk_price_paid
-    WHERE town = 'LONDON'
-    GROUP BY year
-    ORDER BY year
-    ```
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
 
-    يبدو أن أمرًا ما قد طرأ على أسعار المنازل في عام 2020! لكن هذا على الأرجح ليس مفاجئًا...
+<div id="average-price-london">
+  ### الاستعلام 2. متوسط السعر سنويًا في لندن
+</div>
 
-    يُظهر الاستعلام التالي الأحياء الأعلى سعرًا:
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
 
-    ```sql
-    SELECT
+يبدو أن شيئًا ما حدث لأسعار المنازل في عام 2020! لكن ذلك على الأرجح ليس مفاجئًا...
+
+<div id="most-expensive-neighborhoods">
+  ### الاستعلام 3. الأحياء الأكثر تكلفة
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
       town,
       district,
       count() AS c,
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
-    FROM uk.uk_price_paid
-    WHERE date >= '2020-01-01'
-    GROUP BY
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
       town,
       district
-    HAVING c >= 100
-    ORDER BY price DESC
-    LIMIT 100
-    ```
-  </Step>
-</Steps>
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
 
-## الخطوات التالية {#next-steps}
+<div id="speeding-up-queries-with-projections">
+  ## تسريع الاستعلامات باستخدام الإسقاطات
+</div>
 
-في هذا الدليل العملي، أنشأت جدولًا، وأجريت معالجة مسبقة لبيانات أسعار العقارات في المملكة المتحدة ثم حمّلتها إلى ClickHouse، وبعد ذلك
-نفّذت بعض الاستعلامات التحليلية على تلك البيانات.
+يمكننا تسريع هذه الاستعلامات باستخدام الإسقاطات. راجع [&quot;الإسقاطات&quot;](/ar/concepts/features/projections/projections) للاطلاع على أمثلة تتعلق بمجموعة البيانات هذه.
 
-يمكنك الآن:
+<div id="playground">
+  ### جرّبه في Playground
+</div>
 
-* التعرّف على كيفية تسريع هذه الاستعلامات باستخدام الإسقاطات. راجع [&quot;الإسقاطات&quot;](/ar/concepts/features/projections/projections) للاطلاع على أمثلة تستخدم مجموعة البيانات نفسها.
-* التعمّق أكثر في [المفاهيم الأساسية](/ar/concepts/core-concepts) في ClickHouse
-* استكشاف [أفضل الممارسات](/ar/concepts/best-practices) في ClickHouse
-* استكشاف [مجموعات بيانات نموذجية](/ar/get-started/sample-datasets) أخرى
+تتوفر مجموعة البيانات أيضًا في [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX).

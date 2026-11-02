@@ -1,7 +1,6 @@
 #include <DataTypes/validateGroupByKeyType.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -28,7 +27,8 @@ void validateGroupByKeyType(const DataTypePtr & key_type, bool allow_suspicious_
                 "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
     };
 
-    forEachInTypeTree(*key_type, check);
+    check(*key_type);
+    key_type->forEachChild(check);
 }
 
 void validateWindowKeyType(const DataTypePtr & key_type, std::string_view clause)

@@ -2,6 +2,7 @@
 -- no-random-settings, no-random-merge-tree-settings, no-parallel-replicas: Explain output may differ
 
 SET max_threads = 16;
+SET enable_analyzer = 1;
 
 -- { echo }
 

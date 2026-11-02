@@ -15,7 +15,7 @@ database (CIDB) that records which lines each test covered in recent nightly run
 ```
 NightlyCoverage CI job (nightly at 02:13 UTC)
   └─ Build amd_per_test_coverage binary
-       (-DWITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON)
+       (WITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON -finstrument-functions-after-inlining)
   └─ Run stateless tests including --long (clickhouse-test --collect-per-test-coverage)
        ├─ SYSTEM SET COVERAGE TEST 'test_name'  (before each test)
        └─ SYSTEM SET COVERAGE TEST ''           (flush + reset counters)
@@ -255,7 +255,7 @@ Found 275 relevant tests
 
 Defined in `ci/workflows/nightly_coverage.py`. Runs nightly at 02:13 UTC on master.
 Uses `coverage_build_jobs[1]` = `Build (amd_llvm_coverage_per_test)` which builds
-with `-DWITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON`.
+with `WITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON -finstrument-functions-after-inlining`.
 
 **Long tests are included** (removed `--no-long` from per-test coverage runs in
 `ci/jobs/functional_tests.py`), so tests like `00900_long_parquet` and

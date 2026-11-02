@@ -33,16 +33,19 @@ public:
     size_t getNumberOfArguments() const final { return 0; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const final { return false; }
-    /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
-    bool useDefaultImplementationForSparseColumns() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
-    bool useDefaultImplementationForNothing() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "([Any]) -> UUID";
+        FunctionArgumentDescriptors mandatory_args;
+        FunctionArgumentDescriptors optional_args{
+            {"expr", nullptr, nullptr, "Arbitrary expression"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeUUID>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

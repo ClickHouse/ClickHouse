@@ -1,4 +1,5 @@
 -- Fixed only for analyzer
+SET enable_analyzer=1;
 
 INSERT INTO TABLE FUNCTION file(database() || '.test-data.json', JSON)
     SELECT number numeric FROM numbers(10);

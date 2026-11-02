@@ -29,10 +29,6 @@ void validateSupportedColumns(
     ColumnsDescription & columns,
     const StorageObjectStorageConfiguration & configuration);
 
-/// Throws `ACCESS_DENIED` if the client of `object_storage` uses the server's own Azure identity and the session of
-/// `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
-void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
-
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 
@@ -43,33 +39,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt,
     bool allow_page_cache = true);
-
-/// Fetches the metadata of an object to read (e.g. by an S3 `HEAD` request), when its size and ETag are not
-/// known from listing or table metadata. Every metadata request of the read path must go through these
-/// functions, so that it is accounted in `ObjectStorageMetadataFetchedForRead` and `ObjectStorageMetadataFetchMicroseconds`.
-ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags);
-/// Same as `getObjectMetadataForRead`, but returns `std::nullopt` if the object does not exist.
-std::optional<ObjectMetadata> tryGetObjectMetadataForRead(
-    const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags);
-
-/// Joins an object's path under a storage prefix (a namespace, or a data source description).
-/// A leading separator is dropped only when there is a prefix to join under, since `fs::path`
-/// would otherwise treat the path as absolute and discard the prefix. An empty prefix leaves the
-/// path as written: on a filesystem-backed storage that separator is what makes a path absolute.
-std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path);
-
-/// Inverse of `joinPathUnderPrefix` under the same prefix. An empty prefix again needs care, for
-/// the opposite reason: `fs::relative` of an absolute path against an empty base is the empty
-/// path, which would lose the value rather than leave it.
-std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path);
-
-std::string formatObjectPath(
-    const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info);
-/// `joinPathUnderPrefix` is not injective under a non-empty prefix: a key with a leading separator
-/// and the same key without it render to the same `_path` value, so `relativizePathUnderPrefix`
-/// alone cannot tell which of them produced a given value. Returns every key that could have, so
-/// that a caller which needs the original key can see when the answer is not unique.
-Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);

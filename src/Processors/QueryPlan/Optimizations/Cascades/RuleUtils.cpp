@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -18,10 +17,6 @@ bool isTopNSort(const IQueryPlanStep & step)
 
 bool isDistributionPassthroughStep(const IQueryPlanStep & step)
 {
-    /// A preliminary `DISTINCT` deduplicates each stream on its own, so it is correct on any split of its
-    /// input and keeps the order within a stream.
-    if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
-        return distinct->isPreliminary();
     return typeid_cast<const ExpressionStep *>(&step) != nullptr
         || typeid_cast<const FilterStep *>(&step) != nullptr
         || typeid_cast<const BuildRuntimeFilterStep *>(&step) != nullptr;
