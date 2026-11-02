@@ -308,7 +308,7 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
-            if (!has_month && !has_day_of_month)
+            if (!has_month || !has_day_of_month)
             {
                 week_date_format = true;
                 day_of_year_format = false;
@@ -363,7 +363,7 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
-            if (!has_month && !has_day_of_month)
+            if (!has_month || !has_day_of_month)
             {
                 week_date_format = true;
                 day_of_year_format = false;
