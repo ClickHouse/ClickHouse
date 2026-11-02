@@ -16,7 +16,6 @@ CREATE ROW POLICY 04098_p3 ON t_row_policy_or USING id = 5 AS permissive TO ALL;
 -- The OR chain is converted to IN by LogicalExpressionOptimizerPass applied to the
 -- row policy filter in buildFilterInfo.
 
-SET enable_analyzer = 1;
 SELECT 'analyzer';
 SELECT replaceRegexpOne(explain, '__set_UInt64_\\d+_\\d+', '__set_UInt64_')
 FROM (EXPLAIN actions = 1 SELECT id FROM t_row_policy_or)

@@ -142,17 +142,17 @@ def test_s3_resource_request_granularity():
 
     writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     write_bytes_before = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_cost from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     write_budget_before = int(
         node.query(
-            "select budget from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='fifo'"
+            "select budget from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     node.query(
@@ -160,17 +160,17 @@ def test_s3_resource_request_granularity():
     )
     writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     write_bytes_after = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_cost from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     write_budget_after = int(
         node.query(
-            "select budget from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='fifo'"
+            "select budget from system.scheduler where resource='network_write' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
 
@@ -189,17 +189,17 @@ def test_s3_resource_request_granularity():
 
     reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     read_bytes_before = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_cost from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     read_budget_before = int(
         node.query(
-            "select budget from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='fifo'"
+            "select budget from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     node.query(
@@ -207,17 +207,17 @@ def test_s3_resource_request_granularity():
     )
     reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     read_bytes_after = int(
         node.query(
-            "select dequeued_cost from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_cost from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
     read_budget_after = int(
         node.query(
-            "select budget from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='fifo'"
+            "select budget from system.scheduler where resource='network_read' and path ilike '%/admin/%' and type='request_queue'"
         ).strip()
     )
 
@@ -391,12 +391,12 @@ def test_merge_workload():
 
     reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_merges/%' and type='request_queue'"
         ).strip()
     )
     writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_merges/%' and type='request_queue'"
         ).strip()
     )
 
@@ -407,12 +407,12 @@ def test_merge_workload():
 
     reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_merges/%' and type='request_queue'"
         ).strip()
     )
     writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_merges/%' and type='request_queue'"
         ).strip()
     )
 
@@ -441,22 +441,22 @@ def test_merge_workload_override():
 
     prod_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_merges/%' and type='request_queue'"
         ).strip()
     )
     prod_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_merges/%' and type='request_queue'"
         ).strip()
     )
     dev_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_merges/%' and type='request_queue'"
         ).strip()
     )
     dev_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_merges/%' and type='request_queue'"
         ).strip()
     )
 
@@ -471,22 +471,22 @@ def test_merge_workload_override():
 
     prod_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_merges/%' and type='request_queue'"
         ).strip()
     )
     prod_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_merges/%' and type='request_queue'"
         ).strip()
     )
     dev_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_merges/%' and type='request_queue'"
         ).strip()
     )
     dev_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_merges/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_merges/%' and type='request_queue'"
         ).strip()
     )
 
@@ -517,12 +517,12 @@ def test_mutate_workload():
 
     reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_mutations/%' and type='request_queue'"
         ).strip()
     )
     writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_mutations/%' and type='request_queue'"
         ).strip()
     )
 
@@ -531,12 +531,12 @@ def test_mutate_workload():
 
     reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/sys_mutations/%' and type='request_queue'"
         ).strip()
     )
     writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/sys_mutations/%' and type='request_queue'"
         ).strip()
     )
 
@@ -570,22 +570,22 @@ def test_mutation_workload_override():
 
     prod_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_mutations/%' and type='request_queue'"
         ).strip()
     )
     prod_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_mutations/%' and type='request_queue'"
         ).strip()
     )
     dev_reads_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_mutations/%' and type='request_queue'"
         ).strip()
     )
     dev_writes_before = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_mutations/%' and type='request_queue'"
         ).strip()
     )
 
@@ -596,22 +596,22 @@ def test_mutation_workload_override():
 
     prod_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/prod_mutations/%' and type='request_queue'"
         ).strip()
     )
     prod_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/prod_mutations/%' and type='request_queue'"
         ).strip()
     )
     dev_reads_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/dev_mutations/%' and type='request_queue'"
         ).strip()
     )
     dev_writes_after = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_mutations/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/dev_mutations/%' and type='request_queue'"
         ).strip()
     )
 
@@ -643,12 +643,12 @@ def test_merge_workload_change():
 
         reads_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges/%' and type='request_queue'"
             ).strip()
         )
         writes_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges/%' and type='request_queue'"
             ).strip()
         )
 
@@ -659,12 +659,12 @@ def test_merge_workload_change():
 
         reads_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_merges/%' and type='request_queue'"
             ).strip()
         )
         writes_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_merges/%' and type='request_queue'"
             ).strip()
         )
 
@@ -697,12 +697,12 @@ def test_mutation_workload_change():
 
         reads_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations/%' and type='request_queue'"
             ).strip()
         )
         writes_before = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations/%' and type='request_queue'"
             ).strip()
         )
 
@@ -711,12 +711,12 @@ def test_mutation_workload_change():
 
         reads_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_read' and path ilike '%/{env}_mutations/%' and type='request_queue'"
             ).strip()
         )
         writes_after = int(
             node.query(
-                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations/%' and type='fifo'"
+                f"select dequeued_requests from system.scheduler where resource='network_write' and path ilike '%/{env}_mutations/%' and type='request_queue'"
             ).strip()
         )
 
@@ -739,7 +739,7 @@ def test_create_workload():
     def do_checks():
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='request_queue'"
             )
             == "2\n"
         )
@@ -751,7 +751,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='request_queue'"
             )
             == "2\n"
         )
@@ -763,7 +763,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='request_queue'"
             )
             == "2\n"
         )
@@ -891,19 +891,19 @@ def test_resource_read_and_write():
 
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/admin/%' and type='request_queue'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/development/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/development/%' and type='request_queue'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/production/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_write' and path ilike '%/production/%' and type='request_queue'"
         )
         == "1\n"
     )
@@ -928,19 +928,19 @@ def test_resource_read_and_write():
 
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/admin/%' and type='request_queue'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/development/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/development/%' and type='request_queue'"
         )
         == "1\n"
     )
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/production/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/production/%' and type='request_queue'"
         )
         == "1\n"
     )
@@ -965,7 +965,7 @@ def test_resource_any_disk():
 
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='request_queue'"
         )
         == "1\n"
     )
@@ -974,7 +974,7 @@ def test_resource_any_disk():
 
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='request_queue'"
         )
         == "1\n"
     )
@@ -1106,7 +1106,7 @@ def test_throw_on_unknown_workload():
 
     assert (
         node.query(
-            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+            "select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='request_queue'"
         )
         == "0\n"
     )

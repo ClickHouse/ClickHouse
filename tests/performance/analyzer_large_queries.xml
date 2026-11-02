@@ -1,0 +1,59 @@
+<!--
+    Queries whose time is almost all planning, on the 105-column schema of `hits_100m_single`: `IN` lists of 200 K integer
+    literals on the leading key column (2.2 MB of text) and of 200 K strings on `URL` (9 MB); 100 nested subqueries, each
+    `SELECT *` plus one derived column and one filter (super-linear in the depth; `query_plan_max_optimizations_to_apply = 0`
+    lifts the limit); 400 CTEs read through one `UNION ALL`. TPC-style CTE planning is covered by
+    `tpcds*.xml`.
+    Every query has a key condition that leaves 86 granules (`CounterID = 1629`) or none (`CounterID = 0`), so the time is
+    parsing, analysis, plan build and optimisation (with index analysis) and pipeline build. The texts are generated in shell
+    queries (in milliseconds) and sent with curl, settings in the URL, so no client binary is timed; each checks its result.
+    The setup sends every text once to the server itself (`INSERT INTO FUNCTION url`, the same text generated in SQL;
+    `framing_output_format` and `wait_end_of_query` make the server log the query before it answers) and checks in
+    `system.query_log` that it read no more rows than expected and spent most of its time in planning (`Query*Microseconds`).
+    Per server and invocation: no table data written, about 1 GB of memory per literal-list query; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="30">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<fill_query>SELECT throwIf(count() != 100000000 OR countIf(CounterID = 1629) != 696473 OR countIf(CounterID = 0 OR CounterID >= 1000000000) != 0) FROM hits_100m_single</fill_query>
+
+<fill_query>SELECT 1 FORMAT Null SETTINGS log_comment = 'analyzer_large_queries.start'</fill_query>
+<fill_query>INSERT INTO FUNCTION url(concat('http://127.0.0.1:', toString(getServerPort('http_port')), '/?max_query_size=16777216&amp;framing_output_format=JSONEachPacketString&amp;wait_end_of_query=1&amp;log_comment=analyzer_large_queries.in_int'), 'RawBLOB', 'q String')
+    SELECT concat('SELECT count() FROM hits_100m_single WHERE CounterID IN (1629,', arrayStringConcat(range(1000000000, 1000199999), ','), '\n)')</fill_query>
+<fill_query>INSERT INTO FUNCTION url(concat('http://127.0.0.1:', toString(getServerPort('http_port')), '/?max_query_size=16777216&amp;framing_output_format=JSONEachPacketString&amp;wait_end_of_query=1&amp;log_comment=analyzer_large_queries.in_string'), 'RawBLOB', 'q String')
+    SELECT concat('SELECT count() FROM hits_100m_single WHERE CounterID = 0 AND URL IN (', arrayStringConcat(arrayMap(i -> concat('\'http://example.com/catalog/item-', toString(i), '.html\''), range(1, 200001)), ','), ')')</fill_query>
+<fill_query>INSERT INTO FUNCTION url(concat('http://127.0.0.1:', toString(getServerPort('http_port')), '/?max_parser_depth=10000&amp;max_subquery_depth=1000&amp;query_plan_max_optimizations_to_apply=0&amp;framing_output_format=JSONEachPacketString&amp;wait_end_of_query=1&amp;log_comment=analyzer_large_queries.nested'), 'RawBLOB', 'q String')
+    SELECT concat('SELECT sum(c100) FROM (', arrayFold((acc, i) -> concat('SELECT *, c', toString(i - 1), ' + 1 AS c', toString(i), ' FROM (', acc, ') WHERE c', toString(i - 1), ' != ', toString(i)), range(1, 101), 'SELECT *, WatchID AS c0 FROM hits_100m_single'), ') WHERE CounterID = 0')</fill_query>
+<fill_query>INSERT INTO FUNCTION url(concat('http://127.0.0.1:', toString(getServerPort('http_port')), '/?framing_output_format=JSONEachPacketString&amp;wait_end_of_query=1&amp;log_comment=analyzer_large_queries.ctes'), 'RawBLOB', 'q String')
+    SELECT concat('WITH ', arrayStringConcat(arrayMap(i -> concat('m', toString(i), ' AS (SELECT count() AS c FROM hits_100m_single WHERE CounterID = 0 AND RegionID = ', toString(i), ')'), range(1, 401)), ', '), ' SELECT sum(c) FROM (', arrayStringConcat(arrayMap(i -> concat('SELECT c FROM m', toString(i)), range(1, 401)), ' UNION ALL '), ')')</fill_query>
+<fill_query>SYSTEM FLUSH LOGS</fill_query>
+<fill_query>
+    SELECT throwIf(uniqExact(log_comment) != 4 OR count() != 4
+        OR countIf(read_rows > if(log_comment = 'analyzer_large_queries.in_int', 704512, 0)) != 0
+        OR countIf(ProfileEvents['QueryParseMicroseconds'] + ProfileEvents['QueryAnalysisMicroseconds'] + ProfileEvents['QueryPlanBuildMicroseconds']
+            + ProfileEvents['QueryPlanOptimizeMicroseconds'] + ProfileEvents['QueryPipelineBuildMicroseconds'] &lt; query_duration_ms * 500) != 0,
+        'a generated query is missing in query_log, read too many rows or spent less than half of its time in planning')
+    FROM system.query_log
+    WHERE type = 'QueryFinish' AND log_comment IN ('analyzer_large_queries.in_int', 'analyzer_large_queries.in_string', 'analyzer_large_queries.nested', 'analyzer_large_queries.ctes')
+        AND event_time_microseconds > (SELECT max(event_time_microseconds) FROM system.query_log WHERE log_comment = 'analyzer_large_queries.start')
+</fill_query>
+
+<query type="shell"><![CDATA[test "$({ printf 'SELECT count() FROM hits_100m_single WHERE CounterID IN (1629,'; seq -s, 1000000000 1000199998; printf ')'; } | ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_query_size=16777216" --data-binary @-)" = 696473]]></query>
+<query type="shell"><![CDATA[test "$({ printf "SELECT count() FROM hits_100m_single WHERE CounterID = 0 AND URL IN ('http://example.com/catalog/item-"; seq -s ".html','http://example.com/catalog/item-" 200000 | tr -d '\n'; printf ".html')"; } | ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_query_size=16777216" --data-binary @-)" = 0]]></query>
+<query type="shell"><![CDATA[
+q='SELECT *, WatchID AS c0 FROM hits_100m_single'
+for i in $(seq 100); do q="SELECT *, c$((i - 1)) + 1 AS c$i FROM ($q) WHERE c$((i - 1)) != $i"; done
+test "$(printf 'SELECT sum(c100) FROM (%s) WHERE CounterID = 0' "$q" | ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_parser_depth=10000&max_subquery_depth=1000&query_plan_max_optimizations_to_apply=0" --data-binary @-)" = 0
+]]></query>
+<query type="shell"><![CDATA[
+printf -v w 'm%d AS (SELECT count() AS c FROM hits_100m_single WHERE CounterID = 0 AND RegionID = %d), ' $(seq 400 | sed 's/.*/& &/')
+printf -v u 'SELECT c FROM m%d UNION ALL ' $(seq 400)
+test "$(printf 'WITH %s SELECT sum(c) FROM (%s)' "${w%, }" "${u% UNION ALL }" | ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}" --data-binary @-)" = 0
+]]></query>
+
+</test>

@@ -4,21 +4,20 @@ sidebarTitle: 'Отзывы покупателей Amazon'
 slug: /getting-started/example-datasets/amazon-reviews
 title: 'Отзывы покупателей Amazon'
 doc_type: 'guide'
-keywords: ['отзывы Amazon', 'датасет отзывов покупателей', 'данные электронной коммерции', 'пример датасета', 'начало работы']
+keywords: ['Amazon reviews', 'customer reviews dataset', 'e-commerce data', 'example dataset', 'getting started']
 ---
 
 import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
 
-Этот набор данных содержит более 150 млн отзывов покупателей о товарах Amazon. Данные хранятся в сжатых алгоритмом snappy файлах Parquet в AWS S3; их общий размер составляет 49 ГБ (в сжатом виде). Давайте по шагам разберем, как вставить эти данные в ClickHouse.
+Этот набор данных содержит более 150 млн отзывов покупателей о товарах Amazon. Данные хранятся в сжатых алгоритмом snappy файлах Parquet в AWS S3; их общий размер составляет 49 ГБ (в сжатом виде).
 
 <Note>
-  Приведенные ниже запросы были выполнены на инстансе **Production** в ClickHouse Cloud. Подробнее см. в разделе
-  [&quot;Характеристики Песочницы ClickHouse&quot;](/ru/get-started/sample-datasets/playground#specifications).
+  Вы можете попробовать загрузить данные в самоуправляемый ClickHouse или ClickHouse Cloud. Если у вас ещё нет аккаунта, вы можете начать с бесплатного [пробного периода ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-amazon-reviews).
 </Note>
 
-<div id="loading-the-dataset">
-  ## Загрузка набора данных
-</div>
+Давайте по шагам разберём, как вставить эти данные в ClickHouse.
+
+## Загрузка набора данных {#loading-the-dataset}
 
 1. Не выполняя вставку данных в ClickHouse, мы можем выполнять запросы к ним напрямую. Давайте выберем несколько строк, чтобы посмотреть, как они выглядят:
 
@@ -118,17 +117,17 @@ ENGINE = MergeTree
 ORDER BY (review_date, product_category)
 ```
 
-3. Следующая команда `INSERT` использует табличную функцию `s3Cluster`, которая позволяет параллельно обрабатывать несколько файлов S3, задействуя все узлы вашего кластера. Мы также используем подстановочный знак, чтобы выполнить вставку всех файлов, имена которых начинаются с `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet`:
+3. Следующая команда `INSERT` использует табличную функцию [`s3Cluster`](/ru/reference/functions/table-functions/s3Cluster), которая распределяет файлы S3 между узлами вашего кластера для параллельного чтения.
+
+В ClickHouse Cloud ваш кластер называется `default`, поэтому команду можно выполнить в приведённом виде. На самоуправляемом сервере замените `default` на имя вашего кластера. Если же вы используете один сервер, вместо этого воспользуйтесь табличной функцией [`s3`](/ru/reference/functions/table-functions/s3): уберите первый аргумент, чтобы вызов начинался с URL.
+
+Мы используем подстановочный знак в URL, чтобы вставить все соответствующие файлы отзывов.
 
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
 FROM s3Cluster('default', 
 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet', NOSIGN)
 ```
-
-<Tip>
-  В ClickHouse Cloud имя кластера — `default`. Замените `default` на имя вашего кластера...или используйте табличную функцию `s3` (вместо `s3Cluster`), если у вас нет кластера.
-</Tip>
 
 5. Этот запрос выполняется быстро — в среднем около 300 000 строк в секунду. Примерно через 5 минут вы должны увидеть, что все строки вставлены:
 
@@ -159,9 +158,7 @@ FROM s3Cluster('default',
 
 Исходные данные занимали около 70G, но в ClickHouse в сжатом виде они занимают примерно 30G.
 
-<div id="example-queries">
-  ## Примеры запросов
-</div>
+## Примеры запросов {#example-queries}
 
 7. Выполним несколько запросов. Вот 10 самых полезных отзывов в наборе данных:
 

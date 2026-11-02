@@ -68,6 +68,11 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     return {};
 }
 
+bool DataTypeTuple::hasValidElementNames(const Strings & names)
+{
+    return !checkTupleNames(names).has_value();
+}
+
 DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
     : elems(elems_), names(names_), has_explicit_names(true)
 {
@@ -405,13 +410,11 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 }
 
 
-void DataTypeTuple::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeTuple::doCloneWithChildren(const DataTypes & new_children) const
 {
-    for (const auto & elem : elems)
-    {
-        callback(*elem);
-        elem->forEachChild(callback);
-    }
+    if (has_explicit_names)
+        return std::make_shared<DataTypeTuple>(new_children, names);
+    return std::make_shared<DataTypeTuple>(new_children);
 }
 
 void DataTypeTuple::updateHashImpl(SipHash & hash) const

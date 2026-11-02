@@ -1,0 +1,14 @@
+two parts
+w advanced	1	{"a":100}	100	{"d":{"a":100}}
+w advanced	2	{"a":101}	101	{"d":{"a":101}}
+w chunked	1	{"a":100}	100	{"d":{"a":100}}
+w chunked	2	{"a":101}	101	{"d":{"a":101}}
+c advanced	1	{"a":100}	100	{"d":{"a":100}}
+c advanced	2	{"a":101}	101	{"d":{"a":101}}
+merged
+w advanced	1	{"a":100}	100	{"d":{"a":100}}
+w advanced	2	{"a":101}	101	{"d":{"a":101}}
+w chunked	1	{"a":100}	100	{"d":{"a":100}}
+w chunked	2	{"a":101}	101	{"d":{"a":101}}
+c advanced	1	{"a":100}	100	{"d":{"a":100}}
+c advanced	2	{"a":101}	101	{"d":{"a":101}}
