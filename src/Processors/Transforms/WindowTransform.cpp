@@ -22,13 +22,6 @@ Columns materializeColumns(Columns columns, const std::vector<bool> & should_mat
     return columns;
 }
 
-std::vector<size_t> argumentColumnIndices(const Block & input_header, const WindowFunctionDescription & function)
-{
-    return function.argument_names
-        | std::views::transform([&](const String & argument_name) { return input_header.getPositionByName(argument_name); })
-        | std::ranges::to<std::vector<size_t>>();
-}
-
 WindowFunctionWorkspace createWorkspace(const Block & input_header, const WindowFunctionDescription & function, size_t result_column)
 {
     WindowFunctionWorkspace workspace;
@@ -47,13 +40,12 @@ WindowFunctionWorkspace createWorkspace(const Block & input_header, const Window
     return workspace;
 }
 
-GeneralWindowFunctionSlot createSlot(const Block & input_header, const WindowFunctionDescription & function, GeneralWindowFunctionPtr general, size_t result_column, Arena & states_arena)
+GeneralWindowFunctionSlot createSlot(GeneralWindowFunctionPtr general, size_t function_index, Arena & states_arena)
 {
     GeneralWindowFunctionSlot slot{
         .function = std::move(general),
         .state = nullptr,
-        .result_column = result_column,
-        .arguments = WindowArguments(argumentColumnIndices(input_header, function)),
+        .function_index = function_index,
     };
 
     if (slot.function->sizeOfState() != 0)
@@ -75,23 +67,6 @@ void destroyStates(std::vector<GeneralWindowFunctionSlot> & general_functions, s
         ws.aggregate_function->destroy(ws.aggregate_function_state.data());
 }
 
-std::vector<WindowArguments::Block> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
-{
-    Int64 first_position = batch_start_position - batch_start.row;
-    for (int64_t block_number = batch_start.block; block_number > blocks.begin().block; --block_number)
-        first_position -= blocks.blockAt(block_number - 1).rows_count;
-
-    std::vector<WindowArguments::Block> argument_blocks;
-    argument_blocks.reserve(blocks.end().block - blocks.begin().block);
-    for (int64_t block_number = blocks.begin().block; block_number < blocks.end().block; ++block_number)
-    {
-        const SlidingBlock & block = blocks.blockAt(block_number);
-        argument_blocks.push_back(WindowArguments::Block{.columns = block.materialized_columns, .first_position = first_position, .end_position = first_position + block.rows_count});
-        first_position += block.rows_count;
-    }
-    return argument_blocks;
-}
-
 }
 
 WindowTransform::WindowTransform(
@@ -100,6 +75,7 @@ WindowTransform::WindowTransform(
     : IProcessor({input_header_}, {output_header_})
     , params(WindowTransformParams::create(*input_header_, window_description_, functions))
     , indexes(params)
+    , arguments(params.input_header, functions)
     , frame(params)
 {
     for (const auto & function : functions)
@@ -110,16 +86,16 @@ WindowTransform::WindowTransform(
     {
         general_functions.reserve(functions.size());
         workspaces.reserve(functions.size());
-        for (size_t result_column = 0; result_column < functions.size(); ++result_column)
+        for (size_t function_index = 0; function_index < functions.size(); ++function_index)
         {
-            const WindowFunctionDescription & function = functions[result_column];
+            const WindowFunctionDescription & function = functions[function_index];
             if (auto general = asGeneralWindowFunction(function.aggregate_function))
             {
-                general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
+                general_functions.push_back(createSlot(std::move(general), function_index, states_arena));
             }
             else
             {
-                workspaces.push_back(createWorkspace(params.input_header, function, result_column));
+                workspaces.push_back(createWorkspace(params.input_header, function, function_index));
                 if (!arena && function.aggregate_function->allocatesMemoryInArena())
                     arena = std::make_unique<Arena>();
             }
@@ -213,12 +189,13 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto rows_count = static_cast<int64_t>(chunk.getNumRows());
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
     auto index = indexes.calculate(materialized_columns, rows_count);
+    arguments.add(materialized_columns, rows_count);
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
     partition.advance(blocks);
 
     block.result_columns.resize(general_functions.size() + workspaces.size());
     for (const auto & slot : general_functions)
-        block.result_columns[slot.result_column] = slot.function->getResultType()->createColumn();
+        block.result_columns[slot.function_index] = slot.function->getResultType()->createColumn();
     for (const auto & ws : workspaces)
         block.result_columns[ws.result_column] = ws.aggregate_function->getResultType()->createColumn();
     for (auto & column : block.result_columns)
@@ -283,17 +260,9 @@ void WindowTransform::evaluateRowsBatch()
     if (bounds.rows == 0)
         return;
 
-    const bool has_arguments = std::ranges::any_of(general_functions, [](const GeneralWindowFunctionSlot & slot) { return slot.arguments.size() != 0; });
-    if (has_arguments)
-    {
-        const std::vector<WindowArguments::Block> argument_blocks = collectArgumentBlocks(blocks, batch_start, bounds.row[0]);
-        for (auto & slot : general_functions)
-            slot.arguments.setBlocks(argument_blocks);
-    }
-
     const SlidingBlock & block = blocks.blockAt(batch_start.block);
     for (const auto & slot : general_functions)
-        slot.function->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot.result_column]);
+        slot.function->evaluate(slot.state, bounds, arguments.view(slot.function_index), *block.result_columns[slot.function_index]);
 
     const bool block_complete = batch_start.row + bounds.rows == block.rows_count;
     if (block_complete)
@@ -318,6 +287,7 @@ void WindowTransform::startNextPartition()
     const RowNumber partition_start = partition.bounds().end.location;
     chassert(peers.current().location == partition_start);
 
+    arguments.startPartition(partition.bounds().end.row_index_in_partition);
     partition.beginAt(blocks, partition_start);
     peers.enterPartition(partition_start);
     frame.enterPartition(partition_start);
@@ -411,7 +381,10 @@ void WindowTransform::releaseUnusedBlocks()
 {
     const auto first_used_block = std::min(prev_frame.start.location.block, peers.current().location.block);
     while (blocks.begin().block < first_used_block)
+    {
         blocks.pop();
+        arguments.pop();
+    }
 }
 
 }
