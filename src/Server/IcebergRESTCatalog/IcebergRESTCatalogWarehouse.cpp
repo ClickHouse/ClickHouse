@@ -6,19 +6,27 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 #if USE_AWS_S3
-#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
+#include <IO/S3/URI.h>
 #endif
 
 #include <fmt/format.h>
 
 namespace DB
 {
+
+#if USE_AWS_S3
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+}
+#endif
 
 namespace ErrorCodes
 {
@@ -45,26 +53,32 @@ S3Location parseS3Location(const String & location)
     return S3Location{.bucket = location.substr(S3_SCHEME.size(), slash - S3_SCHEME.size()), .key = location.substr(slash + 1)};
 }
 
-/// S3 client of the warehouse. Same arguments as `s3(url, extra_credentials(role_arn = ...))`.
+/// S3 client of the warehouse. It accesses the bucket with the warehouse credential.
 /// The endpoint comes from `url_scheme_mappers` in the server config, AWS by default.
 ObjectStoragePtr createObjectStorage([[maybe_unused]] ContextPtr context, [[maybe_unused]] const IcebergRESTCatalogWarehouseDefinition & definition)
 {
 #if USE_AWS_S3
     const auto & credential = definition.credential;
-    auto credentials_ast = makeASTFunction("extra_credentials");
-    const std::initializer_list<std::pair<String, String>> credential_args
-        = {{"role_arn", credential.role_arn}, {"external_id", credential.external_id}, {"role_session_name", credential.role_session_name}};
-    for (const auto & [key, value] : credential_args)
-    {
-        if (!value.empty())
-            credentials_ast->arguments->children.push_back(
-                makeASTFunction("equals", make_intrusive<ASTLiteral>(key), make_intrusive<ASTLiteral>(value)));
-    }
+    S3::URI url(definition.base_location);
 
-    ASTs args{make_intrusive<ASTLiteral>(definition.base_location), credentials_ast};
-    auto configuration = std::make_shared<StorageS3Configuration>();
-    StorageObjectStorageConfiguration::initialize(*configuration, args, context, /*with_table_structure*/ false);
-    return configuration->createObjectStorage(context, /*is_readonly*/ false, std::nullopt);
+    auto s3_settings = std::make_unique<S3Settings>();
+    s3_settings->request_settings.updateFromSettings(context->getSettingsRef(), /*if_changed*/ false);
+    /// The server signs the STS `AssumeRole` call with its own identity, then uses the assumed role for S3.
+    s3_settings->auth_settings[S3AuthSetting::role_arn] = credential.role_arn;
+    s3_settings->auth_settings[S3AuthSetting::external_id] = credential.external_id;
+    s3_settings->auth_settings[S3AuthSetting::role_session_name] = credential.role_session_name;
+
+    auto client = getClient(url, *s3_settings, context, /*for_disk_s3*/ false);
+    return std::make_shared<S3ObjectStorage>(
+        std::move(client),
+        std::move(s3_settings),
+        url,
+        S3Capabilities{},
+        /*key_generator*/ nullptr,
+        /*disk_name*/ "IcebergRESTCatalog",
+        /*for_disk_s3*/ false,
+        /*credentials_refresh_callback*/ S3ObjectStorage::S3CredentialsRefreshCallback{},
+        /*client_restricts_server_credentials*/ context->shouldRestrictUserQueryS3Credentials());
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The Iceberg REST catalog needs S3 support, but this build has none");
 #endif
