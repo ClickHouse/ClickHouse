@@ -1,0 +1,43 @@
+-- An ASOF JOIN whose right ASOF key is Nullable and carries the lazy replication wrapper.
+-- A Nullable column always satisfies isLazyReplicationUseful, and the arrayJoin on the right side
+-- replicates it, so the join build side receives the ASOF key wrapped in ColumnReplicated.
+-- grace_hash is not covered on purpose: it materializes the block at its entry point and rejects ASOF.
+-- The oracle is row equality against the enable_lazy_columns_replication = 0 arm rather than the absence
+-- of an error, because reading the nested null map at the logical row index raises nothing, it silently
+-- keeps or drops the wrong rows.
+-- join_use_nulls is pinned because the stress workers set it to 1, which returns NULL instead of the type default for the unmatched rows.
+
+DROP TABLE IF EXISTS t05233_left;
+DROP TABLE IF EXISTS t05233_right;
+
+CREATE TABLE t05233_left (k UInt8, ts DateTime) ENGINE = Memory;
+CREATE TABLE t05233_right (k UInt8, ts Nullable(DateTime), tag String) ENGINE = Memory;
+
+INSERT INTO t05233_left VALUES (1, '2025-01-01 00:10:00'), (2, '2025-01-01 00:10:00'), (3, '2025-01-01 00:10:00'), (4, '2025-01-01 00:10:00');
+
+-- k = 1 has a NULL key next to a usable one, k = 2 has only a NULL key, k = 3 has two usable keys,
+-- k = 4 has no right row at all, so a NULL key and a missing row stay distinguishable in the output.
+INSERT INTO t05233_right VALUES (1, '2025-01-01 00:00:00', 'r1a'), (1, NULL, 'r1n'), (2, NULL, 'r2n'), (3, '2025-01-01 00:00:00', 'r3a'), (3, '2025-01-01 00:05:00', 'r3b'), (3, NULL, 'r3n');
+
+SELECT '-- hash';
+{% for i in range(2) -%}
+SELECT l.k, l.ts, r.ts, r.tag, r.dup
+FROM t05233_left AS l
+ASOF LEFT JOIN (SELECT k, ts, tag, arrayJoin([0, 0]) AS dup FROM t05233_right) AS r
+ON l.k = r.k AND l.ts >= r.ts
+ORDER BY l.k, l.ts, r.ts, r.tag, r.dup
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_convert_outer_join_to_inner_join = 0, query_plan_optimize_join_order_limit = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, compile_expressions = 0, join_use_nulls = 0;
+{% endfor %}
+
+SELECT '-- parallel_hash';
+{% for i in range(2) -%}
+SELECT l.k, l.ts, r.ts, r.tag, r.dup
+FROM t05233_left AS l
+ASOF LEFT JOIN (SELECT k, ts, tag, arrayJoin([0, 0]) AS dup FROM t05233_right) AS r
+ON l.k = r.k AND l.ts >= r.ts
+ORDER BY l.k, l.ts, r.ts, r.tag, r.dup
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1, query_plan_join_swap_table = 0, query_plan_convert_outer_join_to_inner_join = 0, query_plan_optimize_join_order_limit = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, compile_expressions = 0, join_use_nulls = 0;
+{% endfor %}
+
+DROP TABLE t05233_left;
+DROP TABLE t05233_right;

@@ -58,6 +58,26 @@ bool SQLDatabase::isDataLakeCatalogDatabase() const
     return deng == DatabaseEngineValues::DDataLakeCatalog;
 }
 
+bool SQLDatabase::isClusterDatabase() const
+{
+    return deng == DatabaseEngineValues::DCluster;
+}
+
+bool SQLDatabase::isRemoteDatabase() const
+{
+    return deng == DatabaseEngineValues::DRemote || deng == DatabaseEngineValues::DRemoteSecure;
+}
+
+bool SQLDatabase::isOverlayDatabase() const
+{
+    return deng == DatabaseEngineValues::DOverlay;
+}
+
+bool SQLDatabase::isProxyDatabase() const
+{
+    return isClusterDatabase() || isRemoteDatabase() || isOverlayDatabase();
+}
+
 bool SQLDatabase::isReplicatedOrSharedDatabase() const
 {
     return isReplicatedDatabase() || isSharedDatabase();
@@ -215,6 +235,12 @@ bool SQLBase::isFileEngine(const bool as_alias) const
 {
     return engine.value == TableEngineValues::File
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::File);
+}
+
+bool SQLBase::isSummingMergeTree(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::SummingMergeTree
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::SummingMergeTree);
 }
 
 bool SQLBase::isJoinEngine(const bool as_alias) const

@@ -27,7 +27,7 @@ single_worker_instance = cluster.add_instance(
         "configs/macros.xml",
         "configs/single_message_broker_worker.xml",
     ],
-    # parallel_view_processing=0 so the per-consumer sources share one pipeline thread and run serially.
+    # parallel_view_processing=0: the insert into materialized views gets a single pipeline thread.
     user_configs=["configs/users_serial_views.xml"],
     with_rabbitmq=True,
     stay_alive=True,
@@ -776,8 +776,8 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     # The blocked-REFRESH cycle waits for delivery from the AMQP looping task, which runs in the same
     # pool; with a single worker it never gets CPU while the streaming task waits, so the source must
     # drive the loop itself, otherwise the REFRESH permit is spent on a zero-row timeout and the
-    # backlog stays queued. Two consumers exercise the shared-pipeline-thread case: the sources run
-    # serially, so each must get its own drain budget rather than the first exhausting a shared one.
+    # backlog stays queued. Two consumers: each source must get its own drain budget rather than the
+    # first exhausting a shared one.
     node = single_worker_instance
     table = "rabbitmq_starve"
     exchange = "starve_exchange"
@@ -786,7 +786,7 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     # backlog, not cut it off at a fixed wall-clock budget. This is deterministic (no whole-cycle cap
     # to race) and regresses if the self-driving cycle ever reintroduces a finite whole-cycle deadline
     # for flush=0 (a paced single-worker drain of a larger backlog would then be truncated mid-cycle).
-    # num_consumers=2 keeps the serial per-source path (each source drives its own backlog).
+    # num_consumers=2: each source drives its own backlog.
     setup_consuming_table(
         table, exchange, node=node, flush_interval_ms=0, num_consumers=2
     )

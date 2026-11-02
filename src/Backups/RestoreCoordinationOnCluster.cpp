@@ -343,7 +343,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
             if (code == Coordination::Error::ZNODEEXISTS)
                 lock_acquired = table_unique_id == zk->get(restore_lock_path);
             else
-                zkutil::KeeperException::fromPath(code, restore_lock_path);
+                throw zkutil::KeeperException::fromPath(code, restore_lock_path);
         });
     return lock_acquired;
 }
