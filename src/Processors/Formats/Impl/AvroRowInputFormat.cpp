@@ -955,7 +955,7 @@ size_t AvroDeserializer::readUnionIndex(avro::Decoder & decoder, size_t num_bran
 {
     size_t index = decoder.decodeUnionIndex();
     if (index >= num_branches)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary: got {}, the union has {} branches", index, num_branches);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary: got {}, the number of branches is {}", index, num_branches);
     return index;
 }
 

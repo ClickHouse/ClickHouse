@@ -1,5 +1,9 @@
 index out of boundary
-index out of boundary
-index out of boundary
-index out of boundary
-index out of boundary
+Union index out of boundary: got 10, the number of branches is 3
+INCORRECT_DATA
+Union index out of boundary: got 10, the number of branches is 2
+INCORRECT_DATA
+Union index out of boundary: got 10, the number of branches is 2
+INCORRECT_DATA
+Union index out of boundary: got 1, the number of branches is 1
+INCORRECT_DATA
