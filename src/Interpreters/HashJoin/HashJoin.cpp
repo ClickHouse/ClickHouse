@@ -29,12 +29,14 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
+#include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
 
@@ -2876,8 +2878,13 @@ void HashJoin::onBuildPhaseFinish()
 bool HashJoin::canPreserveLeftBlockOrderOnEveryServer() const
 {
     /// `ConcurrentHashJoin` uses a two-level map, which preserves the order, for every key but these.
-    return canPreserveLeftBlockOrder()
-        && (!table_join->allowParallelHashJoin() || (data->type != Type::key8 && data->type != Type::key16));
+    if (table_join->allowParallelHashJoin() && (data->type == Type::key8 || data->type == Type::key16))
+        return false;
+    /// Another server may spill the join, and only some joins can be spilled without losing the order.
+    if (table_join->spillingDependsOnServer() && GraceHashJoin::isSupported(table_join)
+        && !SpillingHashJoin::fallbackCanPreserveLeftBlockOrder(table_join, nullptr, right_sample_block, any_take_last_row))
+        return false;
+    return canPreserveLeftBlockOrder();
 }
 
 bool HashJoin::hasPostBuildPhase() const

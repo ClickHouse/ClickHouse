@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS r;
 DROP TABLE IF EXISTS rj;
 DROP TABLE IF EXISTS l8;
 DROP TABLE IF EXISTS r8;
+DROP TABLE IF EXISTS lf;
+DROP TABLE IF EXISTS rf;
 
 CREATE TABLE l (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 128;
 SYSTEM STOP MERGES l;
@@ -24,6 +26,11 @@ CREATE TABLE l8 (k UInt8) ENGINE = MergeTree ORDER BY k;
 INSERT INTO l8 SELECT number % 200 FROM numbers(1000);
 CREATE TABLE r8 (k UInt8, s String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO r8 SELECT number * 2, toString(number) FROM numbers(100);
+
+CREATE TABLE lf (k Float64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO lf SELECT number % 200 FROM numbers(1000);
+CREATE TABLE rf (k Float64, s String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO rf SELECT number * 2, toString(number) FROM numbers(100);
 
 CREATE TABLE rj (k UInt32, s String) ENGINE = Join(ANY, LEFT, k);
 INSERT INTO rj SELECT number * 2, toString(number) FROM numbers(2500);
@@ -90,6 +97,20 @@ SELECT arraySort(groupArray(trim(explain))) FROM (
     SETTINGS join_algorithm = 'parallel_hash', max_threads = 1
 ) WHERE explain LIKE '%ReadType%';
 
+-- A replica with memory limits spills the join when `max_bytes_ratio_before_external_join` is set, and a
+-- spilled join keeps the order only for keys whose equality survives the switch to `MergeJoin`, which
+-- `Float64` keys do not.
+SELECT 'left join, spilling';
+SELECT arraySort(groupArray(trim(explain))) FROM (
+    EXPLAIN actions = 1
+    SELECT lf.k, rf.s FROM lf LEFT JOIN rf ON lf.k = rf.k ORDER BY lf.k LIMIT 5
+    SETTINGS max_bytes_ratio_before_external_join = 0.5
+) WHERE explain LIKE '%ReadType%';
+SELECT arraySort(groupArray(trim(explain))) FROM (
+    EXPLAIN actions = 1
+    SELECT lf.k, rf.s FROM lf LEFT JOIN rf ON lf.k = rf.k ORDER BY lf.k LIMIT 5
+) WHERE explain LIKE '%ReadType%';
+
 -- The virtual row bounds differ between replicas with different parts, so an inner join is read
 -- in order only when forced.
 SELECT 'inner join, order by';
@@ -128,3 +149,5 @@ DROP TABLE r;
 DROP TABLE rj;
 DROP TABLE l8;
 DROP TABLE r8;
+DROP TABLE lf;
+DROP TABLE rf;

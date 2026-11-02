@@ -413,35 +413,16 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 }
 
-bool SpillingHashJoin::canPreserveLeftBlockOrder() const
+bool SpillingHashJoin::fallbackCanPreserveLeftBlockOrder(
+    const std::shared_ptr<TableJoin> & table_join, const Block * left_header, const Block & right_header, bool any_take_last_row)
 {
-    return canPreserveLeftBlockOrderImpl(/* on_every_server */ false);
-}
-
-bool SpillingHashJoin::canPreserveLeftBlockOrderOnEveryServer() const
-{
-    return canPreserveLeftBlockOrderImpl(/* on_every_server */ true);
-}
-
-bool SpillingHashJoin::canPreserveLeftBlockOrderImpl(bool on_every_server) const
-{
-    /// The in-memory join processes the probe side when the build fits under the threshold, so it
-    /// must preserve the order on its own.
-    bool in_memory_join_preserves_order;
-    if (on_every_server)
-        in_memory_join_preserves_order = concurrent_join ? concurrent_join->canPreserveLeftBlockOrderOnEveryServer()
-                                                         : hash_join->canPreserveLeftBlockOrderOnEveryServer();
-    else
-        in_memory_join_preserves_order
-            = concurrent_join ? concurrent_join->preservesLeftBlockOrder() : hash_join->preservesLeftBlockOrder();
-
     /// Hash-key equality must survive the switch: the hash join matches the key's byte
     /// representation while MergeJoin matches with `compareAt`, and for some types the two
     /// disagree - floating point (`-0.0` == `+0.0`, NaNs with different payloads compare equal
     /// but hash differently), `JSON` and `Dynamic` (the hash depends on the physical layout) -
     /// also when nested. Crossing the spill threshold must not change the result, so such keys
     /// cannot take the order-preserving fallback (see `keyTypeBreaksHashSharding`).
-    auto keys_preserve_hash_equality = [this]
+    auto keys_preserve_hash_equality = [&]
     {
         auto keys_ok = [](const Names & key_names, const Block & header)
         {
@@ -456,17 +437,34 @@ bool SpillingHashJoin::canPreserveLeftBlockOrderImpl(bool on_every_server) const
         };
 
         const auto & on_clause = table_join->getOnlyClause();
-        return keys_ok(on_clause.key_names_left, *left_sample_block) && keys_ok(on_clause.key_names_right, right_sample_block);
+        return (!left_header || keys_ok(on_clause.key_names_left, *left_header)) && keys_ok(on_clause.key_names_right, right_header);
     };
 
     /// The spill fallback must be able to run as an order-preserving MergeJoin. `any_take_last_row`
     /// has no MergeJoin counterpart: it picks the first match in the right sort order instead.
-    bool merge_join_fallback_is_possible = MergeJoin::isSupported(table_join)
+    return MergeJoin::isSupported(table_join)
         && (table_join->strictness() == JoinStrictness::Any || table_join->strictness() == JoinStrictness::All)
         && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any)
         && keys_preserve_hash_equality();
+}
 
-    return in_memory_join_preserves_order && merge_join_fallback_is_possible;
+bool SpillingHashJoin::canPreserveLeftBlockOrder() const
+{
+    /// The in-memory join processes the probe side when the build fits under the threshold, so it
+    /// must preserve the order on its own.
+    bool in_memory_join_preserves_order
+        = concurrent_join ? concurrent_join->preservesLeftBlockOrder() : hash_join->preservesLeftBlockOrder();
+    return in_memory_join_preserves_order
+        && fallbackCanPreserveLeftBlockOrder(table_join, left_sample_block.get(), right_sample_block, any_take_last_row);
+}
+
+bool SpillingHashJoin::canPreserveLeftBlockOrderOnEveryServer() const
+{
+    /// Only the right keys are checked, as `HashJoin` does: the keys of both sides have a common type.
+    bool in_memory_join_preserves_order = concurrent_join ? concurrent_join->canPreserveLeftBlockOrderOnEveryServer()
+                                                          : hash_join->canPreserveLeftBlockOrderOnEveryServer();
+    return in_memory_join_preserves_order
+        && fallbackCanPreserveLeftBlockOrder(table_join, nullptr, right_sample_block, any_take_last_row);
 }
 
 void SpillingHashJoin::keepLeftPipelineInOrder()

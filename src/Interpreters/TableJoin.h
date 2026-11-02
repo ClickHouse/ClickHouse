@@ -170,6 +170,9 @@ private:
     /// Old behaviour of `max_rows_in_join` / `max_bytes_in_join`: they spill instead of capping the right side.
     const bool legacy_join_size_limits_trigger_spilling = false;
     const size_t max_bytes_before_external_join = 0;
+    /// `max_bytes_ratio_before_external_join` is resolved against the memory limits of each server, so another
+    /// server may spill a join that this one does not, or the other way round.
+    const bool spilling_depends_on_server = false;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
@@ -350,6 +353,7 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     bool legacyJoinSizeLimitsTriggerSpilling() const { return legacy_join_size_limits_trigger_spilling; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
+    bool spillingDependsOnServer() const { return spilling_depends_on_server; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }

@@ -232,6 +232,7 @@ TableJoin::TableJoin(
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
+    , spilling_depends_on_server(settings[Setting::max_bytes_ratio_before_external_join] != 0.)
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
@@ -267,6 +268,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
     , legacy_join_size_limits_trigger_spilling(settings.legacy_join_size_limits_trigger_spilling)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
+    , spilling_depends_on_server(settings.max_bytes_ratio_before_external_join != 0.)
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)

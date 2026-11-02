@@ -127,6 +127,11 @@ public:
     bool preservesLeftBlockOrder() const override { return keep_left_block_order; }
     bool canPreserveLeftBlockOrder() const override;
     bool canPreserveLeftBlockOrderOnEveryServer() const override;
+
+    /// Whether the order-preserving `MergeJoin` that a spilled join switches to can serve this join. Without
+    /// `left_header`, only the right keys are checked.
+    static bool fallbackCanPreserveLeftBlockOrder(
+        const std::shared_ptr<TableJoin> & table_join, const Block * left_header, const Block & right_header, bool any_take_last_row);
     void keepLeftPipelineInOrder() override;
 
     void onBuildPhaseFinish() override;
@@ -146,8 +151,6 @@ public:
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
-    bool canPreserveLeftBlockOrderImpl(bool on_every_server) const;
-
     SpillableAdapter<SpillingHashJoin> spillable{*this};
 
     enum class State

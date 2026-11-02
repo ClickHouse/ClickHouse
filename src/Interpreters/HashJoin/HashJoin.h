@@ -153,7 +153,8 @@ public:
 
     /// The left side is streamed through once, each row emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
-    /// Another server may choose `ConcurrentHashJoin`, whose single-level maps do not preserve the order.
+    /// Another server may choose `ConcurrentHashJoin`, whose single-level maps do not preserve the order, or
+    /// `SpillingHashJoin`.
     bool canPreserveLeftBlockOrderOnEveryServer() const override;
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,

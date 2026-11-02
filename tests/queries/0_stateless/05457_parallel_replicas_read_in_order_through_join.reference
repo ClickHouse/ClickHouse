@@ -34,6 +34,9 @@ left join engine, order by
 left join, parallel_hash
 ['ReadType: Default','ReadType: Default']
 ['ReadType: Default','ReadType: InOrder']
+left join, spilling
+['ReadType: Default','ReadType: Default']
+['ReadType: Default','ReadType: InOrder']
 inner join, order by
 ['ReadType: Default','ReadType: Default']
 0	0	0
