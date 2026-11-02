@@ -1,4 +1,4 @@
-"""Nightly native Mirai workflow for the ClickStack schema synchronization."""
+"""Nightly ClickHouse workflow for the ClickStack schema synchronization."""
 
 from praktika import Job, Workflow
 

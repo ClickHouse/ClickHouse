@@ -1,4 +1,4 @@
-"""Nightly Mirai job: synchronize ClickStack schemas from upstream HyperDX.
+"""Nightly ClickHouse job: synchronize ClickStack schemas from upstream HyperDX.
 
 The job refreshes the canonical English snippets and opens or updates one bot
 pull request when the upstream schema changes. It fails closed: a failed fetch,
