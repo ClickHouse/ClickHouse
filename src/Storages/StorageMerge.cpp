@@ -1056,6 +1056,10 @@ void ReadFromMerge::addCreatingAliasSets(QueryPipelineBuilder & pipeline)
             continue;
 
         set_pipelines.push_back(set_plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context)));
+
+        /// The processors of the set pipeline point to the steps of its plan, which `EXPLAIN ANALYZE` and the
+        /// step profiler look at, so the plan has to live as long as this step, the same as the child plans.
+        alias_set_plans.push_back(std::move(set_plan));
     }
 
     if (set_pipelines.empty())

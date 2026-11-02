@@ -360,6 +360,8 @@ private:
     /// built once for the whole read in front of the united pipeline of the children (`initializePipeline`),
     /// the same as a set of the outer query, instead of once per child table.
     PreparedSets alias_sets;
+    /// The plans which `addCreatingAliasSets` built the pipelines of `alias_sets` from.
+    std::vector<std::unique_ptr<QueryPlan>> alias_set_plans;
 
     std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_, PreparedSets & alias_sets_) const;
 
