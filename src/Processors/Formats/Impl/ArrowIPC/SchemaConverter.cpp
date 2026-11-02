@@ -622,6 +622,13 @@ buildField(
         type_offset = flatbuf::CreateInt(b, bits, is_signed).Union();
     };
 
+    auto make_timestamp = [&](flatbuf::TimeUnit unit, const std::string & time_zone)
+    {
+        auto tz_off = b.CreateString(time_zone);
+        type_type = flatbuf::Type_Timestamp;
+        type_offset = flatbuf::CreateTimestamp(b, unit, tz_off).Union();
+    };
+
     if (isBool(t))
     {
         type_type = flatbuf::Type_Bool;
@@ -640,7 +647,12 @@ buildField(
             case TypeIndex::Int16: case TypeIndex::Enum16: make_int(16, true); break;
             case TypeIndex::Int32: make_int(32, true); break;
             case TypeIndex::Int64: make_int(64, true); break;
-            case TypeIndex::DateTime: make_int(32, false); break;
+            case TypeIndex::DateTime:
+                if (settings.arrow.output_datetime_as_timestamp)
+                    make_timestamp(flatbuf::TimeUnit_SECOND, assert_cast<const DataTypeDateTime &>(*t).getTimeZone().getTimeZone());
+                else
+                    make_int(32, false);
+                break;
             case TypeIndex::Float32:
                 type_type = flatbuf::Type_FloatingPoint;
                 type_offset = flatbuf::CreateFloatingPoint(b, flatbuf::Precision_SINGLE).Union();
@@ -667,14 +679,11 @@ buildField(
             case TypeIndex::DateTime64:
             {
                 const auto & dt64 = assert_cast<const DataTypeDateTime64 &>(*t);
-                const int unit = arrowTimeUnitForScale(dt64.getScale());
                 /// Always serialize the timezone, matching the Apache Arrow library writer
                 /// (`arrow::timestamp(unit, datetime64_type->getTimeZone().getTimeZone())`): a
                 /// `DateTime64` without an explicit timezone still carries the server/default one, and
                 /// dropping it would emit a timezone-less Arrow `Timestamp` and break writer parity.
-                auto tz_off = b.CreateString(dt64.getTimeZone().getTimeZone());
-                type_type = flatbuf::Type_Timestamp;
-                type_offset = flatbuf::CreateTimestamp(b, static_cast<flatbuf::TimeUnit>(unit), tz_off).Union();
+                make_timestamp(static_cast<flatbuf::TimeUnit>(arrowTimeUnitForScale(dt64.getScale())), dt64.getTimeZone().getTimeZone());
                 break;
             }
             case TypeIndex::Time:
