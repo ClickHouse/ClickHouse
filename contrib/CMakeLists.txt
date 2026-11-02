@@ -97,6 +97,7 @@ add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (libdeflate-cmake libdeflate)
+add_contrib (gdeflate-cmake gdeflate)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
 add_contrib (capnproto-cmake capnproto)
@@ -114,7 +115,7 @@ add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 add_contrib (heks-cmake heks)
-# parquet/arrow/orc
+# parquet/arrow
 add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
 add_contrib (avro-cmake avro) # requires: snappy
@@ -169,7 +170,6 @@ add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
-add_contrib (cassandra-cmake cassandra) # requires: libuv
 add_contrib (azure-cmake azure)
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)

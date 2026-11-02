@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Core/ResultColumnOrigin.h>
 #include <base/types.h>
 #include <base/unit.h>
 
@@ -35,6 +36,7 @@ struct FormatSettings
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
     bool precise_float_parsing = true;
+    bool check_integer_text_overflow = false;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -432,6 +434,7 @@ struct FormatSettings
         bool write_page_index = false;
         bool write_bloom_filter = false;
         bool write_checksums = true;
+        bool use_alp_encoding = false;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
@@ -522,6 +525,8 @@ struct FormatSettings
          * By default, use Text ResultSet.
          */
         bool binary_protocol = false;
+        /// The table columns the result columns come from, reported in the column definitions. Not owned; may be null.
+        const ResultColumnOrigins * result_column_origins = nullptr;
     } mysql_wire{};
 
     struct
@@ -599,6 +604,12 @@ struct FormatSettings
         double output_dictionary_key_size_threshold = 0.0;
         UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
+
+    struct
+    {
+        bool filter_push_down = true;
+        bool preserve_order = false;
+    } vortex{};
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.

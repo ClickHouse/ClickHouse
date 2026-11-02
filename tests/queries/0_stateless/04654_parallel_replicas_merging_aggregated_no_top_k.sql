@@ -12,7 +12,6 @@ SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
-SET enable_analyzer = 1;
 SET enable_group_by_top_k_optimization = 1;
 -- Memory-bound merging and in-order aggregation turn the partial aggregation
 -- into an in-order one (`applyOrder`), which by design drops the top-K heap;

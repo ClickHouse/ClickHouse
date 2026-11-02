@@ -137,7 +137,7 @@ __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUEle
     return {.element_type = expected_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
 }
 
-__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, rmm::cuda_stream_view stream)
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, cuda::stream_ref stream)
 {
     checkNoNulls(column);
 
@@ -166,7 +166,7 @@ __host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view
                 [&] { return cudf::cast(offsets, cudf::data_type{cudf::type_id::INT64}, stream); });
             offsets = widened_offsets->view();
             /// cuDF returns once the cast is queued, and the offsets may be read on another stream or by the host.
-            checkCuda(cudaStreamSynchronize(stream.value()), "Cannot wait for the offsets of a strings column to be widened");
+            checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for the offsets of a strings column to be widened");
             break;
         default:
             throwGPUError(

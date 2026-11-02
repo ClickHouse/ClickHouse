@@ -1,5 +1,6 @@
 #include <memory>
 #include <ranges>
+#include <vector>
 
 #include <Core/Block.h>
 #include <Core/Joins.h>
@@ -31,14 +32,24 @@ namespace DB
 
 String dumpRelationStatsForLogs(const RelationStats & stats)
 {
+    auto dump_column = [](const auto & column)
+    {
+        const auto & [name, column_stats] = column;
+        /// No min/max: they can be values of rows hidden by a row policy, and this line reaches clients with `send_logs_level`.
+        std::vector<String> fields;
+        if (column_stats.null_fraction)
+            fields.push_back(fmt::format("null {}", *column_stats.null_fraction));
+        if (column_stats.avg_bytes != 0)
+            fields.push_back(fmt::format("avg_bytes {}", column_stats.avg_bytes));
+        if (fields.empty())
+            return fmt::format("{}: {}", name, column_stats.num_distinct_values);
+        return fmt::format("{}: {} [{}]", name, column_stats.num_distinct_values, fmt::join(fields, ", "));
+    };
     return fmt::format(
         "{}: {} rows, columns: [{}]",
         stats.table_name.empty() ? "<unknown>" : stats.table_name,
         stats.estimated_rows ? fmt::format("{}", stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
-            ", "));
+        fmt::join(stats.column_stats | std::views::transform(dump_column), ", "));
 }
 
 /* Read a table statistics hint from the query parameter.

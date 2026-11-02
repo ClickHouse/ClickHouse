@@ -23,7 +23,7 @@ Contains a list of all the formats along with flags whether a format is suitable
 - `supports_random_access` ([UInt8](/reference/data-types/int-uint)) — Flag that indicates whether the format supports random access in the input.
 - `has_schema_inference` ([UInt8](/reference/data-types/int-uint)) — The format can dynamically determine the schema from the data (either from embedded header/metadata or from the piece of data).
 - `has_external_schema` ([UInt8](/reference/data-types/int-uint)) — The format either has a fixed schema or accepts a predefined schema in its own format.
-- `prefers_large_blocks` ([UInt8](/reference/data-types/int-uint)) — The format will write larger blocks into output and generate larger blocks on input.
+- `prefers_large_blocks` ([UInt8](/reference/data-types/int-uint)) — The format will write larger blocks into output.
 - `supports_append` ([UInt8](/reference/data-types/int-uint)) — It's possible to append into a single file with this format.
 - `supports_subsets_of_columns` ([UInt8](/reference/data-types/int-uint)) — The input format can recognize when certain columns are omitted.
 - `description` ([String](/reference/data-types/string)) — A high-level description of what the format is.

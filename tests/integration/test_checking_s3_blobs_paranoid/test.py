@@ -621,6 +621,7 @@ def test_when_s3_timeout_at_listing(
     insert_query_id = randomize_query_id(
         "TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
     )
+    # A parallel formatter per partition keeps several MiB, and 2000 of them approach the node's memory limit.
     node.query(
         f"""
         INSERT INTO
@@ -636,7 +637,8 @@ def test_when_s3_timeout_at_listing(
         LIMIT 2000
         SETTINGS
             s3_check_objects_after_upload=0,
-            s3_truncate_on_insert=1
+            s3_truncate_on_insert=1,
+            output_format_parallel_formatting=0
         """,
         query_id=insert_query_id,
     )

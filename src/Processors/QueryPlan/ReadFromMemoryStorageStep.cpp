@@ -26,6 +26,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MaterializedCTE.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageMemory.h>
@@ -711,6 +712,16 @@ public:
 
     String getName() const override { return "LazyReadFromMemoryBlocks"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// A partial result must still get the deferred columns of the rows already selected by the main branch.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+    using ISource::cancel;
+
 protected:
     Chunk generate() override
     {
@@ -719,20 +730,37 @@ protected:
 
         MutableColumns result_columns = getPort().getHeader().cloneEmptyColumns();
         size_t num_rows = 0;
+        /// The size of the whole deferred columns materialized from the blocks.
+        size_t num_read_bytes = 0;
 
         for (const auto & [block_index, rows_in_block] : block_rows)
         {
+            /// The range can span many blocks, so stop rereading them as soon as the query is cancelled.
+            if (isCancelled())
+                return {};
+
             const Block & src = (*data)[block_index];
 
             Columns block_columns = readColumnsFromBlock(src, columns, nested_arrays);
 
             for (size_t i = 0; i < block_columns.size(); ++i)
+            {
+                num_read_bytes += block_columns[i]->byteSize();
                 result_columns[i]->insertRangeFrom(*block_columns[i]->index(*rows_in_block, 0), 0, rows_in_block->size());
+            }
 
             num_rows += rows_in_block->size();
         }
 
         block_rows.clear();
+
+        /// Reports the read progress explicitly, because the automatic accounting of `ISource` uses
+        /// the returned chunk, which holds only the requested rows, while the deferred columns of each
+        /// block are materialized as a whole (and decompressed for a table with `compress = true`).
+        /// The rows are already counted by the main branch, so only the requested rows are reported here,
+        /// the same as the automatic accounting would do.
+        progress(num_rows, num_read_bytes);
+
         return Chunk(std::move(result_columns), num_rows);
     }
 
@@ -740,6 +768,7 @@ private:
     const NamesAndTypesList columns;
     std::shared_ptr<const Blocks> data;
     std::vector<MemoryLazyBlockRows> block_rows;
+    /// The same as in `MemorySource`, so that a missing member of a `Nested` gets the same sizes in both branches.
     const Names nested_arrays;
 };
 
@@ -981,7 +1010,19 @@ bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
         return false;
 
     const auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name);
-    if (!column)
+    if (!column || !column->type->equals(*sort_column.type))
+        return false;
+
+    /// The threshold is computed from the output column, while the filter reads the physical column
+    /// of the same name. They are the same only if the in-source filters pass it through unchanged.
+    auto is_shadowed = [&](const ActionsDAG & dag)
+    {
+        const auto * node = dag.tryFindInOutputs(sort_column.name);
+        return node && node->type != ActionsDAG::ActionType::INPUT;
+    };
+    if (query_info.row_level_filter && is_shadowed(query_info.row_level_filter->actions))
+        return false;
+    if (query_info.prewhere_info && is_shadowed(query_info.prewhere_info->prewhere_actions))
         return false;
 
     /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
@@ -1037,18 +1078,55 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
     if (!canUseLazyMaterialization())
         return {};
 
-    /// The in-source filters run in the main branch.
+    /// The in-source filters run in the main branch. A column they output as a computed node may shadow
+    /// the physical column of the same name, and the lazy branch would read the physical one instead,
+    /// so such columns also stay in the main branch.
     NameSet names_to_keep = required_names;
+    auto keep_columns_of_filter = [&](const ActionsDAG & dag)
+    {
+        for (const auto & column : dag.getRequiredColumns())
+            names_to_keep.insert(column.name);
+        for (const auto * output : dag.getOutputs())
+            if (output->type != ActionsDAG::ActionType::INPUT)
+                names_to_keep.insert(output->result_name);
+    };
     if (query_info.row_level_filter)
-        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
+        keep_columns_of_filter(query_info.row_level_filter->actions);
     if (query_info.prewhere_info)
-        for (const auto & column : query_info.prewhere_info->prewhere_actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
+        keep_columns_of_filter(query_info.prewhere_info->prewhere_actions);
     if (top_k_filter)
         names_to_keep.insert(top_k_filter->column_name);
 
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+
+    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
+    /// after the block was inserted) with the defaults of the type in both branches, not by evaluating
+    /// the `DEFAULT` expression. Do not rely on that, the same way `supportsTopKDynamicFilter` does:
+    /// a column with a default expression and the transitive inputs of the expression stay in the main branch.
+    const auto & column_defaults = storage_snapshot->metadata->getColumns().getDefaults();
+    NameSet names_in_default_expressions;
+    std::vector<String> names_to_visit;
+    for (const auto & column_name : columns_to_read)
+    {
+        auto column = storage_snapshot->tryGetColumn(options, column_name);
+        if (column && column_defaults.contains(column->getNameInStorage()) && names_in_default_expressions.insert(column->getNameInStorage()).second)
+            names_to_visit.push_back(column->getNameInStorage());
+    }
+    while (!names_to_visit.empty())
+    {
+        const auto it = column_defaults.find(names_to_visit.back());
+        names_to_visit.pop_back();
+        if (it == column_defaults.end() || !it->second.expression)
+            continue;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & required_name : columns_context.requiredColumns())
+            if (names_in_default_expressions.insert(required_name).second)
+                names_to_visit.push_back(required_name);
+    }
+
     Names main_columns;
     NamesAndTypesList lazy_columns;
     for (const auto & column_name : columns_to_read)
@@ -1058,7 +1136,8 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
             return {};
 
         auto column = storage_snapshot->tryGetColumn(options, column_name);
-        if (column && !names_to_keep.contains(column_name) && output_header->has(column_name))
+        if (column && !names_to_keep.contains(column_name) && output_header->has(column_name)
+            && !names_in_default_expressions.contains(column_name) && !names_in_default_expressions.contains(column->getNameInStorage()))
             lazy_columns.push_back(*column);
         else
             main_columns.push_back(column_name);

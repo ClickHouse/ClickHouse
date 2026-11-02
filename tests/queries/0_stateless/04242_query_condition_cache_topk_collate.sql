@@ -10,7 +10,6 @@
 -- the dynamic `__topKFilter` PREWHERE (issue #114639), both salted with the TopK
 -- plan parameters, including the collation locale.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;

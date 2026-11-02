@@ -6,8 +6,6 @@
 -- only-analyze mode, but the table function is still resolved into a storage there,
 -- so it needs the real URL. Used to fail with "Host is empty in S3 URI".
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS path_table;
 DROP TABLE IF EXISTS s3_table_cte;
 DROP TABLE IF EXISTS s3_table_inline;
