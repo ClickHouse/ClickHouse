@@ -31,6 +31,17 @@ size_t maxRowsFittingOneArrowBatch(
     bool fixed_string_as_fixed_byte_array,
     UInt64 max_batch_bytes = MAX_ARROW_BUFFER_SIZE);
 
+/// The largest `n` such that rows [begin, begin + n) of every column stay within `max_batch_bytes`: the
+/// number of rows of the next record batch of a chunk. The work is proportional to the returned number of
+/// rows rather than to `end - begin`, so splitting a chunk into many batches stays linear.
+size_t maxRowsFittingOneArrowBatch(
+    const Columns & columns,
+    const DataTypes & types,
+    size_t begin,
+    size_t end,
+    bool fixed_string_as_fixed_byte_array,
+    UInt64 max_batch_bytes);
+
 }
 
 #endif

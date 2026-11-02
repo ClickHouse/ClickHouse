@@ -2100,20 +2100,13 @@ namespace DB
             size_t offset = 0;
             do
             {
-                /// Two columns never share an Arrow buffer, so the smallest per-column limit applies.
-                size_t rows = num_rows - offset;
-                for (size_t column_i = 0; column_i < columns_num; ++column_i)
-                {
-                    rows = std::min(
-                        rows,
-                        maxRowsFittingOneArrowBatch(
-                            *columns[column_i],
-                            column_types[column_i],
-                            offset,
-                            offset + rows,
-                            settings.output_fixed_string_as_fixed_byte_array,
-                            settings.output_max_record_batch_bytes));
-                }
+                size_t rows = maxRowsFittingOneArrowBatch(
+                    columns,
+                    column_types,
+                    offset,
+                    num_rows,
+                    settings.output_fixed_string_as_fixed_byte_array,
+                    settings.output_max_record_batch_bytes);
                 /// A row that does not fit on its own cannot be represented at all; the leaf encoders reject it.
                 rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
 

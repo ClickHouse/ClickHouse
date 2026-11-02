@@ -69,11 +69,11 @@ size_t maxRowsForLowCardinality(
     const auto & values = assert_cast<const ColumnString &>(values_column);
     const auto & value_offsets = values.getOffsets();
 
-    UInt64 max_value_size = 0;
-    for (size_t i = 0; i != values.size(); ++i)
-        max_value_size = std::max(max_value_size, value_offsets[i] - value_offsets[static_cast<ssize_t>(i) - 1]);
-    /// Scanning the indexes is only needed when the largest value repeated on every row could overflow.
-    if (max_value_size == 0 || num_rows <= max_batch_bytes / max_value_size)
+    /// Scanning the indexes is only needed when the whole dictionary repeated on every row could overflow:
+    /// no single value is larger than all of them together. This is O(1), unlike finding the largest value,
+    /// so it does not add work proportional to the dictionary for every batch of a split chunk.
+    const UInt64 dictionary_bytes = values.empty() ? 0 : value_offsets.back();
+    if (dictionary_bytes == 0 || num_rows <= max_batch_bytes / dictionary_bytes)
         return num_rows;
 
     const auto & indexes = low_cardinality.getIndexes();
@@ -275,6 +275,42 @@ size_t maxRowsFittingOneArrowBatch(
             /// encoded size would mean serializing twice. The encoder rejects a batch that overflows.
             return num_rows;
         }
+    }
+}
+
+size_t maxRowsFittingOneArrowBatch(
+    const Columns & columns,
+    const DataTypes & types,
+    size_t begin,
+    size_t end,
+    bool fixed_string_as_fixed_byte_array,
+    UInt64 max_batch_bytes)
+{
+    chassert(columns.size() == types.size());
+    const size_t num_rows = end - begin;
+    if (num_rows == 0)
+        return 0;
+
+    /// Some limits (`Variant`, `LowCardinality`) take time linear in the rows they are given, so measuring
+    /// the whole remainder of a chunk for each of its batches would be quadratic. The window grows instead:
+    /// the limit of a prefix is the limit of the whole range capped at the prefix's length, so the first
+    /// window that does not fit entirely gives the answer, and the work stays proportional to the rows
+    /// emitted, plus the initial window.
+    static constexpr size_t initial_window = 8192;
+    size_t window = std::min(num_rows, initial_window);
+    while (true)
+    {
+        /// Two columns never share an Arrow buffer, so the smallest per-column limit applies.
+        size_t rows = window;
+        for (size_t i = 0; i < columns.size() && rows != 0; ++i)
+            rows = std::min(
+                rows,
+                maxRowsFittingOneArrowBatch(
+                    *columns[i], types[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes));
+
+        if (rows < window || window == num_rows)
+            return rows;
+        window = std::min(num_rows, window * 2);
     }
 }
 

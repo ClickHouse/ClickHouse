@@ -428,20 +428,13 @@ void ArrowIPCBlockOutputFormat::writeChunk(Chunk chunk)
     size_t offset = 0;
     do
     {
-        /// Two columns never share an Arrow buffer, so the smallest per-column limit is the batch's limit.
-        size_t rows = num_rows - offset;
-        for (size_t i = 0; i < columns.size(); ++i)
-        {
-            rows = std::min(
-                rows,
-                maxRowsFittingOneArrowBatch(
-                    *columns[i],
-                    column_types[i],
-                    offset,
-                    offset + rows,
-                    format_settings.arrow.output_fixed_string_as_fixed_byte_array,
-                    format_settings.arrow.output_max_record_batch_bytes));
-        }
+        size_t rows = maxRowsFittingOneArrowBatch(
+            columns,
+            column_types,
+            offset,
+            num_rows,
+            format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+            format_settings.arrow.output_max_record_batch_bytes);
         /// A row that does not fit on its own cannot be represented at all; let the encoder reject it.
         rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
 
