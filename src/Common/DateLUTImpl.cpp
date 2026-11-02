@@ -459,7 +459,6 @@ DateLUTImpl::Time DateLUTImpl::timezoneOffsetOutOfRange(Time t) const
 
 DateLUTImpl::Time DateLUTImpl::timezoneOffsetAtLocalTimeOutOfRange(Time t) const
 {
-    /// The local time as a civil time within the representable calendar, converted as in `makeDateTimeOutOfRange`.
     t = std::clamp(t, min_representable_time, max_representable_time);
     const cctz::civil_second local = cctz::civil_second{1970, 1, 1, 0, 0, 0} + t;
     return t - makeDateTimeOutOfRange(
