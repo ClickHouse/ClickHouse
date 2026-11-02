@@ -8,9 +8,13 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
+# `custom_settings_prefixes.xml` makes the old node accept `backup_named_collections` - which it
+# predates - as a custom setting and forward it verbatim
+# (see `test_old_initiator_does_not_export_named_collections`).
 main_configs = [
     "configs/backups_disk.xml",
     "configs/cluster_different_versions.xml",
+    "configs/custom_settings_prefixes.xml",
 ]
 
 # `named_collections_users.xml` lets the default user read the values of named collections, which
@@ -167,6 +171,20 @@ def test_old_initiator_does_not_export_named_collections():
         )
         backup_files = list_backup_files("old_initiator_nc")
         assert backup_files
+        assert [f for f in backup_files if is_named_collection_entry(f)] == []
+
+        # The old initiator does not reject `backup_named_collections = 1` either: with the
+        # configured `custom_settings_prefixes` it accepts the unknown name as a custom setting
+        # and forwards it verbatim, still without checking any of the rights the export requires.
+        # The upgraded host must fail such an explicitly requested export rather than run it with
+        # full access (`replica_num = 1` selects the upgraded node as the only executing host).
+        error = old_node.query_and_get_error(
+            "BACKUP ALL ON CLUSTER 'cluster_ver' TO Disk('backups', 'old_initiator_nc_forced') "
+            "SETTINGS backup_named_collections = 1, replica_num = 1",
+            user="backup_user_mixed",
+        )
+        assert "too old to authorize the export" in error
+        backup_files = list_backup_files("old_initiator_nc_forced")
         assert [f for f in backup_files if is_named_collection_entry(f)] == []
 
         # The same backup initiated by the new node with a user holding every right does export the

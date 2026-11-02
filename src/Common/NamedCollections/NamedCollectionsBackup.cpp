@@ -89,33 +89,41 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
     const bool explicitly_selected = backup_entries_collector.isTableDataExplicitlySelectedForBackup(
         QualifiedTableName{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"});
 
+    /// An internal backup executes a query dispatched by the initiating host of a `BACKUP ON
+    /// CLUSTER`, possibly with full access (the default `distributed_ddl_use_initial_user_and_roles
+    /// = false`), so the rights checks below may pass for an initiating user who holds none of the
+    /// rights. The export must therefore be authorized by the initiating host against the
+    /// initiating user: an initiator aware of the export resolves a wildcard selection before
+    /// dispatching the query and requires the rights for an explicit selection and for
+    /// `backup_named_collections = true` (see `BackupsWorker` and
+    /// `BackupUtils::getRequiredAccessToBackup`), which its backup coordination version shows. An
+    /// older initiator supplies no such decision, so the collections must not be exported: fail
+    /// close by skipping a wildcard selection and refusing an explicitly requested export. The
+    /// check must not depend on the setting being unset: an older initiator does not necessarily
+    /// reject `backup_named_collections = true` - with a matching `custom_settings_prefixes` it
+    /// accepts the unknown name as a custom setting and forwards it verbatim - yet it has checked
+    /// nothing.
+    if (backup_settings.internal
+        && !backup_entries_collector.getBackupCoordination()->doesInitiatorTakeNamedCollectionsExportDecision())
+    {
+        /// With the setting unset, a wildcard selection defaults to the skip below. An explicitly
+        /// requested export - the table named explicitly, or `backup_named_collections = true` -
+        /// must fail instead of producing a backup silently missing what was asked for.
+        if (explicitly_selected || backup_named_collections == true)
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot export the named collections to the backup: the initiating host of this ON CLUSTER query "
+                "is too old to authorize the export against the initiating user's rights. "
+                "Upgrade the initiating host or run the backup on it");
+        LOG_WARNING(
+            getLogger("backupNamedCollections"),
+            "Not exporting the named collections to the backup: the initiating host of this ON CLUSTER query "
+            "is too old to authorize the export against the initiating user's rights");
+        return;
+    }
+
     if (!backup_named_collections.has_value())
     {
-        /// An internal backup executes a query dispatched by the initiating host of a `BACKUP ON
-        /// CLUSTER`, possibly with full access (the default `distributed_ddl_use_initial_user_and_roles
-        /// = false`), so the rights checks below may pass for an initiating user who holds none of the
-        /// rights. The export must therefore be authorized by the initiating host against the
-        /// initiating user: an initiator aware of the export resolves a wildcard selection before
-        /// dispatching the query and requires the rights for an explicit one (see `BackupsWorker` and
-        /// `BackupUtils::getRequiredAccessToBackup`), which its backup coordination version shows. An
-        /// older initiator supplies no such decision, so the collections must not be exported: fail
-        /// close by skipping a wildcard selection and refusing an explicit one.
-        if (backup_settings.internal
-            && !backup_entries_collector.getBackupCoordination()->doesInitiatorTakeNamedCollectionsExportDecision())
-        {
-            if (explicitly_selected)
-                throw Exception(
-                    ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Cannot back up the `system.named_collections` table: the initiating host of this ON CLUSTER query "
-                    "is too old to authorize exporting the named collections against the initiating user's rights. "
-                    "Upgrade the initiating host or run the backup on it");
-            LOG_WARNING(
-                getLogger("backupNamedCollections"),
-                "Not exporting the named collections to the backup: the initiating host of this ON CLUSTER query "
-                "is too old to authorize the export against the initiating user's rights");
-            return;
-        }
-
         if (!explicitly_selected)
         {
             /// The default for a DATABASE or ALL element selecting this table implicitly: export the
