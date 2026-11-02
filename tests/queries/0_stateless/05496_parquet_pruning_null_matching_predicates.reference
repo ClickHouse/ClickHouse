@@ -8,6 +8,7 @@
 200
 10000
 10000
+10000
 -- pages
 200
 200
@@ -17,6 +18,11 @@
 200
 10000
 10000
--- row groups holding NULLs are still pruned for an ordinary predicate
+-- Nullable MergeTree key: a decreasing step moves a NULL to -inf
+1
+1
+-- row groups are still pruned where no NULL can match
 0
-2
+05496_prune_check	2
+05496_prune_ifnull	1
+05496_prune_null_set	1

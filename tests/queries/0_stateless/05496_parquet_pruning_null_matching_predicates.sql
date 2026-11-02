@@ -1,9 +1,9 @@
 -- Tags: no-fasttest
 -- no-fasttest: the Parquet format is not built in the fast-test image.
 
--- Parquet min/max statistics stand a NULL in as -inf. A row group or page holding NULLs must be kept
--- for a predicate that maps NULL to a matching value: ifNull/coalesce/assumeNotNull chains and sets
--- holding NULL under transform_null_in.
+-- Parquet min/max statistics stand a NULL in as -inf, and a decreasing step moves the +inf NULL of a Nullable
+-- MergeTree key there too. A row group, page or granule holding NULLs must be kept for a predicate that maps
+-- NULL to a matching value: ifNull/coalesce/assumeNotNull chains and sets holding NULL under transform_null_in.
 
 SET engine_file_truncate_on_insert = 1;
 -- Bloom and dictionary filters are not under test.
@@ -27,8 +27,9 @@ SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nul
 SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nullable(Int64)') WHERE intDiv(id, 10) IN (NULL, 5) SETTINGS transform_null_in = 1;
 SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nullable(Int64)') WHERE id IN (NULL, 5) SETTINGS transform_null_in = 1;
 SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nullable(Int64)') WHERE ifNull(id, toInt64(42)) = 42 SETTINGS allow_key_condition_coalesce_rewrite = 0;
-SELECT count() FROM file(currentDatabase() || '_all_null.parquet', Parquet, 'id Nullable(Int64)') WHERE intDiv(id, 10) IN (NULL, 5) SETTINGS transform_null_in = 1;
+SELECT count() FROM file(currentDatabase() || '_all_null.parquet', Parquet, 'id Nullable(Int64)') WHERE intDiv(id, 10) IN (NULL, 5) SETTINGS transform_null_in = 1, log_comment = '05496_prune_null_set';
 SELECT count() FROM file(currentDatabase() || '_all_null.parquet', Parquet, 'id Nullable(Int64)') WHERE id IN (NULL, 5) SETTINGS transform_null_in = 1;
+SELECT count() FROM file(currentDatabase() || '_all_null.parquet', Parquet, 'id Nullable(Int64)') WHERE ifNull(id, toInt64(42)) IN (42, 43) SETTINGS log_comment = '05496_prune_ifnull';
 
 SELECT '-- pages';
 SET input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 1;
@@ -41,9 +42,18 @@ SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nul
 SELECT count() FROM file(currentDatabase() || '_all_null.parquet', Parquet, 'id Nullable(Int64)') WHERE intDiv(id, 10) IN (NULL, 5) SETTINGS transform_null_in = 1;
 SELECT count() FROM file(currentDatabase() || '_all_null.parquet', Parquet, 'id Nullable(Int64)') WHERE id IN (NULL, 5) SETTINGS transform_null_in = 1;
 
-SELECT '-- row groups holding NULLs are still pruned for an ordinary predicate';
+SELECT '-- Nullable MergeTree key: a decreasing step moves a NULL to -inf';
+DROP TABLE IF EXISTS t_nullable_key;
+CREATE TABLE t_nullable_key (id Nullable(Int64)) ENGINE = MergeTree ORDER BY id SETTINGS allow_nullable_key = 1, index_granularity = 8192;
+INSERT INTO t_nullable_key SELECT if(number = 0, NULL, -1) FROM numbers(20000);
+SELECT count() FROM t_nullable_key WHERE ifNull(-id, toInt64(42)) IN (42, 43);
+SELECT count() FROM t_nullable_key WHERE intDiv(-id, 10) IN (NULL, 5) SETTINGS transform_null_in = 1;
+DROP TABLE t_nullable_key;
+
+SELECT '-- row groups are still pruned where no NULL can match';
 SELECT count() FROM file(currentDatabase() || '_mixed.parquet', Parquet, 'id Nullable(Int64)') WHERE id > 0
     SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 0, log_comment = '05496_prune_check';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['ParquetPrunedRowGroups'] FROM system.query_log
-    WHERE current_database = currentDatabase() AND log_comment = '05496_prune_check' AND type = 'QueryFinish';
+SELECT log_comment, ProfileEvents['ParquetPrunedRowGroups'] FROM system.query_log
+    WHERE current_database = currentDatabase() AND startsWith(log_comment, '05496_prune_') AND type = 'QueryFinish'
+    ORDER BY log_comment;
