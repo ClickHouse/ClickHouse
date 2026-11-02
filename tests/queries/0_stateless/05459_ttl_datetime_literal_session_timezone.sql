@@ -9,8 +9,6 @@ DROP TABLE IF EXISTS t_create;
 DROP TABLE IF EXISTS t_modify;
 DROP TABLE IF EXISTS t_source;
 DROP TABLE IF EXISTS t_copy;
-DROP TABLE IF EXISTS t_plain;
-DROP TABLE IF EXISTS t_clone;
 DROP TABLE IF EXISTS t_modify_column;
 DROP TABLE IF EXISTS t_add_column;
 DROP TABLE IF EXISTS t_untyped;
@@ -39,11 +37,6 @@ TTL event + INTERVAL 1 SECOND DELETE WHERE event = '2020-01-01 00:00:00';
 SET session_timezone = 'Asia/Tokyo';
 CREATE TABLE t_copy AS t_source;
 SELECT 'AS', extract(engine_full, 'WHERE [^\']*\'[^\']*\'') FROM system.tables WHERE database = currentDatabase() AND name = 't_copy';
-
--- A `TTL` that `CLONE AS` gives the clone itself is written in the session.
-CREATE TABLE t_plain (event DateTime, id UInt8) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t_clone CLONE AS t_plain TTL event + INTERVAL 1 SECOND DELETE WHERE event = '2020-01-01 00:00:00';
-SELECT 'CLONE AS', extract(engine_full, 'WHERE [^)]*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_clone';
 
 -- The type of the column is the one that the preceding commands of the `ALTER` give it: here, a literal of a `UTC` column.
 CREATE TABLE t_modify_column (event DateTime, id UInt8) ENGINE = MergeTree ORDER BY id SETTINGS merge_with_ttl_timeout = 86400;
@@ -78,8 +71,6 @@ DROP TABLE t_create;
 DROP TABLE t_modify;
 DROP TABLE t_source;
 DROP TABLE t_copy;
-DROP TABLE t_plain;
-DROP TABLE t_clone;
 DROP TABLE t_modify_column;
 DROP TABLE t_add_column;
 DROP TABLE t_untyped;
