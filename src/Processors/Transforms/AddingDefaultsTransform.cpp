@@ -308,9 +308,6 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     /// n's defaults (for rows where n is missing), mix them into the block, and only
     /// then compute s's defaults so that s can see the correct values of n.
     std::unordered_map<String, NameSet> dependencies;
-    /// The dependencies by the required names as they are, without resolving subcolumns to their columns:
-    /// they order a cycle which exists only through a subcolumn, e.g. `a DEFAULT tuple(b)` and `b DEFAULT a.x`, as before.
-    std::unordered_map<String, NameSet> raw_dependencies;
     std::unordered_set<String> columns_needing_defaults_set;
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
         columns_needing_defaults_set.insert(col_name);
@@ -324,17 +321,6 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
                 deps.insert(read);
         }
         dependencies[col_name] = std::move(deps);
-
-        RequiredSourceColumnsVisitor::Data columns_context;
-        auto expression = column_defaults.at(col_name).expression->clone();
-        RequiredSourceColumnsVisitor(columns_context).visit(expression);
-        NameSet raw_deps;
-        for (const auto & required : columns_context.requiredColumns())
-        {
-            if (columns_needing_defaults_set.contains(required))
-                raw_deps.insert(required);
-        }
-        raw_dependencies[col_name] = std::move(raw_deps);
     }
 
     /// Process columns in dependency order (topological sort).
@@ -345,32 +331,24 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     while (processed.size() < columns_needing_defaults.size())
     {
         /// Find columns ready to process (all dependencies satisfied)
-        auto find_ready = [&](std::unordered_map<String, NameSet> & dependencies_to_check)
+        std::vector<std::pair<String, size_t>> ready;
+        for (const auto & [col_name, col_idx] : columns_needing_defaults)
         {
-            std::vector<std::pair<String, size_t>> result;
-            for (const auto & [col_name, col_idx] : columns_needing_defaults)
+            if (processed.contains(col_name))
+                continue;
+
+            bool all_deps_ready = true;
+            for (const auto & dep : dependencies[col_name])
             {
-                if (processed.contains(col_name))
-                    continue;
-
-                bool all_deps_ready = true;
-                for (const auto & dep : dependencies_to_check[col_name])
+                if (!processed.contains(dep))
                 {
-                    if (!processed.contains(dep))
-                    {
-                        all_deps_ready = false;
-                        break;
-                    }
+                    all_deps_ready = false;
+                    break;
                 }
-                if (all_deps_ready)
-                    result.emplace_back(col_name, col_idx);
             }
-            return result;
-        };
-
-        auto ready = find_ready(dependencies);
-        if (ready.empty())
-            ready = find_ready(raw_dependencies);
+            if (all_deps_ready)
+                ready.emplace_back(col_name, col_idx);
+        }
 
         if (ready.empty())
         {
