@@ -698,7 +698,26 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
     bool selected = pos != oldpos || (kind == 'e' && oldpos < static_cast<int>(text.length()));
     if (op)
     {
-        if (pos > oldpos || (kind == 'e' && selected))
+        if (kind == 'w' && !inclusivity_flip && pos > oldpos && text[pos - 1] == '\n')
+        {
+            /* Like vim, an exclusive motion that ends in the first column of a line ends at the end
+             * of the previous line instead, so the line break stays. When the motion also starts at
+             * or before the first non-blank of its line, it becomes linewise. */
+            int line_start = oldpos;
+            for (; line_start > 0 && text[line_start - 1] != '\n'; line_start--)
+                ;
+            if (std::all_of(text.begin() + line_start, text.begin() + oldpos, [](char32_t c) { return c == ' ' || c == '\t'; }))
+            {
+                text.erase(line_start, pos - line_start - (op == OPERATOR_C));
+                pos = op == OPERATOR_C ? line_start : firstNonBlank(text, line_start);
+            }
+            else
+            {
+                text.erase(oldpos, pos - 1 - oldpos);
+                pos = oldpos;
+            }
+        }
+        else if (pos > oldpos || (kind == 'e' && selected))
         {
             text.erase(oldpos, pos - oldpos + (kind == 'e' ? 1 - inclusivity_flip : inclusivity_flip));
             pos = oldpos;
@@ -802,10 +821,16 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
     }
     else
     {
-        /* Each extra count takes one more chunk, alternating word and whitespace. */
+        /* Each extra count takes one more chunk, alternating word and whitespace. Like vim, the line
+         * break at the end of a non-empty line is not a chunk of its own: the next chunk starts on the
+         * following line. */
         for (int rep = 1; rep < reps; rep++)
+        {
+            if (end + 2 < length && text[end + 1] == '\n' && text[end] != '\n')
+                end++;
             if (extendChunk(text, end, bigword) == -1)
                 break;
+        }
     }
 
     text.erase(start, end - start + 1);
@@ -907,7 +932,8 @@ void ReplxxLineReader::vimLinewise(int & pos, std::u32string & text, int oldpos)
             for (; start > 0 && text[start - 1] != '\n'; start--)
                 ;
         }
-        pos = start;
+        /* Like vim, a linewise delete leaves the cursor on the first non-blank of the line. */
+        pos = op == OPERATOR_C ? start : firstNonBlank(text, start);
     }
     if (op == OPERATOR_C)
     {
@@ -1670,7 +1696,6 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         MODE_G);
 
 
-    /* FIXME: Where should the cursor be placed afterwards? */
     bindKey(
         'd',
         [this](int & pos, std::u32string & text, char32_t)
@@ -1704,6 +1729,8 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                         break;
                     }
                 }
+                /* Like vim, leave the cursor on the first non-blank of the line. */
+                pos = firstNonBlank(text, pos);
 
                 resetVim(&pos, &text);
             }

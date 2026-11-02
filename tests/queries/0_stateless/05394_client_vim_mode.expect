@@ -175,7 +175,7 @@ submit
 expect "9041"
 expect ":) "
 
-# `dd` and `dG` on the last line leave the cursor at the start of the remaining last line.
+# `dd` and `dG` on the last line leave the cursor on the first non-blank of the remaining last line.
 send -- "SELECT 1200\r+ 34"
 escape
 send -- "ddwi9"
@@ -682,6 +682,44 @@ escape
 send -- "gg2ljx"
 submit
 expect "1023"
+expect ":) "
+
+# A counted `iw` skips the line break at the end of a non-empty line: the next chunk is the word on the next line.
+send -- "SELECT 6100 + 7\r- 2345"
+escape
+send -- "gg\$d2iw"
+submit
+expect "8445"
+expect ":) "
+
+# An exclusive `w` or `W` motion that ends in the first column of a line keeps the line break before it.
+send -- "SELECT 6200 -- note\r\r+ 34"
+escape
+send -- "gg\$d2w"
+submit
+expect "6234"
+expect ":) "
+
+send -- "SELECT 6300 -- note\r\r+ 34"
+escape
+send -- "gg\$d2W"
+submit
+expect "6334"
+expect ":) "
+
+# A linewise delete leaves the cursor on the first non-blank of the remaining line.
+send -- "SELECT 6500\r  +234\rgarbage"
+escape
+send -- "ddwr-"
+submit
+expect "6466"
+expect ":) "
+
+send -- "SELECT 6600\r  +234\rgarbage"
+escape
+send -- "dGwr-"
+submit
+expect "6566"
 expect ":) "
 
 send -- "\4"
