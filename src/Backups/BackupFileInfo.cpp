@@ -228,16 +228,8 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
-    /// A task per entry, so that an entry whose checksum is calculated by reading the whole file never holds up the
-    /// others, and a bound on how many tasks exist at once, so that a backup of millions of entries does not keep a
-    /// task for each of them: `TaskTracker::add` admits a task only while fewer than this many are in flight, collects
-    /// the finished ones as it goes and rethrows the first failure, which stops the loop below.
-    ///
-    /// A small multiple of the threads of the pool: enough that a thread which finishes a task finds the next one
-    /// already admitted, and few enough that what is retained stays a few kilobytes whatever the size of the backup.
-    /// Deliberately not derived from the capacity of the pool. Whether `add` comes to wait here or inside the pool
-    /// depends on how the pool was configured, and neither the bound nor the correctness of the scan depends on which
-    /// of the two it is: a task admitted here is tracked here, wherever it then waits to run.
+    /// A task per entry, so that a slow one holds up nothing, bounded so that millions of them do not keep a task
+    /// each: `TaskTracker::add` admits one while fewer than this are in flight, and rethrows the first failure.
     const size_t max_tasks_inflight = 2 * std::max<size_t>(1, thread_pool.getMaxThreads());
 
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
