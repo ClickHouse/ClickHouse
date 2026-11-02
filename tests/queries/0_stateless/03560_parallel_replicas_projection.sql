@@ -82,7 +82,8 @@ SELECT sum(value) AS v FROM agg where key > 90 AND key < 110 SETTINGS log_commen
 DROP TABLE agg;
 
 DROP TABLE IF EXISTS x;
-CREATE TABLE x (i int) engine MergeTree ORDER BY i SETTINGS index_granularity = 3;
+-- The exact-count read below reads 8 rows from a Compact part and 7 from a Wide one.
+CREATE TABLE x (i int) engine MergeTree ORDER BY i SETTINGS index_granularity = 3, min_bytes_for_wide_part = '1G';
 
 INSERT INTO x SELECT * FROM numbers(10);
 
