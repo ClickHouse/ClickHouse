@@ -28,8 +28,7 @@ CREATE TABLE t_05259_proxy AS view(SELECT a, b FROM ${CLICKHOUSE_DATABASE}.t_052
 # the query tree; either would make the count vacuous.
 ${CLICKHOUSE_CLIENT} --query "
 SELECT sum(b) FROM t_05259_proxy FORMAT Null
-SETTINGS enable_analyzer = 1,
-         enable_parallel_replicas = 1,
+SETTINGS enable_parallel_replicas = 1,
          cluster_for_parallel_replicas = 'parallel_replicas',
          max_parallel_replicas = 3,
          automatic_parallel_replicas_mode = 1,
