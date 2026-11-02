@@ -536,9 +536,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 for (const auto & name_type : getColumns())
                 {
                     auto serialization = getSerialization(name_type.name);
-                    auto data = ISerialization::SubstreamData(serialization)
-                        .withType(name_type.type)
-                        .withColumn(getColumnSample(name_type));
+                    auto data = ISerialization::SubstreamData(serialization).withType(name_type.type);
                     serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                     {
                         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
