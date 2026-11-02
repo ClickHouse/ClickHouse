@@ -1467,6 +1467,29 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
                     granted.toString(),
                     std::get<0>(names),
                     grant_option ? " with grant option" : "");
+
+            if constexpr (sizeof...(Args) == 2 && !wildcard)
+            {
+                /// Flags missing in this exact filter can't be narrowed out of other filters, so revoking them would silently do nothing.
+                AccessFlags exact_flags;
+                AccessFlags other_flags;
+                for (const auto & filter : check_root->getFilters(std::get<0>(names)))
+                    (filter.path == std::get<1>(names) ? exact_flags : other_flags) |= filter.access_flags;
+                if (auto missing = (flags - exact_flags) & other_flags)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot revoke {}{} ON {}('{}') because {} ON {} is granted{} only with other filters, and filters are compared "
+                        "as strings. Revoke a granted filter exactly, or {} ON {} without a filter",
+                        grant_option ? "GRANT OPTION FOR " : "",
+                        flags.toString(),
+                        std::get<0>(names),
+                        std::get<1>(names),
+                        missing.toString(),
+                        std::get<0>(names),
+                        grant_option ? " with grant option" : "",
+                        missing.toString(),
+                        std::get<0>(names));
+            }
         }
     }
 

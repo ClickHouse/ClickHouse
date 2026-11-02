@@ -53,6 +53,23 @@ TEST(UsersConfigGrants, RevokeFilterOfRoleSourceGrantedWithoutFilter)
     ASSERT_TRUE(role->access.isEmpty());
 }
 
+TEST(UsersConfigGrants, RevokeFilterNotGrantedWhileOtherFilterIs)
+{
+    auto user = loadWithGrants<User>("<query>GRANT READ ON URL('https://.*')</query>"
+                                     "<query>REVOKE READ ON URL('https://internal/.*')</query>");
+    ASSERT_TRUE(user);
+    ASSERT_TRUE(user->access.isEmpty());
+}
+
+TEST(UsersConfigGrants, RevokeFlagsGrantedOnlyWithOtherFilter)
+{
+    auto user = loadWithGrants<User>("<query>GRANT READ ON URL('a')</query>"
+                                     "<query>GRANT WRITE ON URL('b')</query>"
+                                     "<query>REVOKE READ, WRITE ON URL('a')</query>");
+    ASSERT_TRUE(user);
+    ASSERT_TRUE(user->access.isEmpty());
+}
+
 TEST(UsersConfigGrants, RevokeOneOfFilters)
 {
     auto user = loadWithGrants<User>("<query>GRANT WRITE ON S3</query>"

@@ -88,7 +88,7 @@ namespace
                 }
                 catch (const Exception & e)
                 {
-                    /// A filter can't be revoked from a source granted without it: revoke without the filter so such configs keep loading.
+                    /// Such a filter can't be revoked separately: revoke without it, as before, so existing configs keep their meaning.
                     if (!element.hasFilter() || e.code() != ErrorCodes::BAD_ARGUMENTS)
                         throw;
                     LOG_WARNING(

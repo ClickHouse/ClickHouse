@@ -15,7 +15,8 @@ REVOKE READ ON URL('https://foo/.*') FROM u;
 SELECT access_type, access_object, is_partial_revoke, grant_option FROM system.grants WHERE user_name = 'u' ORDER BY ALL;
 
 SELECT '-- revoke a filter which is not granted';
-REVOKE READ ON URL('https://foo/.*') FROM u;
+REVOKE READ ON URL('https://foo/.*') FROM u; -- { serverError BAD_ARGUMENTS }
+REVOKE WRITE ON URL('https://foo/.*') FROM u;
 SELECT access_type, access_object, is_partial_revoke, grant_option FROM system.grants WHERE user_name = 'u' ORDER BY ALL;
 
 SELECT '-- revoke the only filter';

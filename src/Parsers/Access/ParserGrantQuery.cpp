@@ -956,7 +956,7 @@ REVOKE READ ON S3 FROM john
 
 **Important limitations:**
 
-- **Filters are compared as strings:** `REVOKE` removes only the filter that is exactly the same as the granted one. Revoking `S3('s3://foo/bar/.*')` doesn't narrow a grant on `S3('s3://foo/.*')`.
+- **Filters are compared as strings:** `REVOKE` removes only the filter that is exactly the same as the granted one. Revoking `S3('s3://foo/bar/.*')` throws an exception instead of narrowing a grant on `S3('s3://foo/.*')`.
 - **Partial revokes are not allowed:** You cannot revoke a subset of a granted filter pattern. You must revoke the entire grant and re-grant with new patterns if needed.
 - **Wildcard grants are not allowed:** You cannot use `GRANT READ ON *('regexp')` or similar wildcard-only patterns. Specific source must be provided.
 

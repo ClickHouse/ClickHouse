@@ -601,14 +601,33 @@ TEST(AccessRights, RevokeFilter)
     ASSERT_EQ(filters.size(), 1);
     ASSERT_EQ(filters[0].path, "s3://bar/.*");
 
-    // Revoke non-existent filter does nothing
+    // Revoke non-existent filter while another filter is granted throws
     const AccessRights before = root;
-    root.revoke(AccessType::READ, "S3", "s3://baz/.*");
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://baz/.*"), Exception);
+    ASSERT_EQ(root, before);
+
+    // Revoke non-existent filter of flags not granted with any filter does nothing
+    root.revoke(AccessType::WRITE, "S3", "s3://baz/.*");
     ASSERT_EQ(root, before);
 
     // Revoke the remaining filter leaves the tree empty
     root.revoke(AccessType::READ, "S3", "s3://bar/.*");
     ASSERT_TRUE(root.isEmpty());
+
+    // Revoke non-existent filter without other filters does nothing
+    root.revoke(AccessType::READ, "S3", "s3://baz/.*");
+    ASSERT_TRUE(root.isEmpty());
+
+    // Revoke flags granted only with other filters throws
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::WRITE, "S3", "s3://bar/.*");
+    ASSERT_THROW(root.revoke(AccessType::READ | AccessType::WRITE, "S3", "s3://foo/.*"), Exception);
+
+    // Revoke a prefix of a granted filter throws
+    root = {};
+    root.grant(AccessType::READ, "S3", "s3://foo/.*bar");
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+    root = {};
 
     // Revoke without filter removes whole subtree
     root.grant(AccessType::READ, "S3", "s3://foo/.*");
@@ -704,6 +723,12 @@ TEST(AccessRights, RevokeFilterGrantOption)
     root = {};
     root.grantWithGrantOption(AccessType::READ, "S3");
     ASSERT_THROW(root.revokeGrantOption(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+
+    // Revoke grant option of a filter without it while another filter has it throws
+    root = {};
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://bar/.*");
+    ASSERT_THROW(root.revokeGrantOption(AccessType::READ, "S3", "s3://bar/.*"), Exception);
 }
 
 TEST(AccessRights, RevokeWithParameters)
