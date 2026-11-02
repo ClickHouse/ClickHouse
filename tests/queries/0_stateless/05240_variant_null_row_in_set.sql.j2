@@ -23,4 +23,14 @@ SELECT {{ mode }},
     (v, 1) IN (SELECT CAST(7, 'Variant(DateTime64(3, \'UTC\'), UInt8)'), 1) AS variant_key_value_member
 FROM (SELECT CAST(NULL, 'Variant(DateTime64(3, \'UTC\'), UInt8)') AS v)
 SETTINGS transform_null_in = {{ mode }};
+
+-- The same holds for a NULL field of a tuple key whose field in the key type is a `Variant` or `Dynamic`: the
+-- conversion of the tuple keeps the NULL field as a value, so the row matches a member with a NULL field.
+SELECT {{ mode }},
+    (t, 1) IN (SELECT tuple(CAST(NULL, 'Variant(UInt8, String, Float64)')), 1) AS variant_field_null_member,
+    (t, 1) IN (SELECT tuple(CAST(7, 'Variant(UInt8, String, Float64)')), 1) AS variant_field_value_member,
+    (n, 1) IN (SELECT tuple(CAST(NULL, 'Dynamic')), 1) AS dynamic_field_null_member,
+    (n, 1) IN (SELECT tuple(CAST(7, 'Dynamic')), 1) AS dynamic_field_value_member
+FROM (SELECT materialize(tuple(CAST(NULL, 'Variant(UInt8, String)'))) AS t, materialize(tuple(CAST(NULL, 'Nullable(UInt8)'))) AS n)
+SETTINGS transform_null_in = {{ mode }}, allow_suspicious_variant_types = 1;
 {% endfor %}

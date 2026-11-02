@@ -27,6 +27,18 @@ SELECT isNull(accurateCastOrNull(tuple(tuple(materialize('bad'))), 'Tuple(Tuple(
     isNull(accurateCastOrNull(tuple(materialize(toUInt16(257))), 'Tuple(UInt8)')),
     isNull(accurateCastOrNull(tuple(materialize(CAST(NULL, 'Nullable(UInt8)'))), 'Tuple(UInt8)'));
 
+-- A `LowCardinality(Nullable)`, `Variant` or `Dynamic` field holds NULL, so it keeps the NULL of the source
+-- field. Only a NULL that the conversion adds makes the whole tuple NULL, as for the string 'bad' here.
+SELECT accurateCastOrNull(tuple(materialize(CAST(NULL, 'Nullable(String)'))), 'Tuple(LowCardinality(Nullable(UInt8)))'),
+    accurateCastOrNull(tuple(materialize('bad')), 'Tuple(LowCardinality(Nullable(UInt8)))')
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+SELECT accurateCastOrNull(tuple(materialize(CAST(NULL, 'Variant(UInt8, String)'))), 'Tuple(Variant(UInt8, String, Float64))'),
+    accurateCastOrNull(tuple(CAST(NULL, 'Variant(UInt8, String)')), 'Tuple(Variant(UInt8, String, Float64))'),
+    accurateCastOrNull(tuple(materialize(CAST(1, 'Variant(UInt8, String)'))), 'Tuple(Variant(UInt8, String, Float64))'),
+    accurateCastOrNull(tuple(materialize('bad')), 'Tuple(Variant(UInt8, Float64))')
+SETTINGS allow_suspicious_variant_types = 1;
+SELECT accurateCastOrNull(tuple(materialize(CAST(NULL, 'Nullable(UInt8)'))), 'Tuple(Dynamic)');
+
 -- Dictionary strings and fixed strings preserve the same conversion-failure behavior.
 SELECT isNull(accurateCastOrNull(tuple(toLowCardinality('1')), 'Tuple(UInt8)')),
     isNull(accurateCastOrNull(tuple(toLowCardinality('bad')), 'Tuple(UInt8)'));

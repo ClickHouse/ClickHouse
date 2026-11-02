@@ -1129,6 +1129,73 @@ FunctionCast::ElementWrappers FunctionCast::getElementWrappers(const DataTypes &
     return element_wrappers;
 }
 
+/// For `accurateCastOrNull` to a tuple, returns the null map of the rows where the conversion of an element
+/// failed. A failure at any element makes the conversion of the tuple inaccurate, so the whole tuple is NULL.
+/// - An element type that cannot hold NULL fails on every NULL: one that the conversion reports by wrapping
+///   the element in `Nullable`, which is removed from `converted_columns`, and one of the source element.
+/// - An element type that can hold NULL (`Nullable`, `LowCardinality(Nullable)`, `Variant` or `Dynamic`)
+///   keeps the NULLs of its source element as values, so only the NULLs that the conversion adds are
+///   failures. These column kinds encode NULLs differently, and `getOuterNullMap` reads each of them.
+/// - An element without a source element never fails, even when its default value is NULL: casting
+///   `Tuple(a Int32)` to `Tuple(a Float32, b Nullable(UInt8))` fills `b` with NULL.
+static ColumnPtr extractTupleElementConversionFailures(
+    Columns & converted_columns,
+    const DataTypes & to_element_types,
+    const ColumnTuple & source,
+    const VectorWithMemoryTracking<std::optional<size_t>> & source_positions,
+    size_t rows)
+{
+    auto failures_column = ColumnUInt8::create(rows, UInt8(0));
+    auto & failures = failures_column->getData();
+
+    for (size_t i = 0; i < converted_columns.size(); ++i)
+    {
+        if (!source_positions[i])
+            continue;
+
+        const ColumnPtr source_null_map = getOuterNullMap(*source.getColumns()[*source_positions[i]]);
+        if (canContainNull(*to_element_types[i]))
+        {
+            const ColumnPtr result_null_map = getOuterNullMap(*converted_columns[i]);
+            chassert(result_null_map);
+
+            const auto & result_nulls = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
+            if (source_null_map)
+            {
+                const auto & source_nulls = assert_cast<const ColumnUInt8 &>(*source_null_map).getData();
+                for (size_t row = 0; row < rows; ++row)
+                    failures[row] |= result_nulls[row] & ~source_nulls[row];
+            }
+            else
+            {
+                for (size_t row = 0; row < rows; ++row)
+                    failures[row] |= result_nulls[row];
+            }
+        }
+        else
+        {
+            if (const auto * converted_nullable = checkAndGetColumn<ColumnNullable>(converted_columns[i].get()))
+            {
+                const auto & result_nulls = converted_nullable->getNullMapData();
+                for (size_t row = 0; row < rows; ++row)
+                    failures[row] |= result_nulls[row];
+                converted_columns[i] = converted_nullable->getNestedColumnPtr();
+            }
+
+            /// The conversion does not always report a NULL of the source element: a `Variant` or `Dynamic`
+            /// source without a convertible row yields a plain column of default values.
+            if (source_null_map)
+            {
+                const auto & source_nulls = assert_cast<const ColumnUInt8 &>(*source_null_map).getData();
+                for (size_t row = 0; row < rows; ++row)
+                    failures[row] |= source_nulls[row];
+            }
+        }
+    }
+
+    return failures_column;
+}
+
 FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
 {
     /// Conversion from String through parsing.
@@ -1190,86 +1257,12 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
         }
 
-        /// For `accurateCastOrNull`, element conversions may produce `ColumnNullable`
-        /// to represent per-element conversion failures. A conversion failure at any
-        /// element means the entire Tuple cast is inaccurate, so the whole Tuple is NULL.
-        ///
-        /// How we detect conversion failures:
-        /// - Non-Nullable target element: any NULL in the result is a conversion failure,
-        ///   because the target type cannot hold NULL — the `ColumnNullable` was injected
-        ///   by the `accurateOrNull` conversion path.
-        /// - Nullable target element with a source: a NULL is a conversion failure only if
-        ///   it is NEW — present in the result but not in the source. Source NULLs are
-        ///   legitimate values that should remain as element NULLs, not Tuple-level failures.
-        /// - Nullable target element without a source (named tuple default): the default
-        ///   NULL is not a conversion failure. For example, casting `Tuple(a Int32)` to
-        ///   `Tuple(a Float32, b Nullable(UInt8))` — element `b` has no source, so it is
-        ///   filled with NULL by default. This is valid, not a failure.
+        /// `accurateCastOrNull` reports a failed conversion of any element as a NULL tuple.
         if (cast_type_is_accurate_or_null)
         {
-            MutableColumnPtr combined_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
-            auto & null_map_data = assert_cast<ColumnUInt8 &>(*combined_null_map).getData();
-
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                auto converted_col_full = converted_columns[i]->convertToFullColumnIfLowCardinality();
-                const auto * nullable_col = checkAndGetColumn<ColumnNullable>(converted_col_full.get());
-
-                if (!isNullableOrLowCardinalityNullable(to_element_types[i]))
-                {
-                    /// Non-Nullable target: the element cannot hold NULL, so every NULL is a
-                    /// conversion failure -- including a genuine source NULL.
-                    /// (a) Failures captured in the converted column's null map (numeric
-                    ///     `accurateOrNull` conversions inject a `ColumnNullable` to mark them).
-                    if (nullable_col)
-                    {
-                        const auto & result_null_map = nullable_col->getNullMapData();
-                        for (size_t row = 0; row < input_rows_count; ++row)
-                            null_map_data[row] |= result_null_map[row];
-                        converted_columns[i] = nullable_col->getNestedColumnPtr();
-                    }
-                    /// (b) A `Dynamic`/`Variant` source whose block has no convertible row yields a
-                    ///     plain (non-Nullable) default column, so its source NULLs leave no
-                    ///     trace in (a). Reconstruct them from the source.
-                    if (source_positions[i])
-                    {
-                        const size_t source_position = *source_positions[i];
-                        if (auto source_null_map_col = getOuterNullMap(*column_tuple.getColumns()[source_position]))
-                        {
-                            const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*source_null_map_col).getData();
-                            for (size_t row = 0; row < input_rows_count; ++row)
-                                null_map_data[row] |= source_null_map[row];
-                        }
-                    }
-                }
-                else if (nullable_col && source_positions[i])
-                {
-                    /// Nullable target with a source element: only NULLs that are NEW
-                    /// (present in result but not in source) are conversion failures.
-                    /// Source may be `ColumnNullable`, `ColumnLowCardinality` wrapping, or a
-                    /// `Dynamic`/`Variant` whose NULLs are encoded by `NULL_DISCRIMINATOR`.
-                    const auto & result_null_map = nullable_col->getNullMapData();
-                    const size_t source_position = *source_positions[i];
-                    auto source_null_map_col = getOuterNullMap(*column_tuple.getColumns()[source_position]);
-
-                    if (source_null_map_col)
-                    {
-                        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*source_null_map_col).getData();
-                        for (size_t row = 0; row < input_rows_count; ++row)
-                            null_map_data[row] |= result_null_map[row] & ~source_null_map[row];
-                    }
-                    else
-                    {
-                        for (size_t row = 0; row < input_rows_count; ++row)
-                            null_map_data[row] |= result_null_map[row];
-                    }
-                    /// Keep `ColumnNullable` -- target type is Nullable.
-                }
-                /// else: Nullable target without source (named tuple default), or a plain
-                /// converted column with no NULL info -- not a conversion failure.
-            }
-
-            return ColumnNullable::create(ColumnTuple::create(converted_columns), std::move(combined_null_map));
+            auto failures = extractTupleElementConversionFailures(
+                converted_columns, to_element_types, column_tuple, source_positions, input_rows_count);
+            return ColumnNullable::create(ColumnTuple::create(converted_columns), std::move(failures));
         }
 
         return ColumnTuple::create(converted_columns);
