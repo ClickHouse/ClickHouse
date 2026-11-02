@@ -261,6 +261,9 @@ void WindowTransform::computeReadyRows()
 
 void WindowTransform::recordCurrentRowBounds()
 {
+    if (general_functions.empty())
+        return;
+
     const RowPoint & current = peers.current();
     const FrameBounds & current_frame = frame.bounds();
     const PeersBounds & current_peers = peers.bounds();
