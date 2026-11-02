@@ -1,0 +1,10 @@
+metadata-only, stored type:	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3, \'d\' = 4)
+metadata-only, group by:	1
+1	2500
+2	2500
+3	2500
+4	2500
+converted, before the alter:	1
+converted, stored type:	DateTime(\'UTC\')
+converted, group by:	1
+2024-01-01	10000

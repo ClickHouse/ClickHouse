@@ -18,6 +18,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Formats/ParseError.h>
 #include <Functions/IFunction.h>
@@ -120,9 +121,13 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     if (!column)
         return false;
 
-    /// Skip if the column statistics has outdated data type.
-    /// It can happen after ALTER MODIFY COLUMN until mutations is not materialized in the data part.
-    return column->type->equals(*stats->getDataType());
+    /// A part keeps statistics of the type it stores, which may differ from the current type after
+    /// `ALTER TABLE ... MODIFY COLUMN`: until a mutation or a merge rewrites the part, or for good if the conversion
+    /// is metadata-only. A read converts the values to the current type, so the statistics still describe what
+    /// the query sees only if the conversion keeps the values (e.g. `Enum8` -> `Int8`, an extended `Enum`), like
+    /// for the statistics part pruning and the skip indexes. Otherwise skip them.
+    const auto stats_type = stats->getDataType();
+    return stats_type && isRepresentationPreservingConversion(stats_type.get(), column->type.get());
 }
 
 /// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
@@ -245,7 +250,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata) const
 {
-    /// Unfiltered relation profiles must also reject sketches for an outdated column type.
+    /// Like the filtered profiles, skip statistics that do not describe the values of the current column type.
     RelationProfile result;
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)

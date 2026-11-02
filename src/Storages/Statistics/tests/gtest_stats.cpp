@@ -1026,12 +1026,13 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
 namespace
 {
 
-/// `uniq` statistics over `rows` values of `data_type` with `num_distinct` distinct values.
-ColumnStatisticsPtr buildUniqStats(const std::vector<StatisticsType> & types, const DataTypePtr & data_type, size_t rows, size_t num_distinct)
+/// `uniq` statistics over `rows` values of `data_type` with `num_distinct` distinct values, starting from `first_value`.
+ColumnStatisticsPtr buildUniqStats(
+    const std::vector<StatisticsType> & types, const DataTypePtr & data_type, size_t rows, size_t num_distinct, Int64 first_value = 0)
 {
     MutableColumnPtr col = data_type->createColumn();
     for (size_t i = 0; i < rows; ++i)
-        col->insert(static_cast<Int64>(i % num_distinct));
+        col->insert(first_value + static_cast<Int64>(i % num_distinct));
     auto stats = createTestStats(types, data_type);
     stats->build(std::move(col));
     return stats;
@@ -1126,6 +1127,60 @@ TEST(Statistics, EstimatorKeepsColumnWithMixedStatisticsTypes)
     auto profile = estimator->estimateRelationProfile(metadata);
     ASSERT_TRUE(profile.column_stats.contains("a"));
     EXPECT_EQ(profile.column_stats.at("a").num_distinct_values, 10u);
+}
+
+/// A part keeps the statistics of the type it stores. After a metadata-only `ALTER TABLE ... MODIFY COLUMN`, here
+/// `Enum8` -> `Int8`, they still describe the values a read returns, so both the unfiltered and the filtered
+/// profiles use them. After a conversion that a read applies to the values, here `Int32` -> `Int64`, they do not.
+TEST(Statistics, EstimatorUsesStatisticsOfRepresentationPreservingType)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const DataTypePtr enum_type = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}});
+    const DataTypePtr int8_type = std::make_shared<DataTypeInt8>();
+    const DataTypePtr int32_type = std::make_shared<DataTypeInt32>();
+    const DataTypePtr int64_type = std::make_shared<DataTypeInt64>();
+    const std::vector<StatisticsType> types{StatisticsType::Basic, StatisticsType::Uniq};
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription(NamesAndTypesList{{"e", int8_type}, {"v", int64_type}}));
+    const NamesAndTypesList columns{{"e", int8_type}, {"v", int64_type}};
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.incrementRowCount(1000);
+    builder.addStatistics("e", buildUniqStats(types, enum_type, 1000, 4, /*first_value=*/ 1));
+    builder.addStatistics("v", buildUniqStats(types, int32_type, 1000, 100));
+    auto estimator = builder.getEstimator();
+    ASSERT_NE(estimator, nullptr);
+
+    auto unfiltered = estimator->estimateRelationProfile(metadata);
+    EXPECT_EQ(unfiltered.rows, 1000u);
+    ASSERT_TRUE(unfiltered.column_stats.contains("e"));
+    EXPECT_EQ(unfiltered.column_stats.at("e").num_distinct_values, 4u);
+    ASSERT_TRUE(unfiltered.column_stats.at("e").min_value && unfiltered.column_stats.at("e").max_value);
+    EXPECT_EQ(*unfiltered.column_stats.at("e").min_value, Field(Int64(1)));
+    EXPECT_EQ(*unfiltered.column_stats.at("e").max_value, Field(Int64(4)));
+    EXPECT_FALSE(unfiltered.column_stats.contains("v"));
+
+    /// One of the 4 values of `e`, estimated from its statistics.
+    auto filtered_by_e = estimateProfileFor(estimator, "e = 1", columns, metadata);
+    EXPECT_EQ(filtered_by_e.rows, 250u);
+    EXPECT_TRUE(filtered_by_e.column_stats.contains("e"));
+    EXPECT_FALSE(filtered_by_e.column_stats.contains("v"));
+
+    /// Without usable statistics for `v` the equality gets the default factor (0.01).
+    auto filtered_by_v = estimateProfileFor(estimator, "v = 5", columns, metadata);
+    EXPECT_EQ(filtered_by_v.rows, 10u);
+    EXPECT_FALSE(filtered_by_v.column_stats.contains("v"));
+
+    /// The reverse conversion is not metadata-only: a part may hold an `Int8` that names no element of the `Enum8`.
+    auto enum_metadata = std::make_shared<StorageInMemoryMetadata>();
+    enum_metadata->setColumns(ColumnsDescription(NamesAndTypesList{{"e", enum_type}}));
+    ConditionSelectivityEstimatorBuilder int8_builder(getContext().context);
+    int8_builder.incrementRowCount(1000);
+    int8_builder.addStatistics("e", buildUniqStats(types, int8_type, 1000, 4, /*first_value=*/ 1));
+    EXPECT_FALSE(int8_builder.getEstimator()->estimateRelationProfile(enum_metadata).column_stats.contains("e"));
 }
 
 #if USE_DATASKETCHES
