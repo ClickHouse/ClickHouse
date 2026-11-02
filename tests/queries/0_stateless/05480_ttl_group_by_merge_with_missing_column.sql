@@ -40,3 +40,26 @@ ALTER TABLE t_set ADD COLUMN x UInt64;
 ALTER TABLE t_set MODIFY TTL d + INTERVAL 1 DAY GROUP BY k SET s = sum(s), x = sum(s) SETTINGS materialize_ttl_after_modify = 0;
 OPTIMIZE TABLE t_set FINAL;
 SELECT 'set', k, s, x FROM t_set;
+
+-- A merge that does not apply the TTL leaves out a `SET` target that no source part stores.
+CREATE TABLE t_set_not_due (k UInt64, id UInt64, d DateTime, s UInt64) ENGINE = MergeTree ORDER BY (k, id)
+TTL d + INTERVAL 1 DAY GROUP BY k SET s = sum(s)
+SETTINGS enable_vertical_merge_algorithm = 0;
+INSERT INTO t_set_not_due SELECT 1, number, '2100-01-01', 1 FROM numbers(10);
+INSERT INTO t_set_not_due SELECT 1, number + 10, '2100-01-01', 1 FROM numbers(10);
+ALTER TABLE t_set_not_due ADD COLUMN x UInt64;
+ALTER TABLE t_set_not_due MODIFY TTL d + INTERVAL 1 DAY GROUP BY k SET s = sum(s), x = sum(s) SETTINGS materialize_ttl_after_modify = 0;
+OPTIMIZE TABLE t_set_not_due FINAL;
+SELECT 'parts storing x', count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_set_not_due' AND active AND column = 'x';
+
+-- With TTL merges stopped, a merge must neither aggregate the due rows nor lose the `SET` target.
+CREATE TABLE t_set_stopped (k UInt64, id UInt64, d DateTime, s UInt64) ENGINE = MergeTree ORDER BY (k, id)
+TTL d + INTERVAL 1 DAY GROUP BY k SET s = sum(s)
+SETTINGS enable_vertical_merge_algorithm = 0;
+SYSTEM STOP TTL MERGES t_set_stopped;
+INSERT INTO t_set_stopped SELECT 1, number, '2000-01-01', 1 FROM numbers(10);
+INSERT INTO t_set_stopped SELECT 1, number + 10, '2000-01-01', 1 FROM numbers(10);
+ALTER TABLE t_set_stopped ADD COLUMN x UInt64;
+ALTER TABLE t_set_stopped MODIFY TTL d + INTERVAL 1 DAY GROUP BY k SET s = sum(s), x = sum(s) SETTINGS materialize_ttl_after_modify = 0;
+OPTIMIZE TABLE t_set_stopped FINAL;
+SELECT 'set stopped', count(), sum(s), sum(x) FROM t_set_stopped;
