@@ -1797,7 +1797,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const
 {
     result.checkInternalConsistency();
 
@@ -1848,15 +1848,18 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
     {
-        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-        Block additional_columns = block;
-
-        /// Carry over columns projected out at earlier steps: they may be needed
-        /// to evaluate defaults of columns missing in the part.
-        for (const auto & col : result.additional_columns)
+        /// Columns might be projected out. A later step may need them to evaluate defaults of columns missing in the part.
+        Block additional_columns;
+        if (keep_additional_columns)
         {
-            if (!additional_columns.has(col.name))
-                additional_columns.insert(col);
+            additional_columns = block;
+
+            /// Carry over columns projected out at earlier steps.
+            for (const auto & col : result.additional_columns)
+            {
+                if (!additional_columns.has(col.name))
+                    additional_columns.insert(col);
+            }
         }
 
         if (prewhere_info->actions)
@@ -1873,8 +1876,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         result.additional_columns.clear();
 
-        /// Additional columns might only be needed if there are more steps in the chain.
-        if (!is_last_reader)
+        if (keep_additional_columns)
         {
             const bool filter_column_is_removed = prewhere_info->type == PrewhereExprStep::Filter && prewhere_info->remove_filter_column;
 
