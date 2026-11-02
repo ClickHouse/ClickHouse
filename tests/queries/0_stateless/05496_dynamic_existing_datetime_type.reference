@@ -1,0 +1,19 @@
+JSONExtract, DateTime first
+['DateTime','String','String','String']	['2024-12-22 16:18:16','1','31','32']
+JSONExtract, DateTime64 first
+['DateTime64(9)','String','String']	['2024-12-22 16:18:16.123000000','1','1.5']
+JSON type
+1	2024-01-01 00:00:00	DateTime
+2	1	String
+3	1.5	String
+4	2024-01-02 03:04:05	DateTime
+JSON type, array
+1	['2024-01-01 00:00:00']	Array(Nullable(DateTime))
+2	['1']	Array(Nullable(String))
+Date and date time strings still go to an existing DateTime
+['DateTime','String','DateTime','DateTime','DateTime']	['2024-12-22 16:18:16','32','2024-12-23 10:00:00','2024-12-23 10:00:00','2024-12-23 00:00:00']
+Date first
+['Date','String','String']	['2024-12-22','1','31']
+Reversed order
+['String','String','String','String']	['1','31','32','2024-12-22 16:18:16']
+['String','String','String']	['1','1.5','2024-12-22 16:18:16.123']
