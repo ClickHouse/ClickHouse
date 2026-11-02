@@ -1,6 +1,7 @@
--- Tags: linux
+-- Tags: linux, no-fasttest
 -- Tag linux: 'io_uring' needs USE_LIBURING, which is Linux-only; on other
 -- platforms createReadBufferFromFileBase throws UNSUPPORTED_METHOD.
+-- Tag no-fasttest: the Fast test container runs under Docker's default seccomp profile, which blocks the io_uring syscalls, so `IOUringReader::isSupported` is false and the read throws UNSUPPORTED_METHOD.
 
 -- Covers the two asynchronous branches of the local read buffer factory
 -- createReadBufferFromFileBase (src/Disks/IO/createReadBufferFromFileBase.cpp):
