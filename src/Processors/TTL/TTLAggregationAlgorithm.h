@@ -45,9 +45,8 @@ private:
     Columns calculateSortingKey(const Block & block) const;
 
     const Block header;
-    /// `header` and the arguments of the aggregate functions that are not its columns; the header of the aggregator.
+    /// `header` plus the aggregate function arguments that `argument_expressions` calculate from its columns.
     Block aggregator_header;
-    /// Calculate those arguments from the columns of `header`, with the names of the calculated columns.
     std::vector<std::pair<ExpressionActionsPtr, Names>> argument_expressions;
     /// Calculates the sorting key from the columns of the header. Empty if the table has no sorting key.
     ExpressionActionsPtr sorting_key_expression;
