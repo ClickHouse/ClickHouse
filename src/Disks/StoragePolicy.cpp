@@ -2,7 +2,7 @@
 #include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskSelector.h>
 #include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <map>
 #include <ranges>
 #include <set>
 
@@ -475,8 +476,8 @@ std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & 
 
 void StoragePolicy::buildVolumeIndices()
 {
-    /// A cache disk shares the files of the disk it wraps, so a policy must not contain two disks over the same underlying disk.
-    std::unordered_map<String, String> policy_disk_by_underlying_disk;
+    /// `cache` and `encrypted` disks share the files of the disk they wrap, so two disks of a policy must not resolve to the same directory.
+    std::map<std::pair<const IMetadataStorage *, String>, String> policy_disk_by_directory;
 
     for (size_t index = 0; index < volumes.size(); ++index)
     {
@@ -498,17 +499,14 @@ void StoragePolicy::buildVolumeIndices()
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
 
-            if (auto underlying_disk = std::dynamic_pointer_cast<const DiskObjectStorage>(disk))
+            if (auto metadata_storage = unwrapEncryptedAndCacheLayers(disk))
             {
-                while (auto wrapped_disk = underlying_disk->getWrappedDisk())
-                    underlying_disk = wrapped_disk;
-
-                auto [it, inserted] = policy_disk_by_underlying_disk.emplace(underlying_disk->getName(), disk_name);
+                auto [it, inserted] = policy_disk_by_directory.emplace(std::pair{metadata_storage.get(), disk->getPath()}, disk_name);
                 if (!inserted)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Disks {} and {} in storage policy {} store data on the same disk {}, "
+                    throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                                    "Disks {} and {} in storage policy {} store data in the same directory {}, "
                                     "so a table would load each of its parts twice",
-                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(underlying_disk->getName()));
+                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(disk->getPath()));
             }
 
             volume_index_by_disk_name[disk_name] = index;

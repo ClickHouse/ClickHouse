@@ -24,6 +24,22 @@
                 <path>cache_of_cache_1/</path>
                 <max_size>1Gi</max_size>
             </cache_of_cache_1>
+            <encrypted_1>
+                <type>encrypted</type>
+                <disk>cache_1</disk>
+                <key>1234567812345678</key>
+            </encrypted_1>
+            <encrypted_2>
+                <type>encrypted</type>
+                <disk>cache_2</disk>
+                <key>1234567812345678</key>
+            </encrypted_2>
+            <encrypted_subdir>
+                <type>encrypted</type>
+                <disk>blob</disk>
+                <path>encrypted/</path>
+                <key>1234567812345678</key>
+            </encrypted_subdir>
         </disks>
         <policies>
             <cache_1_only>
@@ -40,6 +56,14 @@
                     </main>
                 </volumes>
             </cache_2_only>
+            <blob_and_encrypted_subdir>
+                <volumes>
+                    <main>
+                        <disk>blob</disk>
+                        <disk>encrypted_subdir</disk>
+                    </main>
+                </volumes>
+            </blob_and_encrypted_subdir>
         </policies>
     </storage_configuration>
 </clickhouse>
