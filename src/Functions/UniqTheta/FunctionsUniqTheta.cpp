@@ -17,7 +17,7 @@ Two uniqThetaSketch objects to do union calculation(set operation ∪), the resu
     FunctionDocumentation::Arguments arguments_uniqThetaUnion = {
         {"uniqThetaSketch", "uniqThetaSketch object.", {"Tuple", "Array", "Date", "DateTime", "String", "(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_uniqThetaUnion = {"Returns a new uniqThetaSketch containing the union result.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value_uniqThetaUnion = {"Returns a new uniqThetaSketch containing the union result.", {"AggregateFunction"}};
     FunctionDocumentation::Examples examples_uniqThetaUnion = {
     {
         "Usage example",
@@ -45,7 +45,7 @@ Two uniqThetaSketch objects to do intersect calculation(set operation ∩), the 
     FunctionDocumentation::Arguments arguments_uniqThetaIntersect = {
         {"uniqThetaSketch", "uniqThetaSketch object.", {"Tuple", "Array", "Date", "DateTime", "String", "(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_uniqThetaIntersect = {"A new uniqThetaSketch containing the intersect result.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value_uniqThetaIntersect = {"A new uniqThetaSketch containing the intersect result.", {"AggregateFunction"}};
     FunctionDocumentation::Examples examples_uniqThetaIntersect = {
     {
         "Usage example",
@@ -73,7 +73,7 @@ Two uniqThetaSketch objects to do a_not_b calculation(set operation ×), the res
     FunctionDocumentation::Arguments arguments_uniqThetaNot = {
         {"uniqThetaSketch", "uniqThetaSketch object.", {"Tuple", "Array", "Date", "DateTime", "String", "(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_uniqThetaNot = {"Returns a new uniqThetaSketch containing the a_not_b result.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value_uniqThetaNot = {"Returns a new uniqThetaSketch containing the a_not_b result.", {"AggregateFunction"}};
     FunctionDocumentation::Examples examples_uniqThetaNot = {
     {
         "Usage example",
