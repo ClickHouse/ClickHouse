@@ -11,3 +11,6 @@ lambda	WHERE arrayExists(event -> (event = \'keep\'), tags) AND (event = toDateT
 MODIFY TTL lambda	WHERE arrayExists(event -> (event = \'keep\'), tags) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))
 lambda element	WHERE arrayExists(n -> (n.event = \'keep\'), arr)
 DELETE lambda	['other']
+lambda DateTime	WHERE arrayExists(event -> (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), arr) OR arrayExists(x -> (x = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), arr) OR mapExists((k, v) -> (v = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), m) OR arrayFold((acc, x) -> (acc OR (x = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))), arr, false) OR arrayExists(a -> arrayExists(b -> (b = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), a), nested) OR arrayExists(event -> (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), arrayMap(y -> y, arr))
+SELECT lambda DateTime	1
+DELETE lambda DateTime	2

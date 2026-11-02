@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS t_untyped;
 DROP TABLE IF EXISTS t_lambda_create;
 DROP TABLE IF EXISTS t_lambda_modify;
 DROP TABLE IF EXISTS t_lambda_element;
+DROP TABLE IF EXISTS t_lambda_datetime;
+DROP TABLE IF EXISTS t_lambda_mutation;
 DROP TABLE IF EXISTS t_rollup_create;
 DROP TABLE IF EXISTS t_rollup_modify;
 
@@ -76,7 +78,8 @@ ALTER TABLE t_rollup_modify MODIFY TTL event + INTERVAL 1 SECOND GROUP BY k
 SELECT 'MODIFY TTL GROUP BY SET', position(engine_full, 'sumIf(value, event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))') > 0
 FROM system.tables WHERE database = currentDatabase() AND name = 't_rollup_modify';
 
--- A lambda parameter shadows the column of the same name: its comparison keeps the string.
+-- A lambda parameter has the type of the element it is bound to and shadows the column of the same name: a `String` keeps the
+-- string.
 CREATE TABLE t_lambda_create (event DateTime, tags Array(String)) ENGINE = MergeTree ORDER BY tuple()
 TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(event -> event = 'keep', tags) AND event = '2020-01-01 00:00:00';
 SELECT 'lambda', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_create';
@@ -95,6 +98,24 @@ INSERT INTO t_lambda_modify SETTINGS session_timezone = '' VALUES ('2100-01-01 0
 ALTER TABLE t_lambda_modify DELETE WHERE arrayExists(event -> event = 'keep', tags) SETTINGS mutations_sync = 2;
 SELECT 'DELETE lambda', tags FROM t_lambda_modify;
 
+-- A lambda parameter of a `DateTime` type gets the time zone whatever its name, over an array, over a map, as the element of
+-- `arrayFold` and over a parameter of an enclosing lambda. The type of a parameter bound to an expression is not known, and the
+-- parameter is matched with the columns by its name.
+CREATE TABLE t_lambda_datetime (event DateTime, arr Array(DateTime), m Map(String, DateTime), nested Array(Array(DateTime)))
+ENGINE = MergeTree ORDER BY tuple()
+TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(event -> event = '2020-01-01 00:00:00', arr)
+    OR arrayExists(x -> x = '2020-01-01 00:00:00', arr) OR mapExists((k, v) -> v = '2020-01-01 00:00:00', m)
+    OR arrayFold((acc, x) -> acc OR x = '2020-01-01 00:00:00', arr, false)
+    OR arrayExists(a -> arrayExists(b -> b = '2020-01-01 00:00:00', a), nested)
+    OR arrayExists(event -> event = '2020-01-01 00:00:00', arrayMap(y -> y, arr));
+SELECT 'lambda DateTime', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_datetime';
+
+CREATE TABLE t_lambda_mutation (id UInt8, event DateTime, arr Array(DateTime)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_lambda_mutation VALUES (1, 0, [1577804400]), (2, 0, [1577836800]);
+SELECT 'SELECT lambda DateTime', id FROM t_lambda_mutation WHERE arrayExists(event -> event = '2020-01-01 00:00:00', arr);
+ALTER TABLE t_lambda_mutation DELETE WHERE arrayExists(event -> event = '2020-01-01 00:00:00', arr) SETTINGS mutations_sync = 2;
+SELECT 'DELETE lambda DateTime', id FROM t_lambda_mutation;
+
 DROP TABLE t_create;
 DROP TABLE t_modify;
 DROP TABLE t_source;
@@ -108,3 +129,5 @@ DROP TABLE t_clear_column;
 DROP TABLE t_lambda_create;
 DROP TABLE t_lambda_modify;
 DROP TABLE t_lambda_element;
+DROP TABLE t_lambda_datetime;
+DROP TABLE t_lambda_mutation;

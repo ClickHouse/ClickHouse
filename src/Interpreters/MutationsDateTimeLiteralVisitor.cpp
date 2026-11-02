@@ -1,5 +1,4 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
-#include <Core/Names.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -8,10 +7,15 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTTLElement.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTuple.h>
+
+#include <span>
 
 namespace DB
 {
@@ -19,15 +23,11 @@ namespace DB
 namespace
 {
 
-/// Returns the DateTime/DateTime64 column type if `identifier_name` refers to
-/// a DateTime column without an explicit timezone. Returns nullptr otherwise.
-DataTypePtr getDateTimeColumnType(const String & identifier_name, const ColumnsDescription & columns)
+/// Returns the DateTime/DateTime64 type if `type` is a DateTime without an explicit timezone, also inside `Nullable` or
+/// `LowCardinality`. Returns nullptr otherwise.
+DataTypePtr getZonelessDateTimeType(const DataTypePtr & type)
 {
-    const auto * desc = columns.tryGet(identifier_name);
-    if (!desc)
-        return nullptr;
-
-    auto unwrapped = removeNullable(removeLowCardinality(desc->type));
+    auto unwrapped = removeNullable(removeLowCardinality(type));
 
     if (const auto * dt = typeid_cast<const DataTypeDateTime *>(unwrapped.get()))
     {
@@ -42,13 +42,121 @@ DataTypePtr getDateTimeColumnType(const String & identifier_name, const ColumnsD
     return nullptr;
 }
 
-/// The same for an identifier, which is not a column when it names a parameter of an enclosing lambda or an element of
-/// one, such as `n.event` in `n -> n.event = '...'`.
-DataTypePtr getDateTimeColumnType(const ASTIdentifier & identifier, const ColumnsDescription & columns, const NameSet & lambda_parameters)
+/// Returns the DateTime/DateTime64 column type if `identifier_name` refers to
+/// a DateTime column without an explicit timezone. Returns nullptr otherwise.
+DataTypePtr getDateTimeColumnType(const String & identifier_name, const ColumnsDescription & columns)
 {
-    if (lambda_parameters.contains(identifier.name_parts.front()))
+    const auto * desc = columns.tryGet(identifier_name);
+    if (!desc)
         return nullptr;
+    return getZonelessDateTimeType(desc->type);
+}
+
+/// The types of the parameters of the enclosing lambdas, by name. A parameter with a known type shadows the column with its
+/// name. A type that is not known is nullptr, and then the identifier is matched with the columns by its name.
+using LambdaParameters = std::unordered_map<String, DataTypePtr>;
+
+/// The type of the element `element_names` of a tuple of type `type`, such as `n.event` of the parameter `n`, or nullptr.
+DataTypePtr getTupleElementType(DataTypePtr type, std::span<const String> element_names)
+{
+    for (const auto & element_name : element_names)
+    {
+        const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple)
+            return nullptr;
+        const auto position = tuple->tryGetPositionByName(element_name);
+        if (!position)
+            return nullptr;
+        type = tuple->getElement(*position);
+    }
+    return type;
+}
+
+/// The type of the lambda parameter that `identifier` names, or of its element, such as `n.event` in `n -> n.event = '...'`.
+/// Returns std::nullopt if the identifier does not name a parameter with a known type.
+std::optional<DataTypePtr> tryGetLambdaParameterType(const ASTIdentifier & identifier, const LambdaParameters & lambda_parameters)
+{
+    const auto it = lambda_parameters.find(identifier.name_parts.front());
+    if (it == lambda_parameters.end() || !it->second)
+        return std::nullopt;
+    return getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
+}
+
+/// The same for an identifier, which may name a parameter of an enclosing lambda or an element of one.
+DataTypePtr getDateTimeColumnType(const ASTIdentifier & identifier, const ColumnsDescription & columns, const LambdaParameters & lambda_parameters)
+{
+    if (const auto parameter_type = tryGetLambdaParameterType(identifier, lambda_parameters))
+        return *parameter_type ? getZonelessDateTimeType(*parameter_type) : nullptr;
     return getDateTimeColumnType(identifier.name(), columns);
+}
+
+/// The type of `argument` of a higher-order function if it is a column, a subcolumn or a lambda parameter with a known type,
+/// or nullptr.
+DataTypePtr getArgumentType(const ASTPtr & argument, const ColumnsDescription & columns, const LambdaParameters & lambda_parameters)
+{
+    const auto * identifier = argument->as<ASTIdentifier>();
+    if (!identifier)
+        return nullptr;
+    if (const auto parameter_type = tryGetLambdaParameterType(*identifier, lambda_parameters))
+        return *parameter_type;
+    const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name());
+    return column ? column->type : nullptr;
+}
+
+/// The types of the `num_parameters` parameters of the lambda that is the argument `lambda_position` of the higher-order
+/// function `function`: the elements of its arrays, the key and the value of its map, and the accumulator of `arrayFold`.
+/// A type that is not known is nullptr.
+DataTypes getLambdaParameterTypes(
+    const ASTFunction & function,
+    size_t lambda_position,
+    size_t num_parameters,
+    const ColumnsDescription & columns,
+    const LambdaParameters & lambda_parameters)
+{
+    DataTypes types(num_parameters);
+    const auto & arguments = function.arguments->children;
+    if (lambda_position != 0)
+        return types;
+
+    auto argument_type = [&](size_t position) -> DataTypePtr
+    {
+        return position < arguments.size() ? getArgumentType(arguments[position], columns, lambda_parameters) : nullptr;
+    };
+    auto element_type = [&](size_t position) -> DataTypePtr
+    {
+        const auto type = argument_type(position);
+        const auto * array = typeid_cast<const DataTypeArray *>(type.get());
+        return array ? array->getNestedType() : nullptr;
+    };
+
+    if (function.name == "arrayFold")
+    {
+        /// arrayFold((acc, x, ...) -> ..., array, ..., acc_initial)
+        if (num_parameters > 0 && arguments.size() == num_parameters + 1)
+        {
+            types[0] = argument_type(arguments.size() - 1);
+            for (size_t i = 1; i < num_parameters; ++i)
+                types[i] = element_type(i);
+        }
+        return types;
+    }
+
+    /// mapFilter((key, value) -> ..., map) and the other functions of a map.
+    if (num_parameters == 2 && arguments.size() == 2)
+    {
+        const auto type = argument_type(1);
+        if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        {
+            types[0] = map->getKeyType();
+            types[1] = map->getValueType();
+            return types;
+        }
+    }
+
+    /// arrayMap((x, y) -> ..., array_x, array_y) and the other functions of arrays.
+    for (size_t i = 0; i < num_parameters; ++i)
+        types[i] = element_type(i + 1);
+    return types;
 }
 
 /// Wraps a string literal AST with toDateTime('...', 'tz') or toDateTime64('...', scale, 'tz').
@@ -68,7 +176,7 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
 /// For a comparison like `column >= 'datetime-string'`, try to wrap the string
 /// literal with an explicit timezone cast. Modifies the AST in place.
 /// Returns true if any literal was wrapped.
-bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription & columns, const NameSet & lambda_parameters, const String & timezone)
+bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription & columns, const LambdaParameters & lambda_parameters, const String & timezone)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
         return false;
@@ -108,7 +216,7 @@ bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription &
 
 /// For an IN expression like `column IN ('dt1', 'dt2')`, wrap each string literal.
 /// Returns true if any literal was wrapped.
-bool tryWrapInLiterals(ASTFunction & function, const ColumnsDescription & columns, const NameSet & lambda_parameters, const String & timezone)
+bool tryWrapInLiterals(ASTFunction & function, const ColumnsDescription & columns, const LambdaParameters & lambda_parameters, const String & timezone)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
         return false;
@@ -164,13 +272,12 @@ public:
         const ColumnsDescription & columns;
         const String & session_timezone;
         bool modified = false;
-        /// The parameters of the enclosing lambdas: they shadow the columns of the same names.
-        NameSet lambda_parameters = {};
+        LambdaParameters lambda_parameters = {};
     };
 
     static bool needChildVisit(const ASTPtr & ast, const ASTPtr & /*child*/)
     {
-        /// A lambda visits its body itself.
+        /// The body of a lambda is visited with the types of its parameters by the function it is an argument of.
         if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
             return false;
         return !ast->as<ASTSelectQuery>();
@@ -201,9 +308,16 @@ public:
 
     static void visit(ASTFunction & function, Data & data)
     {
-        if (function.name == "lambda")
-            visitLambda(function, data);
-        else if (comparison_functions.contains(function.name))
+        /// The body of a lambda is visited with the function it is an argument of, which tells the types of its parameters.
+        if (function.arguments)
+        {
+            const auto & arguments = function.arguments->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+                if (auto * lambda = arguments[i]->as<ASTFunction>(); lambda && lambda->name == "lambda")
+                    visitLambda(*lambda, function, i, data);
+        }
+
+        if (comparison_functions.contains(function.name))
         {
             if (tryWrapComparisonLiteral(function, data.columns, data.lambda_parameters, data.session_timezone))
                 data.modified = true;
@@ -215,8 +329,9 @@ public:
         }
     }
 
-    /// Visit the body of `lambda(tuple(x, ...), body)` with its parameters shadowing the columns of the same names.
-    static void visitLambda(ASTFunction & lambda, Data & data)
+    /// Visit the body of `lambda(tuple(x, ...), body)`, the argument `lambda_position` of `function`, with the types of its
+    /// parameters.
+    static void visitLambda(ASTFunction & lambda, const ASTFunction & function, size_t lambda_position, Data & data)
     {
         if (!lambda.arguments || lambda.arguments->children.size() != 2)
             return;
@@ -224,10 +339,12 @@ public:
         if (!parameters || parameters->name != "tuple" || !parameters->arguments)
             return;
 
+        const auto & parameter_asts = parameters->arguments->children;
+        const auto types = getLambdaParameterTypes(function, lambda_position, parameter_asts.size(), data.columns, data.lambda_parameters);
         Data body_data{data.columns, data.session_timezone, false, data.lambda_parameters};
-        for (const auto & parameter : parameters->arguments->children)
-            if (const auto * identifier = parameter->as<ASTIdentifier>())
-                body_data.lambda_parameters.insert(identifier->name());
+        for (size_t i = 0; i < parameter_asts.size(); ++i)
+            if (const auto * identifier = parameter_asts[i]->as<ASTIdentifier>())
+                body_data.lambda_parameters[identifier->name()] = types[i];
 
         InDepthNodeVisitor<RewriteDateTimeLiteralsMatcher, true>(body_data).visit(lambda.arguments->children[1]);
         data.modified |= body_data.modified;
