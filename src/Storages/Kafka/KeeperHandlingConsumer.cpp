@@ -33,6 +33,84 @@ std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & pa
 
     return DB::parse<int64_t>(result);
 }
+
+/// A batched read sends every path of a chunk as a single request, so the chunk must
+/// stay within the Keeper/client max_request_size. The limit is configurable (the
+/// default is 1 MiB, but a server may advertise less) and tens of thousands of
+/// topic-partition locks would otherwise exceed it: every lock refresh would then
+/// fail with ZBADARGUMENTS, stalling consumption - the very failure this code removes.
+/// Bound each chunk by op count and by a conservative serialized-size estimate (the
+/// per-path overhead covers the op header, a possible chroot prefix and tracing), and
+/// if a chunk is still rejected as oversized, retry its paths one by one - the same
+/// batch-then-fallback shape tryRemoveChildrenRecursive() uses for failed multis.
+constexpr size_t lock_read_chunk_max_ops = 1024;
+constexpr size_t lock_read_chunk_max_bytes = 256 * 1024;
+constexpr size_t lock_read_per_path_overhead = 128;
+
+struct LockReadResult
+{
+    Coordination::Error error = Coordination::Error::ZOK;
+    String data;
+};
+
+std::vector<LockReadResult> readLockNodes(zkutil::ZooKeeper & keeper, const Strings & lock_paths)
+{
+    std::vector<LockReadResult> responses;
+    responses.reserve(lock_paths.size());
+
+    size_t first_unread = 0;
+    while (first_unread < lock_paths.size())
+    {
+        /// Always take at least one path per chunk, even if it alone exceeds the byte bound.
+        size_t last_in_chunk = first_unread;
+        size_t chunk_bytes = 0;
+        while (last_in_chunk < lock_paths.size() && last_in_chunk - first_unread < lock_read_chunk_max_ops)
+        {
+            chunk_bytes += lock_paths[last_in_chunk].size() + lock_read_per_path_overhead;
+            if (chunk_bytes > lock_read_chunk_max_bytes && last_in_chunk > first_unread)
+                break;
+            ++last_in_chunk;
+        }
+
+        Strings chunk;
+        chunk.reserve(last_in_chunk - first_unread);
+        for (size_t i = first_unread; i < last_in_chunk; ++i)
+            chunk.push_back(lock_paths[i]);
+
+        try
+        {
+            auto batch_responses = keeper.tryGet(chunk);
+            /// Collect locally first: on the per-request (non-MultiRead) path accessing a
+            /// response can throw, and a partial append would corrupt the caller's pairing
+            /// of responses to paths once the fallback re-reads the chunk.
+            std::vector<LockReadResult> chunk_results;
+            chunk_results.reserve(chunk.size());
+            for (size_t i = 0; i < chunk.size(); ++i)
+                chunk_results.push_back(LockReadResult{batch_responses[i].error, batch_responses[i].data});
+            responses.insert(responses.end(), chunk_results.begin(), chunk_results.end());
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code != Coordination::Error::ZBADARGUMENTS)
+                throw;
+            /// The chunk exceeded the configured request size limit (a limit below our
+            /// conservative bound): read the chunk path by path, every request is small.
+            std::vector<zkutil::ZooKeeper::FutureGet> futures;
+            futures.reserve(chunk.size());
+            for (const auto & path : chunk)
+                futures.push_back(keeper.asyncTryGetNoThrow(path));
+            for (auto & future : futures)
+            {
+                auto response = future.get();
+                responses.push_back(LockReadResult{response.error, std::move(response.data)});
+            }
+        }
+
+        first_unread = last_in_chunk;
+    }
+
+    return responses;
+}
 }
 
 KeeperHandlingConsumer::MessageInfo::MessageInfo(const KafkaConsumer2 & kafka_consumer_)
@@ -275,10 +353,10 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
 
     /// Locks are released and re-acquired as replicas rebalance. A lock listed by
     /// getChildren() may already be gone by the time we read it; such a lock is held
-    /// by no one, so skip it instead of failing the whole polling round. Batched tryGet
-    /// also replaces N sequential synchronous gets with a single batched read (or, on a
-    /// cluster without the MultiRead feature, with parallel asynchronous reads).
-    auto lock_responses = keeper->tryGet(lock_paths);
+    /// by no one, so skip it instead of failing the whole polling round. Batched reads
+    /// (chunked to respect the request size limit) also replace N sequential
+    /// synchronous gets with a few batched round trips.
+    const auto lock_responses = readLockNodes(*keeper, lock_paths);
 
     for (size_t i = 0; i < lock_nodes.size(); ++i)
     {
