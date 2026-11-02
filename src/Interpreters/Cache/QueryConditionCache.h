@@ -129,9 +129,7 @@ public:
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
-    /// `table_object_id` tells apart the objects of a table that was created again with the same UUID, whose part
-    /// names start anew (MergeTree passes `MergeTreeData::getTableObjectId`; storages whose part names identify the
-    /// data by themselves pass 0).
+    /// `table_object_id` tells apart a table created again with the same UUID, whose part names start anew (0 if unused).
     void write(
         const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark, UInt64 table_object_id = 0);

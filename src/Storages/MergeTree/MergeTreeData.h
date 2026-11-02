@@ -762,8 +762,7 @@ public:
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
 
-    /// Unique among the table objects of the process, unlike the UUID: a table created again
-    /// with the UUID of a dropped one is a new object.
+    /// Unique per table object in the process, unlike the UUID, which a table created again can reuse.
     UInt64 getTableObjectId() const { return table_object_id; }
 
     struct CachesToPrewarm
