@@ -188,8 +188,6 @@ String getGlueColumnType(const Poco::Dynamic::Var & type)
         return "string";
     if (name == DB::Iceberg::f_timestamp || name == DB::Iceberg::f_timestamptz)
         return "timestamp";
-    if (name == DB::Iceberg::f_timestamp_ns || name == DB::Iceberg::f_timestamptz_ns)
-        return "timestamp_nano";
     if (name.starts_with("fixed["))
         return "binary";
     if (name.starts_with("decimal("))

@@ -1725,11 +1725,14 @@ bool IcebergStorageSink::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(
-                        namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location, metadata))
+                const auto commit = [&]
                 {
-                    if (!catalog_writes_metadata_file)
-                        Iceberg::removeUncommittedMetadataFile(resolver, metadata_info, object_storage);
+                    return catalog->updateMetadata(
+                        namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location, metadata);
+                };
+                if (!(catalog_writes_metadata_file ? commit()
+                                                   : Iceberg::commitCreatedMetadataFile(commit, resolver, metadata_info, object_storage)))
+                {
                     cleanup(true);
                     return false;
                 }

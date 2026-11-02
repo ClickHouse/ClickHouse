@@ -546,6 +546,9 @@ bool writeMetadataFileAndVersionHint(
     return true;
 }
 
+namespace
+{
+
 void removeUncommittedMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -561,6 +564,30 @@ void removeUncommittedMetadataFile(
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+}
+
+bool commitCreatedMetadataFile(
+    const std::function<bool()> & commit,
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    ObjectStoragePtr object_storage)
+{
+    bool committed = false;
+    try
+    {
+        committed = commit();
+    }
+    catch (...)
+    {
+        if (!isCommitStateUnknown())
+            removeUncommittedMetadataFile(resolver, metadata_file_info, object_storage);
+        throw;
+    }
+    if (!committed)
+        removeUncommittedMetadataFile(resolver, metadata_file_info, object_storage);
+    return committed;
 }
 
 bool isCommitStateUnknown()

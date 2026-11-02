@@ -795,10 +795,16 @@ ExpireSnapshotsResult expireSnapshots(
             {
                 auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
                 const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-                if (!catalog->updateMetadata(
-                        namespace_name, parsed_table_name, catalog_filename, nullptr, base_catalog_metadata_location, metadata))
+                if (!Iceberg::commitCreatedMetadataFile(
+                        [&]
+                        {
+                            return catalog->updateMetadata(
+                                namespace_name, parsed_table_name, catalog_filename, nullptr, base_catalog_metadata_location, metadata);
+                        },
+                        persistent_table_components.path_resolver,
+                        metadata_info,
+                        object_storage))
                 {
-                    Iceberg::removeUncommittedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                     LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
                     continue;
                 }

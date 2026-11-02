@@ -580,11 +580,14 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(
-                    namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location, metadata))
+            const auto commit = [&]
             {
-                if (!catalog_writes_metadata_file)
-                    Iceberg::removeUncommittedMetadataFile(path_resolver, metadata_info, object_storage);
+                return catalog->updateMetadata(
+                    namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location, metadata);
+            };
+            if (!(catalog_writes_metadata_file ? commit()
+                                               : Iceberg::commitCreatedMetadataFile(commit, path_resolver, metadata_info, object_storage)))
+            {
                 cleanup();
                 return false;
             }
@@ -924,11 +927,16 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(
-                    namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, base_catalog_metadata_location))
+            const auto commit = [&]
             {
-                if (!catalog_writes_metadata_file)
-                    Iceberg::removeUncommittedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                return catalog->updateSchema(
+                    namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, base_catalog_metadata_location);
+            };
+            if (!(catalog_writes_metadata_file
+                      ? commit()
+                      : Iceberg::commitCreatedMetadataFile(
+                            commit, persistent_table_components.path_resolver, metadata_info, object_storage)))
+            {
                 ++i;
                 continue;
             }

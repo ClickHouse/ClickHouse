@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -79,8 +80,11 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
-/// Best-effort removal of a metadata file the catalog refused to commit, so that a retry can write the same name.
-void removeUncommittedMetadataFile(
+/// Calls `commit`, which commits the metadata file `metadata_file_info` this writer created to a catalog that does not
+/// write metadata files. When the catalog does not commit it (`false`, or an exception other than an unknown outcome),
+/// the file is removed so that a retry or the next write can use the same name.
+bool commitCreatedMetadataFile(
+    const std::function<bool()> & commit,
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
     DB::ObjectStoragePtr object_storage);

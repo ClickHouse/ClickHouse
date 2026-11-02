@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -2533,6 +2534,63 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         assert parameters["concurrent_touch"] == "1", parameters
         assert query_glue_fault_proxy(started_cluster, f"updates/{namespace}") == "2"
         assert query_glue_fault_proxy(started_cluster, f"rejected/{namespace}") == "1"
+    if mode == "rejected":
+        # The rejected commit removes its metadata file, so it does not block the next write.
+        assert list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table) == set()
+        node.query(insert, settings=GLUE_WRITE_SETTINGS)
+        assert node.query(f"SELECT id FROM {db_name}.`{namespace}.{table_name}` ORDER BY id") == "1\n2\n"
+        assert get_glue_table(started_cluster, namespace, table_name)["Parameters"]["metadata_location"] != table.metadata_location
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_update_keeps_nested_nanosecond_timestamp_readable(started_cluster):
+    # A commit registers a nested nanosecond timestamp with a Glue type the Glue database can still read.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"nanos_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_nanos_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+        NestedField(
+            field_id=2,
+            name="st",
+            field_type=StructType(NestedField(field_id=3, name="ts", field_type=TimestampType(), required=False)),
+            required=False,
+        ),
+    )
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [], schema)
+    # pyiceberg 0.11.1 cannot write format version 3, which `timestamp_ns` needs, so make the table the one a
+    # version 3 writer registers: `st.ts` is `timestamp_ns`, with the Glue type pyiceberg gives it.
+    bucket, key = split_s3_path(table.metadata_location)
+    metadata = json.loads(started_cluster.minio_client.get_object(bucket, key).read())
+    metadata["format-version"] = 3
+    metadata["next-row-id"] = 0
+    for field in metadata["schemas"][0]["fields"]:
+        if field["name"] == "st":
+            field["type"]["fields"][0]["type"] = "timestamp_ns"
+    v3_key = f"{key.rsplit('/', 1)[0]}/00001-{uuid.uuid4()}.metadata.json"
+    data = json.dumps(metadata).encode()
+    started_cluster.minio_client.put_object(bucket, v3_key, io.BytesIO(data), len(data))
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    glue_table["Parameters"]["previous_metadata_location"] = glue_table["Parameters"]["metadata_location"]
+    glue_table["Parameters"]["metadata_location"] = f"s3://{bucket}/{v3_key}"
+    for column in glue_table["StorageDescriptor"]["Columns"]:
+        if column["Name"] == "st":
+            column["Type"] = "struct<ts:timestamp_ns>"
+    put_glue_table(started_cluster, namespace, glue_table)
+
+    def glue_type(name):
+        columns = get_glue_table(started_cluster, namespace, table_name)["StorageDescriptor"].get("Columns", [])
+        return next((c["Type"] for c in columns if c["Name"] == name), None)
+
+    assert glue_type("st") == "struct<ts:timestamp_ns>"
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    node.query(f"INSERT INTO {table_ref} (id) VALUES (1)", settings=GLUE_WRITE_SETTINGS)
+    assert glue_type("st") == "struct<ts:timestamp_ns>"
+    assert node.query(f"SELECT count() FROM {table_ref}") == "1\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
