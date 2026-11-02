@@ -208,6 +208,23 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     return it->second;
 }
 
+void SchemaConverter::setListElementColumnMapperPath(TraversalNode & subnode) const
+{
+    if (!column_mapper || schema_idx >= file_metadata.schema.size())
+        return;
+    const auto & element = file_metadata.schema.at(schema_idx);
+    if (element.__isset.field_id)
+    {
+        const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
+        if (auto it = field_id_map.find(element.field_id); it != field_id_map.end())
+        {
+            subnode.column_mapper_path = it->second;
+            return;
+        }
+    }
+    subnode.column_mapper_path = Nested::concatenateName(subnode.getColumnMapperPath(), "element");
+}
+
 static bool isPrimitiveNode(const parq::SchemaElement & elem)
 {
     /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
@@ -317,7 +334,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (node.schema_context == SchemaContext::None || node.schema_context == SchemaContext::MapKey)
     {
         bool not_in_schema = false;
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.getColumnMapperPath(), not_in_schema));
 
         /// A column that is not in the data lake schema is never requested, and its physical name
         /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
@@ -726,18 +743,7 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
-
-    if (column_mapper && schema_idx < file_metadata.schema.size())
-    {
-        const auto & elem_schema = file_metadata.schema.at(schema_idx);
-        if (elem_schema.__isset.field_id)
-        {
-            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
-            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
-                subnode.name = std::string(it->second);
-        }
-    }
-
+    setListElementColumnMapperPath(subnode);
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -1045,7 +1051,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     {
         bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
-            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
+            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.getColumnMapperPath(), not_in_schema));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
