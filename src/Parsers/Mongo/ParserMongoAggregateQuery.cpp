@@ -1042,19 +1042,56 @@ void translateReplaceRoot(SelectChain & chain, const rapidjson::Value & new_root
     chain.select_list = std::move(select_list);
 }
 
-/** The names of the columns a `*` of a collection expands to, in order, as a scalar subquery:
+/** The BSON type category of a type named by `type_name`, as far as `$unionWith` cares: `1` for a
+  * `Bool`, `2` for a number and `0` for anything else. A SQL `UNION ALL` converts the values of a
+  * column to a common type of its branches, which turns a boolean into a number when the other
+  * branch holds a number, while `$unionWith` appends the documents as they are.
+  */
+ASTPtr makeTypeCategory(const ASTPtr & type_name)
+{
+    return makeASTFunction(
+        "multiIf",
+        makeASTFunction("match", type_name->clone(), makeLiteral(Field(String(R"(^((Array|Nullable|LowCardinality)\()*Bool\)*$)")))),
+        makeLiteral(Field(UInt64(1))),
+        makeASTFunction(
+            "match",
+            type_name->clone(),
+            makeLiteral(Field(String(R"(^((Array|Nullable|LowCardinality)\()*(U?Int\d+|B?Float\d+|Decimal\d*\(.*\))\)*$)")))),
+        makeLiteral(Field(UInt64(2))),
+        makeLiteral(Field(UInt64(0))));
+}
+
+/// Whether two arrays of the categories of `makeTypeCategory`, of the same length, pair a boolean
+/// with a number.
+ASTPtr makePairsBooleanWithNumber(ASTPtr ours, ASTPtr theirs)
+{
+    auto lambda = makeASTFunction(
+        "lambda",
+        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_ours"), make_intrusive<ASTIdentifier>("__mongo_theirs")),
+        makeASTFunction(
+            "equals",
+            makeASTFunction("plus", make_intrusive<ASTIdentifier>("__mongo_ours"), make_intrusive<ASTIdentifier>("__mongo_theirs")),
+            makeLiteral(Field(UInt64(3)))));
+    return makeASTFunction("arrayExists", std::move(lambda), std::move(ours), std::move(theirs));
+}
+
+/** The names and the type categories (see `makeTypeCategory`) of the columns a `*` of a collection
+  * expands to, in order, as a scalar subquery:
   *
-  *     (SELECT arrayMap(c -> c.2, arraySort(groupArray((position, name)))) FROM system.columns
+  *     (SELECT arrayMap(c -> (c.2, <category of c.3>), arraySort(groupArray((position, name, type))))
+  *      FROM system.columns
   *      WHERE database = '<database>' AND table = '<collection>' AND default_kind != 'EPHEMERAL'
   *          AND (default_kind != 'MATERIALIZED' OR getSetting('asterisk_include_materialized_columns'))
   *          AND (default_kind != 'ALIAS' OR getSetting('asterisk_include_alias_columns')))
   */
-ASTPtr makeCollectionColumnNames(const std::string & database, const std::string & collection)
+ASTPtr makeCollectionColumns(const std::string & database, const std::string & collection)
 {
+    auto column_element = [](UInt64 index)
+    { return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("__mongo_column"), makeLiteral(Field(index))); };
     auto lambda = makeASTFunction(
         "lambda",
         makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_column")),
-        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("__mongo_column"), makeLiteral(Field(UInt64(2)))));
+        makeASTFunction("tuple", column_element(2), makeTypeCategory(column_element(3))));
     auto names = makeASTFunction(
         "arrayMap",
         std::move(lambda),
@@ -1062,7 +1099,11 @@ ASTPtr makeCollectionColumnNames(const std::string & database, const std::string
             "arraySort",
             makeASTFunction(
                 "groupArray",
-                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("position"), make_intrusive<ASTIdentifier>("name")))));
+                makeASTFunction(
+                    "tuple",
+                    make_intrusive<ASTIdentifier>("position"),
+                    make_intrusive<ASTIdentifier>("name"),
+                    make_intrusive<ASTIdentifier>("type")))));
 
     /// A `*` never expands to an `EPHEMERAL` column, and expands to a `MATERIALIZED` or an `ALIAS` one
     /// only when `asterisk_include_materialized_columns` or `asterisk_include_alias_columns` says
@@ -1128,21 +1169,41 @@ void translateUnionWith(SelectChain & chain, const rapidjson::Value & stage, con
     using Kind = StreamFields::Kind;
     if (ours.kind == Kind::Collection && theirs.kind == Kind::Collection)
     {
-        /// Two different collections may have the same fields, which only the server knows, so the
-        /// query checks that they do: the names of the columns of both, in order, must be equal.
+        /** Two different collections may have the same fields, which only the server knows, so the
+          * query checks that they do: the names of the columns of both, in order, must be equal, and
+          * no column may be a boolean in one of them and a number in the other (see
+          * `makeTypeCategory`).
+          */
         if (ours.database != theirs.database || ours.collection != theirs.collection)
         {
+            auto our_columns = makeCollectionColumns(ours.database, ours.collection);
+            auto their_columns = makeCollectionColumns(theirs.database, theirs.collection);
+            auto elements = [](const ASTPtr & columns, UInt64 index)
+            {
+                auto lambda = makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_column")),
+                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("__mongo_column"), makeLiteral(Field(index))));
+                return makeASTFunction("arrayMap", std::move(lambda), columns->clone());
+            };
+            /// `arrayExists` needs arrays of the same size, which collections with different names may not have.
+            auto size = makeASTFunction(
+                "greatest", makeASTFunction("length", our_columns->clone()), makeASTFunction("length", their_columns->clone()));
+            auto resized = [&](const ASTPtr & columns)
+            { return makeASTFunction("arrayResize", elements(columns, 2), size->clone(), makeLiteral(Field(UInt64(0)))); };
+            auto incompatible = makeASTFunction(
+                "or",
+                makeASTFunction("notEquals", elements(our_columns, 1), elements(their_columns, 1)),
+                makePairsBooleanWithNumber(resized(our_columns), resized(their_columns)));
             auto check = makeASTFunction(
                 "equals",
                 makeASTFunction(
                     "throwIf",
-                    makeASTFunction(
-                        "notEquals",
-                        makeCollectionColumnNames(ours.database, ours.collection),
-                        makeCollectionColumnNames(theirs.database, theirs.collection)),
+                    std::move(incompatible),
                     makeLiteral(Field(fmt::format(
                         "'$unionWith' of the collection '{}' requires it to have the same fields in the same order as the collection "
-                        "'{}', because the documents of a union are matched by the position of a field rather than by its name",
+                        "'{}', because the documents of a union are matched by the position of a field rather than by its name, "
+                        "and no field may be a boolean in one of them and a number in the other",
                         theirs.collection,
                         ours.collection)))),
                 makeLiteral(Field(UInt64(0))));
@@ -1177,12 +1238,42 @@ void translateUnionWith(SelectChain & chain, const rapidjson::Value & stage, con
             "its fields as they are, or both end with stages that name every field they produce, such as '$group' or a "
             "'$project' of computed fields, with the same names on both sides");
 
+    /** The types of the fields are only known when the query is analyzed, so the query checks that no
+      * field is a boolean on one side and a number on the other (see `makeTypeCategory`). The types
+      * of our fields come from a scalar subquery that reads none of our documents, which yields one
+      * row thanks to the aggregation: `(SELECT [<category of toTypeName(any(<field>))>, ...] FROM
+      * (<ours>) WHERE 0)`. Both are constants, so the check is done when the query is analyzed.
+      */
+    auto our_categories = makeASTFunction("array");
+    auto their_categories = makeASTFunction("array");
+    for (const auto & name : ours.names)
+    {
+        our_categories->arguments->children.push_back(
+            makeTypeCategory(makeASTFunction("toTypeName", makeASTFunction("any", make_intrusive<ASTIdentifier>(name)))));
+        their_categories->arguments->children.push_back(makeTypeCategory(makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(name))));
+    }
+    SelectChain probe(makeSubquery(chain.build()));
+    probe.select_list = make_intrusive<ASTExpressionList>();
+    probe.select_list->children.push_back(std::move(our_categories));
+    probe.where = makeLiteral(Field(UInt64(0)));
+    auto check = makeASTFunction(
+        "equals",
+        makeASTFunction(
+            "throwIf",
+            makePairsBooleanWithNumber(makeSubquery(probe.build()), std::move(their_categories)),
+            makeLiteral(Field(String("'$unionWith' requires that no field is a boolean in one of the pipelines and a number in the other, "
+                                     "because the union would convert the booleans into numbers")))),
+        makeLiteral(Field(UInt64(0))));
+
+    if (!other.onlyFiltered())
+        other.wrap();
+    other.where = other.where ? makeASTFunction("and", other.where, std::move(check)) : std::move(check);
+
     if (theirs.names != ours.names)
     {
         auto select_list = make_intrusive<ASTExpressionList>();
         for (const auto & name : ours.names)
             select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
-        other.wrap();
         other.select_list = std::move(select_list);
     }
 

@@ -238,6 +238,28 @@ ASTPtr makeIsDate(const ASTPtr & value)
         makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(Date|DateTime))"))));
 }
 
+/// Whether the type of `value` is `Dynamic`, whose values carry types of their own. A constant.
+ASTPtr makeIsDynamic(const ASTPtr & value)
+{
+    return makeASTFunction("startsWith", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String("Dynamic"))));
+}
+
+/** The name of the type of `value` in each row: the type it holds for a `Dynamic` - `None` for a
+  * `NULL` - and its own type otherwise, where it is the same constant `toTypeName` is. A document
+  * whose first value of a field is `null` stores the field as `Dynamic`, and its later values are of
+  * any type, so the category of such a value is only known when the query reads it. `dynamicType`
+  * only accepts a `Dynamic`, so the value is cast to it, which is a no-op for a `Dynamic` and
+  * analyzes for the other types too, which the condition then drops.
+  */
+ASTPtr makeRuntimeTypeName(const ASTPtr & value)
+{
+    return makeASTFunction(
+        "if",
+        makeIsDynamic(value),
+        makeASTFunction("dynamicType", makeASTFunction("CAST", value->clone(), makeLiteral(Field(String("Dynamic"))))),
+        makeASTFunction("toTypeName", value->clone()));
+}
+
 /// `value`, which throws when the query is analyzed if `condition` - a constant - is true.
 ASTPtr withGuard(ASTPtr value, ASTPtr condition, const std::string & message)
 {
@@ -614,9 +636,10 @@ ASTPtr makeToBool(ASTPtr argument)
 {
     return withValue(std::move(argument), [](const ASTPtr & value)
     {
+        /// The type of a `Dynamic` is the one of its value, see `makeRuntimeTypeName`.
         auto is_number = makeASTFunction(
             "match",
-            makeASTFunction("toTypeName", value->clone()),
+            makeRuntimeTypeName(value),
             makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|Float|Decimal|Bool))"))));
         auto text = makeASTFunction("toString", value->clone());
         auto number_truth = makeASTFunction(
@@ -1745,6 +1768,31 @@ ASTPtr makeAccumulatedNumber(const ASTPtr & value)
     return makeConstantChoice(makeIsAccumulatedNumber(value), value->clone(), makeLiteral(Field(UInt64(0))));
 }
 
+/** The argument of a numeric accumulator. `makeIsAccumulatedNumber` tells a number by the type of
+  * the value, which is a constant, while a `Dynamic` - the type of a field whose first value was
+  * `null` - holds values of any type, a number in one document and a boolean or a string in another.
+  * So a `Dynamic` is converted to a `Nullable(Float64)`, which is the number for a value that holds
+  * a number and `NULL` - which the aggregate functions skip - for any other one, or `0` when
+  * `zero_for_others` says so, which `$sum` adds up to `0` for a group without a number, as Mongo
+  * does. Any other value is left as it is. The number is read through its text, which never throws.
+  */
+ASTPtr makeAccumulatorArgument(ASTPtr argument, bool zero_for_others)
+{
+    return withValue(std::move(argument), [zero_for_others](const ASTPtr & value)
+    {
+        auto holds_a_number = makeASTFunction(
+            "match",
+            makeRuntimeTypeName(value),
+            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int\d+|B?Float\d+|Decimal\d*\(.*\))\)*$)"))));
+        auto number = makeASTFunction("toFloat64OrNull", makeASTFunction("toString", value->clone()));
+        auto other = zero_for_others ? makeASTFunction("toFloat64", makeLiteral(Field(UInt64(0)))) : makeNull();
+        auto converted = makeASTFunction("if", std::move(holds_a_number), std::move(number), std::move(other));
+        if (zero_for_others)
+            converted = makeASTFunction("ifNull", std::move(converted), makeASTFunction("toFloat64", makeLiteral(Field(UInt64(0)))));
+        return makeConstantChoice(makeIsDynamic(value), std::move(converted), value->clone());
+    });
+}
+
 /** `number`, widened to `Decimal256` with at least `scale` digits after the point if it is a
   * decimal, and to the type of `otherwise` - added as a zero - if it is not. `sum` accumulates a
   * `Decimal128` in a `Decimal128`, which wraps around without an error, while the sum of Mongo
@@ -1821,6 +1869,7 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         auto argument = parseMongoAggregateExpression(member.value);
         if (const auto * literal = argument->as<ASTLiteral>(); literal && literal->value == Field(Int64(1)))
             return makeASTFunction("count");
+        argument = makeAccumulatorArgument(std::move(argument), /* zero_for_others= */ true);
         /// A sum of integers that wraps around is an error, see `withIntegerOverflowCheck`, and a sum
         /// of decimals is accumulated wide enough not to, see `makeWidenedNumber`.
         auto is_number = makeIsAccumulatedNumber(argument);
@@ -1853,7 +1902,7 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     /// nest, so the copy does not compound.
     if (name == "$stdDevSamp")
     {
-        auto input = parseMongoAggregateExpression(member.value);
+        auto input = makeAccumulatorArgument(parseMongoAggregateExpression(member.value), /* zero_for_others= */ false);
         auto is_number = makeIsAccumulatedNumber(input);
         auto sampled = makeAccumulatedNumber(input);
         auto counted = makeASTFunction("countIf", sampled->clone(), is_number->clone());
@@ -1867,7 +1916,7 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     /// `$avg` and `$stdDevPop` of a group without a number are `null`, see `makeIsAccumulatedNumber`.
     if (name == "$stdDevPop")
     {
-        auto input = parseMongoAggregateExpression(member.value);
+        auto input = makeAccumulatorArgument(parseMongoAggregateExpression(member.value), /* zero_for_others= */ false);
         auto is_number = makeIsAccumulatedNumber(input);
         return makeASTFunction("stddevPopOrNullIf", makeAccumulatedNumber(input), std::move(is_number));
     }
@@ -1880,7 +1929,7 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
       */
     if (name == "$avg")
     {
-        auto input = parseMongoAggregateExpression(member.value);
+        auto input = makeAccumulatorArgument(parseMongoAggregateExpression(member.value), /* zero_for_others= */ false);
         auto is_number = makeIsAccumulatedNumber(input);
         auto number = makeAccumulatedNumber(input);
         auto count = makeASTFunction("countIf", number->clone(), is_number->clone());

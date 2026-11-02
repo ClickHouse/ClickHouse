@@ -3197,3 +3197,42 @@ def test_decimal_accumulators_keep_exact_values(started_cluster):
     assert type(result["s"]) == Decimal128 and result["s"].to_decimal() == Decimal128("1.8E+38").to_decimal()
     assert type(result["a"]) == Decimal128 and result["a"].to_decimal() == Decimal128("9007199254740993").to_decimal()
     collection.drop()
+
+
+def test_values_keep_their_categories(started_cluster):
+    """A float column rejects an integer it does not hold exactly; the values of a field whose first
+    value was `null` keep their categories in the numeric accumulators and in the truth value; and a
+    string bound of a comparison does not select a number."""
+    node = cluster.instances["node"]
+    database = make_client()["db"]
+
+    floats = database["inexact_integers_in_floats"]
+    floats.drop()
+    with pytest.raises(pymongo.errors.OperationFailure, match="does not hold exactly"):
+        floats.insert_many([{"id": 1, "x": 1.0}, {"id": 2, "x": bson.Int64(9007199254740993)}])
+    assert node.query("SELECT count() FROM db.inexact_integers_in_floats", password="123") == "0\n"
+    floats.drop()
+    floats.insert_many([{"id": 1, "x": 1.0, "xs": [1.0]}, {"id": 2, "x": bson.Int64(9007199254740992), "xs": [2]}])
+    with pytest.raises(pymongo.errors.OperationFailure, match="does not hold exactly"):
+        floats.insert_one({"id": 3, "x": bson.Int64(-9007199254740993)})
+    with pytest.raises(pymongo.errors.OperationFailure, match="does not hold exactly"):
+        floats.insert_one({"id": 3, "xs": [1.0, bson.Int64(9007199254740993)]})
+    assert node.query("SELECT id, x FROM db.inexact_integers_in_floats ORDER BY id", password="123") == "1\t1\n2\t9007199254740992\n"
+    floats.drop()
+
+    dynamic = database["null_first_values"]
+    dynamic.drop()
+    dynamic.insert_many([{"id": 1, "v": None}, {"id": 2, "v": 2}, {"id": 3, "v": 0}, {"id": 4, "v": False}, {"id": 5, "v": "x"}])
+    [result] = list(dynamic.aggregate([{"$group": {"_id": None, "s": {"$sum": "$v"}, "a": {"$avg": "$v"}}}]))
+    assert result["s"] == 2 and result["a"] == 1
+    dynamic.delete_many({"$expr": "$v"})
+    assert sorted(document["id"] for document in dynamic.find()) == [1, 3, 4]
+    dynamic.drop()
+
+    numbers = database["string_bounds_of_numbers"]
+    numbers.drop()
+    numbers.insert_many([{"id": 1, "x": 1}, {"id": 2, "x": 0}])
+    assert list(numbers.find({"x": {"$gt": "0"}})) == []
+    numbers.delete_many({"x": {"$gt": "0"}})
+    assert numbers.count_documents({}) == 2
+    numbers.drop()

@@ -21,6 +21,8 @@ enum class ConstantCategory : uint8_t
 {
     Boolean,
     Number,
+    String,
+    Date,
     Other,
 };
 
@@ -28,12 +30,14 @@ ConstantCategory constantCategory(const rapidjson::Value & value);
 
 /** Mongo compares values of different BSON type categories as unequal, and a range predicate only
   * selects values of the category of its constant ("type bracketing"), while ClickHouse stores a
-  * `Bool` as a number and compares it with numbers by value: `{"active": 1}` would select a
-  * document with `"active": true`. So a condition with a boolean constant is restricted to a field
-  * of type `Bool` - or an array of, or a nullable `Bool` - and one with a number to a field of
-  * another type. The type of the field is a constant, so the restriction folds away when the query
-  * is analyzed. Other categories need no restriction: ClickHouse refuses to compare, say, a string
-  * with a number rather than giving it a meaning.
+  * `Bool` as a number and compares it with numbers by value, and converts a string constant to the
+  * type of the column it is compared with: `{"active": 1}` would select a document with
+  * `"active": true`, and `{"x": {"$gt": "0"}}` a document with `"x": 1`. So a condition with a
+  * boolean constant is restricted to a field of type `Bool` - or an array of, or a nullable `Bool` -
+  * and one with a number, a string or a date to a field that is not of a type of another of these
+  * categories. The type of the field is a constant, so the restriction folds away when the query is
+  * analyzed. A field whose type does not name the category of its values, such as `Dynamic`, is not
+  * restricted. A constant of another category - `null` - is not restricted either.
   */
 ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition);
 

@@ -1,6 +1,8 @@
 #include <Parsers/Mongo/MongoConstants.h>
 
 #include <cmath>
+#include <limits>
+#include <vector>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -15,6 +17,7 @@
 #include <Common/Exception.h>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
@@ -73,8 +76,15 @@ T extendedJSONNumber(const rapidjson::Value & value, std::string_view wrapper)
     }
     else
     {
+        /// The relaxed form must be in the range of the type the wrapper declares, as the
+        /// canonical one is: `{"$numberInt": 2147483648}` is rejected rather than wrapped around.
         if (value.IsInt64())
-            return static_cast<T>(value.GetInt64());
+        {
+            Int64 number = value.GetInt64();
+            if (number < static_cast<Int64>(std::numeric_limits<T>::min()) || number > static_cast<Int64>(std::numeric_limits<T>::max()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of '{}' is out of the range of its type", number, wrapper);
+            return static_cast<T>(number);
+        }
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '{}' must be a number or a string", wrapper);
 }
@@ -251,26 +261,53 @@ ConstantCategory constantCategory(const rapidjson::Value & value)
         return ConstantCategory::Boolean;
     if (value.IsNumber())
         return ConstantCategory::Number;
+    if (value.IsString())
+        return ConstantCategory::String;
     if (value.IsObject() && value.MemberCount() == 1)
     {
         auto wrapper = stringView(value.MemberBegin()->name);
         if (wrapper == "$numberInt" || wrapper == "$numberLong" || wrapper == "$numberDouble" || wrapper == "$numberDecimal")
             return ConstantCategory::Number;
+        /// An `ObjectId` is stored as its hexadecimal text.
+        if (wrapper == "$oid")
+            return ConstantCategory::String;
+        if (wrapper == "$date")
+            return ConstantCategory::Date;
     }
     return ConstantCategory::Other;
 }
 
 ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition)
 {
+    /// The types of a category, as they are written inside the wrappers of the regular expression below.
+    static constexpr std::string_view boolean_types = "Bool";
+    static constexpr std::string_view number_types = R"(U?Int\d+|B?Float\d+|Decimal\d*\(.*\))";
+    static constexpr std::string_view string_types = R"(String|FixedString\(\d+\))";
+    static constexpr std::string_view date_types = R"(Date|Date32|DateTime(64)?(\(.*\))?)";
+
     if (category == ConstantCategory::Other)
         return condition;
-    auto field_is_boolean = makeASTFunction(
-        "match",
-        makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(field)),
-        make_intrusive<ASTLiteral>(Field(String("^((Array|Nullable|LowCardinality)\\()*Bool\\)*$"))));
-    if (category == ConstantCategory::Number)
-        field_is_boolean = makeASTFunction("not", std::move(field_is_boolean));
-    return makeASTFunction("and", std::move(field_is_boolean), std::move(condition));
+
+    /// A boolean only matches a `Bool`; a number, a string or a date matches any type that is not of
+    /// another of the categories.
+    const bool requires_the_types = category == ConstantCategory::Boolean;
+    std::vector<std::string_view> types = {boolean_types};
+    if (!requires_the_types)
+    {
+        if (category != ConstantCategory::Number)
+            types.push_back(number_types);
+        if (category != ConstantCategory::String)
+            types.push_back(string_types);
+        if (category != ConstantCategory::Date)
+            types.push_back(date_types);
+    }
+    auto pattern = fmt::format(R"(^((Array|Nullable|LowCardinality)\()*({})\)*$)", fmt::join(types, "|"));
+
+    ASTPtr field_is_of_category = makeASTFunction(
+        "match", makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(field)), make_intrusive<ASTLiteral>(Field(pattern)));
+    if (!requires_the_types)
+        field_is_of_category = makeASTFunction("not", std::move(field_is_of_category));
+    return makeASTFunction("and", std::move(field_is_of_category), std::move(condition));
 }
 
 std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(

@@ -353,13 +353,17 @@ std::vector<InsertHandler::DocumentField> inferSchema(
 }
 
 /** The smallest and the largest integer among the values of one field, see `checkValuesFitColumns`,
-  * and the first of its string values that is not the text of an integer, if any.
+  * the first of its string values that is not the text of an integer, if any, and the first of its
+  * integers that a `Float64` and a `Float32` do not hold exactly, if any. The latter are recorded
+  * value by value: the integers between two that a float holds are not all held by it.
   */
 struct IntegerRange
 {
     std::optional<Int128> min;
     std::optional<Int128> max;
     std::optional<String> non_integer;
+    std::optional<Int128> inexact_in_float64;
+    std::optional<Int128> inexact_in_float32;
 };
 
 /** The integer a string is the text of: the `JSONEachRow` reader reads a quoted number into a number
@@ -478,6 +482,11 @@ void recordNumbers(
     auto & range = integer_ranges[name];
     range.min = range.min ? std::min(*range.min, *number) : *number;
     range.max = range.max ? std::max(*range.max, *number) : *number;
+    /// The magnitude is at most `10^30` (see `parseIntegerText`), so it converts back from a float.
+    if (!range.inexact_in_float64 && static_cast<Int128>(static_cast<Float64>(*number)) != *number)
+        range.inexact_in_float64 = *number;
+    if (!range.inexact_in_float32 && static_cast<Int128>(static_cast<Float32>(*number)) != *number)
+        range.inexact_in_float32 = *number;
 }
 
 /** Records the range of the integers of every field of an already flattened document, including
@@ -607,7 +616,27 @@ void checkValuesFitColumns(
                 collection.database,
                 collection.collection);
 
-        auto type_range = getIntegerTypeRange(get_value_type(it->second));
+        auto value_type = get_value_type(it->second);
+
+        /** The reader rounds an integer that a float column does not hold exactly to a neighbor of
+          * it, e.g. `9007199254740993` in the `Float64` column inferred from a first value `1.0`
+          * becomes `9007199254740992`, and the stored number is not the one acknowledged.
+          */
+        std::optional<Int128> inexact;
+        if (WhichDataType(value_type).isFloat64())
+            inexact = range.inexact_in_float64;
+        else if (WhichDataType(value_type).isFloat32())
+            inexact = range.inexact_in_float32;
+        if (inexact)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The field '{}' holds the integer value {}, which its column of the type {} does not hold exactly: the value cannot "
+                "be stored",
+                name,
+                *inexact,
+                it->second);
+
+        auto type_range = getIntegerTypeRange(value_type);
         if (!type_range)
             continue;
         const auto [type_min, type_max] = *type_range;
