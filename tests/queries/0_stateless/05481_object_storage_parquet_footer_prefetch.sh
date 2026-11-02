@@ -28,8 +28,11 @@ ${CLICKHOUSE_CLIENT} $SETTINGS --query "SELECT sum(x) FROM s3(s3_conn, filename 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
 # The second query finds all footers in the Parquet metadata cache.
+# With parallel replicas, `s3` is rewritten to `s3Cluster` and the files are read by secondary queries,
+# which run with `current_database = 'default'`, so the hits are summed over `initial_query_id`.
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT ProfileEvents['ParquetMetadataCacheHits'] >= 4
+    SELECT sum(ProfileEvents['ParquetMetadataCacheHits']) >= 4
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '${Q}2'
+    WHERE initial_query_id = '${Q}2' AND type = 'QueryFinish'
+      AND (current_database = currentDatabase() OR NOT is_initial_query)
 "
