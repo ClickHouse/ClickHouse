@@ -166,6 +166,7 @@ namespace FailPoints
 namespace
 {
 
+#if USE_HDFS
 /// Throws `ACCESS_DENIED` unless the session of `context` has `READ ON HDFS` for `uri`, normalized as
 /// `ITableFunction::getFunctionURINormalized` does so that grant filters match alike.
 void checkHDFSReadAccess(const ContextPtr & context, const String & uri)
@@ -185,6 +186,7 @@ void checkHDFSReadAccess(const ContextPtr & context, const String & uri)
     context->getAccess()->checkAccessWithFilter(
         AccessType::READ, toStringSource(AccessTypeObjects::Source::HDFS), normalized_uri);
 }
+#endif
 
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
