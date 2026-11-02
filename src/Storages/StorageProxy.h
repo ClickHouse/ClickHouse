@@ -195,26 +195,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override { return getNested()->updateLightweight(commands, context); }
 
-    /// Without this the base implementation rejects every mutation before `mutate` is reached.
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
-    {
-        getNested()->checkMutationIsPossible(commands, settings);
-    }
-
-    bool supportsDelete() const override { return getNested()->supportsDelete(); }
-    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
-
-    /// `UPDATE` and `DELETE FROM` ask the catalog pointer first, so the check must reach the nested storage.
-    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override
-    {
-        return getNested()->supportsLightweightUpdate();
-    }
-
-    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
-    {
-        return getNested()->updateLightweight(commands, context);
-    }
-
     /// Gates `SELECT ... FROM t STREAM`.
     bool supportsStreaming() const override { return getNested()->supportsStreaming(); }
     bool supportsTransactions() const override { return getNested()->supportsTransactions(); }

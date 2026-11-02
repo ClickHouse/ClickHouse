@@ -307,15 +307,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     auto & create_query = ast->as<ASTCreateQuery &>();
 
-    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree"))
-        return;
-
-    const bool already_replicated = create_query.storage->engine->name.starts_with("Replicated")
-        || create_query.storage->engine->name.starts_with("Shared");
-
-    /// A run that rewrote the metadata but did not finalize the conversion leaves the flag behind. Only
-    /// a deferring database has to look for it here, since the startup job below sees the real storage.
-    if (already_replicated && !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
+    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree") || create_query.storage->engine->name.starts_with("Replicated") || create_query.storage->engine->name.starts_with("Shared"))
         return;
 
     /// Get table's storage policy
@@ -331,14 +323,6 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
-        return;
-
-    {
-        std::lock_guard lock(converting_to_replicated_mutex);
-        converting_to_replicated.insert(qualified_name.table);
-    }
-
-    if (already_replicated)
         return;
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
@@ -679,13 +663,6 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (!query.columns_list || !query.columns_list->columns)
         return false;
 
-    /// The startup job finalizes a pending conversion to replicated, which needs the real storage.
-    {
-        std::lock_guard lock(converting_to_replicated_mutex);
-        if (converting_to_replicated.contains(query.getTable()))
-            return false;
-    }
-
     return true;
 }
 
@@ -821,10 +798,6 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     }
 
     checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
-    {
-        std::lock_guard lock(converting_to_replicated_mutex);
-        converting_to_replicated.erase(name.table);
-    }
     LOG_INFO
     (
         log,

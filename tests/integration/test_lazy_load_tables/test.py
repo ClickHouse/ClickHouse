@@ -123,36 +123,6 @@ def test_deferred_engines_outside_the_mergetree_family(lazy_database):
     assert int(node.query(f"SELECT count() FROM {DB}.km")) == 10
 
 
-def test_convert_to_replicated_finishes(lazy_database):
-    """The `convert_to_replicated` flag is finalized by the startup job on the real storage, so a
-    table that still carries it is loaded eagerly."""
-    node.query(
-        f"""
-        CREATE TABLE {DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
-        INSERT INTO {DB}.t SELECT number FROM numbers(10);
-        """
-    )
-    data_path = node.query(
-        f"SELECT data_paths[1] FROM system.tables WHERE database = '{DB}' AND name = 't'"
-    ).strip()
-    node.exec_in_container(
-        ["bash", "-c", f"touch {data_path}convert_to_replicated"], user="root"
-    )
-
-    node.query(RELOAD)
-    assert node.query(
-        f"SELECT engine FROM system.tables WHERE database = '{DB}' AND name = 't'"
-    ).strip() == "ReplicatedMergeTree"
-    assert loaded("t") == "1", "a pending conversion has to be finalized at startup"
-
-    # The conversion is finished only if the metadata is in ZooKeeper: otherwise the table is read-only.
-    node.query(f"INSERT INTO {DB}.t SELECT number + 100 FROM numbers(10)")
-    assert int(node.query(f"SELECT count() FROM {DB}.t")) == 20
-    assert "convert_to_replicated" not in node.exec_in_container(
-        ["bash", "-c", f"ls {data_path}"], user="root"
-    )
-
-
 def test_engines_that_work_in_the_background_stay_eager(started_cluster):
     """Deferring an engine that works in the background would cancel that work rather than delay it, so
     opting in is per engine. A message queue only feeds views, so it opts in and is kept eager per table."""
