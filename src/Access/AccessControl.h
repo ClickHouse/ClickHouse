@@ -220,6 +220,8 @@ public:
     /// any user can call any function. `hasFunctionsRequiringGrant` is lock-free and false
     /// when the list is empty, so the function-resolution path pays nothing in the default case.
     static bool hasFunctionsRequiringGrant() noexcept;
+    /// Identifies the list, so that a query cache entry written under another list is not read.
+    static UInt64 getFunctionsRequiringGrantFingerprint() noexcept;
     /// Pass the name the function is registered under: the configured list is resolved with
     /// `IFactoryWithAliases::resolveNameOrAlias`, and so must be the name of the call.
     static bool functionRequiresGrant(std::string_view function_name);

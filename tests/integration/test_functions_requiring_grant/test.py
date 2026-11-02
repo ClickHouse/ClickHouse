@@ -10,9 +10,16 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/functions_requiring_grant.xml"],
+    main_configs=[
+        "configs/functions_requiring_grant.xml",
+        "configs/query_cache_on_disk.xml",
+    ],
     user_configs=["configs/users.d/users.xml"],
     stay_alive=True,
+)
+
+FUNCTIONS_REQUIRING_GRANT_CONFIG = (
+    "/etc/clickhouse-server/config.d/functions_requiring_grant.xml"
 )
 
 EXECUTABLE_FUNCTIONS_CONFIG = """<clickhouse>
@@ -211,6 +218,32 @@ def test_query_cache_does_not_outlive_grant():
     assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
 
 
+def test_query_cache_on_disk_written_before_function_was_listed():
+    """The on-disk query cache survives the restart which adds a function to the list, and
+    a hit is served before the grant check, so an entry from the old list must not match.
+    """
+    instance.query("CREATE USER A")
+
+    query = (
+        "SELECT upper('a') SETTINGS use_query_cache = 1, "
+        "query_cache_on_disk_cache_name = 'cache_for_query_results', query_cache_ttl = 3600"
+    )
+    assert instance.query(query, user="A") == "A\n"
+
+    listed = "<function>in</function>"
+    instance.replace_in_config(
+        FUNCTIONS_REQUIRING_GRANT_CONFIG, listed, f"{listed}<function>upper</function>"
+    )
+    instance.restart_clickhouse()
+    try:
+        assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
+    finally:
+        instance.replace_in_config(
+            FUNCTIONS_REQUIRING_GRANT_CONFIG, "<function>upper</function>", ""
+        )
+        instance.restart_clickhouse()
+
+
 def test_system_functions_readable_without_grant():
     """A listed SQL UDF must not break introspection for users who cannot execute it."""
     instance.query("CREATE USER A")
@@ -379,7 +412,7 @@ def test_invalid_config_is_rejected(body, expected_error):
     """Every one of these used to be a silent no-op: the administrator would see a protected
     function in the config while anybody could still call it. The server must refuse to start.
     """
-    config_path = "/etc/clickhouse-server/config.d/functions_requiring_grant.xml"
+    config_path = FUNCTIONS_REQUIRING_GRANT_CONFIG
     original = instance.exec_in_container(["bash", "-c", f"cat {config_path}"])
     bad_config = f"""<clickhouse>
     <access_control_improvements>

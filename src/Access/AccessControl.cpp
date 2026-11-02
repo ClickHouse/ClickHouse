@@ -33,6 +33,7 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/re2.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -73,6 +74,7 @@ namespace
     /// `Context::getAccessControl`, which takes a shared lock on the global context mutex, on
     /// every function resolution. There is one `AccessControl` per server process.
     std::atomic<bool> functions_requiring_grant_enabled{false};
+    std::atomic<UInt64> functions_requiring_grant_fingerprint{0};
     std::mutex functions_requiring_grant_mutex;
 
     struct TransparentStringHash
@@ -1275,6 +1277,18 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         }
     }
 
+    /// The same list gives the same value in every process, because the on-disk query cache keeps it
+    /// across restarts.
+    Strings sorted_names(names->begin(), names->end());
+    std::ranges::sort(sorted_names);
+    SipHash fingerprint;
+    for (const auto & name : sorted_names)
+    {
+        fingerprint.update(name.size());
+        fingerprint.update(name);
+    }
+    functions_requiring_grant_fingerprint.store(fingerprint.get64(), std::memory_order_relaxed);
+
     const bool enabled = !names->empty();
     {
         std::lock_guard lock(functions_requiring_grant_mutex);
@@ -1293,6 +1307,11 @@ void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
             element.parameter = FunctionFactory::instance().resolveNameOrAlias(element.parameter);
         }
     }
+}
+
+UInt64 AccessControl::getFunctionsRequiringGrantFingerprint() noexcept
+{
+    return functions_requiring_grant_fingerprint.load(std::memory_order_relaxed);
 }
 
 bool AccessControl::functionRequiresGrant(std::string_view function_name)

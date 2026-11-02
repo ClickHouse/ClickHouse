@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
+#include <Access/AccessControl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -592,6 +593,13 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)
     hash.update(current_database);
+
+    /// A hit is served before the query is analyzed, so before the `FUNCTION` grant is checked, and results of calls that
+    /// need the grant are not written (see `checkFunctionAccess`). But the on-disk cache survives the restart which adds a
+    /// function to `access_control_improvements.functions_requiring_grant`, so an entry written under another list must
+    /// not match. The default empty list leaves the key as it was.
+    if (AccessControl::hasFunctionsRequiringGrant())
+        hash.update(AccessControl::getFunctionsRequiringGrantFingerprint());
 
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
