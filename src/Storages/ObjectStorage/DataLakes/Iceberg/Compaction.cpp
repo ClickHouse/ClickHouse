@@ -83,6 +83,7 @@ struct DataFilePlan
 {
     IcebergDataObjectInfoPtr data_object_info;
     std::shared_ptr<ManifestFilePlan> manifest_list;
+    std::shared_ptr<const Iceberg::PartitionSpecification> partition_specification;
 
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
@@ -213,7 +214,7 @@ static Plan getPlan(
     plan.generator.setVersion(metadata_version + 1);
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        = deepCopy(getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -284,6 +285,7 @@ static Plan getPlan(
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
+                        .partition_specification = data_file->common_partition_specification,
                         .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[data_file_path] = data_file_ptr;
                 }
@@ -306,11 +308,31 @@ static Plan getPlan(
         if (delete_file->parsed_entry->isDeletionVector())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compaction of Iceberg tables with deletion vectors is not supported");
 
+        /// `lower/upper_reference_data_file_path` bound the delete file's own `file_path` column,
+        /// so a data file outside them has no deleted rows recorded in this delete file.
+        const auto & lower = delete_file->parsed_entry->lower_reference_data_file_path;
+        const auto & upper = delete_file->parsed_entry->upper_reference_data_file_path;
+        const auto & delete_file_specification = *delete_file->common_partition_specification;
+
         for (auto & data_file : plan.partitions[partition_index])
         {
-            if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
-                data_file->data_object_info->addPositionDeleteFile(
-                    delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
+            if (data_file->data_object_info->info.sequence_number > delete_file->sequence_number)
+                continue;
+
+            /// Buckets are keyed by partition value alone, and a position delete applies only within its own partition spec.
+            const auto & data_file_specification = *data_file->partition_specification;
+            if (data_file_specification < delete_file_specification || delete_file_specification < data_file_specification)
+                continue;
+
+            const auto & data_file_path = data_file->data_object_info->info.data_object_file_path_key;
+            bool can_contain_data_file_deletes
+                = (!lower.has_value() || *lower <= data_file_path)
+                && (!upper.has_value() || *upper >= data_file_path);
+            if (!can_contain_data_file_deletes)
+                continue;
+
+            data_file->data_object_info->addPositionDeleteFile(
+                delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
         }
     }
     plan.history = std::move(snapshots_info);
@@ -338,6 +360,9 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
+                const auto & metadata_object = initial_plan.initial_metadata_object;
+                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
+                    column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
                 break;
             }
         }
@@ -374,6 +399,8 @@ static void writeDataFiles(
             settings,
             /*num_streams_=*/1);
 
+        auto input_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+        input_format_filter_info->need_row_numbers = delete_file_transform != nullptr;
         auto input_format = FormatFactory::instance().getInput(
             data_file->data_object_info->getFileFormat().value_or(write_format),
             *read_buffer,
@@ -382,7 +409,7 @@ static void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
+            input_format_filter_info,
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);
@@ -1428,14 +1455,14 @@ void compactIcebergManifests(
             persistent_table_components.metadata_compression_method,
             /* ignore_metadata_pointer_overrides */ true);
 
-        auto metadata_object = getMetadataJSONObject(
+        auto metadata_object = deepCopy(getMetadataJSONObject(
             metadata_file_path,
             object_storage_,
             persistent_table_components.metadata_cache,
             context_,
             log,
             persistent_table_components.metadata_compression_method,
-            persistent_table_components.table_uuid);
+            persistent_table_components.table_uuid));
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
         const Int32 format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);

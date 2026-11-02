@@ -2,7 +2,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/HTTP/HTTPClientIO.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -14,9 +14,36 @@
 namespace DB
 {
 
+namespace detail
+{
+
+/// Opens the session and sends the request headers, so that the framing of the body is known
+/// before the buffer of `WriteBufferFromHTTP` is constructed. It is a base class rather than a
+/// member because base classes are initialized first.
+struct WriteBufferFromHTTPRequestSender
+{
+    WriteBufferFromHTTPRequestSender(
+        const HTTPConnectionGroupType & connection_group,
+        const Poco::URI & uri,
+        const std::string & method,
+        const std::string & content_type,
+        const std::string & content_encoding,
+        const HTTPHeaderEntries & additional_headers,
+        const ConnectionTimeouts & timeouts,
+        const ProxyConfiguration & proxy_configuration);
+
+    /// Named to avoid clashing with the session of `HTTPRequestBodyWriteBuffer`.
+    HTTPSessionPtr http_session;
+    Poco::Net::HTTPRequest request;
+    Poco::Net::HTTPResponse response;
+    Poco::Net::HTTPClientSession::BodyInfo body_info;
+};
+
+}
+
 /* Perform HTTP POST/PUT request.
  */
-class WriteBufferFromHTTP : public WriteBufferFromOStream
+class WriteBufferFromHTTP : private detail::WriteBufferFromHTTPRequestSender, public HTTPRequestBodyWriteBuffer
 {
     friend class BuilderWriteBufferFromHTTP;
 
@@ -35,10 +62,6 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
 
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
-
-    HTTPSessionPtr session;
-    Poco::Net::HTTPRequest request;
-    Poco::Net::HTTPResponse response;
 };
 
 class BuilderWriteBufferFromHTTP

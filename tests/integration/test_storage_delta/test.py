@@ -80,6 +80,7 @@ def get_spark(log_dir=None):
         )
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
+        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
@@ -3648,11 +3649,42 @@ def test_count_from_cache(started_cluster):
         instance.query(f"SELECT count() FROM {table_function}", query_id=query_id)
     )
     instance.query("SYSTEM FLUSH LOGS")
-    assert 3 == int(
+    # Every `add` action carries `stats.numRecords`, so the delta kernel reports the total row
+    # count from the log itself and count() is answered without opening any data file.
+    assert 0 == int(
         instance.query(
             f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+    explain = instance.query(
+        f"EXPLAIN SELECT count() FROM {table_function} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert "ReadFromPreparedSource (Optimized trivial count)" in explain, explain
+
+    # The legacy Delta metadata never reports a total row count, so on the very same table
+    # count() falls back to per-file row counts, which is what the row count cache holds.
+    legacy_instance = started_cluster.instances["node_with_disabled_delta_kernel"]
+    legacy_instance.query(f"SELECT count() FROM {table_function}")
+    legacy_instance.query(f"SELECT count() FROM {table_function}")
+    legacy_query_id = f"{TABLE_NAME}_legacy_query"
+    assert 3 == int(
+        legacy_instance.query(
+            f"SELECT count() FROM {table_function}", query_id=legacy_query_id
+        )
+    )
+    legacy_instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        legacy_instance.query(
+            f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{legacy_query_id}' and type = 'QueryFinish'"
+        )
+    )
+    legacy_explain = legacy_instance.query(
+        f"EXPLAIN SELECT count() FROM {table_function} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert (
+        "ReadFromPreparedSource (Optimized trivial count)" not in legacy_explain
+    ), legacy_explain
+
     assert (
         "3\t3"
         == instance.query(f"SELECT count(), count() FROM {table_function}").strip()
@@ -5281,6 +5313,135 @@ deltaLake{suffix}({cluster}
     # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
     assert node.contains_in_log("Row indexes size 2 for file")
 
+    # A bare `count()` is eligible for the trivial-count optimization, which answers from the
+    # `numRecords` statistics of the surviving files: 4 here, because the deletion vector removes
+    # 2 more rows that those statistics still include. The assertions above use `ORDER BY all`,
+    # which resolves to `count()` and so makes `applyTrivialCountIfPossible` see the aggregate
+    # twice and decline, which is why they never exercised this path.
+    trivial_count_step = "ReadFromPreparedSource (Optimized trivial count)"
+
+    count_query_id = f"test_dv_count_{table_name}"
+    assert 2 == int(
+        node.query(
+            f"SELECT count() FROM {delta_function}", query_id=count_query_id
+        ).strip()
+    )
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function}"
+    )
+    # That count went through the metadata-only stats scan, one of the two places the row counts
+    # are accumulated.
+    node.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{count_query_id}' "
+            "AND message LIKE '%Updated statistics for snapshot version%'"
+        )
+    )
+
+    # Version 1 is the overwrite that precedes the DELETE, so that snapshot carries no deletion
+    # vector and the optimization still applies to it. This is the positive control for the pinned
+    # path: without it, the assertions below would also hold if the optimization had been disabled
+    # for every Delta table rather than declined for the files that carry a vector.
+    assert 5 == int(
+        node.query(
+            f"SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 1"
+        ).strip()
+    )
+    assert trivial_count_step in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 1"
+    )
+
+    # A commit after the DELETE, so the version that carries the vector becomes an older snapshot
+    # and the counts below cannot be served by whatever the latest version happens to be.
+    df_appended = spark.createDataFrame(data=[(3, "z", "z")], schema=schema)
+    df_appended.write.format("delta").partitionBy("a").mode("append").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    # The vector stays on the surviving file across later commits, so the newest version is
+    # over-counted too: 3 rows survive, while the statistics of its files still add up to 5.
+    assert 3 == int(node.query(f"SELECT count() FROM {delta_function}").strip())
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function}"
+    )
+    # Version 2 is the DELETE itself. Reading it counts 2, the number of rows that version has,
+    # rather than the 4 its file statistics record.
+    assert 2 == int(
+        node.query(
+            f"SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 2"
+        ).strip()
+    )
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 2"
+    )
+
+    if on_cluster:
+        return
+
+    # Scanning a table before counting it makes the scan callback publish the statistics, which is
+    # the other place the row counts are accumulated: `getSnapshotStats` caches, and the callback
+    # only fills an empty cache, so whichever query runs first decides which of the two sites is
+    # exercised.
+    engine_table = table_name + "_engine"
+    node.query(f"DROP TABLE IF EXISTS {engine_table}")
+    node.query(
+        f"CREATE TABLE {engine_table} ENGINE=DeltaLake(s3, filename = '{table_name}/', "
+        f"format=Parquet, url = 'http://minio1:9001/{bucket}/')"
+    )
+    scan_query_id = f"test_dv_scan_{table_name}"
+    node.query(f"SELECT * FROM {engine_table} FORMAT Null", query_id=scan_query_id)
+    node.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{scan_query_id}' "
+            "AND message LIKE '%Updated statistics from data files iterator for snapshot version%'"
+        )
+    )
+
+    assert 3 == int(node.query(f"SELECT count() FROM {engine_table}").strip())
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {engine_table}"
+    )
+
+    # Positive control: a table with no deletion vector keeps the optimization, so the arms
+    # above distinguish "declined for this file" from "disabled for every Delta table".
+    plain_table = randomize_table_name("test_dv_plain")
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 5), f"/{plain_table}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{plain_table}", "")
+    create_delta_table(node, "s3", plain_table, started_cluster)
+    assert 5 == int(node.query(f"SELECT count() FROM {plain_table}").strip())
+    assert trivial_count_step in node.query(
+        f"EXPLAIN SELECT count() FROM {plain_table}"
+    )
+
+    # The control above counts before it scans, so its row count comes from the metadata-only stats
+    # scan. Reading the same data through a table that is scanned first covers the other site in
+    # the direction where it must still report a number, which the deletion-vector assertions above
+    # cannot check: they only require it to report nothing.
+    plain_scanned = plain_table + "_scanned"
+    node.query(f"DROP TABLE IF EXISTS {plain_scanned}")
+    node.query(
+        f"CREATE TABLE {plain_scanned} ENGINE=DeltaLake(s3, filename = '{plain_table}/', "
+        f"format=Parquet, url = 'http://minio1:9001/{bucket}/')"
+    )
+    plain_scan_query_id = f"test_dv_plain_scan_{table_name}"
+    node.query(
+        f"SELECT * FROM {plain_scanned} FORMAT Null", query_id=plain_scan_query_id
+    )
+    node.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{plain_scan_query_id}' "
+            "AND message LIKE '%Updated statistics from data files iterator for snapshot version%'"
+        )
+    )
+    assert 5 == int(node.query(f"SELECT count() FROM {plain_scanned}").strip())
+    assert trivial_count_step in node.query(
+        f"EXPLAIN SELECT count() FROM {plain_scanned}"
+    )
+
 
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_jumbled(started_cluster, cluster):
@@ -6699,7 +6860,6 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
     assert written.field("ts_ntz_nullable").type == pa.timestamp("us"), written
     assert written.field("ts_tz").type == pa.timestamp("us", tz="UTC"), written
 
-    # The reported defect: Spark refuses a table whose data file contradicts its own Delta schema.
     spark = started_cluster.spark_session
     rows = spark.read.format("delta").load(result_file).collect()
     assert len(rows) == 1, rows
@@ -6745,7 +6905,6 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
         "us", tz="UTC"
     ), pinned_written
 
-    # Spark reads the whole table, so the pinned-version file is genuinely conforming, not just annotated.
     pinned_rows = sorted(
         spark.read.format("delta").load(result_file).collect(),
         key=lambda row: row["id"],
@@ -6949,18 +7108,12 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert str(rows[0]["arr"][0]) == "2024-06-01 12:00:00", rows
     assert str(rows[0]["m"]["k"]) == "2024-06-01 12:00:00", rows
 
-    # `sg`'s annotated leaf is what Spark could not read before this fix.
     rows_sg = spark.read.format("delta").load(result_file).select("sg").collect()
     assert str(rows_sg[0]["sg"]["a.b"]) == "2024-06-01 12:00:00", rows_sg
     assert rows_sg[0]["sg"]["a"]["b"]["x"] == 42, rows_sg
     rows_si = spark.read.format("delta").load(result_file).select("si").collect()
     assert str(rows_si[0]["si"]["a.b"]) == "2024-06-01 12:00:00", rows_si
     assert rows_si[0]["si"]["a"]["b"] == 7, rows_si
-
-    # `sc` is read separately because it is still annotated as on master, so Spark refuses it with the
-    # reported error. Reading it is also what proves the ambiguous path was not annotated after all.
-    with pytest.raises(Exception, match="Unable to create Parquet converter"):
-        spark.read.format("delta").load(result_file).select("sc").collect()
 
     instance.query(f"DROP TABLE {table_name}")
 

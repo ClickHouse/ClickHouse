@@ -18,14 +18,12 @@ ClickHouse 支持多种类型的用户自定义函数 (UDFs) ：
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) 会在服务器进程内的沙箱中运行编译为 WebAssembly 的代码。与外部可执行程序相比，它们的单次调用开销更低；与原生扩展相比，又具备更好的隔离性，因此适合用可编译为 WASM 的语言 (如 C/C++/Rust) 编写自定义算法。
 * [Experimental 基于 驱动 的可执行 UDFs](#driver-based-executable-user-defined-functions) 允许由运维人员提供的 &quot;驱动&quot; 在函数创建时，将 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` 中提供的代码片段转换为可执行 UDF (例如通过编译) 。它们构建在可执行 UDFs 之上，并且需要服务器端 驱动 配置。
 
-<div id="executable-user-defined-functions">
-  ## 可执行用户自定义函数
-</div>
+## 可执行用户自定义函数 {#executable-user-defined-functions}
 
 <BetaBadge />
 
 <Note>
-  在 ClickHouse Cloud 中，可执行 UDF 目前处于 Public Beta 阶段，并通过 Cloud 控制台 UI 创建。有关 Cloud 特定工作流，请参见 [Cloud 中的用户自定义函数](/zh/products/cloud/features/sql-console-features/user-defined-functions)。
+  在 ClickHouse Cloud 中，可执行 UDF 已正式可用，可通过 Cloud 控制台、Cloud API 或 Terraform 创建。有关 Cloud 特定工作流 (包括适用于已编译二进制文件的 Native 运行时) ，请参见 [Cloud 中的用户自定义函数](/zh/products/cloud/features/sql-console-features/user-defined-functions)。
 </Note>
 
 ClickHouse 可以调用任意外部可执行程序或脚本来处理数据。
@@ -58,17 +56,11 @@ ClickHouse 可以调用任意外部可执行程序或脚本来处理数据。
 
 命令必须从 `STDIN` 读取参数，并将结果输出到 `STDOUT`。命令必须以迭代方式处理参数。也就是说，处理完一批参数后，它必须等待下一批参数。
 
-<div id="executable-user-defined-functions">
-  ## 可执行用户自定义函数
-</div>
+## 可执行用户自定义函数 {#executable-user-defined-functions}
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
-<div id="udf-inline">
-  ### 来自内联脚本的 UDF
-</div>
+### 来自内联脚本的 UDF {#udf-inline}
 
 通过 XML 或 YAML 配置手动创建 `test_function_sum`，并将 `execute_direct` 指定为 `0`。
 
@@ -132,9 +124,7 @@ SELECT test_function_sum(2, 2);
 └─────────────────────────┘
 ```
 
-<div id="udf-python">
-  ### 基于 Python 脚本的 UDF
-</div>
+### 基于 Python 脚本的 UDF {#udf-python}
 
 在此示例中，我们将创建一个 UDF，它从 `STDIN` 读取一个值，并将其作为字符串返回。
 
@@ -203,9 +193,7 @@ SELECT test_function_python(toUInt64(2));
 └─────────────────────────┘
 ```
 
-<div id="udf-stdin">
-  ### 从 `STDIN` 读取两个值，并将它们的和作为 JSON 对象返回
-</div>
+### 从 `STDIN` 读取两个值，并将它们的和作为 JSON 对象返回 {#udf-stdin}
 
 使用 XML 或 YAML 配置，以命名参数和 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow) 格式创建 `test_function_sum_json`。
 
@@ -285,9 +273,7 @@ SELECT test_function_sum_json(2, 2);
 └──────────────────────────────┘
 ```
 
-<div id="udf-parameters-in-command">
-  ### 在 `command` 设置中使用参数
-</div>
+### 在 `command` 设置中使用参数 {#udf-parameters-in-command}
 
 可执行用户自定义函数可以接收在 `command` 设置中配置的常量参数 (仅适用于 `executable` 类型的用户自定义函数) 。
 此外，还需要启用 `execute_direct` 选项，以避免 shell 参数展开漏洞。
@@ -355,9 +341,7 @@ SELECT test_function_parameter_python(1)(2);
 └──────────────────────────────────────┘
 ```
 
-<div id="udf-shell-script">
-  ### 通过 shell 脚本创建 UDF
-</div>
+### 通过 shell 脚本创建 UDF {#udf-shell-script}
 
 在本示例中，我们将创建一个 shell 脚本，把每个值乘以 2。
 
@@ -430,26 +414,20 @@ SELECT test_shell(number) FROM numbers(10);
     └────────────────────┘
 ```
 
-<div id="error-handling">
-  ## 错误处理
-</div>
+## 错误处理 {#error-handling}
 
 如果数据无效，某些函数可能会抛出异常。
 此时，查询会被取消，并向客户端返回错误信息。
 对于分布式处理，当其中一台服务器上发生异常时，其他服务器也会尝试中止该查询。
 
-<div id="evaluation-of-argument-expressions">
-  ## 参数表达式的求值
-</div>
+## 参数表达式的求值 {#evaluation-of-argument-expressions}
 
 在几乎所有编程语言中，对于某些运算符，某个参数可能不会被求值。
 通常是运算符 `&&`、`||` 和 `?:`。
 在 ClickHouse 中，函数 (运算符) 的参数始终都会被求值。
 这是因为系统会一次性对整块列数据进行求值，而不是逐行分别计算。
 
-<div id="performing-functions-for-distributed-query-processing">
-  ## 分布式查询处理中函数的执行
-</div>
+## 分布式查询处理中函数的执行 {#performing-functions-for-distributed-query-processing}
 
 在分布式查询处理中，会尽可能多地在远程服务器上完成查询处理的各个阶段，其余阶段 (合并中间结果及之后的所有操作) 则在请求方服务器上完成。
 
@@ -465,15 +443,11 @@ SELECT test_shell(number) FROM numbers(10);
 
 如果查询中的某个函数是在请求方服务器上执行的，但你需要它在远程服务器上执行，可以将其包裹在 &#39;any&#39; 聚合函数中，或者将其添加到 `GROUP BY` 键中。
 
-<div id="sql-user-defined-functions">
-  ## SQL 用户自定义函数
-</div>
+## SQL 用户自定义函数 {#sql-user-defined-functions}
 
 可使用 [CREATE FUNCTION](/zh/reference/statements/create/function) 语句基于 Lambda 表达式创建自定义函数。要删除这些函数，请使用 [DROP FUNCTION](/zh/reference/statements/drop#drop-function) 语句。
 
-<div id="webassembly-user-defined-functions">
-  ## WebAssembly 用户自定义函数
-</div>
+## WebAssembly 用户自定义函数 {#webassembly-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -481,9 +455,7 @@ SELECT test_shell(number) FROM numbers(10);
 
 WebAssembly 用户自定义函数 (WASM UDF) 允许你在 ClickHouse 服务器进程中运行编译为 WebAssembly 的自定义代码。
 
-<div id="quick-start">
-  ### 快速入门
-</div>
+### 快速入门 {#quick-start}
 
 在 ClickHouse 配置中启用 Experimental WebAssembly 支持：
 
@@ -517,15 +489,11 @@ RETURNS UInt32;
 SELECT my_function(10, 20);
 ```
 
-<div id="more-information">
-  ### 更多信息
-</div>
+### 更多信息 {#more-information}
 
 更多详情请参阅[WebAssembly 用户自定义函数](/zh/reference/functions/regular-functions/wasm_udf)文档。
 
-<div id="driver-based-executable-user-defined-functions">
-  ## 基于驱动的可执行用户自定义函数
-</div>
+## 基于驱动的可执行用户自定义函数 {#driver-based-executable-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -539,9 +507,7 @@ SELECT my_function(10, 20);
 
 这样，管理员就能为用户提供一种安全且受限的方式，用任意语言定义函数 (例如，在沙箱容器中编译的 C) ，而无需授予他们访问服务器配置文件或文件系统的权限。可用驱动程序的范围完全由运维方控制。
 
-<div id="enabling-drivers">
-  ### 启用驱动程序
-</div>
+### 启用驱动程序 {#enabling-drivers}
 
 基于驱动的 executable UDFs 默认处于禁用状态。要启用它们，请按以下步骤操作：
 
@@ -564,9 +530,7 @@ SELECT my_function(10, 20);
 
 驱动程序 registry 会在服务器启动时加载，并在执行 `SYSTEM RELOAD CONFIG` 时刷新，因此无需重启服务器即可添加、更改或移除驱动程序。
 
-<div id="driver-configuration">
-  ### 驱动程序配置
-</div>
+### 驱动程序配置 {#driver-configuration}
 
 驱动程序由一个以 `<driver>` 为顶层元素的 XML (或 YAML) 文件定义。支持以下字段：
 
@@ -597,9 +561,7 @@ SELECT my_function(10, 20);
 </clickhouse>
 ```
 
-<div id="driver-invocation-contract">
-  #### 驱动调用约定
-</div>
+#### 驱动调用约定 {#driver-invocation-contract}
 
 运行 `CREATE FUNCTION` 时，会在设置好已配置的 `env` 变量后调用 `create_command`，并传入以下参数：
 
@@ -612,9 +574,7 @@ SELECT my_function(10, 20);
 
 如果存在 `drop_command`，则在删除函数时也会以相同方式调用它 (但不会通过 stdin 传入代码主体) 。
 
-<div id="creating-a-function-with-a-driver">
-  ### 创建函数
-</div>
+### 创建函数 {#creating-a-function-with-a-driver}
 
 ```sql
 CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
@@ -625,9 +585,7 @@ CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 
 ClickHouse 运行驱动程序的 `create_command`，将生成的配置写入 [`dynamic_user_defined_executable_functions_path`](/zh/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path)，随后现有的可执行 UDF 加载器会检测并加载该配置。之后，这个函数就可以像其他函数一样调用。
 
-<div id="dropping-a-function-with-a-driver">
-  ### 删除函数
-</div>
+### 删除函数 {#dropping-a-function-with-a-driver}
 
 ```sql
 DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
@@ -635,23 +593,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 `DROP FUNCTION` 会调用驱动程序的 `drop_command` (如果存在) ，删除生成的动态配置以及每个函数的工作目录，重新加载可执行 UDF 加载器，并删除已持久化的查询。
 
-<div id="driver-persistence-and-restart">
-  ### 持久化与重启
-</div>
+### 持久化与重启 {#driver-persistence-and-restart}
 
 原始查询会以 `ATTACH FUNCTION ...` 语句的形式保存在用户定义 SQL 对象目录中，因此服务器重启后该函数仍会保留。启动时，会直接加载 [`dynamic_user_defined_executable_functions_path`](/zh/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) 中生成的配置，而无需重新运行驱动程序。如果已持久化的 `ATTACH FUNCTION` 没有对应的已生成配置 (例如动态目录丢失了) ，则会重新运行驱动程序来重新创建它。
 
-<div id="driver-limitations">
-  ### 限制
-</div>
+### 限制 {#driver-limitations}
 
 * 该功能为 Experimental，受 `allow_experimental_executable_udf_drivers` 控制。
 * 基于 driver 的函数不支持复制型用户自定义函数存储 (`ON CLUSTER` 和 `<user_defined_zookeeper_path>`) ，因为被复制的只有发起查询，不包括生成的制品。
 * 对已备份的基于 driver 的函数执行 `RESTORE` 时，会保留查询，但不会重新运行 driver；生成的 configuration 会在重启恢复期间稍后物化。
 
-<div id="example-c-drivers">
-  ### C 驱动程序示例
-</div>
+### C 驱动程序示例 {#example-c-drivers}
 
 源码树在 `programs/server/user_defined_executable_function_drivers_config.d/` 下提供了一些概念验证驱动，用于编译并运行 C 函数体。它们仅作为示例，**不会随软件包一起安装**：
 
@@ -661,8 +613,6 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 这些示例驱动程序可作为起点；在将它们暴露给不受信任的用户之前，请先根据您的环境审查并加固其沙箱隔离机制。
 
-<div id="related-content">
-  ## 相关文章
-</div>
+## 相关文章 {#related-content}
 
 * [ClickHouse Cloud 中的用户自定义函数](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

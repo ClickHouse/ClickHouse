@@ -104,7 +104,8 @@ SecretArgumentsResult findSecretArguments(const FunctionNode & function);
 SecretArgumentsResult findSecretArguments(const TableFunctionNode & function);
 
 /// Visits the secret value slots selected by a finder result in a resolved argument list, for the
-/// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members and the arguments
+/// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members, the individually
+/// masked arguments (whole, unless masked as a named `key = value`) and the arguments
 /// with a partial replacement (for a `key = value` argument, its value; a tree dump cannot represent
 /// partial masking, so the whole value is masked: fail closed), and the values of the nested secret
 /// maps (`headers(..)` / `extra_credentials(..)`; a malformed child is visited whole). The callback

@@ -8,7 +8,6 @@
 -- The data is three 100-row tables in a 1:1 relationship on `id`, so every join matches
 -- exactly 100 rows and all asserted quantities are deterministic.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
