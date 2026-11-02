@@ -29,6 +29,8 @@ QUERIES = {
     "t_arr": "SELECT id, a, arrayMap(x -> variantType(x), a) FROM t_arr ORDER BY id",
     "t_json": "SELECT id, j, j.p, variantType(j.p) FROM t_json ORDER BY id",
     "t_nested": "SELECT id, n.g, arrayMap(x -> variantType(x), n.g) FROM t_nested ORDER BY id",
+    "t_default": "SELECT id, g, variantType(g) FROM t_default ORDER BY id",
+    "t_geo_only": "SELECT g, variantType(g) FROM t_geo_only ORDER BY variantType(g)",
 }
 
 
@@ -94,6 +96,20 @@ def test_geometry_parts_without_multipoint(start_cluster):
             (3, [NULL, [(0., 0.), (1., 0.), (1., 1.)]::Ring])
         """)
 
+    node.query(
+        f"CREATE TABLE t_default (id UInt64, g Geometry DEFAULT (0., 0.)::Point) ENGINE = MergeTree ORDER BY id SETTINGS {WIDE}"
+    )
+    node.query(
+        "INSERT INTO t_default VALUES (1, [(1., 2.), (3., 4.)]::LineString), (2, [[(0., 0.), (2., 0.), (2., 2.)]]::Polygon)"
+    )
+
+    node.query(
+        f"CREATE TABLE t_geo_only (g Geometry) ENGINE = MergeTree ORDER BY tuple() SETTINGS {WIDE}"
+    )
+    node.query(
+        "INSERT INTO t_geo_only VALUES ((1., 2.)::Point), ([(1., 2.), (3., 4.)]::LineString)"
+    )
+
     expected = {table: node.query(query) for table, query in QUERIES.items()}
 
     node.restart_with_latest_version()
@@ -121,6 +137,10 @@ def test_geometry_parts_without_multipoint(start_cluster):
         assert node.query(query) == expected[table], table
     assert node.query("SELECT id FROM t WHERE variantType(g) = 'LineString'") == "2\n"
 
+    assert node.query("SELECT uniqExact(_part), count() FROM t_geo_only") == "1\t2\n"
+    node.query("ALTER TABLE t_default MATERIALIZE COLUMN g SETTINGS mutations_sync = 2")
+    assert node.query(QUERIES["t_default"]) == expected["t_default"]
+
     node.query(
         "ALTER TABLE t UPDATE g = [(5., 6.), (7., 8.)]::MultiPoint WHERE id = 3 SETTINGS mutations_sync = 2"
     )
@@ -140,5 +160,5 @@ def test_geometry_parts_without_multipoint(start_cluster):
             assert "MultiPoint" in substreams, substreams
 
     assert node.query(QUERIES["t"]) == expected["t"] + "8\t[(7,8),(9,10)]\tMultiPoint\n"
-    for table in ["t_compact", "t_arr", "t_json", "t_nested"]:
+    for table in ["t_compact", "t_arr", "t_json", "t_nested", "t_default", "t_geo_only"]:
         assert node.query(QUERIES[table]) == expected[table], table
