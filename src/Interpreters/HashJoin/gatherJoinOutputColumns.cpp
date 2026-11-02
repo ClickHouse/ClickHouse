@@ -464,8 +464,11 @@ void gatherNullableRows(
             });
         return;
     }
-    gatherFixedDispatch<false>(dst.getNullMapColumn(), node.data_by_block.data(), 1, row_store_row_length, words, words + count, count, &null_map_default);
-    gatherNodeRows(dst.getNestedColumn(), nested, words, count, row_store_row_length);
+    /// A row store `String` field is gathered through `string_refs`, so only a column-major node gets here.
+    chassert(!row_store_row_length);
+    gatherFixedDispatch<false>(
+        dst.getNullMapColumn(), node.data_by_block.data(), 1, std::nullopt, words, words + count, count, &null_map_default);
+    gatherNodeRows(dst.getNestedColumn(), nested, words, count);
 }
 
 /// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block. `row_no`

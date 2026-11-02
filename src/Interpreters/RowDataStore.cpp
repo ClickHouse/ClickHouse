@@ -377,7 +377,8 @@ NameSet computeRowStoreCandidateColumns(
         {
             /// The average comes from the statistics and includes the 8-byte offset. 0 means the average is unknown.
             const Float64 avg_value_bytes = table_join.getRightColumnAvgBytes(column.name);
-            if (avg_value_bytes > 0 && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset)
+            if (min_string_column_bytes != 0 && avg_value_bytes > 0
+                && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset)
                 && static_cast<Float64>(right_rows) * avg_value_bytes >= static_cast<Float64>(min_string_column_bytes))
                 columns.insert(column.name);
         }

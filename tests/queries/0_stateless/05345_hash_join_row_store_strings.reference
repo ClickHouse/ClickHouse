@@ -1,18 +1,23 @@
-7	7	0	0
-7	7	dup	\N
-8	8	1	1
-9	9	2	2
-7	7	aaaaaaaaaaaaaaaaaaaa	0
-8	8	1	1
-9	9	aaaaaaaaaaaaaaaaaaaa	2
-7	7	zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	wwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-8	8	zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	wwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-9	9	zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	wwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-7	7	0	0
-7	7	dup	\N
-8	8	1	1
-9	9	2	2
-rs_short_strings	1
-rs_mixed_strings	1
-rs_long_strings	0
-rs_gated_strings	0
+short_strings	1
+mixed_strings	1
+long_strings	1
+high_min_bytes_strings	1
+sparse_nullable_strings	1
+left	1
+full	1
+empty	1
+boundary	1
+parallel_hash	1
+grace_hash_spilled	1
+boundary	1
+empty	1
+full	1
+grace_hash_spilled	1
+high_min_bytes_strings	0
+left	1
+long_strings	0
+mixed_strings	1
+parallel_hash	1
+short_strings	1
+sparse_nullable_strings	1
+grace_hash_spilled spilled	1
