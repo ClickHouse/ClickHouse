@@ -5,9 +5,12 @@
 # Tag no-replicated-database: the test detaches and attaches replicated tables itself.
 
 # A queued "MOVE PART ... TO SHARD" is driven by PartMovesBetweenShardsOrchestrator on the leader.
-# The destination replica is detached before the move is queued, so no state transition of the
-# entry can ever be acknowledged by the destination: the entry must stay queued and count a try,
-# instead of the part leaving the source table. Detaching first leaves no window for a race.
+# The destination replica is detached before the move is queued, so the entry walks TODO ->
+# SYNC_SOURCE -> SYNC_DESTINATION and then stays in SYNC_DESTINATION: that state waits for the
+# replicas of the destination shard to process its log entry, and the detached replica has no
+# is_active node, so every try throws TIMEOUT_EXCEEDED and num_tries only grows. SYNC_DESTINATION
+# with a positive num_tries is therefore stable until cleanup, and the part can never leave the
+# source table because SOURCE_DROP is behind SYNC_DESTINATION.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,7 +32,7 @@ PART=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.parts
 # One client call for the whole scenario: the destination replica is taken away before the move
 # exists (its Keeper tree stays, so the move is still accepted, but no replica of the destination
 # will ever process a log entry of it), the move is queued, and the source table is restarted so
-# its orchestrator runs at once instead of on its three second poll.
+# its orchestrator steps at once instead of on its three second poll.
 $CLICKHOUSE_CLIENT -q "
 DETACH TABLE shard_dst;
 ALTER TABLE shard_src MOVE PART '$PART' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst';
@@ -39,17 +42,28 @@ ATTACH TABLE shard_src;
 "
 
 # MOVE PART TO SHARD has no alter_sync, so the entry has to be polled; the round trip of one
-# client paces the loop. The bound only limits a never satisfied wait: the asserts below then
-# report the unfinished state instead of hanging.
-for _ in {1..200}; do
-    tries=$($CLICKHOUSE_CLIENT -q "SELECT max(num_tries) FROM system.part_moves_between_shards
-        WHERE database = currentDatabase()")
-    [ "${tries:-0}" != 0 ] && break
+# request paces the loop. Only the SYNC_DESTINATION try count proves that the inactive destination
+# is what failed: step() resets num_tries to zero on every successful transition, so a count that
+# an earlier state left behind is not evidence, while this one can never be reset or overtaken.
+#
+# A source step can fail for a retryable reason of its own, and the orchestrator then sleeps three
+# seconds before retrying. Restarting the source table makes it retry at once. Such a restart is
+# issued only on a source state that has already counted a try, which is exactly when the
+# orchestrator is sleeping and no destination wait is in flight.
+for _ in {1..400}; do
+    entry=$($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT state, num_tries > 0
+        FROM system.part_moves_between_shards WHERE database = currentDatabase() AND table = 'shard_src'")
+    case "$entry" in
+        SYNC_DESTINATION*1) break ;;
+        SYNC_SOURCE*1) $CLICKHOUSE_CLIENT -q "DETACH TABLE shard_src; ATTACH TABLE shard_src" ;;
+    esac
 done
 
-# The entry counted a try and is still queued, and the row never left the source table.
+# The entry is stuck in destination synchronization with a counted try, and the row never left the
+# source table.
 $CLICKHOUSE_CLIENT -q "
-SELECT max(num_tries) > 0, count() FROM system.part_moves_between_shards WHERE database = currentDatabase();
+SELECT state, num_tries > 0 FROM system.part_moves_between_shards
+    WHERE database = currentDatabase() AND table = 'shard_src';
 SELECT count() FROM shard_src;
 DROP TABLE shard_src SYNC;
 ATTACH TABLE shard_dst;
