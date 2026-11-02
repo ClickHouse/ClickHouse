@@ -15,6 +15,7 @@ ROT_PATH="${ICEBERG_ROOT}/rot"
 ROT_ORC_PATH="${ICEBERG_ROOT}/rot_orc"
 REUSED_PATH="${ICEBERG_ROOT}/reused"
 TUPLE_PATH="${ICEBERG_ROOT}/tuple"
+ROT_ORC_BIG_PATH="${ICEBERG_ROOT}/rot_orc_big"
 
 READ_SETTINGS="input_format_parquet_filter_push_down = 1, input_format_parquet_bloom_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1, input_format_orc_filter_push_down = 1, use_query_condition_cache = 0"
 CREATE_SETTINGS="--input_format_parquet_filter_push_down=1 --input_format_parquet_bloom_filter_push_down=1 --input_format_parquet_page_filter_push_down=1 --input_format_orc_filter_push_down=1"
@@ -67,6 +68,13 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg=1 --allow_insert_i
     INSERT INTO t_tuple VALUES (1, (10, 20));
     ALTER TABLE t_tuple ADD COLUMN z Nullable(Int32);
 "
+${CLICKHOUSE_CLIENT} ${CREATE_SETTINGS} --allow_experimental_insert_into_iceberg=1 --allow_insert_into_iceberg=1 --query "
+    CREATE TABLE t_rot_orc_big (id Int64, a Int64, b Int64) ENGINE = IcebergLocal('${ROT_ORC_BIG_PATH}', 'ORC');
+    INSERT INTO t_rot_orc_big SELECT number, number, 19999 - number FROM numbers(20000) SETTINGS output_format_orc_row_index_stride = 10000;
+    ALTER TABLE t_rot_orc_big RENAME COLUMN a TO tmp;
+    ALTER TABLE t_rot_orc_big RENAME COLUMN b TO a;
+    ALTER TABLE t_rot_orc_big RENAME COLUMN tmp TO b;
+"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${ROT_PATH}') WHERE c = 999 SETTINGS ${READ_SETTINGS}, use_iceberg_partition_pruning = 0, log_comment = '${CLICKHOUSE_DATABASE}_prune_rot'"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${ROT_PATH}') WHERE a = 999 AND indexHint(c = 1) SETTINGS ${READ_SETTINGS}, use_iceberg_partition_pruning = 0, log_comment = '${CLICKHOUSE_DATABASE}_prune_hint'"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${TUPLE_PATH}') WHERE id = 999 AND t.x = 999 SETTINGS ${READ_SETTINGS}, use_iceberg_partition_pruning = 0, log_comment = '${CLICKHOUSE_DATABASE}_prune_tuple'"
@@ -77,6 +85,7 @@ for suffix in rot hint tuple; do
         WHERE current_database = currentDatabase() AND log_comment = '${CLICKHOUSE_DATABASE}_prune_${suffix}' AND type = 'QueryFinish'
     "
 done
+${CLICKHOUSE_CLIENT} --query "SELECT 'orc', count() < 20000, max(id) FROM icebergLocal('${ROT_ORC_BIG_PATH}') WHERE indexHint(id >= 15000) SETTINGS ${READ_SETTINGS}, use_iceberg_partition_pruning = 0"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_rot; DROP TABLE IF EXISTS t_rot_orc; DROP TABLE IF EXISTS t_reused; DROP TABLE IF EXISTS t_tuple"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_rot; DROP TABLE IF EXISTS t_rot_orc; DROP TABLE IF EXISTS t_reused; DROP TABLE IF EXISTS t_tuple; DROP TABLE IF EXISTS t_rot_orc_big"
 rm -rf "${ICEBERG_ROOT}"
