@@ -885,11 +885,13 @@ bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Para
         if (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
             return true;
 
-        if (params.need_alter_mutations && AlterConversions::isSupportedIndexMutation(command))
-            return true;
-
         /// Metadata mutations must be included into the snapshot regardless of the parameters.
         if (AlterConversions::isSupportedMetadataMutation(command.type))
+            return true;
+
+        /// So must a pending rebuild of a skip index: it is not applied on the fly, but the old files of the
+        /// index must not be used until it finishes, whatever `apply_mutations_on_fly` and `apply_patch_parts` are.
+        if (AlterConversions::isSupportedIndexMutation(command))
             return true;
     }
 
@@ -956,7 +958,7 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
         bool is_supported = AlterConversions::isSupportedMetadataMutation(command.type)
             || (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
             || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type))
-            || (params.need_alter_mutations && AlterConversions::isSupportedIndexMutation(command));
+            || AlterConversions::isSupportedIndexMutation(command);
 
         if (is_supported)
         {

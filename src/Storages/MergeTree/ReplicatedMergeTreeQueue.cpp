@@ -2475,10 +2475,12 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     const bool need_metadata_mutations = min_metadata_version < params.metadata_version
         && num_metadata_mutations_in_map.load(std::memory_order_acquire) > 0;
 
-    if (!params.need_data_mutations && !params.need_alter_mutations && !need_metadata_mutations)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
-
     std::shared_lock lock(state_mutex);
+
+    /// A pending rebuild of a skip index is needed regardless of the parameters: the old files of the index
+    /// must not be used for the parts that the rebuild has not reached yet.
+    if (!params.need_data_mutations && !params.need_alter_mutations && !need_metadata_mutations && mutation_counters.num_index <= 0)
+        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {

@@ -4752,7 +4752,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
         patch_parts = getPatchPartsVectorForInternalUsage();
 
     std::lock_guard lock(currently_processing_in_background_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
+    if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0 && mutation_counters.num_index <= 0)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 
     UInt64 max_mutation_version = std::numeric_limits<UInt64>::max();
