@@ -96,7 +96,7 @@ struct ProjectionPartData
     bool variable_width = false;
     /// a merge sized some states by what the part does not record: the memory it built them in, or the states of the parts it merged
     bool merge_history_unknown = false;
-    /// for a merged wide part under a constant granularity: the bytes the part stores, and the least its merged parts can store for its rows
+    /// for a merged wide part under a constant granularity: its stored bytes, and the least its merged parts can store for its rows
     size_t stored_bytes = 0;
     size_t stored_bytes_floor = 0;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
