@@ -18,7 +18,7 @@ ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dedup_cleanup_ba
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dedup_cleanup_batches SYNC"
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE t_dedup_cleanup_batches (n UInt64)
-    ENGINE = ReplicatedMergeTree('$ZK_PATH', '{replica}')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dedup_cleanup_batches', '{replica}')
     ORDER BY n
     SETTINGS replicated_deduplication_window = 5, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0"
 
