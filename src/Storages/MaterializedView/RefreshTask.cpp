@@ -676,20 +676,15 @@ void RefreshTask::run()
         auto component_guard = Coordination::setCurrentComponent("RefreshTask::run");
         auto zookeeper = context->getZooKeeper();
         String path = coordination.path + "/" + requestZnodeName();
-        /// No atomic increment in Keeper: retry lost races. Check the root too: a consume writes it, re-creating this znode at version 0.
+        /// No atomic increment in Keeper: retry lost races. Only `drop` removes this znode, so its version never repeats.
         Coordination::Error code = Coordination::Error::ZOK;
         do
         {
-            Coordination::Stat root_stat;
-            zookeeper->get(coordination.path, &root_stat);
             String data;
             Coordination::Stat stat;
             bool existed = zookeeper->tryGet(path, data, &stat);
-            Coordination::Requests ops {zkutil::makeCheckRequest(coordination.path, root_stat.version),
-                existed ? zkutil::makeSetRequest(path, toString(parse<UInt64>(data) + 1), stat.version)
-                        : zkutil::makeCreateRequest(path, "1", zkutil::CreateMode::Persistent)};
-            Coordination::Responses responses;
-            code = zookeeper->tryMulti(ops, responses);
+            code = existed ? zookeeper->trySet(path, toString(parse<UInt64>(data) + 1), stat.version)
+                           : zookeeper->tryCreate(path, "1", zkutil::CreateMode::Persistent);
             if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION && code != Coordination::Error::ZNODEEXISTS)
                 throw Coordination::Exception::fromPath(code, path);
         } while (code != Coordination::Error::ZOK);
@@ -1956,13 +1951,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (syncs_requested)
         zookeeper->sync(coordination.path);
 
-    /// Do separate requests just to add watches. The children listed here name the "requested-*" znodes, see `run`.
+    /// Do separate requests just to add watches, also on each "requested-*" child listed here: a statement only sets an existing one, see `run`.
     Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
         watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
     zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
     Strings children = zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
-    /// Do an atomic multi-read, with those znodes: a re-created one has a new czxid, i.e. is a new request.
+    /// Do an atomic multi-read, with those znodes: a re-created one, or one whose `version - count` changed, is a new request.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     Strings request_znodes;
     for (const String & child : children)
@@ -1970,6 +1965,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
         {
             request_znodes.push_back(child);
             paths.push_back(coordination.path + "/" + child);
+            zookeeper->existsWatch(paths.back(), nullptr, labelled_watch);
         }
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
@@ -1993,11 +1989,12 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     for (size_t i = 0; i < request_znodes.size(); ++i)
     {
         const auto & response = responses[3 + i];
-        if (response.error != Coordination::Error::ZOK)
+        if (response.error != Coordination::Error::ZOK || response.data == "0")
             continue;
         CoordinationState::PendingRequest request {.czxid = response.stat.czxid, .count = parse<UInt64>(response.data), .version = response.stat.version};
         auto it = coordination.pending_requests.find(request_znodes[i]);
-        if (it != coordination.pending_requests.end() && it->second.czxid == request.czxid)
+        if (it != coordination.pending_requests.end() && it->second.czxid == request.czxid
+            && request.version - Int64(request.count) == it->second.version - Int64(it->second.count))
             request.pending_since = it->second.pending_since;
         pending_requests.emplace(request_znodes[i], request);
     }
@@ -2024,15 +2021,11 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         {
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral, /*ignore_if_exists=*/ true));
-            /// Consume the request in the same multi, so that nobody sees it gone with no refresh running. Version-checked, so
-            /// that a statement counted in meanwhile is kept; the rest are re-created, i.e. start a new takeover clock.
+            /// Consume the request in the same multi, so that nobody sees it gone with no refresh running. Version-checked, see `run`.
             if (!request_znode.empty())
             {
                 const auto & request = coordination.pending_requests.at(request_znode);
-                ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/" + request_znode, request.version));
-                if (request.count > 1)
-                    ops.emplace_back(zkutil::makeCreateRequest(
-                        coordination.path + "/" + request_znode, toString(request.count - 1), zkutil::CreateMode::Persistent));
+                ops.emplace_back(zkutil::makeSetRequest(coordination.path + "/" + request_znode, toString(request.count - 1), request.version));
             }
         }
         else

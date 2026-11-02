@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, zookeeper
+# Tags: no-parallel, zookeeper, no-fasttest
 # no-parallel: the failpoint is server-wide and would park the refresh start of every coordinated view on the server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

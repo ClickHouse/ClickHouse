@@ -355,7 +355,7 @@ def test_takeover_waits_for_recreated_request(started_cluster, cleanup):
         wait_condition(lambda: node2.query("select status from system.view_refreshes where view = 'a'").strip(), predicate, max_attempts=600)
 
     # node2's failed read is retried 5 s later, so its takeover clock starts after node1's: node1 takes the first request over.
-    # That re-creates the znode for the second: a new request, so node2's clock must start over once nothing runs.
+    # That sets its count to 1 for the second: a new request, so node2's clock must start over once nothing runs.
     fp = "refresh_mv_fail_znodes_read"
     node2.query(f"system enable failpoint {fp}")
     try:

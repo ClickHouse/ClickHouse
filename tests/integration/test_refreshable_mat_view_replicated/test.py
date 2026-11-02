@@ -938,9 +938,10 @@ def coordination_path(node, database, table):
 
 
 def requested_znode(zk, path, replica):
-    # The persistent "requested-<replica>" znode: a `SYSTEM REFRESH VIEW` accepted on that replica and not started yet.
+    # The persistent "requested-<replica>" znode while it counts `SYSTEM REFRESH VIEW`s accepted on that replica and not started yet.
     zk.sync(path)
-    return zk.exists(f"{path}/requested-{replica}")
+    znode = zk.exists(f"{path}/requested-{replica}")
+    return znode if znode and zk.get(f"{path}/requested-{replica}")[0] != b"0" else None
 
 
 def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables):

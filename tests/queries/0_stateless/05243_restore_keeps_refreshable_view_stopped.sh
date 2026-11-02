@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, atomic-database
+# Tags: no-parallel, atomic-database, no-fasttest
 # no-parallel: a concurrent `RESTORE` could take the single pause of the `PAUSEABLE_ONCE` failpoint.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -252,7 +252,7 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
-        /// Pending `SYSTEM REFRESH VIEW`s by znode name, ours included; czxid tells a re-created znode apart, see `doScheduling`.
+        /// Pending `SYSTEM REFRESH VIEW`s by znode name, ours included; czxid or `version-count` tells a new one apart, see `doScheduling`.
         struct PendingRequest
         {
             Int64 czxid = 0;
