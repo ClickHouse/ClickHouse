@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexBasic.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexCommitOrder.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexText.h>
 
 namespace DB
 {
@@ -50,6 +51,7 @@ ProjectionIndexFactory::ProjectionIndexFactory()
 {
     registerProjectionIndex<ProjectionIndexBasic>();
     registerProjectionIndex<ProjectionIndexCommitOrder>();
+    registerProjectionIndex<ProjectionIndexText>();
 }
 
 ProjectionIndexFactory & ProjectionIndexFactory::instance()

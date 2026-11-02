@@ -1,0 +1,11 @@
+Without ignore: projection text index drops granules
+Granules: 32/32
+Name: p_text
+Granules: 1/32
+With ignore = p_text: index is not listed and no granules dropped
+Granules: 32/32
+Result is identical with and without ignore
+1
+1
+Ignoring an unrelated name does not affect the projection text index
+Name: p_text

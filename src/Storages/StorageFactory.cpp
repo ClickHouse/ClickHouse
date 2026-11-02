@@ -1,4 +1,7 @@
 #include <Storages/StorageFactory.h>
+#include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/KeyDescription.h>
@@ -44,12 +47,37 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    /// Throws if `type` or any of its nested types is `PostingList`. `PostingList` is an
+    /// internal data type used by projection text indexes; its serialization requires a
+    /// `projection_index_context` that is unavailable on the user-facing column read/write
+    /// paths. Reject it deterministically at DDL time instead of letting the column be
+    /// created and fail later at INSERT or SELECT.
+    void checkNoPostingListInType(const IDataType & type, const String & column_name)
+    {
+        auto throw_if_posting_list = [&](const IDataType & t)
+        {
+            if (const auto * custom = t.getCustomName(); custom && custom->getName().starts_with("PostingList"))
+                throw Exception(
+                    ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES,
+                    "Data type 'PostingList' of column '{}' is internal to projection text indexes and cannot be used as a table column",
+                    column_name);
+        };
+
+        forEachInTypeTree(type, throw_if_posting_list);
+    }
+}
+
 /// Some types are only for intermediate values of expressions and cannot be used in tables.
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 {
     for (const auto & elem : names_and_types)
+    {
         if (elem.type->cannotBeStoredInTables())
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
+        checkNoPostingListInType(*elem.type, elem.name);
+    }
 }
 
 

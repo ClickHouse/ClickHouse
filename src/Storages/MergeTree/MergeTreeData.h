@@ -1586,12 +1586,16 @@ public:
     static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
     static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
 
-    ExpressionActionsPtr
-    getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
-    /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.
-    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(
+    ExpressionActionsPtr getPrimaryKeyAndIndicesExpression(
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeIndices & indices,
+        const std::vector<ProjectionDescriptionRawPtr> & projection_indices) const;
+
+    /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.
+    ExpressionActionsPtr getSortingKeyAndIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::vector<ProjectionDescriptionRawPtr> & projection_indices,
         const std::function<bool(const String &)> & use_index_expression = {}) const;
     /// Returns nullptr when no expression is selected.
     ExpressionActionsPtr getSkipIndicesExpression(

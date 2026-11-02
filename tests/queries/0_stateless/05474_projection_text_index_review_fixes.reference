@@ -1,0 +1,11 @@
+Two predicates sharing a token
+[10,20,30,40]
+[10,20,30,40]
+multiSearchAny evaluated by a dictionary scan
+6
+6
+A physical column shadowing a Map subcolumn
+1
+1
+0
+Unsupported arguments

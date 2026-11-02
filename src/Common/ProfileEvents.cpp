@@ -210,6 +210,12 @@
     M(TextIndexLazyBlocksSkippedDense, "Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexFilledFromFoldedPostings, "Number of times a text index virtual column was filled for all rows of a read directly from the posting lists folded during the index analysis, instead of from posting lists built for each granule.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
+    M(TextIndexLazyPackedBlocksSkipped, "Number of packed blocks skipped (arithmetic sequence) in the lazy posting list cursor path.", ValueType::Number) \
+    M(TextIndexLazySeekCount, "Number of seek calls on lazy posting list cursors.", ValueType::Number) \
+    M(TextIndexLazyLargeBlocksPrepared, "Number of large block Index Sections loaded by lazy posting list cursors.", ValueType::Number) \
+    M(TextIndexLazyLargeBlocksSkippedDense, "Number of large blocks skipped via dense-memset optimization in posting list fill.", ValueType::Number) \
+    M(TextIndexLazyLargeBlocksSkippedCovered, "Number of large blocks skipped because the output region was already all-ones in posting list fill.", ValueType::Number) \
+    M(TextIndexLazyPackedBlocksSkippedCovered, "Number of packed blocks skipped because the output region was already all-ones in posting list fill.", ValueType::Number) \
     M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the text index reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting.", ValueType::Number) \

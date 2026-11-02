@@ -36,6 +36,9 @@ public:
 
     bool canReadIncompleteGranules() const final { return false; }
 
+    LargePostingListReaderStreamPtr getProjectionIndexPostingStreamPtr() const override;
+    LargePostingListReaderStreamPtr getProjectionIndexPostingIndexStreamPtr() const override;
+
     size_t getColumnsCacheStripeMarks() const override
     {
         return columns_cache_reads_possible || columns_cache_writes_possible ? stripes.stripe_marks : 0;
@@ -118,6 +121,9 @@ protected:
 
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     DeserializeBinaryBulkStateMap cached_subcolumn_prefixes;
+    std::unordered_map<String, LargePostingListReaderStreamPtr> large_posting_streams;
+    std::unordered_map<String, LargePostingListReaderStreamPtr> position_streams;
+    std::unordered_map<String, LargePostingListReaderStreamPtr> lidx_streams;
 
 private:
     /// The columns cache.

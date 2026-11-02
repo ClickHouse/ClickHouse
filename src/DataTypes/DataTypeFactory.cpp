@@ -379,6 +379,8 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
     throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 
+void registerDataTypePostingList(DataTypeFactory & factory);
+
 DataTypeFactory::DataTypeFactory()
 {
     registerDataTypeNumbers(*this);
@@ -408,6 +410,8 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
     registerDataTypeJSON(*this);
+
+    registerDataTypePostingList(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()
