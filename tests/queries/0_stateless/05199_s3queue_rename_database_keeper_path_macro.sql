@@ -52,11 +52,11 @@ USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- Anti-vacuity: it really is a stand-in at this point, so the arm below cannot pass through the
 -- ordinary code path by accident.
-SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_bound';
+SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_bound';
 
 -- A settings ALTER goes through `StorageProxy::alter` -> `getNested()`, which materializes the queue.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound MODIFY SETTING loading_retries = 5;
-SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_bound';
+SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_bound';
 
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 
@@ -72,12 +72,12 @@ SETTINGS mode = 'unordered', keeper_path = '/05199{default_path_test}untouched';
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
+SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
 
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier};
 
 -- Still a stand-in: answering the check must not have materialized it.
 USE {CLICKHOUSE_DATABASE_2:Identifier};
-SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
+SELECT engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 'lazy_untouched';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};

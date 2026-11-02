@@ -18,7 +18,7 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE a = 1; -- { serverError SUPPORT_IS_DISABLED }
 
