@@ -578,7 +578,6 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
 }
 
 /// Unique identifier of the text index of a data part in the text index caches.
-/// It holds the checksums of the index files, because a part path can be reused for another part.
 String makeIndexIdForCaches(const IMergeTreeDataPartInfoForReader & part_info, const IMergeTreeIndex & index)
 {
     const auto & part_storage = *part_info.getDataPartStorage();

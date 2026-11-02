@@ -475,8 +475,7 @@ bool indexFileExistsInChecksums(
     const std::string & extension,
     const IDataPartStorage * storage = nullptr);
 
-/// Content token of a part file for the keys of caches that are keyed by its path: the checksum of the
-/// file found as in `indexFileExistsInChecksums` (for a member of `skp_idx.packed`, the archive's one).
+/// Checksum of a part file found as in `indexFileExistsInChecksums` (for a member of `skp_idx.packed`, the archive's one).
 std::optional<UInt128> getFileHashForCaches(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
