@@ -108,7 +108,7 @@ private:
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = AzureBlobStorage::getETagOrEmpty(blob.Details.ETag),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .version_id = {},
                     .tags = {},
                     .attributes = {},
@@ -238,7 +238,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = AzureBlobStorage::getETagOrEmpty(blob.Details.ETag),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .version_id = {},
                     .tags = {},
                     .attributes = {},
@@ -810,7 +810,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
-    result.etag = AzureBlobStorage::getETagOrEmpty(properties.ETag);
+    result.etag = AzureBlobStorage::getETag(properties.ETag, path);
     /// `attributes` is a map, so `emplace()` with no arguments would insert an empty key here.
     for (const auto & [key, value] : properties.Metadata)
         result.attributes[key] = value;

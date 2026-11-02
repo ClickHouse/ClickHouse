@@ -217,6 +217,10 @@ AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, cons
 AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
+/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
+String getETag(const Azure::ETag & etag, const String & blob_path);
+
 /// `Azure::ETag::ToString` aborts when the optional `ETag` header is absent (even in release builds),
 /// so never call it directly on a value from a remote endpoint.
 inline String getETagOrEmpty(const Azure::ETag & etag)

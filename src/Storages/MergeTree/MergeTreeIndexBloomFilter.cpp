@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -559,6 +560,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
             out.function = RPNElement::FUNCTION_HAS;
             return true;
         }
+    }
+
+    /// `empty(s)` of a string is the same as `s = ''`: `ConvertEmptyStringComparisonToFunctionPass` rewrites the latter to the former.
+    if (function_name == "empty" && arguments_size == 1 && parent == nullptr)
+    {
+        auto arg = function.getArgumentAt(0);
+        if (isString(removeNullable(removeLowCardinality(arg.getDAGNode()->result_type))))
+            return traverseTreeEquals("equals", arg, std::make_shared<DataTypeString>(), Field(String()), out, nullptr);
     }
 
     if (arguments_size != 2)
