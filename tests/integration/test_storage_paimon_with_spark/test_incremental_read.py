@@ -372,6 +372,8 @@ def test_incremental_read_skips_overwrite_snapshots(started_cluster_paimon_with_
         # The file that UPDATE wrote is removed by INSERT OVERWRITE in the same read.
         wait_until_query_result(node2, ids_query, "[20,100,101,102]\n")
 
+        # ANALYZE commits statistics only, and its snapshot is skipped.
+        spark.sql(f"ANALYZE TABLE {spark_table(table_name)} COMPUTE STATISTICS")
         # A MERGE INTO that only inserts rewrites no data file: an APPEND snapshot.
         spark.sql(
             f"MERGE INTO {spark_table(table_name)} AS t "
@@ -397,9 +399,10 @@ def test_incremental_read_skips_overwrite_snapshots(started_cluster_paimon_with_
             (5, "OVERWRITE"),
             (6, "OVERWRITE"),
             (7, "APPEND"),
-            (8, "APPEND"),
+            (8, "ANALYZE"),
+            (9, "APPEND"),
         ], layout
-        assert _committed_snapshot(started_cluster, table_name) == b"8"
+        assert _committed_snapshot(started_cluster, table_name) == b"9"
         assert instance.query(ids_query) == "[]\n"
 
         # One data file per Spark statement: the DELETE rewrote the file of ids 1..5.
@@ -408,6 +411,6 @@ def test_incremental_read_skips_overwrite_snapshots(started_cluster_paimon_with_
             == "[1,2,4,5]\n"
         )
         assert instance.contains_in_log(
-            "Target snapshot_id=3 is an OVERWRITE snapshot"
+            f"Target snapshot_id=3 of .*{table_name}.* is an OVERWRITE snapshot"
         )
-        assert _committed_snapshot(started_cluster, table_name) == b"8"
+        assert _committed_snapshot(started_cluster, table_name) == b"9"

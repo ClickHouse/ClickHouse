@@ -637,15 +637,15 @@ ObjectIterator PaimonMetadata::iterate(
     {
         auto target_state = loadStateForSnapshot(target_snapshot_id);
         if (target_state->isCompact())
-            LOG_WARNING(log, "Target snapshot_id={} is a COMPACT snapshot. "
+            LOG_WARNING(log, "Target snapshot_id={} of '{}' is a COMPACT snapshot. "
                 "Its delta manifest contains compaction output (not incremental changes). "
                 "Consider using a non-COMPACT snapshot for accurate incremental semantics.",
-                target_snapshot_id);
+                target_snapshot_id, persistent_components.table_path);
         else if (target_state->isOverwrite())
-            LOG_WARNING(log, "Target snapshot_id={} is an OVERWRITE snapshot. "
+            LOG_WARNING(log, "Target snapshot_id={} of '{}' is an OVERWRITE snapshot. "
                 "When it rewrote data files (a copy-on-write DELETE, UPDATE or MERGE INTO), its delta manifest also "
                 "contains the rows of those files that it did not change.",
-                target_snapshot_id);
+                target_snapshot_id, persistent_components.table_path);
         data_files = collectDeltaFilesForSnapshot(target_state, *schema, partition_pruner);
     }
     /// 4.b Regular incremental mode
@@ -969,7 +969,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         const bool deliver_overwrite = state->isOverwrite() && persistent_components.incremental_read_append_overwrite;
         if (append_only && !state->isAppend() && !deliver_overwrite)
         {
-            if (!state->isCompact() && !state->isOverwrite() && state->commit_kind != "ANALYZE")
+            if (!state->isCompact() && !state->isOverwrite() && !state->isAnalyze())
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Paimon snapshot {} of '{}' has commit kind '{}', which this version of ClickHouse does not know, so the "

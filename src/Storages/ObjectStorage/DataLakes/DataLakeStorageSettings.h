@@ -79,7 +79,10 @@ in Keeper and only read new data since that snapshot. This is similar to Kafka s
 Like Paimon's `streaming-read-append-overwrite` table option: the incremental read also delivers the data files that
 `OVERWRITE` snapshots add, for example the rows of `INSERT OVERWRITE` and the new versions of rows changed by `UPDATE`.
 For a copy-on-write `DELETE`, `UPDATE` or `MERGE INTO` they include the unchanged rows of every rewritten data file,
-which are delivered again. A data file that a later snapshot read by the same query removes is not delivered.
+so rows that an earlier read delivered are delivered again. A data file that a later snapshot read by the same query
+removes is not delivered, but `COMPACT` snapshots are not read: when one query reads an `APPEND` snapshot, a `COMPACT`
+that merges the file it added and an `OVERWRITE` that rewrites the merged file, it returns the rows of both the
+original and the rewritten file, so the unchanged rows appear twice and the changed ones in their old and new versions.
 )", 0) \
     DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
 Background metadata refresh interval for Paimon tables (seconds).
