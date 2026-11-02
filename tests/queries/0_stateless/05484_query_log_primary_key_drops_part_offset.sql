@@ -15,12 +15,12 @@ DROP TABLE IF EXISTS t_no_pk_offset;
 CREATE TABLE t_pk_offset (k UInt64)
 ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity = 8, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE t_no_pk_offset (k UInt64)
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 8, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 -- one part of eight granules
 INSERT INTO t_pk_offset SELECT number FROM numbers(64);
