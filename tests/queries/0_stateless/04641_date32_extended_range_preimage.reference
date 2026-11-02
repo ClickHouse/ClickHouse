@@ -21,7 +21,6 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
                 CONSTANT id: 12, constant_value: \'1501-01-01\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 1
 toYear above the LUT range is rewritten to a key range
 QUERY id: 0
@@ -46,7 +45,6 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
                 CONSTANT id: 12, constant_value: \'9001-01-01\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 1
 toYYYYMM outside the LUT range is rewritten to a key range
 QUERY id: 0
@@ -71,7 +69,6 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
                 CONSTANT id: 12, constant_value: \'9001-01-01\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -95,7 +92,6 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
                 CONSTANT id: 12, constant_value: \'1500-07-01\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 1
 inequalities over the extended range
 3
@@ -127,5 +123,4 @@ QUERY id: 0
               LIST id: 11, nodes: 2
                 COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
                 CONSTANT id: 12, constant_value: \'0001-01-01\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 1

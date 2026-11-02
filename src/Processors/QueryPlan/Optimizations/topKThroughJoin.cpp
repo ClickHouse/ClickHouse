@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -54,24 +55,30 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
     return {};
 }
 
-/// Return `true` when the eventual physical join could have `hasDelayedBlocks()`,
-/// in which case `optimizeReadInOrder`'s second-pass traversal will not propagate
-/// read-in-order through the join (see `findReadingStep` in `optimizeReadInOrder.cpp`).
-/// Used to gate the deferral: if delayed blocks are possible the deferral would
-/// silently disable both `topKThroughJoin` and the second-pass through-join pass.
+/// Return `true` when the eventual physical join could have `hasDelayedBlocks()` that the
+/// second pass cannot eliminate, in which case `optimizeReadInOrder`'s second-pass traversal
+/// will not propagate read-in-order through the join (see `findReadingStep` in
+/// `optimizeReadInOrder.cpp`). Used to gate the deferral: if such delayed blocks are possible
+/// the deferral would silently disable both `topKThroughJoin` and the second-pass through-join
+/// pass.
 ///
-/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly. For
-/// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
+/// For a physical `JoinStep`, a join that `canPreserveLeftBlockOrder` loses its delayed blocks
+/// when the second pass pins it with `keepLeftPipelineInOrder` (`SpillingHashJoin` then spills
+/// through `MergeJoin` instead of `GraceHashJoin`), so only joins without that ability count.
+/// For `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
 /// so we conservatively assume delayed blocks are possible when the configured settings
 /// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
 /// automatic spilling is configured via `max_bytes_*_before_external_join` (which can
-/// wrap the chosen hash join in `SpillingHashJoin`).
+/// wrap the chosen hash join in `SpillingHashJoin`). Whether the eventual `SpillingHashJoin`
+/// can be pinned depends on physical-level details (one disjunct, no mixed `ON` condition,
+/// the in-memory join's own order guarantee), so the logical branch stays fail-closed:
+/// `topKThroughJoin` then injects its own `Sort + Limit` instead of deferring.
 bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
     {
         const auto & join_ptr = physical->getJoin();
-        return !join_ptr || join_ptr->hasDelayedBlocks();
+        return !join_ptr || (join_ptr->hasDelayedBlocks() && !join_ptr->canPreserveLeftBlockOrder());
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
@@ -91,10 +98,10 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// traversal would fail because the eventual physical join breaks the read-in-order
 /// chain on the preserved side. Two distinct failure modes are covered:
 ///
-///  1. The join does not emit left rows in their original stream order
-///     (`preservesLeftBlockOrder() == false`). `findReadingStep` rejects such joins
-///     directly. `PartialMergeJoin` (`partial_merge` / `prefer_partial_merge`) is the
-///     case here: it re-sorts left blocks by the join key.
+///  1. The join can neither emit left rows in their original stream order
+///     (`preservesLeftBlockOrder`) nor be pinned to do so on request
+///     (`canPreserveLeftBlockOrder`; the second pass pins with `keepLeftPipelineInOrder`).
+///     `findReadingStep` rejects such joins directly.
 ///  2. The join's physicalization inserts a `Sort ... before JOIN` on the preserved input
 ///     (`FullSortingMergeJoin`, `full_sorting_merge`; see
 ///     `addSortingForMergeJoin` in `JoinStepLogical.cpp`). `findReadingStep` only
@@ -106,12 +113,15 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// pass, so we must NOT defer and instead let `topKThroughJoin` inject its own
 /// `Sort + Limit`.
 ///
-/// For a physical `JoinStep` we read `preservesLeftBlockOrder()` directly and also flag
+/// For a physical `JoinStep` we read `canPreserveLeftBlockOrder()` directly and also flag
 /// `FullSortingMergeJoin` explicitly (mode 2). For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
 /// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` (the parallel variant
 /// physicalizes to the same `FullSortingMergeJoin` with the same pre-JOIN sort).
+/// A physical `PartialMergeJoin` can be pinned to the order-preserving probe for
+/// INNER/LEFT ANY/ALL joins, but whether the pin applies depends on physical-level
+/// details, so the logical branch stays fail-closed.
 /// `GRACE_HASH` / `AUTO` are already covered by `joinMayHaveDelayedBlocks`.
 ///
 /// The `JoinStepLogical` check is by *list membership*, so listing a merge join as a
@@ -124,13 +134,12 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// `04651_parallel_full_sorting_merge_join_fallback_top_k`; the analogous strict-key
 /// fallback side effect is pinned by
 /// `04602_parallel_full_sorting_merge_join_fallback_strict_keys`.
-/// See issues #110662 and #109216.
 bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
     {
         const auto & join_ptr = physical->getJoin();
-        if (!join_ptr || !join_ptr->preservesLeftBlockOrder())
+        if (!join_ptr || !(join_ptr->preservesLeftBlockOrder() || join_ptr->canPreserveLeftBlockOrder()))
             return true;
         return typeid_cast<const FullSortingMergeJoin *>(join_ptr.get()) != nullptr;
     }
@@ -146,20 +155,6 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     }
     /// Unknown step kind - be conservative.
     return true;
-}
-
-/// Walk down a single-child chain looking for a `ReadFromMergeTree` step.
-const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
-{
-    while (node)
-    {
-        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-            return reading;
-        if (node->children.size() != 1)
-            return nullptr;
-        node = node->children.front();
-    }
-    return nullptr;
 }
 
 }
@@ -233,53 +228,11 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (sort_node->children.size() != 1)
         return 0;
 
-    /// Peel a chain of ExpressionSteps between Sort and Join, translating the sort
-    /// description to the input level of each step. For each sort column we look up
-    /// the output node by name and walk through any `ALIAS` chain - if it ends at an
-    /// `INPUT` node, the column is a pure pass-through and we replace its name with
-    /// the input's name. Anything else (FUNCTION, COLUMN, ARRAY_JOIN, ...) means the
-    /// sort key was computed in this step rather than carried over, and pushing the
-    /// sort below the join would be unsound.
-    ///
-    /// The cap of 4 is generous: in current plans the only steps between Sort and
-    /// Join after `mergeExpressions` are `Before ORDER BY + Projection` and
-    /// `Post Join Actions`, occasionally with one more wrapper.
+    /// an `arrayJoin` above the join changes the row count of the preserved side, so its top-n is not the result's (#82279)
     SortDescription description = sort_step->getSortDescription();
     QueryPlan::Node * join_node = sort_node->children.front();
-    for (size_t peeled = 0; peeled < 4; ++peeled)
-    {
-        auto * expression_step = typeid_cast<ExpressionStep *>(join_node->step.get());
-        if (!expression_step)
-            break;
-        if (join_node->children.size() != 1)
-            return 0;
-
-        const ActionsDAG & dag = expression_step->getExpression();
-        /// `arrayJoin` between `Sort` and `Join` changes the number of output rows
-        /// per input row. The soundness sketch assumes "every preserved-side row
-        /// produces at least one output row" and that the top-n of the sort output
-        /// corresponds to the top-n of the preserved side - both invariants break
-        /// when an `arrayJoin` above the join expands rows, because the n rows we
-        /// keep on the preserved side may expand into fewer (or zero) final rows.
-        /// See `#82279`.
-        if (dag.hasArrayJoin())
-            return 0;
-        for (auto & sort_col : description)
-        {
-            const auto * out_node = dag.tryFindInOutputs(sort_col.column_name);
-            if (!out_node)
-                return 0;
-
-            while (out_node->type == ActionsDAG::ActionType::ALIAS)
-                out_node = out_node->children.front();
-
-            if (out_node->type != ActionsDAG::ActionType::INPUT)
-                return 0;
-
-            sort_col.column_name = out_node->result_name;
-        }
-        join_node = join_node->children.front();
-    }
+    if (!peelPassThroughExpressions(join_node, description))
+        return 0;
 
     auto join_semantics_opt = getJoinSemanticsFromStep(join_node->step.get());
     if (!join_semantics_opt)
@@ -396,7 +349,6 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// `FullSortingMergeJoin` whose physicalization inserts a `Sort ... before JOIN` on the
     /// preserved input (`addSortingForMergeJoin`), which `findReadingStep` will not descend
     /// through. In either case deferring would silently disable both optimizations.
-    /// See issues #110662 and #109216.
     const bool second_pass_can_apply
         = settings.read_in_order
         && settings.read_in_order_through_join
@@ -487,10 +439,9 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
                     *merge,
                     *preserved_input_node);
 
-                const bool reverse_read_blocks_pass2
-                    = order_info && order_info->direction != 1 && !merge->canReadInReverseOrder();
+                const bool read_blocks_pass2 = order_info && !merge->canReadInOrder(*order_info);
 
-                if (order_info && !reverse_read_blocks_pass2)
+                if (order_info && !read_blocks_pass2)
                     return 0;
             }
         }

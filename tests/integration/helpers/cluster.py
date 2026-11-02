@@ -23,7 +23,7 @@ import uuid
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
-from typing import Any, List, Sequence, Tuple, Union
+from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import requests
 import urllib3
@@ -67,6 +67,8 @@ from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
     dremio_user,
+    elasticsearch_pass,
+    elasticsearch_user,
     minio_access_key,
     minio_secret_key,
     mongo_pass,
@@ -235,6 +237,16 @@ CLICKHOUSE_START_COMMAND = (
 CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
+
+CLICKHOUSE_GDB_LOG_FILE = "/var/log/clickhouse-server/gdb.log"
+
+# Dolor runs its servers and Keepers in the foreground, where `BaseDaemon` does not chdir to `core_path`,
+# so a relative `kernel.core_pattern` writes a core to the working directory. Keep that on the host mount.
+DOLOR_CORE_DIR = "/var/log/clickhouse-server/cores"
+DOLOR_KEEPER_CORE_DIR = "/var/log/clickhouse-keeper/cores"
+
+# A backtrace is also taken on restarts in the middle of a run, so it is bounded.
+GDB_BACKTRACE_TIMEOUT_SECONDS = 300
 
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
@@ -609,6 +621,31 @@ def get_instances_dir(name):
     return instances_dir_name
 
 
+_CLEARED_PREV_LOGS_DIRS = set()
+
+
+def preserve_docker_log(instances_dir: str, retention_dir: str) -> Optional[str]:
+    """Moves `<instances_dir>/docker.log` to `<retention_dir>/docker.<N>.log`.
+
+    The retained copy is the only record of the previous incarnation's container output
+    and exit codes; `N` increments, so no earlier incarnation is ever overwritten.
+    """
+    src = p.join(instances_dir, "docker.log")
+    if not p.exists(src) or os.path.getsize(src) == 0:
+        return None
+
+    os.makedirs(retention_dir, exist_ok=True)
+    kept = sum(
+        1
+        for f in os.listdir(retention_dir)
+        if f.startswith("docker.") and f.endswith(".log")
+    )
+    dst = p.join(retention_dir, f"docker.{kept + 1}.log")
+    shutil.move(src, dst)
+    logging.debug(f"Preserved {src} as {dst}")
+    return dst
+
+
 def extract_test_name(base_path):
     """Extracts the name of the test based to a path to its test*.py file
     Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
@@ -758,6 +795,9 @@ class ClickHouseCluster:
         self.docker_net_lock = None
 
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
+        self.prev_logs_dir = p.join(
+            self.base_dir, self.instances_dir_name + "-prev-logs"
+        )
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
@@ -808,6 +848,7 @@ class ClickHouseCluster:
         self.base_postgres_cmd = []
         self.base_mongo_cmd = []
         self.base_redis_cmd = []
+        self.base_elasticsearch_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
         self.base_hdfs_cmd = []
@@ -841,6 +882,7 @@ class ClickHouseCluster:
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
+        self.with_elasticsearch = False
         self.with_cassandra = False
         self.with_ldap = False
         self.with_jdbc_bridge = False
@@ -983,6 +1025,10 @@ class ClickHouseCluster:
         self.redis_host = "redis1"
         self._redis_port = 0
 
+        # available when with_elasticsearch == True
+        self.elasticsearch_host = "elasticsearch1"
+        self._elasticsearch_port = 0
+
         # available when with_postgres == True
         self.postgres_host = "postgres1"
         self.postgres_ip = None
@@ -1102,6 +1148,13 @@ class ClickHouseCluster:
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
+        if self.prev_logs_dir not in _CLEARED_PREV_LOGS_DIRS:
+            # A leftover retention directory belongs to a previous process, so it is
+            # discarded here rather than filed as one of this session's incarnations.
+            _CLEARED_PREV_LOGS_DIRS.add(self.prev_logs_dir)
+            shutil.rmtree(self.prev_logs_dir, ignore_errors=True)
+        elif p.exists(self.instances_dir):
+            preserve_docker_log(self.instances_dir, self.prev_logs_dir)
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
@@ -1226,6 +1279,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def elasticsearch_port(self):
+        if self._elasticsearch_port:
+            return self._elasticsearch_port
+        self._elasticsearch_port = self.port_pool.get_port()
+        return self._elasticsearch_port
 
     @property
     def ldap_external_port(self):
@@ -1532,6 +1592,7 @@ class ClickHouseCluster:
         env_variables["image"] = "clickhouse/integration-test:" + DOCKER_BASE_TAG
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
+        env_variables["keeper_workdir"] = DOLOR_KEEPER_CORE_DIR if self.with_dolor else "/"
         for i in range(1, 4):
             keeper_instance_dir = self.keeper_instance_dir_prefix + f"{i}"
             logs_dir = os.path.join(keeper_instance_dir, "log")
@@ -1541,6 +1602,8 @@ class ClickHouseCluster:
             env_variables[f"keeper_config_dir{i}"] = configs_dir
             env_variables[f"keeper_db_dir{i}"] = coordination_dir
             self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
+            if self.with_dolor:
+                self.zookeeper_dirs_to_create.append(os.path.join(logs_dir, "cores"))
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
@@ -1860,6 +1923,23 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_redis.yml"),
         )
         return self.base_redis_cmd
+
+    def setup_elasticsearch_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_elasticsearch = True
+        env_variables["ELASTICSEARCH_HOST"] = self.elasticsearch_host
+        env_variables["ELASTICSEARCH_EXTERNAL_PORT"] = str(self.elasticsearch_port)
+        env_variables["ELASTICSEARCH_INTERNAL_PORT"] = "9200"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml")]
+        )
+        self.base_elasticsearch_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml"),
+        )
+        return self.base_elasticsearch_cmd
 
     def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_rabbitmq = True
@@ -2257,6 +2337,7 @@ class ClickHouseCluster:
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
+        with_elasticsearch=False,
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
@@ -2403,6 +2484,7 @@ class ClickHouseCluster:
             or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
+            with_elasticsearch=with_elasticsearch,
             with_minio=with_minio,
             with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
@@ -2625,6 +2707,13 @@ class ClickHouseCluster:
         if with_redis and not self.with_redis:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_elasticsearch and not self.with_elasticsearch:
+            cmds.append(
+                self.setup_elasticsearch_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
@@ -3521,6 +3610,14 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
+    def wait_elasticsearch_to_start(self, timeout=180):
+        password = urllib.parse.quote_plus(elasticsearch_pass)
+        self.wait_for_url(
+            f"http://{elasticsearch_user}:{password}@localhost:{self.elasticsearch_port}"
+            "/_cluster/health?wait_for_status=yellow",
+            timeout=timeout,
+        )
+
     def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
         ip = self.get_instance_ip(host)
         minio_client = Minio(
@@ -3851,6 +3948,7 @@ class ClickHouseCluster:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
+            preserve_docker_log(self.instances_dir, self.prev_logs_dir)
             # Remove and recreate so that create_dir() gets a clean slate.
             # This happens when --dist=each causes module-scoped fixtures to be torn down
             # and re-set-up within the same pytest session (e.g. tests from different modules
@@ -3923,6 +4021,11 @@ class ClickHouseCluster:
                         "Got exception in docker compose up: %s", kwargs["exception"]
                     )
 
+            def compose_up(cmd, **kwargs):
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, cmd, **kwargs
+                )
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
                 logging.debug(
@@ -3933,9 +4036,7 @@ class ClickHouseCluster:
                         shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
-                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
-                )
+                compose_up(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
 
                 self.wait_zookeeper_secure_to_start()
@@ -4040,9 +4141,7 @@ class ClickHouseCluster:
                                 ),
                             )
 
-                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
-                )
+                compose_up(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
 
                 self.wait_zookeeper_to_start()
@@ -4278,7 +4377,7 @@ class ClickHouseCluster:
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug("Setup Mongo")
-                run_and_check(self.base_mongo_cmd + common_opts)
+                compose_up(self.base_mongo_cmd + common_opts)
                 self.up_called = True
                 self.wait_mongo_to_start(30)
 
@@ -4293,6 +4392,12 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_redis_cmd + common_opts)
                 self.up_called = True
                 time.sleep(10)
+
+            if self.with_elasticsearch and self.base_elasticsearch_cmd:
+                logging.debug("Setup Elasticsearch")
+                subprocess_check_call(self.base_elasticsearch_cmd + common_opts)
+                self.up_called = True
+                self.wait_elasticsearch_to_start()
 
             if self.with_hive and self.base_hive_cmd:
                 logging.debug("Setup hive")
@@ -4323,7 +4428,7 @@ class ClickHouseCluster:
                     "Trying to create Minio instance by command %s",
                     " ".join(map(str, minio_start_cmd)),
                 )
-                run_and_check(minio_start_cmd)
+                compose_up(minio_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
@@ -4456,9 +4561,7 @@ class ClickHouseCluster:
             )
             self.up_called = True
 
-            retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                run_and_check, clickhouse_start_cmd
-            )
+            compose_up(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
             if self.with_dolor:
@@ -4490,10 +4593,13 @@ class ClickHouseCluster:
                     self.exec_in_container(
                         instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
                     )
-                    instance.exec_in_container(
+                    instance.clickhouse_exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
+                        use_cli=False,
+                        get_exec_id=True,
+                        workdir=DOLOR_CORE_DIR,
                     )
 
             start_timeout = 300.0  # seconds
@@ -4608,13 +4714,6 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                # Collect exit codes for later inspection
-                if self.with_dolor:
-                    container = self.docker_client.containers.get(instance.docker_id)
-                    res = container.wait()
-                    exit_code = res["StatusCode"]
-                    logging.info(f"The server {name} exited with code: {exit_code}")
-
                 if not ignore_sanitizer and instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -5172,6 +5271,7 @@ class ClickHouseInstance:
         with_secrets,
         with_mongo,
         with_redis,
+        with_elasticsearch,
         with_minio,
         with_remote_database_disk,
         with_azurite,
@@ -5302,6 +5402,7 @@ class ClickHouseInstance:
         )
         self.with_arrowflight = with_arrowflight
         self.with_redis = with_redis
+        self.with_elasticsearch = with_elasticsearch
         self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
@@ -5395,6 +5496,10 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.clickhouse_exec_id = ""
+        # How the last server exited, kept once its exec id is dropped; every start clears them.
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5802,6 +5907,14 @@ class ClickHouseInstance:
 
         return error
 
+    def get_cache_size(self, cache_path) -> int:
+        exec_str = f"find {cache_path}  -mindepth 3 -maxdepth 3 -type f -print0 " + "| xargs --no-run-if-empty --null du -B 1 | cut -f 1 | awk 'BEGIN {s=0} {s+=$1} END {print s}'"
+        return int(self.exec_in_container(
+            (["bash", "-c", exec_str]),
+            privileged=True,
+            user="root",
+        ).rstrip())
+
     def append_hosts(self, name, ip):
         self.exec_in_container(
             (["bash", "-c", "echo '{}' {} >> /etc/hosts".format(ip, name)]),
@@ -5887,6 +6000,48 @@ class ClickHouseInstance:
             )
         )
 
+    def capture_clickhouse_exit(self, timeout_sec=10):
+        """Record the exit code of the server exec. Docker fills it in asynchronously, so the
+        process can be gone while the exec still reads as running: wait for it, bounded."""
+        if not self.clickhouse_exec_id:
+            return
+        deadline = time.time() + timeout_sec
+        while True:
+            try:
+                info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
+            except Exception as e:
+                logging.warning(f"Could not inspect exec of {self.name}: {e}")
+                return
+            if not info["Running"] and info["ExitCode"] is not None:
+                self.clickhouse_last_exit_code = info["ExitCode"]
+                return
+            if time.time() >= deadline:
+                logging.warning(f"Exec of {self.name} has no exit code after {timeout_sec}s")
+                return
+            time.sleep(0.2)
+
+    def dump_backtrace(self, occasion: str) -> bool:
+        """Append `thread apply all backtrace` of the running server to gdb.log, headed by
+        the occasion and time, as `stop_server` in `tests/docker_scripts/stress_tests.lib`
+        does. Returns False when there is no process left to dump."""
+        pid = self.get_process_pid("clickhouse")
+        if pid is None:
+            return False
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f'echo "thread apply all backtrace ({occasion}) at $(date -u +%FT%TZ)"'
+                f" >> {CLICKHOUSE_GDB_LOG_FILE}; "
+                f"timeout {GDB_BACKTRACE_TIMEOUT_SECONDS}"
+                f" gdb -batch -ex 'thread apply all bt' -p {pid}"
+                f" >> {CLICKHOUSE_GDB_LOG_FILE} 2>&1",
+            ],
+            user="root",
+            nothrow=True,
+        )
+        return True
+
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception(
@@ -5933,6 +6088,10 @@ class ClickHouseInstance:
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
+                    self.capture_clickhouse_exit()
+                    # Kept until a code is recorded, so a later capture can still read it
+                    if self.clickhouse_last_exit_code is not None:
+                        self.clickhouse_exec_id = ""
                     return True
                 else:
                     time.sleep(1)
@@ -5946,14 +6105,10 @@ class ClickHouseInstance:
                 logging.warning(
                     f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
                 )
-                self.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                    ],
-                    user="root",
-                )
+                # Appended to gdb.log rather than written over the server's stdout.log
+                self.dump_backtrace("on stop")
+                # Only a graceful stop that timed out gets here, never a kill=True call
+                self.clickhouse_forced_stop = True
                 self.stop_clickhouse(kill=True)
             else:
                 ps_all = self.exec_in_container(
@@ -5988,6 +6143,10 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
+                self.clickhouse_last_exit_code = None
+                self.clickhouse_forced_stop = False
+                # Cleared first, so a start that throws leaves no exec of the previous server
+                self.clickhouse_exec_id = ""
                 exec_id = self.exec_in_container(
                     [
                         "bash",
@@ -6003,7 +6162,11 @@ class ClickHouseInstance:
                     use_cli=False,
                     get_exec_id=True,
                     environment=environment,
+                    **({"workdir": DOLOR_CORE_DIR} if self.cluster.with_dolor else {}),
                 )
+                # With `--daemon` the exec is a launcher that exits 0 once it has forked,
+                # so only a foreground start's exec says how the server went away.
+                self.clickhouse_exec_id = "" if daemon else exec_id
                 if not wait_start:
                     return exec_id
                 if expected_to_fail:
@@ -6029,7 +6192,13 @@ class ClickHouseInstance:
                         raise
                     time.sleep(time_to_sleep)
 
-        raise Exception("Cannot start ClickHouse, see additional info in logs")
+        # Every attempt above fails the same way when docker removed the container's interface;
+        # say so, the CI job reports that as an infrastructure error.
+        lost_interface = self.describe_lost_network_interface()
+        raise Exception(
+            (f"{lost_interface} " if lost_interface else "")
+            + "Cannot start ClickHouse, see additional info in logs"
+        )
 
     def stop_clickhouse_client(self, signal="INT"):
         client_pid = self.get_process_pid("clickhouse client")
@@ -6065,12 +6234,7 @@ class ClickHouseInstance:
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
-        pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
-                user="root",
-            )
+        self.dump_backtrace("on start timeout")
         if last_err is not None:
             raise last_err
 
@@ -6803,7 +6967,12 @@ class ClickHouseInstance:
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
-        write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        if not self.cluster.with_dolor:
+            # The `Detect passwords in tests` rule throws when a password reaches the logs.
+            # La Casa del Dolor generates DDL with the integration-test credentials, and a
+            # query that fails to parse is logged before its arguments are masked, so the
+            # rule would turn fuzzer noise into a logical error.
+            write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
@@ -6899,6 +7068,8 @@ class ClickHouseInstance:
         logging.debug(f"Setup logs dir {logs_dir}")
         os.mkdir(logs_dir)
         self.logs_dir = logs_dir
+        if self.cluster.with_dolor:
+            os.mkdir(p.join(logs_dir, "cores"))
 
         depends_on = []
 
@@ -6977,7 +7148,7 @@ class ClickHouseInstance:
 
         if self.cluster.with_dolor:
             entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
-        if self.stay_alive:
+        elif self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
             entrypoint_cmd = self.clickhouse_start_command

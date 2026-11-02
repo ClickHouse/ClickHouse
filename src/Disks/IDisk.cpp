@@ -1,5 +1,4 @@
 #include <Disks/IDisk.h>
-#include <Core/ServerUUID.h>
 #include <Core/UUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -33,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -247,12 +245,7 @@ void IDisk::startup(bool skip_access_check)
 
 void IDisk::checkAccess()
 {
-    DB::UUID server_uuid = DB::ServerUUID::get();
-    if (server_uuid == DB::UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
-
-    checkAccessImpl(path);
+    checkAccessImpl(fmt::format("clickhouse_access_check_{}", toString(UUIDHelpers::generateV4())));
 }
 
 /// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?

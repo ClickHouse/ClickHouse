@@ -5,7 +5,7 @@
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
