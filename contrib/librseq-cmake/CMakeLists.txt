@@ -19,11 +19,10 @@ target_compile_definitions (_librseq PRIVATE _GNU_SOURCE)
 
 if (USE_MUSL)
     # librseq headers use glibc's __GNUC_PREREQ from <features.h>, which musl does not
-    # provide. CMake drops function-style macros from COMPILE_DEFINITIONS, so force-include
-    # a shim header instead. PRIVATE because sanitize_targets.cmake forbids interface
-    # compile options on contrib targets; users of librseq headers (silk) force-include
-    # it themselves in their contrib CMake.
-    target_compile_options (_librseq PRIVATE "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/musl-compat.h")
+    # provide. Shadow <features.h> with a wrapper that adds it, as a PUBLIC include
+    # directory so that every target using librseq headers (silk, examples) gets it too.
+    # SYSTEM, so the reserved-identifier macro it defines does not warn in user code.
+    target_include_directories (_librseq SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/musl")
 
     # In our static musl binaries, dlsym cannot resolve the libc rseq ABI symbols that
     # rseq_init looks up; redirect the lookup to weak link-time references (see the

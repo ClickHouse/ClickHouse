@@ -93,11 +93,6 @@ endif()
 # and there `ch_contrib::librseq` (with its <rseq/rseq.h> headers) does not exist.
 if (TARGET ch_contrib::librseq)
     list(APPEND EXAMPLES_SOURCES ../Common/examples/rseq_vs_atomic_benchmark.cpp)
-    if (USE_MUSL)
-        # librseq headers need glibc's `__GNUC_PREREQ`, see contrib/librseq-cmake/musl-compat.h.
-        set_source_files_properties(../Common/examples/rseq_vs_atomic_benchmark.cpp PROPERTIES
-            COMPILE_OPTIONS "-include;${ClickHouse_SOURCE_DIR}/contrib/librseq-cmake/musl-compat.h;-Wno-reserved-macro-identifier")
-    endif()
 endif()
 
 if (ENABLE_HIVE)

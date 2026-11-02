@@ -39,12 +39,6 @@ target_link_libraries(_silk_util
     PUBLIC boost::headers_only
     PRIVATE ch_contrib::librseq
 )
-if (USE_MUSL)
-    # librseq headers (included by silk) use glibc's __GNUC_PREREQ, which musl does not
-    # provide; see the identical force-include in contrib/librseq-cmake.
-    target_compile_options(_silk_util PRIVATE
-        "SHELL:-include ${ClickHouse_SOURCE_DIR}/contrib/librseq-cmake/musl-compat.h")
-endif ()
 add_library(ch_contrib::silk_util ALIAS _silk_util)
 
 # silk-fibers
