@@ -492,9 +492,11 @@ void optimizeTreeSecondPass(
     /// Not for a plan whose parts run elsewhere, since the lazy read has to run where the main one does. That is asked of
     /// the setting rather than of this pass, as the other lazy materialization does: a plan that has its exchanges
     /// already, optimized again, is still distributed, and its lazy steps could not be sent to the workers.
+    /// Plan-based parallel replicas needs no such check: `applyParallelReplicas` above has already moved the shipped
+    /// reads into their fragments, so the reads left in the plan are local.
     bool lazy_materialization_applied = false;
     if (optimization_settings.optimize_lazy_materialization && optimization_settings.lazy_materialization_for_join
-        && !optimization_settings.enable_parallel_replicas && !optimization_settings.make_distributed_plan)
+        && !optimization_settings.make_distributed_plan)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});

@@ -1,4 +1,5 @@
 #include <functional>
+#include <list>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -14,6 +15,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -614,6 +616,59 @@ private:
     }
 };
 
+/// `ArrayJoinStep` serializes a fused element filter without a version bump, so an older replica cannot read
+/// it. Give a shipped fragment the filter back as a `FilterStep` above the step; the replica fuses it again.
+static void unfuseArrayJoinFilters(QueryPlan & fragment)
+{
+    std::vector<QueryPlan::Node *> fused;
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        *fragment.getRootNode(),
+        [&](QueryPlan::Node & node)
+        {
+            if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(node.step.get()); array_join && array_join->hasElementFilter())
+                fused.push_back(&node);
+        });
+
+    for (auto * node : fused)
+    {
+        auto & array_join = typeid_cast<ArrayJoinStep &>(*node->step);
+        const auto & header = *array_join.getOutputHeader();
+        ActionsDAG dag = array_join.getElementFilter()->clone();
+        const String filter_column_name = array_join.getElementFilterColumnName();
+        array_join.removeElementFilter();
+
+        /// The filter reads only the columns it needs, while a `FilterStep` has to pass the whole header through.
+        std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs;
+        for (const auto * input : dag.getInputs())
+            inputs[input->result_name].push_back(input);
+
+        const auto * filter_node = &dag.findInOutputs(filter_column_name);
+        ActionsDAG::NodeRawConstPtrs outputs;
+        bool filter_column_in_header = false;
+        for (const auto & column : header)
+        {
+            auto & same_name = inputs[column.name];
+            const auto * output = same_name.empty() ? &dag.addInput(column) : same_name.front();
+            if (!same_name.empty())
+                same_name.pop_front();
+            filter_column_in_header |= output == filter_node;
+            outputs.push_back(output);
+        }
+        if (!filter_column_in_header)
+            outputs.push_back(filter_node);
+        dag.getOutputs() = std::move(outputs);
+        dag.removeUnusedActions(/*allow_remove_inputs=*/ false);
+
+        auto & array_join_node = fragment.addNode(std::move(node->step), std::move(node->children));
+        node->step = std::make_unique<FilterStep>(
+            array_join_node.step->getOutputHeader(), std::move(dag), filter_column_name, !filter_column_in_header);
+        node->step->setStepDescription("ARRAY JOIN element filter");
+        node->children = {&array_join_node};
+    }
+}
+
 class ConvertToDistributedVisitor : public QueryPlanVisitor<ConvertToDistributedVisitor>
 {
     QueryPlan & query_plan;
@@ -668,6 +723,7 @@ private:
         /// it. Clone it structurally: `QueryPlan::addStep` can only replay a linear chain and would
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
         auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front(), query_plan));
+        unfuseArrayJoinFilters(*plan_fragment);
 
         /// A fragment's result travels back from the replicas as a Block, whose row count is the size of
         /// its first column, so a fragment with no output columns cannot report how many rows it produced.

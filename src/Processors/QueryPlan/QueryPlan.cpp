@@ -1376,6 +1376,11 @@ QueryPlan QueryPlan::clone() const
     return result;
 }
 
+QueryPlan::Node & QueryPlan::addNode(QueryPlanStepPtr step, std::vector<Node *> children)
+{
+    return nodes.emplace_back(Node{.step = std::move(step), .children = std::move(children)});
+}
+
 QueryPlan QueryPlan::cloneSubtree(Node * subplan_root)
 {
     QueryPlan result;

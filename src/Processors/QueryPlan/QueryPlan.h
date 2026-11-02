@@ -280,6 +280,9 @@ public:
 
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
+    /// Add a node owned by this plan. Linking it into the tree is up to the caller.
+    Node & addNode(QueryPlanStepPtr step, std::vector<Node *> children);
+
 private:
     struct SerializationFlags
     {

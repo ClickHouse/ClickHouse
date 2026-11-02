@@ -46,6 +46,7 @@ public:
     bool hasElementFilter() const { return element_filter.has_value(); }
     const std::optional<ActionsDAG> & getElementFilter() const { return element_filter; }
     const String & getElementFilterColumnName() const { return element_filter_column_name; }
+    void removeElementFilter();
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;

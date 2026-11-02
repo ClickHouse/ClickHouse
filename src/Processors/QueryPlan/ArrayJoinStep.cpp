@@ -122,6 +122,13 @@ void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column
     remove_element_filter_column = remove_filter_column;
 }
 
+void ArrayJoinStep::removeElementFilter()
+{
+    element_filter.reset();
+    element_filter_column_name.clear();
+    remove_element_filter_column = false;
+}
+
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
@@ -199,9 +206,9 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
-    /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
-    /// distributed, serialized and plan-based parallel replicas plans, so an older worker or replica never
-    /// receives it and no version bump is needed
+    /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys): fusion bails for
+    /// distributed and serialized plans, and plan-based parallel replicas unfuses it in a shipped fragment
+    /// (see `applyParallelReplicas`), so an older worker or replica never receives it and no version bump is needed
     const bool serialize_filter = element_filter.has_value();
 
     UInt8 flags = 0;

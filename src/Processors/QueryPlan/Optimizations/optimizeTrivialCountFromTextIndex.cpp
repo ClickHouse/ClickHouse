@@ -332,9 +332,9 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     auto component_guard = Coordination::setCurrentComponent("optimizeTrivialCountFromTextIndex");
 
     /// `ReadFromTextIndexCount` is not serializable, so it must not end up in a distributed plan fragment.
-    /// `applyParallelReplicas` runs first and builds such fragments around the `ReadFromMergeTree` we would
-    /// replace, so bail and let the reader be distributed across replicas as before.
-    if (settings.make_distributed_plan || settings.enable_parallel_replicas)
+    /// `applyParallelReplicas` runs first and has already moved a shipped read into its fragment, so a read
+    /// left in the plan is local. A coordinated read (the local or a remote replica) is rejected by `guardsHold`.
+    if (settings.make_distributed_plan)
         return false;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
