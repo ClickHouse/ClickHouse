@@ -5,3 +5,5 @@
 1	{'a':(NULL,1,'x')}	(NULL,1)	[(NULL,1)]
 0
 1	{'a':NULL}	[NULL]
+1	{'a':NULL}
+2	7

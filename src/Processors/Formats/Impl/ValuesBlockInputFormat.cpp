@@ -746,9 +746,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// or, for an element of a `Nullable` type, gets NULL in place of that element, e.g. `map('a', tuple(-1, 'kept'))` for
     /// `Map(String, Nullable(Tuple(UInt64, String)))`. It is not a NULL value: inserting NULL or the default instead would silently lose the
     /// value, so it is rejected. A NULL element that the type cannot hold is reported as a NULL below (with `input_format_null_as_default` it
-    /// is replaced above), but a NULL in a `Nullable` element of the source is valid and stays.
+    /// is replaced above), but a NULL in a `Nullable` element of the source is valid and stays. A `Variant` converts the value to one of its
+    /// types, so an element of a composite one can get NULL the same way; when no type fits, the whole value is NULL, as for a scalar.
     const auto nested_type = removeNullable(removeLowCardinality(type.getPtr()));
-    if ((isArray(nested_type) || isMap(nested_type) || isTuple(nested_type)) && !expression_value.isNull()
+    const bool is_composite = isArray(nested_type) || isMap(nested_type) || isTuple(nested_type);
+    if ((is_composite || (isVariant(nested_type) && !value.isNull())) && !expression_value.isNull()
         && !hasNullThatTypeCannotHold(expression_value, type) && hasNullFromFailedConversion(expression_value, value))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot convert value '{}' from {}: it cannot be represented as {}",
                         fieldToString(expression_value), value_raw.second->getName(), type.getName());

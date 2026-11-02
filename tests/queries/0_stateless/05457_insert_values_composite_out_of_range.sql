@@ -75,3 +75,12 @@ INSERT INTO t_values_composite_nested_nullable SETTINGS input_format_values_dedu
 VALUES (3, map(), [tuple(-1, 'kept')]); -- { error ARGUMENT_OUT_OF_BOUND }
 SELECT * FROM t_values_composite_nested_nullable ORDER BY id;
 DROP TABLE t_values_composite_nested_nullable;
+
+-- The same for a composite type held by a `Variant`.
+DROP TABLE IF EXISTS t_values_composite_variant;
+CREATE TABLE t_values_composite_variant (id UInt8, v Variant(Map(String, Nullable(Tuple(UInt64, String))), UInt64)) ENGINE = Memory;
+INSERT INTO t_values_composite_variant VALUES (1, map('a', NULL));
+INSERT INTO t_values_composite_variant VALUES (2, 7);
+INSERT INTO t_values_composite_variant VALUES (3, map('a', tuple(-1, 'kept'))); -- { error ARGUMENT_OUT_OF_BOUND }
+SELECT * FROM t_values_composite_variant ORDER BY id;
+DROP TABLE t_values_composite_variant;
