@@ -66,7 +66,7 @@ bool tryExplainSingleFragment(
     const ExplainPlanOptions & options,
     size_t max_step_description_length)
 {
-    if (graph.fragments.size() != 1 || !graph.exchanges.empty())
+    if (graph.fragments.size() != 1 || graph.fragments.front().execution_mode != QueryFragment::ExecutionMode::SingleNode)
         return false;
 
     const auto & fragment = graph.fragments.front();

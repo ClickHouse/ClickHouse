@@ -11,8 +11,8 @@ struct FragmentGraph;
 
 /// Text output of `EXPLAIN PLAN tree = 1`: the query fragments drawn with box-drawing characters.
 ///
-/// A graph with one fragment and no exchanges prints what `EXPLAIN PLAN fragments = 1` prints for it: the plan,
-/// followed by `Not distributed: <reason>` when the fragment has a `fallback_reason`.
+/// A graph with one `SingleNode` fragment (a plan that was not cut) prints what `EXPLAIN PLAN fragments = 1` prints for
+/// it: the plan, followed by `Not distributed: <reason>` when the fragment has a `fallback_reason`.
 ///
 /// Otherwise every step of every fragment is a box, connected to the boxes of its inputs as in a plan tree; the steps
 /// of a fragment are surrounded by a frame titled `F<id> · <stage name>`; and every exchange is an edge from the send

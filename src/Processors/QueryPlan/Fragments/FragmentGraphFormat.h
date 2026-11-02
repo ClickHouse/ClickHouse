@@ -19,9 +19,9 @@ String formatExchangeKind(const FragmentExchange & exchange, bool pretty);
 /// `streaming` or `persisted`.
 std::string_view formatExchangeMode(ExchangeDescription::Kind mode);
 
-/// Prints a graph of one fragment without exchanges (a plan that was not cut) as `EXPLAIN` without options prints its
+/// Prints a graph of one `SingleNode` fragment (a plan that was not cut) as `EXPLAIN` without options prints its
 /// plan, followed by `Not distributed: <reason>` when the fragment has a fallback reason. Returns false and prints
-/// nothing for any other graph.
+/// nothing for any other graph, including a cut plan with a single fragment.
 bool tryExplainSingleFragment(
     const FragmentGraph & graph,
     WriteBuffer & buf,

@@ -149,6 +149,9 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
+    static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
+    static void deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context);
+
     /// Serializes the query plan and store the result
     void ensureSerialized(size_t max_supported_version) const;
 
@@ -172,9 +175,7 @@ public:
 
     /// The first part of `convertToDistributed`: checks that the optimized plan can still be distributed,
     /// takes the `IN`-subquery sets out of it, cuts it into the stages of a distributed plan, and adds the
-    /// `final_result` exchange to the `main` stage. It builds no pipeline, does not resolve worker hosts
-    /// and touches no executor, so `EXPLAIN` can use it too. The cut consumes the plan: its nodes are
-    /// moved into the stages, and this plan is empty afterwards (only its resources stay).
+    /// `final_result` exchange to the `main` stage.
     DistributedPlanCut cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings);
 
     /// The single decision function for `make_distributed_plan`. When this plan cannot be
@@ -291,6 +292,8 @@ private:
         /// See `serializeForDistributedTask`.
         bool sets_must_be_ready = false;
         SizeLimits sets_transfer_limits = {};
+        /// The nesting depth of plans for sets from subqueries, used on deserialize to limit the recursion.
+        size_t subquery_nesting_depth = 0;
     };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
@@ -438,13 +441,22 @@ struct DistributedQueryStage
     bool filter_only = false;
 };
 
+/// A stage that another stage reads from, and the exchange between them.
+struct StageDependency
+{
+    String stage;
+    String exchange;
+};
+
+using StageDependencies = std::vector<StageDependency>;
+
 /// Represents a graph of stages
 /// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
 struct DistributedQueryPlan
 {
     std::unordered_map<String, DistributedQueryStage> stages;
-    /// Maps stage name to stages it depends on and the corresponding exchange_id
-    std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
+    /// Maps stage name to the stages it reads from, in the order to start them.
+    std::unordered_map<String, StageDependencies> stage_depends_on;
     /// Maps exchange_id to exchange description
     ExchangeDescriptions exchange_descriptions;
     String final_result_stream_name;

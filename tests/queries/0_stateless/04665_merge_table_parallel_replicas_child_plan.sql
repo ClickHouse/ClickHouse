@@ -15,7 +15,6 @@ INSERT INTO t_merge_pr_local SELECT toString(number) FROM numbers(100);
 CREATE TABLE t_merge_pr_dist AS t_merge_pr_local
 ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_merge_pr_local);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;

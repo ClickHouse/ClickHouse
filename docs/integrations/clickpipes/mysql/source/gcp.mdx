@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { CloudSQLIAMAuthentication } from "/snippets/clickpipes/_cloudsql_iam_authentication.mdx";
 
 This is a step-by-step guide on how to configure your Cloud SQL for MySQL instance for replicating its data via the MySQL ClickPipe.
 
@@ -58,6 +59,10 @@ Connect to your Cloud SQL MySQL instance as the root user and execute the follow
     GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
     ```
+
+## Using IAM database authentication (optional, Beta) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="mysql" />
 
 ## Configure network access {#configure-network-access-gcp-mysql}
 
