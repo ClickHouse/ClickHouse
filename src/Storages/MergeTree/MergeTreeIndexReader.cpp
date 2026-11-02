@@ -42,6 +42,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     bool interruptible_marks_read)
 {
     auto file_size = getIndexStreamFileSize(data_part_info, stream_name, extension);
+    auto file_hash = getFileHashForCaches(data_part_info->getChecksums(), stream_name, extension, data_part_info->getDataPartStorage().get());
 
     if (marks_count == 1)
     {
@@ -56,6 +57,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
             std::move(settings),
             uncompressed_cache,
             file_size,
+            file_hash,
             /*marks_loader=*/ nullptr,
             ReadBufferFromFileBase::ProfileCallback{},
             CLOCK_MONOTONIC_COARSE);
@@ -92,6 +94,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         std::move(settings),
         uncompressed_cache,
         file_size,
+        file_hash,
         std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);

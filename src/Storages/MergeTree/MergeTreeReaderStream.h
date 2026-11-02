@@ -29,6 +29,7 @@ public:
         const MergeTreeReaderSettings & settings_,
         UncompressedCache * uncompressed_cache_,
         size_t file_size_,
+        std::optional<UInt128> file_hash_,
         MergeTreeMarksLoaderPtr marks_loader_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
         clockid_t clock_type_);
@@ -101,6 +102,8 @@ protected:
     const MergeTreeReaderSettings settings;
     const size_t marks_count;
     const size_t file_size;
+    /// Checksum of the file. Without it the file is not read through the uncompressed cache.
+    const std::optional<UInt128> file_hash;
 
     const MergeTreeMarksLoaderPtr marks_loader;
     MergeTreeMarksGetterPtr marks_getter;

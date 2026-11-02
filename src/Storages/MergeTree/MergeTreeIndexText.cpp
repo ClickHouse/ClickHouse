@@ -10,8 +10,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Hex.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -53,6 +55,7 @@
 #include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
+#include <atomic>
 #include <limits>
 #include <numeric>
 
@@ -575,10 +578,38 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
 }
 
 /// Unique identifier of the text index of a data part in the text index caches.
+/// It holds the checksums of the index files, because a part path can be reused for another part.
 String makeIndexIdForCaches(const IMergeTreeDataPartInfoForReader & part_info, const IMergeTreeIndex & index)
 {
     const auto & part_storage = *part_info.getDataPartStorage();
-    return fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), index.getFileName());
+    const auto & checksums = part_info.getChecksums();
+
+    SipHash files_hash;
+    bool has_header_hash = false;
+    for (const auto & substream : index.getPotentialSubstreams())
+    {
+        auto file_hash = getFileHashForCaches(checksums, index.getFileName() + substream.suffix, substream.extension, &part_storage);
+        if (!file_hash)
+            continue;
+
+        files_hash.update(*file_hash);
+        if (substream.type == MergeTreeIndexSubstream::Type::Regular)
+            has_header_hash = true;
+    }
+
+    String files_token;
+    if (has_header_hash)
+    {
+        files_token = getHexUIntLowercase(files_hash.get128());
+    }
+    else
+    {
+        /// The files are unknown, so the entries of this identifier must not be found by any other reader.
+        static std::atomic<UInt64> unknown_files_counter = 0;
+        files_token = fmt::format("unknown_{}", unknown_files_counter.fetch_add(1, std::memory_order_relaxed));
+    }
+
+    return fmt::format("{}:{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), index.getFileName(), files_token);
 }
 
 std::shared_ptr<TextIndexHeader> loadHeader(

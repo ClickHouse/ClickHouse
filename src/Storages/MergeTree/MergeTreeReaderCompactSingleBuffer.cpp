@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -119,6 +120,8 @@ try
         MergeTreeDataPartCompact::DATA_FILE_EXTENSION, data_part_info_for_read->getMarksCount(),
         all_mark_ranges, settings, uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
+        getFileHashForCaches(
+            data_part_info_for_read->getChecksums(), MergeTreeDataPartCompact::DATA_FILE_NAME, MergeTreeDataPartCompact::DATA_FILE_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
 

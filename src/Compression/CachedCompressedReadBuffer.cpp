@@ -70,7 +70,7 @@ bool CachedCompressedReadBuffer::nextImpl()
     else
     {
         /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
-        owned_cell = cache->getOrSet(UncompressedCache::hash(path, file_pos), load);
+        owned_cell = cache->getOrSet(UncompressedCache::hash(path, file_hash, file_pos), load);
     }
 
     if (owned_cell->data.size() == 0)
@@ -90,8 +90,12 @@ bool CachedCompressedReadBuffer::nextImpl()
 }
 
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
-    const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_, bool allow_different_codecs_)
-    : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(path_), file_pos(0)
+    const std::string & path_,
+    UInt128 file_hash_,
+    std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_,
+    UncompressedCache * cache_,
+    bool allow_different_codecs_)
+    : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(path_), file_hash(file_hash_), file_pos(0)
 {
     allow_different_codecs = allow_different_codecs_;
 }
