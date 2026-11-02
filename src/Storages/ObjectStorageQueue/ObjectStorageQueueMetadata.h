@@ -173,7 +173,7 @@ public:
     size_t getBucketsNum() const { return buckets_num; }
     ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
     /// Get bucket by file path in case of bucket-based processing.
-    Bucket getBucketForPath(const std::string & path) const;
+    Bucket getBucketForPath(const std::string & path, const std::string & partition_key) const;
     static Bucket getBucketForPath(
         const std::string & path,
         size_t buckets_num,

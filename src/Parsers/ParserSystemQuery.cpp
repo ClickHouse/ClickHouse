@@ -2111,7 +2111,7 @@ Each command requires the privilege of the targeted engine: `SYSTEM VIEWS` for a
 
 Blocks until the given file has been processed or permanently failed by the given [S3Queue](/reference/engines/table-engines/integrations/s3queue) or [AzureQueue](/reference/engines/table-engines/integrations/azure-queue) table. Returns immediately if the file was already processed. Raises an error if the file has permanently failed (all retries exhausted).
 
-In `ordered` mode the query itself lists the partition of the file and processes its new files into the attached materialized views, waiting for a bucket held by another processor to be released, and then waits for the file as before. In `unordered` and `exclusive` modes it only waits for the background processing.
+In `ordered` mode without partitioning or with `partitioning_mode = 'explicit'` the query itself lists the table or the partition of the file and processes its new files into the attached materialized views, waiting for a bucket held by another processor to be released, and then waits for the file as before. Otherwise it only waits for the background processing.
 
 ```sql
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'

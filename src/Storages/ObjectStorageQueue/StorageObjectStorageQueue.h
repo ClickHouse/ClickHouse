@@ -102,7 +102,7 @@ public:
     ///
     /// If `deadline` is set, throws TIMEOUT_EXCEEDED when the deadline is reached
     /// (in addition to any process-list time limit on `local_context`).
-    void waitForPathToBeProcessed(
+    void flushPath(
         const std::string & path,
         ContextPtr local_context,
         std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt);
@@ -204,7 +204,7 @@ private:
     std::shared_ptr<ObjectStorageQueueMetadata> tryGetFilesMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(
-        ContextPtr local_context, const ActionsDAG::Node * predicate, const std::optional<std::string> & partition_of_path);
+        ContextPtr local_context, const ActionsDAG::Node * predicate, const std::optional<std::map<std::string, std::string>> & partitions);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
@@ -225,8 +225,7 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(
-        size_t streaming_tasks_index, UInt64 cycle_epoch, ContextPtr local_context, std::shared_ptr<FileIterator> file_iterator);
+    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::shared_ptr<FileIterator> file_iterator);
     /// Apply after_processing action to successfully processed files.
     void postProcess(
         const StoredObjects & successful_objects,
