@@ -1410,24 +1410,36 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
 -- alignment, frequency) rather than at a change in the executed code.
 create view profile_run_counters as
     select test, query_index, version,
-        sum(ProfileEvents['PerfInstructions']) / uniqExact(query_id) instructions,
-        sum(ProfileEvents['PerfCPUCycles']) / uniqExact(query_id) cycles
+        avg(instructions) instructions,
+        avg(cycles) cycles
     from file('analyze/query-profiles.tsv', TSV,
         'test text, query_index int, query_id text, version UInt8, time float') query_profiles
     join (
-        select 0 version, query_id, ProfileEvents
-            from file('left-query-log.tsv', TSVWithNamesAndTypes)
-            where type = 'QueryFinish' and query_id like '%.profile%'
-        union all
-        select 1 version, query_id, ProfileEvents
-            from file('right-query-log.tsv', TSVWithNamesAndTypes)
-            where type = 'QueryFinish' and query_id like '%.profile%'
+        -- All statements of a multi-statement item share the `query_id` of the
+        -- run. A run that timed out still has a `profile` row and may have
+        -- finished some of its statements, so the whole run is dropped if any
+        -- of its statements failed: counting a part of the work as a run would
+        -- skew the ratios.
+        select version, query_id,
+            sumIf(ProfileEvents['PerfInstructions'], type = 'QueryFinish') instructions,
+            sumIf(ProfileEvents['PerfCPUCycles'], type = 'QueryFinish') cycles
+        from (
+            select 0 version, query_id, type, ProfileEvents
+                from file('left-query-log.tsv', TSVWithNamesAndTypes)
+            union all
+            select 1 version, query_id, type, ProfileEvents
+                from file('right-query-log.tsv', TSVWithNamesAndTypes)
+        )
+        where query_id like '%.profile%'
+        group by version, query_id
+        having countIf(type in ('ExceptionBeforeStart', 'ExceptionWhileProcessing')) = 0
     ) profile_query_log using (version, query_id)
     group by test, query_index, version
     ;
 
--- The ratios are NULL when the query was not profiled (the profiling time
--- budget ran out) or the counters are unavailable on the runner.
+-- The ratios are NULL when the query has no complete profile run on a server
+-- (the profiling time budget ran out) or the counters are unavailable on the
+-- runner.
 create view profile_counters as
     select test, query_index,
         nullIf(anyIf(instructions, version = 0), 0) left_instructions,
