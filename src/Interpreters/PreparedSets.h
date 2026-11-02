@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -23,6 +24,7 @@
 namespace DB
 {
 
+class ActionsDAG;
 class QueryPlan;
 
 /// True if any step of `plan` - including the nested plans it owns through `getChildPlans` - holds a
@@ -98,6 +100,11 @@ public:
 };
 
 using FutureSetPtr = std::shared_ptr<FutureSet>;
+
+/// Calls `f` with every set that `actions` uses: the set of every constant `ColumnSet` column, also those in the
+/// lambdas of `actions`. A lambda is the function of a node, or a constant-folded `ColumnFunction` column, whose
+/// captured columns may hold sets and further lambdas.
+void forEachFutureSet(const ActionsDAG & actions, const std::function<void(const FutureSetPtr &)> & f);
 
 /// Future set from already filled set.
 /// Usually it is from StorageSet.

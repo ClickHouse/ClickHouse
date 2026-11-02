@@ -1,11 +1,16 @@
 #include <chrono>
 #include <variant>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <IO/Operators.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
@@ -63,6 +68,42 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
 bool planHasCorrelatedExpressions(const QueryPlan & plan)
 {
     return hasCorrelatedExpressions(plan.getRootNode());
+}
+
+namespace
+{
+
+/// Calls `f` with the sets of `column` (see `forEachFutureSet`).
+void forEachFutureSetOfColumn(const IColumn & column, const std::function<void(const FutureSetPtr &)> & f)
+{
+    if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
+    {
+        forEachFutureSetOfColumn(constant->getDataColumn(), f);
+    }
+    else if (const auto * column_set = typeid_cast<const ColumnSet *>(&column))
+    {
+        f(column_set->getData());
+    }
+    else if (const auto * function = typeid_cast<const ColumnFunction *>(&column))
+    {
+        if (const auto * expression = typeid_cast<const FunctionExpression *>(function->getFunction().get()))
+            forEachFutureSet(expression->getAcionsDAG(), f);
+        for (const auto & captured : function->getCapturedColumns())
+            forEachFutureSetOfColumn(*captured.column, f);
+    }
+}
+
+}
+
+void forEachFutureSet(const ActionsDAG & actions, const std::function<void(const FutureSetPtr &)> & f)
+{
+    for (const auto & node : actions.getNodes())
+    {
+        if (node.column)
+            forEachFutureSetOfColumn(*node.column, f);
+        if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+            forEachFutureSet(capture->getAcionsDAG(), f);
+    }
 }
 
 namespace Setting

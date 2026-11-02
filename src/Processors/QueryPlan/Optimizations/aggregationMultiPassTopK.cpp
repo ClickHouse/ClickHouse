@@ -3,8 +3,6 @@
 #include <Access/Common/QuotaDefs.h>
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsage.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
 #include <Interpreters/AdaptiveAggregation/MultiPassTopK/MultiPassTopK.h>
 #include <Interpreters/Context.h>
@@ -31,24 +29,17 @@ namespace
 {
 
 /// Whether every evaluation of the expressions gives the same values: a pass evaluates them again over other
-/// granules and blocks. Of the sets of `IN`, only a set of literals is part of the expressions: a set of a table
-/// changes with the inserts into it, and a set of a subquery is built by a pipeline of the query outside the passes.
+/// granules and blocks. Of the sets of `IN`, also those in lambdas, only a set of literals is part of the expressions:
+/// a set of a table changes with the inserts into it, and a set of a subquery is built by a pipeline of the query
+/// outside the passes.
 bool isRepeatable(const ActionsDAG & dag)
 {
     if (isSensitiveToEvaluationCount(dag) || dag.hasArrayJoin())
         return false;
-    for (const auto & node : dag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
-            continue;
-        const IColumn * column = node.column.get();
-        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-            column = &column_const->getDataColumn();
-        if (const auto * column_set = typeid_cast<const ColumnSet *>(column);
-            column_set && !typeid_cast<const FutureSetFromTuple *>(column_set->getData().get()))
-            return false;
-    }
-    return true;
+    bool only_literal_sets = true;
+    forEachFutureSet(dag, [&](const FutureSetPtr & set)
+        { only_literal_sets &= typeid_cast<const FutureSetFromTuple *>(set.get()) != nullptr; });
+    return only_literal_sets;
 }
 
 /// Whether reading the same ranges again yields the same rows: no filter of the read is random or stateful, no

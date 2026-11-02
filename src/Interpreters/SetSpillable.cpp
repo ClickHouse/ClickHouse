@@ -1,10 +1,6 @@
 #include <Interpreters/SetSpillable.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnFunction.h>
-#include <Columns/ColumnSet.h>
-#include <Functions/FunctionsMiscellaneous.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
 #include <algorithm>
@@ -50,34 +46,13 @@ void SetSpillables::add(const std::shared_ptr<SetSpillState> & state)
     components.push_back(state->getSpillable());
 }
 
-void SetSpillables::add(const IColumn & column)
-{
-    if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
-        add(constant->getDataColumn());
-    else if (const auto * column_set = typeid_cast<const ColumnSet *>(&column))
-    {
-        if (const auto * future = typeid_cast<const FutureSetFromSubquery *>(column_set->getData().get()))
-            add(future->getSetAndKey()->spill_state);
-    }
-    else if (const auto * function = typeid_cast<const ColumnFunction *>(&column))
-    {
-        if (const auto * expression = typeid_cast<const FunctionExpression *>(function->getFunction().get()))
-            add(expression->getAcionsDAG());
-        for (const auto & captured : function->getCapturedColumns())
-            if (captured.column)
-                add(*captured.column);
-    }
-}
-
 void SetSpillables::add(const ActionsDAG & actions)
 {
-    for (const auto & node : actions.getNodes())
+    forEachFutureSet(actions, [&](const FutureSetPtr & set)
     {
-        if (node.column)
-            add(*node.column);
-        if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
-            add(capture->getAcionsDAG());
-    }
+        if (const auto * future = typeid_cast<const FutureSetFromSubquery *>(set.get()))
+            add(future->getSetAndKey()->spill_state);
+    });
 }
 
 }
