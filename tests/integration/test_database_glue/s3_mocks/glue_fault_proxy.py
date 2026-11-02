@@ -30,7 +30,9 @@ FAULTS = {
 #   without being checked or applied;
 # - `lostnoretry_`: the request is applied, but the client gets an HTTP 501, which its SDK does not retry;
 # - `failnoretry_`: the request is not applied and the client gets an HTTP 501;
-# - `rejected_`: the request is not applied and the client gets `AccessDeniedException`.
+# - `rejected_`: the request is not applied and the client gets `AccessDeniedException`;
+# - `held_`: the request waits until `GET /release/<database>` (`GET /waiting/<database>` counts it), then is
+#   checked and applied as usual.
 UPDATE_FAULTS = (
     "touch_",
     "lostresp_",
@@ -41,6 +43,7 @@ UPDATE_FAULTS = (
     "lostnoretry_",
     "failnoretry_",
     "rejected_",
+    "held_",
 )
 
 # Keys of a Glue `Table` that are also `TableInput` fields.
@@ -111,6 +114,17 @@ def get_hold(key):
         return holds.setdefault(key, threading.Event())
 
 
+def wait_for_release(key):
+    event = get_hold(key)
+    with lock:
+        waiting[key] = waiting.get(key, 0) + 1
+    try:
+        event.wait(timeout=600)
+    finally:
+        with lock:
+            waiting[key] -= 1
+
+
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     def reply(self, status, body, headers):
         self.send_response(status)
@@ -143,15 +157,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 value = counters.get((kind, database), 0)
             self.reply(200, str(value).encode(), [("Content-Type", "text/plain")])
         elif self.path.startswith("/hold/"):
-            key = self.path[len("/hold/") :]
-            event = get_hold(key)
-            with lock:
-                waiting[key] = waiting.get(key, 0) + 1
-            try:
-                event.wait(timeout=600)
-            finally:
-                with lock:
-                    waiting[key] -= 1
+            wait_for_release(self.path[len("/hold/") :])
             self.reply(200, b"2\n", [("Content-Type", "text/csv")])
         elif self.path.startswith("/release/"):
             get_hold(self.path[len("/release/") :]).set()
@@ -189,6 +195,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         database = request.get("DatabaseName", "")
         name = request.get("TableInput", {}).get("Name", "")
         increment("updates", database)
+        if database.startswith("held_") and take_update_fault(database) == "held_":
+            wait_for_release(database)
         with update_lock:
             with lock:
                 deny = database in deny_next_update

@@ -2499,6 +2499,43 @@ def test_glue_update_detects_concurrent_commit(started_cluster, concurrent):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+def test_glue_expire_snapshots_retries_after_concurrent_commit(started_cluster):
+    # Another writer commits while the proxy holds the `UpdateTable` of a ClickHouse `expire_snapshots`: Glue refuses
+    # the stale `VersionId`, and the expiration is retried on top of the other commit.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"held_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_expire_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}], [{"id": 2}]])
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    expire = node.get_query_request(
+        f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+        settings={**GLUE_WRITE_SETTINGS, "allow_experimental_expire_snapshots": 1},
+    )
+    wait_condition(
+        lambda: query_glue_fault_proxy(started_cluster, f"waiting/{namespace}"),
+        lambda value: value == "1",
+        max_attempts=600,
+    )
+    table.append(pa.Table.from_pylist([{"id": 3}], schema=ID_ARROW_SCHEMA))
+    concurrent = table.metadata_location
+    query_glue_fault_proxy(started_cluster, f"release/{namespace}")
+    expire.get_answer()
+
+    assert int(query_glue_fault_proxy(started_cluster, f"rejected/{namespace}")) >= 1
+    parameters = get_glue_table(started_cluster, namespace, table_name)["Parameters"]
+    assert parameters["previous_metadata_location"] == concurrent, parameters
+    assert read_ids(started_cluster, parameters["metadata_location"]) == [1, 2, 3]
+    # The metadata file of the refused attempt is removed, so only the retried commit added one.
+    ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
+    assert ours == {parameters["metadata_location"]}, ours
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 @pytest.mark.parametrize(
     "mode",
     [
