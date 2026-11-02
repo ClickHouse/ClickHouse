@@ -2542,7 +2542,11 @@ The delta-kernel Azure path also requires environment variables:
 - `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — required unless passed via `extra_credentials` or a named collection
 - `AZURE_AUTHORITY_HOST` — optional
 
+Workload identity uses the server's own identity, so it is refused by default: each session that creates or queries the table needs `allow_server_credentials_in_user_queries` enabled, either with `SET` or in its settings profile.
+
 ```sql
+SET allow_server_credentials_in_user_queries = 1;
+
 CREATE NAMED COLLECTION azure_wi AS
     storage_account_url = 'https://<account>.blob.core.windows.net',
     container = 'mycontainer',

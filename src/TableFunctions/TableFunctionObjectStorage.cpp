@@ -1033,6 +1033,8 @@ Uses Azure workload identity via `extra_credentials`; mutually exclusive with `a
 azureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, structure])
 ```
 
+Workload identity uses the server's own identity, so it is refused by default: enable `allow_server_credentials_in_user_queries` in the querying session or its settings profile.
+
 </Tab>
 <Tab title="Named collection">
 
@@ -2452,7 +2454,7 @@ The `format` argument stands for the format of data files in the Delta lake tabl
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-For Azure (`deltaLakeAzure`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity and cannot be combined with `account_name` / `account_key`. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional).
+For Azure (`deltaLakeAzure`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity and cannot be combined with `account_name` / `account_key`. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional). Workload identity uses the server's own identity, so it is refused by default: enable `allow_server_credentials_in_user_queries` in the querying session or its settings profile.
 
 ## Returned value {#returned-value}
 
