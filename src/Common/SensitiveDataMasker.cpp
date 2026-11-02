@@ -180,7 +180,11 @@ void SensitiveDataMasker::validateRule(
 
     std::string error;
     if (!regexp.CheckRewriteString(replacement_string, &error))
+    {
+        if (error.ends_with('.'))
+            error.pop_back();
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid REPLACE of {}: {}", rule_description, error);
+    }
 }
 
 SensitiveDataMasker::MaskerMultiVersion::Version SensitiveDataMasker::getInstance()

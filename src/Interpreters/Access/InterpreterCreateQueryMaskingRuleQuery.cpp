@@ -14,12 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-}
-
-
 void InterpreterCreateQueryMaskingRuleQuery::updateQueryMaskingRuleFromQuery(QueryMaskingRule & rule, const ASTCreateQueryMaskingRuleQuery & query)
 {
     if (!query.new_name.empty())
@@ -68,10 +62,10 @@ BlockIO InterpreterCreateQueryMaskingRuleQuery::execute()
         if (query.if_exists)
         {
             if (auto id = storage->find<QueryMaskingRule>(query.name))
-                storage->tryUpdate(*id, update_func);
+                access_control.tryUpdate(*id, update_func);
         }
         else
-            storage->update(storage->getID<QueryMaskingRule>(query.name), update_func);
+            access_control.update(storage->getID<QueryMaskingRule>(query.name), update_func);
     }
     else
     {
@@ -79,17 +73,13 @@ BlockIO InterpreterCreateQueryMaskingRuleQuery::execute()
         updateQueryMaskingRuleFromQuery(*new_rule, query);
 
         if (!query.storage_name.empty())
-        {
-            if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::QUERY_MASKING_RULE, query.name, storage_ptr))
-                throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Query masking rule {} already exists in storage {}", query.name, another_storage_ptr->getStorageName());
-        }
-
-        if (query.if_not_exists)
-            storage->tryInsert(new_rule);
+            access_control.insertInto(query.storage_name, {new_rule}, query.or_replace, !query.if_not_exists);
+        else if (query.if_not_exists)
+            access_control.tryInsert(new_rule);
         else if (query.or_replace)
-            storage->insertOrReplace(new_rule);
+            access_control.insertOrReplace(new_rule);
         else
-            storage->insert(new_rule);
+            access_control.insert(new_rule);
     }
 
     return {};

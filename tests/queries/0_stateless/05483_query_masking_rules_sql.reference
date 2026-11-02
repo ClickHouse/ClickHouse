@@ -9,6 +9,9 @@ server log masked
 <db>_r1_renamed	1	[HIDDEN]	[qmr_masked]
 CREATE QUERY MASKING RULE <db>_r1_renamed REGEXP '[HIDDEN]' REPLACE '[qmr_masked]'
 <db>_r1_renamed
+-- IN <storage> applies at once
+[qmr_in]
+[qmr_in_altered]
 -- errors
 CANNOT_COMPILE_REGEXP
 missing )
@@ -20,7 +23,12 @@ ACCESS_DENIED
 QUERY MASKING RULE ADMIN
 ACCESS_DENIED
 ACCESS_DENIED
+ACCESS_DENIED
+QUERY MASKING RULE ADMIN
+ACCESS_DENIED
+QUERY MASKING RULE ADMIN
 <db>_by_user
+CREATE QUERY MASKING RULE <db>_by_user REGEXP '[HIDDEN]' REPLACE '******'
 <db>_r1_renamed
 -- query_log
 select masked	1	0

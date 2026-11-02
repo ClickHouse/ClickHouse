@@ -1950,7 +1950,20 @@ def test_system_query_masking_rules():
             instance.query("SELECT count() FROM system.query_masking_rules") == "0\n"
         )
 
-        instance.query(f"RESTORE TABLE system.query_masking_rules FROM {backup_name}")
+        instance.query("CREATE USER qmr_restorer")
+        instance.query("GRANT READ ON DISK, WRITE ON DISK TO qmr_restorer")
+        assert "QUERY MASKING RULE ADMIN" in instance.query_and_get_error(
+            f"RESTORE TABLE system.query_masking_rules FROM {backup_name}",
+            user="qmr_restorer",
+        )
+        assert (
+            instance.query("SELECT count() FROM system.query_masking_rules") == "0\n"
+        )
+        instance.query("GRANT QUERY MASKING RULE ADMIN ON *.* TO qmr_restorer")
+        instance.query(
+            f"RESTORE TABLE system.query_masking_rules FROM {backup_name}",
+            user="qmr_restorer",
+        )
         assert (
             instance.query("SELECT name, replace FROM system.query_masking_rules")
             == "backup_rule\t[backup-hidden]\n"
@@ -1963,6 +1976,7 @@ def test_system_query_masking_rules():
         assert not instance.contains_in_log("BACKUPSECRET_1")
     finally:
         instance.query("DROP QUERY MASKING RULE IF EXISTS backup_rule")
+        instance.query("DROP USER IF EXISTS qmr_restorer")
 
 
 def test_system_functions():

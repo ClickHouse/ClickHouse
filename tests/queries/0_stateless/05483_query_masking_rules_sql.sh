@@ -12,7 +12,7 @@ user="u_${db}"
 function cleanup()
 {
     $CLICKHOUSE_CLIENT -m -q "
-        DROP QUERY MASKING RULE IF EXISTS \`${db}_r1\`, \`${db}_r1_renamed\`, \`${db}_cfg\`, \`${db}_ord_1\`, \`${db}_ord_2\`, \`${db}_bad\`, \`${db}_by_user\`;
+        DROP QUERY MASKING RULE IF EXISTS \`${db}_r1\`, \`${db}_r1_renamed\`, \`${db}_cfg\`, \`${db}_ord_1\`, \`${db}_ord_2\`, \`${db}_bad\`, \`${db}_by_user\`, \`${db}_in\`;
         DROP USER IF EXISTS \`${user}\`;
     "
 }
@@ -70,6 +70,14 @@ $CLICKHOUSE_CLIENT -m -q "
 " | normalize
 $CLICKHOUSE_CLIENT -q "SHOW QUERY MASKING RULES" | grep -F "${db}_" | normalize
 
+echo "-- IN <storage> applies at once"
+storage=$($CLICKHOUSE_CLIENT -q "SELECT storage FROM system.query_masking_rules WHERE name = '${db}_r1_renamed'")
+$CLICKHOUSE_CLIENT -q "CREATE QUERY MASKING RULE \`${db}_in\` IN \`${storage}\` REGEXP 'qmr_in_${db}' REPLACE '[qmr_in]'"
+error_text $CLICKHOUSE_CLIENT -q "SELECT throwIf(1, 'qmr_in_${db}')" | grep -oF -e "[qmr_in]" -e "qmr_in_${db}" | LC_ALL=C sort -u | normalize
+$CLICKHOUSE_CLIENT -q "ALTER QUERY MASKING RULE \`${db}_in\` IN \`${storage}\` REPLACE '[qmr_in_altered]'"
+error_text $CLICKHOUSE_CLIENT -q "SELECT throwIf(1, 'qmr_in_${db}')" | grep -oF -e "[qmr_in_altered]" -e "qmr_in_${db}" | LC_ALL=C sort -u | normalize
+$CLICKHOUSE_CLIENT -q "DROP QUERY MASKING RULE \`${db}_in\`"
+
 echo "-- errors"
 error_text $CLICKHOUSE_CLIENT -q "CREATE QUERY MASKING RULE \`${db}_bad\` REGEXP '(qmr_frag_${db}'" | grep -oF -e "missing )" -e "CANNOT_COMPILE_REGEXP" -e "qmr_frag_${db}" | LC_ALL=C sort -u | normalize
 $CLICKHOUSE_CLIENT -m -q "
@@ -89,10 +97,13 @@ error_text $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE QUERY MASKING RULE \`$
 error_text $CLICKHOUSE_CLIENT --user "${user}" -q "DROP QUERY MASKING RULE \`${db}_r1_renamed\`" | grep -oF -e "ACCESS_DENIED" -e "QUERY MASKING RULE ADMIN" | LC_ALL=C sort -u
 error_text $CLICKHOUSE_CLIENT --user "${user}" -q "SHOW QUERY MASKING RULES" | grep -oF "ACCESS_DENIED" | LC_ALL=C sort -u
 error_text $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT count() FROM system.query_masking_rules" | grep -oF "ACCESS_DENIED" | LC_ALL=C sort -u
+error_text $CLICKHOUSE_CLIENT --user "${user}" -q "SHOW CREATE QUERY MASKING RULE \`${db}_r1_renamed\`" | grep -oF -e "ACCESS_DENIED" -e "QUERY MASKING RULE ADMIN" | LC_ALL=C sort -u
+error_text $CLICKHOUSE_CLIENT --user "${user}" -q "MOVE QUERY MASKING RULE \`${db}_r1_renamed\` TO memory" | grep -oF -e "ACCESS_DENIED" -e "QUERY MASKING RULE ADMIN" | LC_ALL=C sort -u
 $CLICKHOUSE_CLIENT -q "GRANT QUERY MASKING RULE ADMIN ON *.* TO \`${user}\`"
 $CLICKHOUSE_CLIENT --user "${user}" -m -q "
     CREATE QUERY MASKING RULE \`${db}_by_user\` REGEXP 'qmr_user_${db}';
     SELECT name FROM system.query_masking_rules WHERE name = '${db}_by_user';
+    SHOW CREATE QUERY MASKING RULE \`${db}_by_user\` FORMAT TSVRaw;
     DROP QUERY MASKING RULE \`${db}_by_user\`;
 " | normalize
 $CLICKHOUSE_CLIENT --user "${user}" -q "SHOW QUERY MASKING RULES" | grep -F "${db}_" | normalize
