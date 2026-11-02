@@ -1,0 +1,19 @@
+-- tuple element
+3	3
+1	3	c
+2	1	a
+3	2	b
+[2,3,1]
+-- element of a nested tuple, under a transform
+4	4
+[2,3,1]
+-- not a sort source
+BAD_ARGUMENTS
+0
+BAD_ARGUMENTS
+0
+BAD_ARGUMENTS
+0
+-- unknown source-id
+1
+2

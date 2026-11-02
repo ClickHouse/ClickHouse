@@ -1342,12 +1342,32 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 sort_columns.size(),
                 transform_and_column_pairs.size());
 
+        /// Resolves columns and struct fields nested in them, but nothing inside a list or a map.
+        IcebergSchemaProcessor schema_processor(/*allow_geo_parser=*/ true);
+        schema_processor.addIcebergTableSchema(schema_representation);
+
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
         for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
         {
             const auto & [transform_name, column_name] = transform_and_column_pairs[i];
+            const auto source_id = schema_processor.tryGetColumnIDByName(/*schema_id=*/ 0, column_name);
+            if (!source_id)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot sort an Iceberg table by {}: it is neither a column nor a field of a tuple column",
+                    column_name);
+            if (!column_name_to_source_id.contains(column_name))
+            {
+                const auto source_type = removeNullable(schema_processor.getFieldCharacteristics(/*schema_version=*/ 0, *source_id).type);
+                if (isTuple(source_type) || isArray(source_type) || isMap(source_type))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot sort an Iceberg table by {}: a field of a tuple column must have a primitive type to be sorted by, got {}",
+                        column_name,
+                        source_type->getName());
+            }
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
-            sorting_field->set(f_source_id, column_name_to_source_id[column_name]);
+            sorting_field->set(f_source_id, *source_id);
             sorting_field->set(f_transform, transform_name);
             sorting_field->set(f_direction, reverse_flags.empty() || !reverse_flags[i] ? "asc" : "desc");
             sorting_field->set("null-order", "nulls-first");
@@ -1959,7 +1979,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     {
         auto field = fields->getObject(field_index);
         auto source_id = field->getValue<Int64>(f_source_id);
-        auto column_name = source_id_to_column_name[source_id];
+        auto column = source_id_to_column_name.find(source_id);
+        /// A sort field whose source column is not in the current schema cannot be applied: drop the sort order, as for an unknown transform.
+        if (column == source_id_to_column_name.end())
+            return KeyDescription{};
+        const auto & column_name = column->second;
         int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
         auto iceberg_transform_name = field->getValue<String>(f_transform);
         std::optional<TransformAndArgument> clickhouse_transform_name;
@@ -2020,6 +2044,11 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
         initial_column_names.push_back(column_name);
         initial_column_names_set.insert(column_name);
     }
+    /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+    for (const auto & required_column : sort_description.expression->getRequiredColumns())
+        if (!block.has(required_column))
+            if (auto subcolumn = block.findSubcolumnByName(required_column))
+                block.insert(std::move(*subcolumn));
     ASTPtr combined_expr_list = sort_description.expression_list_ast;
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());
