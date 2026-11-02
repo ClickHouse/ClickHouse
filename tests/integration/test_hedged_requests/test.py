@@ -499,11 +499,16 @@ def test_async_query_sending(started_cluster):
         Distributed('test_cluster_three_shards', 'default', 'test_hedged')"""
     )
 
-    # Create big enough temporary table
+    # The temporary table is sent to the shards along with the query, and sending it
+    # has to be suspended at least once, so the table must be large enough to overflow
+    # the socket buffers. Half a gigabyte is orders of magnitude more than any socket
+    # buffer size. It used to be ten times larger, and under sanitizers that exceeded
+    # the `mem_limit` of the container above - a temporary table is kept in memory on
+    # the initiator.
     NODES["node"].query("DROP TABLE IF EXISTS tmp")
     NODES["node"].query(
         "CREATE TEMPORARY TABLE tmp (number UInt64, s String) "
-        "as select number, randomString(number % 1000) from numbers(10000000)"
+        "as select number, randomString(number % 1000) from numbers(1000000)"
     )
 
     NODES["node"].query(

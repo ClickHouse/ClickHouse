@@ -1,0 +1,370 @@
+---
+slug: /cloud/managed-postgres/guides/nodejs
+sidebarTitle: 'Node.js'
+title: 'Use Node.js with ClickHouse Managed Postgres'
+description: 'Connect a Node.js app to ClickHouse Managed Postgres with node-postgres (pg), using a connection pool, verified TLS, parameterized queries, and transactions'
+keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'javascript', 'connection pool', 'tls', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
+
+[node-postgres](https://node-postgres.com/) (the `pg` package) is the most widely used Postgres driver for Node.js. In this guide, you connect to ClickHouse Managed Postgres through a `pg.Pool` with full TLS certificate verification, create two tables, move money between accounts in a transaction, and serve the data from a small `node:http` server.
+
+## Prerequisites {#prerequisites}
+
+- [Node.js](https://nodejs.org/) 20.6 or later (for the built-in `--env-file` flag). This guide was tested with Node.js 24.21.0 and `pg` 8.23.1.
+- A ClickHouse Cloud account
+- [`psql`](https://www.postgresql.org/download/), to create the database
+
+## Create a ClickHouse Managed Postgres service {#create-service}
+
+In the ClickHouse Cloud console, click **New service** and select **Postgres**. The instance is ready in a few minutes. See the [quickstart](/products/managed-postgres/quickstart) for a walkthrough.
+
+## Get your connection details {#connection-details}
+
+Click **Connect** in the left sidebar of your service. With **Directly** selected, copy the connection URL from the **url** tab. Leave **Use SSL** off: the app passes the CA certificate in code instead of in the URL (see [Configure the connection pool](#configure-pool)).
+
+This guide connects **directly** to Postgres on port `5432`. A long-lived Node.js server already keeps its own pool of connections through `pg.Pool`, so it doesn't need a second pooler in front of Postgres. If you run many processes or serverless functions, use the bundled PgBouncer instead; see [Use PgBouncer](#pgbouncer).
+
+Next, download the CA certificate for your instance. Turn on **Use SSL** and click **Download CA certificate**, or go to **Settings → CA Certificate → Download CA certificate**. The certificate is unique to your instance.
+
+## Set up the project {#project-setup}
+
+Create a project and install `pg`:
+
+```bash
+mkdir node-pg-app && cd node-pg-app
+npm init -y
+npm install pg
+```
+
+<Tip>
+**Adding to an existing app?**
+
+Skip `mkdir` and `npm init -y`. In your project, run `npm install pg`, then continue with [Create the database](#create-database).
+</Tip>
+
+The examples in this guide are ES modules with the `.mjs` extension, so they work whether your `package.json` uses CommonJS or ES modules.
+
+## Create the database {#create-database}
+
+Move the downloaded `<service-name>-ca-certificate.pem` file into the project directory and rename it to `ca-certificate.pem`. Then create a database for the app:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c 'CREATE DATABASE guide_nodejs;'
+```
+
+Create a `.env` file with the connection URL you copied, with the database name changed to `guide_nodejs`, and the path to the certificate:
+
+```bash .env
+DATABASE_URL=postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_nodejs
+DATABASE_CA_CERT=./ca-certificate.pem
+```
+
+If your password contains characters such as `@`, `/`, or `#`, percent-encode them in the URL.
+
+## Configure the connection pool {#configure-pool}
+
+Create `db.mjs`. It exports one pool that the rest of the app shares:
+
+```javascript db.mjs
+import fs from 'node:fs';
+import pg from 'pg';
+
+export const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    // Trust only your instance's CA; the hostname is verified too (verify-full).
+    ca: fs.readFileSync(process.env.DATABASE_CA_CERT, 'utf8'),
+  },
+  max: 10,
+  idleTimeoutMillis: 30_000,
+});
+
+// An idle client can be disconnected by the server (for example, during a failover).
+// Without this handler, the error would crash the process.
+pool.on('error', (err) => {
+  console.error('Idle client error:', err.message);
+});
+```
+
+Passing `ssl: { ca }` gives you the equivalent of `sslmode=verify-full`: `pg` checks that the server certificate is signed by your instance's CA and that it matches the hostname. `rejectUnauthorized` defaults to `true`; don't set it to `false`.
+
+<Warning>
+**Don't mix `ssl` with SSL parameters in the URL**
+
+If `DATABASE_URL` contains `sslmode` or `sslrootcert`, `pg` builds its TLS settings from the URL and ignores the `ssl` object. For example, a URL ending in `?sslmode=verify-full` without `sslrootcert` replaces your `ca`, and the connection fails with `unable to verify the first certificate`. Keep SSL parameters out of `DATABASE_URL` when you pass `ssl` in code.
+
+Also note that:
+
+- Without either an `ssl` object or `sslmode` in the URL, `pg` doesn't use TLS or verify the server.
+- `pg` reads `PGHOST`, `PGUSER`, `PGPASSWORD`, and similar variables, but it doesn't read `PGSSLROOTCERT`. The variables in the **env** tab of the Connect modal therefore aren't enough on their own to verify the server.
+- If you prefer to keep everything in the URL, the URL that the Connect modal shows with **Use SSL** on also works with `pg`, for example `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`. In that case, remove the `ssl` option, and note that `sslrootcert` is resolved relative to the directory you start Node.js from.
+</Warning>
+
+## Create the schema {#create-schema}
+
+Create `setup.mjs`. It creates the tables, inserts two accounts with parameterized queries, and reads them back:
+
+```javascript setup.mjs
+import { pool } from './db.mjs';
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    owner   text NOT NULL UNIQUE,
+    balance numeric(12, 2) NOT NULL CHECK (balance >= 0)
+  );
+  CREATE TABLE IF NOT EXISTS transfers (
+    id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    from_id    integer NOT NULL REFERENCES accounts (id),
+    to_id      integer NOT NULL REFERENCES accounts (id),
+    amount     numeric(12, 2) NOT NULL CHECK (amount > 0),
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+`);
+
+const accounts = [
+  ['alice', 100],
+  ['bob', 50],
+];
+for (const [owner, balance] of accounts) {
+  await pool.query(
+    'INSERT INTO accounts (owner, balance) VALUES ($1, $2) ON CONFLICT (owner) DO NOTHING',
+    [owner, balance],
+  );
+}
+
+const { rows } = await pool.query(
+  'SELECT id, owner, balance FROM accounts WHERE owner = ANY($1) ORDER BY id',
+  [['alice', 'bob']],
+);
+console.table(rows);
+
+await pool.end();
+```
+
+Always pass values as parameters (`$1`, `$2`, ...) rather than concatenating them into the SQL string. `pg` sends them separately from the query text, which prevents SQL injection. JavaScript arrays map to Postgres arrays, as in the `ANY($1)` query.
+
+Run it:
+
+```bash
+node --env-file=.env setup.mjs
+```
+
+```text
+┌─────────┬────┬─────────┬──────────┐
+│ (index) │ id │ owner   │ balance  │
+├─────────┼────┼─────────┼──────────┤
+│ 0       │ 1  │ 'alice' │ '100.00' │
+│ 1       │ 2  │ 'bob'   │ '50.00'  │
+└─────────┴────┴─────────┴──────────┘
+```
+
+`pg` returns `numeric` (and `bigint`) values as strings so that no precision is lost. Convert them explicitly if you need numbers.
+
+## Run queries in a transaction {#transaction}
+
+A transaction must run on a single connection, so check out a client with `pool.connect`, and always release it. Create `transfer.mjs`:
+
+```javascript transfer.mjs
+import { pool } from './db.mjs';
+
+// Moves money between two accounts atomically: either every statement commits, or none do.
+export async function transfer(fromOwner, toOwner, amount) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const debit = await client.query(
+      'UPDATE accounts SET balance = balance - $1 WHERE owner = $2 AND balance >= $1 RETURNING id',
+      [amount, fromOwner],
+    );
+    if (debit.rowCount === 0) {
+      throw new Error(`Insufficient funds or unknown account: ${fromOwner}`);
+    }
+    const credit = await client.query(
+      'UPDATE accounts SET balance = balance + $1 WHERE owner = $2 RETURNING id',
+      [amount, toOwner],
+    );
+    if (credit.rowCount === 0) {
+      throw new Error(`Unknown account: ${toOwner}`);
+    }
+    const { rows } = await client.query(
+      'INSERT INTO transfers (from_id, to_id, amount) VALUES ($1, $2, $3) RETURNING *',
+      [debit.rows[0].id, credit.rows[0].id, amount],
+    );
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+```
+
+Don't use `pool.query` for the statements inside a transaction: each `pool.query` call can run on a different connection.
+
+## Serve the data over HTTP {#http-server}
+
+Create `server.mjs`. It serves the accounts and transfers as JSON on port `3107`, accepts new transfers, and shuts down cleanly on `SIGINT` (<kbd>Ctrl</kbd>+<kbd>C</kbd>) or `SIGTERM`:
+
+```javascript server.mjs
+import http from 'node:http';
+import { pool } from './db.mjs';
+import { transfer } from './transfer.mjs';
+
+const port = Number(process.env.PORT ?? 3107);
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+async function readJson(req) {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  return JSON.parse(body);
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  try {
+    if (req.method === 'GET' && url.pathname === '/accounts') {
+      const { rows } = await pool.query('SELECT id, owner, balance FROM accounts ORDER BY id');
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'GET' && url.pathname === '/transfers') {
+      const limit = Number(url.searchParams.get('limit') ?? 10);
+      const { rows } = await pool.query(
+        `SELECT t.id, f.owner AS "from", o.owner AS "to", t.amount, t.created_at
+           FROM transfers t
+           JOIN accounts f ON f.id = t.from_id
+           JOIN accounts o ON o.id = t.to_id
+          ORDER BY t.id DESC
+          LIMIT $1`,
+        [limit],
+      );
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'POST' && url.pathname === '/transfers') {
+      const { from, to, amount } = await readJson(req);
+      return sendJson(res, 201, await transfer(from, to, amount));
+    }
+    sendJson(res, 404, { error: 'Not found' });
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+  }
+});
+
+server.listen(port, () => console.log(`Listening on http://localhost:${port}`));
+
+// Stop accepting requests, let in-flight ones finish, then close all pool connections.
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  server.close(async () => {
+    await pool.end();
+    console.log('Pool closed');
+  });
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+```
+
+Call `pool.end` once, when the process shuts down, not after each request. It waits for checked-out clients to be released and then closes every connection.
+
+## Verify {#verify}
+
+Start the server:
+
+```bash
+node --env-file=.env server.mjs
+```
+
+In a second terminal, make a transfer, then try one that would overdraw an account and one to an account that doesn't exist:
+
+```bash
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "bob", "amount": 25}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "bob", "to": "alice", "amount": 1000}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "carol", "amount": 10}'
+```
+
+```text
+{
+  "id": 1,
+  "from_id": 1,
+  "to_id": 2,
+  "amount": "25.00",
+  "created_at": "2026-09-30T16:45:56.751Z"
+}
+{
+  "error": "Insufficient funds or unknown account: bob"
+}
+{
+  "error": "Unknown account: carol"
+}
+```
+
+The third transfer had already debited `alice` when it failed, but the `ROLLBACK` undid it. Open [http://localhost:3107/accounts](http://localhost:3107/accounts) in your browser to see the balances. The response looks like this:
+
+```json
+[
+  {
+    "id": 1,
+    "owner": "alice",
+    "balance": "75.00"
+  },
+  {
+    "id": 2,
+    "owner": "bob",
+    "balance": "75.00"
+  }
+]
+```
+
+To confirm that the connection uses verified TLS, run a query against `pg_stat_ssl`:
+
+```bash
+node --env-file=.env --input-type=module -e "
+import { pool } from './db.mjs';
+const { rows } = await pool.query('SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()');
+console.log(rows[0]);
+await pool.end();
+"
+```
+
+```text
+{ ssl: true, version: 'TLSv1.3' }
+```
+
+If you point `DATABASE_CA_CERT` at any other certificate, the connection fails with `unable to verify the first certificate`, which shows that the server certificate is actually checked.
+
+Finally, stop the server with <kbd>Ctrl</kbd>+<kbd>C</kbd>. It prints `SIGINT received, shutting down` and then `Pool closed`.
+
+You can also look at the data in the console. Open **SQL console**, expand the `guide_nodejs` database, and open the `accounts` table:
+
+| id | owner | balance |
+|----|-------|---------|
+| 1  | alice | 75.00   |
+| 2  | bob   | 75.00   |
+
+## Use PgBouncer {#pgbouncer}
+
+To connect through the bundled [PgBouncer](/products/managed-postgres/connection#pgbouncer), select **via PgBouncer** in the Connect modal and use port `6432` in `DATABASE_URL`. No code changes are needed; the same CA certificate works.
+
+PgBouncer runs in transaction pooling mode, so each transaction can run on a different Postgres connection. With `pg`:
+
+- Parameterized queries, named prepared statements (`pool.query({ name, text, values })`), and transactions that use `pool.connect` work as shown in this guide.
+- SQL-level `PREPARE` and `EXECUTE`, and session settings made with `SET`, don't carry over between transactions. Use `SET LOCAL` inside a transaction instead.
+- `pg_stat_ssl` reports the connection between PgBouncer and Postgres, so the TLS check query above returns `ssl: false`. Your app's connection to PgBouncer is still verified: a wrong CA certificate fails in the same way.
+
+## Next steps {#next-steps}
+
+- [Connection](/products/managed-postgres/connection): connection strings, PgBouncer, and TLS
+- [Settings](/products/managed-postgres/settings): change parameters such as `max_connections`
+- [Read replicas](/products/managed-postgres/read-replicas): send read-only queries to a replica
+- [High availability](/products/managed-postgres/high-availability): standbys and failover

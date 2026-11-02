@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- Random settings limits: index_granularity=(8192, None)
 -- A tiny index_granularity over S3 storage explodes the per-granule read count
 -- (one S3 GET per granule for multi-column reads), making this long test time out.
@@ -10,7 +10,6 @@
 -- query with the feature off and on, so the expected output is a column of 1s regardless of the
 -- randomly generated table content.
 
-SET max_rows_to_group_by = 0;
 SET max_threads = 4;
 SET max_block_size = 8192;
 SET adaptive_aggregator_freeze_threshold = 128;

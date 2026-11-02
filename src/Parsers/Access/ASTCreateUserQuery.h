@@ -8,6 +8,7 @@
 
 namespace DB
 {
+class ASTUserNameWithHost;
 class ASTUserNamesWithHost;
 class ASTRolesOrUsersSet;
 class ASTDatabaseOrNone;
@@ -52,7 +53,7 @@ public:
     bool replace_authentication_methods = false;
 
     boost::intrusive_ptr<ASTUserNamesWithHost> names;
-    std::optional<String> new_name;
+    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
     String storage_name;
 
     std::vector<boost::intrusive_ptr<ASTAuthenticationData>> authentication_methods;
@@ -76,6 +77,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }

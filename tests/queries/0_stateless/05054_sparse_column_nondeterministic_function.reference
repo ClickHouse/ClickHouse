@@ -1,0 +1,15 @@
+the column really is sparse
+Sparse
+1
+generators that never read their argument
+1000
+1000
+1
+1
+a generator that keeps the default sparse handling
+1000
+deterministic functions keep the fast path
+10	5500
+a generator that reads its argument
+Sparse
+0

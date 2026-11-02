@@ -7,6 +7,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <Core/Block_fwd.h>
 #include <Core/Range.h>
 #include <Processors/Chunk.h>
 
@@ -24,7 +25,13 @@ class DataFileStatistics
 public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
+    /// Every statistic is accumulated in written-block order, so `field_ids[i]` must be the id of
+    /// block column `i` rather than of schema field `i`. An empty `written_field_ids` keeps the schema's ids.
+    DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids);
+
     void update(const Chunk & chunk);
+    void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
+    void setSplitOffsets(std::vector<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
     void merge(const DataFileStatistics & other);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
@@ -33,6 +40,7 @@ public:
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
     const std::vector<Int64> & getFieldIds() const { return field_ids; }
+    const std::vector<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 
@@ -40,6 +48,7 @@ private:
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
     Ranges ranges;
+    std::vector<UInt64> split_offsets;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;

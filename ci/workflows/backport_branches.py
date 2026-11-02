@@ -8,6 +8,7 @@ workflow = Workflow.Config(
     name="BackportPR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *[
             job
@@ -18,7 +19,7 @@ workflow = Workflow.Config(
         *[
             job
             for job in JobConfigs.special_build_jobs
-            if any(t in job.name for t in ("darwin",))
+            if any(t in job.name for t in ("darwin", "illumos"))
         ],
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,

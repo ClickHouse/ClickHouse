@@ -20,6 +20,8 @@ doc_type: 'reference'
   배열 유형의 기본값을 포함한 단일 행을 반환하려면 [emptyArrayToSingle](/ko/reference/functions/regular-functions/array-functions#emptyArrayToSingle)로 감쌀 수 있습니다. 예: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest`(버전 26.5부터)는 함수 호출 형식(`SELECT unnest(arr)`)에서 `arrayJoin`의 대소문자를 구분하지 않는 별칭입니다. PostgreSQL 테이블 소스 구문(`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, `LATERAL`)은 지원되지 않습니다. 이러한 쿼리에는 [`ARRAY JOIN`](/ko/reference/statements/select/array-join) 절을 사용하십시오.
+
 예시:
 
 ```sql title="Query"

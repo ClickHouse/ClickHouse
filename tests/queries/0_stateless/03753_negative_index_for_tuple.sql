@@ -20,7 +20,6 @@ select * from (select _partition_value.-1 from a1 union all select _partition_va
 drop table a1;
 drop table a2;
 
-set enable_analyzer = 1;
 set optimize_functions_to_subcolumns = 1;
 
 drop table if exists test;

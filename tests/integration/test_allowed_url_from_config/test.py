@@ -21,6 +21,9 @@ node5 = cluster.add_instance(
     user_configs=["configs/allow_server_credentials.xml"],
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
+node8 = cluster.add_instance(
+    "node8", main_configs=["configs/config_with_pinned_port.xml"]
+)  # Allows only 127.0.0.1:3306 (port-pinned entry).
 
 if not is_arm():
     node7 = cluster.add_instance(
@@ -58,6 +61,93 @@ def test_config_with_hosts(start_cluster):
     )
     node1.query("DROP TABLE table_test_1_1")
     node1.query("DROP TABLE table_test_1_2")
+
+
+@pytest.mark.parametrize(
+    "query, secret, masked_url",
+    [
+        (
+            "SELECT * FROM url('http://leakuser:pw_userinfo_canary@host:123/', CSV, 'x UInt8')",
+            "pw_userinfo_canary",
+            "http://[HIDDEN]@host:123/",
+        ),
+        (
+            "SELECT * FROM url('http://host:123/f.csv?X-Amz-Signature=pw_presigned_canary', CSV, 'x UInt8')",
+            "pw_presigned_canary",
+            "http://host:123/f.csv?X-Amz-Signature=[HIDDEN]",
+        ),
+        (
+            "SELECT * FROM format(AvroConfluent, 'a UInt8', '\\x00\\x00\\x00\\x00\\x01') "
+            "SETTINGS format_avro_schema_registry_url = 'http://leakuser:pw_registry_canary@host:123/'",
+            "pw_registry_canary",
+            "http://[HIDDEN]@host:123/",
+        ),
+        (
+            "SELECT * FROM s3('http://host:123/bucket/k.csv?X-Amz-Signature=pw_s3_folded_canary', NOSIGN, CSV, 'x UInt8') "
+            "SETTINGS compatibility_s3_presigned_url_query_in_path = 1",
+            "pw_s3_folded_canary",
+            "http://host:123/bucket/k.csv?X-Amz-Signature=[HIDDEN]",
+        ),
+        (
+            "SELECT * FROM azureBlobStorage('BlobEndpoint=https://host:123/;"
+            "SharedAccessSignature=sv=2022-11-02&sr=c&sp=r&sig=pw_azure_sas_canary', 'cont', 'data.csv', 'CSV', 'x UInt8')",
+            "pw_azure_sas_canary",
+            "https://host:123",
+        ),
+        (
+            "SELECT * FROM azureBlobStorage('https://host:123/?sv=2022-11-02&sr=c&sp=r&sig=pw_azure_url_sas_canary', "
+            "'cont', 'data.csv', 'account', 'key', 'CSV', 'auto', 'x UInt8')",
+            "pw_azure_url_sas_canary",
+            "https://host:123/",
+        ),
+        (
+            "SELECT * FROM s3('http://host:123/bucket/k.csv?%73ig=pw_s3_encoded_name_canary', NOSIGN, CSV, 'x UInt8')",
+            "pw_s3_encoded_name_canary",
+            "http://host:123/bucket/k.csv?%73ig=[HIDDEN]",
+        ),
+    ],
+    ids=[
+        "userinfo",
+        "presigned",
+        "avro_schema_registry",
+        "s3_presigned_in_path",
+        "azure_connection_string_sas",
+        "azure_url_sas_with_account_key",
+        "s3_encoded_name_in_path",
+    ],
+)
+def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_url):
+    error = node1.query_and_get_error(query)
+    # The client echoes the submitted query after the exception, so only the exception line is checked.
+    rejections = [
+        line
+        for line in error.splitlines()
+        if "is not allowed in configuration file" in line
+    ]
+    assert len(rejections) == 1, error
+    assert f'URL "{masked_url}"' in rejections[0], error
+    assert secret not in rejections[0], error
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CREATE TABLE azure_blocked_host (x UInt8) ENGINE = AzureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV')",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV', 'x UInt8') VALUES (1)",
+    ],
+)
+def test_azure_host_filter_before_client_creation(start_cluster, query):
+    container_requests = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event IN ('AzureGetProperties', 'AzureCreateContainer')"
+    )
+    before = node5.query(container_requests)
+    error = node5.query_and_get_error(query, settings={"azure_sdk_max_retries": 0})
+    assert "UNACCEPTABLE_URL" in error
+    # The host check must run before even a container existence probe.
+    assert node5.query(container_requests) == before
 
 
 def test_config_with_only_primary_hosts(start_cluster):
@@ -228,6 +318,57 @@ def test_mysql_dictionary_replica_host_filter(start_cluster):
     node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_replica_filter")
 
 
+def test_mysql_dictionary_replica_inherited_port_host_filter(start_cluster):
+    """A REPLICA(...) without its own PORT connects to the top-level PORT (mysqlxx::Pool
+    falls back to the parent prefix), so the host filter must validate that effective
+    port, not the 3306 default."""
+    # node8 allows only 127.0.0.1:3306 and 127.0.0.1:3308. 127.0.0.1 (instead of the
+    # unroutable 10.0.0.1 used above) makes any dial that passes the filter fail
+    # instantly with connection-refused instead of hanging until the connect timeout.
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+    node8.query(
+        """
+        CREATE DICTIONARY default.test_mysql_inherited_port (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            PORT 3307 USER 'root' PASSWORD 'pass' DB 'test' TABLE 'tbl'
+            REPLICA(PRIORITY 1 HOST '127.0.0.1')
+        ))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    # The replica inherits the denied top-level port 3307; before the fix the filter
+    # checked the 3306 default, passed, and dialed 127.0.0.1:3307 anyway.
+    error = node8.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_inherited_port', 'val', toUInt64(1))"
+    )
+    assert "not allowed" in error, f"Expected host filter error, got: {error}"
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+
+    # A replica's own PORT takes precedence over the top-level PORT: 127.0.0.1:3308 is
+    # allowed, so the filter must pass and the failure is a plain connection error.
+    # 3308 differs from both the denied parent port 3307 and the 3306 default, so a
+    # regression that validated either of those instead of the replica's own port
+    # would fail this case.
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
+    node8.query(
+        """
+        CREATE DICTIONARY default.test_mysql_own_port (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            PORT 3307 USER 'root' PASSWORD 'pass' DB 'test' TABLE 'tbl'
+            REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3308)
+        ))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    error = node8.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_own_port', 'val', toUInt64(1))"
+    )
+    assert "not allowed" not in error, f"Filter rejected an allowed replica: {error}"
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
+
+
 def test_table_function_remote(start_cluster):
     assert "not allowed in configuration file" not in node6.query_and_get_error(
         "SELECT * FROM remoteSecure('example01-01-{1|2}', system, events)",
@@ -391,3 +532,109 @@ def test_schema_inference(start_cluster):
     error = node7.query_and_get_error("desc url('http://test.com', 'TSVRaw')")
     assert "not allowed" in error
     assert error.find("ReadWriteBufferFromHTTPBase") == -1
+
+
+# The AI functions read their HTTP endpoint from a named collection, so `NAMED COLLECTION ADMIN`
+# alone must not let a user aim the server's HTTP client at a host the operator did not allow.
+# Nothing listens on port 1; the check runs before any connection, so no server is needed.
+AI_ENDPOINT = "http://localhost:1/v1/chat/completions"
+
+AI_QUERIES = [
+    "SELECT aiGenerate('x', map('credentials', 'ai_text'))",
+    "SELECT aiEmbed('x', 'test-model', map('credentials', 'ai_embed'))",
+    "SELECT aiSimilarity('x', 'y', 'test-model', map('credentials', 'ai_embed'))",
+]
+
+
+def create_ai_collections(node):
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS ai_text AS provider = 'openai', "
+        f"endpoint = '{AI_ENDPOINT}', model = 'test-model', api_key = 'test-key'"
+    )
+    # An embedding collection must not define `model`: `aiEmbed` and `aiSimilarity` take it as an
+    # argument and reject a collection that declares it too.
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS ai_embed AS provider = 'openai', "
+        f"endpoint = '{AI_ENDPOINT}', api_key = 'test-key'"
+    )
+
+
+def drop_ai_collections(node):
+    node.query("DROP NAMED COLLECTION IF EXISTS ai_text")
+    node.query("DROP NAMED COLLECTION IF EXISTS ai_embed")
+
+
+def test_ai_functions_host_filter(start_cluster):
+    # `node5` declares an empty `remote_url_allow_hosts` (allows nothing); `node4` declares none at
+    # all, so its filter stays uninitialized and allows everything. Same collections, same endpoint.
+    create_ai_collections(node4)
+    create_ai_collections(node5)
+    try:
+        for query in AI_QUERIES:
+            error = node5.query_and_get_error(
+                query, settings={"ai_function_max_retries": 0}
+            )
+            assert "UNACCEPTABLE_URL" in error, f"{query}: {error}"
+            # The check must run before the request, so the refusal carries no connection error.
+            assert "Connection refused" not in error, f"{query}: {error}"
+
+            # Control: without an allow-list the same call gets past the check and fails at the
+            # network instead. Without this arm, a filter that rejected everything would also pass.
+            error = node4.query_and_get_error(
+                query, settings={"ai_function_max_retries": 0}
+            )
+            assert "UNACCEPTABLE_URL" not in error, f"{query}: {error}"
+    finally:
+        drop_ai_collections(node4)
+        drop_ai_collections(node5)
+
+
+def test_hive_catalog_host_filter(start_cluster):
+    query = (
+        "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "
+        "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'"
+    )
+    settings = {"allow_experimental_database_hms_catalog": 1}
+    try:
+        # Control first: `node4` declares no `remote_url_allow_hosts` at all, so its filter stays
+        # uninitialized and allows everything - the same statement gets past the check and fails at
+        # the network instead. Without this arm, a filter that rejected everything would also pass.
+        error = node4.query_and_get_error(query, settings=settings)
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # `node5` declares an empty `remote_url_allow_hosts`, which allows nothing.
+        error = node5.query_and_get_error(query, settings=settings)
+        assert "UNACCEPTABLE_URL" in error, error
+        # The check must run before the connect, so the refusal carries no connection error.
+        assert "Connection refused" not in error, error
+    finally:
+        node4.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+        node5.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+
+
+def test_hive_catalog_host_filter_rejects_nul(start_cluster):
+    def create(url):
+        return node1.query_and_get_error(
+            f"CREATE DATABASE test_hive_host_filter_nul ENGINE = DataLakeCatalog('{url}') "
+            "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'",
+            settings={"allow_experimental_database_hms_catalog": 1},
+        )
+
+    try:
+        # Control: the suffix rule in `config_with_hosts.xml` admits this host, so it gets past the
+        # filter and fails at name resolution instead.
+        error = create("thrift://hms.allowed.example:1")
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # The same rule matches the whole string including the NUL, but `getaddrinfo` would stop at the
+        # NUL and connect to 127.0.0.1. The host must be refused before any connection attempt.
+        error = create("thrift://127.0.0.1\\0.allowed.example:1")
+        assert "BAD_ARGUMENTS" in error, error
+        assert "Unexpected character" in error, error
+        assert "Connection refused" not in error, error
+    finally:
+        node1.query("DROP DATABASE IF EXISTS test_hive_host_filter_nul")

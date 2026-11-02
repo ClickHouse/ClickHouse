@@ -1,0 +1,29 @@
+-- the semantic settings survive an explicit SETTINGS clause
+1	10
+2	\N
+-- ... and a set operation keeps the numeric supertype, not Variant
+Nullable(Float64)
+-- ... and hold for a wrapping INSERT ... SELECT
+\N
+-- LEFT JOIN UNNEST over an empty array yields NULL, not the default
+1	10
+1	20
+2	\N
+-- CROSS JOIN UNNEST of arrays of different lengths pads with NULLs
+1	x
+2	y
+3	\N
+-- the column aliases of a joined UNNEST are reachable through its table alias
+a	1
+b	2
+-- array_agg keeps NULL elements
+[1,NULL,2]
+[1,NULL]
+-- the aggregates return NULL over an empty input, also with DISTINCT
+\N	\N	\N	\N
+-- ... and over an empty window frame
+\N
+1
+-- ... and for an EXPLAIN wrapper
+1
+-- LEFT JOIN UNNEST of an element type that cannot be Nullable is rejected

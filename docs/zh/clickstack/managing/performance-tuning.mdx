@@ -72,7 +72,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * [ClickHouse 如何存储数据：parts 和 granules](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) - 更深入地介绍 ClickHouse 中数据如何组织和查询，并详细讲解 granules 和主键。
 * [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)- 适合查阅命令和内部实现细节的高级 MergeTree 参考指南。
 
-下面介绍的所有优化都可以通过标准 ClickHouse SQL 直接应用于底层表，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/cli) 执行。
+下面介绍的所有优化都可以通过标准 ClickHouse SQL 直接应用于底层表，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/client) 执行。
 
 <div id="materialize-frequently-queried-attributes">
   ## 优化 1. 将频繁查询的属性物化
@@ -575,17 +575,37 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
   ### ClickHouse 版本要求
 </div>
 
-查询重写要求使用支持对带文本索引的数组列进行直接标记级剪枝的 ClickHouse 版本。ClickStack 会检测已连接
-server 的版本 (`SELECT version()`，按 connection 缓存) ，并且只有在
-server 版本达到或高于该阈值时才会生成重写后的形式。较旧的
-server 会自动回退到原始的 Map 下标形式。
+查询重写要求使用支持对带文本索引的数组列进行直接
+标记级剪枝的 ClickHouse 版本。ClickStack 会检测已连接的
+server 版本 (`SELECT version()`，按 connection 缓存) ，并且只有在
+server 版本达到或高于下方相应阈值时才会生成重写后的形式。较旧版本会
+自动回退到原始的 Map 下标形式。
 
-| ClickHouse 分支 | 最低版本       |
-| ------------- | ---------- |
-| 26.2          | 26.2.19.43 |
-| 26.3          | 26.3.12.3  |
-| 26.4          | 26.4.3.37  |
-| 26.5+         | 所有版本       |
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ClickHouse Cloud 构建和开源发行版采用独立的版本线。
+    请使用下方列出的 Cloud 最低版本。
+
+    | ClickHouse 分支 | 最低 Cloud 版本   |
+    | ------------- | ------------- |
+    | 26.2          | `26.2.1.307`  |
+    | 26.3          | `26.3.0.0`    |
+    | 26.4          | `26.4.1.1740` |
+    | 26.5+         | 所有版本          |
+
+    `26.3.0.0` 是该分支的起始版本，因此所有 `26.3` 构建均受
+    支持。
+  </Tab>
+
+  <Tab title="开源">
+    | ClickHouse 分支 | 最低开源版本       |
+    | ------------- | ------------ |
+    | 26.2          | `26.2.19.43` |
+    | 26.3          | `26.3.12.3`  |
+    | 26.4          | `26.4.3.37`  |
+    | 26.5+         | 所有版本         |
+  </Tab>
+</Tabs>
 
 <Info>
   **为什么使用 ALIAS，而不是 MATERIALIZED**

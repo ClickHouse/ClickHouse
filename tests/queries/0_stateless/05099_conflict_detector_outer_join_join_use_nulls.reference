@@ -1,0 +1,7 @@
+LEFT+LEFT   cd_c	3
+LEFT+LEFT   cd_a	3
+padded-key row  	2	0	0	v3_0
+LEFT  cross-boundary cd_c	2	300	2	20	20	300
+LEFT  cross-boundary cd_c	3	500	3	30	30	500
+RIGHT cross-boundary cd_a	2	300	2	20	20	300
+RIGHT cross-boundary cd_a	3	500	3	30	30	500

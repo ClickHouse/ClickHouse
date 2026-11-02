@@ -54,7 +54,7 @@
       ]
     },
     {
-      "group": "Guides de développement",
+      "group": "Guides pour les développeurs",
       "pages": [
         "fr/chdb/guides/index",
         "fr/chdb/guides/jupysql",

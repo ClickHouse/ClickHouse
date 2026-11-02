@@ -154,19 +154,25 @@ Les partitions peuvent améliorer les performances des requêtes, mais cela dép
   ```
 </RunnableCode>
 
-Cette requête s’exécute sur notre table d’exemple ci-dessus et [calcule](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) le prix le plus élevé de tous les biens vendus à Londres en décembre 2020, en filtrant à la fois sur une colonne (`date`) utilisée dans la clé de partition de la table et sur une colonne (`town`) utilisée dans la clé primaire de la table (`date` ne faisant pas partie de la clé primaire).
+Cette requête s’exécute sur notre table d’exemple ci-dessus et [calcule](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) le prix le plus élevé de tous les biens vendus à Londres en décembre 2020, en filtrant à la fois sur une colonne (`date`) utilisée dans la clé de partition de la table et sur une colonne (`town`) utilisée dans la clé primaire de la table (`date` ne faisant pas partie de la clé primaire).
 
-ClickHouse traite cette requête en appliquant une série de techniques d’exclusion pour éviter d’évaluer des données non pertinentes :
+ClickHouse traite cette requête en appliquant une série de techniques d’exclusion pour éviter d’évaluer des données non pertinentes :
 
 <Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
 
 <br />
 
-① **élagage des partitions** : les [index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) servent à ignorer des partitions entières (ensembles de parts) qui, logiquement, ne peuvent pas correspondre au filter de la requête sur les colonnes utilisées dans la clé de partition de la table.
+<Steps>
+  <Step title="Élagage des partitions">
+    Les [index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) servent à ignorer des partitions entières (ensembles de parts) qui, logiquement, ne peuvent pas correspondre au filtre de la requête sur les colonnes utilisées dans la clé de partition de la table.
+  </Step>
 
-② **élagage des granules** : pour les data parts restantes après l’étape ①, leur [index primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) sert à ignorer toutes les [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocs de rows) qui, logiquement, ne peuvent pas correspondre au filter de la requête sur les colonnes utilisées dans la clé primaire de la table.
+  <Step title="Élagage des granules">
+    Pour les parties de données restantes après l’étape d’élagage des partitions, leur [index primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) sert à ignorer toutes les [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocs de lignes) qui, logiquement, ne peuvent pas correspondre au filtre de la requête sur les colonnes utilisées dans la clé primaire de la table.
+  </Step>
+</Steps>
 
-Nous pouvons observer ces étapes d’exclusion des données en [inspectant](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) le plan d’exécution physique de notre requête d’exemple ci-dessus via une clause [EXPLAIN](/fr/reference/statements/explain) :
+Nous pouvons observer ces étapes d’exclusion des données en [inspectant](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) le plan d’exécution physique de notre requête d’exemple ci-dessus via une clause [EXPLAIN](/fr/reference/statements/explain) :
 
 ```sql style="fontSize:13px"
 EXPLAIN indexes = 1
@@ -208,14 +214,20 @@ WHERE date >= '2020-12-01'
 
 La sortie ci-dessus montre :
 
-① Élagage des partitions : les lignes 7 à 18 de la sortie EXPLAIN ci-dessus montrent que ClickHouse utilise d’abord l’[index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) du champ `date` pour identifier 11 des 3257 [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existantes (blocs de lignes) stockées dans 1 des 436 parties de données actives existantes, qui contiennent des lignes correspondant au filtre `date` de la requête.
+<Steps>
+  <Step title="Élagage des partitions">
+    Les lignes 7 à 18 de la sortie `EXPLAIN` ci-dessus montrent que ClickHouse utilise d’abord l’[index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) du champ `date` pour identifier 11 des 3257 [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existantes (blocs de lignes) stockées dans 1 des 436 parties de données actives existantes, qui contiennent des lignes correspondant au filtre `date` de la requête.
+  </Step>
 
-② Élagage des granules : les lignes 19 à 24 de la sortie EXPLAIN ci-dessus indiquent que ClickHouse utilise ensuite l’[index primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) (créé sur le champ `town`) de la partie de données identifiée à l’étape ① pour réduire encore le nombre de granules (qui contiennent des lignes susceptibles de correspondre aussi au filtre `town` de la requête) de 11 à 1. Cela se reflète également dans la sortie de clickhouse-client que nous avons affichée plus haut pour la requête exécutée :
+  <Step title="Élagage des granules">
+    Les lignes 19 à 24 de la sortie `EXPLAIN` ci-dessus indiquent que ClickHouse utilise ensuite l’[index primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) (créé sur le champ `town`) de la partie de données identifiée lors de l’étape d’élagage des partitions pour réduire encore le nombre de granules (qui contiennent des lignes susceptibles de correspondre aussi au filtre `town` de la requête) de 11 à 1. Cela se reflète également dans la sortie du client ClickHouse que nous avons affichée plus haut pour la requête exécutée :
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
 Cela signifie que ClickHouse a analysé et traité 1 granule (bloc de [8192](/fr/reference/settings/merge-tree-settings/index-granularity#index_granularity) lignes) en 6 millisecondes pour calculer le résultat de la requête.
 

@@ -11,6 +11,9 @@
 /* date 16433 == 2014-12-29 */
 /* date 17933 == 2019-02-06 */
 
+-- The expected results use the result types that depend on the interval unit.
+SET to_start_of_interval_preserves_argument_type = 0;
+
 /* toStartOfDay */
 
 SELECT 'toStartOfDay';

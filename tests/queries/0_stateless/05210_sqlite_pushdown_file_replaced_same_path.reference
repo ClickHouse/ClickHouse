@@ -1,0 +1,10 @@
+Original STRICT file, both predicates are pushed down and correct:
+10
+a
+Query: SELECT `n` FROM `tbl` WHERE `n` > 2
+Query: SELECT `s` FROM `tbl` WHERE `s` > 'B'
+Replaced non-STRICT file, both predicates stay local and keep the rows:
+10
+a
+Query: SELECT `n` FROM `tbl`
+Query: SELECT `s` FROM `tbl`

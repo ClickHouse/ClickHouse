@@ -1,0 +1,37 @@
+Output: count(), sum(length(content)), sum(length(metadata))
+
+Aggregating
+│  Keys:
+│  Aggregates: count(), sum(length(content)), sum(length(metadata))
+│  Skip merging: 0
+└──Limit (preliminary LIMIT)
+   │  Limit 5001
+   │  Offset 0
+   └──Sorting (Sorting for ORDER BY)
+      │  Prefix sort description: source_id ASC, date ASC, have_reply ASC, id ASC
+      │  Result sort description: source_id ASC, date ASC, have_reply ASC, id ASC
+      │  Limit 5001
+      └──ReadFromMergeTree (default.repro_t)
+            Read type: InOrder
+            Parts: 1 | Granules: 25
+            Output: source_id, date, have_reply, id, content, metadata
+            Prewhere filter
+            Prewhere filter column:  tuple(source_id, date, have_reply, id) <= (\'A\', 20468, 0, \'150000\') AND source_id = \'A\'
+            Indexes:
+              Min-Max
+                Condition: true
+                Parts: 1/1
+                Granules: 25/25
+              Partition
+                Condition: true
+                Parts: 1/1
+                Granules: 25/25
+              PrimaryKey
+                Keys:
+                  source_id
+                Condition: (source_id in [\'A\', \'A\'])
+                Parts: 1/1
+                Granules: 25/25
+                Search Algorithm: binary search
+              Ranges: 1
+5001	5001000	1000200

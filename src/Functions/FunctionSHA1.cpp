@@ -12,7 +12,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
@@ -27,13 +26,14 @@
 #    include <openssl/evp.h>
 #endif
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 #    include <immintrin.h>
 #endif
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 
 namespace
 {
@@ -119,14 +119,14 @@ public:
 /// ============================================================
 /// Multi-buffer SHA-1, templated on Ops.
 ///
-/// Template functions go inside DECLARE_MULTITARGET_CODE so each
+/// Template functions go inside DECLARE_X86_64_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
 /// The Ops struct (AVX512SHA1Ops) is in its own DECLARE block
 /// and found via same-namespace lookup.
 /// ============================================================
 
 /// One SHA-1 round step for a single group of N lanes.
-/// Defined outside DECLARE_MULTITARGET_CODE because preprocessor
+/// Defined outside DECLARE_X86_64_MULTITARGET_CODE because preprocessor
 /// directives inside macro arguments are undefined behavior.
 #define SHA1_STEP(func, a, b, c, d, e, wi, k) \
     { \
@@ -152,7 +152,7 @@ public:
     SHA1_EXPAND(w, i) \
     SHA1_STEP(func, a, b, c, d, e, w[(i) & 15], k)
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
     template <typename Ops> struct SHA1State { typename Ops::Vec a, b, c, d, e; };
 
@@ -462,7 +462,7 @@ DECLARE_MULTITARGET_CODE(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function SHA1", arguments[0].column->getName());
     }
 
-    ) // DECLARE_MULTITARGET_CODE
+    ) // DECLARE_X86_64_MULTITARGET_CODE
 
 #undef SHA1_STEP
 #undef SHA1_EXPAND
@@ -774,34 +774,37 @@ public:
 
 #ifndef SHA1_GTEST_UNIT_TEST
 
-/// Runtime dispatch via ImplementationSelector.
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 class FunctionSHA1 : public TargetSpecific::Default::FunctionSHA1Impl
 {
 public:
-    explicit FunctionSHA1(ContextPtr context)
-        : selector(context)
+    explicit FunctionSHA1([[maybe_unused]] ContextPtr context)
     {
 #    if USE_SSL
         if (OpenSSLInitializer::instance().isFIPSEnabled())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #    endif
 
-        selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionSHA1Impl>();
-
-#    if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
+#    if USE_X86_64_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
+            return;
+        }
 #    endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionSHA1Impl>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSHA1>(context); }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 
