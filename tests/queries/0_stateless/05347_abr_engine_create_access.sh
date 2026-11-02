@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
+
+# Creating an `ABR` table copies the columns and keys of its underlying tables, so it requires
+# `SHOW COLUMNS` on every one of them, checked before anything about them is revealed.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP USER IF EXISTS ${user};
+    DROP TABLE IF EXISTS abr_proxy;
+    DROP TABLE IF EXISTS src_1;
+    DROP TABLE IF EXISTS src_10;
+
+    CREATE TABLE src_1 (ts DateTime, account_id String, value UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY ts;
+    CREATE TABLE src_10 (ts DateTime, account_id String, value UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY ts;
+
+    CREATE USER ${user} NOT IDENTIFIED;
+    GRANT CREATE TABLE ON abr_proxy TO ${user};
+    GRANT TABLE ENGINE ON ABR TO ${user};
+"
+
+echo "CREATE without privileges on the underlying tables"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+echo "CREATE with an explicit column list without privileges on the underlying tables"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy (ts DateTime, account_id String, value UInt64) ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+echo "CREATE over underlying tables that do not exist"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('missing', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON src_1 TO ${user}"
+echo "CREATE with privileges on only some of the underlying tables"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'abr_proxy'"
+
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON src_10 TO ${user}"
+echo "CREATE with privileges on all the underlying tables"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))"
+${CLICKHOUSE_CLIENT} --query "SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'abr_proxy' ORDER BY position"
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE abr_proxy;
+    DROP TABLE src_1;
+    DROP TABLE src_10;
+    DROP USER ${user};
+"
