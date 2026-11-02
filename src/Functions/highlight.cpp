@@ -24,7 +24,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
@@ -53,44 +52,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const size_t num_args = arguments.size();
-        if (num_args != 2 && num_args != 4)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 2 or 4 arguments, got {}",
-                getName(), num_args);
-
-        /// Argument 0: haystack — String or FixedString
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected String or FixedString",
-                arguments[0].type->getName(), getName());
-
-        /// Argument 1: needles — const Array(String)
-        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
-        if (!array_type || !isString(array_type->getNestedType()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected const Array(String)",
-                arguments[1].type->getName(), getName());
-
-        /// Arguments 2, 3: open_tag, close_tag — const String
-        if (num_args == 4)
-        {
-            for (size_t i = 2; i <= 3; ++i)
-            {
-                if (!isString(arguments[i].type))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument {} of function {}, expected const String",
-                        arguments[i].type->getName(), i + 1, getName());
-            }
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "(StringOrFixedString, Array(String), [const String, const String]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override

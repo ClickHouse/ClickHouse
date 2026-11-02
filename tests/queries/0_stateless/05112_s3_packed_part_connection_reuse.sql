@@ -23,11 +23,9 @@ SETTINGS max_threads = 1, remote_filesystem_read_method = 'read', load_marks_asy
 
 SYSTEM FLUSH LOGS query_log;
 
--- Only the amount of reuse is checked: how many connections the query has to create depends on how many of them
--- are already sitting in the shared pool, which other queries running at the same time change.
 SELECT
     ProfileEvents['S3GetObject'] >= 20 AS read_all_streams,
-    ProfileEvents['DiskConnectionsReused'] >= 18 AS connections_reused
+    ProfileEvents['DiskConnectionsReset'] <= 2 AS connections_returned
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05112_s3_packed_part_connection_reuse' AND type = 'QueryFinish' AND query_kind = 'Select';
 

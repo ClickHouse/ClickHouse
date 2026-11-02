@@ -109,6 +109,97 @@ UInt64 normalizedQueryHash(const String & query, bool keep_names)
     return normalizedQueryHash(query.data(), query.data() + query.size(), keep_names);
 }
 
+/// same token rules as normalizedQueryHash, but the token hashes are summed, so their order does not matter;
+/// a sum rather than xor, so that a repeated token does not cancel out
+UInt64 normalizedQueryHashUnordered(const char * begin, const char * end)
+{
+    UInt64 sum = 0;
+    Lexer lexer(begin, end);
+
+    /// Coalesce a list of comma separated literals.
+    size_t num_literals_in_sequence = 0;
+    bool prev_comma = false;
+
+    while (true)
+    {
+        Token token = lexer.nextToken();
+
+        if (!token.isSignificant())
+            continue;
+
+        /// Literals.
+        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        {
+            if (0 == num_literals_in_sequence)
+                sum += sipHash64("\x00", 1);
+            ++num_literals_in_sequence;
+            prev_comma = false;
+            continue;
+        }
+        if (token.type == TokenType::Comma)
+        {
+            if (num_literals_in_sequence)
+            {
+                prev_comma = true;
+                continue;
+            }
+        }
+        else
+        {
+            if (num_literals_in_sequence > 1)
+                sum += sipHash64("\x00", 1);
+
+            if (prev_comma)
+                sum += sipHash64(",", 1);
+
+            num_literals_in_sequence = 0;
+            prev_comma = false;
+        }
+
+        /// Slightly normalize something that look like aliases - if they are complex, replace them to `?` placeholders.
+        if (token.type == TokenType::QuotedIdentifier
+            /// Differentiate identifier from function (example: SHA224(x)).
+            || (token.type == TokenType::BareWord && (token.end == end || *token.end != '(')))
+        {
+            /// Identifier is complex if it contains whitespace or more than two digits
+            /// or it's at least 36 bytes long (UUID for example).
+            size_t num_digits = 0;
+
+            const char * pos = token.begin;
+            if (token.size() < 36)
+            {
+                for (; pos != token.end; ++pos)
+                {
+                    if (isWhitespaceASCII(*pos))
+                        break;
+
+                    if (isNumericASCII(*pos))
+                    {
+                        ++num_digits;
+                        if (num_digits > 2)
+                            break;
+                    }
+                }
+            }
+
+            if (pos == token.end)
+                sum += sipHash64(token.begin, token.size());
+            else
+                sum += sipHash64("\x01", 1);
+
+            continue;
+        }
+
+        /// unlike normalizedQueryHash, an error token is hashed as well, and the lexer moves on past it
+        if (token.isEnd())
+            break;
+
+        sum += sipHash64(token.begin, token.size());
+    }
+
+    return sum;
+}
+
 
 void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArray<UInt8> & res_data, bool keep_names)
 {

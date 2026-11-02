@@ -221,6 +221,7 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"promql", Dialect::promql},
      {"polyglot", Dialect::polyglot},
      {"clickhouse_json", Dialect::clickhouse_json},
+     {"logsql", Dialect::logsql},
      {"trino", Dialect::trino}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
@@ -505,6 +506,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"v1", MergeTreeDynamicSerializationVersion::V1},
      {"v2", MergeTreeDynamicSerializationVersion::V2},
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeObjectTypedSharedDataSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreeObjectTypedSharedDataSerializationVersion::V1}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePatchPartsVersion,

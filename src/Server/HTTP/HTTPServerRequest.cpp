@@ -15,6 +15,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <Common/NetException.h>
+#include <Common/checkSSLReturnCode.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 
@@ -32,22 +33,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SOCKET_TIMEOUT;
-}
-
-namespace
-{
-
-/// Writing to such a socket would start the handshake over, on the much larger body timeouts.
-bool secureHandshakePending([[maybe_unused]] const Poco::Net::SocketImpl * socket)
-{
-#if USE_SSL
-    const auto * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
-    return secure_socket && secure_socket->needHandshake();
-#else
-    return false;
-#endif
-}
-
 }
 
 HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
@@ -77,9 +62,10 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     {
         /// Bounds the request line, the URI and the headers. Clearing it restores the body timeouts,
         /// which is also what the error response is written with, so it has to happen while unwinding.
+        /// It can fail there: macOS rejects `setsockopt` on a connection the peer has reset.
         if (headers_read_timeout > Poco::Timespan(0))
             socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
-        SCOPE_EXIT({ socket_in->clearHandshakeTimeout(); });
+        SCOPE_EXIT_SAFE({ socket_in->clearHandshakeTimeout(); });
 
         try
         {
@@ -87,6 +73,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
         }
         catch (const NetException & e)
         {
+            /// Writing the error response would start the timed-out TLS handshake over, on the body timeouts.
             if (e.code() != ErrorCodes::SOCKET_TIMEOUT || secureHandshakePending(socket))
                 throw;
             /// `HTTPServerConnection` answers 400 to this; a `DB` exception escapes its handlers.

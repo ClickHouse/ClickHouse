@@ -1,6 +1,5 @@
 -- Tags: distributed
 
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 
 -- A window function referencing no column of the table expression leaves the shard-side

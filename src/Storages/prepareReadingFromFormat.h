@@ -44,6 +44,13 @@ namespace DB
 
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+        /// True if `format_header` has a hive partition column. Its values in the file are not the values
+        /// of the column, so filters and the top-K threshold must not be pushed into the format.
+        bool formatReadsHivePartitionColumns() const;
+        /// The filter without the conjuncts on hive partition and virtual columns (except row lineage ones if `keep_row_lineage_columns`):
+        /// they are added after the format, and a column of the data file with the same name holds other values.
+        std::shared_ptr<const ActionsDAG> getFormatFilter(
+            const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns = false) const;
         /// A row-level filter (row policy) is not stored here and does not change the headers. The source
         /// applies it via `FormatFilterInfo` and keeps its input columns, because:
         /// - `DEFAULT` expressions are computed after the format applied the filter and can depend on these columns;
@@ -58,6 +65,12 @@ namespace DB
         const Block & source_header,
         const PrewhereInfoPtr & prewhere_info,
         const FilterDAGInfoPtr & row_level_filter);
+
+    /// Whether reading `format_name` pushes the filter down to a `KeyCondition` that needs the
+    /// IN-subquery sets to be materialised before the read starts. Every read step over a file-like
+    /// storage must agree on this, otherwise the pushdown silently becomes a no-op on one
+    /// entrypoint while working on another.
+    bool formatNeedsEagerKeyConditionSets(const String & format_name);
 
     /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
     void prepareEagerKeyConditionSets(

@@ -12,7 +12,7 @@ namespace DB
 struct SettingsConstraintsAndProfileIDs;
 struct Settings;
 
-/// Information about the default settings which are applied to an user on login.
+/// Information about the default settings which are applied to a user on login.
 struct SettingsProfilesInfo
 {
     SettingsChanges settings;

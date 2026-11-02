@@ -65,6 +65,9 @@ public:
       */
     void updateStorage(StoragePtr storage_value, const ContextPtr & context);
 
+    /// Replace the storage that reads the table. Storage id and storage lock stay those of the table.
+    void replaceStorage(StoragePtr storage_value, StorageSnapshotPtr storage_snapshot_value);
+
     /// Get storage
     const StoragePtr & getStorage() const
     {
@@ -167,6 +170,21 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
+    struct CloneTag
+    {
+    };
+
+    /// Construct a copy for `cloneImpl`: the parameterized view query hash is carried over from the
+    /// source node instead of being recomputed, because the traversal of the substituted inner query
+    /// is exactly what the cache is there to avoid, and the analyzer clones subtrees repeatedly.
+    TableNode(
+        CloneTag,
+        StoragePtr storage_,
+        StorageID storage_id_,
+        TableLockHolder storage_lock_,
+        StorageSnapshotPtr storage_snapshot_,
+        std::optional<IASTHash> parameterized_view_query_hash_);
+
     StoragePtr storage;
     StorageID storage_id;
     TableLockHolder storage_lock;

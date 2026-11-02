@@ -83,7 +83,7 @@ We see that we have all our tables, indexes, views, and sequences intact, along 
 - Ensure that the PostgreSQL versions of the source and target databases are compatible.
 Using a pg_dump version older than the source server may lead to missing features or restore issues. Ideally, use the same or newer major version of pg_dump than the source database.
 - Large databases may take a significant amount of time to dump and restore.
-Plan accordingly to minimize downtime, and consider using parallel dumps/restores (--jobs) where supported.
+Plan accordingly to minimize downtime, and consider using parallel dumps/restores (`--jobs`) where supported.
 - Note that pg_dump / pg_restore don't replicate all database-related objects or runtime state.
 These include roles and role memberships, replication slots, server-level configuration (e.g. postgresql.conf, pg_hba.conf), tablespaces, and runtime statistics.
 
