@@ -1264,6 +1264,10 @@ class Targeting:
         )
 
     def get_all_relevant_tests_with_info(self, include_changed_tests=True):
+        # The manifest records the cutoff, but only the failed-tests query and the
+        # coverage snapshots resolve it. In the merge queue neither runs for a
+        # diff without coverage lines, so resolve it here.
+        self.selection_cutoff()
         self.get_diff_text()
         results = []
         changed = []

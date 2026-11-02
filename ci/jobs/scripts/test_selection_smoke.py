@@ -21,6 +21,7 @@ from ci.jobs.scripts.coverage_selection import (
     validate_snapshots,
 )
 from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.test_selection_manifest import selection_manifest
 from ci.jobs.scripts.test_selection_config import (
     INTEGRATION_SELECTION_CONFIG,
     SELECTION_CONFIG,
@@ -190,6 +191,37 @@ class SelectionSmoke(unittest.TestCase):
         self.assertIn("toDateTime('2026-09-04 23:00:00', 'UTC')", times_query)
         self.assertIn(f"toDateTime('{FIXTURE_TIME}', 'UTC')", health_query)
 
+    def test_merge_queue_manifest_without_coverage_lines(self):
+        # A CI-only diff in the merge queue runs neither the failed-tests query
+        # nor the coverage snapshots, yet the manifest still needs the cutoff.
+        info = SimpleNamespace(
+            job_name="Stateless tests",
+            pr_number=1,
+            repo_name="ClickHouse/ClickHouse",
+            is_local_run=False,
+            is_merge_queue_event=True,
+            run_attempt=1,
+            run_id=7,
+            workflow_start_time=1788566400.0,
+            sha="merge-group",
+        )
+        target = Targeting(info)
+        metadata = SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"head": {"sha": "head"}, "base": {"sha": "base"}},
+        )
+        diff = SimpleNamespace(
+            raise_for_status=lambda: None,
+            text="--- a/ci/jobs/fixture.py\n+++ b/ci/jobs/fixture.py\n@@ -1 +1 @@\n-old\n+new\n",
+        )
+        with patch("requests.get", side_effect=[metadata, diff]):
+            tests, _ = target.get_all_relevant_tests_with_info(
+                include_changed_tests=False
+            )
+        self.assertEqual(tests, [])
+        manifest = selection_manifest(target.selection_diagnostics, info)
+        self.assertEqual(manifest["cutoff"], "2026-09-05 00:00:00")
+
     def test_production_path_contract(self):
         for path in canonical_coverage_paths("src/Interpreters/Fixture.cpp"):
             with self.subTest(path=path):
@@ -198,6 +230,7 @@ class SelectionSmoke(unittest.TestCase):
                         job_name="Stateless tests",
                         pr_number=1,
                         is_merge_queue_event=False,
+                        is_local_run=True,
                     )
                 )
                 target._cidb = FixtureCIDB(path)
