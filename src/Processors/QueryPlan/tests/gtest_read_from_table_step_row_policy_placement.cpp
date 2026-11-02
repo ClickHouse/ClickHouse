@@ -79,5 +79,7 @@ TEST(ReadFromTableStepRowPolicyPlacement, StepVersionOneOnlyTowardsAPeerThatKnow
     registerReadFromTableStep(registry);
     /// 26.9 writes global version 19.
     EXPECT_EQ(registry.versionToWrite("ReadFromTable", 19), 0);
+    /// 26.10 writes global version 20 and knows only version 0 of the step.
+    EXPECT_EQ(registry.versionToWrite("ReadFromTable", 20), 0);
     EXPECT_EQ(registry.versionToWrite("ReadFromTable", DBMS_QUERY_PLAN_SERIALIZATION_VERSION), 1);
 }
