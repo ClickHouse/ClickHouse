@@ -769,6 +769,10 @@ def main():
                     f"test \"$(readelf -d {build_dir_normalized}/programs/clickhouse 2>/dev/null | grep -c '(NEEDED)')\" = 0",
                     f'test "$(readelf -l {build_dir_normalized}/programs/self-extracting/clickhouse-stripped | grep -c INTERP)" = 0',
                     f"test \"$(readelf -d {build_dir_normalized}/programs/self-extracting/clickhouse-stripped 2>/dev/null | grep -c '(NEEDED)')\" = 0",
+                    # The static PIE must keep the pad section of cmake/linux/static_pie_pad.ld, which moves
+                    # the code out of the top of the address space; losing it costs 15-20% on Sapphire Rapids
+                    # without any build error.
+                    f"test \"$(readelf -SW {build_dir_normalized}/programs/self-extracting/clickhouse-stripped | grep -c '\\.clickhouse\\.pad ')\" = 1",
                 ],
             )
         )

@@ -19,9 +19,11 @@
    (and almost never in that range), so nothing changes there.
 
    The section's single byte comes from cmake/linux/static_pie_pad.c; a section without an input section
-   would be folded into the writable segment and turn the gap into 4 GiB of `.bss`. */
+   would be folded into the writable segment and turn the gap into 4 GiB of `.bss`. Nothing references
+   that byte, so KEEP is required: the binary is linked with --gc-sections, which would otherwise drop
+   the input section, leave the output section empty and silently remove the pad. */
 SECTIONS
 {
-    .clickhouse.pad 0x100000000 : { *(.clickhouse.pad) }
+    .clickhouse.pad 0x100000000 : { KEEP(*(.clickhouse.pad)) }
 }
 INSERT AFTER .bss;
