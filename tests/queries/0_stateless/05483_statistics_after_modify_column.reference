@@ -8,3 +8,12 @@ converted, before the alter:	1
 converted, stored type:	DateTime(\'UTC\')
 converted, group by:	1
 2024-01-01	10000
+stored type:	t_stale_first	1	Int32
+stored type:	t_stale_first	2	Int64
+stored type:	t_stale_second	1	Int64
+stored type:	t_stale_second	2	Int32
+stale first, group by:	1
+stale second, group by:	1
+inserted after, stored type:	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3, \'d\' = 4)
+inserted after, stored type:	Int8
+inserted after, group by:	1

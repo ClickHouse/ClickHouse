@@ -1185,7 +1185,7 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
 }
 
 ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
-    const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const
+    const RangesInDataParts & parts, const Names & required_columns, const StorageMetadataPtr & metadata, ContextPtr local_context) const
 {
     if (!local_context->getSettingsRef()[Setting::use_statistics])
         return nullptr;
@@ -1203,7 +1203,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     /// The statistics are loaded in parallel, and merged in the order of parts, so that the estimator does not depend on the scheduling.
     /// The statistics of a part are released right after merging, so only the statistics of one batch of parts are held at once.
     std::vector<ColumnsStatistics> parts_statistics(parts.size());
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context, metadata);
     loadStatisticsOfPartsInParallel(
         parts.size(),
         local_context->getSettingsRef()[Setting::max_threads],

@@ -5,6 +5,9 @@
 
 DROP TABLE IF EXISTS t_metadata_only;
 DROP TABLE IF EXISTS t_converted;
+DROP TABLE IF EXISTS t_stale_first;
+DROP TABLE IF EXISTS t_stale_second;
+DROP TABLE IF EXISTS t_inserted_after;
 
 -- Pinned (randomized in CI): the statistics must be built and used.
 SET use_statistics = 1;
@@ -60,5 +63,61 @@ SELECT 'converted, group by:', countIf(explain LIKE '%Aggregating%(rows: ~1000.0
 
 SELECT d, count() FROM t_converted GROUP BY d ORDER BY d;
 
+-- The parts may store the column with different types. Their statistics cannot be merged, so only the parts of
+-- one type contribute: those of the current type, whatever the part order.
+
+-- `Int32` -> `Int64`: a partition is detached during the `ALTER` and keeps the `Int32` column and statistics. The
+-- rewritten partition has 10 distinct values, the stale one 1000. The stale partition is the first part of
+-- `t_stale_first` and the second part of `t_stale_second`.
+CREATE TABLE t_stale_first (p UInt8, k Int32) ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
+INSERT INTO t_stale_first SELECT 1, number % 1000 FROM numbers(10000);
+INSERT INTO t_stale_first SELECT 2, number % 10 FROM numbers(10000);
+ALTER TABLE t_stale_first DETACH PARTITION 1;
+ALTER TABLE t_stale_first MODIFY COLUMN k Int64;
+ALTER TABLE t_stale_first ATTACH PARTITION 1;
+
+CREATE TABLE t_stale_second (p UInt8, k Int32) ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
+INSERT INTO t_stale_second SELECT 1, number % 10 FROM numbers(10000);
+INSERT INTO t_stale_second SELECT 2, number % 1000 FROM numbers(10000);
+ALTER TABLE t_stale_second DETACH PARTITION 2;
+ALTER TABLE t_stale_second MODIFY COLUMN k Int64;
+ALTER TABLE t_stale_second ATTACH PARTITION 2;
+
+SELECT 'stored type:', table, partition, type FROM system.parts_columns
+WHERE database = currentDatabase() AND table IN ('t_stale_first', 't_stale_second') AND active AND column = 'k'
+ORDER BY table, partition;
+
+SELECT 'stale first, group by:', countIf(explain LIKE '%Aggregating%(rows: ~10.0,%') > 0 FROM (
+    EXPLAIN estimates = 1 SELECT k, count() FROM t_stale_first GROUP BY k
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+SELECT 'stale second, group by:', countIf(explain LIKE '%Aggregating%(rows: ~10.0,%') > 0 FROM (
+    EXPLAIN estimates = 1 SELECT k, count() FROM t_stale_second GROUP BY k
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+-- After the metadata-only `Enum8` -> `Int8`, the part inserted before keeps `Enum8` statistics, and the part
+-- inserted after gets `Int8` statistics. Merges are stopped to keep both parts.
+CREATE TABLE t_inserted_after (k UInt64, e Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4)) ENGINE = MergeTree ORDER BY k
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
+SYSTEM STOP MERGES t_inserted_after;
+INSERT INTO t_inserted_after SELECT number, number % 4 + 1 FROM numbers(10000);
+ALTER TABLE t_inserted_after MODIFY COLUMN e Int8;
+INSERT INTO t_inserted_after SELECT number, number % 4 + 1 FROM numbers(10000);
+
+SELECT 'inserted after, stored type:', type FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_inserted_after' AND active AND column = 'e' ORDER BY name;
+
+SELECT 'inserted after, group by:', countIf(explain LIKE '%Aggregating%(rows: ~4.0,%') > 0 FROM (
+    EXPLAIN estimates = 1 SELECT e, count() FROM t_inserted_after GROUP BY e
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
 DROP TABLE t_metadata_only;
 DROP TABLE t_converted;
+DROP TABLE t_stale_first;
+DROP TABLE t_stale_second;
+DROP TABLE t_inserted_after;

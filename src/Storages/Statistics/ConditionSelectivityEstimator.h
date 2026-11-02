@@ -165,7 +165,9 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    /// `metadata_` is the current structure of the table. With it, the builder skips the statistics that do not
+    /// describe the current column types and prefers those of the current types, see `addStatistics`.
+    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_, StorageMetadataPtr metadata_ = nullptr);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     /// See `ColumnStatistics::setCardinality`; the column must have statistics.
@@ -173,10 +175,14 @@ public:
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:
+    void startColumn(const String & column_name, const ColumnStatisticsPtr & column_stats);
+
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
-    /// Columns whose parts carry statistics for different data types. They get no statistics, see `addStatistics`.
-    NameSet columns_with_mixed_types;
+    StorageMetadataPtr metadata;
+    /// Columns whose parts carry statistics of different outdated types. They get no statistics unless a part
+    /// carries statistics of the current type, see `addStatistics`.
+    NameSet columns_with_conflicting_types;
 };
 
 }

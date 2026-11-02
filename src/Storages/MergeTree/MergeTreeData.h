@@ -593,7 +593,8 @@ public:
     /// `MaterializedView`, `Buffer`) delegating the read to this table forwards the question.
     bool supportedPrewhereColumnsIncludeSubcolumns() const override { return true; }
 
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(
+        const RangesInDataParts & parts, const Names & required_columns, const StorageMetadataPtr & metadata, ContextPtr local_context) const override;
 
     /// Calls `load_part(part_index)` for every part index in `[0, num_parts)`, using up to `max_threads`
     /// threads, and `consume_part(part_index)` for every part index in their order in the calling thread.

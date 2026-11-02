@@ -396,7 +396,8 @@ bool IStorage::supportsSampling() const
     return storage_metadata_snapshot->hasSamplingKey();
 }
 
-ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const
+ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(
+    const RangesInDataParts &, const Names &, const StorageMetadataPtr &, ContextPtr) const
 {
     return nullptr;
 }

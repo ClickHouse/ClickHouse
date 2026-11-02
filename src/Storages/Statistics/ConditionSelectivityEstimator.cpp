@@ -635,8 +635,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
-ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_, StorageMetadataPtr metadata_)
     : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
+    , metadata(std::move(metadata_))
 {
 }
 
@@ -654,37 +655,69 @@ static bool haveSameDataType(const ColumnStatistics & lhs, const ColumnStatistic
     return lhs_type && rhs_type && lhs_type->getName() == rhs_type->getName();
 }
 
+/// Whether `stats` were built for the current type of the column, compared by name like in `haveSameDataType`.
+static bool hasCurrentType(const StorageMetadataPtr & metadata, const ColumnStatistics & stats, const String & column_name)
+{
+    if (!metadata)
+        return false;
+
+    const auto * column = metadata->getColumns().tryGet(column_name);
+    const auto stats_type = stats.getDataType();
+    return column && stats_type && column->type->getName() == stats_type->getName();
+}
+
+void ConditionSelectivityEstimatorBuilder::startColumn(const String & column_name, const ColumnStatisticsPtr & column_stats)
+{
+    /// The statistics of a part are shared through the statistics cache, so they are never merged into
+    /// in place: the estimator accumulates the parts into its own copy, starting from an empty one of
+    /// the same structure.
+    auto stats = column_stats->cloneEmpty();
+    stats->merge(column_stats);
+    estimator->column_estimators[column_name].stats = std::move(stats);
+}
+
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
     if (column_stats == nullptr)
         return;
 
     has_data = true;
-    if (columns_with_mixed_types.contains(column_name))
+
+    /// The estimates reject statistics that do not describe the values of the current type. Skip them here
+    /// already, so that they do not take the place of usable ones.
+    if (!isCompatibleStatistics(metadata, column_stats, column_name))
         return;
 
-    auto & column_estimator = estimator->column_estimators[column_name];
+    const bool is_current_type = hasCurrentType(metadata, *column_stats, column_name);
+    auto it = estimator->column_estimators.find(column_name);
+    if (it == estimator->column_estimators.end())
+    {
+        if (is_current_type || !columns_with_conflicting_types.contains(column_name))
+            startColumn(column_name, column_stats);
+        return;
+    }
 
-    /// The statistics of a part are shared through the statistics cache, so they are never merged into
-    /// in place: the estimator accumulates the parts into its own copy, starting from an empty one of
-    /// the same structure.
-    if (column_estimator.stats == nullptr)
+    auto & stats = it->second.stats;
+    if (stats->structureEquals(*column_stats))
     {
-        column_estimator.stats = column_stats->cloneEmpty();
-        column_estimator.stats->merge(column_stats);
+        stats->merge(column_stats);
     }
-    else if (column_estimator.stats->structureEquals(*column_stats))
+    else if (!haveSameDataType(*stats, *column_stats))
     {
-        column_estimator.stats->merge(column_stats);
-    }
-    else if (!haveSameDataType(*column_estimator.stats, *column_stats))
-    {
-        /// The parts disagree on the column type: an `ALTER TABLE ... MODIFY COLUMN` is not materialized in all of
-        /// them yet. Statistics of either type would cover only some of the parts while `total_rows` counts all of
-        /// them, and which type is kept would depend on the part order - a mutation rewrites the leading parts
-        /// first. Drop the column for the whole snapshot instead.
-        estimator->column_estimators.erase(column_name);
-        columns_with_mixed_types.insert(column_name);
+        /// The parts store the column with different types: after `ALTER TABLE ... MODIFY COLUMN` until a mutation
+        /// or a merge rewrites them, e.g. the parts inserted after a metadata-only conversion and the parts from
+        /// before it, or a part attached with an old type. Statistics of different types cannot be merged, so only
+        /// the parts of one type contribute. To not depend on the part order, the current type is preferred: all
+        /// parts get it eventually. Without it, two outdated types are equally good, so the column gets none.
+        if (is_current_type)
+        {
+            startColumn(column_name, column_stats);
+        }
+        else if (!hasCurrentType(metadata, *stats, column_name))
+        {
+            estimator->column_estimators.erase(it);
+            columns_with_conflicting_types.insert(column_name);
+        }
     }
     /// else: the same type with a different set of statistics, e.g. a `MODIFY STATISTICS` that is not
     /// materialized in all parts yet. The states cannot be merged, so this part's statistics are skipped and
