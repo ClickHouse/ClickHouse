@@ -81,7 +81,7 @@ bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
 struct DataObjectInfo : public DB::ObjectInfo
 {
     DataObjectInfo(std::string path_, int64_t size_)
-        : DB::ObjectInfo(std::move(path_))
+        : DB::ObjectInfo(DB::RelativePathWithMetadata(std::move(path_)))
         , size(size_)
     {
     }
