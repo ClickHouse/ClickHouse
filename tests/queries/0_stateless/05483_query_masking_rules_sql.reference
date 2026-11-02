@@ -1,10 +1,6 @@
 -- masking of the server logs, query_log and exception messages
 server log masked
 [qmr_masked]
--- config rules are applied before SQL rules
-[qmr_after_config]
--- SQL rules are applied in the order of their names
-[qmr_ordered]
 -- ALTER
 [qmr_new]
 <db>_r1_renamed	[qmr_new]
@@ -28,5 +24,7 @@ ACCESS_DENIED
 <db>_r1_renamed
 -- query_log
 select masked	1	0
+config rules first	1	0
+ordered by name	1	0
 create hides the regexp	3	0
 not masked after drop	1

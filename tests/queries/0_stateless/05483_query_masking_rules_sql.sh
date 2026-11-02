@@ -42,17 +42,15 @@ grep -qF "SELECT '[qmr_masked]' AS c1" <<< "$logs" && echo "server log masked"
 grep -qF "qmr_secret_${db}" <<< "$logs" && echo "server log leaked"
 error_text $CLICKHOUSE_CLIENT -q "SELECT throwIf(1, 'qmr_secret_${db}')" | grep -oF -e "[qmr_masked]" -e "qmr_secret_${db}" | LC_ALL=C sort -u | normalize
 
-echo "-- config rules are applied before SQL rules"
-$CLICKHOUSE_CLIENT -q "CREATE QUERY MASKING RULE \`${db}_cfg\` REGEXP '.hidden._qmr_${db}' REPLACE '[qmr_after_config]'"
-trace_logs "SELECT 'TOPSECRET=TOPSECRET_qmr_${db}' AS c3 FORMAT Null" | grep -oF -e "[qmr_after_config]" -e "_qmr_${db}" | LC_ALL=C sort -u | normalize
-
-echo "-- SQL rules are applied in the order of their names"
+# The order of the rules is checked in query_log below: a server log line is masked once more when it is written.
 $CLICKHOUSE_CLIENT -m -q "
+    CREATE QUERY MASKING RULE \`${db}_cfg\` REGEXP '.hidden._qmr_${db}' REPLACE '[qmr_after_config]';
+    SELECT 'TOPSECRET=TOPSECRET_qmr_${db}' AS c3 FORMAT Null;
     CREATE QUERY MASKING RULE \`${db}_ord_2\` REGEXP 'qmr_stage_${db}' REPLACE '[qmr_ordered]';
     CREATE QUERY MASKING RULE \`${db}_ord_1\` REGEXP 'qmr_order_${db}' REPLACE 'qmr_stage_${db}';
+    SELECT 'qmr_order_${db}' AS c4 FORMAT Null;
+    DROP QUERY MASKING RULE \`${db}_cfg\`, \`${db}_ord_1\`, \`${db}_ord_2\`;
 "
-trace_logs "SELECT 'qmr_order_${db}' AS c4 FORMAT Null" | grep -oF -e "[qmr_ordered]" -e "qmr_stage_${db}" -e "qmr_order_${db}" | LC_ALL=C sort -u | normalize
-$CLICKHOUSE_CLIENT -q "DROP QUERY MASKING RULE \`${db}_cfg\`, \`${db}_ord_1\`, \`${db}_ord_2\`"
 
 echo "-- ALTER"
 $CLICKHOUSE_CLIENT -q "ALTER QUERY MASKING RULE \`${db}_r1\` REPLACE '[qmr_new]'"
@@ -105,6 +103,10 @@ $CLICKHOUSE_CLIENT -q "SELECT 'qmr_secret_${db}' AS c9 FORMAT Null"
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS query_log;
     SELECT 'select masked', countIf(position(query, ' AS c1 ') > 0 AND position(query, '[qmr_masked]') > 0), countIf(position(query, ' AS c1 ') > 0 AND position(query, 'qmr_secret_${db}') > 0)
+    FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select';
+    SELECT 'config rules first', countIf(position(query, ' AS c3 ') > 0 AND position(query, '[qmr_after_config]') > 0), countIf(position(query, ' AS c3 ') > 0 AND position(query, '_qmr_${db}') > 0)
+    FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select';
+    SELECT 'ordered by name', countIf(position(query, ' AS c4 ') > 0 AND position(query, '[qmr_ordered]') > 0), countIf(position(query, ' AS c4 ') > 0 AND position(query, 'qmr_stage_${db}') > 0)
     FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select';
     SELECT 'create hides the regexp', countIf(position(query, 'REGEXP \'[HIDDEN]\'') > 0), countIf(position(query, 'qmr_secret_${db}') > 0)
     FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Create' AND position(query, '${db}_r1') > 0;
