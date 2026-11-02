@@ -31,7 +31,7 @@ ALTER TABLE t_readd_nested DROP COLUMN n, ADD COLUMN IF NOT EXISTS n.a UInt8;
 DESC TABLE t_readd_nested;
 DROP TABLE t_readd_nested;
 
--- Mirror: ADD expands the group first, then dropping the group name removes the added child too.
+-- Mirror with `IF EXISTS`: there is no exact column `n`, only `n.a`, so the drop is a no-op and `n.a` stays.
 DROP TABLE IF EXISTS t_readd_nested_mirror;
 CREATE TABLE t_readd_nested_mirror (id UInt8) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE t_readd_nested_mirror ADD COLUMN IF NOT EXISTS n.a UInt8, DROP COLUMN IF EXISTS n;

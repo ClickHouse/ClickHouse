@@ -723,8 +723,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
 
 /// The exact set of columns an ADD COLUMN command materializes: flatten_nested expansion plus the
-/// IF NOT EXISTS existence filter. Shared by AlterCommand::apply and AlterCommands::validate so both
-/// model the identical schema (an earlier drift here caused apply/validate to disagree on nested adds).
+/// IF NOT EXISTS existence filter. Shared by prepare, validate and apply so all three model the
+/// identical schema (an earlier drift here caused apply/validate to disagree on nested adds).
 /// Returns empty when the command is a whole-command no-op (IF NOT EXISTS and the column already exists).
 static std::vector<ColumnDescription> columnsAddedByAlter(
     const ColumnsDescription & existing_columns,
@@ -2047,15 +2047,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                             "in a single ALTER query");
                     }
 
-                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
-                    /// fail explicitly instead of silently dropping the modification.
+                    /// `ADD ENUM VALUES` merges against the column type in the working snapshot. A preceding
+                    /// `ADD COLUMN` in this statement puts that column there. If it is still absent, fail
+                    /// instead of dropping the modification.
                     if (!has_column)
                         throw Exception(
                             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
-                            "column created in the same ALTER statement is not supported.",
+                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table.",
                             backQuote(command.column_name));
 
                 }
