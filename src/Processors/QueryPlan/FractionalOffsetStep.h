@@ -19,8 +19,6 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    QueryPlanStepPtr clone() const override;
-
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 

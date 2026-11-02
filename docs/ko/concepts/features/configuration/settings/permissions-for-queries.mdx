@@ -3,132 +3,73 @@ description: '쿼리 권한 설정입니다.'
 sidebarTitle: '쿼리 권한'
 slug: /operations/settings/permissions-for-queries
 title: '쿼리 권한'
-doc_type: 'reference'
+doc_type: '참고'
 ---
 
 ClickHouse의 쿼리는 여러 유형으로 나눌 수 있습니다:
 
 1. 데이터 읽기 쿼리: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-2. 데이터 쓰기 쿼리: `INSERT`, `OPTIMIZE`, [`DELETE`](/ko/reference/statements/delete), [`UPDATE`](/ko/reference/statements/update), `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`.
+2. 데이터 쓰기 쿼리: `INSERT`, `OPTIMIZE`.
 3. 설정 변경 쿼리: `SET`, `USE`.
-4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리: `CREATE`, `ALTER`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`, `TRUNCATE`.
-5. 접근 관리 쿼리: [`GRANT`](/ko/reference/statements/grant), [`REVOKE`](/ko/reference/statements/revoke), 그리고 사용자, 역할, 행 정책, 마스킹 정책, 쿼터 및 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP`. [액세스 제어 및 계정 관리](/ko/concepts/features/security/access-rights)를 참조하십시오.
-6. `KILL QUERY`.
-
-`ALTER TABLE ... DELETE`와 `ALTER TABLE ... UPDATE`는 테이블 메타데이터가 아니라 데이터를 변경하므로,
-위에서 데이터 쓰기 쿼리로 분류되어 있습니다. 이들은 `ALTER DELETE` 및 `ALTER UPDATE` 권한을 필요로 하며,
-이는 단독으로 사용되는 `DELETE` 및 `UPDATE` SQL 문이 요구하는 권한과 동일합니다. 해당 권한은 `ALTER TABLE`
-권한 그룹에 속하므로, `allow_ddl = 0`이면 영속 테이블에 대한 이 네 가지 SQL 문이 모두 거부됩니다.
+4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
 
 다음 설정은 쿼리 유형에 따라 사용자 권한을 제어합니다:
 
-## readonly {#readonly}
+<div id="readonly">
+  ## readonly
+</div>
 
-세션이 실행할 수 있는 쿼리를 제한합니다. 이 설정의 값, 기본값, 그리고 각 값에서 변경할 수 있는 설정 항목은
-[설정 참고](/ko/reference/settings/session-settings/other#readonly)에 설명되어 있습니다. 이 섹션에서는 각 값이
-어떤 종류의 쿼리를 허용하는지 설명합니다.
+데이터 읽기, 데이터 쓰기 및 설정 변경 쿼리에 대한 권한을 제한합니다.
 
-1로 설정하면 다음과 같은 쿼리가 허용됩니다.
+1로 설정하면 다음이 허용됩니다.
 
-* 읽기 쿼리(`SELECT` 및 이에 준하는 쿼리).
-* 세션 컨텍스트만 변경하는 쿼리(`USE` 등).
+* 모든 유형의 읽기 쿼리(예: SELECT 및 이에 해당하는 쿼리)
+* 세션 컨텍스트만 수정하는 쿼리(예: USE)
 
-2로 설정하면 위 항목에 더해 `SET`, `CREATE TEMPORARY TABLE`, `RESTORE`가 허용됩니다. `RESTORE`는 테이블을
-생성하고 데이터를 적재할 수 있으므로, `readonly = 2`만으로는 세션의 쓰기 작업을 막을 수 없습니다.
-`readonly = 1`에서는 이를 거부합니다.
+2로 설정하면 위 항목에 더해 다음이 허용됩니다.
 
-`BACKUP`은 값에 관계없이 `readonly`의 제한을 받지 않습니다. 테이블을 백업할 권한이 있는 세션은
-`readonly = 1`에서도 백업을 기록할 수 있습니다. 백업을 막는 수단으로 `readonly`에 의존하지 마십시오.
+* SET 및 CREATE TEMPORARY TABLE
 
-대부분의 테이블 함수는 `CREATE TEMPORARY TABLE` 권한이 필요하므로, 테이블 함수에서 읽는 `SELECT`는
-`readonly = 1`에서는 거부되지만 `readonly = 2`에서는 거부되지 않습니다. `numbers`와 같은 일부 함수는
-읽기 전용 모드에서도 허용됩니다.
+<Tip>
+  EXISTS, DESCRIBE, EXPLAIN, SHOW PROCESSLIST 등의 쿼리는 시스템 테이블(system tables)에서 select만 수행하므로 SELECT와 동일합니다.
+</Tip>
 
-0보다 큰 값에서는 영속 테이블에 대해 다음 작업이 모두 허용되지 않습니다. 데이터 쓰기 쿼리
-(`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) 및 DDL
-쿼리(`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE TABLE`). `SYSTEM` 그룹의 권한이 필요한 `SYSTEM` SQL 문과 사용자, 역할, ROW POLICY,
-masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` 역시 허용되지 않습니다.
-단, 명명된 컬렉션 관리는 예외입니다. `readonly`는 `CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION`,
-`DROP NAMED COLLECTION`을 제한하지 않습니다.
+Possible values:
 
-`GRANT`로 권한을 부여하는 것도 거부되지만, 모든 접근 관리 SQL 문이 그런 것은 아닙니다. 로컬 `REVOKE`와
-`GRANT CURRENT GRANTS`는 `readonly`의 게이트를 받지 않으므로, 읽기 전용 세션도 grant option과 함께 보유한
-권한을 회수하거나 자신의 권한 부여를 다른 사용자에게 전파할 수 있습니다.
-`ON CLUSTER`로 권한을 회수하는 것은 거부됩니다.
+* 0 — 읽기, 쓰기 및 설정 변경 쿼리가 허용됩니다.
+* 1 — 데이터 읽기 쿼리만 허용됩니다.
+* 2 — 데이터 읽기 및 설정 변경 쿼리가 허용됩니다.
 
-임시 테이블은 두 설정 모두에서 예외입니다. 임시 테이블을 생성할 수 있는 세션은 해당 테이블을 `ALTER`하고,
-데이터를 삽입하고, 삭제할 수도 있습니다.
+기본값: 0
 
 <Note>
-  [HTTP 인터페이스](/ko/concepts/features/interfaces/http)에서는 메서드가 `POST`가 아닌 요청은 유효 값이
-  원래 0이었다면 `readonly = 2`로 실행됩니다. 사용자 설정이나 설정 프로필을 통해 이미 더 엄격한 값이
-  지정되어 있다면 그 값이 유지됩니다. `PUT`과 `DELETE`는 이를 허용하는 SQL로 정의된
-  [handler](/ko/reference/statements/create/handler)에 도달할 때 예외이므로, 유효 `readonly` 값이 0일 때
-  이러한 요청으로 데이터를 수정할 수 있습니다. 그 외에는 데이터를 수정할 때 `POST` 메서드를 사용하십시오.
+  `readonly = 1`로 설정한 후에는 현재 세션(session)에서 사용자가 `readonly` 및 `allow_ddl` 설정을 변경할 수 없습니다.
 
-  이렇게 값이 상향된 요청에서는 쿼리 문자열의 `readonly` 매개변수가 이미 해당 요청에 적용된 값과 동일하지 않은 한
-  `Cannot modify 'readonly' setting in readonly mode` 오류와 함께 거부됩니다.
+  [HTTP 인터페이스](/ko/concepts/features/interfaces/http)에서 `GET` 메서드를 사용하면 `readonly = 1`이 자동으로 설정됩니다. 데이터를 수정하려면 `POST` 메서드를 사용하세요.
 
-  특정 설정만 변경하지 못하도록 금지하는 방법과, `readonly = 1` 제한에서 특정 설정만 변경할 수 있도록 허용하는
-  방법도 있습니다. 자세한 내용은
-  [설정에 대한 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)을 참조하십시오.
-  이 문서에서는 `readonly` 설정 자체를
-  [읽기 전용 모드에서 변경 가능하게](/ko/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly)
-  만들지 않도록 권장하고 있습니다.
+  `readonly = 1`로 설정하면 사용자가 설정을 변경할 수 없습니다. 특정 설정만 변경하지 못하도록 제한하는 방법도 있습니다. 또한 `readonly = 1` 제한하에서도 특정 설정만 변경할 수 있도록 허용하는 방법이 있습니다. 자세한 내용은 [설정 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)을 참조하세요.
 </Note>
 
-## allow_ddl {#allow_ddl}
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
 
-데이터베이스, 테이블, 뷰, 딕셔너리, 사용자 정의 함수, workload, resource 및 SQL-defined handler에 대한 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리를 허용하거나 거부합니다.
+[DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리를 허용하거나 금지합니다.
 
 가능한 값:
 
-* 0 — 다음 권한 중 하나라도 필요한 영속 객체에 대한 쿼리 실행이 차단됩니다: `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`,
-  `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`,
-  `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
-  `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
-  `ATTACH`, `DETACH` 역시 이러한 권한을 요구하므로 함께 차단됩니다. 다만
-  `ALTER TABLE ... ATTACH PARTITION`과 `ATTACH PART`는 `INSERT`만 필요하므로 이 설정으로는
-  차단되지 않으며, 대신 `readonly`가 영속 테이블에서 이를 차단합니다.
-  `ATTACH PARTITION ... FROM`은 `ALTER DELETE`도 필요하므로 차단됩니다. 이러한 권한의
-  grant 및 revoke는 차단되지 않습니다.
-* 1 — 이 설정으로 차단되는 것이 없습니다.
+* 0 — DDL 쿼리가 허용되지 않습니다.
+* 1 — DDL 쿼리가 허용됩니다.
 
 기본값: 1
 
 <Note>
-  현재 세션에서 `allow_ddl = 0`이면 `SET allow_ddl = 1`을 실행할 수 없습니다.
-
-  `allow_ddl`은 접근 관리 쿼리를 제한하지 않습니다. `GRANT`, `REVOKE`와 사용자, 역할,
-  row policy, masking policy, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP`은 이 설정의
-  영향을 받지 않습니다. `CREATE TEMPORARY TABLE`과 명명된 컬렉션 관리도 영향을 받지 않으며,
-  `readonly` 역시 제한하지 않는 `ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT`,
-  `UNDROP TABLE`도 마찬가지입니다. 사용자, 역할 또는 설정 프로필의 `CREATE`나 `ALTER` 구문 안에서는
-  현재 세션이 `allow_ddl = 0`인 동안 `SETTINGS allow_ddl = 1` 절이 거부되고,
-  `SETTINGS allow_ddl = 0` 절은 허용됩니다. 내장 설정은 세션 자체의 설정 constraint를 기준으로 검사되며,
-  `SET allow_ddl = 1`이 거부되는 것도 같은 이유입니다.
+  현재 세션(session)에서 `allow_ddl = 0`이면 `SET allow_ddl = 1`을 실행할 수 없습니다.
 </Note>
 
 <Info>
   **KILL QUERY**
 
-  자신의 쿼리를 kill할 때는 `KILL QUERY` 권한가 필요하지 않으므로, `readonly`와 `allow_ddl`의
-  어떤 조합에서도 동작합니다. 단, `system.processes`에 대한 `SELECT`는 필요합니다. 다만
-  `KILL QUERY WHERE query_id = '<id>'`는 해당 테이블을 읽지 않고 해당 id를 가진 자신의 쿼리를 취소하므로 예외입니다. 다른 사용자의 쿼리를
-  kill하거나 `KILL QUERY ... ON CLUSTER`를 실행하려면 `KILL QUERY` 권한가 필요하며,
-  `readonly = 1`과 `readonly = 2`는 이를 거부합니다.
+  `KILL QUERY`는 readonly 및 allow&#95;ddl 설정값의 조합과 관계없이 수행할 수 있습니다.
 </Info>
-
-## 그 밖의 관련 설정 {#other-relevant-settings}
-
-* [`allow_introspection_functions`](/ko/reference/settings/session-settings/allow#allow_introspection_functions)
-  는 `readonly`, `allow_ddl`과 함께 권한 판단 자체에 관여하는 세 번째 설정입니다. 이 설정이 비활성화되면
-  인트로스펙션 함수 실행이 차단됩니다. 다만 `INTROSPECTION` 권한 부여는 차단되지 않습니다.
-* [`allow_non_metadata_alters`](/ko/reference/settings/session-settings/allow#allow_non_metadata_alters)
-  는 권한 설정은 아니지만 `ALTER TABLE`을 한층 더 제한합니다. 이 설정이 비활성화되면 `MergeTree` 계열 테이블에서
-  테이블 정의를 변경하는 명령이 디스크의 데이터를 재작성하게 되는 경우(`DROP COLUMN`, `RENAME COLUMN`,
-  `MODIFY COLUMN` 타입 변경, `MODIFY TTL`) 해당 명령이 거부됩니다.
-  `CLEAR COLUMN`, `CLEAR INDEX`, `CLEAR PROJECTION`은 정의를 바꾸지 않는데도 마찬가지로 거부됩니다.
-  `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`, `ALTER TABLE ... MATERIALIZE INDEX`처럼
-  그 자체가 뮤테이션인 SQL 문은 영향을 받지 않습니다.

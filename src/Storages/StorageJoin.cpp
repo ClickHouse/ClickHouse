@@ -14,8 +14,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -152,11 +150,7 @@ void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
     size_t dummy = current_bytes;
-    {
-        /// Table data belongs to the server, not to the query releasing it.
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join->shrinkStoredBlocksToFit(dummy, true);
-    }
+    join->shrinkStoredBlocksToFit(dummy, true);
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -177,10 +171,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
-    }
+    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -217,7 +208,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, block.rows(), JoinBuildContext::serial());
+            new_data->addBlockToJoin(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -226,11 +217,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    {
-        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join = std::move(new_data);
-    }
-    setCurrentQueryMemoryDriftExpected();
+    join = std::move(new_data);
     increment = 1;
 
     if (persistent)
@@ -354,7 +341,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
+    join->addBlockToJoin(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -363,43 +350,11 @@ size_t StorageJoin::getSize(ContextPtr context) const
     return join->getTotalRowCount();
 }
 
-namespace
-{
-
-/// Whether a read of the table returns every stored row of a key rather than one row per key.
-constexpr bool readsAllRowsOfKey(JoinKind kind, JoinStrictness strictness)
-{
-    return strictness == JoinStrictness::All || (kind == JoinKind::Right && strictness != JoinStrictness::RightAny);
-}
-
-}
-
 std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
-    if (!readsAllRowsOfKey(join->getKind(), join->getStrictness()))
-        return join->getTotalRowCount();
-
-    /// getTotalRowCount counts keys, so the rows of each key are summed here.
-    const auto data = join->getJoinedData();
-    const auto * maps = std::get_if<HashJoin::MapsAll>(&data->maps.front());
-    if (!maps)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin keeps every row of a key in a map that is not MapsAll");
-
-    UInt64 rows = 0;
-    switch (data->type)
-    {
-#define M(TYPE) \
-        case HashJoin::Type::TYPE: \
-            if (maps->TYPE) \
-                for (const auto & cell : *maps->TYPE) \
-                    rows += cell.getMapped().rows(); \
-            break;
-        APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
-    }
-    return rows;
+    return join->getTotalRowCount();
 }
 
 std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
@@ -585,7 +540,6 @@ void registerStorageJoin(StorageFactory & factory)
     factory.registerStorage(
         "Join",
         creator_fn,
-        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = has_builtin_fn,
@@ -1024,12 +978,37 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == JoinStrictness::Asof)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
-            else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS))
-                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            else
+            if constexpr (STRICTNESS == JoinStrictness::RightAny)
+            {
                 fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+            }
+            else if constexpr (STRICTNESS == JoinStrictness::All)
+            {
+                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+            }
+            else if constexpr (STRICTNESS == JoinStrictness::Any)
+            {
+                if constexpr (KIND == JoinKind::Left || KIND == JoinKind::Inner)
+                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+                else if constexpr (KIND == JoinKind::Right)
+                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+            }
+            else if constexpr (STRICTNESS == JoinStrictness::Semi)
+            {
+                if constexpr (KIND == JoinKind::Left)
+                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+                else if constexpr (KIND == JoinKind::Right)
+                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+            }
+            else if constexpr (STRICTNESS == JoinStrictness::Anti)
+            {
+                if constexpr (KIND == JoinKind::Left)
+                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+                else if constexpr (KIND == JoinKind::Right)
+                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+            }
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
 
             if (rows_added >= max_block_size)
             {

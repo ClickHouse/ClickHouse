@@ -31,16 +31,6 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
 ```
 
 <Note>
-Like `llvm`, Homebrew's `rustup` is keg-only, so its `bin` directory is not added to `PATH` automatically. Export it the same way `llvm`'s `PATH` is exported in [Build ClickHouse](#build-clickhouse):
-
-```bash
-export PATH=$(brew --prefix rustup)/bin:$PATH
-```
-
-ClickHouse also pins the Rust toolchain used by the `corrosion` contrib module. Install and select it by following the [Install the Rust compiler](/development/build#install-the-rust-compiler-optional) section of the Linux build guide. Without this, `cmake` fails at the `corrosion` contrib module with `Cannot find nightly-<date> Rust toolchain`.
-</Note>
-
-<Note>
 Apple uses a case-insensitive file system by default. While this usually does not affect compilation (especially scratch makes will work), it can confuse file operations like `git mv`.
 For serious development on macOS, make sure that the source code is stored on a case-sensitive disk volume, e.g. see [these instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
 </Note>
@@ -57,10 +47,6 @@ cmake -S . -B build
 cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
-
-<Note>
-Plain `brew install llvm` always installs Homebrew's latest LLVM release, which can be newer than the Clang version pinned for CI and Linux builds (see [Install the Clang compiler](/development/build#install-the-clang-compiler)). A newer Clang can enable `-Weverything` diagnostics that aren't yet suppressed in the build and fail under `-Werror`. If that happens, install the pinned major version instead, e.g. via a versioned formula (`brew install llvm@<version>`) if Homebrew still carries it, rather than disabling warnings.
-</Note>
 
 <Note>
 If you are running into `ld: archive member '/' not a mach-o file in ...` errors during linking, you may need

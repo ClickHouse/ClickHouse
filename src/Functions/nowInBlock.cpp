@@ -42,15 +42,19 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (allow_nonconst_timezone_arguments)
-            return
-                "(const tz StringOrFixedString) -> DateTime(tz)"
-                " OR ([StringOrFixedString]) -> DateTime";
-        return
-            "(const tz StringOrFixedString) -> DateTime(tz)"
-            " OR () -> DateTime";
+        FunctionArgumentDescriptors mandatory_args{};
+        FunctionArgumentDescriptors optional_args{
+            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        if (arguments.size() == 1)
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
+
+        return std::make_shared<DataTypeDateTime>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

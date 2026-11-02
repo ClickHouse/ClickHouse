@@ -1,8 +1,8 @@
-run
+run enable-analyzer=1
 0	5
 1	1
 2	1
-run ignore
+run enable-analyzer=1 ignore
 0	5
 1	1
 2	1

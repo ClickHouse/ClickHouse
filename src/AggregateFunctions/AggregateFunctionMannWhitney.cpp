@@ -317,9 +317,8 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
         )",
         R"(
 ┌─mannWhitneyUTest('greater')(sample_data, sample_index)─┐
-├────────────u_statistic─┬───────────────────────p_value─┤
-│                      9 │           0.04042779918502615 │
-└────────────────────────┴───────────────────────────────┘
+│ (9,0.04042779918502615)                                │
+└────────────────────────────────────────────────────────┘
         )"
     }
     };

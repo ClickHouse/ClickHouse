@@ -197,11 +197,10 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
                     {
                         if (is_attach)
                         {
-                            /// `applyChanges` below applies the changes in order, so the last one wins.
                             LOG_WARNING(
                                 getLogger("StorageObjectStorageQueue"),
                                 "Storage {} has a duplicated setting {}. "
-                                "Will use the last declared setting's value",
+                                "Will use the first declared setting's value",
                                 storage_id.getNameForLogs(), change.name);
                         }
                         else

@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 SELECT number FROM numbers(untuple(tuple(1)));
 
