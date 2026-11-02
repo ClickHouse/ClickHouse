@@ -1039,7 +1039,7 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
 /// spelling of the alias.
 ///
 /// Either argument may be null: the check on a stored expression runs before that expression is built,
-/// and a stored `GROUP BY ... SET` assignment has no AST to check.
+/// and a stored `GROUP BY ... SET` assignment is checked through the expressions built from it.
 void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, const ASTPtr & ast, std::string_view expression_kind)
 {
     if ((expression && expression->hasArrayJoin()) || expressionContainsArrayJoin(ast))
@@ -1436,7 +1436,7 @@ ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) co
 {
     checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, expression_ast, /*expression_kind=*/ "");
 
-    /// A `GROUP BY ... SET` assignment is stored as prebuilt `ExpressionActions` and not as an AST, so it
+    /// The part of a `GROUP BY ... SET` assignment after the aggregation is stored as prebuilt `ExpressionActions`, so it
     /// is screened through the built expression, and it is screened here, because setting up the
     /// `TTLAggregationAlgorithm` that executes it goes through this function too. A spelling that
     /// `ActionsVisitor` does not recognise as `arrayJoin` is not built as an `ARRAY_JOIN` node at all and

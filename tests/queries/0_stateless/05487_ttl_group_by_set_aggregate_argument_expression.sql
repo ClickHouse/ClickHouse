@@ -24,6 +24,15 @@ OPTIMIZE TABLE t_ttl_argument_subcolumn FINAL;
 SELECT tup FROM t_ttl_argument_subcolumn;
 DROP TABLE t_ttl_argument_subcolumn;
 
+DROP TABLE IF EXISTS t_ttl_argument_state;
+CREATE TABLE t_ttl_argument_state (k UInt8, event DateTime, s AggregateFunction(sumForEach, Array(Int32))) ENGINE = MergeTree ORDER BY k
+TTL event + INTERVAL 1 SECOND GROUP BY k SET s = sumForEachState(CAST(finalizeAggregation(s), 'Array(Int32)'));
+INSERT INTO t_ttl_argument_state SELECT 1, '2020-01-01 00:00:00', sumForEachState(CAST([1, 2, 3], 'Array(Int32)'));
+INSERT INTO t_ttl_argument_state SELECT 1, '2020-01-01 09:00:00', sumForEachState(CAST([3, 2, 1], 'Array(Int32)'));
+OPTIMIZE TABLE t_ttl_argument_state FINAL;
+SELECT finalizeAggregation(s) FROM t_ttl_argument_state;
+DROP TABLE t_ttl_argument_state;
+
 CREATE TABLE t_ttl_argument_in (k UInt8, event DateTime, value UInt64) ENGINE = MergeTree ORDER BY k
 TTL event + INTERVAL 1 SECOND GROUP BY k SET value = sumIf(value, value IN (SELECT 10)); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_ttl_argument_in (k UInt8, event DateTime, value UInt64) ENGINE = MergeTree ORDER BY k
