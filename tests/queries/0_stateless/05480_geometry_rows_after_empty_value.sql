@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: h3PolygonToCells needs the h3 library
+
 -- Empty geometries at the start, in the middle and twice in a row must not change the result of the other rows of the block.
 
 SELECT 'MultiPolygon';
