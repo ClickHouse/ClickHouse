@@ -1,0 +1,12 @@
+Key-only records, packed string keys
+matches the baseline	1
+staged records spilled	1
+Argument records, legacy string keys of every length
+matches the baseline	1
+staged records spilled	1
+Argument records, serialized keys
+matches the baseline	1
+staged records spilled	1
+Count records, packed string keys
+matches the baseline	1
+staged records spilled	1

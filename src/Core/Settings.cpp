@@ -612,9 +612,9 @@ Multiply s3_min_upload_part_size by this factor each time s3_multiply_parts_coun
 Each time this number of parts was uploaded to S3, s3_min_upload_part_size is multiplied by s3_upload_part_size_multiply_factor.
 )", 0) \
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
-Maximum part number number for s3 upload part.
+Maximum part number for s3 upload part.
 )", 0, \
-        {"24.6", 10000, 10000, "Maximum part number number for s3 upload part"}) \
+        {"24.6", 10000, 10000, "Maximum part number for s3 upload part"}) \
     DECLARE(Bool, s3_allow_multipart_copy, true, R"(
 Allow multipart copy in S3.
 )", 0, \
@@ -1600,6 +1600,17 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(Bool, to_start_of_interval_preserves_argument_type, true, R"(
+Makes the function `toStartOfInterval` (and its aliases `time_bucket` and `date_bin`) return a value of the same type as its first argument:
+`Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime` and `DateTime64` with the same scale for `DateTime64`, regardless of the interval unit.
+The only exception is a subsecond unit finer than the scale of a `DateTime64` argument, for example `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`: the result has the scale of the unit, because the scale of the argument cannot represent the bucket boundaries.
+
+Possible values:
+
+- `1` — The result has the type of the first argument. The setting `enable_extended_results_for_datetime_functions` does not affect the function.
+- `0` — Legacy behavior: the result type depends on the interval unit. The units `WEEK` and longer produce a `Date`, `DAY` down to `SECOND` produce a `DateTime`, and the subsecond units produce a `DateTime64` with the scale of the unit (for `Date32` and `DateTime64` arguments, `Date32` and `DateTime64` instead of `Date` and `DateTime` with `enable_extended_results_for_datetime_functions = 1`). A value that does not fit the range of the narrower result type is wrapped: for example, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` returns `2036-02-07 06:28:16`. This describes the overload without `origin`. The overload with `origin` keeps the type of the argument even in the legacy behavior, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
+)", 0, \
+        {"26.11", false, true, "The function `toStartOfInterval` returns a value of the same type as its argument instead of a type determined by the interval unit, which wrapped values outside the range of the narrower type"}) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
@@ -1982,7 +1993,7 @@ Enables usage of the thread pool for parallel prefixes reading in Wide parts in 
 )", 0, \
         {"25.2", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"}) \
 DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
-Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark, the data substream of the `SHARED` typed paths included. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
 )", 0, \
         {"26.8", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."}) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
@@ -2257,6 +2268,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"25.12", false, true, "New setting"}) \
+    DECLARE(UInt64, use_skip_indexes_for_disjunctions_max_rpn_elements, 128, R"(
+Maximum number of elements in the internal representation (RPN) of a WHERE filter for which `use_skip_indexes_for_disjunctions` is applied.
+Roughly, every condition and every `AND`, `OR` and `NOT` counts as one element: for example, `A = 5 OR B = 5 OR C = 5` has 5 elements.
+The elements are counted after the filter is rewritten for index analysis: for example, `A = 1 OR A = 2 OR A = 3` becomes `A IN (1, 2, 3)`, which is one element (see `optimize_min_equality_disjunction_chain_length`), and `coalesce(A, B) = 5` is expanded into several conditions (see `allow_key_condition_coalesce_rewrite`).
+For filters with more elements, each skip index is evaluated on its own and cannot skip granules for conditions on different columns connected by `OR`.
+During index analysis, the partial results take one bit per element per granule of each data part, and combining them takes time proportional to the number of elements for every granule. Keep this in mind when setting 0 (no limit).
+
+Possible values:
+
+- 0 — No limit.
+- Positive integer — Maximum number of elements.
+)", 0, \
+        {"26.11", 32, 128, "New setting, previously the limit was hard-coded to 32"}) \
     DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 
@@ -2343,6 +2367,8 @@ Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable
 For such types, the per-row threshold comparison performed by the dynamic filter can outweigh its savings when the column's lexicographic minimum dominates (e.g. mostly empty strings) and few granules can be skipped. In that case the dynamic filter degrades query latency rather than improving it.
 
 When this setting is `0`, dynamic filtering is restricted to columns whose values have a fixed maximum size in memory (numbers, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` of such types, `Tuple` of such types). When set to `1`, dynamic filtering applies to variable-length types as well.
+
+Reads of Parquet files still skip whole row groups by the statistics of a `String` sort column when this setting is `0`; the setting only controls the per-row filter.
 
 Possible values:
 
@@ -5059,7 +5085,7 @@ Allow push predicate to final subquery.
 Allows push predicate when subquery contains WITH clause
 )", 0) \
     DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
-Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+Allows push predicate on AST level for distributed subqueries with enabled analyzer
 )", 0, \
         {"25.1", false, true, "A new setting"}) \
     \
@@ -5186,9 +5212,9 @@ When enabled and aggregation in order is active, pushes LIMIT into the aggregati
 )", 0, \
         {"26.7", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."}) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
-Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys (or `adaptive_aggregator_freeze_threshold_bytes` of memory), then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or `adaptive_aggregator_freeze_threshold_bytes` of memory, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 
-The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold the backlogs are drained early into the shared table, and if that is not enough to get back under it, the shared table spills to disk through the ordinary external aggregation.
+The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold a thread writes its staged records to disk and frees them, and the merge reads them back bucket by bucket. A table that has not frozen yet is written to disk as in the ordinary external aggregation once it holds enough memory, and a frozen one once its aggregate states, such as those of `uniqExact` or `groupArray`, grow enough; the thread then starts filling a new table.
 )", 0, \
         {"26.8", false, true, "New setting to enable adaptive `GROUP BY` aggregation that freezes each thread's local hash table once it reaches `adaptive_aggregator_freeze_threshold` keys, so frequent keys keep aggregating in the small local tables while rare keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge; this stores and processes rare keys once instead of once per thread."}) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 16384, R"(
@@ -5196,9 +5222,15 @@ The number of keys at which the adaptive aggregator freezes a thread's local has
 )", 0, \
         {"26.8", 16384, 16384, "New setting to set the number of keys at which the adaptive aggregator (`enable_adaptive_aggregator`) freezes a thread's local hash table."}) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 4_MiB, R"(
-The memory size at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). A table freezes at whichever of this and `adaptive_aggregator_freeze_threshold` is reached first. The size is the local table's own allocated bytes (its hash-table buffer plus its arenas), checked between blocks. The byte bound matters when the keys or the aggregation states are wide: the key-count threshold alone would let such tables outgrow the CPU caches. At the default, tables of ordinary key and state widths keep freezing by the key count. 0 disables the byte bound, so the key-count threshold alone decides.
+The memory size at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). A table freezes at whichever of this and `adaptive_aggregator_freeze_threshold` is reached first. The size is the local table's own tracked memory, checked between blocks: its hash-table buffer, its arenas and the memory that its aggregation states own, such as the sets of `uniqExact`. The byte bound matters when the keys or the aggregation states are wide: the key-count threshold alone would let such tables outgrow the CPU caches, and a few groups with growing states would never freeze. At the default, tables of ordinary key and state widths keep freezing by the key count. 0 disables the byte bound, so the key-count threshold decides.
 )", 0, \
         {"26.9", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."}) \
+    DECLARE(Bool, adaptive_aggregator_disable_thaw, false, R"(
+Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads have repeat-dominated staged streams, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
+
+With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
+)", 0, \
+        {"26.11", false, false, "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \
@@ -5341,6 +5373,13 @@ This setting applies to JSON passed as a string. Extraction from a column of the
 Disabled by default.
 )", 0, \
         {"26.10", false, false, "New setting to make the `JSONExtract` family fill named tuples from JSON objects only, instead of the historical positional fill from arrays. Unnamed tuples always fill positionally, and extraction from a column of the `JSON` data type is unaffected."}) \
+    DECLARE(Bool, json_extract_use_cast_string_to_date_time_mode, true, R"(
+Controls which setting the `JSONExtract` family of functions follows when parsing a JSON string value into `DateTime` or `DateTime64`. When enabled, the parsing mode is taken from [cast_string_to_date_time_mode](#cast_string_to_date_time_mode), consistently with `CAST`. When disabled, it is taken from [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format), as before version 26.8.
+
+When the chosen parser cannot read the value, the function returns the default value of the type (`1970-01-01 00:00:00`) without an error, so a mismatch between the two settings silently changes the extracted values.
+)", 0, \
+        {"26.11", true, true, "New setting to choose whether the `JSONExtract` family parses `DateTime` values according to `cast_string_to_date_time_mode` (since 26.8) or `date_time_input_format` (before 26.8)."}, \
+        {"26.8", false, true, "`JSONExtract` parses `DateTime` values according to `cast_string_to_date_time_mode` instead of `date_time_input_format`. `compatibility` with versions before 26.8 restores the previous behavior."}) \
     DECLARE(Bool, allow_introspection_functions, false, R"(
 Enables or disables [introspection functions](/reference/functions/regular-functions/introspection) for query profiling.
 
@@ -5995,7 +6034,7 @@ Possible values:
 )", 0, \
         {"23.8", false, false, "New setting to rewrite countDistinctIf with count_distinct_implementation configuration. It is disabled by default"}) \
     DECLARE(Bool, convert_query_to_cnf, false, R"(
-When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+When set to `true`, a `SELECT` query will be converted to conjunctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
 
 For example, notice how the following `SELECT` query is not modified (the default behavior):
 
@@ -6560,7 +6599,7 @@ When enabled, the analyzer substitutes ordinary (non-materialized, non-parameter
 )", EXPERIMENTAL, \
         {"26.4", false, false, "New setting"}) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
-If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+If disabled, declarations in parent WITH clauses will behave the same scope as they declared in the current scope.
 
 Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0, \
@@ -7221,7 +7260,7 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, query_cache_squash_partial_results, true, R"(
-Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](/concepts/features/performance/caches/query-cache) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](/concepts/features/performance/caches/query-cache) but improves the compressibility of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -7268,7 +7307,7 @@ Possible values:
         {"25.4", false, true, "A new optimization"}, \
         {"25.3", false, false, "New setting."}) \
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
-Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
+Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
 Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
@@ -7737,9 +7776,10 @@ Allow to execute correlated subqueries.
         {"25.8", false, true, "Mark correlated subqueries support as Beta. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}, \
         {"25.4", false, false, "Added new setting to allow correlated subqueries execution. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}) \
     \
-    DECLARE(Bool, allow_experimental_lateral_join, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_lateral_join, false, R"(
 Allow LATERAL JOIN syntax. When enabled, subqueries in the right side of a JOIN can reference columns from the left side, enabling correlated subqueries in the FROM clause (SQL standard LATERAL JOIN).
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_lateral_join, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_lateral_join`."}, \
         {"26.10", false, false, "New setting to allow `LATERAL JOIN` syntax."}) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
@@ -7793,6 +7833,10 @@ Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
 Optimize GROUP BY when all keys in block are constant
 )", 0, \
         {"23.9", false, true, "Optimize group by constant keys by default"}) \
+    DECLARE(Bool, optimize_constant_columns_after_filter, true, R"(
+Replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant.
+)", 0, \
+        {"26.11", false, true, "New setting to replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant."}) \
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0, \
@@ -7861,6 +7905,16 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
+    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
 Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 
@@ -8147,11 +8201,11 @@ Use query plan for lazy materialization optimization.
 )", 0, \
         {"25.4", false, true, "Added new setting to use query plan for lazy materialization optimisation"}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
-Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+Use lazy materialization optimization for reading Parquet and Vortex files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_file, true, R"(
-Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+Use lazy materialization optimization for reading local Parquet and Vortex files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}) \
     DECLARE(Bool, query_plan_lazy_materialization_for_join, true, R"(
@@ -8385,20 +8439,20 @@ Overrides the output format of the query. Wins over the format specified in the 
 )", 0, \
         {"26.8", "", "", "New setting to override the output format of the query."}) \
     DECLARE(String, compression, "", R"(
-Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). Specifying a compressed file extension in the URL path is equivalent.
+Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). For response-producing path requests, specifying a compressed file extension in the URL path is equivalent. For a path-based HTTP `PUT` upload, the compression suffix describes the request body instead, which is decompressed before insertion.
 
 This is an HTTP-interface response-shaping setting: it is consumed before the query is executed (the response buffers are set up up-front), so it must be supplied via the HTTP URL parameter, the URL path file extension, or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0, \
         {"26.8", "", "", "New setting to apply generic compression to the response body."}) \
     DECLARE(Bool, http_allow_database_as_path, true, R"(
-If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.
+If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database. It also enables database-prefixed path-based `PUT` uploads such as `/database/table.CSV`.
 
 This is a per-user setting that controls whether a routed path-style request is interpreted. Routing itself is gated globally by the server-level `http_allow_path_requests` configuration setting (on by default), which must be enabled for the HTTP interface to route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all — that routing decision is made before the request is authenticated, so it cannot depend on a per-user setting. When `http_allow_path_requests` is off, unknown paths return a plain `404`. After routing, this setting is re-checked against the authenticated user's effective settings, so it can be disabled selectively per user, role, or profile.
 )", 0, \
         {"26.10", false, true, "Enabled by default: the HTTP interface interprets a `/database/` component of the URL path as the current database."}, \
         {"26.8", false, false, "New setting to recognize a database name in the URL path of HTTP requests."}) \
     DECLARE(Bool, http_allow_table_as_file, true, R"(
-If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. The path is interpreted as `SELECT * FROM table`.
+If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. For `GET` and `HEAD`, the path is interpreted as `SELECT * FROM table`; for a path-based `PUT`, it identifies the existing destination table and input format for the upload.
 
 Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 )", 0, \
@@ -8631,13 +8685,6 @@ Emit `TEST`-level log messages for every filesystem cache buffer refill (state o
         {"26.8", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
-Skip download from remote filesystem if exceeds query cache size
-)", 0, skip_download_if_exceeds_query_cache, \
-        {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
-    DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
-Max remote filesystem cache size that can be downloaded by a single query
 )", 0) \
     DECLARE(Bool, throw_on_error_from_cache_on_write_operations, false, R"(
 Ignore error from cache when caching on write operations (INSERT, merges)
@@ -9126,7 +9173,7 @@ Only has an effect in ClickHouse Cloud. Timeout for receiving data from distribu
 )", 0, \
         {"25.10", 3000, 3000, "New setting"}) \
     DECLARE(UInt64, distributed_cache_send_timeout_ms, default_distributed_cache_send_timeout_ms, R"(
-Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
+Only has an effect in ClickHouse Cloud. Timeout for sending data to distributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
 )", 0, \
         {"25.10", 3000, 3000, "New setting"}) \
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
@@ -9688,9 +9735,9 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
     DECLARE(Bool, use_iceberg_manifest_statistics, false, R"(
-Estimate the rows of an Iceberg read for join reordering from the `record_count` of the data files in its manifest files, after partition and min-max pruning by the query filter, without reading data. The estimate is exact without a filter and without delete files. As for MergeTree tables without column statistics, a filter that prunes no file gives no estimate. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
-        {"26.11", false, false, "New setting to estimate the rows of Iceberg reads for join reordering from manifest files."}) \
+        {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
@@ -10235,6 +10282,10 @@ Choosing finer granularity (like `bucket`) can improve parallelism when working 
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
 )", 0, \
         {"25.11", "file", "file", "New setting."}) \
+    DECLARE(String, cluster_table_function_pushed_down_filter, "", R"(
+This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
+)", 0, \
+        {"26.11", "", "", "New internal setting."}) \
     DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0, \
@@ -10549,11 +10600,11 @@ Max retries for parts update when using `select_sequential_consistency` with `Sh
 )", 0, \
         {"26.5", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."}) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. It prevents read in order through join optimization. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to a spilling join when the right-side data exceeds this many bytes: the collected data moves to disk and the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (read in order through join), so the threshold does not prevent that optimization. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
 )", 0, \
         {"26.4", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."}) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
-The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
+The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to a spilling join that moves the right-side data to disk (a grace hash join, or a partial merge join when the query plan needs the left stream's row order).
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
@@ -10618,7 +10669,7 @@ If true (default), an AI function call that fails permanently after exhausting a
 )", BETA, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+Maximum total input (prompt) tokens across all AI function API calls in a single query including cache reads and writes. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA, \
@@ -10860,13 +10911,13 @@ Patterns shorter than this threshold match too many dictionary tokens and are sk
 
 With the `array` tokenizer, where any pattern qualifies, the threshold is compared against the number of non-wildcard characters in the whole pattern.
 
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+Requires [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) to be enabled.
 )", 0, \
         {"26.4", 4, 4, "New setting"}) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
 
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+Requires [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) to be enabled.
 )", 0, \
         {"26.4", 50, 50, "New setting"}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
@@ -11124,11 +11175,20 @@ Default number of buckets for distributed shuffle-hash-join.
 Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL, \
         {"25.5", 8, 8, "New experimental setting."}) \
-    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
-Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 0, R"(
+Number of tasks for parallel reading in distributed query. Tasks are spread across workers.
+
+`0` chooses the number automatically: one task per `distributed_plan_min_rows_per_reader` rows selected by the read, at least one, and at most the number of workers.
+
 Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL, \
+        {"26.11", 8, 0, "Choose the number of read tasks from the rows to read and the number of workers by default."}, \
         {"25.5", 8, 8, "New experimental setting."}) \
+    DECLARE(NonZeroUInt64, distributed_plan_min_rows_per_reader, 1000000, R"(
+Minimum number of rows for each read task when `distributed_plan_default_reader_bucket_count` is `0`.
+Used by the rule-based distributed planner.
+)", EXPERIMENTAL, \
+        {"26.11", 1000000, 1000000, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0, \
@@ -11327,6 +11387,10 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
+Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 0, 11000, "New setting to limit the resolution of a range query in the Prometheus HTTP API, as in Prometheus."}) \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
 A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.
@@ -11461,6 +11525,11 @@ short-circuit behavior controlled by `short_circuit_function_evaluation`.
         {"26.9", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"}) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false, \
         {"25.12", false, false, "New setting"}) \
+    ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, skip_download_if_exceeds_query_cache, \
+        {"26.10", true, true, "Obsolete: the per-query filesystem cache write limit was removed."}, \
+        {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
+    MAKE_OBSOLETE(M, UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), \
+        {"26.10", 137438953472, 137438953472, "Obsolete: the per-query filesystem cache write limit was removed. A query is no longer capped in how much it writes into a filesystem cache; the cache's own `max_size` and eviction policy bound it."}) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \

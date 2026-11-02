@@ -1832,7 +1832,6 @@ static void constructPhysicalStep(
         join_settings.min_joined_block_size_bytes,
         optimization_settings.max_threads,
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-        false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
     join_step->setLogicalJoinInfo(std::move(logical_join_info));
     join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
