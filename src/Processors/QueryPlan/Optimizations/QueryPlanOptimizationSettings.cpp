@@ -379,8 +379,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     make_distributed_plan = from[Setting::make_distributed_plan];
     serialize_query_plan = from[Setting::serialize_query_plan];
 
-    serialize_query_plan = from[Setting::serialize_query_plan];
-
     /// `distributed_push_down_limit` is historically a `UInt64`; any nonzero value enables it.
     distributed_push_down_limit = from[Setting::distributed_push_down_limit] != 0;
 

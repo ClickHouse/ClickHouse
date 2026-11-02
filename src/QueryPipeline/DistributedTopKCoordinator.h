@@ -2,6 +2,7 @@
 
 #include <Common/EventFD.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/QueryCoordination.h>
 #include <Core/SortDescription.h>
 
@@ -70,8 +71,9 @@ private:
         EventFD event;
     };
 
-    using CandidateBlocks = std::vector<Block>;
-    using SelectedOrdinals = std::vector<std::vector<UInt64>>;
+    using CandidateBlocks = VectorWithMemoryTracking<Block>;
+    /// The inner type matches `QueryCoordinationResponse::selected_ordinals`.
+    using SelectedOrdinals = VectorWithMemoryTracking<std::vector<UInt64>>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     void validateParticipant(size_t participant) const;
     void validateRequest(size_t participant, const QueryCoordinationRequest & request) const;
@@ -86,7 +88,7 @@ private:
     std::atomic_bool cancellation_requested = false;
     mutable std::mutex mutex;
     std::condition_variable cancellation_condition;
-    std::vector<std::unique_ptr<Participant>> participants;
+    VectorWithMemoryTracking<std::unique_ptr<Participant>> participants;
     State state = State::Collecting;
     size_t submitted = 0;
     std::optional<Stopwatch> barrier_watch;

@@ -2,10 +2,10 @@
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/SortCursor.h>
 #include <Interpreters/sortBlock.h>
 
-#include <unordered_set>
 #include <utility>
 
 namespace ProfileEvents
@@ -39,7 +39,7 @@ DistributedTopKCoordinator::DistributedTopKCoordinator(Settings settings_)
     if (settings.sort_description.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Distributed Top-K coordination requires a sort description");
 
-    std::unordered_set<String> expected_keys;
+    UnorderedSetWithMemoryTracking<String> expected_keys;
     for (const auto & key : settings.sort_description)
     {
         if (expected_keys.emplace(key.column_name).second && !settings.candidate_header.has(key.column_name))
@@ -95,7 +95,7 @@ void DistributedTopKCoordinator::validateRequest(size_t participant, const Query
             request.payload.columns(),
             settings.candidate_header.columns());
 
-    std::unordered_set<String> actual_keys;
+    UnorderedSetWithMemoryTracking<String> actual_keys;
     actual_keys.reserve(request.payload.columns());
     for (const auto & column : request.payload)
     {
@@ -322,6 +322,7 @@ void DistributedTopKCoordinator::cancel(std::exception_ptr exception) noexcept
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
     cancellation_condition.notify_all();
 }

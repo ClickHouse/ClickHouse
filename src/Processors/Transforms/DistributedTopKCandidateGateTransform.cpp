@@ -211,7 +211,7 @@ void DistributedTopKCandidateGateTransform::selectRows(const std::vector<UInt64>
         retained_chunks.pop_front();
 
         const UInt64 chunk_rows = chunk.getNumRows();
-        const auto selected_begin = selected.begin() + chunk_begin;
+        const auto * const selected_begin = selected.data() + chunk_begin;
         const size_t selected_rows = static_cast<size_t>(std::count(selected_begin, selected_begin + chunk_rows, UInt8{1}));
         chunk_begin += chunk_rows;
 
