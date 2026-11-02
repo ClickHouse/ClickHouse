@@ -39,6 +39,18 @@ bool hasNoPointsForConvexHull(const Geometry & geometry)
 template <typename Point, typename Geometry>
 void scaleByPowersOfTwo(Geometry & geometry, int x_exponent, int y_exponent)
 {
+    /// A multiplication by a power of two rounds the same as `std::ldexp`, and it is much faster.
+    auto is_normal_exponent = [](int exponent) { return exponent >= -1022 && exponent <= 1023; };
+    if (is_normal_exponent(x_exponent) && is_normal_exponent(y_exponent))
+    {
+        const Float64 x_factor = std::ldexp(1.0, x_exponent);
+        const Float64 y_factor = std::ldexp(1.0, y_exponent);
+        boost::geometry::for_each_point(geometry, [x_factor, y_factor](Point & point)
+        {
+            point = Point(boost::geometry::get<0>(point) * x_factor, boost::geometry::get<1>(point) * y_factor);
+        });
+        return;
+    }
     boost::geometry::for_each_point(geometry, [x_exponent, y_exponent](Point & point)
     {
         point = Point(std::ldexp(boost::geometry::get<0>(point), x_exponent), std::ldexp(boost::geometry::get<1>(point), y_exponent));
@@ -50,9 +62,42 @@ int exponentOf(Float64 value)
     return value == 0 || std::isinf(value) ? 0 : std::ilogb(value);
 }
 
-/// The rotating calipers of `convexHullToMinimumRotatedRectangle`, on a clockwise convex ring
-/// with coordinates below 2^401 in absolute value.
-template <typename Point, typename Ring>
+/// A `Float64` with a separate exponent, so that sums and products of any coordinates neither overflow nor underflow.
+class FloatWithExponent
+{
+public:
+    explicit FloatWithExponent(Float64 value) : FloatWithExponent(value, 0) {}
+    explicit operator Float64() const { return std::ldexp(mantissa, exponent); }
+
+    friend FloatWithExponent operator*(FloatWithExponent a, FloatWithExponent b) { return {a.mantissa * b.mantissa, a.exponent + b.exponent}; }
+    friend FloatWithExponent operator/(FloatWithExponent a, FloatWithExponent b) { return {a.mantissa / b.mantissa, a.exponent - b.exponent}; }
+    friend FloatWithExponent operator+(FloatWithExponent a, FloatWithExponent b)
+    {
+        const int larger = std::max(a.exponent, b.exponent);
+        return {std::ldexp(a.mantissa, a.exponent - larger) + std::ldexp(b.mantissa, b.exponent - larger), larger};
+    }
+    friend FloatWithExponent operator-(FloatWithExponent a, FloatWithExponent b) { return a + FloatWithExponent(-b.mantissa, b.exponent); }
+    friend bool operator<(FloatWithExponent a, FloatWithExponent b) { return (a - b).mantissa < 0; }
+    friend bool operator>(FloatWithExponent a, FloatWithExponent b) { return (a - b).mantissa > 0; }
+    friend bool operator==(FloatWithExponent a, FloatWithExponent b) { return (a - b).mantissa == 0; }
+
+private:
+    /// Zero gets the lowest exponent, so that adding it does not round the other number.
+    static constexpr int zero_exponent = std::numeric_limits<int>::min() / 4;
+
+    FloatWithExponent(Float64 value, int extra_exponent)
+        : mantissa(std::frexp(value, &exponent))
+    {
+        exponent = mantissa == 0 ? zero_exponent : exponent + extra_exponent;
+    }
+
+    Float64 mantissa;
+    int exponent;
+};
+
+/// The rotating calipers of `convexHullToMinimumRotatedRectangle`, on a clockwise convex ring.
+/// With `Float64`, the largest absolute value of a coordinate must be around 2^400.
+template <typename Point, typename Number, typename Ring>
 void replaceWithMinimumRotatedRectangle(Ring & points)
 {
     using boost::geometry::get;
@@ -78,13 +123,15 @@ void replaceWithMinimumRotatedRectangle(Ring & points)
 
     const size_t n = points.size();
     auto next = [n](size_t i) { return i + 1 == n ? 0 : i + 1; };
-    auto x = [&](size_t i) { return get<0>(points[i]); };
-    auto y = [&](size_t i) { return get<1>(points[i]); };
+    auto x = [&](size_t i) { return Number(get<0>(points[i])); };
+    auto y = [&](size_t i) { return Number(get<1>(points[i])); };
 
     /// Brings back the values multiplied by an edge scaled to 2^600, see below. It is exact unless a result is subnormal.
-    constexpr Float64 down = 0x1p-600;
+    constexpr bool scale_edges = std::is_same_v<Number, Float64>;
+    const Number down(scale_edges ? 0x1p-600 : 1.0);
+    const Number zero(0.0);
 
-    Float64 min_area = std::numeric_limits<Float64>::infinity();
+    Number min_area = zero;
     std::array<Point, 4> corners{};
     size_t right = 0; /// The farthest vertex along the edge.
     size_t top = 0; /// The farthest vertex across the edge.
@@ -94,16 +141,20 @@ void replaceWithMinimumRotatedRectangle(Ring & points)
         /// Only the direction of the edge matters, so it is multiplied by a power of two that brings its larger coordinate
         /// to 2^600. Then its products with the differences of coordinates neither overflow nor underflow,
         /// even for a short edge, or for a long edge with a tiny difference in the other coordinate.
-        const Float64 edge_x = x(next(i)) - x(i);
-        const Float64 edge_y = y(next(i)) - y(i);
-        const int edge_scale = 600 - std::ilogb(std::max(std::abs(edge_x), std::abs(edge_y)));
-        const Float64 ex = std::ldexp(edge_x, edge_scale);
-        const Float64 ey = std::ldexp(edge_y, edge_scale);
+        /// `FloatWithExponent` needs no scaling.
+        Number ex = x(next(i)) - x(i);
+        Number ey = y(next(i)) - y(i);
+        if constexpr (scale_edges)
+        {
+            const int edge_scale = 600 - std::ilogb(std::max(std::abs(ex), std::abs(ey)));
+            ex = std::ldexp(ex, edge_scale);
+            ey = std::ldexp(ey, edge_scale);
+        }
         /// Everything along and across the edge is multiplied by its length, which needs no square root,
         /// and that keeps the rounding small.
-        const Float64 squared_length = (ex * down) * (ex * down) + (ey * down) * (ey * down);
-        auto along = [&](Float64 dx, Float64 dy) { return dx * ex + dy * ey; };
-        auto across = [&](Float64 dx, Float64 dy) { return dy * ex - dx * ey; };
+        const Number squared_length = (ex * down) * (ex * down) + (ey * down) * (ey * down);
+        auto along = [&](Number dx, Number dy) { return dx * ex + dy * ey; };
+        auto across = [&](Number dx, Number dy) { return dy * ex - dx * ey; };
         auto along_step = [&](size_t j) { return along(x(next(j)) - x(j), y(next(j)) - y(j)); };
         auto across_step = [&](size_t j) { return across(x(next(j)) - x(j), y(next(j)) - y(j)); };
         auto along_from_edge = [&](size_t j) { return along(x(j) - x(i), y(j) - y(i)) * down; };
@@ -114,30 +165,40 @@ void replaceWithMinimumRotatedRectangle(Ring & points)
         /// are compared, not the positions of the vertices, because a short edge can round to no change of position.
         if (right == i)
             right = next(i);
-        while (right != i && along_step(right) > 0)
+        while (right != i && along_step(right) > zero)
             right = next(right);
         /// `top` and `left` continue from `right` if they are behind it, as at the start, or at the start of the edge.
         /// `left` does not continue from `top`: on a nearly flat polygon rounding can carry `top` around to the start of the edge.
         if (steps_from_edge(top) < steps_from_edge(right))
             top = right;
-        while (top != i && across_step(top) > 0)
+        while (top != i && across_step(top) > zero)
             top = next(top);
         if (steps_from_edge(left) < steps_from_edge(right))
             left = right;
         /// An edge turned by exactly 90 degrees goes neither along nor back, and `left` passes it.
-        while (left != i && (along_step(left) < 0 || (along_step(left) == 0 && across_step(left) > 0)))
+        while (left != i && (along_step(left) < zero || (along_step(left) == zero && across_step(left) > zero)))
             left = next(left);
 
-        const Float64 area = (along_from_edge(right) - along_from_edge(left)) / squared_length * across_from_edge(top);
-        if (area < min_area)
+        const Number area = (along_from_edge(right) - along_from_edge(left)) / squared_length * across_from_edge(top);
+        if (i == 0 || area < min_area)
         {
             min_area = area;
-            const Float64 min_along = along_from_edge(left) / squared_length;
-            const Float64 max_along = along_from_edge(right) / squared_length;
-            const Float64 height = across_from_edge(top) / squared_length;
-            auto corner = [&](Float64 a, Float64 c) { return Point(x(i) + (a * ex - c * ey) * down, y(i) + (a * ey + c * ex) * down); };
+            const Number min_along = along_from_edge(left) / squared_length;
+            const Number max_along = along_from_edge(right) / squared_length;
+            const Number height = across_from_edge(top) / squared_length;
+            /// The corner at `a` along the edge from the vertex `along_vertex` and at `c` across it from the vertex `across_vertex`.
+            /// If the edge is parallel to an axis, the coordinates of these vertices are the exact ones.
+            auto corner = [&](size_t along_vertex, Number a, size_t across_vertex, Number c)
+            {
+                if (ey == zero)
+                    return Point(get<0>(points[along_vertex]), get<1>(points[across_vertex]));
+                if (ex == zero)
+                    return Point(get<0>(points[across_vertex]), get<1>(points[along_vertex]));
+                return Point(Float64(x(i) + (a * ex - c * ey) * down), Float64(y(i) + (a * ey + c * ex) * down));
+            };
             /// Clockwise, as the rings made by `boost::geometry::convex_hull`.
-            corners = {corner(min_along, 0), corner(min_along, height), corner(max_along, height), corner(max_along, 0)};
+            corners = {corner(left, min_along, i, zero), corner(left, min_along, top, height),
+                corner(right, max_along, top, height), corner(right, max_along, i, zero)};
         }
     }
 
@@ -156,18 +217,32 @@ void replaceWithMinimumRotatedRectangle(Ring & points)
 template <typename Point>
 void convexHullToMinimumRotatedRectangle(Polygon<Point> & polygon)
 {
-    /// Bring the largest coordinate between 2^-400 and 2^400 and back. Coordinates smaller than the largest one
-    /// by more than 2^1470 can round to zero.
+    /// Bring the largest coordinate to 2^400 and back, which changes no rounding. Then no product of the calipers overflows,
+    /// and the area of a rectangle that is not flat does not underflow, even if one axis is much smaller than the other.
     Float64 max_abs = 0;
+    Float64 min_abs = std::numeric_limits<Float64>::infinity(); /// The smallest nonzero absolute value.
     boost::geometry::for_each_point(polygon, [&](const Point & point)
     {
-        max_abs = std::max({max_abs, std::abs(boost::geometry::get<0>(point)), std::abs(boost::geometry::get<1>(point))});
+        for (const Float64 value : {std::abs(boost::geometry::get<0>(point)), std::abs(boost::geometry::get<1>(point))})
+        {
+            max_abs = std::max(max_abs, value);
+            if (value != 0)
+                min_abs = std::min(min_abs, value);
+        }
     });
-    const int scale = exponentOf(max_abs) - std::clamp(exponentOf(max_abs), -400, 400);
+    const int scale = max_abs == 0 ? 0 : exponentOf(max_abs) - 400;
+
+    /// Scaling down would round the coordinates that become subnormal, so then it computes with separate exponents.
+    if (scale > 0 && exponentOf(min_abs) - scale < -1022)
+    {
+        replaceWithMinimumRotatedRectangle<Point, FloatWithExponent>(polygon.outer());
+        return;
+    }
+
     if (scale != 0)
         scaleByPowersOfTwo<Point>(polygon, -scale, -scale);
 
-    replaceWithMinimumRotatedRectangle<Point>(polygon.outer());
+    replaceWithMinimumRotatedRectangle<Point, Float64>(polygon.outer());
 
     if (scale != 0)
         scaleByPowersOfTwo<Point>(polygon, scale, scale);

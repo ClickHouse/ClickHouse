@@ -29,9 +29,12 @@ SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (4e-300, 0.), (3e-300,
 -- A small coordinate next to a huge one is kept as it is.
 SELECT polygonConvexHullCartesian([(1e300, 0.), (0., 1e300), (-1e-20, 0.)]::MultiPoint);
 SELECT polygonConvexHullCartesian([(0., 0.), (1e200, 0.), (0., 1e-200)]::MultiPoint), polygonConvexHullCartesian([(0., 0.), (1e300, 0.), (0., 1e-300)]::MultiPoint);
--- The three rectangles of a right triangle have the same area, so only the area and the height are checked.
-SELECT round(polygonAreaCartesian(r), 6), arrayMin(arrayMap(p -> p.2, r[1])) <= 0 AND arrayMax(arrayMap(p -> p.2, r[1])) >= 1e-200
-FROM (SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1e200, 0.), (0., 1e-200)]::MultiPoint) AS r);
+-- A huge side and a tiny side. The three rectangles of a right triangle have the same area, so only the area and the height are checked.
+SELECT k, round(polygonAreaCartesian(r), 6), arrayMin(arrayMap(p -> p.2, r[1])) <= 0 AND arrayMax(arrayMap(p -> p.2, r[1])) >= pow(10., -k)
+FROM (SELECT k, polygonMinimumRotatedRectangleCartesian([(0., 0.), (pow(10., k), 0.), (0., pow(10., -k))]::MultiPoint) AS r FROM (SELECT arrayJoin([200, 250, 300]) AS k))
+ORDER BY k;
+SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1e300, 0.), (1e300, 1e-300), (0., 1e-300)]::MultiPoint);
+SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1e-250, 0.), (1e-250, 1e250), (0., 1e250)]::MultiPoint);
 -- Tiny points next to a far one, where the products of their differences would underflow: (3e-201, 5e-201) is inside.
 SELECT polygonConvexHullCartesian([(1., 1.), (-9e-201, 2e-201), (-3e-201, -4e-201), (3e-201, 5e-201)]::MultiPoint);
 
