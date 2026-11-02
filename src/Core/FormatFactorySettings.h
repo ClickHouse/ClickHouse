@@ -1994,7 +1994,7 @@ Precision of an integer Protobuf field read into `DateTime64`.
 
 `float` and `double` fields always store fractional Unix seconds and ignore this setting. `string` and `bytes` fields stay textual.
 )", 0, \
-        {"26.10", -1, -1, "New setting. Integer Protobuf fields read into DateTime64 are Unix seconds by default (-1), so a column precision change does not reinterpret the payload. Set to the column precision N to read scaled ticks of 10^-N seconds; N must equal the DateTime64 precision or the read is rejected. float/double fields always store fractional Unix seconds and are unaffected."}) \
+        {"26.11", -1, -1, "New setting. Integer Protobuf fields read into DateTime64 are Unix seconds by default (-1), so a column precision change does not reinterpret the payload. Set to the column precision N to read scaled ticks of 10^-N seconds; N must equal the DateTime64 precision or the read is rejected. float/double fields always store fractional Unix seconds and are unaffected."}) \
     DECLARE(Int64, output_format_protobuf_datetime64_scale, -1, R"(
 Precision of an integer Protobuf field written from `DateTime64`.
 
@@ -2003,7 +2003,7 @@ Precision of an integer Protobuf field written from `DateTime64`.
 
 `float` and `double` fields always store fractional Unix seconds and ignore this setting. `string` and `bytes` fields stay textual.
 )", 0, \
-        {"26.10", -1, -1, "New setting. Integer Protobuf fields written from DateTime64 are Unix seconds by default (-1), truncating subseconds. Set to the column precision N to write scaled ticks of 10^-N seconds; N must equal the DateTime64 precision or the write is rejected. float/double fields always store fractional Unix seconds and are unaffected."}) \
+        {"26.11", -1, -1, "New setting. Integer Protobuf fields written from DateTime64 are Unix seconds by default (-1), truncating subseconds. Set to the column precision N to write scaled ticks of 10^-N seconds; N must equal the DateTime64 precision or the write is rejected. float/double fields always store fractional Unix seconds and are unaffected."}) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly.
 )", 0, \
