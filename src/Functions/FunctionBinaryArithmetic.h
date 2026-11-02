@@ -617,6 +617,14 @@ private:
 template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType, bool can_have_division_by_nullable = true>
 struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType, can_have_division_by_nullable> { };
 
+[[noreturn]] [[gnu::cold]] NO_INLINE inline void throwDecimalOperandDoesNotFitIntoResult(size_t bits)
+{
+    throw Exception(
+        ErrorCodes::DECIMAL_OVERFLOW,
+        "Decimal math overflow: the operand does not fit into the {} bits of the result",
+        bits);
+}
+
 /**
  * Binary operations with Decimals (either Decimal OP Decimal or Decimal Op Float) need to scale the args correctly.
  *  - + (plus), - (minus), * (multiply), least and greatest operations scale one of the args (which scale factor is not 1).
@@ -805,10 +813,7 @@ private:
             && (sizeof(Value) > sizeof(NativeResultType) || is_signed_v<Value> != is_signed_v<NativeResultType>))
         {
             if (!accurate::equalsOp(value, result))
-                throw Exception(
-                    ErrorCodes::DECIMAL_OVERFLOW,
-                    "Decimal math overflow: the operand does not fit into the {} bits of the result",
-                    sizeof(NativeResultType) * 8);
+                throwDecimalOperandDoesNotFitIntoResult(sizeof(NativeResultType) * 8);
         }
 
         return result;
@@ -821,7 +826,7 @@ private:
         {
             NativeResultType res;
             if (Op::template apply<NativeResultType>(a, b, res))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                DecimalUtils::throwDecimalMathOverflow();
             return res;
         }
         else
@@ -849,7 +854,7 @@ private:
                 res = Op::template apply<NativeResultType>(a, b);
 
             if (overflow)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                DecimalUtils::throwDecimalMathOverflow();
         }
         else
         {
@@ -875,7 +880,7 @@ private:
                     overflow |= common::mulOverflow(scale, scale, scale);
                 overflow |= common::mulOverflow(a, scale, a);
                 if (overflow)
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                    DecimalUtils::throwDecimalMathOverflow();
             }
             else
             {

@@ -35,6 +35,11 @@ enum
     NOT_INITIALIZED = size_t(-3)
 };
 
+[[noreturn]] [[gnu::cold]] NO_INLINE void throwUnexpectedEndOfStream()
+{
+    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
+}
+
 }
 
 
@@ -145,7 +150,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
+        throwUnexpectedEndOfStream();
     if (*in->position() == '}')
     {
         ++in->position();

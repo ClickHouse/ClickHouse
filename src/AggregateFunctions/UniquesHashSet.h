@@ -349,23 +349,26 @@ private:
     void shrinkIfNeed()
     {
         if (unlikely(m_size > max_fill()))
-        {
-            if (m_size > UNIQUES_HASH_MAX_SIZE)
-            {
-                while (m_size > UNIQUES_HASH_MAX_SIZE)
-                {
-                    if (unlikely(skip_degree >= max_skip_degree))
-                        throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
-                            "Cannot thin out UniquesHashSet: {} elements remain at the maximum skip degree of {}",
-                            static_cast<size_t>(m_size), static_cast<size_t>(max_skip_degree));
+            shrink();
+    }
 
-                    ++skip_degree;
-                    rehash();
-                }
+    NO_INLINE void shrink()
+    {
+        if (m_size > UNIQUES_HASH_MAX_SIZE)
+        {
+            while (m_size > UNIQUES_HASH_MAX_SIZE)
+            {
+                if (unlikely(skip_degree >= max_skip_degree))
+                    throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                        "Cannot thin out UniquesHashSet: {} elements remain at the maximum skip degree of {}",
+                        static_cast<size_t>(m_size), static_cast<size_t>(max_skip_degree));
+
+                ++skip_degree;
+                rehash();
             }
-            else
-                resize();
         }
+        else
+            resize();
     }
 
     UInt8 wideSkipDegree() const { return wide ? wide->skip_degree : UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE; }

@@ -47,7 +47,6 @@ class PeekableReadBuffer;
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_UUID;
@@ -531,6 +530,10 @@ struct NullOutput
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters);
 
+[[noreturn]] [[gnu::cold]] void throwCannotParseDateHere(const char * pos);
+[[noreturn]] [[gnu::cold]] void throwCannotParseDate();
+[[noreturn]] [[gnu::cold]] void throwDateOutOfBounds(Int32 value);
+
 inline bool isSymbolIn(char symbol, const char * symbols)
 {
     if (symbols == nullptr)
@@ -562,7 +565,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         auto error = [&]
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date here: {}", String(buf.position(), 10));
+                throwCannotParseDateHere(buf.position());
             return ReturnType(false);
         };
 
@@ -675,7 +678,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     if (!ret)
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date");
+            throwCannotParseDate();
         else
             return false;
     }
@@ -683,7 +686,7 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     if (!tryToConvertToDayNum(date, *ret))
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", ret->toUnderType());
+            throwDateOutOfBounds(ret->toUnderType());
         else
             return false;
     }
@@ -710,7 +713,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
         if (!ret)
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date");
+                throwCannotParseDate();
             else
                 return false;
         }

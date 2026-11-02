@@ -28,6 +28,11 @@ extern const int LOGICAL_ERROR;
 namespace detail
 {
 
+[[noreturn]] [[gnu::cold]] NO_INLINE inline void throwSelectorIndexOutOfRange(size_t idx, size_t size)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, size);
+}
+
 /// Previously ConcurrentHashJoin used IColumn::scatter method to split input blocks to sub-blocks by hash.
 /// To avoid copying of columns, we introduce a new class ScatteredBlock that holds a block and a selector.
 /// So now each threads get a copy of the source input block and a selector that tells which rows are meant for the given thread.
@@ -62,14 +67,14 @@ public:
         {
             chassert(idx < selector.size());
             if (idx >= selector.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, selector.size());
+                throwSelectorIndexOutOfRange(idx, selector.size());
             return selector[idx];
         }
 
         Iterator & ALWAYS_INLINE operator++()
         {
             if (idx >= selector.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, selector.size());
+                throwSelectorIndexOutOfRange(idx, selector.size());
             ++idx;
             return *this;
         }

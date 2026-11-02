@@ -14,6 +14,14 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename P, typename T>
+[[noreturn]] [[gnu::cold]] NO_INLINE void throwBitPositionOutOfBound(P max_position, T value)
+{
+    throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "The bit position argument needs to a positive value and less or equal to {} for integer {}",
+                    std::to_string(max_position), std::to_string(value));
+}
+
 template <typename A, typename B>
 struct BitTestImpl
 {
@@ -38,9 +46,7 @@ struct BitTestImpl
             typename NumberTraits::ToInteger<B>::Type b_int = b;
             const auto max_position = static_cast<decltype(b)>((8 * sizeof(a)) - 1);
             if (b_int > max_position || b_int < 0)
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                                "The bit position argument needs to a positive value and less or equal to {} for integer {}",
-                                std::to_string(max_position), std::to_string(a_int));
+                throwBitPositionOutOfBound(max_position, a_int);
             return (a_int >> b_int) & 1;
         }
     }

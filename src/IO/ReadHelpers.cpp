@@ -1538,6 +1538,21 @@ std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & 
     throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object should have equal number of opening and closing brackets");
 }
 
+void NO_INLINE throwCannotParseDateHere(const char * pos)
+{
+    throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date here: {}", String(pos, 10));
+}
+
+void NO_INLINE throwCannotParseDate()
+{
+    throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date");
+}
+
+void NO_INLINE throwDateOutOfBounds(Int32 value)
+{
+    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", value);
+}
+
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters)
 {

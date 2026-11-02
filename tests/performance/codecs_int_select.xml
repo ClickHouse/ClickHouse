@@ -54,4 +54,33 @@
 
     <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_{codec}</drop_query>
 
+    <!-- The values have a common divisor greater than 1, so that `GCD` decompresses with the multiplication loop
+         instead of the `memcpy` used when the divisor is 0 or 1 (as it is for the data above).
+         There are more rows than above, so that the query without `LZ4` takes more than 0.1 s. -->
+    <create_query>
+        CREATE TABLE IF NOT EXISTS codec_gcd_{type}
+        (n {type} CODEC(GCD))
+        ENGINE = MergeTree
+        ORDER BY tuple()
+        SETTINGS merge_selector_base=1000
+    </create_query>
+    <create_query>
+        CREATE TABLE IF NOT EXISTS codec_gcd_lz4_{type}
+        (n {type} CODEC(GCD, LZ4))
+        ENGINE = MergeTree
+        ORDER BY tuple()
+        SETTINGS merge_selector_base=1000
+    </create_query>
+
+    <fill_query>INSERT INTO codec_gcd_{type} (n) SELECT intHash64(number) % 1000000 * 1000 FROM system.numbers LIMIT 60000000 SETTINGS max_threads=1</fill_query>
+    <fill_query>INSERT INTO codec_gcd_lz4_{type} (n) SELECT intHash64(number) % 1000000 * 1000 FROM system.numbers LIMIT 60000000 SETTINGS max_threads=1</fill_query>
+    <fill_query>OPTIMIZE TABLE codec_gcd_{type} FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>OPTIMIZE TABLE codec_gcd_lz4_{type} FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+
+    <query>SELECT count(n) FROM codec_gcd_{type} WHERE ignore(n) == 0 LIMIT 60000000 SETTINGS max_threads=1</query>
+    <query>SELECT count(n) FROM codec_gcd_lz4_{type} WHERE ignore(n) == 0 LIMIT 60000000 SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS codec_gcd_{type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_gcd_lz4_{type}</drop_query>
+
 </test>
