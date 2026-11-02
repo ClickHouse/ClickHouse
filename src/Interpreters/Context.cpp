@@ -2827,13 +2827,13 @@ void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_cons
     {
         /// Check the profile's settings against current constraints before resolving, because after
         /// resolving the parent_profile references are already expanded and checkSettingsConstraints
-        /// would not see them. A config-defined admin is trusted to apply looser profiles (structural
-        /// rules still apply); a SQL-defined user must satisfy the constraints it is bound by.
+        /// would not see them. The profile replaces this context's settings, so every user is bound by
+        /// its constraints, even one defined in the server config; only a context without a user is trusted.
         SettingsProfileElements elements;
         elements.emplace_back().parent_profile = profile_id;
         getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
             *settings, elements, SettingSource::PROFILE, /* skip_config_defined_profiles= */ false,
-            /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
+            /* actor_is_config_defined= */ !user_id);
     }
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
     setCurrentProfilesWithLock(*profile_info, /* check_constraints= */ false, lock);

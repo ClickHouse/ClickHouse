@@ -102,7 +102,7 @@ public:
     /// from one that was escalated via SQL before constraints were enforced, so we tolerate both
     /// rather than break the former. It is NOT a trust guarantee. Defaults to false (full enforcement).
     ///
-    /// `actor_is_config_defined` is set when the identity managing settings/profiles (DDL, `SET profile`)
+    /// `actor_is_config_defined` is set when the identity managing settings/profiles (access entity DDL)
     /// is defined in the server config and is therefore a trusted admin: its own min/max/const/disallowed/
     /// writability constraints are not enforced against the change (it may create looser configurations).
     /// Structural rules still apply to everyone: the readonly mode, source restrictions (e.g.
