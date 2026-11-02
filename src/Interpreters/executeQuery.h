@@ -2,12 +2,14 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -38,6 +40,9 @@ struct QueryResultDetails
     /// `framing_output_format`). The HTTP handler uses it to fail closed: once such a response
     /// has started closing, nothing may be appended to it (see `HTTPHandler::trySendExceptionToClient`).
     bool framed = false;
+    /// The table columns the result columns come from, one per result column. Filled only for `SELECT` queries
+    /// executed with `QueryFlags::collect_result_column_origins`, and empty if they are unknown.
+    ResultColumnOrigins result_column_origins = {};
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
@@ -106,10 +111,13 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
-    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,    /// To which stage the query must be executed.
+    QueryResultDetails * result_details = nullptr    /// If not null, filled with the details of the result.
 );
 
-void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);
+/// Schedules the query on the background query pool. The returned future becomes ready once the query
+/// passes all the checks and starts its execution, or holds the exception thrown before that.
+std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context);
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.

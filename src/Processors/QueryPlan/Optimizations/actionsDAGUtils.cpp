@@ -24,6 +24,12 @@ extern const int LOGICAL_ERROR;
 
 namespace DB
 {
+/// A NULL constant argument makes the default implementation for NULLs return a constant NULL, which is not strictly monotonic.
+static bool hasNullConstantArgument(const ActionsDAG::Node & node)
+{
+    return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
+}
+
 MatchedTrees::Matches matchTrees(
     const ActionsDAG::NodeRawConstPtrs & inner_dag,
     const ActionsDAG & outer_dag,
@@ -271,7 +277,7 @@ MatchedTrees::Matches matchTrees(
                             {
                                 MatchedTrees::Monotonicity monotonicity;
                                 monotonicity.direction *= info.is_positive ? 1 : -1;
-                                monotonicity.strict = info.is_strict;
+                                monotonicity.strict = info.is_strict && !hasNullConstantArgument(*frame.node);
                                 monotonicity.child_match = &child_match;
                                 monotonicity.child_node = monotonic_child;
 
@@ -384,7 +390,7 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
         if (!monotonicity.is_positive)
             chain.changes_order = !chain.changes_order;
 
-        chain.is_strict = chain.is_strict && monotonicity.is_strict;
+        chain.is_strict = chain.is_strict && monotonicity.is_strict && !hasNullConstantArgument(*node);
 
         node = node->children[pos];
     }
@@ -398,9 +404,6 @@ void applyActionsToSortDescription(
     const ActionsDAG::Node * output_to_skip)
 {
     if (description.empty())
-        return;
-
-    if (dag.hasArrayJoin())
         return;
 
     const size_t descr_size = description.size();

@@ -15,9 +15,7 @@ doc_type: 'reference'
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-<div id="description">
-  ## Descripción
-</div>
+## Descripción {#description}
 
 La especificación oficial completa del formato `Native` está disponible [aquí](/es/resources/develop-contribute/native-protocol/format), y la especificación complementaria del protocolo `Native` —el protocolo TCP wire que lo transporta— está disponible [aquí](/es/resources/develop-contribute/native-protocol/protocol).
 
@@ -38,9 +36,7 @@ Este es el formato que se utiliza en la interfaz nativa para la interacción ent
   Puede que no resulte práctico trabajar directamente con este formato.
 </Tip>
 
-<div id="data-types-wire-format">
-  ## Formato wire de los tipos de datos
-</div>
+## Formato wire de los tipos de datos {#data-types-wire-format}
 
 Los datos se envían por el wire en un formato columnar, lo que significa que cada columna se envía por separado
 y que todos los valores de una columna se envían juntos como un único array.
@@ -53,9 +49,7 @@ Cada columna de un bloque contiene un encabezado similar a [RowBinaryWithNamesAn
   la interfaz HTTP simple, sin versión de protocolo, por lo que se omite `BlockInfo`.
 </Note>
 
-<div id="block-structure">
-  ### Estructura del bloque
-</div>
+### Estructura del bloque {#block-structure}
 
 La siguiente consulta devuelve dos columnas, `number` y `str`, con tres filas:
 
@@ -97,9 +91,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### Múltiples bloques
-</div>
+### Múltiples bloques {#multiple-blocks}
 
 Sin embargo, en muchos casos, los datos no cabrán en un solo bloque, y ClickHouse los enviará en varios bloques.
 Considere la siguiente consulta, que recupera dos filas con un tamaño de bloque reducido para forzar que los datos se dividan en una fila por bloque:
@@ -153,9 +145,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### Tipos de datos simples
-</div>
+### Tipos de datos simples {#simple-data-types}
 
 El formato wire de un valor individual de uno de los tipos de datos simples es similar a `RowBinary`/`RowBinaryWithNamesAndTypes`.
 La lista completa de tipos que se ajustan a esta descripción incluye:
@@ -175,9 +165,7 @@ La lista completa de tipos que se ajustan a esta descripción incluye:
 
 Consulta las descripciones de los tipos anteriores en [&quot;Formato wire de los tipos de datos de RowBinary&quot;](/es/reference/formats/RowBinary/RowBinary#data-types-wire-format) para obtener más información.
 
-<div id="complex-data-types">
-  ### Tipos de datos complejos
-</div>
+### Tipos de datos complejos {#complex-data-types}
 
 La codificación de los siguientes tipos de datos difiere de `RowBinary` y `RowBinaryWithNamesAndTypes`.
 
@@ -189,9 +177,7 @@ La codificación de los siguientes tipos de datos difiere de `RowBinary` y `RowB
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### Nullable
-</div>
+#### Nullable {#nullable}
 
 En el formato `Native`, una columna Nullable tendrá un número de bytes igual al número de filas del bloque antes de los datos propiamente dichos. Cada uno de estos bytes indica si el valor es `NULL` o no. Por ejemplo, con esta consulta, cada número impar será `NULL`:
 
@@ -311,9 +297,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 A diferencia de [RowBinary](/es/reference/formats/RowBinary/RowBinary#lowcardinality), donde `LowCardinality` es transparente, el formato Native utiliza una codificación columnar basada en diccionario. Una columna se codifica como un prefijo de versión, seguido de un diccionario de valores únicos y un array de índices enteros dentro de ese diccionario.
 
@@ -361,9 +345,7 @@ Con `LowCardinality(Nullable(String))`, el índice 0 es `NULL`:
 02 00 02 00 02              // índices → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### Array
-</div>
+#### Array {#array}
 
 A diferencia de [RowBinary](/es/reference/formats/RowBinary/RowBinary#array), donde cada array va precedido de un recuento LEB128 del número de elementos, el formato Native codifica los arrays como dos subflujos columnares:
 
@@ -402,9 +384,7 @@ Un array vacío tiene el mismo desplazamiento que la fila anterior. Por ejemplo,
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### Map
-</div>
+#### Map {#map}
 
 Un `Map(K, V)` se codifica como `Array(Tuple(K, V))` — offsets del array, seguidos de todas las claves y luego de todos los valores. Esto difiere de [RowBinary](/es/reference/formats/RowBinary/RowBinary#map), donde las claves y los valores se intercalan en cada entrada.
 
@@ -433,9 +413,7 @@ Por ejemplo, `Map(String, UInt64)` con 3 filas `[{'a':0,'b':10}, {'a':1,'b':11},
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 A diferencia de [RowBinary](/es/reference/formats/RowBinary/RowBinary#variant), donde cada fila lleva su propio byte discriminante seguido del valor en línea, el formato Native separa los discriminantes de los datos.
 
@@ -464,9 +442,7 @@ Por ejemplo, `Variant(String, UInt32)` con 5 filas `[0::UInt32, 'hello', NULL, 3
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 A diferencia de [RowBinary](/es/reference/formats/RowBinary/RowBinary#dynamic), donde cada valor es autodescriptivo (prefijo de tipo + valor), el formato Native serializa `Dynamic` como un prefijo de estructura seguido de una columna [Variant](#variant).
 
@@ -493,9 +469,7 @@ Por ejemplo, `Dynamic` con 5 filas `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello
 03 00 00 00                 // UInt32: 3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 A diferencia de [RowBinary](/es/reference/formats/RowBinary/RowBinary#json), donde cada fila contiene su propia descripción con nombres de rutas y valores, el formato Native serializa `JSON` en una estructura columnar. La codificación es compleja y depende de la versión: consta de un prefijo de estructura con la versión de serialización, nombres de rutas dinámicas y la disposición de los datos compartidos, seguido de rutas tipadas (cada una como una columna en bloque), rutas dinámicas (cada una como una columna [Dynamic](#dynamic)) y datos compartidos para las rutas de desbordamiento.
 

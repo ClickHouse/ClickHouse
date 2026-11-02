@@ -81,6 +81,22 @@ The value of this setting does not include the length of file extension. So,
 it is recommended to set it below the maximum filename length (usually 255
 bytes) with some gap to avoid filesystem errors.
 
+## max_memory_ratio_to_activate_adaptive_write_buffer {#max_memory_ratio_to_activate_adaptive_write_buffer}
+<SettingsInfoBlock type="Float" default_value="0.03125" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.03125"},{"label": "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}]}]}/>
+
+Also activate adaptive write buffers when the buffers a wide part preallocates would take at least this
+fraction of the server's memory limit (`max_server_memory_usage`), regardless of
+`min_columns_to_activate_adaptive_write_buffer`.
+
+A wide part preallocates two buffers of `max_compress_block_size` for every stream it writes - the file
+buffer and the compressor's block buffer - so a table with many columns reserves hundreds of megabytes
+before writing a single byte, and every concurrent merge reserves it again. That is negligible on a large
+server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
+`MEMORY_LIMIT_EXCEEDED`.
+
+Set to `0` to disable this trigger and select adaptive write buffers by column count only.
+
 ## max_partitions_to_read {#max_partitions_to_read}
 <SettingsInfoBlock type="Int64" default_value="-1" />
 

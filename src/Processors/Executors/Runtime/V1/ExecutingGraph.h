@@ -1,25 +1,29 @@
 #pragma once
 
+#include <Common/DevectorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
+#include <absl/container/inlined_vector.h>
 #include <Common/SharedMutex.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <atomic>
 #include <list>
 #include <mutex>
-#include <queue>
-#include <unordered_map>
-#include <unordered_set>
 
-#include <boost/container/devector.hpp>
 
 namespace DB
 {
 
+struct MemoryReservation;
+class MemorySpillScheduler;
+
 namespace Runtime::V1
 {
 
-/// Graph of executing pipeline.
 class ExecutingGraph
 {
     struct Node;
@@ -30,7 +34,7 @@ class ExecutingGraph
     {
         Edge(Node * to_, bool backward_,
              InputPort * input_port_, OutputPort * output_port_,
-             std::vector<void *> * update_list)
+             VectorWithMemoryTracking<void *> * update_list)
             : to(to_), backward(backward_)
             , input_port(input_port_), output_port(output_port_)
         {
@@ -53,7 +57,7 @@ class ExecutingGraph
     };
 
     /// Use std::list because new ports can be added to processor during execution.
-    using Edges = std::list<Edge>;
+    using Edges = ListWithMemoryTracking<Edge>;
 
     /// Status for processor.
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
@@ -66,7 +70,7 @@ class ExecutingGraph
     };
 
     /// Forward decl so Node can hold an iterator into the owning Nodes list.
-    using Nodes = std::list<struct Node>;
+    using Nodes = ListWithMemoryTracking<struct Node>;
 
     /// Graph node. Represents single Processor.
     struct Node
@@ -89,6 +93,9 @@ class ExecutingGraph
         /// Current status. It is accessed concurrently, using mutex.
         ExecStatus status = ExecStatus::Idle;
         std::mutex status_mutex;
+        /// Non-null for an independently scheduled spill; normal `work` must not run for this task.
+        ISpillable * spill_target = nullptr;
+        absl::InlinedVector<ISpillable *, 2> registered_spillables;
 
         /// Last state for profiling.
         std::optional<IProcessor::Status> last_processor_status;
@@ -114,12 +121,17 @@ class ExecutingGraph
 
 
 public:
-    /// This queue can grow a lot and lead to OOM. That is why we use non-default
-    /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
-    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
+    /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
+    /// allocator that throws instead of overcommitting.
+    using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
 
-    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
+    ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, MemoryReservation * memory_reservation_);
+    ~ExecutingGraph();
+
+    /// Called after workers stop, including cancellation and exception paths.
+    void detachSpillables();
+    void scheduleSpills(Queue & queue);
+    ISpillable * getSpillTarget(const IProcessor & processor);
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue, Queue & async_queue);
@@ -130,10 +142,26 @@ public:
         Cancelled,
     };
 
+    /// Working memory of `updateNode`. The caller keeps it between the calls,
+    /// so that memory is not allocated every time a processor is updated.
+    struct UpdateNodeBuffers
+    {
+        DevectorWithMemoryTracking<Edge *> updated_edges;
+        DevectorWithMemoryTracking<Node *> updated_processors;
+        VectorWithMemoryTracking<Node *> pending_expansion;
+
+        /// A buffer that has grown larger than this number of elements is released instead of being kept,
+        /// so that a single wide wave of updates does not hold its memory until the end of the execution.
+        static constexpr size_t max_kept_capacity = 1024;
+
+        /// Empty the buffers before the next use.
+        void reset();
+    };
+
     /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
@@ -148,8 +176,28 @@ private:
     Nodes nodes;
 
     /// Each processor is directly tied to pipeline graph node.
-    using ProcessorsMap = std::unordered_map<const IProcessor *, Node *>;
+    using ProcessorsMap = UnorderedMapWithMemoryTracking<const IProcessor *, Node *>;
     ProcessorsMap processors_map;
+
+    struct SpillState
+    {
+        SpillState(Nodes & nodes_, MemoryReservation * memory_reservation_);
+        ~SpillState();
+
+        void detachSpillables();
+        void registerSpillables(Node & node);
+        void unregisterSpillables(Node & node);
+        bool scheduleSpill(Node & node, ISpillable * spillable, Queue & queue) const;
+        /// Caller holds the graph's `nodes_mutex` to keep candidate nodes alive.
+        void scheduleSpills(Queue & queue);
+
+        Nodes & nodes;
+        /// Node lifetimes are protected by `nodes_mutex`; membership changes also take this mutex.
+        std::mutex spillables_mutex;
+        UnorderedMapWithMemoryTracking<ISpillable *, absl::InlinedVector<Node *, 2>> spillable_owners;
+        MemoryReservation * memory_reservation = nullptr;
+        std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
+    };
 
     /// Append a processor to the graph's processors list, create its Node, assign a stable id,
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
@@ -159,22 +207,22 @@ private:
     void removeNode(Node & node);
 
     /// Add single edge to edges list. Check processor is known.
-    Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
+    Edge & addEdge(Edges & edges, Edge edge, const Node & from, const IProcessor * to);
 
     /// Edges newly appended for a node by a call to addEdges.
     struct NewEdges
     {
-        std::vector<Edge *> back;    // back edges added (inputs side of this node)
-        std::vector<Edge *> direct;  // direct edges added (outputs side of this node)
+        VectorWithMemoryTracking<Edge *> back;    // back edges added (inputs side of this node)
+        VectorWithMemoryTracking<Edge *> direct;  // direct edges added (outputs side of this node)
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    void removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes);
+    void removeAffectedEdges(Node & node, const UnorderedSetWithMemoryTracking<Node *> & removed_nodes);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus updatePipeline(boost::container::devector<Node *> & stack, Node & node);
-    UpdateNodeStatus updatePipelineImpl(boost::container::devector<Node *> & stack, Node & node, IProcessor::PipelineUpdate & update);
+    UpdateNodeStatus updatePipeline(DevectorWithMemoryTracking<Node *> & stack, Node & node);
+    UpdateNodeStatus updatePipelineImpl(DevectorWithMemoryTracking<Node *> & stack, Node & node, IProcessor::PipelineUpdate & update);
 
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;
@@ -185,7 +233,7 @@ private:
         Processors processors;
         std::atomic<size_t> not_finished = 0;
     };
-    std::unordered_map<ProcessorPtr, std::shared_ptr<PendingRemovalGroup>> removed_processors;
+    UnorderedMapWithMemoryTracking<ProcessorPtr, std::shared_ptr<PendingRemovalGroup>> removed_processors;
 
     void removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
     void removeReadyGroups(Processors & delayed_destruction);
@@ -200,15 +248,16 @@ private:
     /// Set when `updatePipeline` threw halfway through recording the processors an expansion
     /// added (an allocation failed, for example): the parent's ports are already connected to
     /// processors that never became nodes, so the nodes and edges no longer describe the ports and
-    /// any further expansion would trip over them. The exception has already cancelled the executor;
-    /// later expansions only bail out. Guarded by the `nodes_mutex` write lock.
+    /// any further expansion would trip over them. The exception cancels the executor, but another thread
+    /// may see the flag before that; later expansions only bail out. Guarded by the `nodes_mutex` write lock.
     bool expansion_failed = false;
-    /// The processors of the failed expansion. Ports of live nodes point at them, so they have to
-    /// stay alive as long as the graph does, although they are not part of it.
-    Processors processors_of_failed_expansion;
 
     const bool profile_processors;
     IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;
+
+    /// Declared last so spillables are detached before `nodes` and their processors are destroyed,
+    /// including when graph construction fails.
+    SpillState spill_state;
 };
 
 }
