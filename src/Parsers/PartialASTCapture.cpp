@@ -342,19 +342,20 @@ enum class ColumnListKind : size_t
     Indices,
     Constraints,
     Projections,
+    Codecs,
 };
 
-std::array<ASTExpressionList *, 4> columnLists(const ASTColumns & list)
+std::array<ASTExpressionList *, 5> columnLists(const ASTColumns & list)
 {
-    return {list.columns, list.indices, list.constraints, list.projections};
+    return {list.columns, list.indices, list.constraints, list.projections, list.codec_declarations};
 }
 
 /// Whether the list of a `CREATE TABLE` holds columns only, so that what failed after it is the
-/// element after the last column. With indices, constraints, projections or a primary key in it, the
+/// element after the last column. With codec declarations, indices, constraints, projections or a primary key in it, the
 /// order of the elements is not in the tree.
 bool hasOnlyColumns(const ASTColumns & list)
 {
-    return list.columns && !list.indices && !list.constraints && !list.projections && !list.primary_key
+    return list.columns && !list.codec_declarations && !list.indices && !list.constraints && !list.projections && !list.primary_key
         && !list.primary_key_from_columns;
 }
 

@@ -458,6 +458,8 @@ if (hasAstJson) {
         ['CREATE TABLE t (a UInt8, INDEX i a TYPE minmax GRANULARITY 1', 'CreateQuery', 'columns_list.indices.children[1]', 60, 60],
         ['CREATE TABLE t (INDEX i a TYPE minmax, a UInt8', 'CreateQuery', 'columns_list.columns.children[1]', 46, 46],
         ['CREATE TABLE t (a UInt8, CONSTRAINT c CHECK a > 0', 'CreateQuery', 'columns_list.constraints.children[1]', 49, 49],
+        /// A codec declaration written last is the element that the `Error` follows.
+        ['CREATE TABLE t (p Tuple(a UInt8), CODEC p.a (ZSTD)', 'CreateQuery', 'columns_list.codec_declarations.children[1]', 50, 50],
         /// A `PRIMARY KEY` written last is not in a list of `columns_list`, so the whole list is the slot.
         ['CREATE TABLE t (a UInt8, PRIMARY KEY a', 'CreateQuery', 'columns_list', 38, 38],
         [`${T} ENGINE = MergeTree AS`, 'CreateQuery', 'select', 46, 46],
