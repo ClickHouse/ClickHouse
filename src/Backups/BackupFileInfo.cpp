@@ -234,8 +234,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
-    /// Passing references here is fine. All the objects are created **before** the tracker so they will be destroyed
-    /// after it in case of an exception
+    /// Capturing by reference is fine: everything captured outlives the tracker, being created before it.
     TaskTracker task_tracker(threadPoolCallbackRunnerUnsafe<void>(thread_pool, ThreadName::BACKUP_WORKER), max_tasks_inflight, limited_log);
 
     try
@@ -261,10 +260,8 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     }
     catch (...)
     {
-        /// The tasks have to be waited for outside of `~TaskTracker`, which asserts that none are left in it before
-        /// it waits itself: a backup that fails or is cancelled leaves them there, and the assertion would abort a
-        /// debug or sanitizer build while it unwinds, instead of the failure reaching the error handling of the
-        /// backup. `copyS3File` and `copyAzureBlobStorageFile` drain it the same way.
+        /// `~TaskTracker` asserts that no task is left before it waits, so a failed or cancelled backup has to
+        /// drain it here, as `copyS3File` does, or the assertion aborts a debug build while it unwinds.
         task_tracker.safeWaitAll();
         throw;
     }
