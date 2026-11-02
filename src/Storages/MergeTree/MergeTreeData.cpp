@@ -6495,9 +6495,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         if (!isSecondaryDDLReplay(local_context))
         {
-            /// Only effective commands count. `prepare` marks `command.ignore` from the per-command
-            /// column snapshot, so a no-op is skipped. Replay what remains to record which physical
-            /// column a drop or rename actually removed.
+            /// `prepare` already ignored no-ops against the per-command snapshot. Replay the rest
+            /// to record which physical column a drop or rename removed.
             NameSet present;
             for (const auto & column : old_columns)
                 present.insert(column.name);

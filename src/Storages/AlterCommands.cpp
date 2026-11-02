@@ -2047,9 +2047,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                             "in a single ALTER query");
                     }
 
-                    /// `ADD ENUM VALUES` merges against the column type in the working snapshot. A preceding
-                    /// `ADD COLUMN` in this statement puts that column there. If it is still absent, fail
-                    /// instead of dropping the modification.
+                    /// Still absent after earlier commands of this statement: do not drop the modification.
                     if (!has_column)
                         throw Exception(
                             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
@@ -2160,21 +2158,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                 command.ignore = true;
         }
 
-        /// Advance the working snapshot with what this command does to the columns, so the `has_column`
-        /// check of the NEXT commands sees the effect of the EARLIER ones. This mirrors `validate`,
-        /// which walks the same per-command view (an earlier static view made `ADD COLUMN IF NOT EXISTS`
-        /// after `DROP COLUMN`/`RENAME COLUMN` in one statement silently drop the add). Being wrong by
-        /// NOT ignoring is safe: `apply` re-checks `IF NOT EXISTS` against the advanced metadata anyway;
-        /// only wrongly ignoring loses a column. Ignored commands are no-ops and advance nothing.
+        /// Later commands see this command's columns. An ignored command changes nothing.
+        /// Failing to ignore is safe (`apply` re-checks `IF NOT EXISTS`); ignoring a real add is not.
         if (command.ignore)
             continue;
         switch (command.type)
         {
             case AlterCommand::ADD_COLUMN:
             {
-                /// The exact columns the ADD materializes (flatten_nested expansion + the same
-                /// IF NOT EXISTS filter), shared with `validate` and `apply` for one shared truth.
-                /// An empty result is a whole-command no-op, `validate` skips it the same way.
                 for (auto & column_to_add : columnsAddedByAlter(
                          columns,
                          ColumnDescription(command.column_name, command.data_type),
@@ -2186,20 +2177,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
             }
             case AlterCommand::DROP_COLUMN:
             {
-                /// CLEAR COLUMN and DROP COLUMN ... FROM PARTITION keep the column, they only touch data.
-                /// `remove` erases a whole `n.*` range when given a Nested group name, so no extra handling.
-                /// Mirror `apply`: `IF EXISTS` skips when no exact-name column exists, so a group with only
-                /// dotted children stays. Erasing it here anyway (as the hasNested-based `has_column` above
-                /// suggests) made later `IF EXISTS` commands on those children wrongly ignored while `apply`
-                /// kept the columns.
+                /// `CLEAR` and `DROP ... FROM PARTITION` keep the column. `IF EXISTS` removes only an
+                /// exact name, as `apply` does: `DROP COLUMN IF EXISTS n` must not erase dotted `n.*`.
                 if (!command.clear && !command.partition && !(command.if_exists && !columns.has(command.column_name)))
                     columns.remove(command.column_name);
                 break;
             }
             case AlterCommand::RENAME_COLUMN:
             {
-                /// The plain rename keeps Nested groups intact (`n.a` -> `n.b` stays in `n`); nested-to-plain
-                /// conversions are rejected by `validate` anyway, so no branching is needed here.
                 if (columns.has(command.column_name))
                     columns.rename(command.column_name, command.rename_to);
                 break;

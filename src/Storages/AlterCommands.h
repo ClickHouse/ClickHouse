@@ -254,9 +254,7 @@ public:
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default).
-    /// `context` is forwarded to the snapshot advancement, which shares the
-    /// flatten_nested-aware `columnsAddedByAlter` with `validate` and `apply`,
-    /// so `IF [NOT] EXISTS` decisions match the columns those stages see.
+    /// `context` is for the per-command column snapshot (`columnsAddedByAlter`).
     void prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.
