@@ -492,14 +492,14 @@ SELECT sum(id), count() FROM t_cache_mixed_parts SETTINGS use_columns_cache = 1;
 -- Repeat
 SELECT sum(id), count() FROM t_cache_mixed_parts SETTINGS use_columns_cache = 1;
 
--- Only the wide part participates in the columns cache.
+-- Both parts participate in the columns cache.
 SELECT
     countIf(part IN
     (
         SELECT name
         FROM system.parts
         WHERE database = currentDatabase() AND table = 't_cache_mixed_parts' AND active AND part_type = 'Compact'
-    )) = 0,
+    )) > 0,
     countIf(part IN
     (
         SELECT name

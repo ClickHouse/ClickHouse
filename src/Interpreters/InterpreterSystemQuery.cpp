@@ -1745,6 +1745,8 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropReplica");
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
+    if (query.replica.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", query.replica);
 
     if (!table_id.empty())
     {
@@ -2157,6 +2159,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropDatabaseReplica");
     const String full_replica_name
         = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
+    if (full_replica_name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
     /// query.replica_zk_path keeps the legacy one-slash normalization so DatabaseReplicated::dropReplica
     /// below targets the same live znode a Replicated database stores. Collapse it here only for the
     /// self-protection comparison, so a self-drop spelled with extra trailing slashes still matches.
@@ -2476,6 +2480,10 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
+    /// `CancellationChecker` measures `max_execution_time` from an earlier point than `start` below, so it may cancel
+    /// the query first. `throwIfKilled` then throws `TIMEOUT_EXCEEDED` too, not `QUERY_WAS_CANCELLED`.
+    QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+
     const auto start = std::chrono::steady_clock::now();
     const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
     /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
@@ -2490,7 +2498,9 @@ void InterpreterSystemQuery::syncMerges()
                 >= max_execution_time_us)
             break;
 
-        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+        if (query_status)
+            query_status->throwIfKilled();
+        else if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
         merge_tree.triggerBackgroundOperations();

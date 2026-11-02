@@ -86,6 +86,9 @@
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
+    M(TransactionsRunning, "Number of running transactions started on this replica") \
+    M(TransactionWatermarkLag, "Latest transaction snapshot minus the global watermark; new transactions read this many CSNs behind") \
+    M(TransactionLogEntries, "Number of entries in the transaction log (`/log`) at its last listing") \
     M(ContextLockWait, "Number of threads waiting for lock in Context. This is global lock.") \
     M(StorageBufferRows, "Number of rows in buffers of Buffer tables") \
     M(StorageBufferBytes, "Number of bytes in buffers of Buffer tables") \
@@ -105,6 +108,9 @@
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
+    M(MergeTreeStatisticsLoaderThreads, "Number of threads in the thread pool for loading the statistics of data parts.") \
+    M(MergeTreeStatisticsLoaderThreadsActive, "Number of threads in the thread pool for loading the statistics of data parts running a task.") \
+    M(MergeTreeStatisticsLoaderThreadsScheduled, "Number of queued or active jobs in the thread pool for loading the statistics of data parts.") \
     M(BackgroundQueryThreads, "Number of threads in the background query thread pool.") \
     M(BackgroundQueryThreadsActive, "Number of threads in the background query thread pool running a task.") \
     M(BackgroundQueryThreadsScheduled, "Number of queued or active jobs in the background query thread pool.") \
@@ -223,6 +229,9 @@
     M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
     M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
     M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed index analysis thread pool.") \
+    M(AIRequestThreads, "Number of threads in the AI request thread pool.") \
+    M(AIRequestThreadsActive, "Number of threads in the AI request thread pool running a task.") \
+    M(AIRequestThreadsScheduled, "Number of queued or active jobs in the AI request thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
@@ -294,9 +303,6 @@
     M(FormatParsingThreads, "Number of threads in the thread pool used for parsing input.") \
     M(FormatParsingThreadsActive, "Number of threads in the thread pool used for parsing input running a task.") \
     M(FormatParsingThreadsScheduled, "Number of queued or active jobs in the thread pool used for parsing input.") \
-    M(IcebergManifestDecodeThreads, "Number of threads in the thread pool used for decoding Iceberg data manifest files.") \
-    M(IcebergManifestDecodeThreadsActive, "Number of threads in the thread pool used for decoding Iceberg data manifest files running a task.") \
-    M(IcebergManifestDecodeThreadsScheduled, "Number of queued or active jobs in the thread pool used for decoding Iceberg data manifest files.") \
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
