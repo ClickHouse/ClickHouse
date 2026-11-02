@@ -178,9 +178,17 @@ Number of AI provider requests retried after a transient failure.
 
 Number of AI provider requests rejected with HTTP 429 (Too Many Requests).
 
+### AICacheReadTokens {#aicachereadtokens}
+
+Prompt tokens read from the provider cache, as reported by AI chat providers. Included in AIInputTokens.
+
+### AICacheWriteTokens {#aicachewritetokens}
+
+Prompt tokens written to the provider cache, as reported by AI chat providers. Included in AIInputTokens.
+
 ### AIInputTokens {#aiinputtokens}
 
-Total prompt tokens consumed across all AI function calls in the query.
+Total prompt tokens consumed across all AI function calls in the query, including cache reads and writes.
 
 ### AIORead {#aioread}
 
@@ -201,6 +209,14 @@ Number of writes with Linux or FreeBSD AIO interface
 ### AIOWriteBytes {#aiowritebytes}
 
 Number of bytes written with Linux or FreeBSD AIO interface
+
+### AIRequestMicroseconds {#airequestmicroseconds}
+
+Total time spent in AI provider requests, including failed attempts and response parsing, excluding retry backoff. Summed across threads.
+
+### AIRetryBackoffMicroseconds {#airetrybackoffmicroseconds}
+
+Total time spent waiting before retries of failed AI provider requests. Summed across threads.
 
 ### AIRowsProcessed {#airowsprocessed}
 
