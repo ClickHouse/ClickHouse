@@ -155,6 +155,14 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
     return wb.str();
 }
 
+std::string ObjectStorageQueueOrderedFileMetadata::getPartitionKeyFromPath(
+    const std::string & path_,
+    ObjectStorageQueuePartitioningMode partitioning_mode_,
+    const ObjectStorageQueueFilenameParser * parser_)
+{
+    return getPartitionKey(path_, partitioning_mode_, parser_);
+}
+
 ObjectStorageQueueOrderedFileMetadata::Bucket ObjectStorageQueueOrderedFileMetadata::getBucketForPartition(
     const std::string & path_,
     const std::string & partition_key_,

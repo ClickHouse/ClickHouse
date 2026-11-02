@@ -105,7 +105,7 @@ public:
     void waitForPathToBeProcessed(
         const std::string & path,
         ContextPtr local_context,
-        std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) const;
+        std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt);
 
     /// Rebuild the object-storage S3 client under `context`, re-resolving credentials, without detaching the
     /// table. Used by the server-internal log-pipeline bootstrap to re-apply the server-credential opt-in after
@@ -203,7 +203,8 @@ private:
     /// borrowed from it (e.g. its table metadata) is used.
     std::shared_ptr<ObjectStorageQueueMetadata> tryGetFilesMetadata() const;
 
-    std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
+    std::shared_ptr<FileIterator> createFileIterator(
+        ContextPtr local_context, const ActionsDAG::Node * predicate, const std::optional<std::string> & partition_of_path);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
@@ -224,7 +225,8 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
+    bool streamToViews(
+        size_t streaming_tasks_index, UInt64 cycle_epoch, ContextPtr local_context, std::shared_ptr<FileIterator> file_iterator);
     /// Apply after_processing action to successfully processed files.
     void postProcess(
         const StoredObjects & successful_objects,

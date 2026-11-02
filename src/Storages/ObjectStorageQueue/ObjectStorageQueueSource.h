@@ -57,7 +57,8 @@ public:
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
-            std::atomic<bool> & shutdown_called_);
+            std::atomic<bool> & shutdown_called_,
+            const std::optional<std::string> & partition_of_path_);
 
         bool isFinished();
 
@@ -110,6 +111,7 @@ public:
         std::mutex next_mutex;
         size_t index = 0;
         std::map<std::string, std::string> partition_key_by_prefix;
+        std::optional<std::string> partition_key_filter;
         std::deque<std::pair<std::string, std::string>> partitions_to_list TSA_GUARDED_BY(next_mutex);
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();

@@ -70,6 +70,11 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
+    static std::string getPartitionKeyFromPath(
+        const std::string & path,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
+
     static Bucket getBucketForPartition(
         const std::string & path,
         const std::string & partition_key,

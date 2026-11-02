@@ -112,7 +112,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     LoggerPtr logger_,
     bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
-    std::atomic<bool> & shutdown_called_)
+    std::atomic<bool> & shutdown_called_,
+    const std::optional<std::string> & partition_of_path_)
     : WithContext(context_)
     , metadata(metadata_)
     , object_storage(object_storage_)
@@ -148,6 +149,11 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     {
         object_storage_iterator = std::make_shared<ObjectStorageIteratorFromList>(RelativePathsWithMetadata{});
         partition_key_by_prefix = metadata->getExplicitPartitions(prefix);
+        if (partition_of_path_)
+        {
+            const auto partition_key = ObjectStorageQueueMetadata::getPartitionKeyForPath(partition_key_by_prefix, *partition_of_path_);
+            std::erase_if(partition_key_by_prefix, [&](const auto & partition) { return partition.second != partition_key; });
+        }
         Strings partition_keys;
         for (const auto & [_, partition_key] : partition_key_by_prefix)
             partition_keys.push_back(partition_key);
@@ -159,6 +165,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
     else
     {
+        if (partition_of_path_)
+            partition_key_filter = ObjectStorageQueueOrderedFileMetadata::getPartitionKeyFromPath(
+                *partition_of_path_, metadata->getPartitioningMode(), metadata->getFilenameParser());
         const auto start_after = metadata->getStartAfterForListing();
         object_storage_iterator = object_storage->iterate(
             prefix,
@@ -266,7 +275,10 @@ ObjectStorageQueueSource::FileIterator::next()
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                if ((!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                    || (partition_key_filter
+                        && ObjectStorageQueueOrderedFileMetadata::getPartitionKeyFromPath(
+                               (*it)->getPath(), metadata->getPartitioningMode(), metadata->getFilenameParser()) != *partition_key_filter))
                     it = new_batch.erase(it);
                 else
                     ++it;
