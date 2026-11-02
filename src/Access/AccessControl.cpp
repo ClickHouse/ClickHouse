@@ -9,6 +9,7 @@
 #include <Access/LDAPAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/MultipleAccessStorage.h>
+#include <Access/QueryMaskingRulesCache.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/ReplicatedAccessStorage.h>
@@ -308,6 +309,7 @@ AccessControl::AccessControl()
       changes_notifier(std::make_unique<AccessChangesNotifier>()),
       password_rules(std::make_unique<PasswordComplexityRules>())
 {
+    query_masking_rules_cache = std::make_unique<QueryMaskingRulesCache>(*this);
 }
 
 
@@ -445,6 +447,8 @@ void AccessControl::addReplicatedStorage(
         allow_backup_,
         throw_on_invalid_replicated_access_entities);
     addStorage(new_storage);
+    /// The storage has read its entities from ZooKeeper, but only queued the notifications about them.
+    query_masking_rules_cache->reload();
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
 
@@ -465,6 +469,8 @@ void AccessControl::addDiskStorage(const String & storage_name_, const String & 
     }
     auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, *changes_notifier, readonly_, allow_backup_);
     addStorage(new_storage);
+    /// The storage loads its entities without sending notifications.
+    query_masking_rules_cache->reload();
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 

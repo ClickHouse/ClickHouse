@@ -8,6 +8,7 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateQueryMaskingRuleQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
@@ -24,6 +25,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Access/MaskingPolicy.h>
+#include <Access/QueryMaskingRule.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils.h>
 #include <Core/Defines.h>
@@ -234,6 +236,16 @@ namespace
         return query;
     }
 
+    ASTPtr getCreateQueryImpl(const QueryMaskingRule & rule, bool attach_mode)
+    {
+        auto query = make_intrusive<ASTCreateQueryMaskingRuleQuery>();
+        query->name = rule.getName();
+        query->attach = attach_mode;
+        query->regexp = rule.regexp;
+        query->replace = rule.replace;
+        return query;
+    }
+
     ASTPtr getCreateQueryImpl(
         const IAccessEntity & entity,
         const AccessControl * access_control /* not used if attach_mode == true */,
@@ -249,6 +261,8 @@ namespace
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
             return getCreateQueryImpl(*profile, access_control, attach_mode);
+        if (const QueryMaskingRule * rule = typeid_cast<const QueryMaskingRule *>(&entity))
+            return getCreateQueryImpl(*rule, attach_mode);
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", entity.formatTypeWithName());
     }
 }
@@ -438,6 +452,11 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         case AccessEntityType::MASKING_POLICY:
         {
             res.emplace_back(AccessType::SHOW_MASKING_POLICIES);
+            return res;
+        }
+        case AccessEntityType::QUERY_MASKING_RULE:
+        {
+            res.emplace_back(AccessType::QUERY_MASKING_RULE_ADMIN);
             return res;
         }
         case AccessEntityType::MAX:

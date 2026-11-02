@@ -2,6 +2,7 @@
 
 #include <Parsers/Access/ParserCheckGrantQuery.h>
 #include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ParserCreateQueryMaskingRuleQuery.h>
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
@@ -66,6 +67,7 @@ void registerParsers()
     registry.registerParser([]() -> std::unique_ptr<IParserBase> { return std::make_unique<ParserCreateHandlerQuery>(/*end_*/ nullptr); });
     registry.registerParser<ParserCreateMaskingPolicy>();
     registry.registerParser<ParserCreateQuery>();
+    registry.registerParser<ParserCreateQueryMaskingRuleQuery>();
     registry.registerParser<ParserCreateQuotaQuery>();
     registry.registerParser<ParserCreateRoleQuery>();
     registry.registerParser<ParserCreateRowPolicyQuery>();

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <vector>
+#include <base/defines.h>
 #include <Common/MultiVersion.h>
 
 namespace Poco
@@ -16,9 +18,9 @@ namespace Util
 
 /// It's used as a singleton via getInstance method
 
-/// Initially it's empty (nullptr) and after manual initialization
-/// (one-time, done by setInstance call) it takes the proper value which
-/// is stored in unique_ptr.
+/// Initially it's empty (nullptr). The published instance holds the rules from the server config
+/// (set by setInstance) followed by the SQL-defined rules (set by setSQLDefinedRules);
+/// each call replaces only its own list.
 
 /// It looks like the singleton is the best option here, as
 /// two users of that object (OwnSplitChannel & Interpreters/executeQuery)
@@ -44,11 +46,18 @@ class SensitiveDataMasker
 {
 private:
     class MaskingRule;
-    std::vector<std::unique_ptr<MaskingRule>> all_masking_rules;
+    using MaskingRules = std::vector<std::shared_ptr<const MaskingRule>>;
+    MaskingRules all_masking_rules;
     using MaskerMultiVersion = MultiVersion<SensitiveDataMasker>;
     static MaskerMultiVersion sensitive_data_masker;
 
+    static std::mutex rule_sources_mutex;
+    static MaskingRules config_rules TSA_GUARDED_BY(rule_sources_mutex);
+    static MaskingRules sql_defined_rules TSA_GUARDED_BY(rule_sources_mutex);
+    static void publishRules() TSA_REQUIRES(rule_sources_mutex);
+
 public:
+    SensitiveDataMasker();
     SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     ~SensitiveDataMasker();
 
@@ -56,12 +65,16 @@ public:
     size_t wipeSensitiveData(std::string & data) const;
     size_t wipeSensitiveDataThrow(std::string & data) const;
 
-    /// setInstance is not thread-safe and should be called once in single-thread mode.
-    /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
+    /// Replaces the rules from the server config.
     static void setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_);
+    /// Replaces the rules defined by CREATE QUERY MASKING RULE.
+    static void setSQLDefinedRules(std::unique_ptr<SensitiveDataMasker>&& sql_defined_masker);
     static MaskerMultiVersion::Version getInstance();
 
-    /// Used in tests.
+    /// Throws if the regexp is empty or cannot be compiled, or the replacement is not a valid rewrite for it.
+    /// The error messages never contain any part of the regexp.
+    static void validateRule(const std::string & rule_description, const std::string & regexp_string, const std::string & replacement_string);
+
     void addMaskingRule(
         const std::string & name,
         const std::string & regexp_string,

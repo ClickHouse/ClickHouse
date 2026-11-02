@@ -367,6 +367,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `DROP ROW POLICY`
     - `DROP SETTINGS PROFILE`
     - `DROP USER`
+    - `QUERY MASKING RULE ADMIN`
     - `ROLE ADMIN`
     - `SHOW ACCESS`
       - `SHOW QUOTAS`
@@ -785,6 +786,7 @@ Allows a user to execute queries that manage users, roles and row policies.
   - `CREATE SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `CREATE PROFILE`
   - `ALTER SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `ALTER PROFILE`
   - `DROP SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `DROP PROFILE`
+  - `QUERY MASKING RULE ADMIN`. Level: `GLOBAL`. Allows creating, altering, dropping, moving and listing [query masking rules](/reference/statements/create/query-masking-rule).
   - `SHOW ACCESS`. Level: `GROUP`
     - `SHOW_USERS`. Level: `GLOBAL`. Aliases: `SHOW CREATE USER`
     - `SHOW_ROLES`. Level: `GLOBAL`. Aliases: `SHOW CREATE ROLE`

@@ -90,7 +90,7 @@ namespace
 #endif
 
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
-            || (table_name.table == "row_policies") || (table_name.table == "quotas");
+            || (table_name.table == "row_policies") || (table_name.table == "quotas") || (table_name.table == "query_masking_rules");
     }
 
     /// Whether a specified name corresponds one of the tables backuping ACL.
