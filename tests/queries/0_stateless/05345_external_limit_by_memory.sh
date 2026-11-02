@@ -109,7 +109,7 @@ ratio_query="
     SETTINGS max_threads = 1, max_block_size = 65536,
         max_memory_usage = 0, max_memory_usage_for_user = 167772160,
         max_untracked_memory = 0, max_bytes_before_external_limit_by = 0"
-local_query --query "${ratio_query}, max_bytes_ratio_before_external_limit_by = 0" 2>&1 | grep -o -m1 'MEMORY_LIMIT_EXCEEDED'
+local_query --query "${ratio_query}, max_bytes_ratio_before_external_limit_by = 0" 2>&1 | grep -oF 'MEMORY_LIMIT_EXCEEDED' | head -1
 local_query --query "${ratio_query}, max_bytes_ratio_before_external_limit_by = 0.5, log_comment = 'ratio 0.5'; ${SPILL_EVENTS}"
 
 # The spill files count toward the disk quota of the query. Exceeding it fails the query after its first runs,
