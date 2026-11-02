@@ -31,7 +31,7 @@ namespace
 /// so a bucket fits in the CPU cache in most cases, and the number of small pieces created while scattering is bounded.
 constexpr size_t max_num_buckets = 256;
 
-/// A uniformly distributed random number in [0, n), see https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+/// A random number in [0, n) using multiply-high reduction, see https://arxiv.org/abs/1805.10941
 /// The bias is at most n / 2^64, which is negligible.
 inline UInt64 randomBelow(pcg64 & rng, UInt64 n)
 {
