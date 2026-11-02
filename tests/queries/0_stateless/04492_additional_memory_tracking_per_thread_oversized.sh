@@ -62,6 +62,11 @@ cat > "$CONFIG_FILE" <<EOF
 </clickhouse>
 EOF
 
+# The nonconstant `throwIf` fails on the very first row, so the query reports
+# `MEMORY_LIMIT_EXCEEDED` only if the pipeline workers take the reservation
+# before running any processor (and not just the separate reservation that
+# guards finalization).
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
-    SELECT count() FROM numbers_mt(1000) SETTINGS max_threads = 8
-" 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED' | head -n1
+    SELECT count() FROM numbers_mt(1000) WHERE NOT throwIf(number < 1000000, 'processor work ran before the speculative reservation')
+    SETTINGS max_threads = 8
+" 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' | head -n1

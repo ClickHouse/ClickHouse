@@ -67,6 +67,19 @@ EOF
 # A single speculative reservation already exceeds the hard limit;
 # the pipeline executor must abort the query with MEMORY_LIMIT_EXCEEDED instead
 # of hanging, regardless of how many workers run concurrently.
+#
+# The reservation must be taken by every pipeline worker before it runs any
+# processor, not only by the separate reservation that guards finalization. To
+# tell these apart, the query evaluates a nonconstant `throwIf` that fails on
+# the very first row. If a worker started processing without its reservation,
+# the query would fail with `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` instead.
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
-    SELECT count() FROM numbers_mt(1000) SETTINGS max_threads = 8
-" 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED' | head -n1
+    SELECT count() FROM numbers_mt(1000) WHERE NOT throwIf(number < 1000000, 'processor work ran before the speculative reservation')
+    SETTINGS max_threads = 8
+" 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' | head -n1
+
+# The same for the single-thread branch of the executor.
+${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
+    SELECT count() FROM numbers(1000) WHERE NOT throwIf(number < 1000000, 'processor work ran before the speculative reservation')
+    SETTINGS max_threads = 1
+" 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' | head -n1
