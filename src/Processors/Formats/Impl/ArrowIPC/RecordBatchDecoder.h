@@ -138,6 +138,10 @@ DataTypePtr arrayElementHint(const DataTypePtr & hint);
 /// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
 DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive);
 
+/// The requested type hint for the element at `pos` of a Tuple, named or not, or null when the hint is not a Tuple
+/// or has no such element. Used for the fields of a struct with `ArrowType::positional_fields`.
+DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos);
+
 /// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.
 DataTypePtr mapEntriesHint(const DataTypePtr & hint);
 
@@ -304,7 +308,12 @@ private:
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// materializing its data. With `validate_lengths`, checks buffer sizes and row-aligned child
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
+    /// With `validate_lengths`, also collects the non-nullable fields with nulls into `undeclared_null_fields`.
     void advanceField(const ArrowField & field, bool validate_lengths = false);
+    /// Converts the buffers of `fields` in the current batch from big-endian to little-endian in place: walks
+    /// them in layout order with `advanceField`, which byte-swaps every buffer it passes, then rewinds the
+    /// cursors. `prepareBuffers` has already copied a big-endian batch's buffers into `decompressed_body`.
+    void convertBuffersFromBigEndian(const ArrowField * fields, size_t count);
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
@@ -336,6 +345,12 @@ private:
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
+    /// Decodes a ListView/LargeListView field into an `Array`: each visible row copies the child range
+    /// [offset, offset + size), which may overlap other rows' ranges and come in any order. An invisible row
+    /// (whose offset and size are undefined) is an empty array, like an invisible List row.
+    ColumnPtr readListViewAndChild(
+        const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
+        size_t list_depth, const InvisibleRowsMask * invisible_rows);
     /// The requested ClickHouse type for a field: `resolveHint` over the requested types of the batch being
     /// decoded (`target_types`), preferring the hint derived from the parent and otherwise looking up `path`,
     /// the dotted column name, `list_depth` lists below the top level.
@@ -356,7 +371,7 @@ private:
     /// sit at the position of the field encoding the dictionary.
     DecodedColumn decodeBatchColumn(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        ColumnUInt8::Ptr * decoded_null_map = nullptr);
+        bool read_undeclared_nulls, ColumnUInt8::Ptr * decoded_null_map = nullptr);
     /// Verifies that the batch's nodes, buffers and variadic counts were consumed exactly, then releases the
     /// per-batch state `beginBatch` set up.
     void finishBatch();
@@ -367,6 +382,11 @@ private:
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
     /// normalized name appended to its parent's path.
     String childPath(const String & path, const String & child_name) const;
+    /// The requested type hint and the path of the `i`-th field of a struct: by name, or by position (the path
+    /// then uses the 1-based element number, as for an unnamed `Tuple`) when the struct has `positional_fields`.
+    /// Positional paths keep equally named fields apart in the dictionary uses, which are keyed by path.
+    DataTypePtr structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const;
+    String structFieldPath(const String & path, const ArrowType & type, size_t i) const;
 
     const ArrowSchema & schema;
     const FormatSettings & settings;
@@ -388,6 +408,9 @@ private:
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
     VectorWithMemoryTracking<Int64> variadic_counts;
     size_t variadic_index = 0;
+    /// Set during `convertBuffersFromBigEndian`: `advanceField` byte-swaps the buffers it passes.
+    bool swap_from_big_endian = false;
+    UnorderedSetWithMemoryTracking<const ArrowField *> undeclared_null_fields;
 };
 
 }

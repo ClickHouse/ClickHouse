@@ -1,0 +1,6 @@
+Wide arguments at the freeze, then growing heap states
+128	12615680	1048576
+frozen tables written to disk	1
+A few groups with a wide argument
+128	1048576
+tables frozen	0

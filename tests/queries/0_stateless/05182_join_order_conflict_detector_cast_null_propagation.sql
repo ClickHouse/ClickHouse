@@ -37,7 +37,7 @@ INSERT INTO t3 VALUES (10);
 CREATE TABLE t3v (k Variant(Int64), tag String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO t3v VALUES (10::Int64, 'ten'), (NULL, 'null_key');
 
-SET enable_analyzer = 1, single_join_prefer_left_table = 0;
+SET single_join_prefer_left_table = 0;
 -- Pinned because the test asserts on the join plan shape.
 SET query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
 -- Make t1 look expensive so the detector prefers to reorder t2/t3 to the front.

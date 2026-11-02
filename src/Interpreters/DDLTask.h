@@ -126,6 +126,8 @@ struct DDLTaskBase
     /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
     ContextPtr submitting_user_context;
 
+    QueryExecutionStartedCallback query_execution_started_callback;
+
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;

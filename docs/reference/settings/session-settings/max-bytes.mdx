@@ -96,7 +96,7 @@ In case of ORDER BY with LIMIT, when memory usage is higher than specified thres
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "The setting was backported to 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}]}]}/>
 
 Memory budget, in bytes, for the Bloom filter that each set of `IN` written to disk keeps in memory. The
 filter lets lookups of values that are not in the set skip reading the disk. It does not speed up lookups
@@ -127,7 +127,7 @@ See [IN in external memory](/reference/statements/in#in-in-external-memory).
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "The setting was backported to 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}]}]}/>
 
 Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
 lookup that needs a block already read by an earlier lookup gets it from the cache instead of reading it
@@ -248,7 +248,7 @@ Has effect for every hash-based `join_algorithm`, including `grace_hash`, provid
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Enabled spilling of the set of `IN` with a subquery to disk by default, at half of the available server or user memory."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "The default change to 0.5 was backported to 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}]}]}/>
 
 Fraction of available server or user memory used to calculate the threshold for spilling the set of `IN`
 with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
