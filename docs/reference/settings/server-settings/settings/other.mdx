@@ -513,8 +513,7 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 
 ## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
@@ -1670,7 +1669,7 @@ Additionally:
 
 | Setting | Description                                                                                                                                                                                                 | Default Value       |
 |---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `level` | Maximum Message Level (by default `Trace`) which will be stored in a table.                                                                                                                                 | `Trace`             |
+| `level` | Maximum message level stored in the table. When set explicitly, the root logger level is raised to at least this value, so `text_log` can be more verbose than the server log file (`logger.level`). When not set, messages up to the most verbose level of the configured log outputs (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`) are stored. | `Trace` (limited by the other log outputs when not set) |
 
 **Example**
 
