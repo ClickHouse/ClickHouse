@@ -167,7 +167,7 @@ static NameSet getHeaderColumnsReadByDefault(
         expressions.pop_back();
 
         RequiredSourceColumnsVisitor::Data data;
-        data.mask_subcolumns_of_lambda_arguments = true;
+        data.mask_subcolumns_of_aliases = true;
         RequiredSourceColumnsVisitor(data).visit(expression);
         for (const auto & required : data.requiredColumns())
         {
@@ -286,7 +286,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
                 continue;
 
             RequiredSourceColumnsVisitor::Data columns_context;
-            columns_context.mask_subcolumns_of_lambda_arguments = true;
+            columns_context.mask_subcolumns_of_aliases = true;
             auto expression = it->second.expression->clone();
             RequiredSourceColumnsVisitor(columns_context).visit(expression);
 

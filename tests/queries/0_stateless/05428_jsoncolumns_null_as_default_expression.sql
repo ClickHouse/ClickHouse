@@ -75,3 +75,7 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05428_lambda_subcolumn.jsonl', 
 
 SELECT b FROM file(currentDatabase() || '_05428_lambda_subcolumn.jsonl', JSONEachRow,
     'z String, a Tuple(x UInt32) DEFAULT tuple(toUInt32(z)), b UInt32 DEFAULT arraySum(arrayMap(a -> a.x, [CAST(tuple(2) AS Tuple(x UInt32))]))');
+
+-- "a.x" of the alias "a" is not the column "a" either.
+SELECT b FROM file(currentDatabase() || '_05428_lambda_subcolumn.jsonl', JSONEachRow,
+    'z String, a Tuple(x UInt32) DEFAULT tuple(toUInt32(z)), b UInt32 DEFAULT arraySum(arrayMap(x -> (CAST(tuple(2) AS Tuple(x UInt32)) AS a).x + a.x, [1, 2]))');

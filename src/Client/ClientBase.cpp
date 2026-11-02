@@ -2582,8 +2582,8 @@ void collectScopeAliases(const ASTPtr & ast, NameSet & aliases)
         collectScopeAliases(child, aliases);
 }
 
-/// Generates the new names of lambda arguments and the aliases of definitions, which are different from the columns
-/// and from the identifiers and aliases in their default expressions, because any of them can be substituted.
+/// Generates the aliases of definitions, which are different from the columns and from the identifiers and aliases
+/// in their default expressions, because any of them can be substituted.
 class UniqueNameGenerator
 {
 public:
@@ -2613,13 +2613,14 @@ private:
 
 /// Makes the default expressions of the inserted columns computable without the not inserted columns, as the server does:
 /// a not inserted column takes its own default (or the default of its type).
-/// In each expression a not inserted column is defined once, as `_CAST(default, 'Type') AS alias` in place of its first use,
-/// and the other uses refer to the alias, so that a default which is used many times is not copied for every use.
+/// In each expression a not inserted column is defined once, as `_CAST(default, 'Type') AS alias`, and the other uses
+/// refer to the alias, so that a default which is used many times is not copied for every use.
+/// The definition is placed in place of the first use, or, if it is in a lambda body, at the top level of the expression,
+/// as `tupleElement(tuple(expression, definitions...), 1)`, because the lambda arguments and the aliases defined in
+/// a lambda body could capture the columns of the definition, and an alias defined in a lambda body is not visible outside.
 /// The aliases are unique (or the own alias of the first use), so the definitions in the expressions of different columns,
-/// which are computed together, don't clash. An alias defined in a lambda body is not visible outside of it.
-/// The arguments of lambdas are renamed to unique names, so that they don't capture the columns of a definition
-/// which is substituted for an alias in a lambda body, and are not taken for columns themselves.
-/// An identifier which is an alias visible in its scope is not a column, as for the server.
+/// which are computed together, don't clash. The lambdas are not changed otherwise.
+/// An identifier which is a lambda argument or an alias visible in its scope is not a column, as for the server.
 class NotInsertedColumnsDefaults
 {
 public:
@@ -2630,36 +2631,38 @@ public:
 
     void apply(ASTPtr & expression)
     {
-        std::unordered_map<String, String> aliases;
-        NameSet scope_aliases;
-        collectScopeAliases(expression, scope_aliases);
-        rewrite(expression, aliases, scope_aliases);
+        aliases.clear();
+        hoisted_aliases.clear();
+        top_level_definitions.clear();
+        top_level_scope_aliases.clear();
+        collectScopeAliases(expression, top_level_scope_aliases);
+        rewrite(expression, top_level_scope_aliases, {});
+
+        if (top_level_definitions.empty())
+            return;
+
+        const String alias = expression->tryGetAlias();
+        expression->setAlias("");
+        auto tuple = makeASTFunction("tuple", expression);
+        for (auto & definition : top_level_definitions)
+            tuple->arguments->children.push_back(std::move(definition));
+        top_level_definitions.clear();
+
+        auto element = makeASTFunction("tupleElement", std::move(tuple), make_intrusive<ASTLiteral>(UInt64(1)));
+        element->setAlias(alias);
+        expression = std::move(element);
     }
 
 private:
-    /// `aliases` maps the defined not inserted columns to the aliases of their definitions, `scope_aliases` are the aliases
-    /// of the expression visible in the scope, `lambda_arguments` maps the arguments of the enclosing lambdas to their new names.
-    void rewrite(
-        ASTPtr & ast,
-        std::unordered_map<String, String> & aliases,
-        const NameSet & scope_aliases,
-        const std::unordered_map<String, String> & lambda_arguments = {})
+    /// `scope_aliases` are the aliases of the expression visible in the scope, `shadowed_names` are the arguments of
+    /// the enclosing lambdas and the aliases defined in their bodies, which hide the aliases of the top level.
+    void rewrite(ASTPtr & ast, const NameSet & scope_aliases, const NameSet & shadowed_names, bool in_lambda = false)
     {
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
-            if (auto it = identifier->name_parts.empty() ? lambda_arguments.end() : lambda_arguments.find(identifier->name_parts.front());
-                it != lambda_arguments.end())
-            {
-                auto name_parts = identifier->name_parts;
-                name_parts.front() = it->second;
-                auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
-                renamed->setAlias(identifier->tryGetAlias());
-                ast = std::move(renamed);
-                return;
-            }
-
             const String name = identifier->name();
             if (inserted_columns.contains(name) || !columns.has(name) || scope_aliases.contains(name)
+                || (!identifier->name_parts.empty() && shadowed_names.contains(identifier->name_parts.front()))
                 || (identifier->compound() && scope_aliases.contains(identifier->name_parts.front())))
                 return;
 
@@ -2667,63 +2670,89 @@ private:
             const String own_alias = identifier->tryGetAlias();
             if (auto it = aliases.find(name); it != aliases.end())
             {
-                auto reference = make_intrusive<ASTIdentifier>(it->second);
-                if (own_alias != it->second)
+                String alias = it->second;
+                if (shadowed_names.contains(alias))
+                {
+                    /// The own alias of the first use is hidden here, refer to it by a unique alias from the top level.
+                    auto [hoisted_it, inserted] = hoisted_aliases.try_emplace(name);
+                    if (inserted)
+                    {
+                        hoisted_it->second = unique_names.generate("__default_");
+                        auto reference = make_intrusive<ASTIdentifier>(alias);
+                        reference->setAlias(hoisted_it->second);
+                        top_level_definitions.push_back(std::move(reference));
+                    }
+                    alias = hoisted_it->second;
+                }
+
+                auto reference = make_intrusive<ASTIdentifier>(alias);
+                if (own_alias != alias)
                     reference->setAlias(own_alias);
                 ast = std::move(reference);
                 return;
             }
 
-            const String alias = own_alias.empty() ? unique_names.generate("__default_") : own_alias;
+            const String alias = own_alias.empty() || in_lambda ? unique_names.generate("__default_") : own_alias;
             aliases.emplace(name, alias);
 
             const auto & column = columns.get(name);
             ASTPtr default_value;
             if (column.default_desc.expression)
             {
-                /// The default is computed in the same scope, as the defaults of the server.
+                /// The default is computed in the scope of the top level, as the defaults of the server.
                 default_value = column.default_desc.expression->clone();
-                NameSet default_scope_aliases = scope_aliases;
+                NameSet default_scope_aliases = top_level_scope_aliases;
                 collectScopeAliases(default_value, default_scope_aliases);
-                rewrite(default_value, aliases, default_scope_aliases);
+                rewrite(default_value, default_scope_aliases, {});
             }
             else
                 default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
 
             auto definition = makeASTFunction("_CAST", std::move(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
             definition->setAlias(alias);
-            ast = std::move(definition);
+
+            if (in_lambda)
+            {
+                top_level_definitions.push_back(std::move(definition));
+                auto reference = make_intrusive<ASTIdentifier>(alias);
+                reference->setAlias(own_alias);
+                ast = std::move(reference);
+            }
+            else
+                ast = std::move(definition);
             return;
         }
 
         if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
             && function->arguments->children.size() == 2)
         {
-            auto body_lambda_arguments = lambda_arguments;
-            if (auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
-            {
-                for (auto & argument : arguments_tuple->arguments->children)
-                {
-                    auto * argument_identifier = argument->as<ASTIdentifier>();
-                    if (!argument_identifier)
-                        continue;
+            NameSet body_shadowed_names = shadowed_names;
+            const auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>();
+            if (arguments_tuple && arguments_tuple->arguments)
+                for (const auto & argument : arguments_tuple->arguments->children)
+                    if (const auto * argument_identifier = argument->as<ASTIdentifier>())
+                        body_shadowed_names.insert(argument_identifier->name());
 
-                    String unique_name = unique_names.generate("__lambda_argument_");
-                    body_lambda_arguments[argument_identifier->name()] = unique_name;
-                    argument_identifier->setShortName(unique_name);
-                }
-            }
+            NameSet body_aliases;
+            collectScopeAliases(function->arguments->children[1], body_aliases);
+            body_shadowed_names.insert(body_aliases.begin(), body_aliases.end());
 
-            auto body_aliases = aliases;
             NameSet body_scope_aliases = scope_aliases;
-            collectScopeAliases(function->arguments->children[1], body_scope_aliases);
-            rewrite(function->arguments->children[1], body_aliases, body_scope_aliases, body_lambda_arguments);
+            body_scope_aliases.insert(body_aliases.begin(), body_aliases.end());
+            rewrite(function->arguments->children[1], body_scope_aliases, body_shadowed_names, true);
             return;
         }
 
         for (auto & child : ast->children)
-            rewrite(child, aliases, scope_aliases, lambda_arguments);
+            rewrite(child, scope_aliases, shadowed_names, in_lambda);
     }
+
+    /// The defined not inserted columns and the aliases of their definitions.
+    std::unordered_map<String, String> aliases;
+    /// The unique aliases of the top level for the definitions which have the own aliases of their first uses.
+    std::unordered_map<String, String> hoisted_aliases;
+    ASTs top_level_definitions;
+    NameSet top_level_scope_aliases;
 
     const NameSet & inserted_columns;
     const ColumnsDescription & columns;

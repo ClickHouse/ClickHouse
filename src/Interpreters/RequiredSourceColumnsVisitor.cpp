@@ -173,8 +173,12 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (data.private_aliases.contains(node.name()))
         return;
 
-    if (data.mask_subcolumns_of_lambda_arguments && node.compound() && data.private_aliases.contains(node.name_parts.front()))
-        return;
+    if (data.mask_subcolumns_of_aliases && node.compound())
+    {
+        if (data.private_aliases.contains(node.name_parts.front()))
+            return;
+        data.compound_identifier_prefixes.emplace(node.name(), node.name_parts.front());
+    }
 
     data.addColumnIdentifier(node);
 }
