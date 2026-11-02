@@ -67,6 +67,11 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
+    /// With `use_external_buffer` there is no own allocation: the caller must provide the memory
+    /// through `set` before every `next`, which is what `ReaderExecutor` does for buffers that
+    /// advertise this capability.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
+
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     /// Enables `ParallelReadBuffer` to split one large object across `max_download_threads` ranged
