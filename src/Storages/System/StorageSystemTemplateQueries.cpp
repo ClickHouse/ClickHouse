@@ -12,6 +12,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -40,6 +41,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int ACCESS_DENIED;
     extern const int ATOMIC_RENAME_FAIL;
+    extern const int CANNOT_STAT;
 }
 
 namespace
@@ -49,6 +51,20 @@ namespace
     constexpr size_t MAX_DESCRIPTION_BYTES = 4096;
     constexpr size_t MAX_QUERY_BYTES = 1024 * 1024;
     constexpr size_t MAX_USER_QUERIES = 10000;
+
+    void checkUserQueryFields(std::string_view name, std::string_view category, std::string_view description, std::string_view query)
+    {
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query name must not be empty");
+        if (name.size() > MAX_NAME_BYTES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query name is too long: {} bytes, the maximum is {}", name.size(), MAX_NAME_BYTES);
+        if (category.size() > MAX_CATEGORY_BYTES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query category is too long: {} bytes, the maximum is {}", category.size(), MAX_CATEGORY_BYTES);
+        if (description.size() > MAX_DESCRIPTION_BYTES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query description is too long: {} bytes, the maximum is {}", description.size(), MAX_DESCRIPTION_BYTES);
+        if (query.size() > MAX_QUERY_BYTES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query text is too long: {} bytes, the maximum is {}", query.size(), MAX_QUERY_BYTES);
+    }
 }
 
 ColumnsDescription StorageSystemTemplateQueries::getColumnsDescription()
@@ -85,7 +101,12 @@ void StorageSystemTemplateQueries::loadIfNeeded() const
 
     std::vector<UserQuery> rows;
     std::error_code ec;
-    if (fs::exists(file_path, ec))
+    const bool file_exists = fs::exists(file_path, ec);
+    /// A failed status check must not be mistaken for a missing file: caching an empty catalog
+    /// would make the next INSERT overwrite the saved templates. `loaded` stays false, so the load is retried.
+    if (ec)
+        throw Exception(ErrorCodes::CANNOT_STAT, "Cannot check existence of '{}': {}", file_path, ec.message());
+    if (file_exists)
     {
         ReadBufferFromFile in(file_path);
         while (!in.eof())
@@ -149,16 +170,7 @@ void StorageSystemTemplateQueries::addUserQueries(std::vector<UserQuery> new_row
     auto updated = user_queries;
     for (auto & row : new_rows)
     {
-        if (row.name.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query name must not be empty");
-        if (row.name.size() > MAX_NAME_BYTES)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query name is too long: {} bytes, the maximum is {}", row.name.size(), MAX_NAME_BYTES);
-        if (row.category.size() > MAX_CATEGORY_BYTES)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query category is too long: {} bytes, the maximum is {}", row.category.size(), MAX_CATEGORY_BYTES);
-        if (row.description.size() > MAX_DESCRIPTION_BYTES)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query description is too long: {} bytes, the maximum is {}", row.description.size(), MAX_DESCRIPTION_BYTES);
-        if (row.query.size() > MAX_QUERY_BYTES)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query text is too long: {} bytes, the maximum is {}", row.query.size(), MAX_QUERY_BYTES);
+        checkUserQueryFields(row.name, row.category, row.description, row.query);
         if (isBuiltinName(row.name))
             throw Exception(ErrorCodes::ACCESS_DENIED, "Template query '{}' is built-in and cannot be overridden", row.name);
         if (!names.insert(row.name).second)
@@ -188,6 +200,7 @@ void StorageSystemTemplateQueries::deleteUserQuery(const String & name)
 
     saveToFile(updated);
     user_queries = std::move(updated);
+    LOG_INFO(getLogger("StorageSystemTemplateQueries"), "Deleted template query '{}' from '{}'", name, file_path);
 }
 
 class TemplateQueriesSink final : public SinkToStorage
@@ -206,9 +219,15 @@ public:
         if (columns.size() < 4)
             throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Expected at least 4 columns, got {}", columns.size());
 
+        /// Reject early: the final count and duplicate checks in `addUserQueries` cannot bound the memory used by buffered rows.
+        if (rows.size() + chunk.getNumRows() > MAX_USER_QUERIES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many user template queries in one INSERT, the maximum is {}", MAX_USER_QUERIES);
+
         const UInt32 now = static_cast<UInt32>(std::time(nullptr));
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
         {
+            checkUserQueryFields(columns[0]->getDataAt(i), columns[1]->getDataAt(i), columns[2]->getDataAt(i), columns[3]->getDataAt(i));
+
             StorageSystemTemplateQueries::UserQuery row;
             row.name = String(columns[0]->getDataAt(i));
             row.category = String(columns[1]->getDataAt(i));
