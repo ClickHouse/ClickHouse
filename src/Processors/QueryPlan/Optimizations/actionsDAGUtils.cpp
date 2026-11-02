@@ -923,6 +923,7 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
+    NodeSet visited{node};
     while (!nodes.empty())
     {
         node = nodes.top();
@@ -945,7 +946,8 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
         }
 
         for (const auto * child : node->children)
-            nodes.push(child);
+            if (visited.insert(child).second)
+                nodes.push(child);
     }
     return true;
 }

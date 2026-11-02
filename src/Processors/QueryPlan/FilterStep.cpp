@@ -319,6 +319,7 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
+    std::unordered_set<const ActionsDAG::Node *> visited{node};
     while (!nodes.empty())
     {
         node = nodes.top();
@@ -331,7 +332,8 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
         }
 
         for (const auto * child : node->children)
-            nodes.push(child);
+            if (visited.insert(child).second)
+                nodes.push(child);
     }
     return false;
 }
@@ -343,6 +345,7 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
+    std::unordered_set<const ActionsDAG::Node *> visited{node};
     while (!nodes.empty())
     {
         node = nodes.top();
@@ -355,7 +358,8 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
             return true;
 
         for (const auto * child : node->children)
-            nodes.push(child);
+            if (visited.insert(child).second)
+                nodes.push(child);
     }
     return false;
 }
