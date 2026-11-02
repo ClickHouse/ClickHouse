@@ -414,7 +414,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     {
         if (directoryInTable(instant.relative_path, table_path) != timeline->directory)
             continue;
-        auto completed = parseCompletedInstantName(instant.getFileName(), timeline->layout_2);
+        const String file_name = instant.getFileName();
+        auto completed = parseCompletedInstantName(file_name, timeline->layout_2);
         if (completed && completed->action == "replacecommit")
             collectReplacedFileGroups(instant, object_storage, local_context, log, replaced);
     }
