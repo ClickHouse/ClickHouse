@@ -18,10 +18,11 @@ IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options 
 
 CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2"
 
-# $1: label, $2: statements that build the history of `{table}`, $3: expected reads per delete file (optional).
+# $1: label, $2: statements that build the history of `{table}`, $3: expected reads per delete file (optional),
+# $4: expected `total-records` of the snapshots.
 run_case()
 {
-    local label="$1" history="$2" expected_reads="$3"
+    local label="$1" history="$2" expected_reads="$3" expected_totals="$4"
     local table="t_${CLICKHOUSE_DATABASE}_${label}"
     local table_path="${USER_FILES_PATH:?}/${table}/"
     local query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${label}_${RANDOM}"
@@ -41,12 +42,17 @@ run_case()
 
     if [[ "${IS_CLOUD}" = "1" ]]; then
         echo "${label} 2 2"
+        echo "${label} total-records: ${expected_totals}"
         [[ -n "${expected_reads}" ]] && echo "${label} reads per delete file: ${expected_reads}"
     else
         [[ -n "${optimize_err}" ]] && echo "${label} FAIL: OPTIMIZE failed: ${optimize_err}"
         echo "${label}" \
             "$($CH --query "SELECT count() FROM ${table} SETTINGS optimize_trivial_count_query = 1")" \
             "$($CH --query "SELECT count() FROM ${table} SETTINGS optimize_trivial_count_query = 0")"
+        echo "${label} total-records:" "$($CH --query "
+            SELECT arraySort(groupArray(summary['total-records']))
+            FROM system.iceberg_history
+            WHERE database = currentDatabase() AND table = '${table}'")"
         if [[ -n "${expected_reads}" ]]; then
             $CH --query "SYSTEM FLUSH LOGS blob_storage_log"
             local reads=()
@@ -68,13 +74,13 @@ run_case()
 run_case appended_parent "
     INSERT INTO {table} VALUES (1), (2);
     INSERT INTO {table} VALUES (3);
-    ALTER TABLE {table} DELETE WHERE x = 1"
+    ALTER TABLE {table} DELETE WHERE x = 1" "" "['1','2']"
 
 # A delete-only snapshot is not rewritten, so the second append has no rewritten parent.
 run_case delete_parent "
     INSERT INTO {table} VALUES (1), (2);
     ALTER TABLE {table} DELETE WHERE x = 1;
-    INSERT INTO {table} VALUES (3)"
+    INSERT INTO {table} VALUES (3)" "" "['1','2']"
 
 # Each delete file applies to one data file: two reads (the schema and the rows) each.
 run_case delete_file_reads "
@@ -83,4 +89,4 @@ run_case delete_file_reads "
     INSERT INTO {table} VALUES (3);
     INSERT INTO {table} VALUES (4);
     ALTER TABLE {table} DELETE WHERE x = 1;
-    ALTER TABLE {table} DELETE WHERE x = 2" "2 2"
+    ALTER TABLE {table} DELETE WHERE x = 2" "2 2" "['0','0','1','2']"
