@@ -16,6 +16,8 @@
                  `if` with a constant condition by its branch, `IN` with an array by `has`. -->
             <function>if</function>
             <function>in</function>
+            <!-- Handled by the legacy `ExpressionAnalyzer` before the function is looked up. -->
+            <function>indexHint</function>
         </functions_requiring_grant>
     </access_control_improvements>
 </clickhouse>

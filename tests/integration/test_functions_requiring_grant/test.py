@@ -66,6 +66,7 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B")
+        instance.query("DROP TABLE IF EXISTS t")
         instance.query("DROP FUNCTION IF EXISTS wrap_hex")
         instance.query("DROP FUNCTION IF EXISTS listed_udf")
 
@@ -200,6 +201,27 @@ def test_rewritten_call_requires_grant():
 
         instance.query(f"GRANT FUNCTION ON {function} TO A")
         assert instance.query(query, user="A") == result, query
+
+
+def test_values_expression_requires_grant():
+    """Expressions in `VALUES` are evaluated by the legacy `ExpressionAnalyzer`, which handles
+    `IN` and `indexHint` itself before the function is looked up."""
+    instance.query("CREATE TABLE t (x UInt8) ENGINE = Memory")
+    instance.query("CREATE USER A")
+    instance.query("GRANT INSERT ON t TO A")
+
+    for query, function in [
+        ("INSERT INTO t VALUES (1 IN [materialize(1)])", "in"),
+        ("INSERT INTO t VALUES (indexHint(1))", "indexHint"),
+    ]:
+        assert "Not enough privileges" in instance.query_and_get_error(
+            query, user="A"
+        ), query
+
+        instance.query(f"GRANT FUNCTION ON {function} TO A")
+        instance.query(query, user="A")
+
+    assert instance.query("SELECT x FROM t") == "1\n1\n"
 
 
 def test_query_cache_does_not_outlive_grant():
