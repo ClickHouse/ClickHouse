@@ -207,7 +207,7 @@ TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
         metadata->getValue<Int64>(Iceberg::f_current_snapshot_id));
 }
 
-Poco::JSON::Object::Ptr makeMetadataWithLog(size_t entries)
+static Poco::JSON::Object::Ptr makeMetadataWithLog(size_t entries)
 {
     auto metadata = makeMinimalV2Metadata();
     auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
@@ -221,7 +221,7 @@ Poco::JSON::Object::Ptr makeMetadataWithLog(size_t entries)
     return metadata;
 }
 
-std::vector<String> metadataLogFiles(Poco::JSON::Object::Ptr metadata)
+static std::vector<String> metadataLogFiles(Poco::JSON::Object::Ptr metadata)
 {
     std::vector<String> files;
     auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
