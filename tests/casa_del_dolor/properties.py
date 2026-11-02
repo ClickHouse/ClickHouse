@@ -91,8 +91,8 @@ threads_lambda = lambda: random.randint(0, multiprocessing.cpu_count())
 no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 
 # How long `dolor.py` waits for a server to stop before force killing it, which fails the run.
-# The server's own `shutdown_wait_unfinished` must stay under this, or a drain slower than the
-# window is reported as a shutdown failure rather than letting the server give up on its own.
+# A stopping server can wait `shutdown_wait_unfinished` twice (for backups and restores, then for
+# connections), so twice that must stay under this for the server to give up on its own in time.
 SERVER_STOP_WAIT_SECONDS = 30
 
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
@@ -565,9 +565,8 @@ possible_properties = {
     "s3queue_disable_streaming": true_false_lambda,
     "show_addresses_in_stack_traces": true_false_lambda,
     "show_license_expiration_warnings": true_false_lambda,  # Cloud setting
-    "shutdown_wait_backups_and_restores": true_false_lambda,
     "shutdown_wait_unfinished": threshold_generator(
-        0.2, 0.2, 0, SERVER_STOP_WAIT_SECONDS - 10, allow_unlimited=False
+        0.2, 0.2, 0, (SERVER_STOP_WAIT_SECONDS - 10) // 2, allow_unlimited=False
     ),
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "skip_check_for_incorrect_settings": true_false_lambda,
@@ -1944,6 +1943,11 @@ def modify_server_settings(
         selected_properties["shutdown_wait_unfinished"] = possible_properties[
             "shutdown_wait_unfinished"
         ]
+
+    # By default a stopping server waits for a backup or restore for as long as it runs (Keeper
+    # retries after an error included); only with this off does `shutdown_wait_unfinished` bound it.
+    if root.find("shutdown_wait_backups_and_restores") is None:
+        selected_properties["shutdown_wait_backups_and_restores"] = lambda: 0
 
     # Add remote server configurations
     if (
