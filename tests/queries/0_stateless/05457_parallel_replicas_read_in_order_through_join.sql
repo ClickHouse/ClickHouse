@@ -6,6 +6,7 @@
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
+DROP TABLE IF EXISTS rj;
 
 CREATE TABLE l (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 128;
 SYSTEM STOP MERGES l;
@@ -16,6 +17,9 @@ INSERT INTO l SELECT (number * 13) % 75000, number + 600000 FROM numbers(300000)
 
 CREATE TABLE r (k UInt32, s String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO r SELECT number * 2, toString(number) FROM numbers(2500);
+
+CREATE TABLE rj (k UInt32, s String) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO rj SELECT number * 2, toString(number) FROM numbers(2500);
 
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
@@ -56,6 +60,15 @@ SELECT arraySort(groupArray(trim(explain))) FROM (
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT DISTINCT l.k, r.s FROM l LEFT JOIN r ON l.k = r.k ORDER BY l.k LIMIT 5;
 
+-- A `Join`-engine table is joined by a filled join, which keeps the left order without a pin.
+SELECT 'left join engine, order by';
+SELECT arraySort(groupArray(trim(explain))) FROM (
+    EXPLAIN actions = 1
+    SELECT l.k, l.v, rj.s FROM l LEFT ANY JOIN rj ON l.k = rj.k ORDER BY l.k, l.v LIMIT 5
+) WHERE explain LIKE '%ReadType%';
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+SELECT l.k, l.v, rj.s FROM l LEFT ANY JOIN rj ON l.k = rj.k ORDER BY l.k, l.v LIMIT 5;
+
 -- The virtual row bounds differ between replicas with different parts, so an inner join is read
 -- in order only when forced.
 SELECT 'inner join, order by';
@@ -91,3 +104,4 @@ SELECT cityHash64(groupArray((k, c))), count() FROM (SELECT l.k, count() AS c FR
 
 DROP TABLE l;
 DROP TABLE r;
+DROP TABLE rj;

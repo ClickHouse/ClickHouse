@@ -24,6 +24,13 @@ left join, distinct
 2	1
 3	
 4	2
+left join engine, order by
+['ReadType: InOrder']
+0	0	0
+0	75000	0
+0	150000	0
+0	225000	0
+0	300000	0
 inner join, order by
 ['ReadType: Default','ReadType: Default']
 0	0	0
