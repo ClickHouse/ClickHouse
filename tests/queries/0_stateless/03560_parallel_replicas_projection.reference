@@ -2,7 +2,6 @@
 Row 1:
 ──────
 reads_projection:    1
-reads_parts:         1
 reads_from_replicas: 1
 100045
 ---normal : contains only projections ---
@@ -15,7 +14,6 @@ reads_from_replicas: 1
 Row 1:
 ──────
 reads_projection:    1
-reads_parts:         1
 reads_from_replicas: 1
 1900
 ---agg : contains only projections ---
@@ -34,8 +32,11 @@ reads_from_replicas: 1
 Row 1:
 ──────
 reads_projection:    1
-reads_parts:         1
 reads_from_replicas: 1
 5
-03560_agg_only_projections	1
-03560_normal_only_projections	1
+03560_agg_only_projections	20
+03560_agg_projection_and_parts	110
+03560_exact_count_projection	8
+03560_minmax_projection	1
+03560_normal_only_projections	11
+03560_normal_projection_and_parts	10010

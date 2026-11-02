@@ -1,8 +1,8 @@
 -- Tags: long
 
--- Each check tells whether the plan has the projection read, the read of the table's parts where the
--- query reads some, and the read from the other replicas, which is `ReadFromRemoteParallelReplicas` for
--- query-based parallel replicas and `ReadFromParallelReplicas` for plan-based ones.
+-- Each check tells whether the plan has the projection read and the read from the other replicas, which is
+-- `ReadFromRemoteParallelReplicas` for query-based parallel replicas and `ReadFromParallelReplicas` for plan-based
+-- ones. The rows each case reads, which show whether it reads the parts without the projection, are checked at the end.
 
 -- Statistics-based part pruning can skip parts before they appear in EXPLAIN output
 SET use_statistics_for_part_pruning = 0;
@@ -31,11 +31,10 @@ SET enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, parallel_rep
 
 SELECT '---normal : contains both projections and parts ---';
 SELECT countIf(explain LIKE '%ReadFromMergeTree (p_normal)%') > 0 AS reads_projection,
-       countIf(explain LIKE '%.normal)%') > 0 AS reads_parts,
        countIf(explain LIKE '%ReadFrom%ParallelReplicas%') > 0 AS reads_from_replicas
 FROM (EXPLAIN SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010)
 FORMAT Vertical;
-SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010;
+SELECT sum(key) FROM normal WHERE key > 9999 AND key < 10010 SETTINGS log_comment = '03560_normal_projection_and_parts';
 
 SELECT '---normal : contains only projections ---';
 TRUNCATE TABLE normal;
@@ -66,11 +65,10 @@ INSERT INTO agg SELECT number AS key, number AS value FROM numbers(100, 100);
 
 SELECT '---agg : contains both projections and parts ---';
 SELECT countIf(explain LIKE '%ReadFromMergeTree (p_agg)%') > 0 AS reads_projection,
-       countIf(explain LIKE '%.agg)%') > 0 AS reads_parts,
        countIf(explain LIKE '%ReadFrom%ParallelReplicas%') > 0 AS reads_from_replicas
 FROM (EXPLAIN SELECT sum(value) AS v FROM agg where key > 90 AND key < 110)
 FORMAT Vertical;
-SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
+SELECT sum(value) AS v FROM agg where key > 90 AND key < 110 SETTINGS log_comment = '03560_agg_projection_and_parts';
 
 SELECT '---agg : contains only projections ---';
 TRUNCATE TABLE agg;
@@ -94,20 +92,22 @@ SELECT countIf(explain LIKE '%ReadFromPreparedSource (_minmax_count_projection)%
        countIf(explain LIKE '%ReadFrom%ParallelReplicas%') > 0 AS reads_from_replicas
 FROM (EXPLAIN SELECT max(i) FROM x)
 FORMAT Vertical;
-SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1;
+SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1, log_comment = '03560_minmax_projection';
 
 SELECT '--- exact-count projection ---';
 SELECT countIf(explain LIKE '%ReadFromPreparedSource (_exact_count_projection)%') > 0 AS reads_projection,
-       countIf(explain LIKE '%.x)%') > 0 AS reads_parts,
        countIf(explain LIKE '%ReadFrom%ParallelReplicas%') > 0 AS reads_from_replicas
 FROM (EXPLAIN SELECT count() FROM x WHERE (i >= 3 AND i <= 6) OR i = 7)
 FORMAT Vertical;
-SELECT count() FROM x WHERE (i >= 3 AND i <= 6) OR i = 7;
+SELECT count() FROM x WHERE (i >= 3 AND i <= 6) OR i = 7 SETTINGS log_comment = '03560_exact_count_projection';
 
--- The checks above cannot tell whether the projection-only cases also read the base table: only the projection
--- should be read, so a few rows, not the whole table.
+-- `EXPLAIN` cannot tell which parts each case reads: under plan-based parallel replicas the description of
+-- `ReadFromParallelReplicas` dumps the shipped fragment, which names the table too. The rows read can: a case that
+-- reads the parts without the projection reads the whole old part, one that reads only the projection a few rows.
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, read_rows < 100 AS reads_only_projection FROM system.query_log
+SELECT log_comment, read_rows FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 HOUR AND current_database = currentDatabase()
-    AND type = 'QueryFinish' AND is_initial_query AND log_comment IN ('03560_normal_only_projections', '03560_agg_only_projections')
+    AND type = 'QueryFinish' AND is_initial_query
+    AND log_comment IN ('03560_normal_projection_and_parts', '03560_normal_only_projections', '03560_agg_projection_and_parts',
+                        '03560_agg_only_projections', '03560_minmax_projection', '03560_exact_count_projection')
 ORDER BY log_comment;
