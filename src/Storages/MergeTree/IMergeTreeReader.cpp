@@ -25,6 +25,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -350,7 +351,17 @@ void IMergeTreeReader::fillMissingColumns(
                                 auto frozen_type = DataTypeFactory::instance().get(marker_info->type_name);
                                 frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
                                 if (!candidate_subcolumn.empty())
+                                {
                                     frozen_column = frozen_type->getSubcolumn(candidate_subcolumn, frozen_column);
+                                    frozen_type = frozen_type->getSubcolumnType(candidate_subcolumn);
+                                }
+
+                                /// The marker records the type of the column when the part was written. The column is read
+                                /// in its current type: `columns_to_read` carries that type for a column found under the name
+                                /// of the `Nested` column, so `performRequiredConversions` does not convert it after a pending
+                                /// `MODIFY COLUMN`. Convert the frozen value here instead.
+                                if (!frozen_type->equals(*column.type))
+                                    frozen_column = castColumn({frozen_column, frozen_type, column.name}, column.type);
                             }
                             res_columns[column_index] = std::move(frozen_column);
                             break;
