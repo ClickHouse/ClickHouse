@@ -29,6 +29,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -55,6 +56,13 @@ struct PartialASTState
     ASTPtr outer_with;
     size_t outer_with_select_depth = 0;
 
+    /// For each union being parsed, the number of its branches that have started. A parenthesized union
+    /// with several branches is a node of its own in `ast`, which the `WITH` of the `INSERT` does not
+    /// reach; see `capturePartialAST`. `outer_with_union_level` is the number of unions being parsed when
+    /// the `INSERT` starts its own.
+    std::vector<size_t> union_branches;
+    size_t outer_with_union_level = 0;
+
     /// A part of a statement that failed: a storage definition, a dictionary, an `ALTER` command, the list
     /// of commands. It is captured like the tree, with the `max_parsed_pos` it was captured at. The capture
     /// of the node around it at that position takes it in place of an `Error`.
@@ -73,6 +81,8 @@ struct PartialASTState
         select_depth = 0;
         outer_with = nullptr;
         outer_with_select_depth = 0;
+        union_branches.clear();
+        outer_with_union_level = 0;
         fragment = nullptr;
         fragment_pos = nullptr;
         last_column_element = nullptr;
@@ -149,6 +159,37 @@ private:
     PartialASTState * const state;
 };
 
+/// Held by `ParserSelectWithUnionQuery::parseImpl`: one union being parsed, with capture on.
+class PartialASTUnionScope
+{
+public:
+    explicit PartialASTUnionScope(const Expected & expected)
+        : state(partialASTState(expected))
+    {
+        if (unlikely(state))
+            state->union_branches.push_back(0);
+    }
+
+    ~PartialASTUnionScope()
+    {
+        if (unlikely(state))
+            state->union_branches.pop_back();
+    }
+
+    PartialASTUnionScope(const PartialASTUnionScope &) = delete;
+    PartialASTUnionScope & operator=(const PartialASTUnionScope &) = delete;
+
+private:
+    PartialASTState * const state;
+};
+
+/// Called where a union starts one of its branches, with capture on.
+inline void countPartialASTUnionBranch(const Expected & expected)
+{
+    if (PartialASTState * state = partialASTState(expected); unlikely(state) && !state->union_branches.empty())
+        ++state->union_branches.back();
+}
+
 /// Held by `ParserInsertQuery` while it parses its `SELECT`, with capture on. A capture of a `SELECT` of
 /// its union gets the `WITH` written before `INSERT`, which `ast` puts there. A `SELECT` nested in
 /// another `SELECT` does not.
@@ -162,6 +203,7 @@ public:
         {
             previous_with = std::exchange(state->outer_with, with);
             previous_select_depth = std::exchange(state->outer_with_select_depth, state->select_depth);
+            previous_union_level = std::exchange(state->outer_with_union_level, state->union_branches.size());
         }
     }
 
@@ -171,6 +213,7 @@ public:
         {
             state->outer_with = std::move(previous_with);
             state->outer_with_select_depth = previous_select_depth;
+            state->outer_with_union_level = previous_union_level;
         }
     }
 
@@ -181,6 +224,7 @@ private:
     PartialASTState * const state;
     ASTPtr previous_with;
     size_t previous_select_depth = 0;
+    size_t previous_union_level = 0;
 };
 
 /// Held where a parser tries an alternative on a copy of `Expected` and drops the copy if the alternative

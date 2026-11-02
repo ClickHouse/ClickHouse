@@ -88,6 +88,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto parse_element = [&]
     {
         ASTPtr element;
+        countPartialASTUnionBranch(expected);
         if (!elem_parser.parse(pos, element, expected))
             return false;
 

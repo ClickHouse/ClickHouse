@@ -448,6 +448,34 @@ bool isPartialASTSlotKey(const IAST & node, std::string_view key)
     return found;
 }
 
+namespace
+{
+
+/// Whether the `ast` of the statement gives its `WITH` to the `SELECT` being parsed. `ParserInsertQuery`
+/// gives it to the `SELECT`s that are direct elements of the union. A parenthesized union with a single
+/// branch is flattened into its parent, and one that is the only element of its parent takes the parent's
+/// place. One with several branches, next to others, is a node of its own, and what is inside it is out of
+/// reach. Written for the completion that only closes the parentheses, as the other captures are.
+bool reachedByOuterWith(const PartialASTState & state)
+{
+    const auto & branches = state.union_branches;
+    if (state.outer_with_union_level >= branches.size())
+        return false;
+
+    size_t parent_branches = branches[state.outer_with_union_level];
+    for (size_t level = state.outer_with_union_level + 1; level < branches.size(); ++level)
+    {
+        if (branches[level] < 2)
+            continue;
+        if (parent_branches >= 2)
+            return false;
+        parent_branches = branches[level];
+    }
+    return true;
+}
+
+}
+
 void capturePartialAST(Expected & expected, const ASTPtr & node, IParser::Pos pos, ASTSelectQuery::Expression slot)
 {
     chassert(expected.partial_ast);
@@ -456,7 +484,8 @@ void capturePartialAST(Expected & expected, const ASTPtr & node, IParser::Pos po
     /// A `SELECT` of the union of an `INSERT` - not nested in another `SELECT` of it - gets the `WITH`
     /// written before the `INSERT`, where `ast` has it, unless it has a `WITH` of its own.
     const IAST * outer_with = nullptr;
-    if (node && state.outer_with && state.select_depth == state.outer_with_select_depth + 1 && !node->as<ASTSelectQuery &>().with())
+    if (node && state.outer_with && state.select_depth == state.outer_with_select_depth + 1 && reachedByOuterWith(state)
+        && !node->as<ASTSelectQuery &>().with())
         outer_with = state.outer_with.get();
 
     if (!shouldCapture(state, expected, node, /*is_select=*/true, outer_with))

@@ -701,6 +701,16 @@ if (hasAstJson) {
             [`${outer} SELECT 1 UNION ALL SELECT * FROM c WHERE`, ' 1', `${union}.1`, true],
             [`${outer} (SELECT * FROM c WHERE`, ' 1)', `${union}.0`, true],
             [`${outer} SELECT 1 UNION ALL (SELECT * FROM c WHERE`, ' 1)', `${union}.1`, true],
+            /// A union in parentheses with several branches next to another one is a node of its own, which
+            /// the `WITH` does not reach. Alone, it is the union of the `INSERT`.
+            [`${outer} SELECT 1 UNION ALL (SELECT 2 UNION ALL SELECT * FROM c WHERE`, ' 1)', `${union}.1.list_of_selects.children.1`, false],
+            [`${outer} SELECT 1 UNION ALL (SELECT 2 UNION ALL SELECT 3) UNION ALL (SELECT * FROM c WHERE`, ' 1)', `${union}.2`, true],
+            [`${outer} (SELECT 1 UNION ALL SELECT * FROM c WHERE`, ' 1)', `${union}.1`, true],
+            [`${outer} SELECT 1 UNION ALL ((SELECT 2 UNION ALL SELECT * FROM c WHERE`, ' 1))', `${union}.1.list_of_selects.children.1`, false],
+            [`${outer} SELECT * FROM (SELECT a FROM`, ' c)',
+                `${union}.0.tables.children.0.table_expression.subquery.children.0.list_of_selects.children.0`, false],
+            [`${outer} SELECT * FROM c WHERE x IN (SELECT a FROM`, ' c)',
+                `${union}.0.where.arguments.children.1.children.0.list_of_selects.children.0`, false],
         ]) {
             const partial = parsed(prefix).doc?.partial_ast;
             const select = at(parsed(prefix + rest).doc?.ast, path);
