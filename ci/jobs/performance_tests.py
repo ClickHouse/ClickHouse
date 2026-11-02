@@ -1576,7 +1576,7 @@ class CHServer:
                 continue
             try:
                 stat = Path(f"/proc/{entry}/stat").read_text()
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 continue  # exited meanwhile
             # The command name in parentheses may contain spaces.
             ppid = int(stat.rsplit(")", 1)[1].split()[1])
@@ -1590,7 +1590,11 @@ class CHServer:
         residues = {}
         try:
             for pid in pids:
-                for task in Path(f"/proc/{pid}/task").iterdir():
+                try:
+                    tasks = list(Path(f"/proc/{pid}/task").iterdir())
+                except (FileNotFoundError, ProcessLookupError):
+                    continue  # exited meanwhile
+                for task in tasks:
                     try:
                         fields = (task / "syscall").read_text().split()
                     except (FileNotFoundError, ProcessLookupError):
