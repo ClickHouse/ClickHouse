@@ -1586,12 +1586,13 @@ private:
     {
         /// The gathered element columns with `LowCardinality` and top-level `Nullable` removed,
         ColumnsWithTypeAndName element_args;
-        /// Keep the gathered `Nullable` columns alive: the null map pointers below point into them.
+        /// The gathered columns before the top-level `Nullable` is removed.
         ColumnPtr full_elements0;
         ColumnPtr full_elements1;
-        /// Null maps of the gathered elements (nullptr when the elements are not `Nullable`).
-        const NullMap * null_map0 = nullptr;
-        const NullMap * null_map1 = nullptr;
+        /// Per gathered element: whether it is NULL, empty when the elements cannot be NULL. It covers a NULL of
+        /// `Nullable` as well as of `Dynamic` or `Variant`, which keep their NULLs in the values.
+        NullMap is_null0;
+        NullMap is_null1;
         /// Per row: the aligned prefix length both arrays share.
         PaddedPODArray<UInt64> common_lengths;
         /// Per row: whether array0 is shorter(-1), equals(0), bigger(1) than array1.
@@ -1667,16 +1668,20 @@ private:
         gathered.full_elements1 = recursiveRemoveLowCardinality(column_array1.getDataPtr()->index(*indexes1, 0));
         ColumnPtr elements0 = gathered.full_elements0;
         ColumnPtr elements1 = gathered.full_elements1;
+        auto collect_nulls = [&](const ColumnPtr & elements, const DataTypePtr & nested_type, NullMap & is_null)
+        {
+            if (!canContainNull(*nested_type))
+                return;
+            is_null.resize(gathered.num_elements);
+            for (size_t j = 0; j < gathered.num_elements; ++j)
+                is_null[j] = elements->isNullAt(j);
+        };
+        collect_nulls(gathered.full_elements0, nested_type0, gathered.is_null0);
+        collect_nulls(gathered.full_elements1, nested_type1, gathered.is_null1);
         if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(gathered.full_elements0.get()))
-        {
-            gathered.null_map0 = &nullable0->getNullMapData();
             elements0 = nullable0->getNestedColumnPtr();
-        }
         if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(gathered.full_elements1.get()))
-        {
-            gathered.null_map1 = &nullable1->getNullMapData();
             elements1 = nullable1->getNestedColumnPtr();
-        }
 
         gathered.element_args = ColumnsWithTypeAndName{
             {elements0, removeNullable(nested_type0), "left"},
@@ -1853,13 +1858,13 @@ private:
             equals_resolver, /*order_resolver=*/ nullptr, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality using array NULL semantics.
-        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+        auto elem_is_null = [](const NullMap & is_null, size_t j) -> bool { return !is_null.empty() && is_null[j]; };
 
         /// Null-safe element equality: a NULL is equal only to another NULL.
         auto elements_equal = [&](size_t j) -> bool
         {
-            bool n0 = elem_is_null(gathered.null_map0, j);
-            bool n1 = elem_is_null(gathered.null_map1, j);
+            bool n0 = elem_is_null(gathered.is_null0, j);
+            bool n1 = elem_is_null(gathered.is_null1, j);
             if (n0 || n1)
                 return n0 && n1;
             return element_verdict[j] == 0;
@@ -1908,13 +1913,13 @@ private:
             equals_resolver, order_resolver, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
-        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+        auto elem_is_null = [](const NullMap & is_null, size_t j) -> bool { return !is_null.empty() && is_null[j]; };
 
         /// Null-safe element equality: a NULL is equal only to another NULL.
         auto elements_equal = [&](size_t j) -> bool
         {
-            bool n0 = elem_is_null(gathered.null_map0, j);
-            bool n1 = elem_is_null(gathered.null_map1, j);
+            bool n0 = elem_is_null(gathered.is_null0, j);
+            bool n1 = elem_is_null(gathered.is_null1, j);
             if (n0 || n1)
                 return n0 && n1;
             return element_verdict[j] == 0;
@@ -1923,8 +1928,8 @@ private:
         /// Order of the first differing element, with NULL sorting after every non-NULL value.
         auto element_precedes = [&](size_t j) -> UInt8
         {
-            bool n0 = elem_is_null(gathered.null_map0, j);
-            bool n1 = elem_is_null(gathered.null_map1, j);
+            bool n0 = elem_is_null(gathered.is_null0, j);
+            bool n1 = elem_is_null(gathered.is_null1, j);
             /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
             if (n0 || n1)
                 return (order_is_less ? n1 : n0) ? 1 : 0;
