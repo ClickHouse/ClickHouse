@@ -291,7 +291,8 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
     *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
 3. **Default Search**:
-*If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the Most Recent File {#most-recent-file}
 
@@ -304,7 +305,7 @@ After identifying candidate files using the above rules, the system determines w
 * The file with the highest version number is selected
 * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
+**Note**: All mentioned settings except `iceberg_list_only_v_prefixed_metadata_files` are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
@@ -608,6 +609,7 @@ The command returns a table with two columns (`metric_name String`, `metric_valu
 | `deleted_manifest_lists_count` | Number of manifest list files deleted |
 | `deleted_statistics_files_count` | Number of statistics files deleted (always 0 currently) |
 | `dry_run` | `1` for dry-run mode, `0` for normal execution |
+| `failed_deletions_count` | Number of files whose deletion returned an error. Such a file may be left in storage, and `remove_orphan_files` can delete it later |
 
 The command performs the following steps:
 
@@ -616,7 +618,7 @@ The command performs the following steps:
 3. Expires snapshots that are neither retained by the policy nor protected by the timestamp fuse
 4. Computes which files are exclusively associated with expired snapshots
 5. In normal mode: generates new metadata without the expired snapshots
-6. In normal mode: physically deletes unreachable manifest lists, manifest files, and data files
+6. In normal mode: physically deletes unreachable manifest lists, manifest files, and data files, and counts a file whose deletion returns an error in `failed_deletions_count` instead
 7. In `dry_run = 1` mode: skips steps 5 and 6 and only returns the calculated metrics
 
 #### Snapshot Retention Policy {#iceberg-snapshot-retention-policy}
@@ -633,7 +635,7 @@ Each snapshot reference (`refs` in the Iceberg metadata) can override these with
 
 **Retention evaluation:**
 
-- **For each branch** (including `main`): the ancestor chain is walked starting from the branch head. Snapshots are retained while either of these conditions is true:
+- **For each branch** (including `main`): the branch head is always retained. The ancestor chain is walked starting from the branch head, and snapshots are retained while either of these conditions is true:
   - The snapshot is one of the first `min-snapshots-to-keep` in the chain
   - The snapshot's age is within `max-snapshot-age-ms` (i.e., `now - timestamp-ms <= max-snapshot-age-ms`)
 - **For tags**: the tagged snapshot is retained unless the tag has exceeded its `max-ref-age-ms`, in which case the tag reference is removed

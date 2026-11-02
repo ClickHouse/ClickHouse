@@ -26,9 +26,7 @@ keywords: ['WHERE']
   即使未显式指定 `PREWHERE` 子句，它默认也是启用的。
 </Info>
 
-<div id="testing-for-null">
-  ## 判断 `NULL`
-</div>
+## 判断 `NULL` {#testing-for-null}
 
 如果你需要判断某个值是否为 [`NULL`](/zh/reference/syntax#null)，请使用：
 
@@ -37,9 +35,7 @@ keywords: ['WHERE']
 
 否则，包含 `NULL` 的表达式将永远不会成立。
 
-<div id="filtering-data-with-logical-operators">
-  ## 使用逻辑运算符过滤数据
-</div>
+## 使用逻辑运算符过滤数据 {#filtering-data-with-logical-operators}
 
 您可以将以下[逻辑函数](/zh/reference/functions/regular-functions/logical-functions#and)与 `WHERE` 子句配合使用，以组合多个条件：
 
@@ -48,54 +44,49 @@ keywords: ['WHERE']
 * [`or()`](/zh/reference/functions/regular-functions/logical-functions#or) 或 `NOT`
 * [`xor()`](/zh/reference/functions/regular-functions/logical-functions#xor)
 
-<div id="using-uint8-columns-as-a-condition">
-  ## 将 UInt8 列用作条件
-</div>
+## 将 UInt8 列用作条件 {#using-uint8-columns-as-a-condition}
 
 在 ClickHouse 中，`UInt8` 列可直接用作布尔条件，其中 `0` 表示 `false`，任何非零值 (通常为 `1`) 都表示 `true`。
 相关示例见[下文](#example-uint8-column-as-condition)。
 
-<div id="using-comparison-operators">
-  ## 使用比较运算符
-</div>
+## 使用比较运算符 {#using-comparison-operators}
 
 可以使用以下[比较运算符](/zh/reference/operators/index#comparison-operators)：
 
-| 运算符                     | 函数                      | 描述            | 示例                              |
-| ----------------------- | ----------------------- | ------------- | ------------------------------- |
-| `a = b`                 | `equals(a, b)`          | 等于            | `price = 100`                   |
-| `a == b`                | `equals(a, b)`          | 等于 (替代语法)     | `price == 100`                  |
-| `a != b`                | `notEquals(a, b)`       | 不等于           | `category != 'Electronics'`     |
-| `a <> b`                | `notEquals(a, b)`       | 不等于 (替代语法)    | `category <> 'Electronics'`     |
-| `a < b`                 | `less(a, b)`            | 小于            | `price < 200`                   |
-| `a <= b`                | `lessOrEquals(a, b)`    | 小于或等于         | `price <= 200`                  |
-| `a > b`                 | `greater(a, b)`         | 大于            | `price > 500`                   |
-| `a >= b`                | `greaterOrEquals(a, b)` | 大于或等于         | `price >= 500`                  |
-| `a LIKE s`              | `like(a, b)`            | 模式匹配 (区分大小写)  | `name LIKE '%top%'`             |
-| `a NOT LIKE s`          | `notLike(a, b)`         | 模式不匹配 (区分大小写) | `name NOT LIKE '%top%'`         |
-| `a ILIKE s`             | `ilike(a, b)`           | 模式匹配 (不区分大小写) | `name ILIKE '%LAPTOP%'`         |
-| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | 范围检查 (包含边界)   | `price BETWEEN 100 AND 500`     |
-| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | 范围外检查         | `price NOT BETWEEN 100 AND 500` |
+| 运算符                     | 函数                      | 描述                  | 示例                                |
+| ----------------------- | ----------------------- | ------------------- | --------------------------------- |
+| `a = b`                 | `equals(a, b)`          | 等于                  | `price = 100`                     |
+| `a == b`                | `equals(a, b)`          | 等于 (替代语法)           | `price == 100`                    |
+| `a != b`                | `notEquals(a, b)`       | 不等于                 | `category != 'Electronics'`       |
+| `a <> b`                | `notEquals(a, b)`       | 不等于 (替代语法)          | `category <> 'Electronics'`       |
+| `a < b`                 | `less(a, b)`            | 小于                  | `price < 200`                     |
+| `a <= b`                | `lessOrEquals(a, b)`    | 小于或等于               | `price <= 200`                    |
+| `a > b`                 | `greater(a, b)`         | 大于                  | `price > 500`                     |
+| `a >= b`                | `greaterOrEquals(a, b)` | 大于或等于               | `price >= 500`                    |
+| `a LIKE s`              | `like(a, b)`            | 模式匹配 (区分大小写)        | `name LIKE '%top%'`               |
+| `a NOT LIKE s`          | `notLike(a, b)`         | 模式不匹配 (区分大小写)       | `name NOT LIKE '%top%'`           |
+| `a ILIKE s`             | `ilike(a, b)`           | 模式匹配 (不区分大小写)       | `name ILIKE '%LAPTOP%'`           |
+| `a SIMILAR TO s`        | `similarTo(a, b)`       | SQL 标准模式匹配 (区分大小写)  | `name SIMILAR TO 'Lap(top)?'`     |
+| `a NOT SIMILAR TO s`    | `notSimilarTo(a, b)`    | SQL 标准模式不匹配 (区分大小写) | `name NOT SIMILAR TO 'Lap(top)?'` |
+| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | 范围检查 (包含边界)         | `price BETWEEN 100 AND 500`       |
+| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | 范围外检查               | `price NOT BETWEEN 100 AND 500`   |
 
-<div id="pattern-matching-and-conditional-expressions">
-  ## 模式匹配和条件表达式
-</div>
+## 模式匹配和条件表达式 {#pattern-matching-and-conditional-expressions}
 
 除了比较运算符外，你还可以在 `WHERE` 子句中使用模式匹配和条件表达式。
 
-| Feature     | Syntax                         | Case-Sensitive | Performance | Best For       |
-| ----------- | ------------------------------ | -------------- | ----------- | -------------- |
-| `LIKE`      | `col LIKE '%pattern%'`         | Yes            | Fast        | 区分大小写的精确模式匹配   |
-| `ILIKE`     | `col ILIKE '%pattern%'`        | No             | Slower      | 不区分大小写的搜索      |
-| `if()`      | `if(cond, a, b)`               | N/A            | Fast        | 简单条件判断         |
-| `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | N/A            | Fast        | 多条件判断          |
-| `CASE`      | `CASE WHEN ... THEN ... END`   | N/A            | Fast        | 符合 SQL 标准的条件逻辑 |
+| Feature      | 语法                         | 区分大小写 | Performance | Best For               |
+| ------------ | ------------------------------ | -------------- | ----------- | ---------------------- |
+| `LIKE`       | `col LIKE '%pattern%'`         | Yes            | Fast        | 区分大小写的精确模式匹配           |
+| `ILIKE`      | `col ILIKE '%pattern%'`        | No             | Slower      | 不区分大小写的搜索              |
+| `SIMILAR TO` | `col SIMILAR TO 'p[ab]+%'`     | Yes            | Slower      | 支持正则表达式元字符的 SQL 标准模式匹配 |
+| `if()`       | `if(cond, a, b)`               | N/A            | Fast        | 简单条件判断                 |
+| `multiIf()`  | `multiIf(c1, r1, c2, r2, def)` | N/A            | Fast        | 多条件判断                  |
+| `CASE`       | `CASE WHEN ... THEN ... END`   | N/A            | Fast        | 符合 SQL 标准的条件逻辑         |
 
 用法示例请参见[“模式匹配和条件表达式”](#examples-pattern-matching-and-conditional-expressions)。
 
-<div id="expressions-with-literals-columns-subqueries">
-  ## 包含字面量、列或子查询的表达式
-</div>
+## 包含字面量、列或子查询的表达式 {#expressions-with-literals-columns-subqueries}
 
 `WHERE` 子句后面的表达式也可以包含[字面量](/zh/reference/syntax#literals)、列或子查询。子查询是嵌套的 `SELECT` 语句，会返回在条件中使用的值。
 
@@ -125,13 +116,9 @@ WHERE (price > 100 OR category IN (SELECT category FROM featured))
   AND name LIKE '%Special%'
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
-<div id="examples-testing-for-null">
-  ### 判断 `NULL`
-</div>
+### 判断 `NULL` {#examples-testing-for-null}
 
 带有 `NULL` 值的查询：
 
@@ -152,9 +139,7 @@ SELECT * FROM t_null WHERE y != 0;
 └───┴───┘
 ```
 
-<div id="example-filtering-with-logical-operators">
-  ### 使用逻辑运算符过滤数据
-</div>
+### 使用逻辑运算符过滤数据 {#example-filtering-with-logical-operators}
 
 给定如下表和数据：
 
@@ -271,9 +256,7 @@ WHERE and(or(category = 'Electronics', price > 100), in_stock);
 
 SQL 关键字语法 (`AND`、`OR`、`NOT`、`XOR`) 通常更易于阅读，但在复杂表达式中或构建动态查询时，函数语法也很有用。
 
-<div id="example-uint8-column-as-condition">
-  ### 将 UInt8 列用作条件
-</div>
+### 将 UInt8 列用作条件 {#example-uint8-column-as-condition}
 
 沿用[前一个示例](#example-filtering-with-logical-operators)中的表，你可以直接将列名作为条件使用：
 
@@ -291,9 +274,7 @@ WHERE in_stock
    └────┴─────────┴────────┴─────────────┴──────────┘
 ```
 
-<div id="example-using-comparison-operators">
-  ### 使用比较运算符
-</div>
+### 使用比较运算符 {#example-using-comparison-operators}
 
 以下示例使用上方[示例](#example-filtering-with-logical-operators)中的表和数据。为简洁起见，结果已省略。
 
@@ -368,15 +349,11 @@ SELECT * FROM products
 WHERE category = 'Electronics' AND in_stock = true;
 ```
 
-<div id="examples-pattern-matching-and-conditional-expressions">
-  ### 模式匹配和条件表达式
-</div>
+### 模式匹配和条件表达式 {#examples-pattern-matching-and-conditional-expressions}
 
 下面的示例使用了上面[示例](#example-filtering-with-logical-operators)中的表和数据。为简洁起见，结果已省略。
 
-<div id="like-examples">
-  #### LIKE 示例
-</div>
+#### LIKE 示例 {#like-examples}
 
 ```sql
 -- 查找名称中包含 'o' 的产品
@@ -392,9 +369,7 @@ SELECT * FROM products WHERE name LIKE '____';
 -- 结果：Desk, Lamp
 ```
 
-<div id="ilike-examples">
-  #### ILIKE 示例
-</div>
+#### ILIKE 示例 {#ilike-examples}
 
 ```sql
 -- 不区分大小写搜索 'LAPTOP'
@@ -406,9 +381,39 @@ SELECT * FROM products WHERE name ILIKE 'l%';
 -- 结果：Laptop, Lamp
 ```
 
-<div id="if-examples">
-  #### IF 示例
-</div>
+#### SIMILAR TO 示例 {#similar-to-examples}
+
+与 `LIKE` 不同，`SIMILAR TO` 模式还支持正则表达式元字符 `|`、`*`、`+`、`?`、`{`、`}`、`(`、`)`、`[` 和 `]`；但与 `LIKE` 相同的是，它必须匹配整个值：
+
+```sql
+-- Alternation: either of two names
+SELECT * FROM products WHERE name SIMILAR TO 'Desk|Lamp';
+-- Result: Desk, Lamp
+
+-- A bracket expression combined with the LIKE wildcard `%`
+SELECT * FROM products WHERE name SIMILAR TO '[LM]%';
+-- Result: Laptop, Mouse, Monitor, Lamp
+
+-- Repetition: a name of five or more characters
+SELECT * FROM products WHERE name SIMILAR TO '_{5,}';
+-- Result: Laptop, Mouse, Chair, Monitor
+
+-- Negation
+SELECT * FROM products WHERE name NOT SIMILAR TO '(Desk|Lamp)';
+-- Result: Laptop, Mouse, Chair, Monitor
+```
+
+可以通过 `ESCAPE` 子句指定自定义转义字符，该子句同样适用于 `LIKE`、`ILIKE`、`NOT LIKE`、`NOT ILIKE` 和 `NOT SIMILAR TO`：
+
+```sql
+-- `#%` denotes a literal `%`, so this matches names containing a percent sign
+SELECT * FROM products WHERE name SIMILAR TO '%#%%' ESCAPE '#';
+-- Result: (none)
+```
+
+完整的模式语法请参阅 [`SIMILAR TO` 运算符文档](/zh/reference/operators/index#similarto-function)。
+
+#### IF 示例 {#if-examples}
 
 ```sql
 -- 按类别设置不同的价格阈值
@@ -424,9 +429,7 @@ WHERE if(in_stock, price > 100, true);
 -- （有库存且价格超过 $100 的商品，或所有缺货商品）
 ```
 
-<div id="multiif-examples">
-  #### multiIf 示例
-</div>
+#### multiIf 示例 {#multiif-examples}
 
 ```sql
 -- 基于多个类别的条件
@@ -449,9 +452,7 @@ WHERE multiIf(
 -- 结果：Laptop, Chair, Monitor, Lamp
 ```
 
-<div id="case-examples">
-  #### CASE 示例
-</div>
+#### CASE 示例 {#case-examples}
 
 **简单的 CASE：**
 

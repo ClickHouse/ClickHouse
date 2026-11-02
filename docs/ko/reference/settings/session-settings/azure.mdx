@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="azure_allow_parallel_part_upload">
-  ## azure_allow_parallel_part_upload
-</div>
+## azure_allow_parallel_part_upload {#azure_allow_parallel_part_upload}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 Azure 멀티파트 업로드에 여러 스레드를 사용합니다.
 
-<div id="azure_check_objects_after_upload">
-  ## azure_check_objects_after_upload
-</div>
+## azure_check_objects_after_upload {#azure_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ Azure 멀티파트 업로드에 여러 스레드를 사용합니다.
 
 Azure blob storage에 업로드된 각 객체가 성공적으로 업로드되었는지 확인합니다
 
-<div id="azure_connect_timeout_ms">
-  ## azure_connect_timeout_ms
-</div>
+## azure_connect_timeout_ms {#azure_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -43,17 +37,13 @@ Azure blob storage에 업로드된 각 객체가 성공적으로 업로드되었
 
 Azure 디스크 호스트의 연결 타임아웃입니다.
 
-<div id="azure_create_new_file_on_insert">
-  ## azure_create_new_file_on_insert
-</div>
+## azure_create_new_file_on_insert {#azure_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Azure engine tables에서 각 삽입 시 새 파일을 생성할지 여부를 설정합니다
 
-<div id="azure_ignore_file_doesnt_exist">
-  ## azure_ignore_file_doesnt_exist
-</div>
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -66,17 +56,13 @@ Possible values:
 * 1 — `SELECT`는 빈 결과를 반환합니다.
 * 0 — `SELECT`는 예외를 발생시킵니다.
 
-<div id="azure_list_object_keys_size">
-  ## azure_list_object_keys_size
-</div>
+## azure_list_object_keys_size {#azure_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 ListObject request 한 번에 반환할 수 있는 최대 파일 수
 
-<div id="azure_min_upload_part_size">
-  ## azure_min_upload_part_size
-</div>
+## azure_min_upload_part_size {#azure_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
@@ -84,9 +70,7 @@ ListObject request 한 번에 반환할 수 있는 최대 파일 수
 
 Azure blob storage에 멀티파트 업로드를 수행할 때 각 업로드 파트의 최소 크기입니다.
 
-<div id="azure_request_timeout_ms">
-  ## azure_request_timeout_ms
-</div>
+## azure_request_timeout_ms {#azure_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
@@ -94,9 +78,7 @@ Azure blob storage에 멀티파트 업로드를 수행할 때 각 업로드 파�
 
 Azure와 데이터를 송수신할 때의 유휴 시간 제한입니다. 단일 TCP 읽기 또는 쓰기 호출이 이 시간 동안 차단되면 실패합니다.
 
-<div id="azure_skip_empty_files">
-  ## azure_skip_empty_files
-</div>
+## azure_skip_empty_files {#azure_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -109,9 +91,7 @@ S3 엔진에서 빈 파일 스키핑을 활성화하거나 비활성화합니다
 * 0 — 빈 파일이 요청된 포맷과 호환되지 않으면 `SELECT`에서 예외가 발생합니다.
 * 1 — 빈 파일에 대해 `SELECT`는 빈 결과를 반환합니다.
 
-<div id="azure_strict_upload_part_size">
-  ## azure_strict_upload_part_size
-</div>
+## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -119,9 +99,7 @@ S3 엔진에서 빈 파일 스키핑을 활성화하거나 비활성화합니다
 
 Azure blob storage로 멀티파트 업로드를 수행할 때 업로드할 파트의 정확한 크기입니다.
 
-<div id="azure_throw_on_zero_files_match">
-  ## azure_throw_on_zero_files_match
-</div>
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,23 +112,27 @@ Azure blob storage로 멀티파트 업로드를 수행할 때 업로드할 파�
 * 1 — `SELECT`가 예외를 발생시킵니다.
 * 0 — `SELECT`는 빈 결과를 반환합니다.
 
-<div id="azure_truncate_on_insert">
-  ## azure_truncate_on_insert
-</div>
+## azure_truncate_on_insert {#azure_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Azure engine tables에서 삽입 전에 TRUNCATE를 수행할지 설정합니다.
 
-<div id="azure_use_adaptive_timeouts">
-  ## azure_use_adaptive_timeouts
-</div>
+## azure_use_adaptive_timeouts {#azure_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "새로운 설정"}]}]} />
 
-`true`로 설정하면 모든 Azure request에 대해 처음 두 번의 시도는 짧은 send 및 receive timeout으로 수행됩니다.
-`false`로 설정하면 모든 시도는 동일한 timeout으로 수행됩니다.
+`true`로 설정하면 모든 Azure request에 대해 처음 두 번의 시도는 짧은 send 및 receive 타임아웃으로 수행됩니다.
+`false`로 설정하면 모든 시도는 동일한 타임아웃으로 수행됩니다.
+
+## azure_validate_etag_on_read {#azure_validate_etag_on_read}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "S3의 `s3_validate_etag_on_read`와 마찬가지로, `If-Match`를 사용해 모든 `GET` 요청을 목록 조회 시 확인한 `ETag`에 고정하고 응답의 `ETag`를 검증하여 읽기 도중 Azure 블롭이 같은 위치에서 덮어써지는 상황을 감지하는 새로운 설정입니다. `compatibility`를 26.10 이전 버전으로 설정하면 이전 동작(검증 없음)으로 복원됩니다."}]}]} />
+
+`azureBlobStorage` / `azureBlobStorageCluster` 테이블 함수(table function) 또는 `AzureBlobStorage` 테이블 엔진(table engine)을 통해 Azure blob storage에서 블롭을 읽을 때, 목록 조회 시 확인한 블롭의 `ETag`를 `If-Match`로 전송하여 모든 `GET` 요청을 당시의 블롭 버전에 고정하고 응답의 `ETag`를 검사합니다. 파일 하나를 읽을 때는 범위를 지정한 `GET` 요청이 여러 번 실행됩니다. 요청 사이에 블롭이 같은 위치에서 덮어써지면(예: 외부 쓰기 프로세스가 고정된 키에 데이터를 다시 쓰는 경우), 이러한 검증 없이는 서로 다른 두 버전의 블롭에서 읽은 데이터가 합쳐져 체크섬 불일치나 파싱 오류가 발생할 수 있습니다. 목록 조회 시 기록한 크기는 읽기 범위의 끝 경계로도 사용되므로, 기록 당시의 블롭 버전에만 유효합니다. 불일치가 감지되면 일관성 없는 데이터를 반환하는 대신 `AZURE_OBJECT_CHANGED_DURING_READ` 오류와 함께 읽기가 실패합니다. 덮어쓰기가 진행 중인 블롭을 의도적으로 읽고, 읽기 결과의 불일치를 허용할 수 있는 워크로드에서만 이 설정을 비활성화하십시오.
 
 {/*AUTOGENERATED_END*/}

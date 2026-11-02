@@ -77,7 +77,7 @@ bool patchHasHigherDataVersion(const IMergeTreeDataPartInfoForReader & patch, In
 
 /// Returns maximal version among patches which version are in [current_data_version, next_mutation_version)
 /// If there no such patches returns current_data_version.
-PartsRange getPatchesToApplyOnMerge(const std::vector<MergeTreePartInfo> & patch_parts, const PartsRange & range, Int64 next_mutation_version);
+PartsRange getPatchesToApplyOnMerge(const std::vector<MergeTreePartInfo> & patch_parts, PartsRangeView range, Int64 next_mutation_version);
 
 /// Returns minimal block number with Update operation.
 std::optional<Int64> getMinUpdateBlockNumber(const CommittingBlocksSet & committing_blocks);

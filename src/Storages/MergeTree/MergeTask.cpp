@@ -20,6 +20,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
@@ -130,6 +131,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -651,6 +653,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
+    if (auto max_bytes_to_buffer = (*global_ctx->data_settings)[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+        data_part_storage->setTemporaryDataForTransaction(global_ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -658,9 +662,33 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
+
+    /// The TTL bound of a column is unknown for a part that stores it without TTL info,
+    /// so the merged part must not take the bound of the other parts for that column.
+    NameSet columns_without_ttl_info;
+    if (global_ctx->metadata_snapshot->hasAnyColumnTTL())
+    {
+        for (const auto & [column, _] : global_ctx->metadata_snapshot->getColumnTTLs())
+        {
+            if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
+                { return !part->isEmpty() && !part->ttl_infos.columns_ttl.contains(column) && part->getColumns().contains(column); }))
+                columns_without_ttl_info.insert(column);
+        }
+    }
+
     for (const auto & part : global_ctx->future_part->parts)
     {
-        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        if (columns_without_ttl_info.empty())
+        {
+            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+        }
+        else
+        {
+            auto part_ttl_infos = part->ttl_infos;
+            for (const auto & column : columns_without_ttl_info)
+                part_ttl_infos.columns_ttl.erase(column);
+            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
+        }
 
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
@@ -1455,7 +1483,26 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
     if (hasLightweightDelete(global_ctx.future_part))
         return false;
 
-    return global_ctx.metadata_snapshot->hasRowsTTL() || global_ctx.metadata_snapshot->hasAnyRowsWhereTTL();
+    const auto & metadata = *global_ctx.metadata_snapshot;
+    if (!metadata.hasRowsTTL() && !metadata.hasAnyRowsWhereTTL())
+        return false;
+
+    /// `TTLDeleteFilterTransform` evaluates the rows TTLs before the merge, but only `TTLTransform`,
+    /// after the merge, fills the columns that no source part stores.
+    const auto & expired_columns = global_ctx.new_data_part->expired_columns;
+    auto is_missing = [&](const NameAndTypePair & column)
+    {
+        return Nested::tryGetColumnNameInStorage(column.name, expired_columns).has_value();
+    };
+    auto reads_missing_column = [&](const TTLDescription & ttl)
+    {
+        return std::ranges::any_of(ttl.expression_columns, is_missing) || std::ranges::any_of(ttl.where_expression_columns, is_missing);
+    };
+
+    if (metadata.hasRowsTTL() && reads_missing_column(metadata.getRowsTTL()))
+        return false;
+
+    return std::ranges::none_of(metadata.getRowsWhereTTLs(), reads_missing_column);
 }
 
 bool MergeTask::isVerticalTTLDelete(
@@ -1576,6 +1623,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         bool projection_part_misses_column = false;
 
         MergeTreeData::DataPartsVector projection_parts;
+        size_t parts_with_unloaded_projection = 0;
         for (const auto & part : global_ctx->future_part->parts)
         {
             auto it = part->getProjectionParts().find(projection.name);
@@ -1594,6 +1642,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
                 projection_parts.push_back(it->second);
             }
+            else if (part->hasUnloadedProjection(projection.name))
+                ++parts_with_unloaded_projection;
         }
 
         if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
@@ -1616,6 +1666,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             /// where the correct `_block_number` values are available.
             chassert(projection_parts.size() < global_ctx->future_part->parts.size());
             LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (parts_with_unloaded_projection
+                 && projection_parts.size() + parts_with_unloaded_projection == global_ctx->future_part->parts.size())
+        {
+            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts have it on disk but not loaded", projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else if ((*global_ctx->data_settings)[MergeTreeSetting::materialize_projections_on_merge])
@@ -1646,6 +1702,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     const auto & settings = global_ctx->context->getSettingsRef();
 
+    /// The squash buffers below are the same kind of block-sized copies an `INSERT` pipeline holds, and a
+    /// merge is background work running next to the queries the server is there for, so bound them by the
+    /// memory limit exactly like the insert path does. Without this, a merge of a table with projections
+    /// keeps multi-hundred-MiB buffers alive on a small server even after the source-part fan-in has been
+    /// narrowed, which would leave the "merges fit into a small server's memory" contract unmet.
+    /// The pre-calculate squash and one post-calculate squash per projection are alive at the same time.
+    const size_t num_simultaneous_squashes = global_ctx->projections_to_rebuild.size() + 1;
+    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
+        settings[Setting::min_insert_block_size_bytes], num_simultaneous_squashes);
+
     if (!global_ctx->projections_to_rebuild.empty())
     {
         /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
@@ -1654,7 +1720,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         ctx->pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+            min_block_size_bytes);
 
         /// Collect the union of columns required by all projections. Only these columns
         /// (plus `_row_exists` when present in the source block) are pushed into the
@@ -1669,7 +1735,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     {
         /// Post-calculate squash: accumulates calculated projection blocks before writing.
         ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
-            settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+            settings[Setting::min_insert_block_size_rows], min_block_size_bytes);
     }
 }
 
@@ -3744,8 +3810,6 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
             return MergeAlgorithm::Horizontal;
     }
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
-        return MergeAlgorithm::Horizontal;
-    if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->cleanup)
         return MergeAlgorithm::Horizontal;

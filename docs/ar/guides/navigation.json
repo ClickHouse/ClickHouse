@@ -5,8 +5,9 @@
       "pages": [
         "ar/guides/clickhouse/index",
         "ar/guides/clickhouse/kusto-query-language",
+        "ar/guides/clickhouse/logsql",
         {
-          "group": "صيغ البيانات",
+          "group": "تنسيق البيانات",
           "pages": [
             "ar/guides/clickhouse/data-formats/intro",
             "ar/guides/clickhouse/data-formats/csv-tsv",
@@ -72,7 +73,7 @@
         },
         {
           "expanded": false,
-          "group": "أمثلة على معدِّلات دوال التجميع",
+          "group": "أمثلة على مُركِّبات دوال التجميع",
           "pages": [
             "ar/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "ar/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -104,7 +105,7 @@
         },
         "ar/guides/oss/update",
         {
-          "group": "أفضل ممارسات النسخة مفتوحة المصدر",
+          "group": "أفضل ممارسات البرمجيات مفتوحة المصدر",
           "pages": [
             "ar/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "ar/guides/oss/best-practices/tips"
