@@ -217,6 +217,8 @@ struct DataLakeStorageSettings
     bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
+    /// Returns the canonical name of a setting given under one of its aliases.
+    static std::string_view resolveName(std::string_view name);
 
     void serialize(WriteBuffer & out) const;
     static DataLakeStorageSettings deserialize(ReadBuffer & in);
