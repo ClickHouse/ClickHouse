@@ -1185,7 +1185,10 @@ void executeQueryWithParallelReplicas(
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
             remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
-            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            /// A null plan means the coordinated read could not be marked in it; fall back to sending the
+            /// query text, which every replica plans for itself (see `createRemotePlanForParallelReplicas`).
+            if (remote_query_plan)
+                remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
