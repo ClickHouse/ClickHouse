@@ -17,7 +17,7 @@
     <query>SELECT count() FROM prewhere_combine_filters WHERE a &lt; 50 AND b &lt; 50 AND c &lt; 50</query>
     <query>SELECT sum(d) FROM prewhere_combine_filters WHERE a &lt; 90 AND b &lt; 90 AND c &lt; 90</query>
     <query>SELECT sum(d) FROM prewhere_combine_filters WHERE a &lt; 10 AND b &lt; 50 AND c &lt; 50</query>
-    <query>SELECT s FROM prewhere_combine_filters_string WHERE a &lt; 95 AND b &lt; 95 AND c &lt; 95 AND d &gt;= '2020-01-06' AND s != '' FORMAT Null</query>
+    <query>SELECT s FROM prewhere_combine_filters_string PREWHERE a &lt; 95 AND s != '' AND b &lt; 95 AND c &lt; 95 AND d &gt;= '2020-01-06' FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS prewhere_combine_filters</drop_query>
     <drop_query>DROP TABLE IF EXISTS prewhere_combine_filters_string</drop_query>
