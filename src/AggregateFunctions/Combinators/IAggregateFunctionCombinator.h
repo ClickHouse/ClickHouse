@@ -48,6 +48,14 @@ public:
     /// Does the combined function return the nested function's state (an `AggregateFunction` value), like State?
     virtual bool returnsNestedState() const { return false; }
 
+    /// Can the combined function work with `nested_function` for these arguments? `-Merge` cannot when
+    /// `nested_function` cannot merge the states that `-Merge` reads, for example when it has the window
+    /// layout and no support for merging ordinary states into it.
+    virtual bool acceptsNestedFunction(const IAggregateFunction & /*nested_function*/, const DataTypes & /*arguments*/) const
+    {
+        return true;
+    }
+
     /** Does this combinator transform argument types (like Merge, Array) rather than just adding logic?
       *
       * If true, the combinator expects arguments to be of specific types (e.g., Merge expects AggregateFunction type)

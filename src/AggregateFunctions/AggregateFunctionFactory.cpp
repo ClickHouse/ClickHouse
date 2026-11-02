@@ -332,7 +332,6 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         /// A state leaves the window function as a value that can be stored, sent, cast or merged with ordinary
         /// states, and its type name does not tell the window layout apart. So it always uses the ordinary layout.
-        /// The window layout cannot make such a function faster anyway: each row gets a full copy of the state.
         const auto nested_state_variant = combinator->returnsNestedState() ? AggregateFunctionStateVariant::Aggregation : state_variant;
 
         AggregateFunctionPtr combined_function;
@@ -359,6 +358,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             DataTypes nested_types = combinator->transformArguments(argument_types);
 
             AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, nested_state_variant);
+            /// The window layout only makes a window function faster, so use the ordinary layout where the
+            /// combined function cannot work with the window one.
+            if (nested_state_variant != AggregateFunctionStateVariant::Aggregation
+                && !combinator->acceptsNestedFunction(*nested_function, argument_types))
+                nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, AggregateFunctionStateVariant::Aggregation);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 
