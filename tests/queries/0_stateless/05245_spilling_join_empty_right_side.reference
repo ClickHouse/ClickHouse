@@ -1,0 +1,22 @@
+-- The ordered plan engages over the empty right side
+['ReadType: InOrder']
+-- LEFT ALL: every left row with defaults, in the left order
+100	100	1
+-- LEFT ANY: the same
+100	100	1
+-- INNER: no rows
+0
+-- Concurrent build over the empty right side
+100	100	1
+-- Identical to the non-spill-capable hash join
+1
+-- A UInt8 key preallocates the fixed hash map: the empty build switches to MergeJoin
+100	100	1
+0
+-- An all-filtered FULL ALL build has stored rows but no hash keys: it still spills
+21000	1000	20000	0
+21000	1000	20000	0
+-- The switches happened
+05245_empty_switch_merge	OK
+05245_full_all_filtered_hash	OK
+05245_full_all_filtered_parallel_hash	OK

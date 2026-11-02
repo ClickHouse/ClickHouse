@@ -500,6 +500,17 @@ protected:
 };
 
 
+/** CODEC name (codec, ...) for a column or a subcolumn.
+  * Fails on a column named `codec`, such as `codec Nullable(String)`, so that the column parser gets it.
+  */
+class ParserCodecDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "codec declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** name BY expr TYPE typename(arg1, arg2, ...) GRANULARITY value */
 class ParserIndexDeclaration : public IParserBase
 {
@@ -631,7 +642,7 @@ protected:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS [db2.]name2 [ENGINE = engine]
   *
   * Or:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS ENGINE = engine SELECT ...
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] [ENGINE = engine] AS SELECT ...
   *
   * Or (for engines that supports schema inference):
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] ENGINE = engine

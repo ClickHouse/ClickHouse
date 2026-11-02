@@ -5,6 +5,7 @@
 #include <IO/S3AuthSettings.h>
 #include <IO/S3Defines.h>
 #include <IO/S3Common.h>
+#include <Common/Config/ConfigurationWithUsageTracking.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -96,6 +97,8 @@ S3AuthSettings::S3AuthSettings(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
+    /// See the comment in `getHTTPHeaders`.
+    config.has(ConfigurationWithUsageTracking::getNamePrefixKey(config_prefix + ".user"));
     for (const auto & key : keys)
     {
         if (startsWith(key, "user"))
