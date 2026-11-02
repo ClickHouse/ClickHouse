@@ -61,6 +61,8 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
+#include <AggregateFunctions/Combinators/AggregateFunctionMerge.h>
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -1329,18 +1331,27 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
 namespace
 {
 
-bool isOrNullState(const DataTypes & argument_types, std::string_view base_name)
+bool isStateOf(const DataTypes & argument_types, const String & name, NullsAction action, const Array & parameters)
 {
-    if (argument_types.size() != 1 || base_name.ends_with("OrNull"))
+    if (argument_types.size() != 1)
         return false;
     const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(argument_types[0].get());
-    return state_type && state_type->getFunctionName().ends_with("OrNull");
+    if (!state_type)
+        return false;
+
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(name, action, state_type->getArgumentsDataTypes(), parameters, properties);
+    return AggregateFunctionMerge::canMergeStatesOf(*function, *state_type->getFunction());
 }
 
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
-    const std::string & aggregate_function_name, NullsAction action, const DataTypes & argument_types, const ContextPtr & context)
+    const std::string & aggregate_function_name,
+    NullsAction action,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const ContextPtr & context)
 {
     std::string result_aggregate_function_name = aggregate_function_name;
     auto aggregate_function_name_lowercase = Poco::toLower(aggregate_function_name);
@@ -1398,7 +1409,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
                 auto base_name = result_aggregate_function_name.substr(0, function_name_size - suffix_to_check.size());
 
                 /// sumMergeOrNull consumes sum states, sumOrNullMerge consumes sumOrNull states
-                if ((suffix == "MergeState" || suffix == "Merge") && !isOrNullState(argument_types, base_name))
+                if ((suffix == "MergeState" || suffix == "Merge") && isStateOf(argument_types, base_name, action, parameters))
                     break;
 
                 result_aggregate_function_name = std::move(base_name);

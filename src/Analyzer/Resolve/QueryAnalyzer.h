@@ -175,7 +175,11 @@ private:
     static void expandLimitByAll(QueryNode & query_tree_node_typed);
 
     static std::string rewriteAggregateFunctionNameIfNeeded(
-        const std::string & aggregate_function_name, NullsAction action, const DataTypes & argument_types, const ContextPtr & context);
+        const std::string & aggregate_function_name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
