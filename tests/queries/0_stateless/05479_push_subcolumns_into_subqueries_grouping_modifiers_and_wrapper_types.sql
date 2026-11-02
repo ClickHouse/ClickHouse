@@ -2,6 +2,8 @@
 -- and a subcolumn must not be forwarded through a wrapper whose column type differs from its destination.
 
 SET enable_analyzer = 1;
+-- `StorageBuffer` warns about the differing column type of its destination table, which is intended here.
+SET send_logs_level = 'error';
 
 DROP TABLE IF EXISTS t_arr;
 CREATE TABLE t_arr (arr Array(UInt32)) ENGINE = Memory;
