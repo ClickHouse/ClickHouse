@@ -103,10 +103,12 @@ ASTPtr makeCastToType(ASTPtr expression, const ASTPtr & type, TupleElementDefaul
 }
 
 /// Collect the names of identifiers referenced by an expression (for the ambiguity check below).
-/// Lambda parameters (e.g. `x` in `arrayMap(x -> x + 1, arr)`) are scoped local variables, not
+/// `names` receives the complete names of the referenced identifiers (`c.a` for both the compound
+/// identifier `c.a` and the quoted `` `c.a` ``), `roots` receives the root of every compound identifier
+/// (`c` for `c.a`). Lambda parameters (e.g. `x` in `arrayMap(x -> x + 1, arr)`) are scoped local variables, not
 /// references to columns or tuple elements, so they are skipped while free identifiers from the
 /// lambda body are still collected. `bound` holds the names currently bound by enclosing lambdas.
-void collectReferencedIdentifiers(const IAST & ast, NameSet & names, NameSet & bound)
+void collectReferencedIdentifiers(const IAST & ast, NameSet & names, NameSet & roots, NameSet & bound)
 {
     if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda"
         && function->arguments && function->arguments->children.size() == 2)
@@ -123,7 +125,7 @@ void collectReferencedIdentifiers(const IAST & ast, NameSet & names, NameSet & b
                         added.push_back(identifier->name());
         }
 
-        collectReferencedIdentifiers(*function->arguments->children[1], names, bound);
+        collectReferencedIdentifiers(*function->arguments->children[1], names, roots, bound);
 
         for (const auto & name : added)
             bound.erase(name);
@@ -139,13 +141,13 @@ void collectReferencedIdentifiers(const IAST & ast, NameSet & names, NameSet & b
         {
             names.insert(identifier->name());
             if (!identifier->name_parts.empty())
-                names.insert(identifier->name_parts.front());
+                roots.insert(identifier->name_parts.front());
         }
         return;
     }
 
     for (const auto & child : ast.children)
-        collectReferencedIdentifiers(*child, names, bound);
+        collectReferencedIdentifiers(*child, names, roots, bound);
 }
 
 [[noreturn]] void throwSelfReference(const String & column_name)
@@ -166,20 +168,21 @@ void checkDefaultDoesNotReferenceElements(
     const IAST & expression, const NameSet & visible_element_names, const String & column_name, NameSet & subcolumn_references)
 {
     NameSet referenced;
+    NameSet referenced_roots;
     NameSet bound;
-    collectReferencedIdentifiers(expression, referenced, bound);
+    collectReferencedIdentifiers(expression, referenced, referenced_roots, bound);
 
     /// The default cannot reference the column it is written in, neither directly (`c`) nor through
     /// subcolumn syntax (`c.a`, or the quoted spelling `` `c.a` ``): after the pull-up it becomes a
-    /// self-referential column-level default. `collectReferencedIdentifiers` inserts the root of a
-    /// compound identifier as well, so `c.a` is rejected by its root. A quoted identifier is a single
-    /// name part, and a name with the `<column>.` prefix may as well be an independent column named
-    /// `c.a`, so it is a self-reference only if it names an actual subcolumn of the column and no table
-    /// column has exactly this name. The type of the column is known only after all its defaults are
-    /// stripped, so such names are collected into `subcolumn_references` and checked by
-    /// `pullUpTupleElementDefaults`. This has to be rejected here: the cycle detection in
-    /// `ColumnsDescription` compares whole identifiers, so it does not recognize `c.a` as a reference
-    /// to the column `c`, and the failure would be deferred to the first insert that omits the column.
+    /// self-referential column-level default. A name with the `<column>.` prefix, quoted or not, may
+    /// as well be an independent column named `c.a`, so it is a self-reference only if it names an
+    /// actual subcolumn of the column and no table column has exactly this name. That is why only the
+    /// complete names are checked here, not the roots of compound identifiers. The type of the column
+    /// is known only after all its defaults are stripped, so such names are collected into
+    /// `subcolumn_references` and checked by `pullUpTupleElementDefaults`. This has to be rejected
+    /// here: the cycle detection in `ColumnsDescription` compares whole identifiers, so it does not
+    /// recognize `c.a` as a reference to the column `c`, and the failure would be deferred to the first
+    /// insert that omits the column.
     const String column_subcolumn_prefix = column_name + ".";
     for (const auto & name : referenced)
     {
@@ -189,13 +192,16 @@ void checkDefaultDoesNotReferenceElements(
             subcolumn_references.insert(name.substr(column_subcolumn_prefix.size()));
     }
 
-    for (const auto & name : referenced)
-        if (visible_element_names.contains(name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "DEFAULT expression inside the data type of column '{}' references '{}', which is a tuple/nested "
-                "element name. Default expressions cannot reference other elements of the same tuple/nested, and a "
-                "reference that collides with an element name is ambiguous.",
-                column_name, name);
+    /// The roots of compound identifiers are checked for the ambiguity as well: in `a.b`, `a` may be
+    /// an element name.
+    for (const NameSet * names : {&referenced, &referenced_roots})
+        for (const auto & name : *names)
+            if (visible_element_names.contains(name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DEFAULT expression inside the data type of column '{}' references '{}', which is a tuple/nested "
+                    "element name. Default expressions cannot reference other elements of the same tuple/nested, and a "
+                    "reference that collides with an element name is ambiguous.",
+                    column_name, name);
 }
 
 /// Strip the DEFAULT expression from a name-type pair (turning it back into a plain element).
@@ -489,7 +495,7 @@ ASTPtr buildAndStripTupleDefaults(
 }
 
 void pullUpTupleElementDefaults(
-    ASTColumnDeclaration & col_decl, TupleElementDefaultStateVersion state_version, const NameSet & table_column_names)
+    ASTColumnDeclaration & col_decl, TupleElementDefaultStateVersion state_version, const IsTableColumn & is_table_column)
 {
     auto type = col_decl.getType();
     if (!type)
@@ -505,12 +511,13 @@ void pullUpTupleElementDefaults(
     /// A name with the `<column>.` prefix is a self-reference only if it names a subcolumn of the column
     /// and no table column has exactly this name; otherwise it refers to an independent column with a
     /// dotted name. An exact column name takes precedence over a subcolumn, as in
-    /// `ColumnsDescription::tryGetColumn`.
+    /// `ColumnsDescription::tryGetColumn`. The table columns are consulted only for an actual subcolumn,
+    /// so `is_table_column` is not called for a default that does not need it.
     if (!subcolumn_references.empty())
     {
         const DataTypePtr column_type = DataTypeFactory::instance().get(type);
         for (const auto & subcolumn : subcolumn_references)
-            if (column_type->hasSubcolumn(subcolumn) && !table_column_names.contains(col_decl.name + "." + subcolumn))
+            if (column_type->hasSubcolumn(subcolumn) && !(is_table_column && is_table_column(col_decl.name + "." + subcolumn)))
                 throwSelfReference(col_decl.name);
     }
 
@@ -530,7 +537,10 @@ void pullUpTupleElementDefaultsInColumnList(const IAST & columns, TupleElementDe
         table_column_names.insert(column->as<const ASTColumnDeclaration &>().name);
 
     for (const auto & column : columns.children)
-        pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>(), state_version, table_column_names);
+        pullUpTupleElementDefaults(
+            column->as<ASTColumnDeclaration &>(),
+            state_version,
+            [&](const String & name) { return table_column_names.contains(name); });
 }
 
 }

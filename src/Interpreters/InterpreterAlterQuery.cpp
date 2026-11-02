@@ -156,24 +156,51 @@ using CommandSegments = std::vector<CommandSegment>;
 
 /// Normalize the query itself before it can be sent to an ON CLUSTER or replicated-DDL worker.
 /// AlterCommand::parse normalizes only its private clone, which is too late for a dispatched AST.
-/// `table` is the altered table if it exists on this host: the names of its columns, together with the
-/// columns added by the same query, tell a reference to an independent column with a dotted name
-/// (`c.a`) from a reference to a subcolumn of the column the default is written in.
-void pullUpTupleElementDefaultsInAlterQuery(ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+/// `table` is the altered table if it exists on this host: the names of the columns the table is going
+/// to have after the query tell a reference to an independent column with a dotted name (`c.a`) from a
+/// reference to a subcolumn of the column the default is written in. The table schema is consulted only
+/// after `check_access` succeeds, so that an unauthorized query cannot learn which columns exist.
+void pullUpTupleElementDefaultsInAlterQuery(
+    ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context, const std::function<void()> & check_access)
 {
-    NameSet table_column_names;
-    if (table)
+    std::optional<NameSet> resulting_column_names;
+    auto is_table_column = [&](const String & name)
     {
-        auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-        for (const auto & column : metadata_snapshot->getColumns())
-            table_column_names.insert(column.name);
-    }
-    for (const auto & child : alter.command_list->children)
-    {
-        const auto & command = child->as<const ASTAlterCommand &>();
-        if (command.type == ASTAlterCommand::ADD_COLUMN)
-            table_column_names.insert(command.col_decl->as<const ASTColumnDeclaration &>().name);
-    }
+        if (!table)
+            return false;
+
+        if (!resulting_column_names)
+        {
+            check_access();
+
+            /// The columns of the table, then the commands of the query applied in order: a column dropped
+            /// or renamed by the same query does not exist in the resulting schema.
+            NameSet names;
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            for (const auto & column : metadata_snapshot->getColumns())
+                names.insert(column.name);
+
+            for (const auto & child : alter.command_list->children)
+            {
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type == ASTAlterCommand::ADD_COLUMN)
+                {
+                    names.insert(command.col_decl->as<const ASTColumnDeclaration &>().name);
+                }
+                else if (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition)
+                {
+                    names.erase(getIdentifierName(command.column));
+                }
+                else if (command.type == ASTAlterCommand::RENAME_COLUMN)
+                {
+                    names.erase(getIdentifierName(command.column));
+                    names.insert(getIdentifierName(command.rename_to));
+                }
+            }
+            resulting_column_names = std::move(names);
+        }
+        return resulting_column_names->contains(name);
+    };
 
     for (const auto & child : alter.command_list->children)
     {
@@ -182,10 +209,10 @@ void pullUpTupleElementDefaultsInAlterQuery(ASTAlterQuery & alter, const Storage
         /// well), while `MODIFY COLUMN` keeps the version as written.
         if (command.type == ASTAlterCommand::ADD_COLUMN)
             pullUpTupleElementDefaults(
-                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinCurrent, table_column_names);
+                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinCurrent, is_table_column);
         else if (command.type == ASTAlterCommand::MODIFY_COLUMN)
             pullUpTupleElementDefaults(
-                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::AsWritten, table_column_names);
+                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::AsWritten, is_table_column);
     }
 }
 
@@ -580,7 +607,17 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     /// Normalize this AST on the initiator so all workers receive ordinary column defaults.
     /// It must run before the `data_type_default_nullable` rewrite below, which builds the data type
     /// from the declaration and would reject a type that still carries element defaults.
-    pullUpTupleElementDefaultsInAlterQuery(query_ptr->as<ASTAlterQuery &>(), table, getContext());
+    /// The schema of the table is consulted only for the privileges this query requires anyway (as checked
+    /// below, or by `executeDDLQueryOnCluster`), so that the outcome does not reveal it to an unauthorized user.
+    pullUpTupleElementDefaultsInAlterQuery(
+        query_ptr->as<ASTAlterQuery &>(),
+        table,
+        getContext(),
+        [&]
+        {
+            if (!skip_access_check)
+                getContext()->checkAccess(getRequiredAccess(table));
+        });
 
     if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
         && !getContext()->getClientInfo().is_shared_catalog_internal)
