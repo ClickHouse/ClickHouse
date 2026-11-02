@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/Archives/ArchiveEntryPositions.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -19,8 +18,6 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageListedObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
-    extern const Event ObjectStorageQueryConditionCacheSkippedFiles;
-    extern const Event ObjectStorageQueryConditionCacheSkippedRowGroups;
 }
 
 namespace DB
@@ -163,13 +160,8 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
-                    ProfileEvents::increment(
-                        ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, marks.size() - matching_row_groups.size());
                     if (matching_row_groups.empty())
-                    {
-                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
                         continue;
-                    }
                 }
             }
 
@@ -202,7 +194,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
-    return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
+    return getIdentifierForPath(getPath(), include_file_bucket_info);
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

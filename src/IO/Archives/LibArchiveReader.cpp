@@ -29,13 +29,6 @@ const char * getArchiveErrorMessage(struct archive * archive)
     return message ? message : "unknown error";
 }
 
-/// `archive_entry_pathname` returns nullptr for an entry without a name, e.g. in a 7z archive without file names.
-const char * getEntryPathname(struct archive_entry * entry)
-{
-    const char * pathname = archive_entry_pathname(entry);
-    return pathname ? pathname : "";
-}
-
 }
 
 /// C++ exceptions must not propagate through the libarchive C library (undefined behavior).
@@ -155,7 +148,7 @@ public:
             if (err != ARCHIVE_OK)
                 break;
 
-            if (filter(getEntryPathname(current_entry)))
+            if (filter(archive_entry_pathname(current_entry)))
             {
                 valid = true;
                 return true;
@@ -196,7 +189,7 @@ public:
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
             chassert(entry != nullptr);
-            std::string name = getEntryPathname(entry);
+            std::string name = archive_entry_pathname(entry);
             if (!filter || filter(name))
                 files.push_back(std::move(name));
 
@@ -213,7 +206,7 @@ public:
         if (!valid)
             throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "No current file");
         if (!file_name)
-            file_name.emplace(getEntryPathname(current_entry));
+            file_name.emplace(archive_entry_pathname(current_entry));
 
         return *file_name;
     }

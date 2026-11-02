@@ -106,22 +106,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     void updateSchemeAndRegion();
 
-    /// `remote_host_filter` is a reference, so it must not be bound to a temporary.
-    PocoHTTPClientConfiguration(
-        std::function<ProxyConfiguration()> per_request_configuration_,
-        const String & force_region_,
-        const RemoteHostFilter && remote_host_filter_,
-        unsigned int s3_max_redirects_,
-        RetryStrategy retry_strategy_,
-        bool s3_slow_all_threads_after_network_error_,
-        bool s3_slow_all_threads_after_retryable_error_,
-        bool enable_s3_requests_logging_,
-        bool for_disk_s3_,
-        std::optional<std::string> opt_disk_name_,
-        bool s3_use_adaptive_timeouts_,
-        const HTTPRequestThrottler & request_throttler_,
-        std::function<void(const ProxyConfiguration &)> error_report_) = delete;
-
 private:
     PocoHTTPClientConfiguration(
         std::function<ProxyConfiguration()> per_request_configuration_,

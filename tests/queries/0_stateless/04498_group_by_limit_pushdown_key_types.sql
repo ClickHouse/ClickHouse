@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, long, no-msan
+-- Tags: no-parallel-replicas, long
 -- Correctness of enable_group_by_top_k_optimization across GROUP BY key types:
 -- unsigned and signed integers, Date32/DateTime, Float32/Float64 (NaN handling)
 -- on the typed numeric fast path, strings, tuples, nullable and low-cardinality

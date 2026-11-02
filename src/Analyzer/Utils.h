@@ -16,16 +16,12 @@
 namespace DB
 {
 
-struct StorageID;
 class FunctionNode;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
 class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;
-
-class JoinNode;
-struct Settings;
 
 struct IdentifierResolveScope;
 
@@ -134,9 +130,6 @@ TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr &
   * 5. t1
   */
 TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
-
-/// Returns true if the join is GLOBAL, explicitly or through `distributed_product_mode` / `prefer_global_in_and_join`
-bool isGlobalJoin(const JoinNode & join_node, const Settings & settings);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
@@ -323,10 +316,5 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     const std::string & cte_name,
     const QueryTreeNodePtr & scope_node,
     bool throw_on_mismatch);
-
-/// Returns true if the table is the data inserted into a table function by `INSERT INTO FUNCTION ... RETURNING`,
-/// which the RETURNING query reads instead of the table function. The access to the table function is checked when it is executed,
-/// and its name is not in the database catalog, so the `SELECT` grants are not checked for it.
-bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context);
 
 }

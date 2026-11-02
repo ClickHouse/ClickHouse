@@ -534,8 +534,6 @@ void RecordBatchEncoder::encodeAsOpaque(
     PODArray<Int32> arrow_offsets(num_rows + 1);
     arrow_offsets[0] = 0;
     PODArray<char> data;
-    /// One loop per representation, so the per-row loop does not test `as_text` and the binary one stays small.
-    auto encode_rows = [&]<bool as_text_value>()
     {
         WriteBufferFromVector<PODArray<char>> buffer(data);
         WriteBufferFromOwnString value;
@@ -546,7 +544,7 @@ void RecordBatchEncoder::encodeAsOpaque(
             /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
             if (!(null_map && (*null_map)[i]))
             {
-                if constexpr (as_text_value)
+                if (as_text)
                 {
                     value.restart();
                     serialization->serializeText(column, i, value, settings);
@@ -562,11 +560,7 @@ void RecordBatchEncoder::encodeAsOpaque(
             arrow_offsets[i + 1] = static_cast<Int32>(total);
         }
         buffer.finalize();
-    };
-    if (as_text)
-        encode_rows.template operator()<true>();
-    else
-        encode_rows.template operator()<false>();
+    }
     appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
     appendBuffer(data.data(), data.size());
 }

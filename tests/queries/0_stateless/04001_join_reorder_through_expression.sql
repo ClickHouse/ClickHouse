@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 64;

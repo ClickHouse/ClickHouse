@@ -266,8 +266,7 @@ public:
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
-        size_t first_function_number,
-        const DataTypePtr & key_type,
+        DataTypePtr current_type,
         bool single_point = false);
 
     /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
@@ -429,10 +428,6 @@ public:
         /// E.g. toDate(key) > '2025-09-12'.
         /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
-
-        /// The number of the first function of `monotonic_functions_chain`, or of the chains of `set_index` in mapping
-        /// order. Assigned when the condition is built, it names the cached results of the functions (see `applyFunction`).
-        size_t first_function_number = 0;
 
         std::optional<BloomFilterData> bloom_filter_data;
     };

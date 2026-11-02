@@ -53,8 +53,7 @@ private:
 class AvroDeserializer
 {
 public:
-    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false.
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns = {});
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
@@ -177,8 +176,6 @@ public:
 
     String getName() const override { return "AvroRowInputFormat"; }
 
-    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override { column_mapper = column_mapper_; }
-
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
@@ -189,7 +186,6 @@ private:
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
     FormatSettings format_settings;
-    ColumnMapperPtr column_mapper;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.

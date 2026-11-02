@@ -1074,12 +1074,13 @@ namespace
         });
 
         /// Set callbacks to execute function input().
-        query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription &, const Block & header)
+        query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
         {
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializePipeline(header);
+            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
+            initializePipeline(metadata_snapshot->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1807,8 +1808,7 @@ namespace
             return;
 
         /// Copy output to `result.output`, with optional compressing.
-        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
-        if (write_buffer && !write_buffer->isCanceled())
+        if (write_buffer)
         {
             size_t output_size = 0;
             if (send_final_message)

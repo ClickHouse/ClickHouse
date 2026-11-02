@@ -1,6 +1,7 @@
 -- One query visits the same Merge storage from many nodes; the support answer is memoized per
 -- pass run, so assert the memoized answer equals the fresh one on both the true and false arm.
 
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS mt1;

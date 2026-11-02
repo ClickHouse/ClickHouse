@@ -1,14 +1,14 @@
-BROTLI compression in ORC files is not supported
-BROTLI compression in ORC files is not supported
-BROTLI compression in ORC files is not supported
-BROTLI compression in ORC files is not supported
-BROTLI compression in ORC files is not supported
-BROTLI compression in ORC files is not supported
+orc::CompressionError
+orc::CompressionError
+orc::CompressionError
+orc::CompressionError
+orc::CompressionError
+Unknown compression codec 6
 CANNOT_EXTRACT_TABLE_STRUCTURE
-INCORRECT_DATA
+orc::ParseError
 0
 CANNOT_EXTRACT_TABLE_STRUCTURE
-INCORRECT_DATA
+orc::ParseError
 0
 1
 2

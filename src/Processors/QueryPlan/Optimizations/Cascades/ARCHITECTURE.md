@@ -208,7 +208,7 @@ four stages:
 - **Stage 1 — Explore**: Fire transformation rules (`JoinCommutativity`,
   `TwoStageAggregation`, `TwoStageTopN`) to generate logically equivalent expressions.
 - **Stage 2 — Implement**: Fire implementation rules (`HashJoinImplementation`,
-  `AggregationImplementation`, `DistinctImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
+  `AggregationImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
   `ReplicatedReadImplementation`, `ReplicatedSubplanImplementation`, `TopNImplementation`,
   `DefaultImplementation`, `DistributionPassthrough`) to generate physical expressions
   with concrete properties.
@@ -443,10 +443,6 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   single-key alternatives for multi-key `GROUP BY`) and implements the partial
   aggregations; shuffle is not created for global aggregation, grouping sets, overflow
   rows, or `max_rows_to_group_by`
-- `DistinctImplementation` — creates local and shuffle final `DISTINCT` (shuffle by all
-  `DISTINCT` columns and, for several columns, by each single one); a `DISTINCT` that keeps
-  its input order stays local. The preliminary `DISTINCT` below it is a passthrough step,
-  so before a gather it runs on every node and the gather moves the distinct rows only
 - `LocalReadImplementation` — single-node read
 - `ParallelReadImplementation` — parallel N-way read across nodes
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
@@ -458,9 +454,8 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
-- `DistributionPassthrough` — propagates distribution through steps that run on any split
-  of their input (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`, a preliminary
-  `DistinctStep`), translating distribution
+- `DistributionPassthrough` — propagates distribution through stateless per-row steps
+  (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`), translating distribution
   and sort columns through the step's `ActionsDAG` and creating sorted passthrough
   variants; expressions with per-block or non-deterministic functions stay single-node
 

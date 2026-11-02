@@ -455,16 +455,6 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 {
     chassert(local_context);
 
-    /// Each part's rows and its bitmap come from one read snapshot, so the count matches a `SELECT`'s.
-    if (hasUniqueKey())
-    {
-        const auto uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-        UInt64 res = 0;
-        for (const auto & part : getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID()))
-            res += uk_read_snapshot->liveRows(*part);
-        return res;
-    }
-
     UInt64 res = 0;
     if (local_context->getCurrentTransaction())
     {
@@ -485,15 +475,8 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 {
     chassert(local_context);
 
-    /// Guarded, so a plain count on a table without a unique key does not start a transaction
-    /// as a side effect.
-    DeleteBitmapSnapshotPtr uk_read_snapshot;
-    if (hasUniqueKey())
-        uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-    auto parts = uk_read_snapshot
-        ? getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID())
-        : getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
+    auto parts = getVisibleDataPartsVector(local_context);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
@@ -1996,8 +1979,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions,
-    const std::function<void()> & on_wait_for_running_merges,
-    bool merge_forced_horizontal)
+    const std::function<void()> & on_wait_for_running_merges)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -2133,8 +2115,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID(),
-                /*merge_forced_horizontal_=*/merge_forced_horizontal
+                /*storage_id_=*/getStorageID()
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -2315,8 +2296,7 @@ bool StorageMergeTree::merge(
                 lock,
                 txn,
                 optimize_skip_merged_partitions,
-                release_slot_before_wait,
-                /*merge_forced_horizontal=*/deduplicate || cleanup);
+                release_slot_before_wait);
         }();
 
         if (!merge_select_result.has_value())
@@ -4203,7 +4183,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         {
             .txn = local_context->getCurrentTransaction(),
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
-            .temporary_data = local_context->getTempDataOnDisk(),
         };
         if (replace)
         {
@@ -4419,7 +4398,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
-            .temporary_data = local_context->getTempDataOnDisk(),
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(

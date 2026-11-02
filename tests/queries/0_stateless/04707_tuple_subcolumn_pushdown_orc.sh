@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM numbers(20000)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_orc_row_index_stride = 2000"
 
-# rows_read is the pruning oracle: the ORC reader skips row index strides whose statistics exclude the
+# rows_read is the pruning oracle: liborc skips row index strides whose statistics exclude the
 # predicate, so a pruned read reports fewer rows than the file holds.
 run_and_report() {
     local label="$1"
@@ -34,7 +34,7 @@ run_and_report() {
 
     ${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM ${source} WHERE ${predicate}
-        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 1,
+        SETTINGS max_threads = 1, enable_analyzer = 1, optimize_functions_to_subcolumns = 1,
                  input_format_orc_filter_push_down = 1${extra:+, ${extra}}
         FORMAT JSON" \
         | jq -c --arg name "${label}" '{label: $name, result: .data, rows_read: .statistics.rows_read}'
@@ -88,10 +88,10 @@ check_collision() {
     ${CLICKHOUSE_CLIENT} --query "
         SELECT tupleElement(t, 'a.b'), tupleElement(tupleElement(t, 'a'), 'b')
         FROM file('${COLLISION_FILE}', ORC, '${structure}') LIMIT 1
-        SETTINGS optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1;
+        SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1;
         SELECT countIf(tupleElement(t, 'a.b') = 999), countIf(tupleElement(t, 'a.b') = 111)
         FROM file('${COLLISION_FILE}', ORC, '${structure}')
-        SETTINGS optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1"
+        SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1"
 }
 
 check_collision 't Tuple(a Tuple(b UInt64), `a.b` UInt64)' 'tuple(tuple(111::UInt64), 999::UInt64)'

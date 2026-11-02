@@ -2,7 +2,6 @@
 #include "config.h"
 
 #include <Common/Documentation.h>
-#include <DataTypes/DataTypeMapHelpers.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
@@ -81,12 +80,6 @@ class ActionsDAG;
 class Block;
 struct MergeTreeWriterSettings;
 struct MergeTreeDataPartChecksums;
-
-/// Is a value written with @from decoded identically when read back as @to? Used for the skip index
-/// granules and the column statistics of a part that stores a column with a type different from the
-/// current metadata (e.g. after extending an `Enum`). Fail-closed: a conversion not known to keep the
-/// representation is treated as incompatible.
-bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to);
 
 namespace ErrorCodes
 {
@@ -364,19 +357,10 @@ struct IMergeTreeIndex
     /// never schedule it for recalculation, otherwise those operations get wedged.
     virtual bool isInert() const { return false; }
 
-    /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
-    /// slows down reading it. The blocks of such an index that the part's codec does not compress well
-    /// are written with codec `NONE`.
-    virtual bool isCompressible() const { return true; }
-
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    /// Tells whether a name shaped like a Map key subcolumn `<map>.key_<k>` belongs to a column or a
-    /// subcolumn of the table instead. It looks the name up in the metadata snapshot on demand rather
-    /// than collecting such names: an index condition is built per query (and per partition), and
-    /// the table may have thousands of columns.
-    IsShadowingColumn getMapSubcolumnShadowingCheck() const;
+    NameSet getColumnsShadowingMapSubcolumns() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
@@ -442,11 +426,6 @@ void setIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
-/// Every granule of a text bloom filter index eagerly allocates one filter per indexed column, so the total size of the filters
-/// (not only the size of a single filter) is limited. The check is done only for indexes being declared or changed, not on `ATTACH`
-/// and not for indexes inherited unchanged from `old_index`, so that tables created before the check still load and can be altered.
-/// Does nothing for other index types.
-void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);

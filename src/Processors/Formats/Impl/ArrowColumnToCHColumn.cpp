@@ -1,7 +1,7 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Common/Exception.h>
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -2785,7 +2785,6 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const std::string & format_name,
     const FormatSettings & format_settings,
     bool skip_columns_with_unsupported_types,
-    bool allow_arrow_null_type,
     bool allow_inferring_nullable_columns,
     bool case_insensitive_matching,
     bool allow_geoparquet_parser,
@@ -2798,7 +2797,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .format_name = format_name,
         .format_settings = format_settings,
         .date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore,
-        .allow_arrow_null_type = allow_arrow_null_type,
+        .allow_arrow_null_type = false,
         .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
         .case_insensitive_matching = case_insensitive_matching,

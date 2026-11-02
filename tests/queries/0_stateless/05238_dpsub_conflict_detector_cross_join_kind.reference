@@ -1,10 +1,5 @@
--- dpsub alone plans an unconditioned join
-12
-Type: cross
--- dpsub alone plans a nested cross product
-12
-Type: cross
-Type: inner
+-- dpsub alone declines an unconditioned join
+-- dpsub alone declines a nested cross product
 -- nested cross product keeps its kind, CD-C
 Type: cross
 Type: inner

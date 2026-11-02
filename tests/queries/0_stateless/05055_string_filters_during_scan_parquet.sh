@@ -67,12 +67,8 @@ for file in "$FILE_PLAIN" "$FILE_DICT"; do
 done
 
 echo 'the optimization is applied'
-# A column that can be written to the columns cache is decoded without the filter, so that the cache gets
-# its values, and a column served from the cache is not decoded at all.
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_PLAIN', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_plain'"
-# A dictionary-encoded column read only by the last PREWHERE step is evaluated once per dictionary value,
-# without the filter: `id < 100000` (true for all rows) moves `s` to an earlier step.
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_DICT', Parquet) PREWHERE s LIKE '%rare-substring%' AND id < 100000 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_dict'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_PLAIN', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_plain'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_DICT', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_dict'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -114,7 +110,7 @@ echo 'dictionary runs'
 for file in "$FILE_RLE" "$FILE_ONE_VALUE"; do
     for enable in 0 1; do
         $CLICKHOUSE_CLIENT -q "
-        SELECT count(), sum(cityHash64(s)) FROM file('$file', Parquet) PREWHERE s LIKE '%needle%' AND id < 100000 SETTINGS apply_string_filters_during_scan = $enable;
+        SELECT count(), sum(cityHash64(s)) FROM file('$file', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = $enable;
         SELECT count(), sum(cityHash64(s)) FROM file('$file', Parquet) PREWHERE s LIKE '%value%' SETTINGS apply_string_filters_during_scan = $enable;
         SELECT id, s FROM file('$file', Parquet) ORDER BY id LIMIT 2 SETTINGS apply_string_filters_during_scan = $enable;
         "
@@ -122,8 +118,8 @@ for file in "$FILE_RLE" "$FILE_ONE_VALUE"; do
 done
 
 echo 'the optimization is applied to the runs'
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_RLE', Parquet) PREWHERE s LIKE '%rare-substring%' AND id < 100000 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_rle'"
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_ONE_VALUE', Parquet) PREWHERE s LIKE '%rare-substring%' AND id < 100000 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, log_comment = '05055_string_filter_applied_one_value'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_RLE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_rle'"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM file('$FILE_ONE_VALUE', Parquet) PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied_one_value'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -157,7 +153,7 @@ echo 'dictionary pruning does not disable the filter'
 $CLICKHOUSE_CLIENT -q "
 SELECT count() FROM file('$FILE_PRUNE', Parquet)
 PREWHERE s = 'needle 6' AND s LIKE '%needle%'
-SETTINGS apply_string_filters_during_scan = 1, input_format_parquet_dictionary_filter_push_down = 16777216, use_columns_cache = 0,
+SETTINGS apply_string_filters_during_scan = 1, input_format_parquet_dictionary_filter_push_down = 16777216,
     log_comment = '05055_string_filter_pruning'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"

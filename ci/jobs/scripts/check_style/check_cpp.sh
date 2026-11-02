@@ -123,7 +123,6 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::size
 
     ErrorCodes::ErrorCode
-    ErrorCodes::Error
     ErrorCodes::getName
     ErrorCodes::increment
     ErrorCodes::extendedMessage

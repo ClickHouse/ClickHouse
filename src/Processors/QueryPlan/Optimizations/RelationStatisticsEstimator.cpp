@@ -1,12 +1,14 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 #include <algorithm>
+#include <ranges>
+
+#include <fmt/ranges.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -19,8 +21,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -30,7 +30,6 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_statistics;
-extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -39,8 +38,17 @@ namespace QueryPlanOptimizations
 namespace
 {
 
-/// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
-constexpr Float64 array_join_rows_multiplier = 100;
+String dumpStatsForLogs(const RelationStats & stats)
+{
+    return fmt::format(
+        "{}: {} rows, columns: [{}]",
+        stats.table_name.empty() ? "<unknown>" : stats.table_name,
+        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
+        fmt::join(
+            stats.column_stats
+                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
+            ", "));
+}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -89,15 +97,6 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     return aggregation_stats;
 }
 
-/// Raises a read with rows to 1 row and 1 value per column: 1% of `=` and the 10% guess of distinct values truncate to 0
-/// on a table of a few rows, and the joins and aggregations above multiply them.
-void floorReadWithRows(RelationProfile & profile)
-{
-    profile.rows = std::max<UInt64>(profile.rows, 1);
-    for (auto & [_, column_stats] : profile.column_stats)
-        column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
-}
-
 /// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
 /// sorted range), so the child's value ranges and NULL fraction do not describe the output.
 /// Applied whenever a limit is present: the row estimate cannot prove the limit does not
@@ -113,8 +112,8 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
 }
 
 /// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
-/// True for a `__applyFilter` call or an always-true `x = x`, an `and` of such predicates, or an `or`
-/// with at least one such operand. Aliases are looked through.
+/// True for a `__applyFilter` call, an `and` of such predicates, or an `or` with at least one such
+/// operand. Aliases are looked through.
 bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 {
     if (!node)
@@ -127,7 +126,7 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
         return false;
 
     const auto & function_name = node->function_base->getName();
-    if (function_name == "__applyFilter" || isAlwaysTrueEquality(*node))
+    if (function_name == "__applyFilter")
         return true;
 
     if (node->children.empty())
@@ -142,23 +141,6 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
         return std::ranges::any_of(node->children, prunesNothingAtPlanTime);
 
     return false;
-}
-
-/// The conditions on the rows of a read: the filter above it and the `PREWHERE`, as MergeTree estimates them, and the row policy.
-std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter)
-{
-    std::vector<RPNBuilderTreeNode> conditions;
-    auto add_condition = [&](const ActionsDAG::Node * condition)
-    {
-        if (condition && !prunesNothingAtPlanTime(condition))
-            conditions.emplace_back(condition, reading.getContext());
-    };
-    add_condition(filter);
-    if (const auto & prewhere_info = reading.getPrewhereInfo())
-        add_condition(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
-    if (const auto & row_level_filter = reading.getRowLevelFilter())
-        add_condition(row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name));
-    return conditions;
 }
 
 }
@@ -263,7 +245,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
         }
@@ -293,60 +275,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .source = RowEstimateSource::PrimaryIndex};
     }
 
-    if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
-    {
-        const auto & settings = reading->getContext()->getSettingsRef();
-        if (!settings[Setting::use_iceberg_manifest_statistics] || !settings[Setting::use_statistics])
-            return RelationStats{};
-
-        const auto estimate = reading->estimateReadFromDataLakeMetadata();
-        if (!estimate)
-            return RelationStats{};
-
-        /// No rows, as `RelationStats{}`, so the join order is the same; but the metadata was read, so it names the table
-        /// and its source: `EXPLAIN` shows `t[no_stats~?]` and the data lake hint line lists it.
-        RelationStats stats{
-            .estimated_rows = {},
-            .table_name = reading->getStorageID().getTableName(),
-            .imprecise_estimate = true,
-            .source = RowEstimateSource::DataLakeMetadata};
-        if (!estimate->rows)
-            return stats;
-        const UInt64 rows = *estimate->rows;
-
-        const auto conditions = getConditionsToEstimate(*reading, filter);
-        if (conditions.empty() || rows == 0)
-        {
-            stats.estimated_rows = rows;
-            if (estimate->estimator)
-            {
-                auto profile = estimate->estimator->estimateRelationProfile();
-                if (rows != 0)
-                    floorReadWithRows(profile);
-                stats.column_stats = std::move(profile.column_stats);
-            }
-            /// Without conditions, the rows of the remaining files, imprecise with delete files.
-            stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
-            return stats;
-        }
-
-        if (estimate->estimator)
-        {
-            auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
-            floorReadWithRows(filtered);
-            stats.estimated_rows = filtered.rows;
-            stats.column_stats = std::move(filtered.column_stats);
-            return stats;
-        }
-
-        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
-        if (!estimate->pruned_data_files)
-            return stats;
-
-        /// The remaining files bound the rows, as the selected parts bound a MergeTree read.
-        stats.estimated_rows = rows;
-        return stats;
-    }
+    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
+        return RelationStats{};
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
@@ -369,25 +299,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport);
     }
 
-    /// A join that has already been optimized enters its parent's join graph as a single relation,
-    /// and the row count it settled on is the only estimate that relation has. Read it before the
-    /// single-child check below, which a join, having two children, would never pass.
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
-        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
-        /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
-        /// to keep the parent from appending a second estimate to it.
-        /// A filter above the join (`filter`, from the `FilterStep` branch) is not accounted for, so like
-        /// a storage read with a filter it cannot use, the row count is then unknown.
-        return RelationStats{
-            .estimated_rows = filter ? std::nullopt : join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
-            .table_name = join_step->getReadableRelationName(),
-            .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
-            .composite = true};
-    }
-
     if (node.children.size() != 1)
         return {};
 
@@ -401,32 +312,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
-    const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(step);
-    if (array_join_step || (expression_step && expression_step->getExpression().hasArrayJoin()))
-    {
-        /// A filter above the array join can read its output, which the statistics of the input do not describe.
-        auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
-        if (stats.estimated_rows && *stats.estimated_rows != 0)
-        {
-            /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.
-            if (filter || (array_join_step && array_join_step->hasElementFilter()))
-            {
-                stats.estimated_rows.reset();
-                stats.imprecise_estimate = true;
-            }
-            else
-                stats.estimated_rows = toUInt64Saturating(Float64(*stats.estimated_rows) * array_join_rows_multiplier);
-        }
-        if (expression_step)
-            remapColumnStats(stats.column_stats, expression_step->getExpression());
-        else
-            for (const auto & column : array_join_step->getColumns())
-                stats.column_stats.erase(column);
-        return stats;
-    }
-
-    if (expression_step)
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
+        expression_step && !expression_step->getExpression().hasArrayJoin())
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
@@ -447,6 +334,17 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
+    }
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
+        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
+        return RelationStats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
+            .column_stats = join_step->getResultColumnStats(),
+            .table_name = join_step->getReadableRelationName(),
+            .imprecise_estimate = join_step->hasImpreciseEstimate()};
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
