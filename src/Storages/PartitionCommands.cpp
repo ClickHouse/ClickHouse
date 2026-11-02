@@ -44,10 +44,17 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.partition = command_ast->partition->clone();
         return res;
     }
-    if (command_ast->type == ASTAlterCommand::ADD_PARTITION)
+    if (command_ast->type == ASTAlterCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION)
     {
         PartitionCommand res;
-        res.type = ADD_PARTITION;
+        res.type = ADD_OBJECT_STORAGE_QUEUE_PARTITION;
+        res.partition = command_ast->partition->clone();
+        return res;
+    }
+    if (command_ast->type == ASTAlterCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = FORGET_OBJECT_STORAGE_QUEUE_PARTITION;
         res.partition = command_ast->partition->clone();
         return res;
     }
@@ -164,8 +171,10 @@ std::string PartitionCommand::typeToString() const
             return "DROP DETACHED PARTITION";
     case PartitionCommand::Type::FORGET_PARTITION:
         return "FORGET PARTITION";
-    case PartitionCommand::Type::ADD_PARTITION:
-        return "ADD PARTITION";
+    case PartitionCommand::Type::ADD_OBJECT_STORAGE_QUEUE_PARTITION:
+        return "ADD OBJECT STORAGE QUEUE PARTITION";
+    case PartitionCommand::Type::FORGET_OBJECT_STORAGE_QUEUE_PARTITION:
+        return "FORGET OBJECT STORAGE QUEUE PARTITION";
     case PartitionCommand::Type::FETCH_PARTITION:
         if (part)
             return "FETCH PART";

@@ -29,11 +29,11 @@ $CLICKHOUSE_CLIENT -q "
         buckets = 2,
         after_processing = 'keep',
         commit_on_select = 1;
-    ALTER TABLE queue ADD PARTITION 'a_';
-    ALTER TABLE queue ADD PARTITION 'b_';
-    ALTER TABLE queue ADD PARTITION 'a_';
-    ALTER TABLE queue FORGET PARTITION 'd_';
-    ALTER TABLE queue ADD PARTITION 'a'; -- { serverError BAD_ARGUMENTS }
+    ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'a_';
+    ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'b_';
+    ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'a_';
+    ALTER TABLE queue FORGET OBJECT STORAGE QUEUE PARTITION 'd_';
+    ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'a'; -- { serverError BAD_ARGUMENTS }
     SELECT 'registered', name FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions' ORDER BY name;
 "
 
@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
     SELECT 'listed', ProfileEvents['ObjectStorageQueueListedFiles'] FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_05473_second' AND type = 'QueryFinish';
-    ALTER TABLE queue FORGET PARTITION 'a_';
+    ALTER TABLE queue FORGET OBJECT STORAGE QUEUE PARTITION 'a_';
     SELECT 'registered', name FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions' ORDER BY name;
     SELECT 'processed', name FROM system.zookeeper WHERE path IN ('${KEEPER_PATH}/buckets/0/processed', '${KEEPER_PATH}/buckets/1/processed') ORDER BY name;
     CREATE TABLE queue_path (s String)
@@ -59,13 +59,13 @@ $CLICKHOUSE_CLIENT -q "
         buckets = 2,
         after_processing = 'keep',
         commit_on_select = 1;
-    ALTER TABLE queue_path ADD PARTITION 'a_', ADD PARTITION 'b_';
+    ALTER TABLE queue_path ADD OBJECT STORAGE QUEUE PARTITION 'a_', ADD OBJECT STORAGE QUEUE PARTITION 'b_';
     SELECT 'path', * FROM queue_path ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1;
     SELECT 'path', * FROM queue_path ORDER BY ALL SETTINGS stream_like_engine_allow_direct_select = 1;
     CREATE TABLE queue_plain (s String)
     ENGINE = S3Queue('${S3_URL}/*.csv', 'CSV')
     SETTINGS keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05473_queue_plain', mode = 'ordered';
-    ALTER TABLE queue_plain ADD PARTITION 'a_'; -- { serverError BAD_ARGUMENTS }
+    ALTER TABLE queue_plain ADD OBJECT STORAGE QUEUE PARTITION 'a_'; -- { serverError BAD_ARGUMENTS }
     DROP TABLE queue;
     DROP TABLE queue_path;
     DROP TABLE queue_plain;

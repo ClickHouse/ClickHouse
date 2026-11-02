@@ -560,7 +560,8 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::DROP_PARTITION:
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         case ASTAlterCommand::FORGET_PARTITION:
-        case ASTAlterCommand::ADD_PARTITION:
+        case ASTAlterCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION:
+        case ASTAlterCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION:
         case ASTAlterCommand::ATTACH_PARTITION:
         case ASTAlterCommand::FREEZE_PARTITION:
             require(partition, "partition");
@@ -970,9 +971,14 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                      ;
         partition->format(ostr, settings, state, frame);
     }
-    else if (type == ASTAlterCommand::ADD_PARTITION)
+    else if (type == ASTAlterCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION)
     {
-        ostr << "ADD PARTITION ";
+        ostr << "ADD OBJECT STORAGE QUEUE PARTITION ";
+        partition->format(ostr, settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION)
+    {
+        ostr << "FORGET OBJECT STORAGE QUEUE PARTITION ";
         partition->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::ATTACH_PARTITION)

@@ -1707,7 +1707,8 @@ void StorageObjectStorageQueue::checkAlterPartitionIsPossible(
 
     for (const auto & command : commands)
     {
-        if (command.type != PartitionCommand::ADD_PARTITION && command.type != PartitionCommand::FORGET_PARTITION)
+        if (command.type != PartitionCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION
+            && command.type != PartitionCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operation ALTER TABLE {} is not supported by {}", command.typeToString(), getName());
         if (metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::EXPLICIT)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition operations are allowed for {} only with partitioning_mode='explicit'", getName());
@@ -1727,7 +1728,7 @@ Pipe StorageObjectStorageQueue::alterPartition(
 
     for (const auto & command : commands)
     {
-        if (command.type == PartitionCommand::ADD_PARTITION)
+        if (command.type == PartitionCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION)
             metadata->addPartition(getPartitionPrefix(command));
         else
             metadata->forgetPartition(getPartitionPrefix(command));

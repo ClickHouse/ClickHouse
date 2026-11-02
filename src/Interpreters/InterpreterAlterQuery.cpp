@@ -1045,7 +1045,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:
-        case ASTAlterCommand::ADD_PARTITION:
         {
             required_access.emplace_back(AccessType::INSERT, database, table);
             break;
@@ -1057,6 +1056,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::FORGET_PARTITION:
         {
             required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
+            break;
+        }
+        case ASTAlterCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION:
+        case ASTAlterCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION:
+        {
+            required_access.emplace_back(AccessType::ALTER_OBJECT_STORAGE_QUEUE_PARTITION, database, table);
             break;
         }
         case ASTAlterCommand::MOVE_PARTITION:

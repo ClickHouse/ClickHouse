@@ -597,13 +597,13 @@ The setting `(s3queue_)buckets` is available starting with version `24.6`.
 With `partitioning_mode = 'explicit'` in `ordered` mode, the table processes only the objects under key prefixes registered with `ALTER TABLE`:
 
 ```sql
-ALTER TABLE queue ADD PARTITION 'server-1_';
-ALTER TABLE queue FORGET PARTITION 'server-1_';
+ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'server-1_';
+ALTER TABLE queue FORGET OBJECT STORAGE QUEUE PARTITION 'server-1_';
 ```
 
 A partition is a key prefix relative to the table path with the wildcards cut off: for the path `logs/*` the partition `'server-1_'` covers the objects whose keys start with `logs/server-1_`. Registered partitions are stored in Keeper under `keeper_path` and are shared by all replicas. They must not overlap, that is, no registered partition can be a prefix of another one. Both commands are idempotent.
 
-Each partition keeps its last processed file in every bucket it is processed in. On every poll each partition is listed separately, and on S3 its listing starts after the smallest of these files, or from the beginning if some bucket has not processed any file of the partition yet. So the cost of listing does not grow with the number of processed files kept in the S3 bucket, for example with `after_processing = 'keep'`. Objects outside registered partitions are ignored. `FORGET PARTITION` removes the partition and its progress. It is meant for prefixes that no longer receive or hold objects, because objects still under the prefix may be processed again if it is added back.
+Each partition keeps its last processed file in every bucket it is processed in. On every poll each partition is listed separately, and on S3 its listing starts after the smallest of these files, or from the beginning if some bucket has not processed any file of the partition yet. So the cost of listing does not grow with the number of processed files kept in the S3 bucket, for example with `after_processing = 'keep'`. Objects outside registered partitions are ignored. `FORGET OBJECT STORAGE QUEUE PARTITION` removes the partition and its progress. It is meant for prefixes that no longer receive or hold objects, because objects still under the prefix may be processed again if it is added back.
 
 With `bucketing_mode = 'partition'` all files of a partition go to one bucket: the partition has one last processed file, its listing starts exactly after it, and its files are processed strictly in order. With `bucketing_mode = 'path'` the files of a partition are spread over the buckets for parallelism, at the cost of listing again the files processed by faster buckets until the slowest one catches up. Changing `buckets` with `ALTER TABLE ... MODIFY SETTING` is not allowed.
 

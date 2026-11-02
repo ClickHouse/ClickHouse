@@ -85,7 +85,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_partition(Keyword::DROP_PARTITION);
     ParserKeyword s_drop_part(Keyword::DROP_PART);
     ParserKeyword s_forget_partition(Keyword::FORGET_PARTITION);
-    ParserKeyword s_add_partition(Keyword::ADD_PARTITION);
+    ParserKeyword s_add_object_storage_queue_partition(Keyword::ADD_OBJECT_STORAGE_QUEUE_PARTITION);
+    ParserKeyword s_forget_object_storage_queue_partition(Keyword::FORGET_OBJECT_STORAGE_QUEUE_PARTITION);
     ParserKeyword s_move_partition(Keyword::MOVE_PARTITION);
     ParserKeyword s_move_part(Keyword::MOVE_PART);
     ParserKeyword s_drop_detached_partition(Keyword::DROP_DETACHED_PARTITION);
@@ -287,12 +288,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::FORGET_PARTITION;
             }
-            else if (s_add_partition.ignore(pos, expected))
+            else if (s_add_object_storage_queue_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
-                command->type = ASTAlterCommand::ADD_PARTITION;
+                command->type = ASTAlterCommand::ADD_OBJECT_STORAGE_QUEUE_PARTITION;
+            }
+            else if (s_forget_object_storage_queue_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command_partition, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::FORGET_OBJECT_STORAGE_QUEUE_PARTITION;
             }
             else if (s_drop_detached_partition.ignore(pos, expected))
             {
@@ -1866,7 +1874,7 @@ The following operations with [partitions](/reference/engines/table-engines/merg
 - [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
 - [DROP DETACHED PARTITION\|PART](#drop-detached-partitionpart) - Delete a part or all parts of a partition from `detached`.
 - [FORGET PARTITION](#forget-partition) — Deletes a partition metadata from zookeeper if it's empty.
-- [ADD PARTITION](#add-partition) — Registers a key prefix for processing in an `S3Queue` or `AzureQueue` table.
+- [ADD\|FORGET OBJECT STORAGE QUEUE PARTITION](#add-forget-object-storage-queue-partition) — Registers or removes a key prefix for processing in an `S3Queue` or `AzureQueue` table.
 - [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
 - [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
@@ -1948,15 +1956,14 @@ Example:
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
-For `S3Queue` and `AzureQueue` tables with `partitioning_mode = 'explicit'`, removes a key prefix registered with [ADD PARTITION](#add-partition) and its progress. Unknown prefixes are ignored.
-
-## ADD PARTITION {#add-partition}
+## ADD\|FORGET OBJECT STORAGE QUEUE PARTITION {#add-forget-object-storage-queue-partition}
 
 ```sql
-ALTER TABLE table_name ADD PARTITION 'prefix'
+ALTER TABLE table_name ADD OBJECT STORAGE QUEUE PARTITION 'prefix'
+ALTER TABLE table_name FORGET OBJECT STORAGE QUEUE PARTITION 'prefix'
 ```
 
-Registers a key prefix for processing in an `S3Queue` or `AzureQueue` table with `partitioning_mode = 'explicit'`. Adding a registered prefix does nothing. See [explicit partitions](/reference/engines/table-engines/integrations/s3queue#explicit-partitions).
+Registers a key prefix for processing in an `S3Queue` or `AzureQueue` table with `partitioning_mode = 'explicit'`, or removes it together with its progress. Adding a registered prefix and forgetting an unknown one do nothing. Both require the `ALTER OBJECT STORAGE QUEUE PARTITION` privilege. See [explicit partitions](/reference/engines/table-engines/integrations/s3queue#explicit-partitions).
 
 ## ATTACH PARTITION\|PART {#attach-partitionpart}
 
@@ -2256,7 +2263,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] FORGET PARTITION partition_expr
-ALTER TABLE table_name [ON CLUSTER cluster] ADD PARTITION 'prefix'
+ALTER TABLE table_name [ON CLUSTER cluster] ADD|FORGET OBJECT STORAGE QUEUE PARTITION 'prefix'
 ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
