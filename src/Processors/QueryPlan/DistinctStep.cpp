@@ -262,7 +262,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
                 return std::make_shared<ExternalDistinctTransform>(
                     header,
-                    GroupLimitParams{.key_columns = columns, .limit_hint = limit_hint, .size_limits = local_limits},
+                    GroupLimitParams{
+                        .key_columns = columns,
+                        .limit_hint = limit_hint,
+                        .size_limits = local_limits,
+                        .num_streams = pipeline.getNumStreams()},
                     external_threshold,
                     tmp_data_on_disk,
                     settings.min_free_disk_space,

@@ -23,6 +23,14 @@ SELECT count(), sum(v)
 FROM (SELECT k, v FROM (SELECT number % 1000000 AS k, number AS v FROM numbers(3000000)) ORDER BY v DESC LIMIT 1 BY k LIMIT 100)
 SETTINGS max_bytes_before_external_limit_by = 100000, log_comment = '05483_external_group_limit_spill_floor/low_threshold';
 
+-- A parallel `DISTINCT` splits its groups among hash partitions, and each partition applies its share of the
+-- floor: every partition holds less than 16 MiB, but together they hold more, so the threshold spills them.
+SELECT count()
+FROM (SELECT DISTINCT toString(number % 1000000) AS k FROM numbers_mt(4000000))
+SETTINGS max_threads = 16, allow_parallel_distinct = 1, max_threads_min_free_memory_per_thread = 0,
+    max_bytes_before_external_distinct = 33554432,
+    log_comment = '05483_external_group_limit_spill_floor/parallel';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT
     substring(log_comment, length('05483_external_group_limit_spill_floor/') + 1) AS test_case,

@@ -196,7 +196,11 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return std::make_shared<ExternalLimitByTransform>(
             header,
             GroupLimitParams{
-                .key_columns = columns, .group_offset = group_offset, .group_limit_end = group_limit_end, .limit_hint = limit_hint},
+                .key_columns = columns,
+                .group_offset = group_offset,
+                .group_limit_end = group_limit_end,
+                .limit_hint = limit_hint,
+                .num_streams = pipeline.getNumStreams()},
             external_threshold,
             tmp_data_on_disk,
             settings.min_free_disk_space,

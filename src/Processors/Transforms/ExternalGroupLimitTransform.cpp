@@ -100,7 +100,7 @@ template <typename Traits>
 bool ExternalGroupLimitTransform<Traits>::isBelowSpillFloor(size_t state_bytes, size_t growth_bytes) const
 {
     fiu_do_on(FailPoints::external_group_limit_skip_spill_floor, { return false; });
-    const size_t floor = minBytesInRun();
+    const size_t floor = minBytesInRun() / params.num_streams;
     return growth_bytes < floor && state_bytes < floor - growth_bytes;
 }
 

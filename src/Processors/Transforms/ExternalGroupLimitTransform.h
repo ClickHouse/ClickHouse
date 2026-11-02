@@ -36,6 +36,10 @@ struct GroupLimitParams
     /// Limits on the in-memory state, and on result rows once spilled (`max_rows_in_distinct`,
     /// `max_bytes_in_distinct`).
     SizeLimits size_limits{};
+    /// The number of transforms that split the groups of the operator between them, one per disjoint input
+    /// stream. Each transform holds about `1 / num_streams` of the state, so it applies that share of the
+    /// spill floor.
+    size_t num_streams = 1;
 };
 
 /// The hash-based group limit (`DISTINCT` or `LIMIT BY`) that spills to disk. `Traits` supplies the in-memory
@@ -44,8 +48,8 @@ struct GroupLimitParams
 ///
 /// The transform streams the rows of each group's window until tracked query memory exceeds its spill
 /// threshold, projected growth and spill workspace exceed the remaining threshold budget, or the memory
-/// scheduler requests a spill (see `spill`). The threshold triggers no spill while the filter state stays
-/// below a run's worth of bytes (see `isBelowSpillFloor`). Its filter retains typed keys, or 128-bit
+/// scheduler requests a spill (see `spill`). The threshold triggers no spill while the state of the operator
+/// stays below a run's worth of bytes (see `isBelowSpillFloor`). Its filter retains typed keys, or 128-bit
 /// fingerprints of generic keys, which the spill runs compare instead of the keys.
 ///
 /// At the first spill, the filter's groups become sorted seen runs carrying the number of input rows seen per
@@ -295,9 +299,10 @@ private:
     void spillRun(PreparedRun run);
     /// Returns the minimum run size, also used by the sort that restores input order and as the spill floor.
     size_t minBytesInRun() const;
-    /// Whether a filter state of `state_bytes`, grown by `growth_bytes`, stays below the spill floor,
-    /// `minBytesInRun`. Spilling such a state frees almost nothing when other operators hold the query
-    /// memory, but holds back the results until the input ends, which also defeats an early `LIMIT`.
+    /// Whether a filter state of `state_bytes`, grown by `growth_bytes`, stays below this transform's share
+    /// of the spill floor: `minBytesInRun`, divided among the transforms that split the groups of the
+    /// operator. Spilling such a state frees almost nothing when other operators hold the query memory, but
+    /// holds back the results until the input ends, which also defeats an early `LIMIT`.
     bool isBelowSpillFloor(size_t state_bytes, size_t growth_bytes) const;
     /// Whether spilled rows carry arrival numbers, which restore the input order when they do not carry its
     /// columns.
