@@ -261,7 +261,7 @@ function run_prep_statement()
     echo -e "Stateful data preparation statement exceeded ${PREP_STATEMENT_TIMEOUT}s (see gdb.log)$FAIL" >> /test_output/test_results.tsv
     echo "thread apply all backtrace (on stateful prep bound)" >> /test_output/gdb.log
     timeout --verbose --signal=TERM --kill-after=60 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
-    clickhouse stop --force
+    kill_server
     exit 1
 }
 

@@ -29,6 +29,10 @@ CRASH_CONSEQUENCE_RESULT_NAMES = frozenset(
     }
 )
 
+# Written by `kill_server` (stress_tests.lib). Its kill leaves no `<Fatal>` record, but the killed server
+# may have hung while reporting a failure that only the server logs name.
+SERVER_KILLED_RESULT_NAME = "Server killed by the harness"
+
 
 def container_memory_limit() -> int:
     visible = Utils.physical_memory()
@@ -430,16 +434,20 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False
+    server_killed = False
     crash_named = False
     failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
             server_died = True
             continue
+        if test_result.name == SERVER_KILLED_RESULT_NAME:
+            server_killed = True
         if not test_result.is_ok():
             failed_results.append(test_result)
 
-    if server_died or crash_evidence:
+    crashed = server_died or crash_evidence
+    if crashed or server_killed:
         # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
         # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
         # sc1/sc2: their dedicated server log + matching stderr log
@@ -465,15 +473,19 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 replica_log_pairs.append((sc, sc_server_log, sc_stderr))
 
         if not replica_log_pairs:
-            failed_results.append(
-                Result.create_from(
-                    name="Unknown error",
-                    info="no server logs found",
-                    status=Result.Status.FAIL,
+            if crashed:
+                failed_results.append(
+                    Result.create_from(
+                        name="Unknown error",
+                        info="no server logs found",
+                        status=Result.Status.FAIL,
+                    )
                 )
-            )
         else:
             results = select_replica_failures(replica_log_pairs)
+            if not crashed:
+                # The row about why the server was killed reports it, unless the logs name more.
+                results = [f for f in results if f[0] != FuzzerLogParser.UNKNOWN_ERROR]
             if results:
                 # The crash named in the server logs is the cause, so drop the rows
                 # about its consequences to report it once.
@@ -495,7 +507,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                             files=files,
                         )
                     )
-            else:
+            elif crashed:
                 failed_results.append(
                     Result.create_from(
                         name="Parse failure error",
