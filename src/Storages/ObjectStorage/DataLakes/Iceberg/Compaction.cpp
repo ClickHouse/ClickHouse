@@ -1106,7 +1106,13 @@ static bool writeMetadataFiles(
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
 
-    std::unordered_map<Int64, Int64> snapshot_id_to_records_count;
+    struct LiveTotals
+    {
+        Int64 records = 0;
+        Int64 data_files = 0;
+        Int64 files_size = 0;
+    };
+    std::unordered_map<Int64, LiveTotals> snapshot_id_to_live_totals;
 
     for (const auto & history_record : plan.history)
     {
@@ -1117,22 +1123,26 @@ static bool writeMetadataFiles(
             continue;
         }
 
-        Int64 records_count = 0;
+        LiveTotals live;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
-            records_count += data_file->new_records_count;
-        /// `total-records` adds `added_records` to the parent's total only when the parent is rewritten too.
-        Int64 parent_records_count = 0;
-        if (auto it = snapshot_id_to_records_count.find(history_record.parent_id); it != snapshot_id_to_records_count.end())
-            parent_records_count = it->second;
-        snapshot_id_to_records_count[history_record.snapshot_id] = records_count;
+        {
+            live.records += data_file->new_records_count;
+            live.files_size += data_file->new_bytes_count;
+            ++live.data_files;
+        }
+        /// The `total-*` counters add the `added_*` values to the parent's totals only when the parent is rewritten too.
+        LiveTotals parent;
+        if (auto it = snapshot_id_to_live_totals.find(history_record.parent_id); it != snapshot_id_to_live_totals.end())
+            parent = it->second;
+        snapshot_id_to_live_totals[history_record.snapshot_id] = live;
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
             history_record.parent_id,
-            append->added_files,
-            records_count - parent_records_count,
-            append->added_files_size,
+            live.data_files - parent.data_files,
+            live.records - parent.records,
+            live.files_size - parent.files_size,
             append->num_partitions,
             0,
             0,
