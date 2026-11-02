@@ -1,0 +1,9 @@
+<!-- The per-host yardstick of the long tests; never edited after merge. -->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<!-- CPU -->                <query>SELECT count() FROM numbers_mt(2000000000) WHERE number % 7 = 3</query>
+<!-- Cached-table read -->  <query>SELECT count() FROM hits_100m_single WHERE URL LIKE '%google%'</query>
+
+</test>

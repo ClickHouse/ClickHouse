@@ -101,6 +101,18 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid);
 
+String readMetadataJSONString(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    bool use_metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method);
+
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str);
+
+Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
+
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
@@ -113,6 +125,12 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ASTPtr order_by,
     ContextPtr context,
     UInt64 format_version = 2);
+
+/// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
+
+/// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
@@ -177,7 +195,7 @@ void forEachAvroEntry(
 /// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
 /// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian
 /// unscaled value, a `uuid` is a 16-byte big-endian `fixed`, and older ClickHouse versions wrote a
-/// `DateTime64` partition value as a plain `long`.
+/// `DateTime64` partition value as a plain `long` and a `Bool` one as an `int`.
 /// Bring such a value to the column type; any other value is returned unchanged.
 /// The result of a decimal always uses `Decimal256` as its carrier, independently of the width of the
 /// ClickHouse type, because `DB::Field` compares and orders on its variant tag first and Iceberg allows

@@ -16,9 +16,7 @@ doc_type: 'guide'
 [Configuration → TLS/SSL configuration](/ar/products/kubernetes-operator/guides/configuration#tls-ssl-configuration)
 و[مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#clustertlsspec).
 
-<div id="prerequisites">
-  ## المتطلبات الأساسية
-</div>
+## المتطلبات الأساسية {#prerequisites}
 
 * عنقود ClickHouse قيد التشغيل ويديره المشغِّل (راجع [المقدمة](/ar/products/kubernetes-operator/guides/introduction)).
 * تثبيت [cert-manager](https://cert-manager.io/docs/installation/) في العنقود.
@@ -28,9 +26,7 @@ doc_type: 'guide'
 `Secret` توفّره أنت. ويُعد cert-manager الطريقة الموصى بها لإنشاء هذا
 الـ `Secret` وتدويره، لكن أي أداة تكتب `Secret` بالتنسيق المتوقع ستفي بالغرض.
 
-<div id="secret-format">
-  ## كيف يتوقع المُشغِّل الشهادات
-</div>
+## كيف يتوقع المُشغِّل الشهادات {#secret-format}
 
 يُفعَّل TLS من خلال توجيه `spec.settings.tls.serverCertSecret` إلى Secret يحتوي على
 زوج مفاتيح الخادم:
@@ -50,9 +46,7 @@ doc_type: 'guide'
   ما لم تكن `enabled: true`.
 </Note>
 
-<div id="step-1-ca">
-  ## الخطوة 1 — التهيئة الأولية لـ CA باستخدام cert-manager
-</div>
+## الخطوة 1 — التهيئة الأولية لـ CA باستخدام cert-manager {#step-1-ca}
 
 أكثر إعدادات التهيئة قابليةً للتكرار هو استخدام CA موقَّعة ذاتيًا لتوقيع شهادة
 الخادم لاحقًا. يوفّر لك ذلك ملف `ca.crt` مستقرًا يمكن للعملاء الوثوق به.
@@ -99,9 +93,7 @@ spec:
 CA مؤسسية، أو Vault، أو ACME، وما إلى ذلك). لا تتغير سوى الخطوة 2 — أما ربط
 العنقود فمتطابق.
 
-<div id="step-2-cert">
-  ## الخطوة 2 — إصدار شهادة الخادم
-</div>
+## الخطوة 2 — إصدار شهادة الخادم {#step-2-cert}
 
 اطلب شهادة طرفية من الجهة المُصدِرة لـ CA. يجب أن تغطي `dnsNames` عناوين
 الوصول التي يستخدمها العملاء للكبسولات. ينشئ المشغّل خدمة **headless** واحدة باسم
@@ -142,9 +134,7 @@ kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'ke
 # ["ca.crt","tls.crt","tls.key"]
 ```
 
-<div id="step-3-enable">
-  ## الخطوة 3 — تمكين TLS على العنقود
-</div>
+## الخطوة 3 — تمكين TLS على العنقود {#step-3-enable}
 
 وجّه العنقود إلى كائن Secret:
 
@@ -163,9 +153,7 @@ spec:
         name: clickhouse-cert
 ```
 
-<div id="what-the-operator-does">
-  ### ما الذي يفعله المشغّل
-</div>
+### ما الذي يفعله المشغّل {#what-the-operator-does}
 
 عندما تكون `tls.enabled: true`، فإن المشغّل:
 
@@ -190,9 +178,7 @@ spec:
   [Configuration → `additionalPorts`](/ar/products/kubernetes-operator/guides/configuration#additional-ports).
 </Note>
 
-<div id="step-4-connect">
-  ## الخطوة 4 — الاتصال عبر TLS
-</div>
+## الخطوة 4 — الاتصال عبر TLS {#step-4-connect}
 
 مع `required: true`، يجب على برامج العميل استخدام المنافذ الآمنة والوثوق بـ CA. وجّه
 الاتصال إلى كبسولة نسخة متماثلة محددة عبر خدمة `headless` (أو خدمة `ClusterIP`
@@ -222,12 +208,10 @@ kubectl -n <namespace> get secret clickhouse-cert \
   -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
 ```
 
-<div id="keeper-tls">
-  ## تشفير حركة المرور إلى Keeper
-</div>
+## تشفير حركة المرور إلى Keeper {#keeper-tls}
 
 إن تفعيل TLS على عنقود ClickHouse **لا** يشفّر الاتصال بـ Keeper.
-فعِّل ذلك على `KeeperCluster` بشكل مستقل — أصدر شهادة لخدمة Keeper
+فعِّل ذلك على `KeeperCluster` بشكل مستقل — أصدر شهادة لخدمة Keeper
 (الخطوتان 1–2 مع `dnsNames` الخاصة بخدمة Keeper) وأشِر إليها:
 
 ```yaml
@@ -245,14 +229,12 @@ spec:
         name: keeper-cert
 ```
 
-يكشف Keeper عن منفذ العميل الآمن على `2281`. وبمجرد تفعيل TLS في Keeper، **يتصل
-عنقود ClickHouse به عبر TLS تلقائيًا** — من دون أي إعداد إضافي على جانب
-ClickHouseCluster. ويتحقق ClickHouse من شهادة Keeper بالاستناد إلى
-مخزن الثقة الخاص بالنظام، بالإضافة إلى أي [`caBundle`](#custom-ca) تقوم بتهيئته.
+يكشف Keeper عن منفذ العميل الآمن على `2281`. وبمجرد تفعيل TLS في Keeper،
+**يتصل عنقود ClickHouse الذي يُشير إليه عبر `keeperClusterRef` به عبر TLS تلقائيًا** — من دون أي إعداد إضافي على جانب ClickHouseCluster.
+أما في حالة Keeper المُدار خارجيًا، فاضبط `spec.externalKeeper.tls: Enabled` بدلًا من ذلك، واضبط `port` لكل عقدة على منفذ العميل الآمن الخاص بمجموعة Keeper (مثل `9281`)؛ إذ إن المنفذ الافتراضي `9181` ينقل البيانات نصًا صريحًا.
+ويتحقق ClickHouse من شهادة Keeper بالاستناد إلى مخزن الثقة الخاص بالنظام، بالإضافة إلى أي [`caBundle`](#custom-ca) تقوم بتهيئته.
 
-<div id="custom-ca">
-  ## حزمة CA مخصصة
-</div>
+## حزمة CA مخصصة {#custom-ca}
 
 يتحقق ClickHouse افتراضيًا من الجهات النظيرة التي يتصل بها (النسخ المتماثلة الأخرى، وKeeper، ومصادر القواميس عبر HTTPS،
 وS3، …) بالرجوع إلى **مخزن الثقة في النظام**. ولإضافة الثقة **أيضًا** إلى
@@ -277,9 +259,7 @@ spec:
 إعداد موقَّع ذاتيًا، وجّه `caBundle` إلى المفتاح `ca.crt` في كائن Secret نفسه الذي أنشأه cert-manager
 (كما في المثال `cluster_with_ssl`).
 
-<div id="custom-tls-settings">
-  ## تخصيص إعدادات TLS
-</div>
+## تخصيص إعدادات TLS {#custom-tls-settings}
 
 إن مقطع `openSSL` الذي يُنشئه المشغّل هو إعداد افتراضي، وليس حدًا أقصى. ويُكتب
 في تهيئة الخادم الرئيسية؛ وأي شيء ضمن `spec.settings.extraConfig` يُضاف إلى
@@ -306,9 +286,7 @@ spec:
 [التهيئة → التهيئة الإضافية المضمّنة](/ar/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 لمعرفة كيفية دمج `extraConfig`.
 
-<div id="troubleshoot">
-  ## التحقق واستكشاف الأخطاء وإصلاحها
-</div>
+## التحقق واستكشاف الأخطاء وإصلاحها {#troubleshoot}
 
 **تأكد من أن المنافذ الآمنة مفعّلة على خدمة headless:**
 
@@ -332,9 +310,7 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 | `certificate verify failed` لدى العميل                              | العميل لا يثق في CA. مرّر `ca.crt` من الـ Secret، أو تحقّق من أن `dnsNames` في الشهادة تغطي المضيف الذي تتصل به.                                                                                                                                                                                              |
 | يتعذّر فجأة على عميل plaintext الاتصال                              | أدّت `required: true` إلى إزالة المنفذين `9000`/`8123`. بدّل العميل إلى `9440`/`8443`، أو عيّن `required: false` للإبقاء على المنافذ غير الآمنة مفتوحة أثناء الترحيل.                                                                                                                                         |
 
-<div id="see-also">
-  ## انظر أيضًا
-</div>
+## انظر أيضًا {#see-also}
 
 * [التهيئة → تهيئة TLS/SSL](/ar/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — مرجع الحقول
 * [التهيئة → `additionalPorts`](/ar/products/kubernetes-operator/guides/configuration#additional-ports) — المنافذ المحجوزة

@@ -17,6 +17,10 @@ struct JSONExtractInsertSettings
     /// If false, JSON value will be inserted into column only if type of the value is
     /// the same as column type (no conversions like Integer -> String, Integer -> Float, etc).
     bool allow_type_conversion = true;
+    /// If false, a Date or DateTime value out of the range of its type is rejected instead of saturated.
+    bool saturate_on_overflow = true;
+    /// If false, a DateTime value with fractional seconds is rejected instead of truncated.
+    bool truncate_fractional_seconds = true;
     /// If true, during insert into Dynamic column we first try to insert value into existing variants
     /// and only if failed we try to infer the new variant type.
     bool try_existing_variants_in_dynamic_first = true;
@@ -49,8 +53,11 @@ public:
 template <typename JSONParser>
 std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message);
 
+/// Writes the element as JSON text, descending at most `max_depth` levels and writing `...` in place
+/// of deeper values. `max_depth` == 0 does not bound the descent, leaving checkStackSize as the only
+/// guard. Returns false if anything was elided.
 template <typename JSONParser>
-void jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
+bool jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth = 0);
 
 template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);

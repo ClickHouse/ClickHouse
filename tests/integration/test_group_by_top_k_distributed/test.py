@@ -481,6 +481,23 @@ def test_parallel_replicas_order_by(start_cluster, max_parallel_replicas):
     assert off == expected
 
 
+def _remote_replicas_subplan(plan):
+    """The part of an `EXPLAIN distributed=1` output nested under
+    `ReadFromRemoteParallelReplicas`, i.e. the plan the follower replicas run.
+    The initiator's local fragment is printed beside that step, not under it."""
+    lines = plan.splitlines()
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("ReadFromRemoteParallelReplicas"):
+            indent = len(line) - len(line.lstrip())
+            subplan = []
+            for nested in lines[i + 1 :]:
+                if nested.strip() and len(nested) - len(nested.lstrip()) <= indent:
+                    break
+                subplan.append(nested)
+            return "\n".join(subplan)
+    raise AssertionError(f"no ReadFromRemoteParallelReplicas step in:\n{plan}")
+
+
 def test_remote_partial_aggregation_top_k(start_cluster):
     """EXPLAIN must advertise the `Top-K` the followers actually run: on the
     text-planned path (`serialize_query_plan = 0`) the annotation comes from
@@ -499,6 +516,7 @@ def test_remote_partial_aggregation_top_k(start_cluster):
         "enable_parallel_replicas": 2,
         "max_parallel_replicas": 2,
         "cluster_for_parallel_replicas": "one_shard_two_replicas",
+        "parallel_replicas_local_plan": 1,
         "query_plan_max_limit_for_top_k_optimization": 1000,
     }
     for serialize in (0, 1):
@@ -515,6 +533,16 @@ def test_remote_partial_aggregation_top_k(start_cluster):
                 assert "Top-K:" in plan, (
                     f"serialize_query_plan={serialize}, opt={opt}\nFull plan:\n{plan}"
                 )
+                followers_plan = _remote_replicas_subplan(plan)
+                assert "Top-K:" in followers_plan, (
+                    f"serialize_query_plan={serialize}: the followers' plan has no Top-K\n"
+                    f"Full plan:\n{plan}"
+                )
+                if serialize:
+                    assert "ReadFromTable" in followers_plan, (
+                        "serialize_query_plan=1: the followers did not get a serialized plan\n"
+                        f"Full plan:\n{plan}"
+                    )
             else:
                 assert "Top-K:" not in plan, (
                     f"serialize_query_plan={serialize}, opt={opt}\nFull plan:\n{plan}"
@@ -570,37 +598,28 @@ def test_remote_partial_aggregation_follower_heap_engaged(start_cluster):
 
 def test_remote_partial_aggregation_serialized_heap_engaged(start_cluster):
     """Follower-side proof for the serialized path: with
-    `serialize_query_plan = 1` the shipped plan carries the top-K parameters
-    (`Aggregating` step version 1) and the follower replicas must report
-    `AggregationTopKRowsSkipped`.  Result equality alone cannot distinguish a
-    working remote heap from parameters silently dropped in serialization.
+    `serialize_query_plan = 1` each shard receives a plan whose `Aggregating`
+    step carries the top-K parameters (step version 1), and the shards must
+    report `AggregationTopKRowsSkipped`.  Result equality alone cannot
+    distinguish a working remote heap from parameters silently dropped in
+    serialization.
 
-    `parallel_replicas_local_plan = 1` is what selects the serialized-plan
-    branch (`createRemotePlanForParallelReplicas`): the initiator executes a
-    local fragment and ships the serialized remote plan to the other replica,
-    whose secondary query must run the heap.  With `parallel_replicas_local_plan
-    = 0` no plan is built and the followers receive query text instead - that
-    text path is covered by `test_remote_partial_aggregation_follower_heap_engaged`."""
-    table = "t_pr"
-    _create_replicated_shards(table)
-    # The base fixture is one small part, which the initiator's local fragment can
-    # consume alone, leaving the remote replica with no ranges (and legitimately
-    # zero skips).  Add enough data that both replicas must participate.
-    node1.query(
-        f"INSERT INTO {table} SELECT number % 100000, 1 FROM numbers_mt(5000000)"
-    )
-    node2.query(f"SYSTEM SYNC REPLICA {table}")
+    `prefer_localhost_replica = 0` makes both `remote()` shards secondary
+    queries that read all of their own data, so the proof does not depend on
+    how a parallel-replicas coordinator hands out ranges.  The shipped
+    parallel-replicas plan is checked for `Top-K` by
+    `test_remote_partial_aggregation_top_k`."""
+    _make_local_shards()
     comment = "topk_serialized_heap_proof"
-    query = f"SELECT k, sum(v) FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10"
     node1.query(
-        query,
+        "SELECT k, sum(v) "
+        "FROM remote('node{1,2}', currentDatabase(), t_local) "
+        "GROUP BY k ORDER BY k ASC LIMIT 10",
         settings={
             "enable_group_by_top_k_optimization": 1,
-            "enable_parallel_replicas": 2,
-            "max_parallel_replicas": 2,
-            "cluster_for_parallel_replicas": "one_shard_two_replicas",
+            "enable_parallel_replicas": 0,
             "serialize_query_plan": 1,
-            "parallel_replicas_local_plan": 1,
+            "prefer_localhost_replica": 0,
             "query_plan_max_limit_for_top_k_optimization": 1000,
             "log_comment": comment,
         },

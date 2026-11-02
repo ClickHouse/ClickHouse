@@ -14,6 +14,8 @@
                 <disk>disk0</disk>
                 <path>/var/lib/clickhouse/disk1/</path>
                 <max_size>15Ki</max_size>
+                <max_file_segment_size>4Ki</max_file_segment_size>
+                <boundary_alignment>4Ki</boundary_alignment>
                 <load_metadata_asynchronously>1</load_metadata_asynchronously>
             </disk1>
         </disks>

@@ -1,0 +1,206 @@
+---
+slug: /cloud/managed-postgres/guides/ruby-on-rails
+sidebarTitle: 'Ruby on Rails'
+title: '在 ClickHouse Managed Postgres 中使用 Ruby on Rails'
+description: '通过已验证的 TLS 将 Ruby on Rails 应用连接到 ClickHouse Managed Postgres，运行 Active Record 迁移，并部署脚手架页面'
+keywords: ['managed postgres', 'ruby on rails', 'rails', 'active record', 'ruby', 'database.yml', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-ruby-on-rails-beta" />
+
+[Ruby on Rails](https://rubyonrails.org/) 是一个全栈 Web 框架，其 ORM (Active Record) 通过 `pg` gem 支持 PostgreSQL。
+在本指南中，您将创建一个新的 Rails 应用，通过经证书验证的 TLS 连接将其接入 ClickHouse Managed Postgres，运行一次迁移，并对外提供一个由脚手架生成的 `Post` 资源。
+
+## 前置条件 {#prerequisites}
+
+* Ruby 3.2 或更高版本。本指南已在 Ruby 4.0.7、Rails 8.1.4 和 `pg` 1.6.3 环境下测试通过。
+* 一个 ClickHouse Cloud 账户。
+
+`pg` gem 为 Linux、macOS 和 Windows 提供了内置 `libpq` 的预编译构建，因此无需在本地安装 PostgreSQL。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内就绪。详细操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接信息 {#connection-details}
+
+打开您的服务，在左侧边栏中点击 **Connect**。保持选中 **Directly**，并开启 **Use SSL**。
+复制密码和服务器主机名，然后点击 **Download CA certificate**。
+
+每个服务都有其专属的 CA 证书。您也可以稍后在 **Settings → CA Certificate** 中下载。
+
+**直连还是 PgBouncer？** Rails 服务器是长期运行的进程，会自行维护连接池 (即 `config/database.yml` 中的 `max_connections`，默认每个进程 5 个) ，因此本指南通过 `5432` 端口直连 Postgres。
+如果您运行的进程较多，导致连接数达到上限，请参阅[使用 PgBouncer](#pgbouncer)。
+
+## 创建 Rails 应用 {#create-app}
+
+安装 Rails，并创建一个使用 PostgreSQL 的应用：
+
+```bash
+gem install rails
+rails new blog --database=postgresql
+cd blog
+```
+
+<Tip>
+  **要在现有应用中添加？**
+
+  请跳过 `gem install rails` 和 `rails new`。在应用目录中运行 `bundle add pg`，然后直接转到[配置数据库连接](#configure-connection)，用新的 `development` 部分替换原有的 SQLite 配置。
+</Tip>
+
+## 配置数据库连接 {#configure-connection}
+
+将下载的 CA 证书移动到应用的 `config` 目录下，并重命名为 `ca-certificate.pem`。
+下载的文件以您的服务名称命名，例如 `your-service-ca-certificate.pem`：
+
+```bash
+mv ~/Downloads/your-service-ca-certificate.pem config/ca-certificate.pem
+```
+
+CA 证书并非机密信息，因此可以将其随应用一同提交。
+
+在 `config/database.yml` 中，将 `development` 部分替换为：
+
+```yaml
+development:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>
+  sslmode: verify-full
+  sslrootcert: <%= Rails.root.join("config/ca-certificate.pem") %>
+```
+
+`sslmode: verify-full` 会让 `libpq` 校验服务器证书是否由您服务的 CA 签发，且与主机名匹配。`Rails.root.join` 返回的是绝对路径，因此无论您从哪个目录启动 Rails，该设置都能正常生效。
+
+将 `DATABASE_URL` 指向您的服务，并使用一个新的数据库名称。本指南使用 `guide_rails`：
+
+```bash
+export DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_rails"
+```
+
+<Note>
+  `DATABASE_URL` 中不要带查询字符串。URL 中的参数会覆盖 `database.yml` 中的键，因此一旦复制了 `sslrootcert=your-service-ca-certificate.pem`，你的设置就会被替换为相对于当前目录的路径。
+</Note>
+
+创建数据库：
+
+```bash
+bin/rails db:create
+```
+
+```text
+Created database 'guide_rails'
+```
+
+`db:create` 只会创建 `DATABASE_URL` 中指定的数据库。它会连接到默认的 `postgres` 数据库来执行 `CREATE DATABASE`，但不会对该数据库做任何修改。此外，如果设置了 `DATABASE_URL`，Rails 也不会创建本地测试数据库。
+
+## 生成模型并运行迁移 {#migrations}
+
+为 `Post` 资源生成脚手架并应用其迁移。对于已有应用，`bin/rails db:migrate` 还会在新数据库中创建应用中已有的表。这些表最初是空的，因为 SQLite 中的数据不会被复制过来：
+
+```bash
+bin/rails generate scaffold Post title:string body:text
+bin/rails db:migrate
+```
+
+```text
+== 20260930165011 CreatePosts: migrating ======================================
+-- create_table(:posts)
+   -> 0.0973s
+== 20260930165011 CreatePosts: migrated (0.0973s) =============================
+```
+
+## 查询数据库 {#query}
+
+创建 `script/posts_demo.rb`，并在其中编写几个 Active Record 调用：
+
+```ruby
+post = Post.create!(title: "Hello from Rails", body: "Stored in ClickHouse Managed Postgres.")
+Post.create!(title: "Second post", body: "Created with Active Record.")
+post.update!(body: "Updated with Active Record.")
+Post.create!(title: "Temporary post", body: "Deleted right away.").destroy
+
+Post.order(:id).each { |p| puts "#{p.id}: #{p.title} - #{p.body}" }
+
+tls = ActiveRecord::Base.connection.select_one(
+  "SELECT version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()"
+)
+puts "Connected with #{tls["version"]} (#{tls["cipher"]})"
+```
+
+使用 `bin/rails runner` 运行该脚本：
+
+```bash
+bin/rails runner script/posts_demo.rb
+```
+
+```text
+1: Hello from Rails - Updated with Active Record.
+2: Second post - Created with Active Record.
+Connected with TLSv1.3 (TLS_AES_256_GCM_SHA384)
+```
+
+最后一行查询当前连接的 `pg_stat_ssl`，以确认该会话已加密。
+
+## 运行应用 {#verify}
+
+启动开发服务器：
+
+```bash
+bin/rails server
+```
+
+打开 [http://localhost:3000/posts](http://localhost:3000/posts)，即可列出、创建、编辑和删除帖子。所有请求都会读写 ClickHouse Managed Postgres。
+
+该页面会列出每篇帖子的标题和正文，并附带一个 **Show this post** 链接，列表下方是 **New post** 链接。编辑和删除链接位于每篇帖子的详情页中。
+
+要在控制台中查看该表，请在左侧边栏中打开 **SQL 控制台**，展开 `guide_rails` 数据库，然后选择 `posts` 表。
+Rails 还会创建 `schema_migrations` 和 `ar_internal_metadata` 表，用于跟踪迁移。
+
+`posts` 表中包含 `script/posts_demo.rb` 写入的两行数据：
+
+| id | title            | body                        | created&#95;at             | updated&#95;at             |
+| -- | ---------------- | --------------------------- | -------------------------- | -------------------------- |
+| 1  | Hello from Rails | Updated with Active Record. | 2026-09-30 16:50:15.862005 | 2026-09-30 16:50:16.150928 |
+| 2  | Second post      | Created with Active Record. | 2026-09-30 16:50:16.010488 | 2026-09-30 16:50:16.010488 |
+
+## 使用 PgBouncer {#pgbouncer}
+
+每个 Rails 进程最多会打开 `max_connections` 个直接连接。如果多个进程的连接总数接近 Postgres 的连接上限，请改为通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 进行连接：在 **Connect** 对话框中选择 **via PgBouncer**，并在 `DATABASE_URL` 中使用端口 `6432`。
+
+PgBouncer 以事务池模式运行：
+
+* **预处理语句**：只要 `pg` gem 版本不低于 1.6，且使用的 `libpq` 版本不低于 17，即可在 Rails 默认配置下正常工作。预编译的 `pg` 1.6 gem 已内置 `libpq` 18。在这些版本中，Rails 将某条语句从缓存中淘汰时，会通过协议层的 `Close` 消息释放该语句，而内置的 PgBouncer 能够处理该消息。较旧版本的 `pg` 或 `libpq` 则会改为发送 SQL `DEALLOCATE`，经由 PgBouncer 执行时会失败，并报错 `prepared statement "a1" does not exist`。如果该错误发生在事务中，事务将被中止 (`PG::InFailedSqlTransaction`) 。要检查当前版本，请运行：
+
+  ```bash
+  bin/rails runner 'puts PG::VERSION, PG.library_version'
+  ```
+
+  两者分别需要不低于 `1.6.0` 和 `170000`。如果无法升级，请在 `development` 部分添加 `prepared_statements: false`。Rails 在 `production` 中会启用预处理语句，而在 `development` 中则默认关闭，因为此时 `query_log_tags_enabled` 已开启。
+* **迁移**会获取会话级咨询锁 (`pg_try_advisory_lock`) ，以防止并发执行。在事务池模式下，解锁请求可能会被发送到另一个 Postgres 连接，从而失败并报错 `Failed to release advisory lock`，锁也会一直处于持有状态，导致后续运行失败并报错 `Cannot run migrations because another migration process is currently running`。您可以使用端口为 `5432` 的直接 `DATABASE_URL` 运行 `bin/rails db:migrate`，也可以关闭该锁：
+
+```yaml
+development:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>
+  sslmode: verify-full
+  sslrootcert: <%= Rails.root.join("config/ca-certificate.pem") %>
+  advisory_locks: false
+```
+
+设置 `advisory_locks: false` 时，请确保同一时间只有一个部署任务在执行迁移。
+
+## 故障排查 {#troubleshooting}
+
+* **`SSL error: certificate verify failed`**：`sslrootcert` 未指向您服务的 CA 证书。请前往 **Settings → CA Certificate** 重新下载。每个服务都有各自独立的 CA，公共 CA 证书包无法使用。
+* **`root certificate file "..." does not exist`**：`sslrootcert` 中的路径有误。请检查 `config/ca-certificate.pem` 是否存在。
+
+## 后续步骤 {#next-steps}
+
+* 在 `production` 配置中使用相同的 `sslmode` 和 `sslrootcert` 设置。
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS。
+* [设置](/zh/products/managed-postgres/settings)：修改 Postgres 和 PgBouncer 参数，例如 `max_connections`。
+* [只读副本](/zh/products/managed-postgres/read-replicas)：扩展读取能力，例如结合 Rails 的[多数据库](https://guides.rubyonrails.org/active_record_multiple_databases.html)功能。
+* [Sync to ClickHouse](/zh/products/managed-postgres/sync-to-clickhouse/clickpipes)：将 Rails 表复制到 ClickHouse，用于分析。
