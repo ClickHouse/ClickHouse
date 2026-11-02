@@ -475,6 +475,7 @@ class JobNames:
     # No "++": the job name becomes the GitHub Actions job id via
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
+    DATALAKE_FUZZER = "Data lake fuzzer"
     LLVM_COVERAGE = "LLVM Coverage"
     PROMQL_COMPLIANCE = "PromQL Compliance"
     BUILD_PROFILE_DIFF = "Build profile diff"
