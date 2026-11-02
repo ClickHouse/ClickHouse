@@ -21,9 +21,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -49,7 +47,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/SipHash.h>
-#include <Common/quoteString.h>
 
 #include <optional>
 #include <unordered_set>
@@ -1378,37 +1375,43 @@ static ExpressionAndSets buildExpressionAndSets(
     return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
 }
 
-/// Whether an `IN` in the expression takes its set from a subquery or a table: no TTL merge builds such a set.
-static bool hasInWithSubqueryOrTable(const IAST & ast)
+/// Collect the argument expressions of every aggregate function found in the AST.
+static void collectAggregateFunctionArguments(const ASTPtr & ast, ASTs & arguments)
 {
-    if (const auto * function = ast.as<ASTFunction>();
-        function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+    if (const auto * function = ast->as<ASTFunction>(); function && AggregateUtils::isAggregateFunction(*function))
     {
-        const auto & right = function->arguments->children[1];
-        if (right->as<ASTSubquery>() || right->as<ASTTableIdentifier>())
-            return true;
+        if (function->arguments)
+            for (const auto & argument : function->arguments->children)
+                arguments.push_back(argument);
     }
-    return std::ranges::any_of(ast.children, [](const ASTPtr & child) { return hasInWithSubqueryOrTable(*child); });
+
+    for (const auto & child : ast->children)
+        collectAggregateFunctionArguments(child, arguments);
 }
 
 ExpressionActionsPtr TTLAggregateDescription::buildArgumentsExpression(const ContextPtr & context) const
 {
     const auto expression_context = getTTLExpressionContext(context);
     auto ast = expression_ast->clone();
+
+    /// Checked before the analysis, which executes scalar subqueries, and after it, which expands SQL user-defined functions.
+    ASTs arguments;
+    collectAggregateFunctionArguments(ast, arguments);
+    for (const auto & argument : arguments)
+        checkExpressionDoesntContainSubqueries(*argument);
+
     auto syntax_result = TreeRewriter(expression_context).analyze(ast, expression_source_columns, {}, {}, true);
     ExpressionAnalyzer analyzer(ast, syntax_result, expression_context);
 
-    ASTs arguments;
+    arguments.clear();
     for (const auto & aggregate : syntax_result->aggregates)
         if (const auto & aggregate_arguments = aggregate->as<const ASTFunction &>().arguments)
             arguments.insert(arguments.end(), aggregate_arguments->children.begin(), aggregate_arguments->children.end());
     if (arguments.empty())
         return nullptr;
 
-    if (std::ranges::any_of(arguments, [](const ASTPtr & argument) { return hasInWithSubqueryOrTable(*argument); }))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "An aggregate function argument in the TTL GROUP BY SET expression for column {} contains a subquery or a table "
-            "in the 'IN' operator, which cannot be evaluated during a TTL merge", backQuote(column_name));
+    for (const auto & argument : arguments)
+        checkExpressionDoesntContainSubqueries(*argument);
 
     ExpressionActionsChain chain(expression_context);
     for (const auto & argument : arguments)
