@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the pipes of an SSH session without a terminal. Otherwise the embedded client never sees the end
 # of its input and an INSERT fed through `ssh` never finishes.
 
-if ! echo "" | nc -w 1 "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_SSH}" >/dev/null 2>&1; then
+if ! timeout 5 bash -c ": < /dev/tcp/${CLICKHOUSE_HOST}/${CLICKHOUSE_PORT_SSH}" 2>/dev/null; then
     echo "@@SKIP@@: SSH port ${CLICKHOUSE_PORT_SSH} is not available, skipping test"
     exit 0
 fi
