@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
+# Tags: no-fasttest, no-parallel-replicas, no-replicated-database
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option).
 # - no-parallel-replicas: see 04611_iceberg_parquet_schema_evolution_prewhere_rename.sh.
+# - no-replicated-database: the replica of the other shard applies each `ALTER` again to the same table directory.
 #
 # A filter on a column whose name another column had when an older data file was written
 # must prune that file's row groups / stripes by the column it means now.
