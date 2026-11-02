@@ -55,11 +55,9 @@ struct SelectQueryOptions
     /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
     bool check_subquery_table_access = false;
 
-    /// Set where the executing node plans again a read shipped in a serialized query plan (`resolveStorages.cpp`).
-    /// Its column list is the shipped read list, which also has the columns of the filters above the read. So for the
-    /// table this query reads directly, the planner leaves the user's grants to the caller and does not apply again
-    /// what the sender applied: `max_columns_to_read`, the table's `additional_table_filters` and, when a filter step
-    /// above the read applies it, the row policy.
+    /// Set where a read of a serialized query plan is planned again (`resolveStorages.cpp`). For the table this query
+    /// reads directly, the caller checks the grants, and what the sender applied is not applied again:
+    /// `max_columns_to_read`, `additional_table_filters` and, if `row_policy_in_plan`, the row policy.
     struct ShippedRead
     {
         bool row_policy_in_plan = false;

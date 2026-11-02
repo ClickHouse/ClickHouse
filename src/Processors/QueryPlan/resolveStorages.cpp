@@ -284,8 +284,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         const auto placement = reading_from_table ? reading_from_table->getRowPolicyPlacement() : ReadFromTableStep::RowPolicyPlacement::Unknown;
         if (needs_row_policy || placement != ReadFromTableStep::RowPolicyPlacement::Unknown)
         {
-            /// `column_names` also has the columns of the filters above the read, so the user's grants are checked on
-            /// the columns the query uses, whatever the placement. A plain table is not checked, as with `storage->read()`.
+            /// `column_names` also has the columns of the filters above the read, so the grants are checked on the
+            /// columns the query selects. A plain table is not checked, as with `storage->read()` below.
             if (read_via_interpreter)
                 checkAccessRights(
                     storage, storage->getStorageID(), snapshot, reading_from_table->getSelectedColumns().value_or(column_names), context);
