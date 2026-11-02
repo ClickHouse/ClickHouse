@@ -865,7 +865,7 @@ static UInt64 quotaNormalizedQueryHash(const ASTPtr & query_ast, const ContextPt
 /// A flush of asynchronous inserts run by a query (`SYSTEM FLUSH ASYNC INSERT QUEUE t`) has its thread group nested in
 /// the group of that query, so its counters add up to the counters of the query as well. Having been charged to the
 /// user who submitted the inserts, they are excluded from what the outer query is charged with. Returns the outer
-/// query to exclude them from, if it is charged with profile events.
+/// query to exclude them from.
 static QueryStatusPtr getOuterQueryToExcludeFrom(const ASTPtr & query_ast)
 {
     if (!isAsyncInsertFlush(query_ast))
@@ -877,9 +877,8 @@ static QueryStatusPtr getOuterQueryToExcludeFrom(const ASTPtr & query_ast)
     auto outer_context = outer_group->query_context.lock();
     if (!outer_context)
         return nullptr;
-    auto outer_quota = outer_context->getQuota();
-    if (!outer_quota || !outer_quota->hasProfileEventLimits())
-        return nullptr;
+    /// Recorded even if the quota of the outer query has no limits over profile events at the moment: one can be added
+    /// by `ALTER QUOTA` before the outer query finishes, and the end-of-query accounting decides what is charged.
     return outer_context->getProcessListElementSafe();
 }
 
