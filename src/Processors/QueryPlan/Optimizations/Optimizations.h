@@ -324,8 +324,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 /// an expression that is more than renames and constants. Such a step loses its parallelism when
 /// per-part `PrefetchingConcat` concatenates the streams of a part right at the read.
 bool stepComputesPerStream(const IQueryPlanStep & step);
-/// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read below it keeps its
-/// default stream count.
+/// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
+/// reach it keeps its default stream count.
 void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
