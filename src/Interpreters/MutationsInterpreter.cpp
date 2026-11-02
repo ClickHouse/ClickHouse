@@ -805,11 +805,21 @@ bool MutationsInterpreter::projectionComputesFromColumn(
     const ColumnsDescription & columns,
     const std::function<bool(const String &)> & is_computed_for_part)
 {
+    /// An input of the projection is the column or one of its subcolumns, such as `x.dt` of a `Tuple`. The column metadata tells a
+    /// subcolumn from a column whose name has a dot.
+    auto is_column_or_subcolumn = [&](const String & name)
+    {
+        if (name == column_name)
+            return true;
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        return column && column->isSubcolumn() && column->getNameInStorage() == column_name;
+    };
+
     const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
     const auto & sorting_key = projection.metadata->getSortingKey();
     const Names sorting_key_columns = sorting_key.expression ? sorting_key.expression->getRequiredColumns() : Names{};
-    const bool column_in_key = std::ranges::find(pk_columns, column_name) != pk_columns.end()
-        || std::ranges::find(sorting_key_columns, column_name) != sorting_key_columns.end();
+    const bool column_in_key = std::ranges::any_of(pk_columns, is_column_or_subcolumn)
+        || std::ranges::any_of(sorting_key_columns, is_column_or_subcolumn);
     if (column_in_key)
         return true;
 
@@ -818,10 +828,10 @@ bool MutationsInterpreter::projectionComputesFromColumn(
 
     NameSet visited;
     for (const auto & required_column : projection.required_columns)
-        if (required_column != column_name && isComputedFromColumn(required_column, column_name, columns, is_computed_for_part, visited))
+        if (!is_column_or_subcolumn(required_column) && isComputedFromColumn(required_column, column_name, columns, is_computed_for_part, visited))
             return true;
 
-    const bool column_read = std::ranges::find(projection.required_columns, column_name) != projection.required_columns.end();
+    const bool column_read = std::ranges::any_of(projection.required_columns, is_column_or_subcolumn);
     /// `_parent_part_offset` is the `_part_offset` of the table renamed, not computed from its columns.
     const bool computes_columns = std::ranges::any_of(
         projection.sample_block,

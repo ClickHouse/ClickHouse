@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_filter;
 DROP TABLE IF EXISTS t_absent;
 DROP TABLE IF EXISTS t_default;
 DROP TABLE IF EXISTS t_alias;
+DROP TABLE IF EXISTS t_subcolumn;
 
 CREATE TABLE t_aggregate (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT toHour(dt) AS h, count() GROUP BY h))
 ENGINE = MergeTree ORDER BY id;
@@ -75,6 +76,17 @@ SELECT groupArray(w) FROM (SELECT w, count() FROM t_alias GROUP BY w ORDER BY w)
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 SELECT groupArray(w) FROM (SELECT w, count() FROM t_alias GROUP BY w ORDER BY w) SETTINGS optimize_use_projections = 0;
 
+-- A projection that reads a subcolumn of the column, such as `x.dt` of a `Tuple`, computed from the column too.
+CREATE TABLE t_subcolumn (id UInt64, x Tuple(dt DateTime('UTC'))) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_subcolumn SELECT number, tuple(toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR) FROM numbers(5);
+ALTER TABLE t_subcolumn ADD PROJECTION p (SELECT toHour(x.dt) AS h, count() GROUP BY h);
+ALTER TABLE t_subcolumn MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_subcolumn MODIFY COLUMN x Tuple(dt DateTime64(0, 'Asia/Tokyo')) SETTINGS mutations_sync = 2;
+SELECT groupArray(h) FROM (SELECT toHour(x.dt) AS h, count() FROM t_subcolumn GROUP BY h ORDER BY h)
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(h) FROM (SELECT toHour(x.dt) AS h, count() FROM t_subcolumn GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
+
 -- A projection that stores the column as is answers correctly without being rebuilt.
 CREATE TABLE t_plain (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT * ORDER BY dt)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_plain SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
@@ -89,3 +101,4 @@ DROP TABLE t_filter;
 DROP TABLE t_absent;
 DROP TABLE t_default;
 DROP TABLE t_alias;
+DROP TABLE t_subcolumn;
