@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <mutex>
 #include <Poco/UnWindows.h>
 #endif
 
@@ -60,6 +61,15 @@ static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
 /// console program by calling this handler on a thread of its own making rather than by
 /// interrupting an existing one. Returning TRUE suppresses the default action, which is to end
 /// the process; like the POSIX handler, a repeated Ctrl+C while a stop is already requested exits.
+///
+/// Because the handler runs on its own thread, it must not look at `Poco::Util::Application`'s
+/// instance pointer, which the main thread clears without synchronization while the application
+/// is being destroyed. Instead, the application registers itself here when it installs the
+/// handler and unregisters in its destructor; the mutex makes the destructor wait for a callback
+/// that is already using the application, and later callbacks find no application.
+static std::mutex console_control_mutex;
+static ClientApplicationBase * console_control_application = nullptr;
+
 static BOOL WINAPI consoleControlHandler(DWORD control_type)
 {
     /// Ctrl+Break as well: it is the other way to interrupt a console program, and unlike Ctrl+C
@@ -68,13 +78,19 @@ static BOOL WINAPI consoleControlHandler(DWORD control_type)
     if (control_type != CTRL_C_EVENT && control_type != CTRL_BREAK_EVENT)
         return 0;
 
-    /// The handler might be called even before the setup is fully finished
-    /// and client application started to process the query.
-    /// Because of that we have to manually check it.
-    if (auto * instance = ClientApplicationBase::instanceRawPtr(); instance)
-        if (auto * base = dynamic_cast<ClientApplicationBase *>(instance); base)
-            if (base->tryStopQuery())
-                safeExit(128 + SIGINT);
+    bool stopped = false;
+    {
+        std::lock_guard lock(console_control_mutex);
+        /// The handler might be called before the application has registered itself or after it
+        /// has unregistered, so check it.
+        if (console_control_application)
+            stopped = console_control_application->tryStopQuery();
+    }
+
+    /// Outside the lock: exiting does not use the application, and the destructor must not wait
+    /// for it.
+    if (stopped)
+        safeExit(128 + SIGINT);
 
     return 1;
 }
@@ -101,7 +117,15 @@ ClientApplicationBase::~ClientApplicationBase()
 {
     try
     {
-#if !defined(OS_WINDOWS)
+#if defined(OS_WINDOWS)
+        {
+            /// Waits for a console control callback that is using this application to finish.
+            std::lock_guard lock(console_control_mutex);
+            if (console_control_application == this)
+                console_control_application = nullptr;
+        }
+        SetConsoleCtrlHandler(consoleControlHandler, 0);
+#else
 #if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
@@ -133,6 +157,10 @@ void ClientApplicationBase::setupSignalHandler()
     /// The POSIX branch below installs a `SIGINT` handler so that Ctrl+C cancels the running query
     /// instead of ending the process. Windows reports Ctrl+C through a console control handler,
     /// not a signal.
+    {
+        std::lock_guard lock(console_control_mutex);
+        console_control_application = this;
+    }
     if (!SetConsoleCtrlHandler(consoleControlHandler, 1))
         throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER,
             "Cannot install the console control handler, error code: {}", GetLastError());
