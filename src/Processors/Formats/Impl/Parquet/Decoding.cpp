@@ -752,6 +752,12 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             nextBlock();
         chassert(miniblock_idx < miniblocks_per_block);
 
+        /// Larger bit widths are not supported by the unpacking routine, which would leave the output uninitialized.
+        /// Without a converter (lengths in `DeltaByteArrayDecoder`), the values are decoded as `UInt64`.
+        const size_t max_bit_width = converter ? converter->input_size * 8 : 64;
+        if (miniblock_bit_widths[miniblock_idx] > max_bit_width)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED miniblock bit width: {}", int(miniblock_bit_widths[miniblock_idx]));
+
         miniblock_values_remaining = values_per_block / miniblocks_per_block;
         size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
 
