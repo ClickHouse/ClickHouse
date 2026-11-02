@@ -254,9 +254,16 @@ def rewrite_create(query, table_engine, test_name, rewritten_tables=()):
         after = after[_group_end(after, 0):]
     after = after.strip()
 
-    positions = sorted((p, k) for k in CLAUSES if (p := _find_keyword(after, k)) != -1)
-    # The `AS` inside `EMPTY AS` is not a clause of its own: it would end the `EMPTY AS` clause.
-    positions = [(p, k) for p, k in positions if not (k == "AS" and (p - len("EMPTY "), "EMPTY AS") in positions)]
+    # The `SELECT` of `AS SELECT` / `EMPTY AS SELECT` is kept as it is: its own `ORDER BY`,
+    # `LIMIT` and `SETTINGS` are not clauses of the table.
+    select = None
+    for keyword in ("EMPTY AS", "AS"):
+        position = _find_keyword(after, keyword)
+        if position != -1:
+            select = (keyword, after[position + len(keyword):].strip())
+            after = after[:position].strip()
+            break
+    positions = sorted((p, k) for k in CLAUSES if k not in ("EMPTY AS", "AS") and (p := _find_keyword(after, k)) != -1)
     clauses = {}
     for i, (position, keyword) in enumerate(positions):
         end = positions[i + 1][0] if i + 1 < len(positions) else len(after)
@@ -272,10 +279,8 @@ def rewrite_create(query, table_engine, test_name, rewritten_tables=()):
         order_by = _rewrite_order_by(clauses["ORDER BY"])
         if order_by:
             result += f" ORDER BY {order_by}"
-    if "EMPTY AS" in clauses:
-        result += f" EMPTY AS {clauses['EMPTY AS']}"
-    elif "AS" in clauses:
-        result += f" AS {clauses['AS']}"
+    if select:
+        result += f" {select[0]} {select[1]}"
     return result
 
 
