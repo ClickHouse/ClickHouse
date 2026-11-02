@@ -10,13 +10,9 @@ the at-most-once delivery semantics (the Keeper watermark advances at file
 collection time, before consumption) and the ephemeral processing-lock race.
 """
 
-import json
-import time
-
 import pytest
 
 from helpers.paimon_utils import (
-    PAIMON_WAREHOUSE,
     create_incremental_paimon_table,
     create_spark_paimon_table,
     drop_tables_at_exit,
@@ -38,19 +34,6 @@ def _insert_rows(started_cluster, storage_type, table_name, start_id, rows, comm
             f"SELECT id + {start_id + i * rows}, 'x' FROM range({rows})"
         )
     upload_paimon_table(started_cluster, storage_type, table_name)
-
-
-def _poll_until(instance, table_name, sentinel, retries=60):
-    """Polls the incremental read and returns the sorted ids of every poll up to and including the one that delivers
-    `sentinel`: accumulating across polls makes the result independent of how polls align with the uploaded commits."""
-    delivered = []
-    for _ in range(retries):
-        ids = [int(line) for line in instance.query(f"SELECT id FROM {table_name}").split()]
-        delivered += ids
-        if sentinel in ids:
-            return sorted(delivered)
-        time.sleep(0.5)
-    raise AssertionError(f"id {sentinel} was never delivered, delivered: {sorted(delivered)}")
 
 
 def _committed_snapshot(started_cluster, table_name):
@@ -333,24 +316,51 @@ def test_incremental_read_skips_overwrite_snapshots(started_cluster_paimon_with_
     """Paimon commits DELETE, UPDATE and INSERT OVERWRITE on an append table as
     OVERWRITE snapshots that rewrite whole data files. Like Paimon's streaming
     read, the incremental read delivers APPEND snapshots only, so the unchanged
-    rows of a rewritten file are not delivered again."""
+    rows of a rewritten file are not delivered again. Like Paimon's
+    streaming-read-append-overwrite, paimon_incremental_read_append_overwrite
+    delivers OVERWRITE snapshots too."""
     started_cluster = started_cluster_paimon_with_spark
     spark = started_cluster.spark_session
+    node2 = started_cluster.instances["node2"]
     table_name = "test_inc_overwrite_s3_" + get_uuid_str()
-    instance = create_incremental_paimon_table(started_cluster, "s3", table_name)
-    with drop_tables_at_exit(instance, table_name):
+    # Without the background refresh each query refreshes the metadata, so a
+    # poll sees every commit of the previous upload and its result is exact.
+    instance = create_incremental_paimon_table(
+        started_cluster, "s3", table_name, refresh_interval_sec=0
+    )
+    with drop_tables_at_exit(instance, table_name), drop_tables_at_exit(
+        node2, table_name
+    ):
         ids_query = f"SELECT arraySort(groupArray(id)) FROM {table_name}"
         wait_until_query_result(instance, ids_query, "[0]\n")
         wait_until_query_result(instance, ids_query, "[]\n")
         _insert_rows(started_cluster, "s3", table_name, 1, 5)
         wait_until_query_result(instance, ids_query, id_array_str(range(1, 6)))
 
-        # The OVERWRITE snapshot is consumed no later than the sentinel's, so
-        # anything it re-delivers lands in a poll up to the sentinel's poll.
         spark.sql(f"DELETE FROM {spark_table(table_name)} WHERE id = 3")
         spark.sql(f"INSERT INTO {spark_table(table_name)} VALUES (10, 'x')")
         upload_paimon_table(started_cluster, "s3", table_name)
-        assert _poll_until(instance, table_name, 10) == [10]
+        wait_until_query_result(instance, ids_query, "[10]\n")
+        assert instance.contains_in_log(
+            f"Skipping OVERWRITE snapshot_id=3 of .*{table_name}"
+        )
+
+        node2.query(
+            get_creation_expression(
+                "s3",
+                table_name,
+                started_cluster,
+                additional_settings=incremental_settings(
+                    table_name,
+                    keeper_path=f"/clickhouse/paimon/{table_name}_append_overwrite",
+                    refresh_interval_sec=0,
+                )
+                + ["paimon_incremental_read_append_overwrite = 1"],
+            ),
+            settings={"allow_experimental_paimon_storage_engine": 1},
+        )
+        wait_until_query_result(node2, ids_query, "[0,1,2,4,5,10]\n")
+        wait_until_query_result(node2, ids_query, "[]\n")
 
         spark.sql(f"UPDATE {spark_table(table_name)} SET val = 'y' WHERE id = 4")
         spark.sql(
@@ -358,7 +368,19 @@ def test_incremental_read_skips_overwrite_snapshots(started_cluster_paimon_with_
         )
         spark.sql(f"INSERT INTO {spark_table(table_name)} VALUES (20, 'x')")
         upload_paimon_table(started_cluster, "s3", table_name)
-        assert _poll_until(instance, table_name, 20) == [20]
+        wait_until_query_result(instance, ids_query, "[20]\n")
+        # The file that UPDATE wrote is removed by INSERT OVERWRITE in the same read.
+        wait_until_query_result(node2, ids_query, "[20,100,101,102]\n")
+
+        # A MERGE INTO that only inserts rewrites no data file: an APPEND snapshot.
+        spark.sql(
+            f"MERGE INTO {spark_table(table_name)} AS t "
+            "USING (SELECT 30L AS id, 'x' AS val) AS s ON t.id = s.id "
+            "WHEN NOT MATCHED THEN INSERT *"
+        )
+        upload_paimon_table(started_cluster, "s3", table_name)
+        wait_until_query_result(instance, ids_query, "[30]\n")
+        wait_until_query_result(node2, ids_query, "[30]\n")
 
         layout = [
             (row.snapshot_id, row.commit_kind)
@@ -375,30 +397,17 @@ def test_incremental_read_skips_overwrite_snapshots(started_cluster_paimon_with_
             (5, "OVERWRITE"),
             (6, "OVERWRITE"),
             (7, "APPEND"),
+            (8, "APPEND"),
         ], layout
-        assert _committed_snapshot(started_cluster, table_name) == b"7"
+        assert _committed_snapshot(started_cluster, table_name) == b"8"
         assert instance.query(ids_query) == "[]\n"
 
-        # A commit kind this reader does not know fails the read and leaves the
-        # watermark where it was, instead of guessing whether it adds rows.
-        spark.sql(f"INSERT INTO {spark_table(table_name)} VALUES (30, 'x')")
-        snapshot_file = f"{PAIMON_WAREHOUSE}/default.db/{table_name}/snapshot/snapshot-8"
-        with open(snapshot_file) as f:
-            snapshot = json.load(f)
-        assert snapshot["commitKind"] == "APPEND", snapshot
-        snapshot["commitKind"] = "FUTURE"
-        with open(snapshot_file, "w") as f:
-            json.dump(snapshot, f)
-        upload_paimon_table(started_cluster, "s3", table_name)
-
-        error = ""
-        for _ in range(60):
-            answer, error = instance.query_and_get_answer_with_error(
-                f"SELECT id FROM {table_name}"
-            )
-            if error:
-                break
-            assert answer == "", answer
-            time.sleep(0.5)
-        assert "NOT_IMPLEMENTED" in error and "commit kind 'FUTURE'" in error, error
-        assert _committed_snapshot(started_cluster, table_name) == b"7"
+        # One data file per Spark statement: the DELETE rewrote the file of ids 1..5.
+        assert (
+            instance.query(ids_query, settings={"paimon_target_snapshot_id": 3})
+            == "[1,2,4,5]\n"
+        )
+        assert instance.contains_in_log(
+            "Target snapshot_id=3 is an OVERWRITE snapshot"
+        )
+        assert _committed_snapshot(started_cluster, table_name) == b"8"

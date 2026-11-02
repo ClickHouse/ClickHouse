@@ -132,8 +132,9 @@ private:
 
     /// Get snapshots between from_snapshot (exclusive) and to_snapshot (inclusive).
     /// If max_snapshots_to_load > 0, stop loading once the limit is reached.
-    /// If append_only is true, only APPEND snapshots are returned: COMPACT, OVERWRITE and ANALYZE
-    /// ones are skipped (after checking them for deletion vectors), and any other commit kind throws.
+    /// If append_only is true, only APPEND snapshots are returned (and OVERWRITE ones with
+    /// paimon_incremental_read_append_overwrite): COMPACT, OVERWRITE and ANALYZE ones are skipped
+    /// (after checking them for deletion vectors), and any other commit kind throws.
     /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
     /// (including skipped / missing ones), so the caller can advance the watermark
     /// past gaps that produced no data files. last_scanned_state is its state, or nullptr

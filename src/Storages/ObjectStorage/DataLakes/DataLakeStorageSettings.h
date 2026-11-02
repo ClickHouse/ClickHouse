@@ -75,6 +75,12 @@ Metadata format version.
 Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
 in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
 )", 0) \
+    DECLARE(Bool, paimon_incremental_read_append_overwrite, false, R"(
+Like Paimon's `streaming-read-append-overwrite` table option: the incremental read also delivers the data files that
+`OVERWRITE` snapshots add, for example the rows of `INSERT OVERWRITE` and the new versions of rows changed by `UPDATE`.
+For a copy-on-write `DELETE`, `UPDATE` or `MERGE INTO` they include the unchanged rows of every rewritten data file,
+which are delivered again. A data file that a later snapshot read by the same query removes is not delivered.
+)", 0) \
     DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
 Background metadata refresh interval for Paimon tables (seconds).
 0 disables background refresh. When >0, a background task periodically calls
