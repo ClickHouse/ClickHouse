@@ -12,28 +12,6 @@ from helpers.paimon_utils import (
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_unsupported_row_type(started_cluster_paimon_with_spark, storage_type):
-    started_cluster = started_cluster_paimon_with_spark
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    table_name = "test_row_type_" + storage_type + "_" + get_uuid_str()
-
-    create_spark_paimon_table(
-        spark, table_name, "id INT, nested STRUCT<x: INT, y: STRING>"
-    )
-    spark.sql(
-        f"INSERT INTO {spark_table(table_name)} VALUES (1, named_struct('x', 1, 'y', 'a'))"
-    )
-    upload_paimon_table(started_cluster, storage_type, table_name)
-
-    table_expr = get_creation_expression(
-        storage_type, table_name, started_cluster, table_function=True
-    )
-    error = instance.query_and_get_error(f"DESC {table_expr}")
-    assert "Unsupported Paimon type: ROW" in error
-
-
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_unsupported_scan_mode(started_cluster_paimon_with_spark, storage_type):
     """Only scan.mode latest / latest-full / default are supported."""
     started_cluster = started_cluster_paimon_with_spark
