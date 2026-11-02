@@ -63,8 +63,22 @@ def sync_schemas():
 
 def has_changes():
     return bool(
-        Shell.get_output(f"git status --porcelain -- {SNIPPETS_PATH}").strip()
+        Shell.get_output(
+            f"git status --porcelain -- {SNIPPETS_PATH}", strict=True
+        ).strip()
     )
+
+
+def is_expected_repository() -> bool:
+    repository = Info().repo_name
+    if repository == REPOSITORY:
+        return True
+
+    print(
+        "ERROR: the ClickStack schema sync workflow must run only in "
+        f"{REPOSITORY}, got {repository or '(unset)'}"
+    )
+    return False
 
 
 def open_bot_pull_request() -> str | None:
@@ -96,13 +110,24 @@ def bot_branch_matches_generated_snippets() -> bool:
     )
 
 
+def bot_branch_merges_cleanly() -> bool:
+    """Check whether the bot branch still merges into the checked-out base tip."""
+    return_code, stdout, stderr = Shell.get_res_stdout_stderr(
+        "git merge-tree --write-tree --quiet FETCH_HEAD HEAD", verbose=True
+    )
+    if return_code == 0:
+        return True
+    if return_code == 1:
+        print("The existing ClickStack schema bot branch conflicts with the base branch.")
+        return False
+    raise RuntimeError(
+        "Failed to check whether the ClickStack schema bot branch merges into "
+        f"the base branch: {stderr or stdout}"
+    )
+
+
 def publish_sync(existing_pr: str | None):
-    repository = Info().repo_name
-    if repository != REPOSITORY:
-        print(
-            "ERROR: the ClickStack schema sync workflow must run only in "
-            f"{REPOSITORY}, got {repository or '(unset)'}"
-        )
+    if not is_expected_repository():
         return False
 
     prepare = [
@@ -145,6 +170,9 @@ def close_stale_bot_pull_request(pull_request: str) -> bool:
 
 
 def publish_if_needed():
+    if not is_expected_repository():
+        return False
+
     if not has_changes():
         print("ClickStack schemas are already in sync with upstream.")
         existing_pr = open_bot_pull_request()
@@ -153,7 +181,11 @@ def publish_if_needed():
         return close_stale_bot_pull_request(existing_pr)
 
     existing_pr = open_bot_pull_request()
-    if existing_pr and bot_branch_matches_generated_snippets():
+    if (
+        existing_pr
+        and bot_branch_matches_generated_snippets()
+        and bot_branch_merges_cleanly()
+    ):
         print(f"PR #{existing_pr} already contains the generated schema changes.")
         return True
     return publish_sync(existing_pr)

@@ -56,6 +56,31 @@ ORDER BY Timestamp;""",
                 "CREATE TABLE ${DATABASE}.other (x UInt8);", "otel_logs"
             )
 
+    def test_extract_create_table_ignores_semicolons_in_quotes_and_comments(self):
+        sql = """\
+CREATE TABLE IF NOT EXISTS ${DATABASE}.otel_logs
+(
+    Body String DEFAULT ';', -- semicolon ; in a line comment
+    Message String DEFAULT 'it''s; still a string'
+)
+/* semicolon ; in a block comment */
+ENGINE = MergeTree
+ORDER BY tuple();
+CREATE TABLE ${DATABASE}.other (x UInt8);
+"""
+        self.assertEqual(
+            sync.extract_create_table(sql, "otel_logs"),
+            """\
+CREATE TABLE IF NOT EXISTS ${DATABASE}.otel_logs
+(
+    Body String DEFAULT ';', -- semicolon ; in a line comment
+    Message String DEFAULT 'it''s; still a string'
+)
+/* semicolon ; in a block comment */
+ENGINE = MergeTree
+ORDER BY tuple();""",
+        )
+
     def test_sync_file_rewrites_an_mdx_marker_and_caches_the_source(self):
         with tempfile.TemporaryDirectory() as directory:
             snippet = Path(directory) / "_schema_otel_logs.mdx"
@@ -110,12 +135,63 @@ after
     @mock.patch.object(job, "close_stale_bot_pull_request", return_value=True)
     @mock.patch.object(job, "open_bot_pull_request", return_value="42")
     @mock.patch.object(job, "has_changes", return_value=False)
-    def test_publish_if_needed_closes_stale_bot_pull_request(self, has_changes, open_pr, close_pr):
+    @mock.patch.object(job, "Info")
+    def test_publish_if_needed_closes_stale_bot_pull_request(
+        self, info, has_changes, open_pr, close_pr
+    ):
+        info.return_value.repo_name = job.REPOSITORY
+
         self.assertTrue(job.publish_if_needed())
 
         has_changes.assert_called_once_with()
         open_pr.assert_called_once_with()
         close_pr.assert_called_once_with("42")
+
+    @mock.patch.object(job, "Info")
+    @mock.patch.object(job, "open_bot_pull_request")
+    @mock.patch.object(job.Shell, "get_output", side_effect=RuntimeError("git status failed"))
+    def test_publish_if_needed_propagates_git_status_failure(self, get_output, open_pr, info):
+        info.return_value.repo_name = job.REPOSITORY
+
+        with self.assertRaisesRegex(RuntimeError, "git status failed"):
+            job.publish_if_needed()
+
+        get_output.assert_called_once_with(
+            f"git status --porcelain -- {job.SNIPPETS_PATH}", strict=True
+        )
+        open_pr.assert_not_called()
+
+    @mock.patch.object(job, "close_stale_bot_pull_request")
+    @mock.patch.object(job, "open_bot_pull_request")
+    @mock.patch.object(job, "has_changes")
+    @mock.patch.object(job, "Info")
+    def test_publish_if_needed_rejects_other_repositories(
+        self, info, has_changes, open_pr, close_pr
+    ):
+        info.return_value.repo_name = "ClickHouse/clickhouse-private"
+
+        self.assertFalse(job.publish_if_needed())
+
+        has_changes.assert_not_called()
+        open_pr.assert_not_called()
+        close_pr.assert_not_called()
+
+    @mock.patch.object(job, "Info")
+    @mock.patch.object(job, "publish_sync", return_value=True)
+    @mock.patch.object(job, "bot_branch_merges_cleanly", return_value=False)
+    @mock.patch.object(job, "bot_branch_matches_generated_snippets", return_value=True)
+    @mock.patch.object(job, "open_bot_pull_request", return_value="42")
+    @mock.patch.object(job, "has_changes", return_value=True)
+    def test_publish_if_needed_refreshes_conflicting_bot_branch(
+        self, has_changes, open_pr, snippets_match, merges_cleanly, publish, info
+    ):
+        info.return_value.repo_name = job.REPOSITORY
+
+        self.assertTrue(job.publish_if_needed())
+
+        snippets_match.assert_called_once_with()
+        merges_cleanly.assert_called_once_with()
+        publish.assert_called_once_with("42")
 
 
 if __name__ == "__main__":

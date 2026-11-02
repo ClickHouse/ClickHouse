@@ -39,13 +39,50 @@ def extract_create_table(sql: str, table_id: str) -> str:
     pattern = re.compile(
         r"CREATE TABLE(?:\s+IF NOT EXISTS)?\s+\$\{DATABASE\}\."
         + re.escape(table_id)
-        + r"\b.*?;",
+        + r"\b",
         re.DOTALL,
     )
     match = pattern.search(cleaned)
     if not match:
         raise RuntimeError(f'Could not find CREATE TABLE for id="{table_id}"')
-    return match.group(0).strip()
+
+    quote = None
+    line_comment = False
+    block_comment = False
+    position = match.start()
+    while position < len(cleaned):
+        character = cleaned[position]
+        next_character = cleaned[position + 1] if position + 1 < len(cleaned) else ""
+
+        if line_comment:
+            if character == "\n":
+                line_comment = False
+        elif block_comment:
+            if character == "*" and next_character == "/":
+                block_comment = False
+                position += 1
+        elif quote:
+            if character == "\\":
+                position += 1
+            elif character == quote:
+                if next_character == quote:
+                    position += 1
+                else:
+                    quote = None
+        elif character in "'\"`":
+            quote = character
+        elif character == "-" and next_character == "-":
+            line_comment = True
+            position += 1
+        elif character == "/" and next_character == "*":
+            block_comment = True
+            position += 1
+        elif character == ";":
+            return cleaned[match.start() : position + 1].strip()
+
+        position += 1
+
+    raise RuntimeError(f'Could not find terminating semicolon for id="{table_id}"')
 
 
 def sync_file(path: Path, source_cache: dict[str, str]) -> bool:
