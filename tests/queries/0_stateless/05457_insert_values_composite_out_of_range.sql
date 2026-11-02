@@ -84,3 +84,10 @@ INSERT INTO t_values_composite_variant VALUES (2, 7);
 INSERT INTO t_values_composite_variant VALUES (3, map('a', tuple(-1, 'kept'))); -- { error ARGUMENT_OUT_OF_BOUND }
 SELECT * FROM t_values_composite_variant ORDER BY id;
 DROP TABLE t_values_composite_variant;
+
+-- A string that a `Variant` element reads as NULL is a NULL of the source, not a failed conversion.
+DROP TABLE IF EXISTS t_values_composite_variant_null_text;
+CREATE TABLE t_values_composite_variant_null_text (v Map(String, Variant(Array(UInt64), UInt64))) ENGINE = Memory;
+INSERT INTO t_values_composite_variant_null_text VALUES (map('a', 'NULL'));
+SELECT * FROM t_values_composite_variant_null_text;
+DROP TABLE t_values_composite_variant_null_text;

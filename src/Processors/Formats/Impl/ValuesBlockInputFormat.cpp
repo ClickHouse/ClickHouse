@@ -505,14 +505,24 @@ namespace
         return false;
     }
 
+    /// Whether `value` is a string that the text of a `Nullable` or `Variant` type reads as NULL, such as 'NULL'.
+    bool isNullText(const Field & value)
+    {
+        if (value.getType() != Field::Types::String)
+            return false;
+        ReadBufferFromString buf(value.safeGet<String>());
+        return SerializationNullable::tryDeserializeNullText(buf) && buf.eof();
+    }
+
     /// Whether the conversion of `source` gave NULL at any depth where `source` is not NULL: the element there does not fit its type.
-    /// An element of a `Nullable` type that does not fit becomes NULL inside a value that stays non-NULL.
+    /// An element of a `Nullable` type that does not fit becomes NULL inside a value that stays non-NULL. A string read as NULL, such
+    /// as 'NULL' for a `Variant` element, is a NULL of the source.
     bool hasNullFromFailedConversion(const Field & source, const Field & converted)
     {
         checkStackSize();
 
         if (converted.isNull())
-            return !source.isNull();
+            return !source.isNull() && !isNullText(source);
 
         auto any_element = [](const auto & source_elements, const auto & converted_elements)
         {
