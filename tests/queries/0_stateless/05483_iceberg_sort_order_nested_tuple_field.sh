@@ -4,7 +4,7 @@
 
 # An Iceberg table sorted by a tuple element: the sort field's `source-id` must be the element's
 # field id, INSERT must sort by it, a sort column that is not a valid Iceberg sort source is refused,
-# and a table whose sort field names an unknown `source-id` (written by older versions) stays usable.
+# and a table whose sort field names an unknown `source-id` (written by older versions) stays usable and is written unsorted.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -67,3 +67,4 @@ json.dump(metadata, open(path, 'w'))
 ${CH} -q "SELECT x FROM icebergLocal('${BASE_DIR}/legacy/', 'Parquet') ORDER BY x"
 ${CH} -q "INSERT INTO ${PFX}_legacy VALUES (2, tuple(1)), (1, tuple(2))"
 ${CH} -q "SELECT x FROM icebergLocal('${BASE_DIR}/legacy/', 'Parquet') ORDER BY x"
+data_file_order legacy
