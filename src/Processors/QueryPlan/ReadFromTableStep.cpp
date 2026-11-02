@@ -18,12 +18,14 @@ ReadFromTableStep::ReadFromTableStep(
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
     bool use_parallel_replicas_,
-    RowPolicyPlacement row_policy_placement_)
+    RowPolicyPlacement row_policy_placement_,
+    std::optional<Names> selected_columns_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
     , use_parallel_replicas(use_parallel_replicas_)
     , row_policy_placement(row_policy_placement_)
+    , selected_columns(std::move(selected_columns_))
 {
 }
 
@@ -47,6 +49,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 8;
     if (ctx.step_version >= 1 && row_policy_placement == RowPolicyPlacement::FilterStep)
         flags |= 16;
+    if (ctx.step_version >= 1 && selected_columns)
+        flags |= 32;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -57,6 +61,13 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (flags & 32)
+    {
+        writeVarUInt(selected_columns->size(), ctx.out);
+        for (const auto & name : *selected_columns)
+            writeStringBinary(name, ctx.out);
+    }
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -85,18 +96,30 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
         readIntBinary(use_parallel_replicas, ctx.in);
 
     auto row_policy_placement = RowPolicyPlacement::Unknown;
+    std::optional<Names> selected_columns;
     if (ctx.step_version >= 1)
+    {
         row_policy_placement = (flags & 16) ? RowPolicyPlacement::FilterStep : RowPolicyPlacement::NotInPlan;
+        if (flags & 32)
+        {
+            size_t size = 0;
+            readVarUInt(size, ctx.in);
+            auto & names = selected_columns.emplace();
+            for (size_t i = 0; i < size; ++i)
+                readStringBinary(names.emplace_back(), ctx.in);
+        }
+    }
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
     return std::make_unique<ReadFromTableStep>(
-        ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement);
+        ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement,
+        std::move(selected_columns));
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
     return std::make_unique<ReadFromTableStep>(
-        getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement);
+        getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement, selected_columns);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);

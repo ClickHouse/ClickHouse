@@ -845,13 +845,22 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
       * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
       */
     NameSet columns_names_allowed_to_select;
-    if (table_node && !select_query_options.ignore_table_access_check)
+    if (table_node && !select_query_options.shipped_read)
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
 
         checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
+
+        if (select_query_options.build_logical_plan)
+        {
+            Names authorized_columns = column_names_with_aliases;
+            for (const auto & name : table_expression_data.getAccessCheckedColumnsNames())
+                if (!std::ranges::contains(authorized_columns, name))
+                    authorized_columns.push_back(name);
+            table_expression_data.setAuthorizedColumnsNames(std::move(authorized_columns));
+        }
     }
     else if (table_function_node)
     {
@@ -916,7 +925,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     }
 
     /// Limitation on the number of columns to read
-    if (!select_query_options.ignore_max_columns_to_read
+    if (!select_query_options.shipped_read
         && settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
         throw Exception(
             ErrorCodes::TOO_MANY_COLUMNS,
@@ -1979,7 +1988,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
         if (!select_query_options.only_analyze)
         {
-            if (!select_query_options.skip_additional_table_filters)
+            if (!select_query_options.shipped_read)
                 parseAdditionalFilterAstIfNeeded(
                     storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
 
@@ -2263,7 +2272,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 std::optional<FilterDAGInfo> row_policy_filter_info;
-                if (!select_query_options.skip_row_policy)
+                if (!select_query_options.shipped_read || !select_query_options.shipped_read->row_policy_in_plan)
                     row_policy_filter_info = buildRowPolicyFilterIfNeeded(
                         storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
                 if (row_policy_filter_info)
@@ -2822,7 +2831,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}),
                             /*use_parallel_replicas_=*/ false,
                             row_policy_in_plan ? ReadFromTableStep::RowPolicyPlacement::FilterStep
-                                               : ReadFromTableStep::RowPolicyPlacement::NotInPlan);
+                                               : ReadFromTableStep::RowPolicyPlacement::NotInPlan,
+                            table_expression_data.getAuthorizedColumnsNames());
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

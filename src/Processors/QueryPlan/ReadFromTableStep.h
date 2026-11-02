@@ -23,7 +23,8 @@ public:
         String table_name_,
         TableExpressionModifiers table_expression_modifiers_,
         bool use_parallel_replicas_ = false,
-        RowPolicyPlacement row_policy_placement_ = RowPolicyPlacement::Unknown);
+        RowPolicyPlacement row_policy_placement_ = RowPolicyPlacement::Unknown,
+        std::optional<Names> selected_columns_ = {});
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -38,6 +39,9 @@ public:
     bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
     RowPolicyPlacement getRowPolicyPlacement() const { return row_policy_placement; }
+    /// The columns of the table that the query uses and the sender authorized; the header also has the columns that
+    /// only the filters above this read need. Not set when the sender did not record them.
+    const std::optional<Names> & getSelectedColumns() const { return selected_columns; }
 
     QueryPlanStepPtr clone() const override;
 private:
@@ -45,6 +49,7 @@ private:
     TableExpressionModifiers table_expression_modifiers;
     bool use_parallel_replicas = false;
     RowPolicyPlacement row_policy_placement = RowPolicyPlacement::Unknown;
+    std::optional<Names> selected_columns;
 };
 
 }

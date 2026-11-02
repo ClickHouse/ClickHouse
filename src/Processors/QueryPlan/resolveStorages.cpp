@@ -284,15 +284,13 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         const auto placement = reading_from_table ? reading_from_table->getRowPolicyPlacement() : ReadFromTableStep::RowPolicyPlacement::Unknown;
         if (needs_row_policy || placement != ReadFromTableStep::RowPolicyPlacement::Unknown)
         {
-            /// `column_names` is the shipped read list widened by the filters' columns. Only the selected
-            /// columns are the user's own, and those were authorized where the plan was built.
-            options.ignore_table_access_check = true;
-            /// This table's entry arrived as a filter step of the shipped plan, so resolving it here would filter twice.
-            options.skip_additional_table_filters = true;
-            /// The limit was applied to the selected columns where the read was planned; `column_names` is wider.
-            options.ignore_max_columns_to_read = true;
-            /// The same holds for the policy itself, e.g. for a `Merge` table, whose policy is never pushed into a shipped read.
-            options.skip_row_policy = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep;
+            /// `column_names` also has the columns of the filters above the read, so the user's grants are checked on
+            /// the columns the query uses, whatever the placement. A plain table is not checked, as with `storage->read()`.
+            if (read_via_interpreter)
+                checkAccessRights(
+                    storage, storage->getStorageID(), snapshot, reading_from_table->getSelectedColumns().value_or(column_names), context);
+            options.shipped_read = SelectQueryOptions::ShippedRead{
+                .row_policy_in_plan = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep};
         }
 
         auto interpreter_context = context;
