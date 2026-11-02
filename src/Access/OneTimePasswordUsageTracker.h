@@ -15,18 +15,18 @@ struct OneTimePasswordSecret;
 
 /// Enforces single use of one-time passwords (RFC 6238, Section 5.2): a code is accepted at most once,
 /// and codes for time steps at or before the last accepted one are rejected.
-/// By default the accepted codes are tracked per server process. In strict mode they are tracked in Keeper,
+/// By default the accepted codes are tracked per server process. Optionally they are tracked in Keeper,
 /// so a code accepted by one server is rejected by every server sharing the same Keeper, and after a restart.
 class OneTimePasswordUsageTracker
 {
 public:
     OneTimePasswordUsageTracker();
 
-    /// Strict mode: the accepted codes are stored under `keeper_path_`, one node per user, named by a hash of the user name.
+    /// Keeper-backed tracking: the accepted codes are stored under `keeper_path_`, one node per user, named by a hash of the user name.
     OneTimePasswordUsageTracker(zkutil::GetZooKeeper get_zookeeper_, String keeper_path_);
 
     /// Returns false if the code is not valid now or has already been used. Call it once per successful
-    /// authentication, after all other credentials are verified. In strict mode, throws if Keeper is unavailable.
+    /// authentication, after all other credentials are verified. With Keeper-backed tracking, throws if Keeper is unavailable.
     bool tryConsume(const String & user_name, std::string_view code, const OneTimePasswordSecret & secret);
 
 private:

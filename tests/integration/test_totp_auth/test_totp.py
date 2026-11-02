@@ -30,9 +30,10 @@ MYSQL_USERS = {
     "totuser_mysql_double_sha1": "abacaba",
 }
 
-# In strict mode the accepted codes are shared through Keeper under this path
-# (`totp_strict_mode_keeper_path` in config/totp_strict_mode.xml, set there with a trailing slash).
-STRICT_MODE_KEEPER_PATH = "/clickhouse/test_totp_auth/one_time_passwords"
+# With `totp_track_used_codes_in_keeper` the accepted codes are shared through Keeper under
+# this path (`totp_used_codes_keeper_path` in config/totp_used_codes_in_keeper.xml, set there
+# with a trailing slash).
+USED_CODES_KEEPER_PATH = "/clickhouse/test_totp_auth/one_time_passwords"
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -41,10 +42,10 @@ node = cluster.add_instance(
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
-strict_nodes = [
+keeper_nodes = [
     cluster.add_instance(
-        f"strict_node{i}",
-        main_configs=["config/totp_strict_mode.xml"],
+        f"keeper_node{i}",
+        main_configs=["config/totp_used_codes_in_keeper.xml"],
         user_configs=["config/users.xml"],
         with_zookeeper=True,
         stay_alive=True,
@@ -71,18 +72,18 @@ def fresh_server(started_cluster):
 
 
 @pytest.fixture
-def fresh_strict_servers(started_cluster):
-    # In strict mode the used codes are kept in Keeper and survive restarts: drop them there,
-    # and restart the servers to drop their local copies too.
+def fresh_keeper_servers(started_cluster):
+    # With `totp_track_used_codes_in_keeper` the used codes are kept in Keeper and survive
+    # restarts: drop them there, and restart the servers to drop their local copies too.
     zk = started_cluster.get_kazoo_client("zoo1")
     try:
-        if zk.exists(STRICT_MODE_KEEPER_PATH):
-            zk.delete(STRICT_MODE_KEEPER_PATH, recursive=True)
+        if zk.exists(USED_CODES_KEEPER_PATH):
+            zk.delete(USED_CODES_KEEPER_PATH, recursive=True)
     finally:
         zk.stop()
         zk.close()
-    for strict_node in strict_nodes:
-        strict_node.restart_clickhouse()
+    for keeper_node in keeper_nodes:
+        keeper_node.restart_clickhouse()
 
 
 def get_one_time_password(
@@ -597,13 +598,15 @@ def test_secret_rotation_on_reload(started_cluster):
         node.query("SYSTEM RELOAD USERS")
 
 
-def test_strict_mode_single_use_across_servers(started_cluster, fresh_strict_servers):
-    """In strict mode the accepted codes are shared through Keeper: a code accepted by one
-    server is rejected by the others and after a restart, and codes for earlier time steps
-    are rejected everywhere."""
+def test_used_codes_in_keeper_single_use_across_servers(
+    started_cluster, fresh_keeper_servers
+):
+    """With `totp_track_used_codes_in_keeper` the accepted codes are shared through Keeper:
+    a code accepted by one server is rejected by the others and after a restart, and codes
+    for earlier time steps are rejected everywhere."""
     query_text = "SELECT currentUser() || toString(42)"
-    user = "totuser_strict"
-    node1, node2 = strict_nodes
+    user = "totuser_keeper"
+    node1, node2 = keeper_nodes
 
     # All codes are derived from one timepoint so that they belong to consecutive time steps
     now = time.time()
@@ -644,5 +647,5 @@ def test_strict_mode_single_use_across_servers(started_cluster, fresh_strict_ser
     )
     # One node per user, named by the SHA-256 hash of the user name
     assert "1\n" == node1.query(
-        f"SELECT name = hex(SHA256('{user}')) FROM system.zookeeper WHERE path = '{STRICT_MODE_KEEPER_PATH}'"
+        f"SELECT name = hex(SHA256('{user}')) FROM system.zookeeper WHERE path = '{USED_CODES_KEEPER_PATH}'"
     )

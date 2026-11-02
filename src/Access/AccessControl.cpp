@@ -44,8 +44,8 @@ namespace DB
 {
 namespace ServerSetting
 {
-    extern const ServerSettingsBool totp_strict_mode;
-    extern const ServerSettingsString totp_strict_mode_keeper_path;
+    extern const ServerSettingsBool totp_track_used_codes_in_keeper;
+    extern const ServerSettingsString totp_used_codes_keeper_path;
 }
 
 namespace ErrorCodes
@@ -386,12 +386,12 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config_);
-    if (server_settings[ServerSetting::totp_strict_mode])
+    if (server_settings[ServerSetting::totp_track_used_codes_in_keeper])
     {
         if (!zkutil::hasZooKeeperConfig(config_))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_strict_mode` requires ZooKeeper or ClickHouse Keeper to be configured");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_track_used_codes_in_keeper` requires ZooKeeper or ClickHouse Keeper to be configured");
         one_time_password_usage_tracker = std::make_unique<OneTimePasswordUsageTracker>(
-            get_zookeeper_function_, server_settings[ServerSetting::totp_strict_mode_keeper_path]);
+            get_zookeeper_function_, server_settings[ServerSetting::totp_used_codes_keeper_path]);
     }
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);

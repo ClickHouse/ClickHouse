@@ -31,7 +31,7 @@ OneTimePasswordUsageTracker::OneTimePasswordUsageTracker(zkutil::GetZooKeeper ge
     , log(getLogger("OneTimePasswordUsageTracker"))
 {
     if (keeper_path.empty() || keeper_path.front() != '/')
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_strict_mode_keeper_path` must be an absolute path, got '{}'", keeper_path);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_used_codes_keeper_path` must be an absolute path, got '{}'", keeper_path);
     if (keeper_path.back() == '/')
         keeper_path.pop_back();
 }
