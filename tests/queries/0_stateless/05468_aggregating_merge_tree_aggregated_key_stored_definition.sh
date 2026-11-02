@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-parallel
+# Tag no-parallel: the style check requires it for `SYSTEM DROP`, although the test drops only a replica of its own Keeper path.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
