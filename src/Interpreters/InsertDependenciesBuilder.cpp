@@ -1688,10 +1688,13 @@ bool InsertDependenciesBuilder::storageHidesQuorumWriteTarget(const StoragePtr &
         || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
+    /// A view that is inserted into directly (e.g. behind an `Alias`) writes through a nested `INSERT` that
+    /// expands the dependent views of its target as well, so they are hidden from this graph, as for an `Alias`.
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || storageHidesQuorumWriteTarget(target, depth + 1);
+        return !target || dependentViewMayWriteToReplicatedTable(target, depth + 1)
+            || storageHidesQuorumWriteTarget(target, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         return storageHidesQuorumWriteTarget(proxy->getNested(), depth + 1);
