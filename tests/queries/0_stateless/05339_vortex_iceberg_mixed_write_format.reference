@@ -2,9 +2,9 @@
 100
 2	0
 100
--- the new column is pushed down only into the data file that has it
+-- the new column is pushed down into both data files, as a constant false into the one without it
 1	1005
-1	1
+2	0
 1	1005
 -- lazy materialization of the Vortex data files
 4999	val_4999

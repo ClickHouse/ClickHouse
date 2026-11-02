@@ -50,7 +50,7 @@ echo '-- the renamed column is pushed down into both data files'
 run_counting_pushdown "SELECT count() FROM t WHERE b < 100"
 run "SELECT count() FROM t WHERE b < 100 SETTINGS input_format_vortex_filter_push_down = 0"
 
-echo '-- the new column is pushed down only into the data file that has it'
+echo '-- the new column is pushed down into both data files, as a constant false into the one without it'
 run_counting_pushdown "SELECT count(), any(s) FROM t WHERE a = 1005"
 run "SELECT count(), any(s) FROM t WHERE a = 1005 SETTINGS input_format_vortex_filter_push_down = 0"
 

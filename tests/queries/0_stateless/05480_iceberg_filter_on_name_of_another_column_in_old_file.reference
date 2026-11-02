@@ -19,9 +19,11 @@ c = 1
 1	2	x
 b = 'x'
 1	2	x
--- Parquet, a dropped and added again
+-- Parquet, a column renamed onto a dropped name, and its old name added again
+b = 1
+0	1	\N
 a IS NULL
-x	\N
+0	1	\N
 a = 1
 -- Row groups are still pruned
 rot	1

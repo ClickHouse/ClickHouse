@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ICEBERG_ROOT="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_name_moved"
 ROT_PATH="${ICEBERG_ROOT}/rot"
 ROT_ORC_PATH="${ICEBERG_ROOT}/rot_orc"
-READD_PATH="${ICEBERG_ROOT}/readd"
+REUSED_PATH="${ICEBERG_ROOT}/reused"
 TUPLE_PATH="${ICEBERG_ROOT}/tuple"
 
 READ_SETTINGS="input_format_parquet_filter_push_down = 1, input_format_parquet_bloom_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1, input_format_orc_filter_push_down = 1, use_query_condition_cache = 0"
@@ -48,16 +48,17 @@ for condition in "c = 1" "b = 'x'"; do
     ${CLICKHOUSE_CLIENT} --query "SELECT c, a, b FROM icebergLocal('${ROT_ORC_PATH}') WHERE ${condition} ORDER BY a SETTINGS ${READ_SETTINGS}"
 done
 
-echo "-- Parquet, a dropped and added again"
+echo "-- Parquet, a column renamed onto a dropped name, and its old name added again"
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg=1 --allow_insert_into_iceberg=1 --query "
-    CREATE TABLE t_readd (a Nullable(Int32), b String) ENGINE = IcebergLocal('${READD_PATH}', 'Parquet');
-    INSERT INTO t_readd VALUES (1, 'x');
-    ALTER TABLE t_readd DROP COLUMN a;
-    ALTER TABLE t_readd ADD COLUMN a Nullable(Int32);
+    CREATE TABLE t_reused (id Int64, a Nullable(Int32), b Nullable(Int32)) ENGINE = IcebergLocal('${REUSED_PATH}', 'Parquet');
+    INSERT INTO t_reused VALUES (0, 1, 2);
+    ALTER TABLE t_reused DROP COLUMN b;
+    ALTER TABLE t_reused RENAME COLUMN a TO b;
+    ALTER TABLE t_reused ADD COLUMN a Nullable(Int32);
 "
-for condition in "a IS NULL" "a = 1"; do
+for condition in "b = 1" "a IS NULL" "a = 1"; do
     echo "${condition}"
-    ${CLICKHOUSE_CLIENT} --query "SELECT b, a FROM icebergLocal('${READD_PATH}') WHERE ${condition} SETTINGS ${READ_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} --query "SELECT id, b, a FROM icebergLocal('${REUSED_PATH}') WHERE ${condition} ORDER BY id SETTINGS ${READ_SETTINGS}"
 done
 
 echo "-- Row groups are still pruned"
@@ -76,5 +77,5 @@ for suffix in rot tuple; do
     "
 done
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_rot; DROP TABLE IF EXISTS t_rot_orc; DROP TABLE IF EXISTS t_readd; DROP TABLE IF EXISTS t_tuple"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_rot; DROP TABLE IF EXISTS t_rot_orc; DROP TABLE IF EXISTS t_reused; DROP TABLE IF EXISTS t_tuple"
 rm -rf "${ICEBERG_ROOT}"
