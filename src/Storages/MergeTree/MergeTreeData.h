@@ -947,9 +947,10 @@ public:
     void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
 
     /// The rejection part of `delayInsertOrThrowIfNeeded` as a callable that a sink registers as its
-    /// pre-write check (see `SinkToStorage::getPreWriteCheck`). It does not keep the table or the
-    /// context alive: once either of them is gone, so is the sink that registered the check, and there
-    /// is no write to check any more.
+    /// pre-write check (see `SinkToStorage::getPreWriteCheck`). It does not keep the table alive: once
+    /// it is gone, there is no write to check any more. It keeps the context alive, though: a `Buffer`
+    /// keeps the pending decision of a query (see `InsertStartGates`) after the query and its sinks are
+    /// gone, until it flushes the rows of the query, and the check must still use the limits of that query.
     std::function<void()> makeTooManyPartsCheck(const ContextPtr & query_context) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.

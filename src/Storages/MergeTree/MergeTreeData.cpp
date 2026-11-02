@@ -9172,12 +9172,10 @@ void MergeTreeData::throwIfTemporaryTableSizeLimitsExceededForReplacement(
 std::function<void()> MergeTreeData::makeTooManyPartsCheck(const ContextPtr & query_context) const
 {
     std::weak_ptr<const IStorage> weak_table = shared_from_this();
-    std::weak_ptr<const Context> weak_context = query_context;
-    return [this, weak_table, weak_context]
+    return [this, weak_table, context = query_context]
     {
         auto table = weak_table.lock();
-        auto context = weak_context.lock();
-        if (!table || !context)
+        if (!table)
             return;
         delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
     };

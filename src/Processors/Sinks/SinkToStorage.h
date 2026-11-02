@@ -47,10 +47,6 @@ public:
         /// Null if the check could not be prepared: `outcome` holds that failure then.
         InsertStartGatePtr gate;
         std::shared_ptr<InsertStartGate::DeferredOutcome> outcome;
-        /// The context the check runs with. The gate refers to it only weakly (see `InsertStartGate::Check`),
-        /// and it may be created only for the check, e.g. the `SQL SECURITY` context of a view behind the
-        /// forwarding sink, so the forwarding sink keeps it alive.
-        ContextPtr context;
         /// False for a check behind a `Buffer` further down the forwarding chain: the buffer may only keep the
         /// rows in memory, so its destination's limits are enforced by the `BufferSink` of the nested INSERT,
         /// when it actually writes, and not by this sink.

@@ -812,7 +812,7 @@ void deferHiddenPreWriteCheckFailure(const HiddenCheckOrigin & origin, std::vect
 {
     auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
     outcome->exception = std::current_exception();
-    result.push_back({origin.forwarded_to, /* gate= */ nullptr, std::move(outcome), /* context= */ nullptr, origin.enforced_here});
+    result.push_back({origin.forwarded_to, /* gate= */ nullptr, std::move(outcome), origin.enforced_here});
 }
 
 /// Registers the deferred pre-write checks of the materialized views depending on `storage`, which the
@@ -865,8 +865,8 @@ void registerHiddenDependentViewsPreWriteChecks(
                 auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
                 auto gate = gates->get(target->getStorageID());
                 gate->addCheck({view_context, merge_tree->makeTooManyPartsCheck(view_context), /*deferred=*/ nullptr, view, outcome});
-                /// Not enforced by the forwarding sink: the sink of the view does it. It is kept only to hold the context alive.
-                result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), view_context, /* enforced_here= */ false});
+                /// Not enforced by the forwarding sink: the sink of the view does it.
+                result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), /* enforced_here= */ false});
             }
         }
         catch (...) // Ok: the error is deferred to the write, or ignored like the nested INSERT ignores it.
@@ -964,7 +964,7 @@ void registerHiddenPreWriteChecksImpl(
         /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
         auto gate = gates->get(storage->getStorageID());
         gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by, /*isolated=*/ nullptr});
-        result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), context, origin.enforced_here});
+        result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), origin.enforced_here});
     }
 }
 
