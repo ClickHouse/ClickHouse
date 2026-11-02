@@ -167,3 +167,15 @@ elseif (ARCH_AARCH64)
     )
 
 endif()
+
+# Every x86_64 `memchr` / `strlen` tier of str_functions.cpp under its own name,
+# for the unit tests, which otherwise reach at most the one tier the CPU selects
+# and none at all under sanitizers (where str_functions.cpp is not built).
+# Uninstrumented in every build: the bodies read whole vectors past the end of
+# the object within its page.
+if (ARCH_AMD64)
+    add_library(libllvmlibc_str_test_candidates STATIC EXCLUDE_FROM_ALL
+        "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions_test_candidates.cpp")
+    set_target_properties(libllvmlibc_str_test_candidates PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
+    target_compile_options(libllvmlibc_str_test_candidates PRIVATE -ffreestanding -fno-builtin -fno-sanitize=all)
+endif()

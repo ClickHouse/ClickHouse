@@ -1,30 +1,100 @@
 #include <gtest/gtest.h>
 
+#include <Common/CPUID.h>
+
 #include <climits>
 #include <cstdint>
 #include <cstring>
 #include <random>
 #include <stdexcept>
+#include <ostream>
+#include <string>
 #include <vector>
 
 #include <sys/mman.h>
 #include <unistd.h>
 
 /// `memchr` and `strlen` are overridden process-wide (see `contrib/libllvmlibc-cmake/string/str_functions.cpp`
-/// on x86_64; other architectures run the libc versions through the same tests). These tests pin down the
+/// on x86_64; other architectures run the libc versions through the same tests). Each test runs against the
+/// libc functions the binary links, and on x86_64 also against every vector tier of the override separately
+/// (`str_functions_test_candidates.cpp`): the process-wide functions run only the tier the CPU selects, and
+/// sanitizer builds, which run the unit tests in CI, do not override them at all. These tests pin down the
 /// ISO C contract plus the two properties callers rely on: the functions never read outside the page holding
 /// the buffer, even when the `memchr` limit overstates the buffer up to `SIZE_MAX` as `strnlen(path, PATH_MAX + 1)`
 /// callers do, and the result does not depend on the bytes next to the match (SWAR and vector implementations
 /// compare whole words at once).
 
+#if defined(__x86_64__)
+extern "C"
+{
+void * ch_test_memchr_sse2(const void * s, int c, size_t n) noexcept;
+size_t ch_test_strlen_sse2(const char * s) noexcept;
+void * ch_test_memchr_avx2(const void * s, int c, size_t n) noexcept;
+size_t ch_test_strlen_avx2(const char * s) noexcept;
+void * ch_test_memchr_avx512(const void * s, int c, size_t n) noexcept;
+size_t ch_test_strlen_avx512(const char * s) noexcept;
+}
+#endif
+
 namespace
 {
 
+using MemchrFunction = const void * (*)(const void *, int, size_t);
+using StrlenFunction = size_t (*)(const char *);
+
 /// Called through volatile pointers so that the compiler cannot replace the calls with its builtins.
 /// The glibc headers declare const-overloaded `memchr` for C++, so it is wrapped rather than taken by address.
-const void * (* volatile memchr_ptr)(const void *, int, size_t)
+const void * (* volatile libc_memchr)(const void *, int, size_t)
     = [](const void * s, int c, size_t n) -> const void * { return memchr(s, c, n); };
-size_t (* volatile strlen_ptr)(const char *) = &strlen;
+size_t (* volatile libc_strlen)(const char *) = &strlen;
+
+struct Implementation
+{
+    const char * name;
+    MemchrFunction memchr_function;
+    StrlenFunction strlen_function;
+    bool (*supported)();
+};
+
+void PrintTo(const Implementation & implementation, std::ostream * os)
+{
+    *os << implementation.name;
+}
+
+std::vector<Implementation> implementations()
+{
+    std::vector<Implementation> result{
+        {"libc",
+         [](const void * s, int c, size_t n) { return libc_memchr(s, c, n); },
+         [](const char * s) { return libc_strlen(s); },
+         [] { return true; }},
+    };
+#if defined(__x86_64__)
+    result.push_back(
+        {"sse2",
+         [](const void * s, int c, size_t n) -> const void * { return ch_test_memchr_sse2(s, c, n); },
+         &ch_test_strlen_sse2,
+         [] { return true; }});
+    result.push_back(
+        {"avx2",
+         [](const void * s, int c, size_t n) -> const void * { return ch_test_memchr_avx2(s, c, n); },
+         &ch_test_strlen_avx2,
+         [] { return DB::CPU::CPUFlagsCache::have_AVX2; }});
+    /// The same features as `detect_cpu_level` in `x86_cpu_dispatch.h` checks, plus BMI2 for `bzhi`,
+    /// which every AVX-512 CPU has.
+    result.push_back(
+        {"avx512",
+         [](const void * s, int c, size_t n) -> const void * { return ch_test_memchr_avx512(s, c, n); },
+         &ch_test_strlen_avx512,
+         []
+         {
+             using DB::CPU::CPUFlagsCache;
+             return CPUFlagsCache::have_AVX512F && CPUFlagsCache::have_AVX512DQ && CPUFlagsCache::have_AVX512CD
+                 && CPUFlagsCache::have_AVX512BW && CPUFlagsCache::have_AVX512VL && CPUFlagsCache::have_BMI2;
+         }});
+#endif
+    return result;
+}
 
 /// One readable page surrounded by two `PROT_NONE` pages: any access outside it faults.
 class GuardedPage
@@ -74,7 +144,20 @@ const void * reference_memchr(const void * s, int c, size_t n)
 
 }
 
-TEST(MemchrStrlenPageBoundary, StrlenTerminatorAtPageEnd)
+class MemchrStrlenPageBoundary : public ::testing::TestWithParam<Implementation>
+{
+protected:
+    void SetUp() override
+    {
+        if (!GetParam().supported())
+            GTEST_SKIP() << "the CPU does not support " << GetParam().name;
+    }
+
+    const void * memchr_ptr(const void * s, int c, size_t n) const { return GetParam().memchr_function(s, c, n); }
+    size_t strlen_ptr(const char * s) const { return GetParam().strlen_function(s); }
+};
+
+TEST_P(MemchrStrlenPageBoundary, StrlenTerminatorAtPageEnd)
 {
     GuardedPage page;
     page.fill('x');
@@ -83,7 +166,7 @@ TEST(MemchrStrlenPageBoundary, StrlenTerminatorAtPageEnd)
         ASSERT_EQ(len, strlen_ptr(page.end() - 1 - len)) << "len " << len;
 }
 
-TEST(MemchrStrlenPageBoundary, StrlenAtPageBegin)
+TEST_P(MemchrStrlenPageBoundary, StrlenAtPageBegin)
 {
     GuardedPage page;
     page.fill('x');
@@ -100,7 +183,7 @@ TEST(MemchrStrlenPageBoundary, StrlenAtPageBegin)
 
 /// Bytes with the high bit set and bytes next to 0 must not be mistaken for the terminator, and the
 /// garbage after the terminator must not matter.
-TEST(MemchrStrlenPageBoundary, StrlenHighBytesAndGarbageAfterTerminator)
+TEST_P(MemchrStrlenPageBoundary, StrlenHighBytesAndGarbageAfterTerminator)
 {
     GuardedPage page;
     for (unsigned char fill : tricky_values)
@@ -124,7 +207,7 @@ TEST(MemchrStrlenPageBoundary, StrlenHighBytesAndGarbageAfterTerminator)
     }
 }
 
-TEST(MemchrStrlenPageBoundary, MemchrExactLimitAtPageEnd)
+TEST_P(MemchrStrlenPageBoundary, MemchrExactLimitAtPageEnd)
 {
     GuardedPage page;
     page.fill('x');
@@ -141,7 +224,7 @@ TEST(MemchrStrlenPageBoundary, MemchrExactLimitAtPageEnd)
     }
 }
 
-TEST(MemchrStrlenPageBoundary, MemchrOversizedLimitStopsAtMatchAtPageEnd)
+TEST_P(MemchrStrlenPageBoundary, MemchrOversizedLimitStopsAtMatchAtPageEnd)
 {
     GuardedPage page;
     page.fill('x');
@@ -157,7 +240,7 @@ TEST(MemchrStrlenPageBoundary, MemchrOversizedLimitStopsAtMatchAtPageEnd)
 
 /// C11 7.24.5.1p2: the search behaves as if the bytes were read one at a time and stops at the first match,
 /// so with an overstated limit nothing after the match may be touched, wherever the match is in the buffer.
-TEST(MemchrStrlenPageBoundary, MemchrOversizedLimitStopsAtMatchAnywhere)
+TEST_P(MemchrStrlenPageBoundary, MemchrOversizedLimitStopsAtMatchAnywhere)
 {
     GuardedPage page;
     page.fill('x');
@@ -174,7 +257,7 @@ TEST(MemchrStrlenPageBoundary, MemchrOversizedLimitStopsAtMatchAnywhere)
     }
 }
 
-TEST(MemchrStrlenPageBoundary, MemchrAtPageBegin)
+TEST_P(MemchrStrlenPageBoundary, MemchrAtPageBegin)
 {
     GuardedPage page;
     page.fill('x');
@@ -194,7 +277,7 @@ TEST(MemchrStrlenPageBoundary, MemchrAtPageBegin)
 }
 
 /// The first of several matches is returned.
-TEST(MemchrStrlenPageBoundary, MemchrFirstMatchWins)
+TEST_P(MemchrStrlenPageBoundary, MemchrFirstMatchWins)
 {
     GuardedPage page;
     page.fill('x');
@@ -216,7 +299,7 @@ TEST(MemchrStrlenPageBoundary, MemchrFirstMatchWins)
 }
 
 /// `c` is converted to `unsigned char`: the high bits of the `int` are ignored, and -1 means 0xff.
-TEST(MemchrStrlenPageBoundary, MemchrConvertsCharacterToUnsignedChar)
+TEST_P(MemchrStrlenPageBoundary, MemchrConvertsCharacterToUnsignedChar)
 {
     GuardedPage page;
     page.fill('x');
@@ -232,7 +315,7 @@ TEST(MemchrStrlenPageBoundary, MemchrConvertsCharacterToUnsignedChar)
 
 /// Only the byte itself may match, not a byte that differs in a single bit or in the sign bit,
 /// and such neighbours around the match must not hide it.
-TEST(MemchrStrlenPageBoundary, MemchrIgnoresNeighbourValues)
+TEST_P(MemchrStrlenPageBoundary, MemchrIgnoresNeighbourValues)
 {
     GuardedPage page;
     for (unsigned char c : tricky_values)
@@ -261,7 +344,7 @@ TEST(MemchrStrlenPageBoundary, MemchrIgnoresNeighbourValues)
     }
 }
 
-TEST(MemchrStrlenPageBoundary, MemchrMatchesReference)
+TEST_P(MemchrStrlenPageBoundary, MemchrMatchesReference)
 {
     GuardedPage page;
     std::mt19937_64 rng(42); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
@@ -282,7 +365,7 @@ TEST(MemchrStrlenPageBoundary, MemchrMatchesReference)
 }
 
 /// A buffer far longer than any vector stride, with the match at the very end.
-TEST(MemchrStrlenPageBoundary, LargeBuffer)
+TEST_P(MemchrStrlenPageBoundary, LargeBuffer)
 {
     const size_t n = size_t(32) << 20;
     std::vector<char> buffer(n + 1, 'x');
@@ -295,3 +378,9 @@ TEST(MemchrStrlenPageBoundary, LargeBuffer)
     s[n] = '\0';
     ASSERT_EQ(n, strlen_ptr(s));
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    Implementations,
+    MemchrStrlenPageBoundary,
+    ::testing::ValuesIn(implementations()),
+    [](const ::testing::TestParamInfo<Implementation> & param_info) { return std::string(param_info.param.name); });
