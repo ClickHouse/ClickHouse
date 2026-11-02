@@ -2,9 +2,7 @@
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <IO/WriteHelpers.h>
 #include <base/sort.h>
 
 
@@ -46,20 +44,14 @@ QueryMaskingRulesCache::~QueryMaskingRulesCache() = default;
 void QueryMaskingRulesCache::reload()
 {
     std::lock_guard lock{mutex};
-    rules.clear();
+    std::unordered_map<UUID, QueryMaskingRulePtr> new_rules;
     for (const UUID & id : access_control.findAll<QueryMaskingRule>())
     {
-        try
-        {
-            if (auto rule = access_control.tryRead<QueryMaskingRule>(id))
-                rules.emplace(id, rule);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("QueryMaskingRulesCache"), "Cannot read query masking rule " + toString(id));
-        }
+        if (auto rule = access_control.tryRead<QueryMaskingRule>(id))
+            new_rules.emplace(id, rule);
     }
 
+    rules = std::move(new_rules);
     needs_publish = true;
     publishLocked();
 }
