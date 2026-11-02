@@ -63,8 +63,13 @@ public:
         GetPriorityForLoadBalancing::Func priority_func = {});
 
     /// The same as getMany(), but return std::vector<TryResult>.
-    std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
-                                                   const Settings & settings, PoolMode pool_mode);
+    std::vector<TryResult> getManyForTableFunction(
+        const ConnectionTimeouts & timeouts,
+        const Settings & settings,
+        PoolMode pool_mode,
+        AsyncCallback async_callback = {},
+        std::optional<bool> skip_unavailable_endpoints = std::nullopt,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     using Base = PoolWithFailoverBase<IConnectionPool>;
     using TryResult = Base::TryResult;

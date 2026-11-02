@@ -134,8 +134,8 @@ public:
 
     void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
-    /// Return the pool of the connected replica, used for error tracking during retries.
-    /// Not part of IConnections: called directly on the concrete type by RemoteQueryExecutor.
+    /// Return the pool that produced the last exception packet.
+    /// Not part of `IConnections`: used by `RemoteQueryExecutor` for retry accounting.
     ConnectionPoolPtr getReplicaPool() const { return replica_pool; }
 
     void setAsyncCallback(AsyncCallback async_callback) override;
@@ -230,7 +230,7 @@ private:
 
     ReplicaInfo replica_info;
 
-    /// The pool of the replica we connected to, for error tracking during retries.
+    /// The pool of the replica that produced the last exception packet.
     ConnectionPoolPtr replica_pool;
 
     mutable std::mutex cancel_mutex;

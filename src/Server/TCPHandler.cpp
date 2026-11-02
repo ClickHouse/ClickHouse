@@ -148,6 +148,7 @@ namespace FailPoints
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char remote_query_executor_exception_after_sending_data[];
+extern const char remote_query_executor_exception_after_sending_progress[];
 extern const char tcp_handler_fail_connection_setup[];
 }
 }
@@ -1744,10 +1745,19 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
                     {
+                        fiu_do_on(FailPoints::remote_query_executor_exception_after_sending_progress, {
+                            if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                            {
+                                sendProgress(state);
+                                throw Exception(
+                                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected retryable error after sending progress");
+                            }
+                        });
+
                         sendData(state, block);
 
                         fiu_do_on(FailPoints::remote_query_executor_exception_after_sending_data, {
-                            if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                            if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && block.rows() > 0)
                                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error after sending data");
                         });
                     }

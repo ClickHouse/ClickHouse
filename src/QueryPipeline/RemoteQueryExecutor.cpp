@@ -315,7 +315,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-        if (current_settings[Setting::use_hedged_requests])
+        if (current_settings[Setting::use_hedged_requests] && !initial_connections)
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
             if (main_table)
@@ -323,22 +323,26 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             auto res = std::make_unique<HedgedConnections>(
                 pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback), priority_func);
-            connected_replica_pool = res->getReplicaPool();
+            get_replica_pool = [hedged_connections = res.get()] { return hedged_connections->getReplicaPool(); };
             if (extension && extension->replica_info)
                 res->setReplicaInfo(*extension->replica_info);
             return res;
         }
 #endif
 
-        ConnectionPoolEntries connection_entries;
-        ConnectionPoolPtr replica_pool;
         std::optional<bool> skip_unavailable_endpoints;
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;
 
-        if (main_table)
+        std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+        if (initial_connections)
         {
-            auto try_results = pool->getManyChecked(
+            try_results = std::move(*initial_connections);
+            initial_connections.reset();
+        }
+        else if (main_table)
+        {
+            try_results = pool->getManyChecked(
                 timeouts,
                 current_settings,
                 pool_mode,
@@ -346,28 +350,26 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 std::move(async_callback),
                 skip_unavailable_endpoints,
                 priority_func);
-            connection_entries.reserve(try_results.size());
-            for (auto & try_result : try_results)
-            {
-                if (!replica_pool && try_result.pool)
-                    replica_pool = try_result.pool;
-                connection_entries.emplace_back(std::move(try_result.entry));
-            }
         }
         else
         {
-            /// Table-function queries (e.g. remote()/cluster()) use getMany(), which returns bare
-            /// connection entries without the originating nested pool. As a result replica_pool stays
-            /// null here, so a retry will not deprioritize the failing replica via incrementErrorCount.
-            /// The retry itself still works; only the load-balancing hint is missing. We do not switch
-            /// to getManyForTableFunction() because its signature drops async_callback, priority_func
-            /// and skip_unavailable_endpoints, which would change behavior for all table-function queries.
-            connection_entries = pool->getMany(
+            try_results = pool->getManyForTableFunction(
                 timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
         }
 
+        /// A single pool is sufficient only for a single-replica read. Multi-replica reads
+        /// cannot replay a whole shard safely and do not use shard retries.
+        ConnectionPoolPtr replica_pool;
+        if (pool_mode == PoolMode::GET_ONE && try_results.size() == 1)
+            replica_pool = try_results.front().pool;
+        get_replica_pool = [replica_pool] { return replica_pool; };
+
+        ConnectionPoolEntries connection_entries;
+        connection_entries.reserve(try_results.size());
+        for (auto & try_result : try_results)
+            connection_entries.emplace_back(std::move(try_result.entry));
+
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
-        connected_replica_pool = std::move(replica_pool);
         if (extension && extension->replica_info)
             res->setReplicaInfo(*extension->replica_info);
         return res;
@@ -787,24 +789,24 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     /// is this fragment's failure: record it on the span instead of letting a later backstop mark it cancelled.
     SCOPE_FAIL({ failFragmentSpan(); });
 
-    if (!sent_query)
+    while (true)
     {
-        sendQuery();
-
-        /// `connections` stays null if sendQuery() was cancelled before sending,
-        /// so guard the dereference below (as every other use of it does).
+        if (!sent_query)
         {
-            LockAndBlocker lock(was_cancelled_mutex);
-            if (was_cancelled)
+            sendQuery();
+
+            /// `connections` stays null if sendQuery() was cancelled before sending,
+            /// so guard the dereference below (as every other use of it does).
+            {
+                LockAndBlocker lock(was_cancelled_mutex);
+                if (was_cancelled)
+                    return ReadResult(Block());
+            }
+
+            if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
                 return ReadResult(Block());
         }
 
-        if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-            return ReadResult(Block());
-    }
-
-    while (true)
-    {
         {
             LockAndBlocker lock(was_cancelled_mutex);
             if (was_cancelled)
@@ -828,12 +830,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             return anything;
 
         if (should_retry)
-            break;
+            retryQuery();
     }
-
-    /// The loop above only exits when a retryable exception was received.
-    chassert(should_retry);
-    return retryQuery();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
@@ -844,25 +842,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
     /// the destructor mark it cancelled.
     SCOPE_FAIL({ failFragmentSpan(); });
 
-    if (!read_context || recreate_read_context)
-    {
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
-
-        recreate_read_context = false;
-
-        /// The query was sent synchronously (async_query_sending_for_remote = 0), so the fragment
-        /// span is already open: the read context fiber runs inside it.
-        read_context = std::make_unique<ReadContext>(
-            *this, /*suspend_when_query_sent*/ false, read_packet_type_separately, fragment_trace_context);
-    }
-
     while (true)
     {
         LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
+
+        if (!read_context)
+        {
+            /// Both the initial read and subsequent attempts run inside the same fragment span.
+            read_context = std::make_unique<ReadContext>(
+                *this, /*suspend_when_query_sent*/ false, read_packet_type_separately, fragment_trace_context);
+        }
 
         if (packet_in_progress)
         {
@@ -879,7 +870,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
                 return read_result;
 
             if (should_retry)
-                break;
+            {
+                retryQuery();
+                continue;
+            }
         }
 
         read_context->resume();
@@ -921,26 +915,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             return read_result;
 
         if (should_retry)
-            break;
+            retryQuery();
     }
-
-    /// The loop above only exits when a retryable exception was received.
-    chassert(should_retry);
-    return retryQuery();
 #else
     return read();
 #endif
 }
 
-
-void RemoteQueryExecutor::resetQueryState()
-{
-    /// Reset state to retry
-    recreate_read_context = true;
-    sent_query = false;
-    was_cancelled = false;
-    got_data_from_replica = false;
-}
 
 bool RemoteQueryExecutor::isRetryableError(int error_code) const
 {
@@ -962,50 +943,35 @@ bool RemoteQueryExecutor::isRetryableError(int error_code) const
         || error_code == ErrorCodes::NETWORK_ERROR;
 }
 
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::retryQuery()
+void RemoteQueryExecutor::retryQuery()
 {
-    {
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
+    chassert(!was_cancelled && !got_data_from_replica && !retry_forbidden);
+    chassert(connection_pool_with_failover && get_replica_pool);
+    auto failed_pool = get_replica_pool();
+    chassert(failed_pool);
+    connection_pool_with_failover->incrementErrorCount(failed_pool);
 
-        /// We must never retry after returning data to the caller: re-running the query on
-        /// another replica would duplicate the already-returned rows. processPacket() only sets
-        /// should_retry when no data has been received yet, so this should always hold here.
-        chassert(!got_data_from_replica);
+    ++retry_count;
+    ProfileEvents::increment(ProfileEvents::DistributedTryCount);
+    LOG_DEBUG(
+        log,
+        "Retry {} of {} after exception code {} from host {}",
+        retry_count,
+        context->getSettingsRef()[Setting::distributed_shard_retry_count].value,
+        last_retry_error_code,
+        failed_pool->getHost());
 
-        /// Deprioritize the failed replica so it's less likely to be chosen on the next attempt.
-        auto failed_pool = connected_replica_pool;
-        if (connection_pool_with_failover && failed_pool)
-        {
-            connection_pool_with_failover->incrementErrorCount(failed_pool);
-            if (log)
-                LOG_DEBUG(log, "Incremented connection pool error count for {} due to error code {}",
-                          failed_pool->getHost(), last_retry_error_code);
-        }
+    /// Cancel only the old attempt. `cancelUnlocked` would finish the fragment span as
+    /// cancelled even if a later attempt succeeds. The read fiber is suspended after
+    /// a complete exception packet, so it can be cancelled before replacing connections.
+    tryCancel("Cancelling attempt before shard retry");
+    connections->disconnect();
+    read_context.reset();
 
-        got_exception_from_replica = false;
-
-        if (log)
-            LOG_DEBUG(log, "Retrying query on a different replica after exception code {} from host {}",
-                      last_retry_error_code,
-                      failed_pool ? failed_pool->getHost() : connections->dumpAddresses());
-
-        /// Cancel previous query and disconnect before retry.
-        cancelUnlocked();
-        connections->disconnect();
-
-        /// Reset state to retry
-        /// create_connections is called again (during sendQuery), meaning ConnectionPoolWithFailover
-        /// will select different replicas based on its load balancing and error tracking logic
-        /// Since we incremented the error count for the failed pool, it will prefer other replicas
-        resetQueryState();
-        should_retry = false;
-    }
-
-    if (!read_context)
-        return read();
-    return readAsync();
+    sent_query = false;
+    was_cancelled = false;
+    got_exception_from_replica = false;
+    should_retry = false;
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -1013,16 +979,19 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
+            retry_forbidden = true;
             chassert(packet.request.has_value());
             processMergeTreeReadTaskRequest(packet.request.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::MergeTreeAllRangesAnnouncement:
+            retry_forbidden = true;
             chassert(packet.announcement.has_value());
             processMergeTreeInitialReadAnnouncement(packet.announcement.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
+            retry_forbidden = true;
             processReadTaskRequest();
             break;
         case Protocol::Server::PartUUIDs:
@@ -1049,22 +1018,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
             /// If the error is retryable and config suggests we should do so, reset query state and retry
             const auto max_retries = context->getSettingsRef()[Setting::distributed_shard_retry_count];
-            if (isRetryableError(packet.exception->code())
-                && !got_data_from_replica
-                && retry_count < max_retries
-                && connection_pool_with_failover)
+            if (isRetryableError(packet.exception->code()) && !got_data_from_replica && !retry_forbidden && retry_count < max_retries
+                && connection_pool_with_failover && pool_mode == PoolMode::GET_ONE && !extension && get_replica_pool && get_replica_pool())
             {
-                ProfileEvents::increment(ProfileEvents::DistributedTryCount);
-                retry_count++;
-
-                if (log)
-                {
-                    auto pool_for_log = connected_replica_pool;
-                    LOG_DEBUG(log, "try {} of {} failed due to error code {} from host {}",
-                              retry_count, static_cast<uint64_t>(max_retries) + 1, packet.exception->code(),
-                              pool_for_log ? pool_for_log->getHost() : connections->dumpAddresses());
-                }
-
                 last_retry_error_code = packet.exception->code();
                 should_retry = true;
                 break;
@@ -1102,6 +1058,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::Progress:
+            retry_forbidden = true;
             /** We use the progress from a remote server.
               * We also include in ProcessList,
               * and we use it to check
@@ -1113,18 +1070,21 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::ProfileInfo:
+            retry_forbidden = true;
             /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
             if (profile_info_callback)
                 profile_info_callback(packet.profile_info);
             break;
 
         case Protocol::Server::Totals:
+            retry_forbidden = true;
             totals = packet.block;
             if (!totals.empty())
                 totals = adaptBlockStructure(totals, *header);
             break;
 
         case Protocol::Server::Extremes:
+            retry_forbidden = true;
             extremes = packet.block;
             if (!extremes.empty())
                 extremes = adaptBlockStructure(packet.block, *header);

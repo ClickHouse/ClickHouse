@@ -80,8 +80,8 @@ public:
 
     size_t numberOfProcessingReplicas() const;
 
-    /// Return the pool of the first ready replica, or nullptr if none.
-    ConnectionPoolPtr getReplicaPool() const { return first_ready_replica_pool; }
+    /// Return the originating pool of a connection handed out by this factory.
+    ConnectionPoolPtr getReplicaPool(const Connection * connection) const { return replica_pools.at(connection); }
 
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
@@ -182,8 +182,8 @@ private:
     const bool skip_unavailable_shards = false;
     const bool fail_if_replica_unprobed = false;
 
-    /// Pool of the first replica that became ready, for error tracking during retries.
-    ConnectionPoolPtr first_ready_replica_pool;
+    /// Includes replicas selected after a hedged request changes its connection.
+    std::unordered_map<const Connection *, ConnectionPoolPtr> replica_pools;
 };
 
 }
