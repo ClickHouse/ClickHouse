@@ -88,6 +88,17 @@ public:
         }
     }
 
+    /// Initialize the dense per-row flags for blocks of the given row counts, indexed by their
+    /// position. For users outside of the hash-join map dispatch (the templated `reinit`
+    /// overloads above), such as the INNER ANY claim-once flags of `MergeJoin`.
+    void reinitPerRowFlags(const std::vector<size_t> & rows_per_block)
+    {
+        need_flags = true;
+        per_row_flags = std::vector<UsedFlagsForColumns>(rows_per_block.size());
+        for (size_t block_no = 0; block_no < rows_per_block.size(); ++block_no)
+            per_row_flags[block_no] = UsedFlagsForColumns(rows_per_block[block_no]);
+    }
+
     /// Call once no build stream can still be appending.
     void finalizePerRowFlags(size_t num_blocks)
     {

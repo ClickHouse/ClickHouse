@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: the fast test build has no S3 or MySQL table functions, whose wrong-case names then stay visible
+# no-fasttest: the fast test build has no s3 table function, so the lowercase s3(...) call would be hidden whole
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 # A call that differs only in case from a table function or function with secrets is rejected after the statement is
-# logged, so every argument is hidden. Other unknown or case-insensitive functions stay visible.
+# logged, so every argument is hidden. An unknown function outside a table function position stays visible.
 while read -r query; do
     $CLICKHOUSE_FORMAT --oneline --query "$query"
 done <<'EOF'
