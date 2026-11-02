@@ -129,9 +129,36 @@ StorageABR::StorageABR(
 {
     const DatabasePtr & db = DatabaseCatalog::instance().getDatabase(table_id.database_name);
 
-    copyTableMetadata(db->getTable(fmt::format("{}_{}", table_prefix, sample_intervals.front()), context));
+    const String first_table_name = fmt::format("{}_{}", table_prefix, sample_intervals.front());
+    copyTableMetadata(db->getTable(first_table_name, context));
     const auto metadata = getInMemoryMetadataPtr(context, false);
     const ColumnsDescription columns = metadata->getColumns();
+
+    /// Non-time retention columns must appear as bare identifiers in PARTITION BY.
+    /// The time column is exempt because it typically appears inside a function (e.g. toStartOfMonth).
+    auto check_retention_columns_are_direct = [&](const KeyDescription & partition_key, const String & table_name)
+    {
+        for (const String & col : retention_expression)
+        {
+            auto is_direct_column = [&](const ASTPtr & child) -> bool
+            {
+                const auto * id = child->as<ASTIdentifier>();
+                return col == time_column || (id && id->name() == col);
+            };
+
+            if (!partition_key.expression_list_ast || !std::ranges::any_of(partition_key.expression_list_ast->children, is_direct_column))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Retention column '{}' must appear as a direct (unmodified) column in the PARTITION BY expression of table '{}'",
+                    col, table_name);
+        }
+    };
+
+    /// The partition key columns always come first in the part minmax index, sorted by name.
+    /// Their positions are resolved once, from the first table, and used for the parts of every table,
+    /// so all tables must have partition keys over the same columns. The expressions may differ,
+    /// e.g. `toYYYYMMDD(ts)` and `toYYYYMM(ts)`, as the minmax index stores the values of the columns.
+    NamesAndTypesList minmax_columns;
 
     /// Iterate from sorted sample intervals to get tables sorted by sample interval
     for (const UInt64 & interval : sample_intervals)
@@ -149,15 +176,23 @@ StorageABR::StorageABR(
         if (columns.getAll() != table_metadata->getColumns().getAll())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not all underlying tables have the same column set (names and types)");
 
+        const auto & table_partition_key = table_metadata->getPartitionKey();
+        const NamesAndTypesList table_minmax_columns = MergeTreeData::getMinMaxColumns(
+            table_partition_key, merge_tree->getSettings(), MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+        if (tables.empty())
+            minmax_columns = table_minmax_columns;
+        else if (table_minmax_columns.getNames() != minmax_columns.getNames())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "All underlying tables must have partition keys over the same columns, but the partition key of table '{}' "
+                "uses ({}) and the one of table '{}' uses ({})",
+                first_table_name, fmt::join(minmax_columns.getNames(), ", "), name, fmt::join(table_minmax_columns.getNames(), ", "));
+
+        check_retention_columns_are_direct(table_partition_key, name);
         tables.emplace_back(merge_tree);
         LOG_DEBUG(logger, "Registered underlying table {}", name);
     }
 
-    const auto & partition_key = metadata->getPartitionKey();
-    const auto first_merge_tree = castStorage<MergeTreeData>(tables.front(), DeferredTable::Load);
-    /// The partition key columns always come first in the part minmax index.
-    const NamesAndTypesList minmax_columns = MergeTreeData::getMinMaxColumns(
-        partition_key, first_merge_tree->getSettings(), MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     const Names minmax_names = minmax_columns.getNames();
     const DataTypes minmax_types = minmax_columns.getTypes();
     NamesAndTypesList retention_cols_with_types;
@@ -189,23 +224,6 @@ StorageABR::StorageABR(
             retention_expr_col_types.emplace_back(info.type);
             retention_expr_col_names.push_back(name);
         }
-    }
-
-    /// Non-time retention columns must appear as bare identifiers in PARTITION BY.
-    /// The time column is exempt because it typically appears inside a function (e.g. toStartOfMonth).
-    for (const String & col : retention_expression)
-    {
-        auto is_direct_column = [&](const ASTPtr & child) -> bool
-        {
-            const auto * id = child->as<ASTIdentifier>();
-            return col == time_column || (id && id->name() == col);
-        };
-
-        if (!std::ranges::any_of(partition_key.expression_list_ast->children, is_direct_column))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Retention column '{}' must appear as a direct (unmodified) column in the PARTITION BY expression",
-                col);
     }
 
     retention_key_expr = std::make_shared<ExpressionActions>(ActionsDAG(retention_cols_with_types), ExpressionActionsSettings(context));
@@ -497,10 +515,10 @@ std::optional<StorageABR::UnixTimePoint> StorageABR::getMinMergeTreeDate(
 
         const auto & hyperrectangle = minmax_idx->hyperrectangle;
 
-        /// Defensive check: idx_in_minmax was computed at ABR construction time from the
-        /// ABR table's own partition key. If an underlying table's partition key has since
-        /// diverged (e.g. ALTER on one of the underlying tables), the cached indices may
-        /// exceed this part's hyperrectangle size. Skip such parts rather than risk UB.
+        /// Defensive check: idx_in_minmax was computed at ABR construction time from the first
+        /// underlying table, and the constructor checks that all underlying tables share its minmax
+        /// layout, which cannot change since a partition key cannot be altered. Still, skip parts whose
+        /// hyperrectangle is too small for the cached indices rather than risk an out-of-bounds read.
         const bool indices_in_range = std::ranges::all_of(
             column_info_minmax, [&](const auto & name_and_info) { return name_and_info.second.idx_in_minmax < hyperrectangle.size(); });
         if (!indices_in_range)
