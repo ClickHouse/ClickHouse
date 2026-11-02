@@ -1756,7 +1756,7 @@ Unlike [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record
 
 Only the buffers named above are bounded: a column of a fixed-width type has no offsets to overflow and stays in one batch. A single row never splits either, so a row above the limit still produces a batch that exceeds it.
 )", 0, \
-        {"26.10", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."}) \
+        {"26.11", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."}) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
