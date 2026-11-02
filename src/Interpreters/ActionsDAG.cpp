@@ -30,6 +30,7 @@
 #include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -64,6 +65,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
 }
 
@@ -5207,6 +5209,7 @@ static void serializeConstant(
     const IColumn & value,
     WriteBuffer & out,
     SerializedSetsRegistry & registry,
+    ActionsDAG::IndexHintActions index_hint_actions,
     const Block * input_header)
 {
     if (WhichDataType(type).isSet())
@@ -5272,14 +5275,14 @@ static void serializeConstant(
         /// way too. Without the header a capture of `__table1.id` and one of `__table2.id` normalize onto
         /// one name and two different higher-order filters share a statistics entry.
         serializeCapture(function_expression->getCapture(), out, registry.for_cache_key, input_header);
-        function_expression->getAcionsDAG().serialize(out, registry, input_header);
+        function_expression->getAcionsDAG().serialize(out, registry, index_hint_actions, input_header);
 
         const auto & captured_columns = column_function->getCapturedColumns();
         writeVarUInt(captured_columns.size(), out);
         for (const auto & captured_column : captured_columns)
         {
             encodeDataType(captured_column.type, out);
-            serializeConstant(*captured_column.type, *captured_column.column, out, registry, input_header);
+            serializeConstant(*captured_column.type, *captured_column.column, out, registry, index_hint_actions, input_header);
         }
 
         return;
@@ -5295,7 +5298,7 @@ static void serializeConstant(
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
 }
 
-/// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
+/// The maximum nesting depth of lambda captures and `indexHint` predicates in a deserialized `ActionsDAG`.
 /// The serialized data may come from a client, and the deserialization is recursive.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
 
@@ -5306,7 +5309,7 @@ static void checkActionsDAGDeserializationDepth(size_t nesting_depth)
     if (nesting_depth > MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH)
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
-            "Too deep nesting of lambda captures in deserialized ActionsDAG (more than {} levels)",
+            "Too deep nesting of lambda captures or indexHint in deserialized ActionsDAG (more than {} levels)",
             MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH);
 }
 
@@ -5409,7 +5412,7 @@ static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reorde
 };
 
 
-void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header) const
+void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry, IndexHintActions index_hint_actions, const Block * input_header) const
 {
     size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
@@ -5473,6 +5476,21 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         if (function_capture)
             column_flags |= 4;
 
+        /// `indexHint` keeps its predicate in its own DAG, not in the children of the node.
+        const FunctionIndexHint * index_hint = nullptr;
+        if (node.type == ActionType::FUNCTION && !registry.for_cache_key)
+            index_hint = FunctionIndexHint::tryGet(node.function_base);
+
+        if (index_hint)
+        {
+            if (index_hint_actions == IndexHintActions::Write)
+                column_flags |= 8;
+            else if (!index_hint->getActions().getOutputs().empty())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "The predicate of indexHint requires query plan serialization version >= {}; all nodes must be upgraded",
+                    DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS);
+        }
+
         writeIntBinary(column_flags, out);
 
         /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
@@ -5483,7 +5501,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
         if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
-            serializeConstant(*node.result_type, *node.column, out, registry, input_header);
+            serializeConstant(*node.result_type, *node.column, out, registry, index_hint_actions, input_header);
 
         if (node.type == ActionType::INPUT)
         {
@@ -5512,8 +5530,10 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
             if (function_capture)
             {
                 serializeCapture(function_capture->getCapture(), out, registry.for_cache_key, input_header);
-                function_capture->getAcionsDAG().serialize(out, registry, input_header);
+                function_capture->getAcionsDAG().serialize(out, registry, index_hint_actions, input_header);
             }
+            if (index_hint && (column_flags & 8))
+                index_hint->getActions().serialize(out, registry, index_hint_actions, input_header);
         }
         else if (node.type == ActionType::ARRAY_JOIN)
         {
@@ -5612,6 +5632,9 @@ ActionsDAG ActionsDAG::deserialize(
             String function_name;
             readStringBinary(function_name, in);
 
+            if ((column_flags & 8) && ((column_flags & 4) || function_name != FunctionIndexHint::name))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized function {} cannot carry the predicate of indexHint", function_name);
+
             ColumnsWithTypeAndName arguments;
             arguments.reserve(node.children.size());
             for (const auto * child : node.children)
@@ -5643,7 +5666,15 @@ ActionsDAG ActionsDAG::deserialize(
             }
             else
             {
-                auto function = FunctionFactory::instance().get(function_name, context);
+                FunctionOverloadResolverPtr function;
+                if (column_flags & 8)
+                {
+                    auto index_hint = std::make_shared<FunctionIndexHint>();
+                    index_hint->setActions(ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1));
+                    function = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint));
+                }
+                else
+                    function = FunctionFactory::instance().get(function_name, context);
 
                 node.function_base = function->build(arguments);
                 node.function = node.function_base->prepare(arguments);

@@ -246,6 +246,10 @@ public:
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
     bool getConcurrencyControl() const { return concurrency_control; }
 
+    /// A peer below this query plan serialization version is sent the query as SQL instead of this plan.
+    void setMinSerializationVersion(UInt64 version) { min_serialization_version = version; }
+    UInt64 getMinSerializationVersion() const { return min_serialization_version; }
+
     /// Tree node. Step and it's children.
     struct Node
     {
@@ -309,6 +313,8 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     bool concurrency_control = false;
+
+    UInt64 min_serialization_version = 0;
 
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan

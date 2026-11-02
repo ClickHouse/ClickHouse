@@ -1005,6 +1005,8 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 
 Before version `10`, fields 2 and 3 are absent. An initiator with either non-default execution limit must not send that older layout: it ships the original SQL query instead, so the older receiver reconstructs the limits from the query settings.
 
+From version `21` the plan stream carries the predicate of `indexHint`. An initiator whose query contains `indexHint` sends the original SQL query to a receiver below version `21` instead.
+
 ## Configuration {#configuration}
 
 This section covers the tunables that shape native protocol connections:
