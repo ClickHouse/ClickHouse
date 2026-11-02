@@ -248,7 +248,7 @@ UInt128 SerializationEnum<Type>::getHash(const Values & values)
 template <typename Type>
 SerializationPtr SerializationEnum<Type>::create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
 {
-    return ISerialization::pooled(getHash(enum_type->getValues()), [&] { return new SerializationEnum(enum_type); });
+    return ISerialization::pooled(enum_type->getSerializationHash(), [&] { return new SerializationEnum(enum_type); });
 }
 
 template <typename Type>

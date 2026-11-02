@@ -1,0 +1,10 @@
+=== the host of every span ===
+query	INTERNAL	initiator
+├─ DistributedPlanTask::dispatch	CLIENT	initiator
+│  └─ DistributedPlanTask::execute	SERVER	worker-1
+└─ DistributedPlanTask::dispatch	CLIENT	initiator
+   └─ DistributedPlanTask::execute	SERVER	worker-2
+=== the spans of one node ===
+   └─ DistributedPlanTask::execute	worker-2
+=== a real trace carries the hostname of the span log ===
+every host is a hostname of the span log: OK

@@ -113,6 +113,7 @@ public:
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickHouseTableSchemaById(Int32 id) const;
+    bool isSchemaRegisteredFromMetadata(Int32 id) const;
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
@@ -124,6 +125,9 @@ public:
     /// Paths whose Iceberg field is `optional` (required=false). A complex container is never
     /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
     static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
+
+    /// Field ids (including nested ones) whose Iceberg type is `time`.
+    static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;

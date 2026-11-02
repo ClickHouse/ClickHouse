@@ -1,0 +1,12 @@
+-- an interactive-only command is rejected with an explicit message, not as SQL
+The `/dialect` command is available in interactive mode only
+The `/lang` command is available in interactive mode only
+The `/language` command is available in interactive mode only
+The `/dialect` command is available in interactive mode only
+-- a misspelled interactive-only command is not resolved to it
+Unknown command `/dialec`. 
+-- the commands accepted in a script are still suggested
+Unknown command `/hepl`. Maybe you meant: ['/help']. 
+The `/clear` command does not accept an argument
+-- the diagnostics do not affect the SQL of a script
+1

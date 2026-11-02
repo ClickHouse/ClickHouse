@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- A table found in `metadata_dropped` after a restart is dropped again without a delay. -->
+    <database_atomic_delay_before_drop_table_sec>0</database_atomic_delay_before_drop_table_sec>
+</clickhouse>

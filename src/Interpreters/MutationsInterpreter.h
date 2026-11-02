@@ -30,6 +30,13 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 /// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
+/// Transitive closure of `getColumnDependencies` over @updated_columns: a dependency that is not
+/// read-only is itself updated, so it pulls in its own dependencies. TTL targets are included.
+ColumnDependencies getAllColumnDependencies(
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & updated_columns,
+    const StorageInMemoryMetadata::HasDependencyCallback & has_dependency);
+
 /// Return false if the data isn't going to be changed by mutations.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
@@ -55,6 +62,14 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 /// explicit its text was, and every consumer that feeds it to the analyzer (`buildQueryTree`) must call this
 /// first; otherwise the analyzer rejects the set operation with "UNION mode UNION_DEFAULT must be normalized".
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
+
+/// Reject mutation expressions whose `IN` operand is a `Set` with an applicable row policy.
+/// This must run with the submitting context before the mutation is handed to a background context.
+void checkNoRowPolicyForSetOperands(
+    const ASTPtr & mutation_ast,
+    const String & default_database,
+    const ContextPtr & context,
+    bool throw_if_unresolved = false);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -180,6 +195,7 @@ public:
         bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
+        bool hasUnloadedProjection(const String & name) const;
         bool isCompactPart() const;
 
         void read(

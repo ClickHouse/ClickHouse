@@ -1,0 +1,64 @@
+-- initial scan
+app.log	1
+app.log	2
+-- new files
+app.log	3
+moved_in.log	5
+new.log	4
+-- rotation
+app.log	8
+app.log.1	6
+app.log.1	7
+-- rotation while detached
+app.log	11
+app.log.0	10
+app.log.1	9
+-- second rotation
+app.log.2	12
+-- compression
+app.log	13
+-- renamed file replaced
+-- renamed before it was read
+fresh.log.1	15
+fresh.log.1	16
+hop.log.2	17
+-- chain
+chain.log	20
+-- chain rotation
+chain.log	2100
+-- chain second rotation
+chain.log	220000
+-- chain rotation while detached
+chain.log	23
+chain.log.1	24
+chain.log.3	25
+-- replaced and renamed again
+chain.log.2	27
+-- renamed over a new file
+new2.log	29
+-- renamed twice, first name refilled
+gate.log.2	40
+-- hard links while detached
+app.log	30
+chain.log.2	31
+-- hard link renamed
+chain.log.2	32
+-- matching hard link renamed
+app.log	33
+-- earlier sorting hard link removed after attach
+chain.log.2	34
+-- hard link renamed to a matching name
+app.log	35
+-- matching hard link while detached
+app.log	36
+-- matching hard link to a rotated file removed after attach
+chain.log.2	37
+-- rotated with a hard link
+rot.log	60
+-- rotated with a hard link left in place
+rot.log.1	61
+-- directory name with glob characters
+a.log	1
+-- errors
+OK
+OK

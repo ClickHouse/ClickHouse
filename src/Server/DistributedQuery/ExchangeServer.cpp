@@ -5,6 +5,7 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/makeSocketAddress.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -41,7 +42,7 @@ static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
 ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_)
     : connections(std::move(connections_))
     , authenticate_connection(std::move(authenticate_connection_))
-    , server_socket(Poco::Net::ServerSocket(Poco::Net::SocketAddress(listen_host, port)))
+    , server_socket(Poco::Net::ServerSocket(makeSocketAddress(listen_host, port, getLogger("ExchangeServer"))))
     , accept_thread("ExchangeServer")
     , handshake_pool(
         CurrentMetrics::ExchangeServerThreads,

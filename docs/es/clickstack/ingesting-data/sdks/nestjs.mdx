@@ -6,27 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logging', 'integración', 'monitorización de aplicaciones']
 ---
 
+import { ClickStackIntegrates } from '/snippets/es/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 La integración de NestJS con ClickStack le permite crear un logger o usar el
 logger predeterminado para enviar logs a ClickStack (basado en [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)).
 
-**Esta guía integra:**
-
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✖️ Métricas</td>
-      <td className="pe-2">✖️ Trazas</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs']} />
 
 *Para enviar métricas o APM/trazas, también deberá añadir a su aplicación la
 integración de lenguaje correspondiente.*
 
-<div id="getting-started">
-  ## Primeros pasos
-</div>
+## Primeros pasos {#getting-started}
 
 Importa `HyperDXNestLoggerModule` en el `AppModule` principal y usa el método `forRoot()`
 para configurarlo.
@@ -38,8 +28,8 @@ import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
 @Module({
   imports: [
     HyperDXNestLoggerModule.forRoot({
-      url: 'http://your-otel-collector:4318',
-      apiKey: ***YOUR_INGESTION_API_KEY***, // No es necesario para Managed ClickStack
+      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
       maxLevel: 'info',
       service: 'my-app',
     }),
@@ -68,9 +58,7 @@ export class CatsController {
 }
 ```
 
-<div id="replacing-the-nest-logger">
-  ### Reemplazar el logger de Nest (también durante el arranque)
-</div>
+### Reemplazar el logger de Nest (también durante el arranque) {#replacing-the-nest-logger}
 
 <Info>
   **Importante**
@@ -96,8 +84,8 @@ import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: HyperDXNestLoggerModule.createLogger({
-      url: 'http://your-otel-collector:4318',
-      apiKey: ***YOUR_INGESTION_API_KEY***, // No se necesita para Managed ClickStack
+      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
       maxLevel: 'info',
       service: 'my-app',
     })

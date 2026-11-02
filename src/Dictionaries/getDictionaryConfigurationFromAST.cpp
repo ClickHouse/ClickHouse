@@ -3,8 +3,6 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
-#include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -21,6 +19,8 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/DNSResolver.h>
+#include <Common/NetException.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -852,9 +852,9 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     try
     {
-        info.is_local = isLocalAddress({host, port}, default_port);
+        info.is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port);
     }
-    catch (const Poco::Net::DNSException &)
+    catch (const NetException &)
     {
         /// Server may fail to start if we cannot resolve some hostname.
         info.host_unresolved = true;

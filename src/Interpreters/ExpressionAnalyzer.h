@@ -21,7 +21,6 @@ struct Settings;
 struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 struct ASTTableJoin;
 class IJoin;
@@ -157,12 +156,6 @@ public:
         const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
 
-    /** Checks if subquery is not a plain StorageSet.
-      * Because while making set we will read data from StorageSet which is not allowed.
-      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
-      */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
-
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
@@ -247,9 +240,6 @@ struct ExpressionAnalysisResult
 
     String where_column_name;
     bool remove_where_filter = false;
-    bool optimize_read_in_order = false;
-    bool optimize_aggregation_in_order = false;
-    bool join_has_delayed_stream = false;
 
     bool use_grouping_set_key = false;
 
@@ -285,10 +275,6 @@ struct ExpressionAnalysisResult
     FilterDAGInfoPtr row_policy_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
-    /// Actions by every element of ORDER BY
-    ManyExpressionActions order_by_elements_actions;
-    ManyExpressionActions group_by_elements_actions;
-
     ExpressionAnalysisResult() = default;
 
     ExpressionAnalysisResult(
@@ -420,7 +406,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void validateGroupByKeyType(const DataTypePtr & key_type) const;
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -433,7 +419,7 @@ private:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types);
     void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     bool appendLimitRange(ExpressionActionsChain & chain, bool only_types);
