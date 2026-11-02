@@ -1,11 +1,11 @@
 a_count_alone	0	0	0	1
 b_count_riders	1	1	1	0
-c_uniq_exact	1	1	1	0
+c_uniq_exact	0	0	0	1
 d_max	1	1	1	0
 e_sum	1	1	1	0
 f_count_if	1	1	1	0
 f_sum_if	1	1	1	0
-g_uniq_exact_null	1	1	1	0
+g_uniq_exact_null	0	0	0	1
 h_uniq_estimate	0	0	0	0
 i_float	0	0	0	0
 j_string	0	0	0	0

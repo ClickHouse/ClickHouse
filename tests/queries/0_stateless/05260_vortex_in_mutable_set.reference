@@ -1,0 +1,6 @@
+-- an IN over a Set table is not pushed down
+3
+0	1
+-- an IN over a literal set is pushed down
+3
+1	0
