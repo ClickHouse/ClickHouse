@@ -1706,7 +1706,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     std::vector<RenameEdge> replicated_tables_to_rename;
-    size_t total_tables = 0;
+    /// The kept tables are tables of the database too, for max_broken_tables_ratio.
+    size_t total_tables = failed_tables_to_keep.size();
     std::vector<UUID> replicated_ids;
     for (auto existing_tables_it = getTablesIterator(
              getContext(), [&](const String & table_name) { return !failed_tables_to_keep.contains(table_name); }, /*skip_not_loaded=*/false);

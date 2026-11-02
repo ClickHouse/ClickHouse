@@ -54,7 +54,7 @@ def test_table_failed_to_load(started_cluster):
     r1 = f"{zk_path}/replicas/shard1|replica1"
 
     node1.query(
-        f"CREATE DATABASE {db} ENGINE = Replicated('{zk_path}', 'shard1', 'replica1')"
+        f"CREATE DATABASE {db} ENGINE = Replicated('{zk_path}', 'shard1', 'replica1') SETTINGS max_broken_tables_ratio = 0.6"
     )
     node2.query(
         f"CREATE DATABASE {db} ENGINE = Replicated('{zk_path}', 'shard1', 'replica2')"
@@ -105,6 +105,9 @@ def test_table_failed_to_load(started_cluster):
 
     node1.stop_clickhouse()
     zk.set(r1 + "/digest", b"42")
+    # 2 stale tables of 4 (with the kept one): 4 * 0.6 >= 2, but 3 * 0.6 < 2 would refuse the recovery.
+    node2.query(f"DROP TABLE {db}.t1", settings={"distributed_ddl_task_timeout": 0})
+    node2.query(f"DROP TABLE {db}.t2", settings={"distributed_ddl_task_timeout": 0})
     node2.query(
         f"CREATE TABLE {db}.t3 (x UInt64) ENGINE = MergeTree ORDER BY x",
         settings={"distributed_ddl_task_timeout": 0},
@@ -117,8 +120,10 @@ def test_table_failed_to_load(started_cluster):
     assert_broken_table_fails_to_load(db)
     assert (
         node1.query(
-            f"SELECT count() FROM system.databases WHERE name LIKE '{db}_broken%'"
+            f"SELECT count() FROM system.tables WHERE database = '{db}_broken_tables'"
         )
-        == "0\n"
+        == "2\n"
     )
+    assert node1.query(f"EXISTS TABLE {db}.t1") == "0\n"
+    node1.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
     assert zk.get(r1 + "/digest")[0].decode() == metadata_digest(zk_path)
