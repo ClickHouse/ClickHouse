@@ -1352,6 +1352,8 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
+On large tables the index estimate reads a sample of index windows (see `index_scan_budget_rows`). A window is the `GRANULARITY` granules that one index granule covers. The estimate scales the sampled count to the baseline, and `marks_span` gives the range that the sampling error allows.
+
 Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts the query would read and prunes it as a materialized projection would be pruned.
 
 The report gives the marks and rows it would read, a `read_ratio` against the base-table read, and a `verdict` on whether the optimizer would choose it. With `force_optimize_projection = 1` or `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
@@ -1368,6 +1370,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Settings**
 
+- `index_scan_budget_rows` — how many rows an index estimate may read before it switches to a sample of index windows. Default: `10000000`. `0` means no limit. `max_rows_to_read` can lower it. A sample reads at least about 30 windows and one per part, and when `max_rows_to_read` does not allow that the empirical estimate is `unsupported`.
 - `projection_scan_budget_rows` — how many rows a projection estimate may read before it switches to a sample of granules. Default: `10000000`. `0` means no limit; `max_rows_to_read` can lower it. A sample reads at least about 30 granules and one per part, and when `max_rows_to_read` does not allow that the estimate is `unsupported`.
 - `empirical` — `1` (default) runs the index over the baseline-pruned granules in memory to measure the skip ratio (an upper bound). `0` skips that path. Either way, if empirical doesn't produce a result (disabled, or the index can't be evaluated in memory) the estimator falls back to column [statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), and finally to an applicability-only summary if neither is available.
 
@@ -1384,6 +1387,7 @@ Baseline (after PK + partition + existing indexes):
 With idx_b (minmax, hypothetical):
   status:       applicable
   marks:        1
+  marks_span:   0 to 3              (only when the estimate used a sample)
   est_bytes:    15.00 KiB           (only when baseline bytes are known)
   skip_ratio:   99.0%
 
@@ -1401,7 +1405,7 @@ Estimation:
   - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
   - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
 - `empirical_reason` — why the empirical estimate could not run. Shown only with `empirical_status: unsupported`. For example, a non-zero `merge_tree_min_rows_for_seek` or `merge_tree_min_bytes_for_seek` makes a real read coalesce mark ranges, which the per-granule count does not model, so the estimate falls back to `statistical` or `applicability_only`.
-- `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index. For a projection, `sampled_marks` is `<marks read> / <marks in the parts the query reads>`, and a first number below the second means the estimate used a sample.
+- `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index. For an index estimate from a sample, the first number of `sampled_marks` counts only the baseline marks in the sampled windows. Thus it is below the baseline `marks`. For a projection, `sampled_marks` is `<marks read> / <marks in the parts the query reads>`, and a first number below the second means the estimate used a sample.
 - `est_bytes` — an estimate of the bytes read, derived from the table's average row size, so it is approximate and varies with storage and compression. The baseline line appears only when the query reads rows; the per-candidate line only when the baseline byte estimate is known.
 
 The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
@@ -1412,7 +1416,7 @@ If neither hypothetical indexes nor hypothetical projections are defined for the
 
 When two or more candidates are evaluated empirically, `EXPLAIN WHATIF` appends one extra block named `(combined: idx_a, idx_b, ...)` after the per-candidate rows. It reports the joint benefit of having *all* of those indexes at once: a real read keeps a granule only if it survives *every* skip index, so the combined estimate is the intersection of the candidates' surviving granules. Its `skip_ratio` is therefore at least as high as the best single candidate — complementary indexes prune more together, while redundant ones leave it unchanged.
 
-Only candidates with `source: empirical` contribute, because the combined row is built by intersecting their per-granule survival sets. Candidates estimated `statistical` or `applicability_only` have no per-granule data and are excluded; consequently the combined block appears only when at least two candidates produced an empirical estimate, and is omitted otherwise (for example under `empirical = 0`). Its estimation fields read the same as a per-candidate empirical block, except `elapsed_us` is `0` — the combined estimate is derived from the per-candidate scans, not a new scan. The synthetic `(combined: ...)` name is a report label only and cannot be used with `force_data_skipping_indices`.
+Only candidates with `source: empirical` contribute, because the combined row is built by intersecting their per-granule survival sets. Candidates estimated `statistical` or `applicability_only` have no per-granule data and are excluded; consequently the combined block appears only when at least two candidates produced an empirical estimate, and is omitted otherwise (for example under `empirical = 0`). Its estimation fields read the same as a per-candidate empirical block, except `elapsed_us` is `0` — the combined estimate is derived from the per-candidate scans, not a new scan. The synthetic `(combined: ...)` name is a report label only and cannot be used with `force_data_skipping_indices`. When the estimate of a contributing candidate used a sample, the windows out of the sample are unknown. Then the combined block has `empirical_status: unsupported` and no `marks`.
 
 **Empirical example**
 
