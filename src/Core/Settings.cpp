@@ -9817,6 +9817,8 @@ Possible values:
 
 This options will produce different results depending on the settings used.
 
+With `parallel_replicas_mode` `sampling_key`, or a custom key mode on a cluster with more than one shard, each replica returns its own part of the result of the shard. The replicas of a shard are used together only when the initiator aggregates or fully sorts these parts itself (for example an aggregation without `GROUP BY` keys). Otherwise, for example for `GROUP BY` with `distributed_aggregation_memory_efficient` or for `ORDER BY`, the shard is read from one replica.
+
 ### Parallel processing using `SAMPLE` key
 
 A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:

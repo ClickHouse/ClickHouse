@@ -406,6 +406,10 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+/// Lets a remote read in an offset based parallel replicas mode read a shard from several replicas
+/// only when every consumer of the read ignores the order of its input streams.
+void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root);
+
 struct UseProjectionsResult
 {
     std::optional<String> applied_projection;
