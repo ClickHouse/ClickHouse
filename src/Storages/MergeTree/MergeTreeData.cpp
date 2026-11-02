@@ -81,6 +81,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -5959,6 +5960,27 @@ bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
     return false;
 }
 
+/// The columns and subcolumns used inside the expressions of the partition and sorting keys, as written: constant folding drops
+/// the inputs of a function that depends only on the type of a column, such as `timezoneOf(dt)`, from the key DAG. A column used
+/// as a whole element of a key, such as `ORDER BY dt`, is not included: its order and partition ID do not depend on the time zone.
+NameSet getColumnsUsedInKeyExpressions(const StorageInMemoryMetadata & metadata)
+{
+    NameSet result;
+    for (const auto * key : {&metadata.getPartitionKey(), &metadata.getSortingKey()})
+    {
+        if (!key->expression_list_ast)
+            continue;
+        for (const auto & element : key->expression_list_ast->children)
+        {
+            if (element->as<ASTIdentifier>())
+                continue;
+            for (const auto * identifier : IdentifiersCollector::collect(element))
+                result.insert(identifier->name());
+        }
+    }
+    return result;
+}
+
 /// Comma-separated list of backquoted identifiers, for exception messages.
 String backQuotedList(const std::vector<String> & identifiers)
 {
@@ -6713,6 +6735,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// drop their rows. Checked for every column, the version column included. A `Replicated` database re-executes the ALTER
     /// per replica, so only the initial execution judges it: a secondary refusing what the initiator committed would retry
     /// its queue entry forever.
+    const NameSet columns_in_key_expressions = getColumnsUsedInKeyExpressions(old_metadata);
     auto check_time_zone_of_key_column = [&](const AlterCommand & command)
     {
         if (command.type != AlterCommand::MODIFY_COLUMN || !command.data_type || isSecondaryDDLReplay(local_context)
@@ -6720,24 +6743,24 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             return;
 
         const auto & old_type = old_metadata.getColumns().getPhysical(command.column_name).type;
-        bool changes_time_zone_in_key = columns_alter_type_forbidden.contains(command.column_name) && changesTimeZone(old_type, command.data_type);
 
         /// A key expression can also use a subcolumn of the column, such as `toHour(t.dt)` of a `Tuple`.
-        if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); !changes_time_zone_in_key && it != column_to_subcolumns_used_in_keys.end())
+        bool changes_time_zone_in_key = false;
+        for (const auto & name : columns_in_key_expressions)
         {
-            for (const auto & subcolumn : it->second)
+            if (name == command.column_name)
             {
-                if (!columns_alter_type_forbidden.contains(subcolumn))
-                    continue;
-                const auto subcolumn_name = std::string_view(subcolumn).substr(command.column_name.size() + 1);
+                changes_time_zone_in_key = changesTimeZone(old_type, command.data_type);
+            }
+            else if (name.starts_with(command.column_name + "."))
+            {
+                const auto subcolumn_name = std::string_view(name).substr(command.column_name.size() + 1);
                 const auto old_subcolumn_type = old_type->tryGetSubcolumnType(subcolumn_name);
                 const auto new_subcolumn_type = command.data_type->tryGetSubcolumnType(subcolumn_name);
-                if (old_subcolumn_type && new_subcolumn_type && changesTimeZone(old_subcolumn_type, new_subcolumn_type))
-                {
-                    changes_time_zone_in_key = true;
-                    break;
-                }
+                changes_time_zone_in_key = old_subcolumn_type && new_subcolumn_type && changesTimeZone(old_subcolumn_type, new_subcolumn_type);
             }
+            if (changes_time_zone_in_key)
+                break;
         }
 
         if (!changes_time_zone_in_key)
@@ -13826,24 +13849,15 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     /// as `toHour(dt)`, gives other values in another time zone: the primary key and the partition of a source part would not
     /// match the key of this table, and pruning would drop its rows. A column used in the key as is, such as `ORDER BY dt`, is
     /// not an argument of an expression and keeps its order in any time zone, so it may differ, as `MODIFY COLUMN` allows.
-    for (const auto * key : {&my_snapshot->getPartitionKey(), &my_snapshot->getSortingKey()})
+    for (const auto & name : getColumnsUsedInKeyExpressions(*my_snapshot))
     {
-        if (!key->expression)
-            continue;
-
-        for (const auto & action : key->expression->getActions())
-        {
-            for (const auto * child : action.node->children)
-            {
-                auto my_column = my_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, child->result_name);
-                auto src_column = src_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, child->result_name);
-                if (my_column && src_column && changesTimeZone(src_column->type, my_column->type))
-                    throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
-                        "Column {} is used in a key expression, and its time zone differs between the tables: {} in the source table, "
-                        "{} in the destination table",
-                        backQuoteIfNeed(child->result_name), src_column->type->getName(), my_column->type->getName());
-            }
-        }
+        auto my_column = my_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        auto src_column = src_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (my_column && src_column && changesTimeZone(src_column->type, my_column->type))
+            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Column {} is used in a key expression, and its time zone differs between the tables: {} in the source table, "
+                "{} in the destination table",
+                backQuoteIfNeed(name), src_column->type->getName(), my_column->type->getName());
     }
 
     return *src_data;

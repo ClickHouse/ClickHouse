@@ -13,6 +13,9 @@ DROP TABLE IF EXISTS t_version_key;
 DROP TABLE IF EXISTS t_aggregate_key;
 DROP TABLE IF EXISTS t_variant_key;
 DROP TABLE IF EXISTS t_json_key;
+DROP TABLE IF EXISTS t_folded_key;
+DROP TABLE IF EXISTS t_folded_src;
+DROP TABLE IF EXISTS t_folded_dst;
 DROP TABLE IF EXISTS t_transfer_src;
 DROP TABLE IF EXISTS t_transfer_dst;
 DROP TABLE IF EXISTS t_transfer_plain_src;
@@ -58,6 +61,11 @@ ALTER TABLE t_variant_key MODIFY COLUMN dt Variant(DateTime('Asia/Tokyo'), UInt6
 CREATE TABLE t_json_key (id UInt64, j JSON(a DateTime('UTC'))) ENGINE = MergeTree ORDER BY toString(j);
 ALTER TABLE t_json_key MODIFY COLUMN j JSON(a DateTime('Asia/Tokyo')); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
+-- A function that depends only on the type of the column, such as `timezoneOf(dt)`, is folded to a constant in the key, but
+-- the key still depends on the time zone.
+CREATE TABLE t_folded_key (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree PARTITION BY id + length(timezoneOf(dt)) ORDER BY id;
+ALTER TABLE t_folded_key MODIFY COLUMN dt DateTime('Asia/Tokyo'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
 -- `ATTACH PARTITION FROM`, `REPLACE PARTITION` and `MOVE PARTITION TO TABLE` take the parts with their keys from a table
 -- whose column has another time zone.
 CREATE TABLE t_transfer_src (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY toHour(dt);
@@ -67,6 +75,11 @@ ALTER TABLE t_transfer_dst ATTACH PARTITION tuple() FROM t_transfer_src; -- { se
 ALTER TABLE t_transfer_dst REPLACE PARTITION tuple() FROM t_transfer_src; -- { serverError INCOMPATIBLE_COLUMNS }
 ALTER TABLE t_transfer_src MOVE PARTITION tuple() TO TABLE t_transfer_dst; -- { serverError INCOMPATIBLE_COLUMNS }
 SELECT count() FROM t_transfer_dst;
+
+CREATE TABLE t_folded_src (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree PARTITION BY id + length(timezoneOf(dt)) ORDER BY id;
+CREATE TABLE t_folded_dst (id UInt64, dt DateTime('Asia/Tokyo')) ENGINE = MergeTree PARTITION BY id + length(timezoneOf(dt)) ORDER BY id;
+INSERT INTO t_folded_src VALUES (0, '2026-01-01 00:00:00');
+ALTER TABLE t_folded_dst ATTACH PARTITION 3 FROM t_folded_src; -- { serverError INCOMPATIBLE_COLUMNS }
 
 -- A column used in the key as is, and a column outside the keys, can still change their time zone.
 CREATE TABLE t_plain_key (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY dt;
@@ -104,3 +117,6 @@ DROP TABLE t_transfer_src;
 DROP TABLE t_transfer_dst;
 DROP TABLE t_transfer_plain_src;
 DROP TABLE t_transfer_plain_dst;
+DROP TABLE t_folded_key;
+DROP TABLE t_folded_src;
+DROP TABLE t_folded_dst;
