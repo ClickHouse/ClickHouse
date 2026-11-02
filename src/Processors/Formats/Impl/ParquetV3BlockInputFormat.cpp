@@ -773,7 +773,7 @@ When writing Parquet file, data types that don't have a matching Parquet type ar
 | [Polygon](/reference/data-types/geo#polygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
 | [MultiLineString](/reference/data-types/geo#multilinestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
 | [MultiPolygon](/reference/data-types/geo#multipolygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
-| [Geometry](/reference/data-types/geo#geometry) | `BYTE_ARRAY` (WKB), or `GEOMETRY` + GeoParquet metadata with `output_format_parquet_geometry_logical_type` |
+| [Geometry](/reference/data-types/geo#geometry) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
