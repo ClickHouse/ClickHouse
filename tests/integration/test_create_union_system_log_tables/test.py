@@ -427,6 +427,23 @@ def test_opentelemetry_span_log_rotated_before_rename(start_cluster):
     for node in [node1, node2, node3]:
         node.query("SELECT 1 SETTINGS opentelemetry_start_trace_probability = 1")
         node.query("SYSTEM FLUSH LOGS opentelemetry_span_log")
+        assert (
+            node.query(
+                "SELECT name, default_kind, default_expression FROM system.columns "
+                "WHERE database = 'system' AND table = 'all_opentelemetry_span_log' "
+                "AND name IN ('event_date', 'finish_date') ORDER BY name"
+            )
+            == "event_date\tALIAS\tfinish_date\nfinish_date\t\t\n"
+        )
+
+    # `node2` reads only the log tables themselves, through `clusterAllReplicas` without `merge`.
+    assert (
+        node2.query(
+            "SELECT count() > 0, countIf(event_date = finish_date AND event_date >= today() - 1) = count() "
+            "FROM system.all_opentelemetry_span_log"
+        )
+        == "1\t1\n"
+    )
 
     marker = "test_rotated_before_rename"
     for node in [node1, node3]:
@@ -444,12 +461,13 @@ def test_opentelemetry_span_log_rotated_before_rename(start_cluster):
                 )
                 == "2020-01-02\t2020-01-02\n"
             )
-            assert (
-                node.query(
-                    "SELECT count() FROM system.all_opentelemetry_span_log WHERE event_date = '2020-01-02'"
+            for column in ["event_date", "finish_date"]:
+                assert (
+                    node.query(
+                        f"SELECT count() FROM system.all_opentelemetry_span_log WHERE {column} = '2020-01-02'"
+                    )
+                    == "1\n"
                 )
-                == "1\n"
-            )
             # The spans of the log tables themselves are read as before.
             assert (
                 node.query(
@@ -458,5 +476,13 @@ def test_opentelemetry_span_log_rotated_before_rename(start_cluster):
                 )
                 == "1\t1\n"
             )
+            if node == node3:
+                # The key conditions reach both tables.
+                explain = node.query(
+                    "EXPLAIN indexes = 1 SELECT operation_name FROM system.all_opentelemetry_span_log "
+                    "WHERE event_date = '2020-01-02'"
+                )
+                assert "Condition: (event_date in [18263, 18263])" in explain, explain
+                assert "Condition: (finish_date in [18263, 18263])" in explain, explain
         finally:
             node.query("DROP TABLE system.opentelemetry_span_log_1000 SYNC")
