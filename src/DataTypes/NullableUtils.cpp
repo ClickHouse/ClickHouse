@@ -82,7 +82,7 @@ ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs)
     return result;
 }
 
-ColumnPtr getSourceNullMap(const IColumn & column)
+ColumnPtr getOuterNullMap(const IColumn & column)
 {
     if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
         return column_nullable->getNullMapColumnPtr();

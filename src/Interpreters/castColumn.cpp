@@ -91,7 +91,7 @@ ColumnPtr castColumnAccurateSkipNulls(
 {
     chassert(!type->isNullable());
 
-    const ColumnPtr null_map_column = getSourceNullMap(*arg.column);
+    const ColumnPtr null_map_column = getOuterNullMap(*arg.column);
     if (!null_map_column)
         return castColumnAccurate(arg, type, cache);
 
@@ -129,7 +129,7 @@ ColumnPtr castColumnAccurateOrNullSkipNulls(
 {
     chassert(!type->isNullable());
 
-    const ColumnPtr null_map_column = getSourceNullMap(*arg.column);
+    const ColumnPtr null_map_column = getOuterNullMap(*arg.column);
     if (!null_map_column)
         return castColumnAccurateOrNull(arg, type, cache);
 

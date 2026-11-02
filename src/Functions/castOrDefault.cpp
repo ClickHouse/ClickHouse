@@ -167,8 +167,8 @@ public:
         auto probe_type = cast_or_null_resolver->getReturnType(cast_args);
         auto cast_func = cast_or_null_resolver->build(cast_args);
         auto cast_result = cast_func->execute(cast_args, probe_type, non_const_column_to_cast->size(), false);
-        auto cast_null_map_column = getSourceNullMap(*cast_result);
-        auto source_null_map_column = getSourceNullMap(*non_const_column_to_cast);
+        auto cast_null_map_column = getOuterNullMap(*cast_result);
+        auto source_null_map_column = getOuterNullMap(*non_const_column_to_cast);
         const auto * cast_null_map_data = cast_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*cast_null_map_column).getData()
             : nullptr;

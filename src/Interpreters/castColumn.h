@@ -37,7 +37,7 @@ ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePt
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 
 /// Accurately cast the non-NULL rows of a materialized column to a non-nullable type. The NULL rows are those
-/// of `getSourceNullMap`, and a column without them converts as a whole. Preserve row positions and leave
+/// of `getOuterNullMap`, and a column without them converts as a whole. Preserve row positions and leave
 /// unspecified values at the skipped rows. The caller must retain the source null map to distinguish those
 /// values from the converted non-NULL values.
 ColumnPtr castColumnAccurateSkipNulls(

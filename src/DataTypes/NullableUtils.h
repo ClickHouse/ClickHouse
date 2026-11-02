@@ -12,11 +12,11 @@ namespace DB
 /// Reuse the first column when it is exclusively owned, or share the other column when one map is absent.
 ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs);
 
-/// The row-wise null map of a column that can hold NULLs (`ColumnUInt8`, 1 = the value is NULL), or a null
-/// pointer for a column that cannot. `Variant` and `Dynamic` encode NULLs with the `NULL` discriminator, and
-/// `LowCardinality` with the index of the NULL in its dictionary, rather than a separate null map, so theirs
-/// is reconstructed.
-ColumnPtr getSourceNullMap(const IColumn & column);
+/// The outer null map of a column that can hold NULLs (`ColumnUInt8`, 1 = the value is NULL), or a null
+/// pointer for a column that cannot. A NULL inside a value, such as a NULL field of a tuple, is not an outer
+/// NULL. `Variant` and `Dynamic` encode NULLs with the `NULL` discriminator, and `LowCardinality` with the
+/// index of the NULL in its dictionary, rather than a separate null map, so theirs is reconstructed.
+ColumnPtr getOuterNullMap(const IColumn & column);
 
 /** Replace `Nullable` key columns with their nested columns and combine their outer null maps.
   * A NULL field inside a non-null tuple is part of the key value and does not make the key NULL.

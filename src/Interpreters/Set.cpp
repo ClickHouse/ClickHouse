@@ -678,7 +678,7 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
         /// NULL and stores the nested columns of nullable keys, see `insertFromColumns`, and a non-nullable
         /// key type has no NULL to match. Nullable fields inside a non-null tuple remain part of the key
         /// value in either mode.
-        const ColumnPtr null_map = getSourceNullMap(*probe.column);
+        const ColumnPtr null_map = getOuterNullMap(*probe.column);
         if (transform_null_in && key_type->isNullable())
         {
             if (null_map)

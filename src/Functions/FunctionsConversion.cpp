@@ -1234,7 +1234,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                     if (source_positions[i])
                     {
                         const size_t source_position = *source_positions[i];
-                        if (auto source_null_map_col = getSourceNullMap(*column_tuple.getColumns()[source_position]))
+                        if (auto source_null_map_col = getOuterNullMap(*column_tuple.getColumns()[source_position]))
                         {
                             const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*source_null_map_col).getData();
                             for (size_t row = 0; row < input_rows_count; ++row)
@@ -1250,7 +1250,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                     /// `Dynamic`/`Variant` whose NULLs are encoded by `NULL_DISCRIMINATOR`.
                     const auto & result_null_map = nullable_col->getNullMapData();
                     const size_t source_position = *source_positions[i];
-                    auto source_null_map_col = getSourceNullMap(*column_tuple.getColumns()[source_position]);
+                    auto source_null_map_col = getOuterNullMap(*column_tuple.getColumns()[source_position]);
 
                     if (source_null_map_col)
                     {
