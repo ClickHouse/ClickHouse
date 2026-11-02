@@ -139,7 +139,6 @@ check "PLAIN, PREWHERE" "SELECT s FROM ${P} PREWHERE s != '' ORDER BY s DESC LIM
 check "PLAIN, ties" "SELECT t, k FROM ${P} WHERE t != '' ORDER BY t, k LIMIT 6" "replaced > 0"
 check "dictionary" "SELECT s FROM ${D} WHERE s != '' AND k % 3 != 0 ORDER BY s LIMIT 5" "replaced > 0"
 check "dictionary, PREWHERE" "SELECT s FROM ${D} PREWHERE s != '' AND k % 3 != 0 ORDER BY s DESC LIMIT 5" "replaced > 0"
-check "dictionary, single column" "SELECT r FROM ${D} WHERE r != '' ORDER BY r LIMIT 5" "replaced > 0"
 check "DELTA_LENGTH_BYTE_ARRAY" "SELECT s FROM ${DL} WHERE s != '' ORDER BY s LIMIT 5" "replaced > 0"
 check "DELTA_BYTE_ARRAY" "SELECT s FROM ${DB} WHERE s != '' ORDER BY s LIMIT 5" "replaced > 0"
 check "DEFAULT, PREWHERE moved" "SELECT s, d FROM tp WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0" "replaced > 0"

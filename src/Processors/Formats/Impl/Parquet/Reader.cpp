@@ -2199,9 +2199,8 @@ void Reader::preparePrewhere()
     /// so that the cache does not get a `ColumnReplicated`.
     if (columns_cache_writes_possible && columns_cache_identities.at(pc.idx_in_output_block) != 0)
         return;
-    /// The top-K mask of the dictionary (see `TopKStringBound`) is applied only when the values are gathered row by row.
     if (pc.first_step_to_calculate == steps.size() && !pc.output_nullable && !pc.group_nullable && pc.levels.back().rep == 0
-        && !pc.top_k_string_bound && isLazyReplicationUseful(pc.decoded_type->createColumn()))
+        && isLazyReplicationUseful(pc.decoded_type->createColumn()))
         pc.decode_dictionary_as_replicated = true;
 }
 
