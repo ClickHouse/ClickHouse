@@ -40,10 +40,11 @@ ChunkRowRange shrinkRunToLimitWindow(
 /// run, handled at once. `LimitByTransform` uses the filter for streaming execution;
 /// `ExternalLimitByTransform` also extracts the groups with their counts when it spills.
 ///
-/// A method that serializes its keys (generic keys) stores bytes that only that method can compare. A filter
-/// that keeps fingerprints therefore also keeps, for each such group, the 128-bit fingerprint of its key
-/// columns, as the `hashed` method of `DISTINCT` does; spill runs compare the fingerprints instead of the
-/// keys.
+/// Spill runs sort the groups by their key columns, which the extraction restores from the keys of the
+/// method, serialized keys included. A key of a type without an order, such as an aggregate state, cannot be
+/// sorted. A filter that keeps fingerprints therefore also keeps, for each group of such a key, the 128-bit
+/// fingerprint of its key columns, as the `hashed` method of `DISTINCT` does; spill runs compare the
+/// fingerprints instead of the keys.
 ///
 /// The row loop observes cancellation of `owner_`: a cancelled filter returns the chunk without rows, and its
 /// counts no longer describe the consumed input.
@@ -132,8 +133,8 @@ private:
     NO_INLINE void
     processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run);
 
-    /// Appends the fingerprint of the key at `row` to `group_fingerprints`. Only a spilling filter with
-    /// generic keys keeps fingerprints, so the call stays out of the row loop.
+    /// Appends the fingerprint of the key at `row` to `group_fingerprints`. Only a spilling filter with a key
+    /// of a type without an order keeps fingerprints, so the call stays out of the row loop.
     NO_INLINE void addGroupFingerprint(size_t row, const ColumnRawPtrs & key_columns);
 
     /// Splits the rows into runs and counts them; returns false when cancellation stopped the loop. With
@@ -176,7 +177,7 @@ private:
     std::vector<UInt64> group_counts;
 
     /// Whether every group keeps the fingerprint of its key columns: set for a filter that keeps fingerprints
-    /// and a method that serializes its keys.
+    /// and a key of a type without an order.
     bool retains_fingerprints = false;
     /// Fingerprints of the groups, indexed like `group_counts`.
     std::vector<UInt128> group_fingerprints;

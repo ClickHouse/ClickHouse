@@ -49,8 +49,9 @@ struct GroupLimitParams
 /// The transform streams the rows of each group's window until tracked query memory exceeds its spill
 /// threshold, projected growth and spill workspace exceed the remaining threshold budget, or the memory
 /// scheduler requests a spill (see `spill`). The threshold triggers no spill while the state of the operator
-/// stays below a run's worth of bytes (see `isBelowSpillFloor`). Its filter retains typed keys, or 128-bit
-/// fingerprints of generic keys, which the spill runs compare instead of the keys.
+/// stays below a run's worth of bytes (see `isBelowSpillFloor`). The spill runs compare the keys that its
+/// filter retains, or their 128-bit fingerprints where the filter has no key to sort: the `hashed` set of
+/// `DISTINCT` keeps only the fingerprint, and `LIMIT BY` keeps one for a key of a type without an order.
 ///
 /// At the first spill, the filter's groups become sorted seen runs carrying the number of input rows seen per
 /// group. Extraction prepares one run at a time with a soft byte target and waits for its file to finish.
@@ -71,7 +72,7 @@ struct GroupLimitParams
 /// rows carry them, and otherwise by arrival numbers that `GroupLimitSpillLayout` attaches to spilled rows.
 /// Rows that tie on the sort columns can then come out in a different order than in memory, which the sort
 /// order allows. Without the order requirement, rows follow the spill comparison order, which is fingerprint
-/// order for generic keys.
+/// order for the keys that the spill compares by fingerprint.
 /// Scheduler requests synchronously write unconnected runs and release their memory before returning;
 /// their readers are attached at the next pipeline update.
 template <typename Traits>

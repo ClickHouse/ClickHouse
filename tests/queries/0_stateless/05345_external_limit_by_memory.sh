@@ -102,7 +102,7 @@ local_query --query "${queries} ${SPILL_EVENTS}"
 
 # The spill ratio applies to the user memory limit. With spilling disabled, the table of the array keys
 # outgrows the limit. A ratio of 0.5 sets the threshold to half of the available user memory, so the query
-# spills its groups as fingerprints and succeeds. The input repeats one block of keys, as above.
+# spills its groups and succeeds. The input repeats one block of keys, as above.
 ratio_query="
     SELECT count(), sum(k[1]), uniqExact(k) = count()
     FROM (SELECT [toUInt64(number % 1048576)] AS k FROM numbers(1114112) LIMIT 2 OFFSET 1 BY k)

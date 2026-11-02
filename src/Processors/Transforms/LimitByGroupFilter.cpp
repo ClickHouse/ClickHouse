@@ -409,7 +409,8 @@ LimitByGroupFilter::LimitByGroupFilter(
     data->keys_size = key_names.size();
     const auto type = AggregatedDataVariants::chooseMethod(header, key_names, data->key_sizes);
     data->init(type);
-    retains_fingerprints = keep_fingerprints_ && data->isSerialized();
+    retains_fingerprints = keep_fingerprints_
+        && !std::ranges::all_of(key_types, [](const DataTypePtr & key_type) { return key_type->isComparable(); });
 
     ColumnsHashing::HashMethodContextSettings ctx_settings;
     ctx_settings.max_threads = 1;

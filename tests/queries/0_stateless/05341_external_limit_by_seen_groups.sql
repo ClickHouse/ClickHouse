@@ -36,9 +36,13 @@ SELECT count(), sum(cityHash64(k)), uniqExact(v) = count() FROM (SELECT toLowCar
 -- restores the columns in the order of the packing.
 SELECT count(), sum(cityHash64(a, b)), uniqExact(v) = count() FROM (SELECT toUInt8(x % 256) AS a, toUInt64(intDiv(x, 256)) * 1000000007 AS b, v FROM limit_by_input LIMIT 2 OFFSET 1 BY a, b) SETTINGS max_bytes_before_external_limit_by = 67108864, log_comment = '05341_external_limit_by_seen_groups/packed_keys';
 
--- Keys that the table stores serialized are compared through their 128-bit fingerprints once spilled, so
--- their seen groups carry fingerprints instead of keys.
+-- Keys that the table stores serialized are deserialized into their columns when they are extracted, and
+-- the spill compares them by these columns.
 SELECT count(), sum(cityHash64(k)), uniqExact(v) = count() FROM (SELECT tuple(toString(x % 1024), [intDiv(x, 1024), x % 3]) AS k, v FROM limit_by_input LIMIT 2 OFFSET 1 BY k) SETTINGS max_bytes_before_external_limit_by = 67108864, log_comment = '05341_external_limit_by_seen_groups/serialized';
+
+-- A key of a type without an order, such as an aggregate state, cannot be sorted. It is compared through its
+-- 128-bit fingerprint once spilled, so its seen groups carry fingerprints instead of keys.
+SELECT count(), sum(finalizeAggregation(k)), uniqExact(v) = count() FROM (SELECT initializeAggregation('sumState', toUInt64(x)) AS k, v FROM limit_by_input LIMIT 2 OFFSET 1 BY k) SETTINGS max_bytes_before_external_limit_by = 67108864, log_comment = '05341_external_limit_by_seen_groups/aggregate_state';
 
 -- With `ORDER BY` the spilling `LIMIT BY` keeps the same rows as the in-memory one, in the same order: the
 -- rows kept before the switch come first, and the merged rows are sorted back into their arrival order. The
