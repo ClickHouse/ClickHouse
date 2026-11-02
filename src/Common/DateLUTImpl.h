@@ -903,11 +903,7 @@ public:
         return res <= 23 ? res : 23;
     }
 
-    /** Calculating offset from UTC in seconds.
-      * which means Using the same literal time of "t" to get the corresponding timestamp in UTC,
-      * then subtract the former from the latter to get the offset result.
-      * The boundaries when meets DST(daylight saving time) change should be handled very carefully.
-      */
+    /// The offset from UTC at the instant `t`.
     Time timezoneOffset(Time t) const
     {
         if (unlikely(isOutOfLUTRange(t)))
@@ -924,6 +920,29 @@ public:
             res += lut[index].amount_of_offset_change();
 
         return res;
+    }
+
+    /// The offset from UTC at the local time `t`, which is a wall clock read as seconds since the epoch, so that
+    /// `t - timezoneOffsetAtLocalTime(t)` is its UTC time. A repeated or skipped local time is resolved as in `makeDateTime`.
+    Time timezoneOffsetAtLocalTime(Time t) const
+    {
+        Int64 day = t / 86400;
+        Time time_of_day = t - day * 86400;
+        if (time_of_day < 0)
+        {
+            --day;
+            time_of_day += 86400;
+        }
+
+        const Int64 index = day + daynum_offset_epoch;
+        if (unlikely(index < 0 || index >= DATE_LUT_SIZE))
+            return timezoneOffsetAtLocalTimeOutOfRange(t);
+
+        const Values & values = lut[index];
+        if (time_of_day >= values.time_at_offset_change())
+            time_of_day -= values.amount_of_offset_change();
+
+        return t - (values.date + time_of_day);
     }
 
 
@@ -2012,6 +2031,7 @@ private:
     DateTimeComponents toDateTimeComponentsOutOfRange(Time t) const;
     Time toTimeOutOfRange(Time t) const;
     Time timezoneOffsetOutOfRange(Time t) const;
+    Time timezoneOffsetAtLocalTimeOutOfRange(Time t) const;
     Time addDaysOutOfRange(Time t, Int64 delta) const;
     Time addMonthsOutOfRange(Time t, Int64 delta) const;
     Time addYearsOutOfRange(Time t, Int64 delta) const;
