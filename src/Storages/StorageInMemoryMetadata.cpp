@@ -20,6 +20,8 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 
 namespace DB
 {
