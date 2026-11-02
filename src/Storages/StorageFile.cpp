@@ -791,10 +791,10 @@ std::unique_ptr<ReadBuffer> takeArchiveEntryReadBuffer(std::unique_ptr<ReadBuffe
 /// different member compression methods, so the effective method is part of the key.
 std::string getArchiveEntryCacheKey(const std::string & path, std::optional<size_t> position, CompressionMethod method)
 {
-    auto method_name = toContentEncodingName(method);
-    if (method_name.empty())
-        method_name = "none";
-    return getArchiveEntryKey(fmt::format("{}#compression_method={}", path, method_name), position);
+    /// An entry read without decompression keeps the plain key, so the key of a not compressed entry does not change.
+    if (method == CompressionMethod::None)
+        return getArchiveEntryKey(path, position);
+    return getArchiveEntryKey(fmt::format("{}#compression_method={}", path, toContentEncodingName(method)), position);
 }
 
 }
@@ -1086,11 +1086,13 @@ namespace
                     if (last_read_buffer)
                     {
                         file_enumerator = archive_reader->nextFile(std::move(last_read_buffer));
+                        ++current_entry_index;
                     }
                     else
                     {
                         file_enumerator = archive_reader->firstFile();
                         entry_positions.reset();
+                        current_entry_index = 0;
                     }
 
                     if (!file_enumerator)
@@ -1109,6 +1111,7 @@ namespace
                             break;
                         }
 
+                        ++current_entry_index;
                         filename = &file_enumerator->getFileName();
                         entry_position = entry_positions.onEntry(*filename);
                     }
@@ -1207,8 +1210,19 @@ namespace
             chassert(current_archive_index >= 0 && current_archive_index < archive_info.paths_to_archives.size());
             const auto & archive = archive_info.paths_to_archives[current_archive_index];
             auto archive_reader = createArchiveReader(archive);
-            chassert(last_read_buffer);
-            file_enumerator = archive_reader->currentFile(std::move(last_read_buffer));
+            /// The previous buffer has already consumed some data of the entry, and not every archive reader can rewind it
+            /// (`LibArchiveReader::currentFile` for tar continues where the previous buffer stopped), so the entry is opened
+            /// again from its beginning by enumerating the archive up to it.
+            last_read_buffer.reset();
+            file_enumerator = archive_reader->firstFile();
+            for (size_t i = 0; file_enumerator && i < current_entry_index; ++i)
+            {
+                if (!file_enumerator->nextFile())
+                    file_enumerator.reset();
+            }
+            if (!file_enumerator)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Cannot find entry {} in archive {} to read it again", current_entry_index, archive);
             auto method = chooseCompressionMethod(file_enumerator->getFileName(), compression_method);
             std::unique_ptr<ReadBuffer> read_buf = archive_reader->readFile(std::move(file_enumerator));
             decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
@@ -1269,6 +1283,8 @@ namespace
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
         ArchiveEntryPositions entry_positions;
+        /// The 0-based position of the last read entry in enumeration order of the current archive.
+        size_t current_entry_index = 0;
         std::unique_ptr<ReadBuffer> last_read_buffer;
         /// See `decompressArchiveEntryReadBuffer`.
         std::unique_ptr<ReadBuffer> archive_entry_read_buffer;

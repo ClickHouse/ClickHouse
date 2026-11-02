@@ -18,9 +18,10 @@ printf '{"a":1}\n{"a":2}\n' | gzip > "${MEMBERS_DIR}/gz.data"
 printf '{"a":3}\n' | gzip > "${MEMBERS_DIR}/auto1.json.gz"
 printf '{"a":4}\n' | gzip > "${MEMBERS_DIR}/auto2.json.gz"
 printf '{"a":5}\n' > "${MEMBERS_DIR}/plain.json"
+printf '{"a":6}\n' > "${MEMBERS_DIR}/plain.data"
 printf '1\n2\n' | gzip -n > "${MEMBERS_DIR}/lines.gz"
 
-MEMBERS="gz.json gz.data auto1.json.gz auto2.json.gz plain.json lines.gz"
+MEMBERS="gz.json gz.data auto1.json.gz auto2.json.gz plain.json plain.data lines.gz"
 TAR_ARCHIVE="${USER_FILES_PATH}/${FILE_PREFIX}.tar"
 ZIP_ARCHIVE="${USER_FILES_PATH}/${FILE_PREFIX}.zip"
 # shellcheck disable=SC2086
@@ -50,7 +51,10 @@ do
     ${CLICKHOUSE_CLIENT} -q "SELECT _file, a FROM file('${ARCHIVE} :: {auto1.json.gz,plain.json}', JSONEachRow, 'a Int64') ORDER BY a"
     echo "glob with schema inference"
     ${CLICKHOUSE_CLIENT} -q "SELECT _file, a FROM file('${ARCHIVE} :: auto*.json.gz') ORDER BY a SETTINGS schema_inference_mode = 'union'"
+    # Format detection tries several formats, and every retry must read the file in the archive from its beginning.
+    ${CLICKHOUSE_CLIENT} -q "SELECT _file, a FROM file('${ARCHIVE} :: gz.d*', 'auto', 'auto', 'gzip') ORDER BY a SETTINGS schema_inference_use_cache_for_file = 0"
     ${CLICKHOUSE_CLIENT} -q "SELECT _file, a FROM file('${ARCHIVE} :: gz.d*', 'auto', 'auto', 'gzip') ORDER BY a"
+    ${CLICKHOUSE_CLIENT} -q "SELECT _file, a FROM file('${ARCHIVE} :: plain.d*', 'auto') ORDER BY a SETTINGS schema_inference_use_cache_for_file = 0"
     echo "not compressed"
     ${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('${ARCHIVE} :: plain.json', JSONEachRow, 'a Int64') ORDER BY a"
     ${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('${ARCHIVE} :: plain.json') ORDER BY a"
