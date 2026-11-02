@@ -17,7 +17,7 @@ EOF
 # The following SELECT is expected to read 20 rows. In fact it may decide to read more than 20 rows, but not too many anyway.
 # So we'll check that the number of read rows is less than 40.
 # With parallel replicas each replica reads its own top rows, so the check is per replica: `RowsReadByMainReader`
-# counts the rows read by each query, and the replicas are found by `initial_query_id` (they run in another database).
+# counts the rows read by each query. The replicas run in another database, so they are found by the database they read.
 query="SELECT * FROM (SELECT * FROM view1) ORDER BY number DESC LIMIT 20 SETTINGS max_streams_for_merge_tree_reading = 1"
 
 query_id=${CLICKHOUSE_DATABASE}_optimize_read_in_order_from_view_$RANDOM$RANDOM
@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "$query" --query_id="$query_id" --log_queries=1 --optimize
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-read_rows=$($CLICKHOUSE_CLIENT -q "SELECT max(ProfileEvents['RowsReadByMainReader']) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id='${query_id}' AND type='QueryFinish' HAVING count() > 0")
+read_rows=$($CLICKHOUSE_CLIENT -q "SELECT max(ProfileEvents['RowsReadByMainReader']) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND has(databases, currentDatabase()) AND initial_query_id='${query_id}' AND type='QueryFinish' HAVING count() > 0")
 
 if [ -z "$read_rows" ]; then
     echo "read_rows:not found"
