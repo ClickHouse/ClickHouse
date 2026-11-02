@@ -774,7 +774,15 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+            if (isBool(type))
+                return {Iceberg::f_boolean, true};
+            [[fallthrough]];
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::UInt16:
         case TypeIndex::Int32:
+            /// Iceberg has no 8- or 16-bit integers.
             return {"int", true};
         case TypeIndex::UInt32:
         case TypeIndex::Int64:
@@ -900,6 +908,9 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
+            if (isBool(type))
+                return "boolean";
+            [[fallthrough]];
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
@@ -1338,10 +1349,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
     /// The spec reserves sort order id 0 for the unsorted order.
-    const Int64 sort_order_id = order_by ? 1 : 0;
-    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
+    Int64 sort_order_id = 0;
     Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
-    sort_order->set(Iceberg::f_order_id, sort_order_id);
 
     if (order_by)
     {
@@ -1356,7 +1365,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid iceberg sort order: expected {} elements, but got {}",
-                sort_columns.size(), transform_and_column_pairs.size());
+                sort_columns.size(),
+                transform_and_column_pairs.size());
 
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
         for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
@@ -1365,25 +1375,60 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
             sorting_field->set(f_source_id, column_name_to_source_id[column_name]);
             sorting_field->set(f_transform, transform_name);
-            if (reverse_flags.empty() || !reverse_flags[i])
-                sorting_field->set(f_direction, "asc");
-            else
-                sorting_field->set(f_direction, "desc");
+            sorting_field->set(f_direction, reverse_flags.empty() || !reverse_flags[i] ? "asc" : "desc");
             sorting_field->set("null-order", "nulls-first");
             sorting_fields->add(sorting_field);
         }
         sort_order->set(Iceberg::f_fields, sorting_fields);
+
+        /// ORDER BY with no sorting fields (i.e., ORDER BY tuple()) represents the unsorted order.
+        sort_order_id = sorting_fields->size() ? 1 : 0;
     }
     else
     {
         sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     }
 
+    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
+    sort_order->set(Iceberg::f_order_id, sort_order_id);
+
     Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
+    setFormatVersion1SchemaAndPartitionSpec(new_metadata_file_content);
+
     return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
+}
+
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
+{
+    if (metadata->getValue<Int32>(f_format_version) != 1)
+        return;
+
+    metadata->set(f_schema, deepCopy(parseTableSchemaV2Method(metadata).first));
+
+    for (const auto * field : {f_default_spec_id, f_partition_specs})
+        if (!metadata->has(field))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot write Iceberg table metadata: '{}' field is missing", field);
+
+    const auto default_spec_id = metadata->getValue<Int32>(f_default_spec_id);
+    const auto partition_specs = metadata->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 i = 0; i < partition_specs->size(); ++i)
+    {
+        const auto spec = partition_specs->getObject(i);
+        if (spec->getValue<Int32>(f_spec_id) == default_spec_id)
+        {
+            metadata->set(f_partition_spec, deepCopy(spec->get(f_fields).extract<Poco::JSON::Array::Ptr>()));
+            return;
+        }
+    }
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot write Iceberg table metadata: there is no partition spec with '{}' {}",
+        f_spec_id,
+        default_spec_id);
 }
 
 /**
@@ -2109,6 +2154,10 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
     if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
         return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    /// ClickHouse used to write a `boolean` partition value as an Avro `int`.
+    if (value.getType() == Field::Types::Int64 && isBool(value_type))
+        return Field(static_cast<UInt64>(value.safeGet<Int64>() != 0));
 
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
