@@ -20,4 +20,15 @@ for depth in 1000 9000; do
     done
 done
 
+# Writing a part and merging parts go through the dynamic structure helpers of the column.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE deep_dynamic (d Dynamic) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0"
+for depth in 1000 9000; do
+    table=$(nested_value $depth)
+    for query in "INSERT INTO deep_dynamic SELECT d FROM $table" "INSERT INTO deep_dynamic SELECT d FROM $table" "OPTIMIZE TABLE deep_dynamic FINAL"; do
+        out=$($CLICKHOUSE_CLIENT -q "$query" 2>&1)
+        [[ -z "$out" || "$out" == *TOO_DEEP_RECURSION* ]] || echo "$query, depth $depth: $out"
+    done
+done
+$CLICKHOUSE_CLIENT -q "DROP TABLE deep_dynamic"
+
 $CLICKHOUSE_CLIENT -q "SELECT 'server is alive'"
