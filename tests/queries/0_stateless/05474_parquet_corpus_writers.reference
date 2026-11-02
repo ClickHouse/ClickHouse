@@ -2668,7 +2668,7 @@ parquet/polars-0.20.31/flat.brotli.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.brotli.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.brotli.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.brotli.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.brotli.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.brotli.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.brotli.parquet content	120	ok
 parquet/polars-0.20.31/flat.brotli.parquet stress	ok
 parquet/polars-0.20.31/flat.brotli.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Float64), Nullable(Float64), Nullable(Float64)
@@ -2684,7 +2684,7 @@ parquet/polars-0.20.31/flat.gzip.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.gzip.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.gzip.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.gzip.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.gzip.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.gzip.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.gzip.parquet content	120	ok
 parquet/polars-0.20.31/flat.gzip.parquet stress	ok
 parquet/polars-0.20.31/flat.gzip.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Float64), Nullable(Float64), Nullable(Float64)
@@ -2700,7 +2700,7 @@ parquet/polars-0.20.31/flat.lz4.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.lz4.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.lz4.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.lz4.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.lz4.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.lz4.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.lz4.parquet content	120	ok
 parquet/polars-0.20.31/flat.lz4.parquet stress	ok
 parquet/polars-0.20.31/flat.lz4.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Float64), Nullable(Float64), Nullable(Float64)
@@ -2732,7 +2732,7 @@ parquet/polars-0.20.31/flat.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.parquet `b`	ok
 parquet/polars-0.20.31/flat.parquet `bin`	ok
 parquet/polars-0.20.31/flat.parquet `d`	ok
@@ -2772,7 +2772,7 @@ parquet/polars-0.20.31/flat.row_group_29.page_200.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.row_group_29.page_200.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.row_group_29.page_200.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.row_group_29.page_200.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.row_group_29.page_200.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.row_group_29.page_200.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.row_group_29.page_200.parquet content	120	ok
 parquet/polars-0.20.31/flat.row_group_29.page_200.parquet stress	ok
 parquet/polars-0.20.31/flat.row_group_29.page_200.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Float64), Nullable(Float64), Nullable(Float64)
@@ -2788,7 +2788,7 @@ parquet/polars-0.20.31/flat.snappy.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.snappy.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.snappy.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.snappy.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.snappy.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.snappy.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.snappy.parquet content	120	ok
 parquet/polars-0.20.31/flat.snappy.parquet stress	ok
 parquet/polars-0.20.31/flat.snappy.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Float64), Nullable(Float64), Nullable(Float64)
@@ -2804,7 +2804,7 @@ parquet/polars-0.20.31/flat.uncompressed.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.uncompressed.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.uncompressed.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.uncompressed.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.uncompressed.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.uncompressed.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.uncompressed.parquet content	120	ok
 parquet/polars-0.20.31/flat.uncompressed.parquet stress	ok
 parquet/polars-0.20.31/flat.uncompressed.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Float64), Nullable(Float64), Nullable(Float64)
@@ -2820,7 +2820,7 @@ parquet/polars-0.20.31/flat.zstd.parquet WHERE `s` = "alpha"	ok
 parquet/polars-0.20.31/flat.zstd.parquet WHERE `s` = "zz-not-present"	ok
 parquet/polars-0.20.31/flat.zstd.parquet WHERE `s` >= "m"	ok
 parquet/polars-0.20.31/flat.zstd.parquet WHERE `s` IS NULL	ok
-parquet/polars-0.20.31/flat.zstd.parquet WHERE `u64` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/flat.zstd.parquet WHERE `u64` > 9223372036854775807	ok
 parquet/polars-0.20.31/flat.zstd.parquet content	120	ok
 parquet/polars-0.20.31/flat.zstd.parquet stress	ok
 parquet/polars-0.20.31/flat.zstd.parquet types	Nullable(Int64), Nullable(Bool), Nullable(Int8), Nullable(UInt8), Nullable(Int16), Nullable(UInt16), Nullable(Int32), Nullable(UInt32), Nullable(Int64), Nullable(UInt64), Nullable(Float32), Nullable(Float64), Nullable(String), Nullable(String), Nullable(String), Nullable(String), Nullable(Date32), Nullable(DateTime64(3, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(9, \'UTC\')), Nullable(Float64), Nullable(Float64), Nullable(Float64)
@@ -2870,7 +2870,7 @@ parquet/polars-0.20.31/numbers.parquet WHERE `i32_small` = 3	ok
 parquet/polars-0.20.31/numbers.parquet WHERE `i64_mono` < -1099511000000	ok
 parquet/polars-0.20.31/numbers.parquet WHERE `id` >= 400	ok
 parquet/polars-0.20.31/numbers.parquet WHERE `ts_us` >= "2020-09-13 15:00:00.000000"	ok
-parquet/polars-0.20.31/numbers.parquet WHERE `u64_rand` > 9223372036854775807	INCORRECT_DATA
+parquet/polars-0.20.31/numbers.parquet WHERE `u64_rand` > 9223372036854775807	ok
 parquet/polars-0.20.31/numbers.parquet `d`	ok
 parquet/polars-0.20.31/numbers.parquet `dec18`	ok
 parquet/polars-0.20.31/numbers.parquet `f32`	ok
