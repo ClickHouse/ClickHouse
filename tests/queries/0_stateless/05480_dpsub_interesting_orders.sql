@@ -107,6 +107,11 @@ SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%',
 WHERE explain LIKE '%Algorithm:%'
 SETTINGS join_algorithm = 'parallel_hash';
 
+SELECT '-- join_algorithm set explicitly in a subquery only: its join stays a hash join';
+SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN
+    SELECT * FROM (SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k SETTINGS join_algorithm = 'parallel_hash'))
+WHERE explain LIKE '%Algorithm:%';
+
 SELECT '-- the setting is off: hash join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
 WHERE explain LIKE '%Algorithm:%'

@@ -29,6 +29,8 @@ hash join
 merge join
 -- join_algorithm set explicitly without full_sorting_merge: hash join
 hash join
+-- join_algorithm set explicitly in a subquery only: its join stays a hash join
+hash join
 -- the setting is off: hash join
 hash join
 -- results

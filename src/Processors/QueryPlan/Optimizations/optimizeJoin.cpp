@@ -1121,10 +1121,16 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             query_graph.prepared_storage_relations.set(i);
     }
 
-    /// `CreateSetAndFilterOnTheFlyStep` (`max_rows_in_set_to_optimize_join`) prevents reading in order.
-    if (const auto & context = *query_graph_builder.context; context.optimization_settings.query_plan_join_order_use_interesting_orders
-        && context.optimization_settings.read_in_order && context.join_settings.max_rows_in_set_to_optimize_join == 0)
-        query_graph.read_in_order_columns = getReadInOrderColumns(query_graph, query_graph_builder.inputs, context.sorting_settings);
+    /// The joins of this graph may become sort-merge joins unless their own `join_algorithm` is explicit without it.
+    if (const auto & context = *query_graph_builder.context; context.optimization_settings.query_plan_join_order_use_interesting_orders)
+    {
+        const auto & join_settings = context.join_settings;
+        query_graph.use_interesting_orders = !join_settings.join_algorithm_is_explicit
+            || std::ranges::contains(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE);
+        /// `CreateSetAndFilterOnTheFlyStep` (`max_rows_in_set_to_optimize_join`) prevents reading in order.
+        if (query_graph.use_interesting_orders && context.optimization_settings.read_in_order && join_settings.max_rows_in_set_to_optimize_join == 0)
+            query_graph.read_in_order_columns = getReadInOrderColumns(query_graph, query_graph_builder.inputs, context.sorting_settings);
+    }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 

@@ -165,7 +165,7 @@ struct QueryGraph
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
 
-    /// DPsub chooses between hash and sort-merge joins by the sort order of their inputs.
+    /// DPsub chooses between hash and sort-merge joins by the sort order of their inputs; set from the graph's join settings.
     bool use_interesting_orders = false;
     /// The order of a sort-merge join result is used by the sort of a later join (`optimize_sorting_by_input_stream_properties`).
     bool reuse_join_output_order = false;

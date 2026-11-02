@@ -149,6 +149,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     : join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
+    join_algorithm_is_explicit = query_settings.isChanged("join_algorithm");
     allow_block_nested_loop_join = query_settings[Setting::allow_block_nested_loop_join];
 
     max_block_size = query_settings[Setting::max_block_size];
@@ -211,6 +212,8 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
+    /// Whether the sender's list was explicit is not serialized; assume it was, so no join becomes a sort-merge join here.
+    join_algorithm_is_explicit = true;
     /// A plan from before the name existed was built where the block nested loop join did not exist.
     allow_block_nested_loop_join = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN
         && settings[QueryPlanSerializationSetting::allow_block_nested_loop_join];

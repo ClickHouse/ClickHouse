@@ -2952,6 +2952,8 @@ void JoinStepLogical::serialize(Serialization & ctx) const
             optimizer_flags |= 1;
         if (runtime_filter_declined_small_probe)
             optimizer_flags |= 2;
+        if (planned_as_sort_merge)
+            optimizer_flags |= 4;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3026,6 +3028,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
         step->optimized = bool(optimizer_flags & 1);
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
+        step->planned_as_sort_merge = bool(optimizer_flags & 4);
     }
     return step;
 }
@@ -3082,6 +3085,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->planned_as_sort_merge = planned_as_sort_merge;
 
     return result_step;
 }
