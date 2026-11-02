@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 SELECT round(cramersVMerge(s.`AggregateFunction(cramersV, UInt8, UInt8)`), 4)
 FROM

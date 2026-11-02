@@ -10,34 +10,22 @@
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <Core/PostgreSQL/Utils.h>
 
-#include <memory>
 #include <mutex>
-
-/// libpq's PGcancel.
-struct pg_cancel;
 
 
 namespace DB
 {
-
-struct PostgreSQLCancelDeleter
-{
-    void operator()(pg_cancel * cancel) const noexcept;
-};
 
 template <typename T = pqxx::ReadTransaction>
 class PostgreSQLSource : public ISource
 {
 
 public:
-    /// structure_hint_, if set, is appended to the error of a failed value conversion or of a row of the wrong
-    /// width. Callers that map the result positionally use it to state the column order the result must be in.
     PostgreSQLSource(
         postgres::ConnectionHolderPtr connection_holder_,
         const String & query_str_,
         SharedHeader sample_block,
-        UInt64 max_block_size_,
-        const String & structure_hint_ = {});
+        UInt64 max_block_size_);
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -62,12 +50,11 @@ protected:
 private:
     void init(const Block & sample_block);
 
-    void finalize(pg_cancel * cancel, pqxx::stream_from * stream_to_close) noexcept;
+    void finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx::stream_from * stream_to_close) noexcept;
 
     const UInt64 max_block_size;
     bool auto_commit = true;
     ExternalResultDescription description;
-    const String structure_hint;
 
     std::atomic<bool> started{false};
     /// Asks the read to stop. A signal only: it never takes the teardown from whoever owes it.
@@ -75,16 +62,11 @@ private:
     /// Claimed once by whoever tears the connection down: prepare() on an uncancelled finish, else
     /// the destructor. onCancel()'s interrupt does not claim it - it cannot close the stream.
     std::atomic<bool> finalized{false};
-    /// Claimed by whichever comes first, the clean finish in prepare() or the interrupt in onCancel().
-    std::atomic<bool> teardown_started{false};
 
-    /// tx, stream, cancel_handle and interrupt_fd are written only by the pipeline thread; this
-    /// publishes cancel_handle and interrupt_fd to onCancel().
+    /// tx and stream are written only by the pipeline thread; this is for onCancel() to read tx.
     std::mutex tx_mutex;
-    /// Our own duplicate of the connection's socket. The client library may close its own on a failed read.
-    int interrupt_fd = -1;
-    /// Built by the thread that runs the read. Sending it reads only this copy, so onCancel() may.
-    std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> cancel_handle;
+    /// Serializes the cancel_query() in finalize() between onCancel() and the destructor.
+    std::mutex cancel_mutex;
 
     postgres::ConnectionHolderPtr connection_holder;
 

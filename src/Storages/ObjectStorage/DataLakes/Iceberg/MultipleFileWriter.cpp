@@ -13,21 +13,6 @@ namespace DB
 
 #if USE_AVRO
 
-static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
-{
-    const auto & field_id_by_name = mapper.getStorageColumnEncoding();
-    std::vector<Int64> field_ids;
-    field_ids.reserve(written_block.columns());
-    for (const auto & column : written_block)
-    {
-        auto it = field_id_by_name.find(column.name);
-        if (it == field_id_by_name.end())
-            return {};
-        field_ids.push_back(it->second);
-    }
-    return field_ids;
-}
-
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
     UInt64 max_data_file_num_bytes_,
@@ -42,8 +27,8 @@ MultipleFileWriter::MultipleFileWriter(
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
+    , stats(schema_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
-    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -59,8 +44,9 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_stats = std::make_shared<DataFileStatistics>(schema);
     current_file_num_rows = 0;
+    current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
 
@@ -83,18 +69,14 @@ void MultipleFileWriter::startNewFile()
 
 void MultipleFileWriter::consume(const Chunk & chunk)
 {
-    /// The size limit is compared against the bytes written to the current file so far, that is, the compressed size,
-    /// the same measure as `file_size_in_bytes` in the manifest, which the compaction uses to select its input files.
-    /// Comparing it against the uncompressed size makes the files smaller than the target by the compression ratio,
-    /// and the output of the compaction is selected by the compaction again. The file can exceed the limit
-    /// by what the output format has not written yet: an incomplete Parquet row group and the row groups being encoded.
-    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || buffer->count() >= max_data_file_num_bytes)
+    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || *current_file_num_bytes >= max_data_file_num_bytes)
     {
         startNewFile();
     }
     output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
     output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
+    *current_file_num_bytes += chunk.bytes();
     stats.update(chunk);
     current_file_stats->update(chunk);
 }
@@ -106,10 +88,7 @@ void MultipleFileWriter::finalize()
 
     auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
     if (current_file_stats)
-    {
         current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
-        current_file_stats->setSplitOffsets(output_format->getRowGroupOffsets());
-    }
     stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
 
     buffer->finalize();

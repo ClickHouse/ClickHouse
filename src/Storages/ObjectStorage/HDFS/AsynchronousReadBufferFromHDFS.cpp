@@ -229,7 +229,8 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 {
     LOG_TEST(
         log,
-        "next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
+        "object:{} next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
+        reinterpret_cast<std::uintptr_t>(this),
         next_times,
         seek_times,
         sum_interval,

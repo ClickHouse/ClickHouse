@@ -105,8 +105,6 @@ namespace
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = {.is_order_dependent = true};
-
     // stochasticLinearRegression documentation
     FunctionDocumentation::Description description_linear = R"(
 This function implements stochastic linear regression.
@@ -138,8 +136,6 @@ CREATE TABLE IF NOT EXISTS train_data
 ) ENGINE = Memory;
 
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model ENGINE = Memory AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
@@ -208,12 +204,8 @@ So in the example above the query will return a column with 3 values.
     {
         "Training a model",
         R"(
-DROP TABLE IF EXISTS train_data;
-
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = Memory
@@ -228,20 +220,14 @@ SELECT count() FROM your_model
     {
         "Making predictions",
          R"(
-DROP TABLE IF EXISTS train_data;
-
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = Memory
 AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
 AS state FROM train_data;
-
-DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO test_data VALUES (10, 0), (20, 0);
@@ -257,8 +243,6 @@ evalMLMethod(model, x1, x2) > 0 FROM test_data
     {
         "Getting model weights",
         R"(
-DROP TABLE IF EXISTS train_data;
-
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
 
@@ -271,7 +255,7 @@ SELECT length(stochasticLinearRegression(0.01)(target, x1, x2)) FROM train_data
     FunctionDocumentation::Category category_linear = FunctionDocumentation::Category::MachineLearning;
     FunctionDocumentation documentation_linear = {description_linear, syntax_linear, arguments_linear, {}, returned_value_linear, examples_linear, introduced_in_linear, category_linear};
 
-    factory.registerFunction("stochasticLinearRegression", {createAggregateFunctionMLMethod<FuncLinearRegression>, documentation_linear, properties});
+    factory.registerFunction("stochasticLinearRegression", {createAggregateFunctionMLMethod<FuncLinearRegression>, documentation_linear, {}});
 
     // stochasticLogisticRegression documentation
     FunctionDocumentation::Description description_logistic = R"(
@@ -295,8 +279,6 @@ CREATE TABLE IF NOT EXISTS train_data
 ) ENGINE = Memory;
 
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model ENGINE = Memory AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
@@ -356,12 +338,8 @@ Then the result will be labels.
     {
         "Training a model",
         R"(
-DROP TABLE IF EXISTS train_data;
-
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = MergeTree
@@ -377,12 +355,8 @@ SELECT count() FROM your_model
     {
         "Making predictions",
         R"(
-DROP TABLE IF EXISTS train_data;
-
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = MergeTree
@@ -390,8 +364,6 @@ ORDER BY tuple()
 AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
 AS state FROM train_data;
-
-DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO test_data VALUES (1, 1), (9, 9);
@@ -409,12 +381,8 @@ FROM test_data
     {
         "Classification with threshold",
         R"(
-DROP TABLE IF EXISTS train_data;
-
 CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model
 ENGINE = MergeTree
@@ -422,8 +390,6 @@ ORDER BY tuple()
 AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
 AS state FROM train_data;
-
-DROP TABLE IF EXISTS test_data;
 
 CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
 INSERT INTO test_data VALUES (1, 1), (9, 9);
@@ -443,7 +409,7 @@ evalMLMethod(model, x1, x2) AS result FROM test_data)
     FunctionDocumentation::Category category_logistic = FunctionDocumentation::Category::MachineLearning;
     FunctionDocumentation documentation_logistic = {description_logistic, syntax_logistic, arguments_logistic, {}, returned_value_logistic, examples_logistic, introduced_in_logistic, category_logistic};
 
-    factory.registerFunction("stochasticLogisticRegression", {createAggregateFunctionMLMethod<FuncLogisticRegression>, documentation_logistic, properties});
+    factory.registerFunction("stochasticLogisticRegression", {createAggregateFunctionMLMethod<FuncLogisticRegression>, documentation_logistic, {}});
 }
 
 LinearModelData::LinearModelData(

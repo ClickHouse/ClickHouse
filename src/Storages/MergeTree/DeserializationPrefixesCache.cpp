@@ -20,12 +20,10 @@ std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr> D
 
 std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr> DeserializationPrefixesCache::clonePrefixes() const
 {
-    /// One context for the whole map: the states the columns share stay shared.
-    ISerialization::DeserializeBinaryBulkStateCloneContext context;
     std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr> cloned;
     cloned.reserve(prefixes->size());
     for (const auto & [name, prefix] : *prefixes)
-        cloned[name] = prefix ? prefix->clone(context) : nullptr;
+        cloned[name] = prefix ? prefix->clone() : nullptr;
     return cloned;
 }
 

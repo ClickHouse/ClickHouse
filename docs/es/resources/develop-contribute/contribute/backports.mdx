@@ -8,7 +8,9 @@ doc_type: 'referencia'
 
 Este documento describe la política de backport de ClickHouse y el sistema automatizado que la implementa.
 
-## Modelo de versiones {#release-model}
+<div id="release-model">
+  ## Modelo de versiones
+</div>
 
 Las versiones de ClickHouse siguen el esquema `YY.M.patch.build-type`, donde `YY` es el año con dos dígitos, `M` es el mes de lanzamiento (sin cero a la izquierda), `patch` es el número de parche dentro de la rama, `build` es un número de compilación que aumenta de forma monotónica y `type` es `stable` o `lts`.
 
@@ -21,7 +23,9 @@ Hay dos líneas de versiones:
 
 Se recomienda a los usuarios que ejecutan cargas de trabajo de producción que usen la versión estable más reciente o una versión LTS, y que actualicen sin demora a las nuevas versiones de parche, ya que estas no introducen cambios incompatibles.
 
-## Política de backport {#backport-policy}
+<div id="backport-policy">
+  ## Política de backport
+</div>
 
 No todos los cambios se llevan a release branches. El objetivo es mantener estables las ramas de lanzamiento, por lo que el alcance de los backports es intencionadamente limitado:
 
@@ -35,9 +39,11 @@ La etiqueta `pr-must-backport` es la anulación manual que usan los mantenedores
 
 **Escalado de conflictos.** Cuando el backport automático no puede resolver conflictos de merge, igualmente debe crearse una PR de cherry-pick y asignarse al autor, a quien hizo el merge y a los asignados existentes de la PR original para que una persona pueda resolver los conflictos y completar el backport.
 
-## Herramienta de backport {#backport-tool}
+<div id="backport-tool">
+  ## Herramienta de backport
+</div>
 
-La política de backport descrita anteriormente está implementada en la herramienta automatizada ubicada en `ci/tools/cherry_pick.py`. La herramienta se ejecuta como un flujo de trabajo de GitHub Actions en la infraestructura de ClickHouse y cubre todos los requisitos: detectar las ramas de lanzamiento activas, seleccionar los PR aptos para backport, realizar el procedimiento de cherry-pick y backport en dos etapas, gestionar conflictos, aplicar la política de demora y mantener las etiquetas sincronizadas.
+La política de backport descrita anteriormente está implementada en la herramienta automatizada ubicada en `tests/ci/cherry_pick.py`. La herramienta se ejecuta como un flujo de trabajo de GitHub Actions en la infraestructura de ClickHouse y cubre todos los requisitos: detectar las ramas de lanzamiento activas, seleccionar los PR aptos para backport, realizar el procedimiento de cherry-pick y backport en dos etapas, gestionar conflictos, aplicar la política de demora y mantener las etiquetas sincronizadas.
 
 El objetivo a largo plazo es extraer esta implementación y convertirla en una herramienta independiente de Python de código abierto que otros proyectos puedan adoptar. El diseño previsto es:
 
@@ -45,7 +51,9 @@ El objetivo a largo plazo es extraer esta implementación y convertirla en una h
 * **Distribuible** — empaquetada como un wheel de Python autocontenido e instalable desde PyPI, sin depender de la infraestructura de CI de ClickHouse.
 * **Programable** — expone un modelo de objetos claro para pull requests, etiquetas y ramas de lanzamiento, de modo que los usuarios puedan crear flujos de trabajo personalizados sobre el motor principal.
 
-### Pruebas {#testing}
+<div id="testing">
+  ### Pruebas
+</div>
 
 Una parte prevista de la herramienta independiente es una suite de pruebas específica junto con una infraestructura de pruebas ligera. La infraestructura podrá crear repositorios temporales de GitHub (o equivalentes locales) preconfigurados con:
 
@@ -55,7 +63,9 @@ Una parte prevista de la herramienta independiente es una suite de pruebas espec
 
 Esto permite que las pruebas pongan a prueba todo el ciclo de automatización — detección de etiquetas, creación de ramas de cherry-pick, gestión de conflictos, creación de PR de backport, lógica de asignación y política de demora — en un repositorio real pero desechable, sin afectar al estado de producción. La misma infraestructura también puede reutilizarse para realizar pruebas de regresión de cambios en las políticas antes de desplegarlos.
 
-## Ramas de lanzamiento activas {#active-release-branches}
+<div id="active-release-branches">
+  ## Ramas de lanzamiento activas
+</div>
 
 Una rama de lanzamiento activa es cualquier rama cuya PR de lanzamiento correspondiente (con la etiqueta `release`) sigue abierta en GitHub. La automatización de backport las detecta dinámicamente en cada ejecución, por lo que no es necesario realizar cambios de configuración cuando se crea una nueva versión o una antigua llega al fin de su vida útil.
 
@@ -63,18 +73,24 @@ Una etiqueta específica de versión establece la versión de lanzamiento *más 
 
 La versión indicada no tiene que estar activa. Una etiqueta para una versión al fin de su vida útil (una sin ninguna PR de lanzamiento abierta) sigue trasladando la corrección a todas las versiones activas posteriores, de modo que al actualizar desde esa versión nunca se pierda la corrección de forma silenciosa. Por ejemplo, `v25.12-must-backport` en una PR sigue aplicando backport a `26.1`, `26.2`, … incluso después de que la propia `25.12` haya llegado al fin de su vida útil.
 
-## Implementación {#implementation}
+<div id="implementation">
+  ## Implementación
+</div>
 
-### Descripción general {#overview}
+<div id="overview">
+  ### Descripción general
+</div>
 
-La automatización de backport se ejecuta cada hora como el flujo de trabajo `CherryPick` de GitHub Actions (`.github/workflows/cherry_pick.yml`), implementado en `ci/tools/cherry_pick.py`. Opera mediante la API de GitHub y operaciones locales de git en un runner `style-checker-aarch64` autoalojado.
+La automatización de backport se ejecuta cada hora como el workflow `CherryPick` de GitHub Actions (`.github/workflows/cherry_pick.yml`), implementado en `tests/ci/cherry_pick.py`. Opera mediante la API de GitHub y operaciones locales de git en un runner `style-checker-aarch64` autoalojado.
 
-El proceso consta de dos etapas para cada par (original PR, rama de lanzamiento):
+El proceso consta de dos etapas para cada par (original PR, release branch):
 
-1. Se crea una **PR de cherry-pick** para aislar la resolución de conflictos del destino real de la fusión. Si no hay conflictos, se fusiona automáticamente.
-2. Se crea una **PR de backport** contra la rama de lanzamiento real, con los cambios del cherry-pick compactados en un único commit.
+1. Se crea una **cherry-pick PR** para aislar la resolución de conflictos del destino real del merge. Si no hay conflictos, se hace merge automáticamente.
+2. Se crea una **backport PR** contra la release branch real, con los cambios del cherry-pick compactados en un único commit.
 
-### Etiquetas {#labels}
+<div id="labels">
+  ### Etiquetas
+</div>
 
 Las etiquetas de la PR original determinan si se realiza el backport y a qué ramas.
 
@@ -89,7 +105,9 @@ Las etiquetas de la PR original determinan si se realiza el backport y a qué ra
 | `pr-backport`                                          | Se aplica a las PR de backport creadas por el bot                                                                                                                                                                                                                                                                                       |
 | `do not test`                                          | Se aplica a las PR de cherry-pick para que la CI no se ejecute en ellas                                                                                                                                                                                                                                                                 |
 
-### Nomenclatura de ramas y PR {#branch-and-pr-naming}
+<div id="branch-and-pr-naming">
+  ### Nomenclatura de ramas y PR
+</div>
 
 Para cada número de PR original `N` y rama de lanzamiento `release/X.Y`:
 
@@ -98,13 +116,19 @@ Para cada número de PR original `N` y rama de lanzamiento `release/X.Y`:
 * Título del PR de cherry-pick: `Cherry pick #N to release/X.Y: <original title>`
 * Título del PR de backport: `Backport #N to release/X.Y: <original title>`
 
-### Proceso paso a paso {#step-by-step-process}
+<div id="step-by-step-process">
+  ### Proceso paso a paso
+</div>
 
-#### 1. Descubrir las versiones activas {#discover-active-releases}
+<div id="discover-active-releases">
+  #### 1. Descubrir las versiones activas
+</div>
 
 `BackportPRs.receive_release_prs` consulta GitHub para obtener todos los PR abiertos con la etiqueta `release`. Las referencias de cabecera de estos PR son los nombres de las ramas de lanzamiento (por ejemplo, `release/25.3`). A partir de ellas, se deriva el conjunto de etiquetas específicas de versión que se deben buscar: todas las etiquetas `v{VER}-must-backport` que existan en el repositorio y cuya versión no sea más reciente que la release activa más reciente. También se incluyen etiquetas más antiguas aunque su release ya no esté activa (se omite cualquier etiqueta más reciente que todas las releases activas, ya que no podría expandirse a ninguna rama activa), por lo que un PR etiquetado para una release al final de su vida útil seguirá encontrándose siempre que haya una release activa más reciente.
 
-#### 2. Encontrar PR para backport {#find-prs-to-backport}
+<div id="find-prs-to-backport">
+  #### 2. Encontrar PR para backport
+</div>
 
 `BackportPRs.receive_prs_for_backport` usa la API de búsqueda de GitHub para encontrar PR fusionados que:
 
@@ -113,7 +137,9 @@ Para cada número de PR original `N` y rama de lanzamiento `release/X.Y`:
 * se hayan fusionado después de la fecha del commit más antiguo encontrada en cualquier rama de lanzamiento, y
 * se hayan actualizado en los últimos 90 días (para mantener eficiente la consulta de búsqueda).
 
-#### 3. Etapa de cherry-pick (`ReleaseBranch.create_cherrypick`) {#cherry-pick-stage}
+<div id="cherry-pick-stage">
+  #### 3. Etapa de cherry-pick (`ReleaseBranch.create_cherrypick`)
+</div>
 
 Para cada par (PR original, rama de lanzamiento) en el que aún no exista un PR de cherry-pick:
 
@@ -127,11 +153,15 @@ Para cada par (PR original, rama de lanzamiento) en el que aún no exista un PR 
 6. Propaga `pr-bugfix` o `pr-critical-bugfix` desde el PR original, si corresponde.
 7. Las personas asignadas **no** se establecen en este punto; solo se añaden cuando se detectan conflictos.
 
-#### 4. Merge automático de PR de cherry-pick sin conflictos {#auto-merge-conflict-free-cherry-pick-prs}
+<div id="auto-merge-conflict-free-cherry-pick-prs">
+  #### 4. Merge automático de PR de cherry-pick sin conflictos
+</div>
 
 Si el PR de cherry-pick puede fusionarse (sin conflictos), el bot lo fusiona automáticamente a través de la API de GitHub y pasa de inmediato a la etapa de backport.
 
-#### 5. Etapa de backport (`ReleaseBranch.create_backport`) {#backport-stage}
+<div id="backport-stage">
+  #### 5. Etapa de backport (`ReleaseBranch.create_backport`)
+</div>
 
 Después de que se haya hecho merge del PR de cherry-pick:
 
@@ -143,15 +173,21 @@ Después de que se haya hecho merge del PR de cherry-pick:
 6. Etiqueta el PR con `pr-backport` (y `pr-bugfix` / `pr-critical-bugfix` si corresponde).
 7. Asigna el PR al autor del PR original, a quien hizo el merge y a las personas asignadas existentes (excluyendo las cuentas de robot).
 
-#### 6. Finalización {#completion}
+<div id="completion">
+  #### 6. Finalización
+</div>
 
 Cuando se hayan aplicado mediante backport todas las ramas de lanzamiento de un PR original determinado, el bot añade `pr-backports-created` al PR original.
 
-#### 7. Verificación previa {#pre-check}
+<div id="pre-check">
+  #### 7. Verificación previa
+</div>
 
 Antes de empezar cualquier trabajo en un PR, `ReleaseBranch.pre_check` ejecuta `git merge-base --is-ancestor` para verificar que el commit de merge no sea ya accesible desde la rama de lanzamiento. Si lo es, se considera que al PR ya se le ha aplicado backport y se omite.
 
-### Gestión de PR de cherry-pick obsoletos {#stale-cherry-pick-pr-handling}
+<div id="stale-cherry-pick-pr-handling">
+  ### Gestión de PR de cherry-pick obsoletos
+</div>
 
 La clase `CherryPickPRs` se ejecuta al inicio de cada ejecución horaria y gestiona dos escenarios:
 
@@ -163,7 +199,9 @@ Para los PR de cherry-pick que están a la espera de una resolución manual de c
 * Después de **3 días** sin actualizaciones, el bot publica un comentario de recordatorio mencionando a las personas asignadas.
 * Después de **7 días** sin actualizaciones, el bot publica un comentario de cierre y cierra el PR.
 
-### Resolución de conflictos {#conflict-resolution}
+<div id="conflict-resolution">
+  ### Resolución de conflictos
+</div>
 
 Cuando un `cherry-pick` tiene conflictos, el PR de `cherry-pick` se deja abierto para que una persona los resuelva. El bot se lo asigna al autor del PR original, a quien lo fusionó y a las personas asignadas. Después de resolver los conflictos y de fusionar el PR de `cherry-pick`, el bot crea el PR de backport en la siguiente ejecución horaria.
 
@@ -175,18 +213,26 @@ Para recrear desde cero un PR de `cherry-pick` dañado:
 2. Elimina la rama `cherrypick/...`.
 3. Elimina `pr-backports-created` del PR original si está presente.
 
-### CI para PR de backport {#ci-for-backport-prs}
+<div id="ci-for-backport-prs">
+  ### CI para PR de backport
+</div>
 
 Los PR de backport se dirigen a ramas de lanzamiento, por lo que usan un flujo de trabajo de CI específico (`BackportPR`, definido en `ci/workflows/backport_branches.py`) en lugar del flujo de trabajo estándar para pull requests. Este flujo de trabajo ejecuta un subconjunto representativo de CI: compilaciones con ASan/UBSan y TSan, compilaciones de lanzamiento, compilaciones para macOS, pruebas funcionales con ASan, pruebas de estrés con TSan y pruebas de integración. Valida que la rama de backport tenga entre 1 y 50 commits y al menos un archivo modificado (lo verifica `check_backport_branch.py`).
 
-### Autenticación {#authentication}
+<div id="authentication">
+  ### Autenticación
+</div>
 
 El flujo de trabajo usa una clave SSH (`ROBOT_CLICKHOUSE_SSH_KEY`) para las operaciones de `git push`. Las llamadas a la API de GitHub se autentican mediante `get_best_robot_token`, que selecciona el token con más cuota disponible de un conjunto almacenado en SSM (`/github-tokens`). `ROBOT_CLICKHOUSE_COMMIT_TOKEN` se usa en el paso de checkout del flujo de trabajo de Actions, no para las llamadas a la API. Las cuentas de robot (`robot-clickhouse`, `clickhouse-gh`) se excluyen al asignar la persona responsable.
 
-### Caché de la API de GitHub {#github-api-cache}
+<div id="github-api-cache">
+  ### Caché de la API de GitHub
+</div>
 
 `GitHubCache` (de `cache_utils.py`) guarda de forma persistente la caché de objetos de PyGithub en S3, lo que reduce las llamadas a la API en las ejecuciones horarias. La caché se descarga al inicio y se sube al final de cada ejecución.
 
-### Manejo de errores {#error-handling}
+<div id="error-handling">
+  ### Manejo de errores
+</div>
 
 Los errores durante el procesamiento individual de cada PR se capturan y se registran, pero no detienen la ejecución. Después de procesar todas las PR, si se produjo algún error, se lanza una `BackportException`. En CI, esto desencadena una notificación a través de `CIBuddy` en el chat del equipo.

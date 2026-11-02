@@ -72,11 +72,6 @@
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
 
-/// Keeps `-fstack-protector-strong` away from a function. Use it only where the canary buys nothing and
-/// costs something: code that reads the stack layout directly, or a hot function whose only reason to be
-/// instrumented is a small fixed buffer handed to a system call. Prefer removing the reason instead.
-#define NO_STACK_PROTECTOR __attribute__((no_stack_protector))
-
 #include <base/sanitizer_defs.h>
 
 /// chassert(x) is similar to assert(x), but:

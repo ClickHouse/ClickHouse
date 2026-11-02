@@ -1,8 +1,0 @@
-The `.test` files in `testdata/` are copied from the Prometheus project:
-
-  https://github.com/prometheus/prometheus
-  path: promql/promqltest/testdata
-  commit: recorded in snapshot.json
-
-Those files are licensed under the Apache License, Version 2.0.
-See https://github.com/prometheus/prometheus/blob/main/LICENSE

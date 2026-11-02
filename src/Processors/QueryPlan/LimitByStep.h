@@ -11,7 +11,7 @@ class LimitByStep : public ITransformingStep
 public:
     explicit LimitByStep(
             const SharedHeader & input_header_,
-            size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_ = false);
+            size_t group_length_, size_t group_offset_, Names columns_);
 
     String getName() const override { return "LimitBy"; }
 
@@ -19,8 +19,6 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
-
-    bool hasCorrelatedExpressions() const override { return false; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -32,7 +30,6 @@ public:
     size_t getGroupLength() const { return group_length; }
     size_t getGroupOffset() const { return group_offset; }
     const Names & getColumns() const { return columns; }
-    bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void applyOrder(const SortDescription & sort_description);
 
@@ -51,8 +48,6 @@ private:
     size_t group_offset;
 
     Names columns;
-
-    bool always_read_till_end = false;
 
     SortDescription sorted_columns_descr;
 

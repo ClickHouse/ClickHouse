@@ -1,7 +1,10 @@
 -- Tags: no-object-storage
 
+SET enable_analyzer = 1;
+
 -- Specific value doesn't matter, we just need it to be fixed, because it is a part of `EXPLAIN PIPELINE` output.
 SET max_threads = 8;
+SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS test_grouping_sets_predicate;
@@ -66,7 +69,7 @@ FROM
                 (day_))
     ) AS t
 )
-WHERE type_1 = 'all' settings query_plan_merge_filters=1; -- CI may inject False; separate filters change pipeline structure
+WHERE type_1 = 'all' settings enable_analyzer=1, query_plan_merge_filters=1; -- CI may inject False; separate filters change pipeline structure
 
 SELECT '';
 SELECT '---Result---';
@@ -114,6 +117,6 @@ FROM
                 (day_))
     ) AS t
 )
-WHERE day_ = '2023-01-05' settings query_plan_merge_filters=1; -- CI may inject False; separate filters change pipeline structure
+WHERE day_ = '2023-01-05' settings enable_analyzer=1, query_plan_merge_filters=1; -- CI may inject False; separate filters change pipeline structure
 
 DROP TABLE test_grouping_sets_predicate;

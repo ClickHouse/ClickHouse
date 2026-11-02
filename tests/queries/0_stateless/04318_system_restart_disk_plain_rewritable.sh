@@ -23,8 +23,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      metadata_snapshot_write_delay_ms = 0, -- the readers see the snapshot of the state right after every commit
-      path = '${CLICKHOUSE_DISKS_FILES}/04318/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04318/${CLICKHOUSE_DATABASE}/')
 "
 
 # Same backing path, but readonly and WITHOUT refresh_parts_interval, so the only way for
@@ -38,7 +37,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = '${CLICKHOUSE_DISKS_FILES}/04318/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04318/${CLICKHOUSE_DATABASE}/')
 "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO writer VALUES ('Hello')"

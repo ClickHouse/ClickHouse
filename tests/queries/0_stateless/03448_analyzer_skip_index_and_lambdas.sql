@@ -21,27 +21,33 @@ insert into index_test select number, arrayMap(x -> 'A_' || toString(x) , range(
 EXPLAIN indexes = 1, description=0
 SELECT arr
 FROM index_test
-WHERE has(arrayMap(x -> lower(x), arr), lower('a_12'));
+WHERE has(arrayMap(x -> lower(x), arr), lower('a_12'))
+SETTINGS enable_analyzer = 1;
 
 SELECT arr
 FROM index_test
-WHERE has(arrayMap(x -> lower(x), arr), lower('a_12'));
+WHERE has(arrayMap(x -> lower(x), arr), lower('a_12'))
+SETTINGS enable_analyzer = 1;
 
 
 EXPLAIN indexes = 1, description=0
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lower(x), y), arr, arr), 'a_12A_12');
+WHERE has(arrayMap((x, y) -> concat(lower(x), y), arr, arr), 'a_12A_12')
+SETTINGS enable_analyzer = 1;
 
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lower(x), y), arr, arr), 'a_12A_12');
+WHERE has(arrayMap((x, y) -> concat(lower(x), y), arr, arr), 'a_12A_12')
+SETTINGS enable_analyzer = 1;
 
 EXPLAIN indexes = 1, description=0
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lower(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13');
+WHERE has(arrayMap((x, y) -> concat(lower(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13')
+SETTINGS enable_analyzer = 1;
 
 SELECT arr
 FROM index_test
-WHERE has(arrayMap((x, y) -> concat(lower(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13');
+WHERE has(arrayMap((x, y) -> concat(lower(x), y, '_', toString(id)), arr, arr), 'a_12A_12_13')
+SETTINGS enable_analyzer = 1;
