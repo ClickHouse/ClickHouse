@@ -386,6 +386,15 @@ add_object_library(clickhouse_core Core)
 list (APPEND dbms_sources Common/ExceptionExt.cpp)
 
 add_object_library(clickhouse_core_mysql Core/MySQL)
+# -Wunsafe-buffer-usage for src/Core/MySQL; the mapping reports only diagnostics located in that directory, not in headers outside it.
+# Compiler caches do not hash the mapping file, so it is passed as a copy named by its content hash.
+file(SHA256 "${CMAKE_SOURCE_DIR}/cmake/unsafe_buffer_usage_mappings.txt" unsafe_buffer_usage_mappings_hash)
+set(unsafe_buffer_usage_mappings "${CMAKE_BINARY_DIR}/unsafe_buffer_usage_mappings_${unsafe_buffer_usage_mappings_hash}.txt")
+configure_file("${CMAKE_SOURCE_DIR}/cmake/unsafe_buffer_usage_mappings.txt" "${unsafe_buffer_usage_mappings}" COPYONLY)
+add_glob(clickhouse_core_mysql_sources Core/MySQL/*.cpp)
+set_property(SOURCE ${clickhouse_core_mysql_sources} APPEND PROPERTY COMPILE_OPTIONS
+    -Wunsafe-buffer-usage
+    "--warning-suppression-mappings=${unsafe_buffer_usage_mappings}")
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)

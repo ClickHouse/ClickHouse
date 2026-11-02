@@ -1,0 +1,6 @@
+# Suppression mappings for -Wunsafe-buffer-usage (clang --warning-suppression-mappings, see
+# https://clang.llvm.org/docs/WarningSuppressionMappings.html). Clang 21 applies the longest matching
+# entry and clang 22 the last one, so `=emit` entries go after `src:*`.
+[unsafe-buffer-usage]
+src:*
+src:*src/Core/MySQL/*=emit

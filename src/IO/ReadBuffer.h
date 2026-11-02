@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <memory>
+#include <span>
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
@@ -180,6 +181,7 @@ public:
 
     /** Reads n bytes with read, if there are less - throws an exception. */
     void readStrict(char * to, size_t n);
+    void readStrict(std::span<char> to) { readStrict(to.data(), to.size()); }
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
       * The implementation can read data directly into `to`, without superfluous copying, if in `to` there is enough space for work.

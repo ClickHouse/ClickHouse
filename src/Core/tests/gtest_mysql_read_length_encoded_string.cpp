@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Core/MySQL/IMySQLReadPacket.h>
+#include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 
@@ -56,6 +57,19 @@ TEST(MySQLReadLengthEncodedString, RejectsLengthLongerThanData)
     {
         EXPECT_NE(e.message().find("length-encoded string"), String::npos) << e.message();
     }
+}
+
+/// A string that spans two buffers is read chunk by chunk, each chunk after the previous one.
+TEST(MySQLReadLengthEncodedString, ReadsStringSpanningSeveralBuffers)
+{
+    String first("\x0a""abc", 4); /// claims 10 bytes; 3 in the first buffer, 7 in the second
+    String second("defghij");
+    ReadBufferFromString first_buffer(first);
+    ReadBufferFromString second_buffer(second);
+    ConcatReadBuffer buffer(first_buffer, second_buffer);
+    String s;
+    readLengthEncodedString(s, buffer);
+    EXPECT_EQ(s, "abcdefghij");
 }
 
 }
