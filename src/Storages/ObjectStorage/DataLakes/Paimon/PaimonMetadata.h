@@ -102,7 +102,6 @@ private:
     /// Which files of a primary-key table Paimon's batch scan reads without merging.
     struct PrimaryKeyRead
     {
-        /// Level-0 files are not read.
         bool skip_level_zero = false;
         /// A bucket whose files are all above level 0 needs no merge even when they are in several levels.
         bool allow_several_levels = false;
