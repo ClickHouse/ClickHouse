@@ -773,7 +773,8 @@ static bool usesColumn(const ASTPtr & ast, const String & column_name)
 }
 
 /// Whether the column `name`, computed from its default for the part, is computed from the column `column_name`, also through
-/// the defaults of other such columns.
+/// the defaults of other such columns. An `ALIAS` is always computed from its expression when read, even if the part still
+/// stores data of a former column with its name.
 static bool isComputedFromColumn(
     const String & name,
     const String & column_name,
@@ -781,11 +782,13 @@ static bool isComputedFromColumn(
     const std::function<bool(const String &)> & is_computed_for_part,
     NameSet & visited)
 {
-    if (!visited.emplace(name).second || !is_computed_for_part(name))
+    if (!visited.emplace(name).second)
         return false;
 
     const auto column_default = columns.getDefault(name);
     if (!column_default || !column_default->expression)
+        return false;
+    if (column_default->kind != ColumnDefaultKind::Alias && !is_computed_for_part(name))
         return false;
 
     if (usesColumn(column_default->expression, column_name))

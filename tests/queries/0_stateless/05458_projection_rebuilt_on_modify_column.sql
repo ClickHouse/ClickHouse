@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_filter;
 DROP TABLE IF EXISTS t_absent;
 DROP TABLE IF EXISTS t_default;
+DROP TABLE IF EXISTS t_alias;
 
 CREATE TABLE t_aggregate (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT toHour(dt) AS h, count() GROUP BY h))
 ENGINE = MergeTree ORDER BY id;
@@ -61,6 +62,19 @@ SELECT groupArray(h) FROM (SELECT h, count() FROM t_default GROUP BY h ORDER BY 
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 SELECT groupArray(h) FROM (SELECT h, count() FROM t_default GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
 
+-- An `ALIAS` is computed from its expression when read, even if the part still stores the data of the former column.
+CREATE TABLE t_alias (id UInt64, dt DateTime('UTC'), h UInt8) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alias SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR, toUInt8(number) FROM numbers(5);
+ALTER TABLE t_alias ADD COLUMN w UInt8 DEFAULT h;
+ALTER TABLE t_alias ADD PROJECTION p (SELECT w, count() GROUP BY w);
+ALTER TABLE t_alias MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias MODIFY COLUMN h UInt8 ALIAS toHour(dt);
+ALTER TABLE t_alias MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') SETTINGS mutations_sync = 2;
+SELECT groupArray(w) FROM (SELECT w, count() FROM t_alias GROUP BY w ORDER BY w)
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(w) FROM (SELECT w, count() FROM t_alias GROUP BY w ORDER BY w) SETTINGS optimize_use_projections = 0;
+
 -- A projection that stores the column as is answers correctly without being rebuilt.
 CREATE TABLE t_plain (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT * ORDER BY dt)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_plain SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
@@ -74,3 +88,4 @@ DROP TABLE t_plain;
 DROP TABLE t_filter;
 DROP TABLE t_absent;
 DROP TABLE t_default;
+DROP TABLE t_alias;
