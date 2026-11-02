@@ -109,10 +109,11 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
         time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
-        /// A text column is compared with local wall-clock text, any other type with a Unix timestamp (the same instant
-        /// in any time zone), zero-padded because a shorter number can be rejected or read as `YYYYMMDD`.
+        /// A column that can hold text (`Dynamic` or a type with `String`) is compared with local wall-clock text, any other
+        /// type with a Unix timestamp (the same instant in any time zone), zero-padded because a shorter number can be
+        /// rejected or read as `YYYYMMDD`.
         std::string bound = fmt::format(
-            "if(toTypeName({}) LIKE '%String%', '{}', '{:010}')",
+            "if(toTypeName({0}) LIKE '%String%' OR toTypeName({0}) LIKE 'Dynamic%', '{1}', '{2:010}')",
             configuration.update_field, DateLUT::instance().timeToString(hr_time), std::max<time_t>(hr_time, 0));
         update_time = std::chrono::system_clock::now();
         return query_builder->composeUpdateQueryWithBound(configuration.update_field, bound);
