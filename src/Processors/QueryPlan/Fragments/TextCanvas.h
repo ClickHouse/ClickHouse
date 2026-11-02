@@ -11,13 +11,14 @@ namespace DB
 class WriteBuffer;
 
 /// A grid of character cells for drawing text pictures with box-drawing characters, such as `EXPLAIN PLAN tree = 1`.
-/// Every cell holds one code point. A character of display width 2 (e.g. CJK) takes two cells; the second one is a
-/// continuation that is not printed. The grid grows as text is put into it.
+/// Every cell holds one character: a code point and the zero-width code points that follow it (combining marks, a
+/// virama, joiners). A character of display width 2 (e.g. CJK) takes two cells; the second one is a continuation that is
+/// not printed. The grid grows as text is put into it.
 class TextCanvas
 {
 public:
-    /// Writes `text` starting at column `x` of line `y`, one code point per cell (two cells for wide characters),
-    /// overwriting what was there.
+    /// Writes `text` starting at column `x` of line `y`, one character per cell (two cells for wide characters),
+    /// overwriting what was there. A zero-width code point is kept with the character before it.
     void put(size_t x, size_t y, std::string_view text);
 
     /// Draws a box with the light box-drawing characters, `width` columns wide and 3 lines tall, with `text`

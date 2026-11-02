@@ -3,6 +3,8 @@
 #include <IO/WriteBuffer.h>
 #include <Common/UTF8Helpers.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -37,13 +39,23 @@ String & TextCanvas::cell(size_t x, size_t y)
 
 void TextCanvas::put(size_t x, size_t y, std::string_view text)
 {
+    /// The cell of the last character put: a zero-width code point (a combining mark, a virama, a joiner) belongs to it
+    /// and is appended to it, taking no column of its own. A text that starts with one attaches it to the cell on its left.
+    std::optional<size_t> last_x;
+    if (x > 0)
+        last_x = x - 1;
     forEachCodePoint(text, [&](std::string_view code_point, size_t width)
     {
         if (width == 0)
+        {
+            if (last_x)
+                cell(*last_x, y) += code_point;
             return;
+        }
         cell(x, y) = String(code_point);
         for (size_t i = 1; i < width; ++i)
             cell(x + i, y).clear();
+        last_x = x;
         x += width;
     });
 }
