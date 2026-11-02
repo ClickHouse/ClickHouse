@@ -128,6 +128,7 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
 
 void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
+    out.reset();
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + "/" + filename).c_str(), out);
 };
@@ -1719,6 +1720,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            /// The file is removed when the `cpu` controller is disabled in the parent cgroup,
+            /// and reads through the kept descriptor fail with ENODEV from then on.
+            openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
         }
     }
     else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
