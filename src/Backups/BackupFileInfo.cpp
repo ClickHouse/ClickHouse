@@ -11,6 +11,8 @@
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Interpreters/ProcessList.h>
 
+#include <atomic>
+
 
 namespace ProfileEvents
 {
@@ -234,6 +236,11 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
+    /// The tracker rethrows the first failure, which stops the loop below from adding more tasks, but the tasks
+    /// already given to the pool still run. Calculating a checksum reads a whole file, so without this they go on
+    /// reading - up to `max_tasks_inflight` of them - after the backup has failed or been cancelled.
+    std::atomic_bool failed = false;
+
     /// Capturing by reference is fine: everything captured outlives the tracker, being created before it.
     TaskTracker task_tracker(threadPoolCallbackRunnerUnsafe<void>(thread_pool, ThreadName::BACKUP_WORKER), max_tasks_inflight, limited_log);
 
@@ -241,18 +248,30 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     {
         for (size_t i = 0; i != backup_entries.size(); ++i)
         {
-            task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log,
+            task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &failed, i, log,
                               current_component = Coordination::getCurrentComponent()]
             {
+                if (failed)
+                    return;
+
                 auto component_guard = Coordination::setCurrentComponent(current_component);
 
                 const auto & name = backup_entries[i].first;
                 const auto & entry = backup_entries[i].second;
 
-                if (process_list_element)
-                    process_list_element->checkTimeLimit();
+                try
+                {
+                    if (process_list_element)
+                        process_list_element->checkTimeLimit();
 
-                infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+                    infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+                }
+                catch (...)
+                {
+                    /// Stop the other tasks, as `copyS3File` does.
+                    failed = true;
+                    throw;
+                }
             });
         }
 
