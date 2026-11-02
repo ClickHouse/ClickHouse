@@ -17,4 +17,4 @@
 --- q7 parallel-replica reads logged ---
 1	1	0.1
 --- q8 non-selective first step: rows passing every step ---
-1	1	1
+1	1	1	1

@@ -187,13 +187,14 @@ FROM system.predicate_statistics_log
 WHERE table = '$TABLE' AND $(qids "$Q7") AND predicate_expression != '';
 "
 
-# Q8: the second step counts the rows that passed both steps, whether or not the first filter was applied.
+# Q8: the PREWHERE is split into two steps, and the second counts the rows that passed both, whether or not the first filter was applied.
 echo '--- q8 non-selective first step: rows passing every step ---'
 $CLICKHOUSE_CLIENT -m --query "
 SELECT
     sumIf(input_rows, predicate_expression LIKE '%cat_a%') = (SELECT count() FROM $TABLE) AS step_input_ok,
     sumIf(passed_rows, predicate_expression LIKE '%cat_a%') = (SELECT count() FROM $TABLE WHERE status = 'inactive' AND category = 'cat_a') AS step_passed_ok,
-    sumIf(total_passed_rows, predicate_expression LIKE '%cat_a%') = (SELECT count() FROM $TABLE WHERE status = 'inactive' AND category = 'cat_a') AS total_ok
+    sumIf(total_passed_rows, predicate_expression LIKE '%cat_a%') = (SELECT count() FROM $TABLE WHERE status = 'inactive' AND category = 'cat_a') AS total_ok,
+    uniqExact(predicate_expression) = 2 AS two_steps
 FROM system.predicate_statistics_log
 WHERE table = '$TABLE' AND $(qids "$Q8") AND predicate_expression != '';
 "
