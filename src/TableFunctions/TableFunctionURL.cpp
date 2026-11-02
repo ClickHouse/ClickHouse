@@ -374,7 +374,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(context, true),
+            columns.empty() ? getActualTableStructure(context, true) : columns,
             ConstraintsDescription{},
             configuration);
     }

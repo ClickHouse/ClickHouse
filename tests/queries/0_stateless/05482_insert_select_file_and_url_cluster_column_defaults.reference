@@ -1,0 +1,20 @@
+--- fileCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- fileCluster, format detected, non-replicated destination ---
+1	7	10
+2	5	6
+3	7	30
+--- urlCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- urlCluster with headers, non-replicated destination ---
+1	7	10
+2	5	6
+3	7	30
+--- url with parallel replicas ---
+1	7	10
+2	5	6
+3	7	30
