@@ -20,6 +20,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -113,6 +114,20 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         }
     }
 
+    if (hasOrderByCombinator())
+    {
+        FormatSettings format_settings{true /* one_line */};
+        FormatState state;
+        FormatStateStacked frame;
+        writeCString(" ORDER BY ", ostr);
+        order_by_combinator_columns->format(ostr, format_settings, state, frame);
+        if (auto limit = getOrderByCombinatorLimit())
+        {
+            writeCString(" LIMIT ", ostr);
+            writeIntText(*limit, ostr);
+        }
+    }
+
     writeChar(')', ostr);
 
     if (getNullsAction() == NullsAction::RESPECT_NULLS)
@@ -145,6 +160,9 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
     w.writeString("name", name);
     w.writeChild("arguments", arguments);
     w.writeChild("parameters", parameters);
+    w.writeChild("order_by_combinator_columns", order_by_combinator_columns);
+    if (auto limit = getOrderByCombinatorLimit())
+        w.writeUInt("order_by_combinator_limit", *limit);
     if (!window_name.empty())
         w.writeString("window_name", window_name);
     w.writeChild("window_definition", window_definition);
@@ -259,6 +277,26 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     if (parameters)
         children.push_back(parameters);
 
+    /// The sort list of the `ORDER BY` aggregate function combinator, e.g. `groupArray(x ORDER BY y LIMIT 1)`.
+    /// The parser produces it as a non-empty list of `ASTOrderByElement`, and the LIMIT only together with it.
+    order_by_combinator_columns = r.readChildOfType<ASTExpressionList>("order_by_combinator_columns");
+    if (order_by_combinator_columns)
+    {
+        if (order_by_combinator_columns->children.empty()
+            || !std::ranges::all_of(order_by_combinator_columns->children, [](const ASTPtr & child) { return child->as<ASTOrderByElement>() != nullptr; }))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'order_by_combinator_columns' must be a non-empty list of order by elements during AST JSON deserialization");
+        children.push_back(order_by_combinator_columns);
+    }
+
+    if (r.has("order_by_combinator_limit"))
+    {
+        if (!order_by_combinator_columns)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'order_by_combinator_limit' requires 'order_by_combinator_columns' during AST JSON deserialization");
+        setOrderByCombinatorLimit(r.getUInt("order_by_combinator_limit"));
+    }
+
     window_name = r.getString("window_name");
 
     /// `window_definition` is parser-produced as an `ASTWindowDefinition`; `finishFormatWithWindow`
@@ -372,6 +410,11 @@ ASTPtr ASTFunction::clone() const
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
+    if (order_by_combinator_columns)
+    {
+        res->order_by_combinator_columns = order_by_combinator_columns->clone();
+        res->children.push_back(res->order_by_combinator_columns);
+    }
 
     if (window_definition)
     {
@@ -389,6 +432,15 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(getNullsAction());
+
+    /// The ORDER BY sort list of the aggregate function combinator is a child, but the LIMIT is not.
+    if (hasOrderByCombinator())
+    {
+        auto limit = getOrderByCombinatorLimit();
+        hash_state.update(limit.has_value());
+        if (limit)
+            hash_state.update(*limit);
+    }
 
     /// The function composition operator `f | g` and an ordinary call to a function of the same
     /// name are different expressions, see the formatting of `__compose` below.
@@ -1205,6 +1257,17 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             argument->format(ostr, settings, state, argument_frame);
         }
 
+    }
+
+    /// Aggregate function combinator: ORDER BY ... [LIMIT N] inside the function arguments.
+    /// Example: groupArray(value ORDER BY ts DESC LIMIT 10).
+    /// Must be printed BEFORE the closing parenthesis so the syntactic sugar round-trips correctly.
+    if (hasOrderByCombinator())
+    {
+        ostr << " ORDER BY ";
+        order_by_combinator_columns->format(ostr, settings, state, frame);
+        if (auto limit = getOrderByCombinatorLimit())
+            ostr << " LIMIT " << *limit;
     }
 
     if (need_parens)

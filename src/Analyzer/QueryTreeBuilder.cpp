@@ -857,6 +857,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
                 }
 
+                /// Aggregate function combinator: ORDER BY [LIMIT N].
+                if (function->hasOrderByCombinator())
+                {
+                    function_node->setOrderByColumnsNode(buildSortList(function->order_by_combinator_columns, context));
+                    function_node->setOrderByLimit(function->getOrderByCombinatorLimit());
+                }
+
                 if (function->isWindowFunction())
                 {
                     if (function->window_definition)
