@@ -14,9 +14,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="merge_selector_algorithm">
-  ## merge_selector_algorithm
-</div>
+## merge_selector_algorithm {#merge_selector_algorithm}
 
 <ExperimentalBadge />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Алгоритм выбора частей для распределения слияний
 
-<div id="merge_selector_base">
-  ## merge_selector_base
-</div>
+## merge_selector_base {#merge_selector_base}
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
@@ -34,18 +30,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 выбранных слияний (настройка экспертного уровня; не изменяйте её, если не понимаете,
 как она работает). Работает для селекторов слияний Simple и StochasticSimple
 
-<div id="merge_selector_blurry_base_scale_factor">
-  ## merge_selector_blurry_base_scale_factor
-</div>
+## merge_selector_blurry_base_scale_factor {#merge_selector_blurry_base_scale_factor}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Определяет, когда срабатывает эта логика в зависимости от количества частей в
 партиции. Чем больше коэффициент, тем позже будет реакция.
 
-<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
-  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
-</div>
+## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once {#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +47,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Это увеличивает число параллельных слияний, что может помочь с ошибками TOO&#95;MANY&#95;PARTS,
 но при этом также увеличивает усиление записи.
 
-<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
-  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
-</div>
+## merge_selector_enable_heuristic_to_remove_small_parts_at_right {#merge_selector_enable_heuristic_to_remove_small_parts_at_right}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -65,9 +55,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 стороны диапазона, если их размер меньше указанной доли (0.01) от sum&#95;size.
 Работает для селекторов слияний Simple и StochasticSimple
 
-<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
-  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
-</div>
+## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent {#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent}
 
 <ExperimentalBadge />
 
@@ -78,9 +66,17 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Управляет значением экспоненты, используемым в формулах, задающих кривую уменьшения. Уменьшение экспоненты
 уменьшает размер слияний, что приводит к увеличению усиления записи. Верно и обратное.
 
-<div id="merge_selector_window_size">
-  ## merge_selector_window_size
-</div>
+## merge_selector_min_age_to_disable_right_tail_heuristic {#merge_selector_min_age_to_disable_right_tail_heuristic}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Если значение больше нуля и включена настройка `merge_selector_enable_heuristic_to_remove_small_parts_at_right`,
+эта эвристика отключается для диапазонов, в которых каждая часть существует не менее указанного количества секунд. Значение `0` отключает эту проверку.
+Применяется к селекторам слияний Simple и StochasticSimple.
+
+## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

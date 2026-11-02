@@ -8,7 +8,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
+#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
@@ -185,12 +189,15 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
+    auto secret_arguments = s3TableEngineSecretArguments();
+    secret_arguments.secret_settings = S3Queue::SETTINGS_TO_HIDE;
     factory.registerStorage(
         "S3Queue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageS3Configuration>(args);
         },
+        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -787,12 +794,15 @@ exception:
 void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
+    auto secret_arguments = azureTableEngineSecretArguments();
+    secret_arguments.secret_settings = AzureQueue::SETTINGS_TO_HIDE;
     factory.registerStorage(
         "AzureQueue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageAzureConfiguration>(args);
         },
+        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,

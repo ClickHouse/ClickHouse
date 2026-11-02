@@ -17,7 +17,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
@@ -111,6 +111,23 @@ UInt64 countWithCursors(
 {
     static constexpr size_t window_size = 65536;
 
+    std::vector<PostingListCursor *> sorted_cursors;
+    sorted_cursors.reserve(cursors.size());
+
+    for (const auto & cursor : cursors)
+        sorted_cursors.push_back(cursor.get());
+
+    if (search_mode == TextSearchMode::Any)
+    {
+        sortCursorsForUnion(sorted_cursors);
+    }
+    else
+    {
+        sortCursorsForIntersection(sorted_cursors);
+        intersection_algorithm = chooseIntersectionAlgorithm(sorted_cursors, intersection_algorithm);
+    }
+
+    LazyPostingsStats stats;
     auto filter = ColumnUInt8::create();
     auto & filter_data = filter->getData();
     UInt64 count = 0;
@@ -124,8 +141,8 @@ UInt64 countWithCursors(
         filter_data.resize_fill(num_rows, 0);
 
         const bool may_be_true = search_mode == TextSearchMode::Any
-            ? lazyUnionPostingLists(*filter, cursors, 0, row_offset, num_rows)
-            : lazyIntersectPostingLists(*filter, cursors, 0, row_offset, num_rows, intersection_algorithm);
+            ? lazyUnionPostingLists(*filter, sorted_cursors, 0, row_offset, num_rows)
+            : lazyIntersectPostingLists(*filter, sorted_cursors, 0, row_offset, num_rows, intersection_algorithm, stats);
 
         if (may_be_true)
             count += countBytesInFilter(filter_data);
@@ -168,7 +185,7 @@ UInt64 computeCountForPart(
         .part_info = part_info,
         .index = *index.index,
         .readable_ranges = nullptr,
-        .skip_postings_deserialization = single_token,
+        .text_index_read_postings = !single_token,
         .reader_settings = reader_settings,
     };
 
@@ -349,7 +366,7 @@ public:
         std::shared_ptr<const ReadFromTextIndexCount::ResolvedQuery> resolved_,
         MergeTreeReaderSettings reader_settings_,
         QueryStatusPtr query_status_)
-        : ISource(std::move(header))
+        : ISource(std::move(header), /*enable_auto_progress=*/ false)
         , state(std::move(state_))
         , resolved(std::move(resolved_))
         , reader_settings(std::move(reader_settings_))
@@ -376,8 +393,12 @@ protected:
                 query_status->checkTimeLimit();
         };
 
-        UInt64 count = computeCountForPart(state->parts[part_idx], *resolved, reader_settings, check_cancelled);
+        const auto & part = state->parts[part_idx];
+        UInt64 count = computeCountForPart(part, *resolved, reader_settings, check_cancelled);
 
+        /// Report the rows of the selected ranges as processed instead of the one-row output chunk,
+        /// the same as `ReadFromMergeTree` does, so `read_rows` and the `READ_ROWS` quota match the unoptimized read.
+        progress(part.getRowsCount(), 0);
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
         return Chunk(Columns{createSingleCountStateColumn(agg_count, count)}, 1);
     }
@@ -419,10 +440,18 @@ void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline,
 
     size_t streams = std::max<size_t>(1, std::min(num_streams, state->parts.size()));
 
+    size_t total_rows = state->parts.getRowsCountAllParts();
+
     Pipes pipes;
     for (size_t i = 0; i < streams; ++i)
-        pipes.emplace_back(std::make_shared<TextIndexCountSource>(
-            getOutputHeader(), state, resolved, reader_settings, settings.process_list_element));
+    {
+        auto source = std::make_shared<TextIndexCountSource>(getOutputHeader(), state, resolved, reader_settings, settings.process_list_element);
+
+        if (i == 0)
+            source->addTotalRowsApprox(total_rows);
+
+        pipes.emplace_back(std::move(source));
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 

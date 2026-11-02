@@ -5,6 +5,7 @@
       "pages": [
         "ru/guides/clickhouse/index",
         "ru/guides/clickhouse/kusto-query-language",
+        "ru/guides/clickhouse/logsql",
         {
           "group": "Форматы данных",
           "pages": [
@@ -104,7 +105,7 @@
         },
         "ru/guides/oss/update",
         {
-          "group": "Рекомендации по работе с ClickHouse OSS",
+          "group": "Рекомендации по работе с OSS",
           "pages": [
             "ru/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "ru/guides/oss/best-practices/tips"

@@ -1,0 +1,179 @@
+---
+title: 'Terraform で AWS インフラストラクチャをプロビジョニングする'
+sidebarTitle: 'AWS での Terraform'
+slug: /products/bring-your-own-cloud/connector/terraform-aws
+description: 'Terraform または OpenTofu を使用して、managed モード用の Amazon EKS クラスターを作成するか、既存の VPC またはクラスターに必要なリソースを追加します'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'terraform', 'opentofu', 'EKS', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+managed モードは、お客様が所有する Amazon EKS クラスター上で動作します。各リリースには 4 つの Terraform ルートモジュール (以下、ルート) が同梱されており、要件を満たすクラスターを新規作成するか、既存の VPC またはクラスターに不足しているリソースを追加します。ルートは、システムノードグループとマネージドアドオン (`vpc-cni`、`kube-proxy`、`coredns`、`aws-ebs-csi-driver`) を備えたクラスターを作成するほか、IAM role、KMS キー、タグも作成します。なお、`existing-eks` は `install_addons` で指定したアドオンのみをインストールします。Helm ターゲットの場合は、その後 `clicklink clctl init` が Terraform の出力とプラットフォームバンドルを使用してプラットフォームレイヤーをインストールします。プラットフォームレイヤーには、Karpenter、AWS Load Balancer コントローラー、StorageClass、およびバージョンが固定されたコンポーネントが含まれます ([Terraform の出力からコネクタを初期化する](#hand-off)を参照) 。ルートを使用するには、Terraform 1.10 以降または OpenTofu 1.12 以降と、AWS プロバイダー `~> 6.0` が必要です。このページのすべてのコマンドで、`terraform` の代わりに `tofu` を使用できます。
+
+<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="AWS 上の ClickHouse Connector の Terraform プロビジョニングフロー" />
+
+## 始める前に {#before-you-begin}
+
+以下が必要です。
+
+* Terraform 1.10 以降または OpenTofu 1.12 以降、および AWS プロバイダー `~> 6.0`。
+* 選択したルートで必要となるリソースの作成・変更権限を持つ AWS アイデンティティ。
+* リリースアーカイブのダウンロードと検証に使用する `curl`、SHA-256 ツール (`sha256sum` または `shasum`) 、および `cosign`。
+* [登録](/ja/products/bring-your-own-cloud/connector/onboarding#registration)時に取得した以下の情報：すべてのルートで必要な `chart_repository_arn`、および最後に `init` へ引き渡すコネクタエンドポイント、登録トークン、プラットフォームバンドル。
+
+`production` および `existing-vpc` を使用する場合は、`clicklink clctl init` と `kubectl` を実行するマシンからプライベートな EKS API にどのようにアクセスするかを事前に検討しておいてください。VPN、踏み台サーバー、ピアリング接続されたネットワーク、SSM ポートフォワーディングなどの方法があります。
+
+<Steps titleSize="h2">
+  <Step title="環境に適した Terraform ルートを選択する" id="choose-a-root">
+    4つのルートはいずれも同じ `clicklink` の出力を生成します。どのルートを適用した場合でも、`clicklink clctl init` への引き継ぎ方法は変わりません。
+
+    | ルート            | 開始環境               | 作成されるリソース                             |
+    | -------------- | ------------------ | ------------------------------------- |
+    | `minimal`      | 開発・概念実証用のクラスター     | 同じ構成、単一ゾーン、パブリックエンドポイント、エンドポイントやCMKなし |
+    | `production`   | リソースのないアカウントとリージョン | VPC、EKSクラスター、ノードグループ、IAM、KMS          |
+    | `existing-vpc` | 既存のVPC             | EKSクラスター、ノードグループ、IAM、KMS、サブネットタグ      |
+    | `existing-eks` | 運用中のクラスター          | IAM、名前付きアドオン、キーへの権限付与、検出用タグ           |
+
+### `minimal` {#minimal}
+
+    `minimal` では、パブリックエンドポイント、インターフェイスエンドポイント、フローログ、ログの保持期間、システム pool のサイズに関する設定が緩和されています。緩和された変数はいずれも、両方のルートに同じ名前で存在します。いずれかを本番環境向けの値に変更する場合は、`terraform.tfvars` を編集して再適用するだけで済みます。一方、ワークロードが単一ゾーンであることと KMS キーが存在しないことは後から変更できません。サブネットのゾーンは変更できず、またルートには EKS の Secret 暗号化用の変数がないためです。これらの差異を解消するには、`production` を新しいクラスターとして適用する必要があります。
+
+### `production` {#production}
+
+    VPC は 3 つのゾーン (`availability_zone_count` で 2〜4 を指定可能) にまたがり、ゾーンごとにプライベート `/19` サブネット、パブリック `/21` サブネット、NAT ゲートウェイ 1 つを配置します。さらに、S3 ゲートウェイエンドポイント、ECR、STS、EKS、EC2、CloudWatch Logs、SSM、SQS、KMS、ELB 用のインターフェイスエンドポイント、および VPC フローログを備えます。 EKS クラスターは、プライベート API エンドポイント、アクセスエントリによる認証、ルートが所有するロググループへのすべてのコントロールプレーンログタイプの出力、およびカスタマー管理の KMS キーによる Secret の暗号化を備えます。 クラスターには、マネージドアドオン `vpc-cni`、`kube-proxy`、`coredns`、`aws-ebs-csi-driver` と、`clickhouseGroup=system` ラベルが付いた taint なしのシステムノードグループ 1 つ (デフォルトでは `m7g.large` ノード 2〜4 台) が構成されます。 さらにルートは、中断キューと `karpenter.sh/discovery` タグを含む Karpenter 用 IAM、AWS Load Balancer コントローラーおよびコネクタの executor 用の IRSA ロール、そして EBS ボリュームとオブジェクトストレージバケット用の KMS キーも作成します。
+
+### `existing-vpc` と `existing-eks` {#existing-infrastructure}
+
+    いずれのルートも、自身が作成していないリソース (ルートテーブル、NAT ゲートウェイ、エンドポイント、セキュリティグループルール、ノードグループ、起動テンプレート、クラスター設定、KMS キー) は変更しません。どちらのルートも、プライベートサブネットに `karpenter.sh/discovery=<cluster_name>` および `kubernetes.io/role/internal-elb=1` のタグを付与します。さらに `existing-vpc` はパブリックサブネットに `kubernetes.io/role/elb=1` のタグを付与し、`existing-eks` はクラスターのセキュリティグループにタグを付与します。
+
+    `existing-vpc` を使用する場合、VPC で次のものがあらかじめ用意されている必要があります:
+
+    * DNS サポートと DNS ホスト名が有効になっていること。
+    * 少なくとも 2 つのアベイラビリティゾーンにまたがる 2～4 個のプライベートサブネットがあること。これらのサブネットでは `map_public_ip_on_launch` を無効にし、NAT ゲートウェイ、または ECR、STS、EKS、EC2、CloudWatch Logs、SSM、SQS、KMS、ELB 用のインターフェイスエンドポイントへルーティングされている必要があります。また、S3 ゲートウェイエンドポイントも追加してください。これがないと、オブジェクトストレージのトラフィックが NAT ゲートウェイを経由することになります。
+    * パブリックサブネットは、インターネット向けのロードバランサーを使用する場合にのみ必要です。VPC にパブリック層がない場合は、`public_subnet_ids` を空のままにしてください。
+
+    `existing-eks` を使用する場合、クラスターに以下がすでに用意されている必要があります。
+
+    * Kubernetes 1.34 以降。
+    * 認証モードが `API` または `API_AND_CONFIG_MAP` であること。`CONFIG_MAP` のクラスターでは、plan の出力に切り替え用のコマンドが表示されます。
+    * クラスターの issuer に対応する IAM OIDC プロバイダー。
+    * 2 つ以上のアベイラビリティゾーンにまたがるプライベートサブネットがあり、NAT またはインターフェイスエンドポイント経由で AWS API へのエグレスが可能であること。デフォルトでは、ルートモジュールはクラスターのサブネットから、ルートテーブルがインターネットゲートウェイに到達するものを除外してプライベートサブネットを導出します。クラスターのサブネットがコントロールプレーン専用の `/28` である場合や、ノードを別のサブネットに配置する場合は、`private_subnet_ids` を設定してください。
+    * Karpenter がインストールされていないこと。Karpenter の IAM と中断キューはこのルートモジュールが作成します。キュー名は `<cluster_name>-clicklink` となるため、アンインストール済みの Karpenter が残したキューと衝突することはありません。
+    * `system_node_selector` のラベル (デフォルトは `clickhouseGroup=system`) が付与され、taint が設定されていないシステムノード。このルートモジュールはノードグループを作成しません。
+
+    これらのいずれかが不足していると、`terraform plan` は失敗します。
+
+    `install_addons` 内のアドオンがすでにセルフマネージドでインストールされ稼働している場合、EKS は `Conflicts found when trying to apply` を返します。`addon_resolve_conflicts_on_create = "OVERWRITE"` を設定してマネージドアドオンに引き継がせるか、該当アドオンを `install_addons` から削除してください。
+  </Step>
+
+  <Step title="Terraformのリリースアーカイブをダウンロードして検証する" id="download-the-release-archive">
+    ルート証明書はリリースごとに 1 つのアーカイブとして提供され、バージョンは `clicklink` バイナリと共通です。現在のリリースのアーカイブを、チェックサムおよび cosign バンドルとあわせて取得します:
+
+    ```bash
+    CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+    # Or pin a specific release: CLICKLINK_VERSION='vX.Y.Z'
+    TERRAFORM_TARBALL="clicklink-terraform-${CLICKLINK_VERSION}.tar.gz"
+    for suffix in '' .sha256 .bundle; do
+      curl -fsSLO "https://releases.clicklink.clickhouse.com/${TERRAFORM_TARBALL}${suffix}"
+    done
+    if command -v sha256sum >/dev/null; then
+      sha256sum -c "${TERRAFORM_TARBALL}.sha256"
+    else
+      shasum -a 256 -c "${TERRAFORM_TARBALL}.sha256"
+    fi
+    ```
+
+    展開する前に、cosign を使用して署名を検証します。
+
+    ```bash
+    cosign verify-blob \
+      --bundle "${TERRAFORM_TARBALL}.bundle" \
+      --certificate-identity-regexp '^https://github\.com/ClickHouse/data-plane-clicklink/\.github/workflows/release\.yaml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      "${TERRAFORM_TARBALL}"
+    ```
+
+    次に、ダウンロードしたファイルを展開します。
+
+    ```bash
+    tar -xzf "${TERRAFORM_TARBALL}"
+    cd "clicklink-terraform-${CLICKLINK_VERSION}"
+    ```
+
+    アーカイブを展開すると、`aws/production`、`aws/minimal`、`aws/existing-vpc`、`aws/existing-eks`、`aws/modules` を含む1つのディレクトリが作成されます。各ルートはモジュールを `../modules` として参照しています。ルートを1つだけ取り出してコピーせず、展開したツリーはそのままの構成で保持してください。アーカイブ内の各ルートの README には、`--platform-bundle` を指定しない `init` への引き渡し手順が記載されている場合があります。サポートされているのは、[Terraform の出力からコネクタを初期化する](#hand-off) に記載されているコマンドです。
+  </Step>
+
+  <Step title="選択したルートを設定し、適用します" id="apply">
+    ルートディレクトリで、サンプルの変数ファイルをコピーして値を入力します：
+
+    ```bash
+    cp terraform.tfvars.example terraform.tfvars
+    ```
+
+    すべてのルートで `region`、`cluster_name`、`chart_repository_arn` が必要です。`cluster_name` はクラスター名として使われるほか、すべてのリソース名のプレフィックスとなり、ディスカバリー用のタグの値にもなります。`production`、`minimal`、`existing-vpc` では、英小文字、数字、ハイフンからなる 3〜32 文字で指定します。先頭は英字とし、末尾をハイフンにすることはできません。`existing-eks` では、既存の稼働中クラスターの名前 (最大 32 文字) を指定します。`chart_repository_arn` は ClickHouse クラスターのチャートを格納した ECR リポジトリで、[登録](/ja/products/bring-your-own-cloud/connector/onboarding#registration)時にアカウントチームから提供されます。クラスターを作成するルートでは、`cluster_admin_principal_arns` も必要です。これは、EKS アクセスエントリを通じてクラスター管理者権限を付与するプリンシパルのリストです。ルートを実行するアイデンティティは必ずこのリストに含めてください。含まれていない場合、実行後にクラスターへアクセスできなくなります。クラスターの作成者に暗黙的なアクセス権は付与されません。ルートごとの要件は次のとおりです。
+
+    * `minimal` では、パブリック API エンドポイントへのアクセスを許可する IPv4 の許可リスト `endpoint_public_access_cidrs` が必要です。`init` や `kubectl` を実行するネットワークを、このリストに含める必要があります。`/0` は、`allow_public_endpoint_from_anywhere = true` を指定しない限り拒否されます。`endpoint_public_access = false` の場合はリストを空にでき、その場合エンドポイントは `production` と同様にプライベートアクセスのみとなります。
+    * `existing-vpc` では、`vpc_id` と `private_subnet_ids` が必要です。`public_subnet_ids` は任意で、インターネット向けロードバランサーを使用する場合に指定します。
+    * `existing-eks` では、ほかに必須の変数はありません。`install_addons` にはクラスターに不足しているマネージドアドオンを指定し、`ebs_kms_key_arn` にはサービスのボリュームで使用する鍵を指定します。
+
+    続いて、初期化、プランの作成、適用を実行します。
+
+    ```bash
+    terraform init
+    terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+    terraform plan
+    terraform apply
+    ```
+
+    アーカイブにはプロバイダーのロックファイルが含まれていません。`terraform providers lock` を実行するとロックファイルが生成されるので、手元のコピーにコミットしてください。ステートはデフォルトではローカルに保存されます。`versions.tf` にはコメントアウトされた `backend "s3"` ブロックが含まれており、ステートを共有する場合の構成例を示しています。
+
+    <Note>
+      `production` および `existing-vpc` の API エンドポイントはプライベートです。`init` と `kubectl` は VPC 内から実行してください (システムノードへの SSM ポートフォワード、踏み台サーバー、VPN、ピアリングされたネットワークなどを経由) 。または、`endpoint_public_access = true` を指定し、`endpoint_public_access_cidrs` に許可リストを設定して、パブリックアクセスを明示的に有効にすることもできます。
+    </Note>
+  </Step>
+
+  <Step title="Terraformの出力を使用してコネクタを初期化する" id="hand-off">
+    出力をエクスポートしてから、kube コンテキストが新しいクラスターを指しているマシン上で、プラットフォームバンドルとあわせて `init` に渡します:
+
+    ```bash
+    terraform output -json > outputs.json
+    clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed \
+      --from-terraform outputs.json --platform-bundle bundle.yaml
+    ```
+
+    これらのルートは Helm ターゲットのみをサポートします。VM 上 (`--target systemd`) では `init` が `--platform-bundle` を受け付けず、`clicklink clctl platform approve --bundle` もピン留めされたコンポーネントしかインストールしないため、クラスターにノードプロビジョナーが存在しない状態になります。`--target systemd` は、自身で運用している ClickHouse を登録するコネクタにのみ使用してください。これらのルートではサポートされていません。
+
+    `--platform-bundle` は、ルートに含まれないものをインストールします。具体的には、`EC2NodeClass` と `clickhouse-server` および `clickhouse-keeper` の NodePool を備えた Karpenter、AWS Load Balancer コントローラー、`gp3-encrypted` StorageClass (出力に EBS 鍵が含まれている場合はその鍵で暗号化) 、そしてバンドルがピン留めするプラットフォームコンポーネント (スナップショットコントローラー、ClickHouse オペレーター、監視用 collector) です。バンドルは ClickHouse Cloud がお使いの環境向けに生成するプラットフォームマニフェストで、オンボーディング時にアカウントチームから提供されます。その `cluster:` セクションで Karpenter とロードバランサーコントローラーのバージョンがピン留めされています。このフラグを使用するには `--target helm`、`--managed`、`--from-terraform` の指定が必要です。既に存在するコンポーネントには手を加えないため、コマンドは安全に再実行できます。また `init` は、インストールしたもの、スキップしたもの、およびその理由をレポートとして出力します。このフラグを指定しない場合、`init` はコネクタを登録しますが、これらのコンポーネントは一切インストールしません。これらが揃うまで、クラスターでサービスを実行することはできません。その後の[プラットフォーム更新](/ja/products/bring-your-own-cloud/connector/platform-updates)で変更されるのは、スナップショットコントローラー、オペレーター、collector です。Karpenter、ロードバランサーコントローラー、StorageClass は `init` がインストールした状態のまま維持されます。
+
+    `--from-terraform` には、`terraform output -json` が出力するドキュメント全体、または `terraform output -json clicklink` が出力するオブジェクト単体のどちらでも指定できます。`clicklink` 出力には、クラスターのアイデンティティ (`account_id`、`region`、`cluster_name`、`cluster_endpoint`、`cluster_ca`) 、OIDC プロバイダー、コネクタのネームスペース、executor の IAM ロール (`executor_role_arn`) 、EBS 鍵、Karpenter のノードロールとキュー、ロードバランサーコントローラーのロール、`system_node_selector` が含まれます。`init` はこのファイルからクラスターのアイデンティティとコネクタのネームスペースを読み取ります。さらに、`executor_role_arn` をコネクタの `pcm-executor` ServiceAccount に IRSA アノテーションとして設定し、コネクタの Pod にノードセレクターを適用します。マネージドサービスはこのロールを共有しません。`clicklink clctl executor prepare` はサービスごとにロールを 1 つ (デフォルトでは `CH-S3-<service>-<region>-00-Role`) 作成し、サービスの作成時にそのサービスへ紐付けます。詳細は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model#identities)を参照してください。
+
+    `--cluster-name` や `--target-namespace` などのフラグがファイルの内容と一致しない場合、`init` は両方の値を示してエラーとします。フラグを削除するか、出力を修正してください。また、API サーバーが `cluster_endpoint` と異なる kube コンテキストや、EKS ARN が別のクラスターを指している kube コンテキストも受け付けません。出力には `schema` フィールドがあり、現在の値は `1` です。`clctl` は、サポート対象外の `schema` を持つファイルを受け付けません。
+
+    残りの登録手順は、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)の標準フローと同じです。
+  </Step>
+</Steps>
+
+## KMS キーと必要な権限 {#keys}
+
+`production` と `existing-vpc` は、`kms` で ARN を渡さない限り、EKS シークレット、EBS ボリューム、オブジェクトストレージのバケット用に、ローテーションを有効にしたカスタマー管理の KMS キーを 3 つ作成します。`existing-eks` は、`storage_kms_key_arn` を設定しない限りストレージ用キーを作成します。サービスボリューム用には `ebs_kms_key_arn` を受け取りますが、このキーは作成しません。`minimal` はキーを一切作成しません。`storage_kms_key_arn` を指定しない場合、バケットは SSE-S3 のままです。作成されたキーには、IAM にアクセスを委任するアカウントルートのステートメントが 1 つ含まれます。ユーザーが用意するキーには、同じ委任を設定するか、キーポリシーで以下の権限を付与する必要があります。
+
+| キー         | プリンシパル                                                                                             | アクション                                                                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EKS シークレット | `<cluster_name>-cluster`                                                                           | `kms:Encrypt`, `kms:Decrypt`, `kms:DescribeKey`                                                                                                          |
+| EBS        | `<cluster_name>-ebs-csi-driver`, `<cluster_name>-karpenter-controller`                             | `kms:Encrypt`, `kms:Decrypt`, `kms:ReEncrypt*`, `kms:GenerateDataKey*`, `kms:DescribeKey`、および `kms:GrantIsForAWSResource = true` 条件付きの `kms:CreateGrant` |
+| ストレージ      | `clicklink clctl executor prepare --storage-kms-key-arn` が作成する各 `CH-S3-<service>-<region>-00-Role` | `kms:Decrypt`, `kms:GenerateDataKey`, `kms:DescribeKey`                                                                                                  |
+| ストレージ      | `<cluster_name>-clicklink-executor` (サービスのバックアップと同じ場所に置かれる `_tde/` キーレコード用)                        | `kms:GenerateDataKey`, `kms:Decrypt`                                                                                                                     |
+
+ルートは、どちらの場合でも EKS シークレット用および EBS 用キーに対する IAM role のポリシーをアタッチします。また、ルートがストレージ用キーを持つ場合は、executor のストレージキーポリシーも必ずアタッチします。各サービスロールのポリシーは `executor prepare` がアタッチします。システムノードのルートボリュームに格納されるのはイメージとキューブレットのログのみで、サービスデータは含まれません。これらのボリュームにはアカウントのデフォルトの EBS キーが使用されます。
+
+## Terraform で管理されているインフラストラクチャの削除 {#destroy}
+
+`terraform destroy` は、ルートモジュールが作成したリソースを削除します。作成された KMS キーは 30 日間の削除待機期間に入ります。ロググループは保持されているログごと削除されるため、必要なログは事前にエクスポートしてください。Karpenter が起動したインスタンスや ClickHouse Operator が作成したボリュームは Terraform ステートで管理されていません。先にサービスを削除し、Karpenter をアンインストールしておいてください。そうしないと、VPC とノードロールの削除に失敗します。
+
+`existing-eks` では、クラスター自体は削除されずに残ります。削除されるのは、このルートモジュールが追加したロール、中断キューとルール、アクセスエントリ、およびタグです。このルートモジュールがインストールした `vpc-cni`、`kube-proxy`、`coredns` アドオンは EKS の管理対象から外れますが、それらのポッドは引き続き実行されます。一方、このルートモジュールがインストールした EBS CSI ドライバーアドオンは、その IRSA ロールも削除されるため、ルートモジュールとともに削除されます。ドライバーを残したい場合は、destroy を実行する前に独自のロールを使ってアドオンを再作成してください。
+
+destroy を実行すると、これらのルートモジュールが追加したタグはすべて削除されます。`aws_ec2_tag` は既存のタグの所有権を引き継ぐため、ルートモジュールの適用前から存在していた `kubernetes.io/role/internal-elb` タグも削除対象になります。タグを残すには、destroy の前に `manage_subnet_tags = false` (`existing-vpc`) または `manage_discovery_tags = false` (`existing-eks`) を設定して apply するか、`terraform state rm` で `aws_ec2_tag` リソースをステートから除外してください。

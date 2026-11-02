@@ -55,32 +55,90 @@ ClickHouse Managed Postgres에는 PostGIS, pgvector, pg&#95;cron 등 널리 사�
 
 ### PgBouncer를 통해 `prepared statement does not exist` 오류가 발생하는 이유는 무엇입니까? {#prepared-statement-errors}
 
-ClickHouse Managed Postgres는 **트랜잭션 풀링** 모드로 PgBouncer를 실행합니다. 이 모드에서는 단일 트랜잭션 동안에만 백엔드 Postgres 연결(connection)이 클라이언트에 할당된 후 풀로 반환됩니다. 따라서 동일한 클라이언트의 다음 트랜잭션은 다른 백엔드로 연결될 수 있습니다.
+ClickHouse Managed Postgres는 PgBouncer를 **트랜잭션 풀링(transaction pooling)** 모드로 실행합니다. 이 모드에서는 백엔드 Postgres 연결이 단일 트랜잭션 동안에만 클라이언트에 할당되었다가 풀로 반환됩니다. 따라서 같은 클라이언트에서 보낸 다음 트랜잭션이 다른 백엔드에서 실행될 수 있습니다.
 
-이로 인해 **서버 측 prepared statement**가 동작하지 않게 됩니다. 서버 측 prepared statement는 `PREPARE`(또는 확장 쿼리 `Parse`)를 실행한 특정 백엔드에 연결되어 있기 때문입니다. 해당 `EXECUTE`가 다른 백엔드로 전달되면 다음과 같은 오류가 발생합니다:
+PgBouncer는 **프로토콜 수준 prepared statement**를 추적합니다. 대부분의 드라이버는 확장 쿼리 프로토콜(`Parse`, `Bind`, `Execute` 메시지)을 사용해 이를 전송합니다. 아직 해당 SQL 문을 받은 적이 없는 백엔드에서 SQL 문이 실행되면 PgBouncer가 먼저 그 백엔드에서 SQL 문을 준비합니다. 각 백엔드 연결은 prepared statement를 최대 `max_prepared_statements`개(기본값 `200`)까지 유지합니다. 따라서 대부분의 드라이버는 기본 설정 그대로 PgBouncer를 통해 정상적으로 동작합니다.
+
+다음 항목은 PgBouncer를 통해 동작하지 않습니다.
+
+* **SQL 수준 prepared statement.** PgBouncer는 SQL로 전송된 `PREPARE`와 `EXECUTE`를 추적하지 않으므로, `PREPARE`를 실행한 적이 없는 백엔드에서 `EXECUTE`가 실행될 수 있습니다.
+* **SQL `DEALLOCATE`를 사용한 SQL 문 해제.** PgBouncer는 백엔드에서 SQL 문의 이름을 바꾸므로, 클라이언트 측 SQL 문 이름으로 `DEALLOCATE`를 실행하면 실패합니다. 트랜잭션 안에서 이 오류가 발생하면 트랜잭션이 중단되고, 이후 SQL 문은 `current transaction is aborted` 오류와 함께 실패합니다. libpq 17 이상을 기반으로 하는 드라이버는 대신 프로토콜 수준 `Close` 메시지로 SQL 문을 해제하며, PgBouncer는 이 메시지를 처리할 수 있습니다.
+* **여러 왕복에 나뉘어 전송되는 이름 없는 SQL 문.** 일부 드라이버 모드는 이름 없는 SQL 문의 `Parse`를 한 번의 왕복으로 보내고 `Bind`는 다음 왕복으로 보냅니다. 이때 PgBouncer가 두 번째 왕복을 다른 백엔드에서 실행할 수 있으며, 그러면 `unnamed prepared statement does not exist` 오류와 함께 실패하거나, 아무런 오류 없이 다른 클라이언트의 SQL 문을 실행하고 그 결과를 반환합니다.
+
+이러한 경우 다음과 같은 오류가 발생합니다.
 
 ```text
 ERROR:  prepared statement "..." does not exist
 ERROR:  unnamed prepared statement does not exist
+ERROR:  prepared statement did not exist
 ```
 
-같은 근본 원인에서 흔히 나타나는 증상은 다음과 같습니다.
+다음은 흔히 동일한 근본 원인에서 비롯되는 증상입니다.
 
-* 특히 backfill이나 동시성이 높은 쓰기 작업 중에 `prepared statement does not exist` 오류가 급증합니다
-* &quot;조용히 실패하는&quot; 것처럼 보이는 삽입 — SQL 문에서 오류가 발생하고 드라이버가 재시도하면서, Batch가 일부만 적용되거나 아예 누락될 수 있습니다
-* 유형이 잘못된 반환 값(예: `BIGINT` 컬럼이 `float64` 비트 패턴으로 디코딩됨) — 캐시된 클라이언트 측 계획이, 해당 `Parse`를 전송받은 적이 없는 백엔드에 오래된 유형/포맷 코드를 재사용할 때 발생합니다
+* 특히 백필이나 동시성이 높은 쓰기 작업 중에 `prepared statement does not exist` 오류가 집중적으로 발생합니다
+* 삽입이 &quot;조용히 실패&quot;하는 것처럼 보입니다. SQL 문에서 오류가 발생하고 드라이버가 재시도하는 과정에서 배치가 일부만 적용되거나 누락될 수 있습니다
+* SQL 문이 해제된 후 트랜잭션이 `current transaction is aborted` 오류와 함께 실패합니다
+* 다른 쿼리에 속한 행이 반환됩니다
 
-**해결 방법: 드라이버에서 서버 측 prepared statement를 비활성화하십시오.** 정확한 설정은 사용하는 클라이언트 라이브러리에 따라 다릅니다.
+**해결 방법: 아래에서 사용 중인 드라이버에 해당하는 설정을 적용하십시오.** 드라이버가 목록에 없다면 libpq 17 이상을 사용하는 릴리스로 업그레이드하거나, 드라이버에서 서버 측 prepared statement를 비활성화하십시오.
 
-| 드라이버                             | 설정                                                                                     |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| **pgx** (Go)                     | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
-| **psycopg3** (Python)            | `prepare_threshold=None`                                                               |
-| **asyncpg** (Python)             | `statement_cache_size=0`                                                               |
-| **JDBC** (Java)                  | `prepareThreshold=0`                                                                   |
-| **node-postgres / pg** (Node.js) | `query()`에 `name`을 전달하지 마십시오 (`name`이 지정된 쿼리는 서버 측 prepared statement가 됩니다)            |
+| 드라이버                                 | PgBouncer 경유 시                                                                                                                                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **node-postgres / pg** (Node.js)     | 변경할 필요가 없습니다.                                                                                                                                                                                                                        |
+| **Bun.sql** (Bun)                    | 변경할 필요가 없습니다. `prepared statement does not exist` 오류가 발생하면 `prepare: false`를 설정하십시오.                                                                                                                                                 |
+| **Prisma** (`@prisma/adapter-pg` 사용) | 변경할 필요가 없습니다. Prisma 7에서는 `pgbouncer=true` URL 매개변수가 적용되지 않습니다.                                                                                                                                                                      |
+| **psycopg 3** (Python, Django)       | `psycopg[binary]` 또는 libpq 17 이상을 사용하면 변경할 필요가 없습니다. 이전 버전의 libpq를 사용한다면 `prepare_threshold=None`을 설정하십시오. Django는 기본적으로 클라이언트 측 바인딩을 사용하므로 변경할 필요가 없습니다.                                                                            |
+| **asyncpg** (Python, SQLAlchemy)     | 변경할 필요가 없습니다. SQLAlchemy에서 `statement_cache_size=0`으로 SQL 문 캐시를 비활성화한다면 URL에 `prepared_statement_cache_size=0`도 함께 설정하십시오.                                                                                                           |
+| **pgjdbc** (Java)                    | 변경할 필요가 없습니다. pgjdbc 42.7.5 이상을 사용하십시오. 이전 버전은 PgBouncer를 통해 연결할 수 없습니다. [`unsupported startup parameter`](#unsupported-startup-parameter)를 참조하십시오.                                                                                  |
+| **Npgsql** (.NET)                    | 자동 준비(automatic preparation)가 기본적으로 꺼져 있으므로 변경할 필요가 없습니다. PgBouncer를 통해 연결할 때는 `Max Auto Prepare`를 활성화하거나 `Prepare`를 호출하지 마십시오. 꼭 사용해야 한다면 `No Reset On Close=true`도 함께 설정하십시오.                                                      |
+| **pgx** (Go)                         | `default_query_exec_mode=cache_describe`(또는 `exec`)를 설정하십시오. `describe_exec`는 이름 없는 SQL 문을 여러 번의 왕복(round trip)에 나누어 처리하므로 절대 사용하지 마십시오.                                                                                             |
+| **Postgrex / Ecto** (Elixir)         | repo 구성에서 `prepare: :unnamed`를 설정하십시오. 이름 있는 SQL 문을 사용하면 약 4 KB 크기의 쿼리가 PgBouncer를 거치면서 멈출 수 있습니다.                                                                                                                                   |
+| **sqlx** (Rust)                      | prepared statement 관련 설정은 필요하지 않습니다. `.persistent(false)` 또는 `statement_cache_capacity(0)`는 사용하지 마십시오. 다만 연결하려면 반드시 `extra_float_digits(None)`을 설정해야 합니다. [`unsupported startup parameter`](#unsupported-startup-parameter)를 참조하십시오. |
+| **Active Record** (Ruby on Rails)    | `pg` gem 1.6 이상과 libpq 17 이상을 사용하면 변경할 필요가 없습니다. 그 외에는 `config/database.yml`에서 `prepared_statements: false`를 설정하십시오.                                                                                                                 |
+| **PDO** (PHP, Laravel)               | `pdo_pgsql`이 libpq 17 이상으로 컴파일되었다면 변경할 필요가 없습니다. 그 외에는 `PDO::ATTR_EMULATE_PREPARES => true`를 설정하십시오.                                                                                                                                 |
 
-워크로드가 prepared statement에 의존한다면, PgBouncer 풀러를 거치지 말고 **PostgreSQL에 직접**(포트 5432) 연결하십시오. 직접 연결은 prepared statement를 정상적으로 지원합니다. pooled 엔드포인트와 direct 엔드포인트 중 무엇을 선택할지에 대한 자세한 내용은 [Connection](/ko/products/managed-postgres/connection)을 참조하십시오.
+워크로드가 SQL 수준의 `PREPARE`에 의존한다면 PgBouncer 풀러 대신 **PostgreSQL에 직접**(포트 5432) 연결하십시오. 풀링 엔드포인트와 직접 엔드포인트 중 무엇을 선택할지에 대한 자세한 내용은 [연결](/ko/products/managed-postgres/connection)을 참조하십시오.
+
+### 마이그레이션 후 쿼리가 `cached plan must not change result type` 오류로 실패하는 이유는 무엇입니까? {#cached-plan-result-type}
+
+PgBouncer는 Postgres 연결에 prepared statement를 유지하며, 동일한 SQL 텍스트에 대해 이를 재사용합니다. 스키마 변경으로 쿼리가 반환하는 컬럼의 타입이 바뀌면(예: `integer`에서 `bigint`로 변경) 해당 쿼리는 PgBouncer를 거칠 때 `cached plan must not change result type` 오류와 함께 계속 실패합니다. 이 현상은 새 클라이언트 연결에서도 발생하며, PgBouncer가 Postgres 연결을 교체할 때까지 지속됩니다. 일부 드라이버는 오류를 내는 대신 오래된 결과 타입으로 디코딩하여 오류 없이 잘못된 값을 반환합니다. 직접 연결을 사용하면 각 연결은 최대 한 번만 실패한 후 복구됩니다.
+
+복구하려면 해당 데이터베이스에 대한 PgBouncer의 Postgres 연결을 종료하십시오. 그러면 PgBouncer가 새 연결을 엽니다. PgBouncer는 Postgres에 로컬로 연결하므로 해당 연결에는 `client_addr`가 없습니다. 다음 명령은 직접 연결(포트 `5432`)을 통해, 애플리케이션이 연결할 때 사용하는 것과 동일한 사용자로 실행하십시오. 이 명령은 애플리케이션 사용자의 PgBouncer 연결만 종료하므로, 그 시점에 PgBouncer를 통해 실행 중인 트랜잭션은 실패하지만 직접 연결에는 영향을 주지 않습니다.
+
+```sql
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+WHERE datname = '<your_database>' AND usename = current_user
+  AND client_addr IS NULL AND backend_type = 'client backend'
+  AND pid <> pg_backend_pid();
+```
+
+기본 설정의 Npgsql, `prepare: :unnamed`를 사용하는 Postgrex, `cache_describe`를 사용하는 pgx처럼 이름 없는 SQL 문(unnamed statement)을 사용하는 드라이버는 영향을 받지 않습니다.
+
+### PgBouncer를 통해 연결할 때 `unsupported startup parameter` 오류가 발생하는 이유는 무엇입니까? {#unsupported-startup-parameter}
+
+PgBouncer는 풀링된 Postgres 연결 전반에 일관되게 적용할 수 없는 연결 시점 설정을 거부하며, 이때 `FATAL: unsupported startup parameter: ...` 또는 `unsupported startup parameter in options: ...` 오류가 발생합니다. 주로 다음과 같은 경우에 해당합니다.
+
+* **`extra_float_digits`**: pgjdbc 42.7.4 이하 버전(예: Spring Boot 3 사용 시)과 sqlx는 연결할 때마다 이 설정을 전송합니다. pgjdbc를 42.7.5 이상으로 업그레이드하십시오. sqlx에서는 `PgConnectOptions`에 `extra_float_digits(None)`을 설정하십시오.
+* **연결 문자열(connection string)에 포함된 `search_path` 및 기타 설정**: JDBC URL의 `currentSchema`, Npgsql 연결 문자열의 `Search Path`, `options=-c ...`, Django의 `OPTIONS["options"]` 등이 여기에 해당합니다. 이러한 경우에는 `ALTER ROLE ... SET` 또는 `ALTER DATABASE ... SET`으로 기본값을 설정하거나, 트랜잭션 안에서 `SET LOCAL`을 사용하거나, PgBouncer를 거치지 않고 직접 연결하십시오.
+
+`application_name`과 `TimeZone`은 지원됩니다.
+
+### PgBouncer를 거치면 `SET` 명령어가 유지되지 않는 이유는 무엇입니까? {#session-state}
+
+트랜잭션 풀링 모드(transaction pooling mode)에서는 세션 수준의 `SET`이 클라이언트가 아니라 해당 명령을 실행한 Postgres 연결에 적용됩니다. 따라서 같은 클라이언트의 이후 트랜잭션은 해당 설정이 없는 다른 연결에서 실행될 수 있고, 반대로 다른 클라이언트가 해당 설정이 적용된 연결을 사용하게 될 수도 있습니다. `SET ROLE`도 마찬가지이므로, 사용자가 전환한 역할이 다른 클라이언트의 쿼리에 적용될 수 있습니다. 트랜잭션 내부에서 `SET LOCAL`을 사용하거나, `ALTER ROLE ... SET` 또는 `ALTER DATABASE ... SET`으로 기본값을 설정하십시오. 세션 상태(session state)에 의존하는 워크로드는 PgBouncer를 거치지 않고 직접 연결하십시오.
+
+### PgBouncer를 통해 마이그레이션을 실행하면 왜 멈추거나 advisory lock 해제에 실패합니까? {#migration-advisory-locks}
+
+많은 마이그레이션 도구는 한 번에 하나의 마이그레이션만 실행되도록 세션 수준의 advisory lock을 획득한 뒤, 별도의 SQL 문으로 이를 해제합니다. PgBouncer를 거치면 해제 SQL 문이 다른 Postgres 연결에서 실행될 수 있으며, 이 경우 잠금은 풀링된 연결에 그대로 남습니다. 그 결과 이후의 마이그레이션은 직접 연결을 사용하더라도 계속 대기하거나 `failed to release advisory lock`과 같은 오류를 내며 실패합니다. 세션 advisory lock을 사용하는 도구로는 golang-migrate, sqlx, Kysely의 `Migrator`, Rails, `transactional-lock=false`가 설정된 Flyway, `migration_lock: :pg_advisory_lock`이 설정된 Ecto 등이 있습니다.
+
+마이그레이션은 직접 연결(포트 `5432`)을 통해 실행하십시오. 누수된 잠금은 유휴 세션이 보유하는 반면, 아직 실행 중인 마이그레이션의 잠금은 활성 세션이 보유합니다. 누수된 잠금을 해제하려면 마찬가지로 직접 연결을 통해 데이터베이스에서 advisory lock을 보유한 유휴 세션만 종료하십시오.
+
+```sql
+SELECT pg_terminate_backend(l.pid) FROM pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory' AND a.state = 'idle'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database());
+```
 
 ### PgBouncer의 `max_client_conn` 설정은 무엇을 의미하며, Postgres의 `max_connections`와는 어떤 관련이 있습니까? {#pgbouncer-vs-pg-connections}
 
@@ -89,7 +147,13 @@ ERROR:  unnamed prepared statement does not exist
 * **Postgres `max_connections`**는 PostgreSQL 자체의 **백엔드(backend)** 연결 수 상한을 정합니다. 이 값은 비용이 큰 편입니다. 각 백엔드는 메모리와 프로세스 슬롯을 사용합니다.
 * **PgBouncer `max_client_conn`**는 풀러에 동시에 열 수 있는 **클라이언트(client)** 연결 수 상한을 정합니다. PgBouncer는 이렇게 많은 클라이언트 연결을 훨씬 더 적은 수의 백엔드 연결에 다중화합니다.
 
-일반적인 ClickHouse Managed Postgres 인스턴스는 PgBouncer가 **Postgres 백엔드 수보다 약 10배 많은 클라이언트 연결**을 허용하도록 구성됩니다(예: 클라이언트 5000개 / 백엔드 500개). 풀러에서 연결 오류가 발생한다면, 겉으로 드러나는 클라이언트 제한에 도달했다기보다 풀별 백엔드 제한(`default_pool_size`)에 걸렸을 가능성이 훨씬 높습니다.
+PgBouncer는 Postgres 백엔드 수보다 몇 배 많은 클라이언트 연결을 허용합니다. 예를 들어 `max_connections`가 `500`으로 설정된 인스턴스는 풀러에서 클라이언트 연결을 `2500`개까지 허용합니다. 풀러에서 연결 오류가 발생한다면, 겉으로 드러나는 클라이언트 제한에 도달했다기보다 풀별 백엔드 제한(`default_pool_size` 또는 데이터베이스별 `max_db_connections`)에 걸렸을 가능성이 훨씬 높습니다.
+
+인스턴스에 설정된 값을 확인하려면 PgBouncer(포트 `6432`)를 통해 특수 데이터베이스인 `pgbouncer`에 연결한 후 `SHOW CONFIG`를 실행하십시오.
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/pgbouncer?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SHOW CONFIG;"
+```
 
 ## 데이터베이스 기능 {#database-capabilities}
 

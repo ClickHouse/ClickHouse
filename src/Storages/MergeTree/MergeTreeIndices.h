@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Common/Documentation.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
@@ -80,6 +81,12 @@ class ActionsDAG;
 class Block;
 struct MergeTreeWriterSettings;
 struct MergeTreeDataPartChecksums;
+
+/// Is a value written with @from decoded identically when read back as @to? Used for the skip index
+/// granules and the column statistics of a part that stores a column with a type different from the
+/// current metadata (e.g. after extending an `Enum`). Fail-closed: a conversion not known to keep the
+/// representation is treated as incompatible.
+bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to);
 
 namespace ErrorCodes
 {
@@ -315,7 +322,8 @@ struct IMergeTreeIndex
     /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
     /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
     /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
-    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+    /// Probes `getPotentialSubstreams`, so reimplement that one to cover another version.
+    MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
@@ -356,10 +364,19 @@ struct IMergeTreeIndex
     /// never schedule it for recalculation, otherwise those operations get wedged.
     virtual bool isInert() const { return false; }
 
+    /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
+    /// slows down reading it. The blocks of such an index that the part's codec does not compress well
+    /// are written with codec `NONE`.
+    virtual bool isCompressible() const { return true; }
+
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    NameSet getColumnsShadowingMapSubcolumns() const;
+    /// Tells whether a name shaped like a Map key subcolumn `<map>.key_<k>` belongs to a column or a
+    /// subcolumn of the table instead. It looks the name up in the metadata snapshot on demand rather
+    /// than collecting such names: an index condition is built per query (and per partition), and
+    /// the table may have thousands of columns.
+    IsShadowingColumn getMapSubcolumnShadowingCheck() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
@@ -425,6 +442,11 @@ void setIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+/// Every granule of a text bloom filter index eagerly allocates one filter per indexed column, so the total size of the filters
+/// (not only the size of a single filter) is limited. The check is done only for indexes being declared or changed, not on `ATTACH`
+/// and not for indexes inherited unchanged from `old_index`, so that tables created before the check still load and can be altered.
+/// Does nothing for other index types.
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
@@ -444,8 +466,9 @@ String getIndexFileName(const String & index_name, bool escape_filename);
 
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
-/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
-/// the archive check, which is fine for callers that only see standalone per-file layouts.
+/// skp_idx.packed. Standalone files are always in checksums, so the archive check looks only at
+/// the archive index of @storage and never asks the disk about the file. Passing a null @storage
+/// skips the archive check, which is fine for callers that only see standalone per-file layouts.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,

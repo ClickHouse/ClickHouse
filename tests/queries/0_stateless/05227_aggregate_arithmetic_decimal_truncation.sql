@@ -7,6 +7,10 @@
 
 SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 
+-- An integer operand that does not fit the native width of the decimal raises `DECIMAL_OVERFLOW` by
+-- default; the wrapping is only observable with `decimal_check_overflow = 0`.
+SET decimal_check_overflow = 0;
+
 DROP TABLE IF EXISTS t_aggregate_arithmetic_decimal;
 CREATE TABLE t_aggregate_arithmetic_decimal (a Decimal(5, 4)) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_aggregate_arithmetic_decimal SELECT toDecimal32(number, 4) FROM numbers(10);
@@ -29,6 +33,8 @@ INSERT INTO t_aggregate_arithmetic_int VALUES (4294967298), (5);
 SELECT min(a * toDecimal32(1, 0)), max(a * toDecimal32(1, 0)), avg(a * toDecimal32(1, 0)) FROM t_aggregate_arithmetic_int;
 SELECT min(a * toDecimal32(1, 0)), max(a * toDecimal32(1, 0)), avg(a * toDecimal32(1, 0)) FROM t_aggregate_arithmetic_int
 SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
+
+SET decimal_check_overflow = 1;
 
 -- A constant that fits the native width still overflows it on a row: the original query throws, the
 -- hoisted one would not.
