@@ -98,6 +98,39 @@ namespace ErrorCodes
 
 static constexpr auto DEFAULT_GCS_HOST = "storage.googleapis.com";
 
+/// The bucket a JSON API request of the native client addresses: the client sends its requests to
+/// `<endpoint>/storage/v1/b/<bucket>/...`, uploads to `<endpoint>/upload/storage/v1/b/<bucket>/...`
+/// (including the session URL of a resumable upload) and media downloads possibly to
+/// `<endpoint>/download/storage/v1/b/<bucket>/...`. Empty when the URL has another shape.
+static String gcsBucketOfRequestURL(const Poco::URI & uri, std::string_view endpoint_path)
+{
+    while (endpoint_path.ends_with('/'))
+        endpoint_path.remove_suffix(1);
+
+    std::string_view path = uri.getPath();
+    if (!path.starts_with(endpoint_path))
+        return {};
+    path.remove_prefix(endpoint_path.size());
+
+    for (std::string_view prefix : {"/storage/v1/b/", "/upload/storage/v1/b/", "/download/storage/v1/b/"})
+    {
+        if (path.starts_with(prefix))
+        {
+            path.remove_prefix(prefix.size());
+            return String(path.substr(0, path.find('/')));
+        }
+    }
+    return {};
+}
+
+bool isGCSRequestURLAllowed(const RemoteHostFilter & filter, const Poco::URI & uri, std::string_view endpoint_path)
+{
+    if (const String bucket = gcsBucketOfRequestURL(uri, endpoint_path);
+        !bucket.empty() && filter.isBucketAllowed(uri.getHost(), uri.getPort(), bucket))
+        return true;
+    return filter.checkURL(uri, /* throw_on_error */ false);
+}
+
 bool isDefaultGCSHost(const String & host)
 {
     static const String default_suffix = String(".") + DEFAULT_GCS_HOST;
@@ -663,8 +696,13 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     /// Fail-closed validation of the actual network destination against `remote_url_allow_hosts`,
     /// mirroring what the S3, Azure and web object storage transports do before a user-configurable
     /// endpoint is used. Throws when a filter is configured and the host is not allowed.
+    /// A `<s3_bucket>` entry grants one bucket at the endpoint, as for the S3-compatibility path
+    /// (`S3::URI::checkRemoteHostFilter`), without granting the whole host.
     const String resolved_endpoint = resolveGCSEndpoint(settings.endpoint_override);
-    context->getRemoteHostFilter().checkURL(Poco::URI(resolved_endpoint));
+    const Poco::URI resolved_endpoint_uri(resolved_endpoint);
+    if (settings.bucket.empty()
+        || !context->getRemoteHostFilter().isBucketAllowed(resolved_endpoint_uri.getHost(), resolved_endpoint_uri.getPort(), settings.bucket))
+        context->getRemoteHostFilter().checkURL(resolved_endpoint_uri);
 
     gc::Options options;
 
@@ -682,9 +720,37 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     const auto ssl_context_provider = [] { return Poco::Net::SSLManager::instance().defaultClientContext(); };
     options.set<::ClickHouse::PocoRestSslContextProviderOption>(ssl_context_provider);
 
+    /// The transport keeps its own sessions rather than borrowing them from `HTTPConnectionPools`, so it
+    /// registers each of them in the connection group the S3 client of the same surface would use --
+    /// `DISK` for a disk, `STORAGE` for a table function or a table engine -- and the server-wide
+    /// `disk_connections_*` / `storage_connections_*` limits (`hard_limit`, the limit on idle
+    /// connections) and socket buffer sizes (`rcvbuf`, `sndbuf`) apply to them as well.
+    /// The group is also part of the transport's session pool key, so a session pooled by a table function is never
+    /// reused by a disk (or vice versa) without being registered in the disk's group.
+    const auto connection_group = settings.for_disk ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    const ::ClickHouse::PocoRestSessionAccountingOption::Type session_accounting{
+        .group = settings.for_disk ? "DISK" : "STORAGE",
+        .factory = [connection_group](
+            Poco::Net::HTTPClientSession & session) -> std::unique_ptr<::ClickHouse::PocoRestSessionAccountingOption::Registration>
+        {
+            return std::make_unique<GCSSessionRegistration>(
+                HTTPConnectionPools::instance().registerExternalConnection(connection_group, session));
+        }};
+
     const auto credential_source = chooseGCSCredentialSource(settings);
+    /// The SDK builds the REST clients of the token requests of Application Default Credentials and of
+    /// a service-account key from the options handed to the credentials, not from the storage client's
+    /// options below. So these options carry everything that has to apply to those requests as well:
+    /// the TLS context, the connect timeout, the stall timeouts (rather than the transport's default of
+    /// 120 seconds, so a stalled token endpoint cannot hold a query far beyond `request_timeout_ms`),
+    /// and the accounting in the connection group, so token exchanges are subject to the same
+    /// connection limits and socket buffer sizes as the storage requests.
     gc::Options token_request_options;
     token_request_options.set<::ClickHouse::PocoRestSslContextProviderOption>(ssl_context_provider);
+    token_request_options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
+    token_request_options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
+    token_request_options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
+    token_request_options.set<::ClickHouse::PocoRestSessionAccountingOption>(session_accounting);
     /// The key file is read once: the `token_uri` checks below and the credentials have to see the same
     /// contents, even if the file is rewritten in between.
     String service_account_key;
@@ -718,11 +784,6 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
                 token_proxy_resolver = ProxyConfigurationResolverProvider::get(token_proxy_protocol, context->getConfigRef());
             token_request_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(token_proxy_resolver));
             token_request_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(makeGCSProxyErrorReporter(token_proxy_resolver));
-            token_request_options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
-            /// The token request is remote I/O like the storage requests, so it gets the same stall
-            /// timeout rather than the transport's default of 120 seconds.
-            token_request_options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
-            token_request_options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
         }
     }
 
@@ -805,22 +866,7 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     options.set<gcs::BackoffPolicyOption>(
         gcs::ExponentialBackoffPolicy(std::chrono::milliseconds(100), std::chrono::seconds(5), 2.0).clone());
 
-    /// The transport keeps its own sessions rather than borrowing them from `HTTPConnectionPools`, so it
-    /// registers each of them in the connection group the S3 client of the same surface would use --
-    /// `DISK` for a disk, `STORAGE` for a table function or a table engine -- and the server-wide
-    /// `disk_connections_*` / `storage_connections_*` limits (`hard_limit`, the limit on idle
-    /// connections) and socket buffer sizes (`rcvbuf`, `sndbuf`) apply to them as well.
-    /// The group is also part of the transport's session pool key, so a session pooled by a table function is never
-    /// reused by a disk (or vice versa) without being registered in the disk's group.
-    const auto connection_group = settings.for_disk ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
-    options.set<::ClickHouse::PocoRestSessionAccountingOption>(::ClickHouse::PocoRestSessionAccountingOption::Type{
-        .group = settings.for_disk ? "DISK" : "STORAGE",
-        .factory = [connection_group](
-            Poco::Net::HTTPClientSession & session) -> std::unique_ptr<::ClickHouse::PocoRestSessionAccountingOption::Registration>
-        {
-            return std::make_unique<GCSSessionRegistration>(
-                HTTPConnectionPools::instance().registerExternalConnection(connection_group, session));
-        }});
+    options.set<::ClickHouse::PocoRestSessionAccountingOption>(session_accounting);
 
     /// Whether a pooled keep-alive session is still usable is decided by ClickHouse's own TLS-aware
     /// probe, the one `HTTPConnectionPool` uses: a session that is merely `connected()` may already
@@ -832,12 +878,15 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     /// of a resumable upload is the `Location` header of the response that started it, and the transport
     /// requests it verbatim. So every URL a storage request goes to is checked, not only the endpoint.
     /// The filter lives in the shared part of the context, for the lifetime of the server.
+    /// A `<s3_bucket>` entry allows the requests to that bucket at that host and port, and nothing else:
+    /// the client may be shared by storages of different buckets, so the bucket is taken from every URL
+    /// rather than from the settings of the storage that built the client.
     const RemoteHostFilter * remote_host_filter = &context->getRemoteHostFilter();
     options.set<::ClickHouse::PocoRestUrlCheckOption>(
-        [remote_host_filter](const std::string & url) -> std::string
+        [remote_host_filter, endpoint_path = resolved_endpoint_uri.getPath()](const std::string & url) -> std::string
         {
             const Poco::URI uri(url, /* enable_url_encoding */ false);
-            if (remote_host_filter->checkURL(uri, /* throw_on_error */ false))
+            if (isGCSRequestURLAllowed(*remote_host_filter, uri, endpoint_path))
                 return {};
             return fmt::format("URL \"{}\" is not allowed in configuration file, see <remote_url_allow_hosts>", uri.getHost());
         });
