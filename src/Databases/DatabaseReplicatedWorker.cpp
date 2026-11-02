@@ -202,6 +202,12 @@ void DatabaseReplicatedDDLWorker::shutdown()
     active_node_holder.reset();
     active_node_holder_zookeeper.reset();
 
+    /// Waiters in `tryEnqueueAndExecuteEntry` and `waitForReplicaToProcessAllEntries` (which may outlive the
+    /// shutdown, holding a reference to this worker) check `stop_flag` under `mutex`. Taking it before notifying
+    /// guarantees that each of them either sees the flag or receives the notification.
+    {
+        std::lock_guard lock{mutex};
+    }
     wait_current_task_change.notify_all();
 }
 

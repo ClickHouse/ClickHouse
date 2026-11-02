@@ -931,14 +931,14 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::waitForReplicaToProcessAllEntries");
     chassert(mode == SyncReplicaMode::DEFAULT || mode == SyncReplicaMode::STRICT);
-    {
-        std::lock_guard lock{ddl_worker_mutex};
-        if (!ddl_worker || is_probably_dropped)
-            return false;
-    }
+    /// The worker can be stopped and replaced concurrently (`SYSTEM RESTORE DATABASE REPLICA`, `DROP DATABASE`):
+    /// the reference keeps it alive, and a stopped worker returns from the wait.
+    auto worker = tryGetDDLWorker();
+    if (!worker)
+        return false;
 
     if (mode == SyncReplicaMode::DEFAULT)
-        return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
+        return worker->waitForReplicaToProcessAllEntries(timeout_ms);
 
     /// In STRICT mode the sync is satisfied as soon as our replication lag is within the
     /// max_replication_lag_to_enqueue threshold - we do not require every entry to be fully
@@ -950,7 +950,7 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     Stopwatch elapsed;
     while (true)
     {
-        UInt32 our_log_ptr = ddl_worker->getLogPointer();
+        UInt32 our_log_ptr = worker->getLogPointer();
         UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
         bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
@@ -964,7 +964,7 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
         /// processing (our_log_ptr == max_log_ptr) is strictly stronger than the STRICT
         /// threshold, so return immediately in that case; otherwise loop and re-check the
         /// threshold above, re-reading max_log_ptr, which might have advanced while we waited.
-        if (ddl_worker->waitForReplicaToProcessAllEntries(std::min(wait_step_ms, timeout_ms - elapsed_ms)))
+        if (worker->waitForReplicaToProcessAllEntries(std::min(wait_step_ms, timeout_ms - elapsed_ms)))
             return true;
     }
 }
@@ -1149,9 +1149,17 @@ void DatabaseReplicated::initDDLWorkerUnlocked()
     chassert(!is_probably_dropped.load());
     chassert(!ddl_worker_initialized.load());
 
-    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+    ddl_worker = std::make_shared<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
     ddl_worker_initialized = true;
+}
+
+std::shared_ptr<DatabaseReplicatedDDLWorker> DatabaseReplicated::tryGetDDLWorker() const
+{
+    std::lock_guard lock{ddl_worker_mutex};
+    if (!ddl_worker || is_probably_dropped)
+        return nullptr;
+    return ddl_worker;
 }
 
 void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper)
@@ -1548,13 +1556,12 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
-    String host_fqdn_id;
-    {
-        std::lock_guard lock{ddl_worker_mutex};
-        if (!ddl_worker || is_probably_dropped)
-            throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Database is not initialized or is being dropped");
-        host_fqdn_id = ddl_worker->getCommonHostID();
-    }
+    /// Hold our own reference: `SYSTEM RESTORE DATABASE REPLICA` or `DROP DATABASE` can stop and replace the worker
+    /// while this query waits in `tryEnqueueAndExecuteEntry`. A stopped worker makes it throw instead of executing.
+    auto worker = tryGetDDLWorker();
+    if (!worker)
+        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Database is not initialized or is being dropped");
+    String host_fqdn_id = worker->getCommonHostID();
 
     if (!flags.internal && query_context->isDDLOrOnClusterInternal())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
@@ -1569,7 +1576,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.initial_query_id = query_context->getClientInfo().initial_query_id;
     entry.is_backup_restore = flags.distributed_backup_restore;
-    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags);
+    String node_path = worker->tryEnqueueAndExecuteEntry(entry, query_context, flags);
 
     Strings hosts_to_wait;
     Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");

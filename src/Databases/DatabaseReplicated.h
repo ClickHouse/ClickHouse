@@ -258,6 +258,9 @@ private:
     void stopLoading() override;
 
     void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
+    /// Returns a reference to the DDL worker taken under `ddl_worker_mutex`, or nullptr if the database
+    /// is not initialized yet or is being dropped.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> tryGetDDLWorker() const;
 
     void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
@@ -285,7 +288,12 @@ private:
     std::atomic_bool is_probably_dropped = false;
     std::atomic_bool is_recovering = false;
     std::atomic_bool ddl_worker_initialized = false;
-    std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    /// Shared, so that a query thread that uses the worker outside of `ddl_worker_mutex` (e.g. waiting in
+    /// `tryEnqueueAndExecuteEntry`) keeps it alive while `shutdown`, `restoreDatabaseInKeeper` or
+    /// `reinitializeDDLWorker` concurrently stop and replace it. Such a thread must take its own reference
+    /// under the mutex with `getDDLWorker` and never dereference this member without the lock.
+    /// The worker's own threads may read it without the lock: it is reset only after they are joined.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     mutable std::mutex ddl_worker_mutex;
     UInt32 max_log_ptr_at_creation = 0;
 
