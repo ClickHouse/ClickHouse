@@ -51,7 +51,7 @@ private:
     ASTPtr current_query_ptr;
     /// Is this a step of another statement rather than a DROP the user issued.
     bool internal = false;
-    /// Storages whose size limit `executeToDatabaseImpl` has checked; a second check would consume `force_drop_table` again.
+    /// Storages whose size check in `executeToDatabaseImpl` consumed `force_drop_table`; a second check would fail without the flag.
     std::set<std::weak_ptr<IStorage>, std::owner_less<>> tables_with_checked_size;
 
     BlockIO executeSingleDropQuery(const ASTPtr & drop_query_ptr);

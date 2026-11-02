@@ -34,6 +34,10 @@
 
 #include "config.h"
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
@@ -651,10 +655,16 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                         tables_to_check_size.push_back(std::move(table));
                 }
                 /// Last, because it may consume the `force_drop_table` flag.
+                const fs::path force_drop_file = fs::path(table_context->getFlagsPath()) / "force_drop_table";
                 for (const auto & table : tables_to_check_size)
                 {
+                    bool force_drop_file_existed = fs::exists(force_drop_file);
                     table->checkTableCanBeDropped(table_context);
-                    tables_with_checked_size.insert(table);
+                    /// A table under the limit is checked again in `executeToTableImpl`, after `prepare_tables`, so that
+                    /// an `INSERT` in between cannot make it exceed the limit unnoticed. A table that consumed the flag
+                    /// cannot be checked again, because the flag is gone.
+                    if (force_drop_file_existed && !fs::exists(force_drop_file))
+                        tables_with_checked_size.insert(table);
                 }
             };
 
@@ -810,8 +820,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.sync = original_sync;
                 DatabasePtr db;
                 UUID table_to_wait = UUIDHelpers::Nil;
-                /// A failure here (`KILL QUERY`, a dependent created after `check_tables`, a Keeper error) leaves the
-                /// remaining tables prepared for shutdown but not shut down.
+                /// A failure here (`KILL QUERY`, a dependent created after `check_tables`, a table that has grown over
+                /// `max_table_size_to_drop` since then, a Keeper error) leaves the remaining tables prepared for shutdown
+                /// but not shut down.
                 executeToTableImpl(table_context, query_for_table, db, table_to_wait);
                 uuids_to_wait.push_back(table_to_wait);
             }
