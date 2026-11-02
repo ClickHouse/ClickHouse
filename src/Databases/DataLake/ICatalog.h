@@ -289,12 +289,14 @@ public:
     /// Updates metadata in catalog.
     /// `base_metadata_location` is the metadata location this catalog reported for the table when the commit's base was read
     /// (empty if it stores none). A catalog that stores only a pointer returns `false` when its pointer no longer equals it.
+    /// `new_metadata` is the metadata object written to `new_metadata_path`.
     virtual bool updateMetadata(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_snapshot,
-        const String & base_metadata_location) const;
+        const String & base_metadata_location,
+        const Poco::JSON::Object::Ptr & new_metadata) const;
 
     /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
     /// `new_metadata_path` is the path of the freshly written `vN.metadata.json`; it is used by

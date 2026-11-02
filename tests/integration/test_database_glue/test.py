@@ -2299,11 +2299,12 @@ def create_pyiceberg_table(
 
 
 @pytest.mark.parametrize(
-    "operation", ["insert", "alter_add_column", "delete", "optimize_manifest", "expire_snapshots"]
+    "operation",
+    ["insert", "alter_add_column", "delete", "optimize_manifest", "expire_snapshots", "insert_after_wipe"],
 )
 def test_glue_update_keeps_table_definition(started_cluster, operation):
-    # A ClickHouse commit to a table another engine registered in Glue changes only the metadata pointer, and the
-    # columns on a schema change, and it records the previous pointer.
+    # A ClickHouse commit to a table another engine registered in Glue keeps the table definition, records the
+    # previous pointer and keeps the Glue columns in sync with the Iceberg schema.
     node = started_cluster.instances["node1"]
     test_ref = uuid.uuid4().hex[:12]
     namespace = f"keep_{test_ref}"
@@ -2322,15 +2323,33 @@ def test_glue_update_keeps_table_definition(started_cluster, operation):
     catalog, _ = create_pyiceberg_table(
         started_cluster, namespace, table_name, batches, schema, arrow_schema, {"owner_team": "x"}
     )
-    if operation == "alter_add_column":
-        # A comment typed in the Glue console, with no Iceberg `doc` behind it.
-        glue_table = get_glue_table(started_cluster, namespace, table_name)
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    registered = glue_table["StorageDescriptor"]["Columns"]
+    if operation == "insert_after_wipe":
+        # What a commit of an earlier ClickHouse version leaves.
+        glue_table["StorageDescriptor"] = {**glue_table["StorageDescriptor"], "Columns": []}
+    else:
+        # A comment and a parameter typed in the Glue console, with no Iceberg `doc` behind them, and a column of an
+        # older schema.
         glue_table["StorageDescriptor"]["Columns"][0]["Comment"] = "typed in the console"
-        put_glue_table(started_cluster, namespace, glue_table)
+        glue_table["StorageDescriptor"]["Columns"][0]["Parameters"]["owner"] = "team-x"
+        glue_table["StorageDescriptor"]["Columns"].append(
+            {
+                "Name": "old",
+                "Type": "string",
+                "Parameters": {
+                    "iceberg.field.id": "100",
+                    "iceberg.field.optional": "true",
+                    "iceberg.field.current": "false",
+                },
+            }
+        )
+    put_glue_table(started_cluster, namespace, glue_table)
     before = get_glue_table(started_cluster, namespace, table_name)
 
     statement, settings, rows = {
         "insert": (f"INSERT INTO {table_ref} VALUES (4, 'd')", {}, 3),
+        "insert_after_wipe": (f"INSERT INTO {table_ref} VALUES (4, 'd')", {}, 3),
         "alter_add_column": (f"ALTER TABLE {table_ref} ADD COLUMN c Nullable(String)", {}, 2),
         "delete": (f"ALTER TABLE {table_ref} DELETE WHERE id = 1", {}, 1),
         "optimize_manifest": (
@@ -2367,8 +2386,14 @@ def test_glue_update_keeps_table_definition(started_cluster, operation):
                 "iceberg.field.current": "true",
             },
         }
-        assert columns == before["StorageDescriptor"]["Columns"] + [new_column], columns
+        older = [c for c in before["StorageDescriptor"]["Columns"] if c["Parameters"]["iceberg.field.current"] == "false"]
+        current = [c for c in before["StorageDescriptor"]["Columns"] if c not in older]
+        assert columns == current + [new_column] + older, columns
+        assert columns[0]["Comment"] == "typed in the console", columns
+        assert columns[0]["Parameters"]["owner"] == "team-x", columns
         assert "c\tNullable(String)" in node.query(f"DESCRIBE TABLE {table_ref}")
+    elif operation == "insert_after_wipe":
+        assert columns == registered, columns
     else:
         assert columns == before["StorageDescriptor"]["Columns"], columns
 
@@ -2445,7 +2470,20 @@ def test_glue_update_detects_concurrent_commit(started_cluster, concurrent):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
-@pytest.mark.parametrize("mode", ["touch", "lost_response", "superseded", "superseded_unknown", "readback_fails"])
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "touch",
+        "lost_response",
+        "superseded",
+        "superseded_unknown",
+        "readback_fails",
+        "lost_final_error",
+        "lost_no_retry",
+        "failed_no_retry",
+        "rejected",
+    ],
+)
 def test_glue_update_conditional_on_version_id(started_cluster, mode):
     # The proxy enforces `UpdateTable.VersionId`, which moto ignores, and injects the fault named by the
     # namespace prefix (see `s3_mocks/glue_fault_proxy.py`). A commit that cannot tell whether it was applied
@@ -2457,6 +2495,10 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         "superseded": "superseded_",
         "superseded_unknown": "unknown_",
         "readback_fails": "readbackfail_",
+        "lost_final_error": "lostfinal_",
+        "lost_no_retry": "lostnoretry_",
+        "failed_no_retry": "failnoretry_",
+        "rejected": "rejected_",
     }[mode]
     test_ref = uuid.uuid4().hex[:12]
     namespace = f"{prefix}{test_ref}"
@@ -2466,21 +2508,27 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
     _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}]])
     create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
     insert = f"INSERT INTO {db_name}.`{namespace}.{table_name}` VALUES (2)"
-    if mode in ("touch", "lost_response", "superseded"):
+    if mode in ("touch", "lost_response", "superseded", "lost_final_error", "lost_no_retry"):
         node.query(insert, settings=GLUE_WRITE_SETTINGS)
+    elif mode == "rejected":
+        error = node.query_and_get_error(insert, settings=GLUE_WRITE_SETTINGS)
+        assert "DATALAKE_DATABASE_ERROR" in error and "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
     else:
         error = node.query_and_get_error(insert, settings=GLUE_WRITE_SETTINGS)
         assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
 
-    ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
-    assert len(ours) == 1, ours
-    ours = ours.pop()
-    assert read_ids(started_cluster, ours) == [1, 2]
     parameters = get_glue_table(started_cluster, namespace, table_name)["Parameters"]
-    if mode in ("superseded", "superseded_unknown"):
-        assert parameters["metadata_location"] == ours + "-superseded", parameters
-    else:
-        assert parameters["metadata_location"] == ours, parameters
+    if mode in ("failed_no_retry", "rejected"):
+        assert parameters["metadata_location"] == table.metadata_location, parameters
+    if mode != "rejected":
+        ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
+        assert len(ours) == 1, ours
+        ours = ours.pop()
+        assert read_ids(started_cluster, ours) == [1, 2]
+        if mode in ("superseded", "superseded_unknown"):
+            assert parameters["metadata_location"] == ours + "-superseded", parameters
+        elif mode != "failed_no_retry":
+            assert parameters["metadata_location"] == ours, parameters
     if mode == "touch":
         assert parameters["concurrent_touch"] == "1", parameters
         assert query_glue_fault_proxy(started_cluster, f"updates/{namespace}") == "2"

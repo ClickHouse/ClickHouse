@@ -87,7 +87,8 @@ public:
         const String & table_name,
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_snapshot,
-        const String & base_metadata_location) const override;
+        const String & base_metadata_location,
+        const Poco::JSON::Object::Ptr & new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
@@ -141,7 +142,7 @@ private:
     Aws::Glue::Model::Table getGlueTable(const String & namespace_name, const String & table_name) const;
 
     /// Replaces the table's metadata pointer with `new_metadata_path` if it still equals `base_metadata_location`,
-    /// keeping the rest of the table definition. A non-null `new_schema` also replaces the columns.
+    /// keeping the rest of the table definition and refreshing the columns from `new_schema` when it is not null.
     bool commitTableUpdate(
         const String & namespace_name,
         const String & table_name,

@@ -25,8 +25,23 @@ FAULTS = {
 # - `superseded_`: like `lostresp_`, and another writer commits on top, recording the request's pointer as
 #   `previous_metadata_location`;
 # - `unknown_`: like `superseded_`, but the other writer does not record `previous_metadata_location`;
-# - `readbackfail_`: like `lostresp_`, and the first `GetTable` after the refusal fails with a non-retryable error.
-UPDATE_FAULTS = ("touch_", "lostresp_", "superseded_", "unknown_", "readbackfail_")
+# - `readbackfail_`: like `lostresp_`, and the first `GetTable` after the refusal fails with a non-retryable error;
+# - `lostfinal_`: like `lostresp_`, but the next `UpdateTable` (the SDK retry) is refused with `AccessDeniedException`
+#   without being checked or applied;
+# - `lostnoretry_`: the request is applied, but the client gets an HTTP 501, which its SDK does not retry;
+# - `failnoretry_`: the request is not applied and the client gets an HTTP 501;
+# - `rejected_`: the request is not applied and the client gets `AccessDeniedException`.
+UPDATE_FAULTS = (
+    "touch_",
+    "lostresp_",
+    "superseded_",
+    "unknown_",
+    "readbackfail_",
+    "lostfinal_",
+    "lostnoretry_",
+    "failnoretry_",
+    "rejected_",
+)
 
 # Keys of a Glue `Table` that are also `TableInput` fields.
 TABLE_INPUT_KEYS = (
@@ -52,6 +67,8 @@ counters = {}
 update_faults_taken = set()
 # Databases whose read-back `GetTable` is armed to fail (`readbackfail_`, after the refusal).
 readback_armed = set()
+# Databases whose next `UpdateTable` is refused (`lostfinal_`, after the lost response).
+deny_next_update = set()
 # `GET /hold/<key>` answers only after `GET /release/<key>`; `GET /waiting/<key>` returns how many are held.
 holds = {}
 waiting = {}
@@ -173,7 +190,20 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         name = request.get("TableInput", {}).get("Name", "")
         increment("updates", database)
         with update_lock:
+            with lock:
+                deny = database in deny_next_update
+                deny_next_update.discard(database)
+            if deny:
+                self.reply_glue_error(400, "AccessDeniedException", "Injected access denied")
+                return
+
             fault = take_update_fault(database)
+            if fault == "failnoretry_":
+                self.reply_glue_error(501, "InternalServiceException", "Injected failure.")
+                return
+            if fault == "rejected_":
+                self.reply_glue_error(400, "AccessDeniedException", "Injected access denied")
+                return
             if fault == "touch_":
                 table = self.get_table(database, name)
                 table["Parameters"]["concurrent_touch"] = "1"
@@ -203,6 +233,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     table["Parameters"].pop("previous_metadata_location", None)
                 self.put_table(database, table)
+            elif fault == "lostfinal_":
+                with lock:
+                    deny_next_update.add(database)
+            elif fault == "lostnoretry_":
+                self.reply_glue_error(501, "InternalServiceException", "Injected lost response.")
+                return
             self.reply_glue_error(500, "InternalServiceException", "Injected lost response.")
 
     def get_table_version(self, database, name):

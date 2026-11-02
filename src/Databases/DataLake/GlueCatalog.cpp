@@ -63,6 +63,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <unordered_set>
+
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -134,6 +136,13 @@ bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
 /// Bounds the retries of a commit after a concurrent change that did not move the metadata pointer.
 constexpr size_t MAX_UPDATE_TABLE_ATTEMPTS = 100;
 
+/// Glue answered the only attempt with a client error, so the update was not applied.
+bool isDefiniteRejection(const Aws::Client::AWSError<Aws::Glue::GlueErrors> & error)
+{
+    const auto code = static_cast<int>(error.GetResponseCode());
+    return code >= 400 && code < 500 && !Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
+}
+
 std::optional<String> findTableParameter(const Aws::Glue::Model::Table & table, const String & name)
 {
     const auto & parameters = table.GetParameters();
@@ -188,49 +197,81 @@ String getGlueColumnType(const Poco::Dynamic::Var & type)
     return name;
 }
 
-/// Glue columns for the fields of an Iceberg schema. A field without a `doc` keeps the comment of its existing
-/// column, matched by field id, or by name for a column without one.
+bool isNonCurrentGlueColumn(const Aws::Glue::Model::Column & column)
+{
+    const auto & parameters = column.GetParameters();
+    auto current = parameters.find("iceberg.field.current");
+    return current != parameters.end() && current->second == "false";
+}
+
+std::optional<String> findColumnParameter(const Aws::Glue::Model::Column & column, const String & name)
+{
+    const auto & parameters = column.GetParameters();
+    auto it = parameters.find(name);
+    if (it == parameters.end())
+        return std::nullopt;
+    return it->second;
+}
+
+/// Glue columns for the fields of an Iceberg schema. The existing column of a field, matched by field id, or by name
+/// for a column without one, keeps its comment (unless the field has a `doc`) and its other parameters. The existing
+/// columns of older schemas (`iceberg.field.current = false`) are kept after the current ones.
 Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
     const Poco::JSON::Object::Ptr & schema, const Aws::Vector<Aws::Glue::Model::Column> & existing_columns)
 {
-    std::unordered_map<String, String> comment_by_id;
-    std::unordered_map<String, String> comment_by_name;
+    std::unordered_map<String, const Aws::Glue::Model::Column *> existing_by_id;
+    std::unordered_map<String, const Aws::Glue::Model::Column *> existing_by_name;
     for (const auto & column : existing_columns)
     {
-        const auto & parameters = column.GetParameters();
-        auto current = parameters.find("iceberg.field.current");
-        if (column.GetComment().empty() || (current != parameters.end() && current->second == "false"))
+        if (isNonCurrentGlueColumn(column))
             continue;
-        if (auto id = parameters.find("iceberg.field.id"); id != parameters.end())
-            comment_by_id.emplace(id->second, column.GetComment());
+        if (auto id = findColumnParameter(column, "iceberg.field.id"))
+            existing_by_id.emplace(*id, &column);
         else
-            comment_by_name.emplace(column.GetName(), column.GetComment());
+            existing_by_name.emplace(column.GetName(), &column);
     }
 
     Aws::Vector<Aws::Glue::Model::Column> columns;
+    std::unordered_set<String> current_ids;
+    std::unordered_set<String> current_names;
     const auto fields = schema->getArray(DB::Iceberg::f_fields);
     for (UInt32 i = 0; i < fields->size(); ++i)
     {
         const auto field = fields->getObject(i);
         const auto name = field->getValue<String>(DB::Iceberg::f_name);
         const auto id = std::to_string(field->getValue<Int32>(DB::Iceberg::f_id));
+        current_ids.insert(id);
+        current_names.insert(name);
+
+        const Aws::Glue::Model::Column * existing = nullptr;
+        if (auto by_id = existing_by_id.find(id); by_id != existing_by_id.end())
+            existing = by_id->second;
+        else if (auto by_name = existing_by_name.find(name); by_name != existing_by_name.end())
+            existing = by_name->second;
 
         Aws::Glue::Model::Column column;
         column.SetName(name);
         column.SetType(getGlueColumnType(field->get(DB::Iceberg::f_type)));
         if (field->has("doc") && !field->isNull("doc"))
             column.SetComment(field->getValue<String>("doc"));
-        else if (auto by_id = comment_by_id.find(id); by_id != comment_by_id.end())
-            column.SetComment(by_id->second);
-        else if (auto by_name = comment_by_name.find(name); by_name != comment_by_name.end())
-            column.SetComment(by_name->second);
+        else if (existing && !existing->GetComment().empty())
+            column.SetComment(existing->GetComment());
 
-        Aws::Map<Aws::String, Aws::String> parameters;
+        auto parameters = existing ? existing->GetParameters() : Aws::Map<Aws::String, Aws::String>{};
         parameters["iceberg.field.id"] = id;
         parameters["iceberg.field.optional"] = field->getValue<bool>(DB::Iceberg::f_required) ? "false" : "true";
         parameters["iceberg.field.current"] = "true";
         column.SetParameters(std::move(parameters));
         columns.push_back(std::move(column));
+    }
+
+    for (const auto & column : existing_columns)
+    {
+        if (!isNonCurrentGlueColumn(column) || current_names.contains(column.GetName()))
+            continue;
+        if (auto id = findColumnParameter(column, "iceberg.field.id"); id && current_ids.contains(*id))
+            continue;
+        columns.push_back(column);
     }
     return columns;
 }
@@ -977,15 +1018,36 @@ bool GlueCatalog::commitTableUpdate(
         bool retried = false;
         request.SetRequestRetryHandler([&retried](const Aws::AmazonWebServiceRequest &) { retried = true; });
 
-        auto response = glue_client->UpdateTable(request);
-        if (response.IsSuccess())
-            return true;
-        if (response.GetError().GetErrorType() != Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION)
-            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
-        if (!retried)
-            continue;
+        std::optional<Aws::Glue::Model::UpdateTableOutcome> response;
+        String error_message;
+        try
+        {
+            response.emplace(glue_client->UpdateTable(request));
+        }
+        catch (...)
+        {
+            error_message = DB::getCurrentExceptionMessage(false);
+        }
 
-        /// An earlier attempt of the request may have been applied, which moved the version.
+        if (response && response->IsSuccess())
+            return true;
+
+        bool concurrent_modification = false;
+        if (response)
+        {
+            concurrent_modification = response->GetError().GetErrorType() == Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION;
+            error_message = response->GetError().GetMessage();
+        }
+
+        if (!retried && response)
+        {
+            if (concurrent_modification)
+                continue;
+            if (isDefiniteRejection(response->GetError()))
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", error_message);
+        }
+
+        /// An attempt of the request may have been applied, which moved the version.
         String current_metadata_location;
         std::optional<String> previous_metadata_location;
         try
@@ -1003,13 +1065,20 @@ bool GlueCatalog::commitTableUpdate(
         }
 
         if (current_metadata_location == new_metadata_path || previous_metadata_location == new_metadata_path)
+        {
+            LOG_INFO(
+                log, "Update of {} to {} took effect despite a failed response: {}",
+                namespace_name + "." + table_name, new_metadata_path, error_message);
             return true;
-        if (current_metadata_location == base_metadata_location || previous_metadata_location == base_metadata_location)
+        }
+        /// After another error, a request carrying the still current `VersionId` may still be applied later.
+        if (concurrent_modification
+            && (current_metadata_location == base_metadata_location || previous_metadata_location == base_metadata_location))
             continue;
         throw DB::Exception(
             DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
-            "Cannot tell whether the commit of '{}' to Glue table {} was applied: the table now points to '{}'",
-            new_metadata_path, namespace_name + "." + table_name, current_metadata_location);
+            "Cannot tell whether the commit of '{}' to Glue table {} was applied: the table now points to '{}' ({})",
+            new_metadata_path, namespace_name + "." + table_name, current_metadata_location, error_message);
     }
 
     throw DB::Exception(
@@ -1023,9 +1092,10 @@ bool GlueCatalog::updateMetadata(
     const String & table_name,
     const String & new_metadata_path,
     Poco::JSON::Object::Ptr /*new_snapshot*/,
-    const String & base_metadata_location) const
+    const String & base_metadata_location,
+    const Poco::JSON::Object::Ptr & new_metadata) const
 {
-    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_location, nullptr);
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_location, getCurrentSchema(new_metadata));
 }
 
 bool GlueCatalog::updateSchema(

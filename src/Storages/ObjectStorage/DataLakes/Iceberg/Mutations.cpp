@@ -580,7 +580,8 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location))
+            if (!catalog->updateMetadata(
+                    namespace_name, table_name, catalog_filename, new_snapshot, base_catalog_metadata_location, metadata))
             {
                 if (!catalog_writes_metadata_file)
                     Iceberg::removeUncommittedMetadataFile(path_resolver, metadata_info, object_storage);

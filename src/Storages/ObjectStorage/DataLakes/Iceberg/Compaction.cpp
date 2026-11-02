@@ -1006,7 +1006,8 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot, base_catalog_metadata_location))
+                if (!catalog->updateMetadata(
+                        namespace_name, table_name, catalog_filename, new_snapshot.snapshot, base_catalog_metadata_location, metadata_object))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
                     if (!catalog_writes_metadata_file)

@@ -454,7 +454,8 @@ bool ICatalog::updateMetadata(
     const String & /*table_name*/,
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr /*new_snapshot*/,
-    const String & /*base_metadata_location*/) const
+    const String & /*base_metadata_location*/,
+    const Poco::JSON::Object::Ptr & /*new_metadata*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }

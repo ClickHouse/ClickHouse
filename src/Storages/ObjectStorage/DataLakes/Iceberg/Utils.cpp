@@ -553,7 +553,9 @@ void removeUncommittedMetadataFile(
 {
     try
     {
-        object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_file_info.path)));
+        const auto path = resolver.resolve(metadata_file_info.path);
+        object_storage->removeObjectIfExists(StoredObject(path));
+        LOG_INFO(getLogger("IcebergWrites"), "Removed metadata file {} that the catalog did not commit", path);
     }
     catch (...)
     {
