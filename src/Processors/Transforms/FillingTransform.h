@@ -37,9 +37,12 @@ public:
     static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
+    void onCancel() noexcept override;
     void transform(Chunk & chunk) override;
 
 private:
+    void transformImpl(Chunk & chunk);
+
     using MutableColumnRawPtrs = std::vector<IColumn *>;
     void transformRange(
         const Columns & input_fill_columns,

@@ -85,6 +85,31 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
+### Row order {#row-order}
+
+For each source row, `arrayJoin` produces the elements in their order in the array.
+
+If a query has more than one `arrayJoin` call with different arguments, the result has one row for each combination of the elements. The order of these rows is not guaranteed, because it depends on the query plan. For example, if `WHERE` uses one of the calls, the query can expand this call first. To get a predictable order, use `ORDER BY`:
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Without `ORDER BY`, this query can return the rows in the order `('a', 1)`, `('b', 1)`, `('a', 2)`, `('b', 2)`.
+
+Without `ORDER BY`, the order of the source rows is not guaranteed. For a stable order and for pages with `LIMIT` and `OFFSET`, see the section "Row Order and Paging" of the [`ARRAY JOIN`](/reference/statements/select/array-join) clause. The rules for `ORDER BY` in that section apply to `arrayJoin` too.
+
 ### Best practice {#important-note}
 
 Using multiple `arrayJoin` with same expression may not produce expected results due to the elimination of common subexpressions.

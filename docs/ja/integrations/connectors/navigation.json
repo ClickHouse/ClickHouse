@@ -75,6 +75,7 @@
             "ja/integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
+        "ja/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
           "group": "コミュニティによるインテグレーション",

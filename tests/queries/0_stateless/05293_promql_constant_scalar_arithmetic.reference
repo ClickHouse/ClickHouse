@@ -1,0 +1,44 @@
+-- histogram_quantile with a computed phi
+[]	0.14444444444444443
+[]	0.14444444444444443
+[]	0.23333333333333334
+[]	-inf
+[]	inf
+[]	nan
+[]	1
+-- other functions with a computed parameter
+[]	17.5
+[('__name__','m'),('i','3')]	30
+[('__name__','m'),('i','4')]	40
+[('i','1')]	15
+[('i','2')]	20
+[('i','3')]	30
+[('i','4')]	35
+[('i','1')]	20
+[('i','2')]	40
+[('i','3')]	60
+[('i','4')]	80
+[]	3
+-- scalar results
+7
+1.4142135623730951
+-1
+1.5
+5
+nan
+inf
+-inf
+nan
+0.7853981633974483
+-3
+0
+1
+1
+0
+60
+-- range query
+[(100,3),(101,3),(102,3)]
+[(100,1),(101,2),(102,3)]
+-- a comparison of scalars still needs bool
+-- vector matching needs two instant vectors
+3

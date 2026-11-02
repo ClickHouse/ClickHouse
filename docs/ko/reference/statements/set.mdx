@@ -28,9 +28,7 @@ SET force_index_by_date = 1
 SET force_index_by_date
 ```
 
-<div id="set-time-zone">
-  ## SET TIME ZONE
-</div>
+## SET TIME ZONE {#set-time-zone}
 
 ```sql
 SET TIME ZONE [=] 'timezone'
@@ -49,13 +47,11 @@ SET TIME ZONE 'America/New_York';
 SELECT getSetting('session_timezone');
 ```
 
-시간대 값은 [IANA Time Zone Database](https://www.iana.org/time-zones)에 있는 유효한 이름이어야 합니다. 유효하지 않은 시간대 이름을 사용하면 오류가 발생합니다.
+시간대 값은 서버와 함께 제공되는 [IANA Time Zone Database](https://www.iana.org/time-zones)에서 `system.time_zones`에 나열된 이름이거나 `Fixed/UTC±HH:MM:SS` 형식의 고정 오프셋이어야 합니다. 운영 체제의 시간대 데이터베이스에만 있는 이름을 포함해 다른 값을 사용하면 오류가 발생합니다.
 
 `session_timezone` 설정에 관한 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)을 참조하십시오.
 
-<div id="setting-query-parameters">
-  ## 쿼리 매개변수 설정
-</div>
+## 쿼리 매개변수 설정 {#setting-query-parameters}
 
 `SET` 문은 매개변수 이름 앞에 `param_`를 붙여 쿼리 매개변수를 정의하는 데에도 사용할 수 있습니다.
 쿼리 매개변수를 사용하면 실행 시 실제 값으로 대체되는 플레이스홀더를 사용하여 재사용 가능한 쿼리를 작성할 수 있습니다.
