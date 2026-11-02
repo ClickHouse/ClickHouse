@@ -68,3 +68,35 @@ SELECT count() FROM dst_p_move WHERE b = 1000001 SETTINGS use_skip_indexes = 0;
 DROP TABLE src_p;
 DROP TABLE dst_p;
 DROP TABLE dst_p_move;
+
+-- The destination reads the imported index files under the file names that its own `escape_index_filenames`
+-- derives, so the check must look them up the same way, even after the source changed its policy.
+DROP TABLE IF EXISTS src_e;
+DROP TABLE IF EXISTS dst_e;
+
+CREATE TABLE src_e (a UInt64, `b-x` UInt64 ALIAS a + 1) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 0, auto_statistics_types = '',
+    escape_index_filenames = 0;
+CREATE TABLE dst_e (a UInt64, `b-x` UInt64 ALIAS a + 1000000) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 0, auto_statistics_types = '',
+    escape_index_filenames = 0;
+
+INSERT INTO src_e SELECT number FROM numbers(100000);
+ALTER TABLE src_e DROP COLUMN `b-x`;
+ALTER TABLE src_e MODIFY SETTING escape_index_filenames = 1;
+
+ALTER TABLE dst_e ATTACH PARTITION ALL FROM src_e; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM dst_e;
+
+-- With the policies the other way around, the destination looks for the escaped file name, which the part does not
+-- have, so the import is accepted and the index of the destination is absent from the imported part.
+ALTER TABLE src_e MODIFY SETTING escape_index_filenames = 0;
+ALTER TABLE dst_e MODIFY SETTING escape_index_filenames = 1;
+ALTER TABLE dst_e ATTACH PARTITION ALL FROM src_e;
+SELECT count() FROM dst_e WHERE `b-x` = 1000001;
+SELECT count() FROM dst_e WHERE `b-x` = 1000001 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE src_e;
+DROP TABLE dst_e;

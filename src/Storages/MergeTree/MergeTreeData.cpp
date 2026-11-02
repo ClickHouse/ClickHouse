@@ -2005,7 +2005,7 @@ void MergeTreeData::setProperties(
             {
                 for (const auto & index_name : new_implicit_indices)
                 {
-                    if (!foreign_implicit_indices.contains(index_name) && part->hasSecondaryIndex(index_name, old_metadata.escape_index_filenames))
+                    if (!foreign_implicit_indices.contains(index_name) && part->hasSecondaryIndex(index_name, new_metadata_.escape_index_filenames))
                         foreign_implicit_indices.insert(index_name);
                 }
             }
@@ -13858,9 +13858,12 @@ std::optional<std::pair<String, MergeTreeData::DataPartPtr>> MergeTreeData::find
     if (destination_only_indices.empty())
         return {};
 
+    /// The copied files are read by the destination, so they are looked up under the file names that the destination
+    /// derives from the index names. The source may use a different `escape_index_filenames`, and changing it does
+    /// not rename the existing files, so probing with the policy of the source could miss them.
     for (const auto & part : src_parts)
         for (const auto & index_name : destination_only_indices)
-            if (part->hasSecondaryIndex(index_name, src_snapshot->escape_index_filenames))
+            if (part->hasSecondaryIndex(index_name, my_snapshot->escape_index_filenames))
                 return std::make_pair(index_name, part);
 
     return {};
