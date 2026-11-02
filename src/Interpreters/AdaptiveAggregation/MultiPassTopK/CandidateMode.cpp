@@ -227,11 +227,11 @@ private:
         Fallback,
     };
 
-    /// What a run that learns from its fallback keeps until the fallback finishes (see `learnCandidates`): the result of
-    /// the candidate pass for the cold cells, and the least rank of a group of the fallback that becomes a candidate.
+    /// What a run that learns from its fallback keeps until the fallback finishes (see `learnCandidates`): the proven
+    /// candidates with their aggregates, and the least rank of a group of the fallback that becomes a candidate.
     struct Learning
     {
-        Block cold_candidates;
+        Block proven_candidates;
         UInt64 min_rank = 0;
     };
 
@@ -241,7 +241,7 @@ private:
     TopKCandidatesPtr candidates;
     std::optional<Learning> learning;
 
-    /// After the candidate pass: emits the candidates of the cold cells, which are groups of the result (see
+    /// After the candidate pass: emits the proven candidates, which are groups of the result (see
     /// `TopKCandidates::prove`). The candidates prove the top when no cell is hot; otherwise the fallback aggregates
     /// all the keys of the hot cells.
     TopKNext afterCandidatePass(Block result)
@@ -258,15 +258,15 @@ private:
         auto proof = candidates->prove(keys, countsOf(result, rowsColumnOf(*templ)), nth_rank);
 
         Columns columns = result.getColumns();
-        if (proof.num_cold < num_candidates)
+        if (proof.num_proven < num_candidates)
             for (auto & column : columns)
-                column = column->filter(proof.cold, proof.num_cold);
-        Block cold_candidates = result.cloneWithColumns(columns);
+                column = column->filter(proof.proven, proof.num_proven);
+        Block proven_candidates = result.cloneWithColumns(columns);
         /// The output has no column of the rows that the candidate pass adds to an aggregation without `count()`.
         if (!templ->rows_index)
             columns.pop_back();
         TopKNext next;
-        next.result.emplace_back(std::move(columns), proof.num_cold);
+        next.result.emplace_back(std::move(columns), proof.num_proven);
 
         if (proof.hot_cells->none())
         {
@@ -285,7 +285,7 @@ private:
         /// fallback would read the input once more on every run, which costs more than the candidates save. The next
         /// runs then run the original aggregation, as after a decline.
         if (memo->cachesCandidates() && !memo->startedFromLearned())
-            learning = Learning{.cold_candidates = std::move(cold_candidates), .min_rank = nth_rank / candidate_rank_divisor};
+            learning = Learning{.proven_candidates = std::move(proven_candidates), .min_rank = nth_rank / candidate_rank_divisor};
         else
             memo->keepOriginal();
         pass = Pass::Fallback;
@@ -293,7 +293,7 @@ private:
         return next;
     }
 
-    /// After the fallback: emits its groups after the candidates of the cold cells.
+    /// After the fallback: emits its groups after the proven candidates.
     TopKNext afterFallback(Block fallback)
     {
         if (learning)
@@ -304,9 +304,11 @@ private:
         return next;
     }
 
-    /// Keeps the candidates for the next runs (see `learning`): those of the cold cells, which proved their cells, and
-    /// the groups of `fallback` whose rank reaches a quarter of the n-th best candidate, as the pilot picks them. These
-    /// hold the keys that the sample missed. Keeps at most `max_candidates` of them, those of the best ranks.
+    /// Keeps the candidates for the next runs (see `learning`): the proven ones, and the groups of `fallback` whose
+    /// rank reaches a quarter of the n-th best candidate, as the pilot picks them. These hold the keys that the sample
+    /// missed. Keeps at most `max_candidates` of them, those of the best ranks. Fewer than `top` of them mean that the
+    /// input holds fewer heavy groups than the top takes, as after the data changed: the next runs then run the
+    /// original aggregation, as after a decline.
     void learnCandidates(const Block & fallback)
     {
         const auto & fallback_ranks = countsOf(fallback, rankColumnOf(*templ));
@@ -318,9 +320,9 @@ private:
             num_heavy += heavy[i];
         }
 
-        const Block & cold = learning->cold_candidates;
-        const auto & cold_ranks = countsOf(cold, rankColumnOf(*templ));
-        std::vector<UInt64> ranks(cold_ranks.begin(), cold_ranks.end());
+        const Block & proven = learning->proven_candidates;
+        const auto & proven_ranks = countsOf(proven, rankColumnOf(*templ));
+        std::vector<UInt64> ranks(proven_ranks.begin(), proven_ranks.end());
         for (size_t i = 0; i < fallback.rows(); ++i)
             if (heavy[i])
                 ranks.push_back(fallback_ranks[i]);
@@ -328,11 +330,11 @@ private:
         Block keys;
         for (size_t i = 0; i < templ->aggregating->getParams().keys_size; ++i)
         {
-            const auto & cold_key = cold.getByPosition(i);
-            auto column = cold_key.column->cloneEmpty();
-            column->insertRangeFrom(*cold_key.column, 0, cold.rows());
+            const auto & proven_key = proven.getByPosition(i);
+            auto column = proven_key.column->cloneEmpty();
+            column->insertRangeFrom(*proven_key.column, 0, proven.rows());
             column->insertRangeFrom(*fallback.getByPosition(i).column->filter(heavy, num_heavy), 0, num_heavy);
-            keys.insert({std::move(column), cold_key.type, cold_key.name});
+            keys.insert({std::move(column), proven_key.type, proven_key.name});
         }
 
         if (ranks.size() > max_candidates)
@@ -343,8 +345,11 @@ private:
             for (auto & key : keys)
                 key.column = key.column->permute(best, best.size());
         }
-        LOG_DEBUG(log, "Learned {} candidates: {} of the cold cells and {} of the fallback", keys.rows(), cold.rows(), num_heavy);
-        memo->keepCandidates(std::move(keys), /*learned=*/true);
+        LOG_DEBUG(log, "Learned {} candidates: {} proven and {} of the fallback", keys.rows(), proven.rows(), num_heavy);
+        if (keys.rows() < templ->top)
+            memo->keepOriginal();
+        else
+            memo->keepCandidates(std::move(keys), /*learned=*/true);
     }
 };
 

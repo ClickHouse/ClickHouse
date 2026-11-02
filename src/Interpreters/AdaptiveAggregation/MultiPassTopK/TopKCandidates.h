@@ -29,13 +29,15 @@ struct TopKDistinctRank
 };
 
 /// What the candidate pass proves (see `TopKCandidates::prove`): the hot cells, whose other keys may outrank the n-th
-/// best candidate, and the candidates of the other cells, the cold ones, which are groups of the result.
+/// best candidate, and the proven candidates, those of the other cells, the cold ones, that hold rows. The proven
+/// candidates are groups of the result.
 struct TopKCandidateProof
 {
     std::shared_ptr<TopKCellSet> hot_cells;
-    /// Marks the cold candidates, `num_cold` of them.
-    PaddedPODArray<UInt8> cold;
-    size_t num_cold = 0;
+    /// Marks the proven candidates, `num_proven` of them. A candidate that an earlier run found may hold no rows of
+    /// this one, when the data or a literal of the query changed (see `TopKMemo`), and is then no group.
+    PaddedPODArray<UInt8> proven;
+    size_t num_proven = 0;
     /// The most rows that another key holds in a cell, or for a rank that counts distinct values the most runs.
     UInt64 bound = 0;
 };

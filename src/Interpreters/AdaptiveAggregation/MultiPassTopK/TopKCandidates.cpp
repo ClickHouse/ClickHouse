@@ -147,11 +147,11 @@ TopKCandidateProof TopKCandidates::prove(const ColumnRawPtrs & keys, const Padde
     for (size_t i = 0; i < num_cells; ++i)
         if (others[i] > nth_rank)
             proof.hot_cells->set(i);
-    proof.cold.resize(num_candidates);
+    proof.proven.resize(num_candidates);
     for (size_t i = 0; i < num_candidates; ++i)
     {
-        proof.cold[i] = !proof.hot_cells->test(cell(hashes[i]));
-        proof.num_cold += proof.cold[i];
+        proof.proven[i] = rows[i] && !proof.hot_cells->test(cell(hashes[i]));
+        proof.num_proven += proof.proven[i];
     }
     return proof;
 }
