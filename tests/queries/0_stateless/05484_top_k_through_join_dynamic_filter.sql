@@ -21,6 +21,10 @@ SELECT '-- the sort below the join gets the top-K filter';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT l.k, r.v FROM t_tj_left AS l LEFT JOIN t_tj_right AS r ON l.id = r.id ORDER BY l.k LIMIT 10)
 WHERE explain LIKE '%__topKFilter%';
 
+SELECT '-- a chain of LEFT JOIN: the sort reaches the read';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT l.k FROM t_tj_left AS l LEFT JOIN t_tj_right AS r1 ON r1.id = l.id LEFT JOIN t_tj_right AS r2 ON r2.id = l.id ORDER BY l.k LIMIT 10)
+WHERE explain LIKE '%__topKFilter%';
+
 SELECT '-- same rows as without the rewrite';
 SELECT
     (SELECT groupArray((k, v)) FROM (SELECT l.k AS k, r.v AS v FROM t_tj_left AS l LEFT JOIN t_tj_right AS r ON l.id = r.id ORDER BY l.k LIMIT 10))
@@ -28,6 +32,9 @@ SELECT
 SELECT
     (SELECT groupArray((k, v)) FROM (SELECT l.k AS k, r.v AS v FROM t_tj_right AS r RIGHT JOIN t_tj_left AS l ON l.id = r.id ORDER BY l.k DESC LIMIT 5 OFFSET 3))
     = (SELECT groupArray((k, v)) FROM (SELECT l.k AS k, r.v AS v FROM t_tj_right AS r RIGHT JOIN t_tj_left AS l ON l.id = r.id ORDER BY l.k DESC LIMIT 5 OFFSET 3 SETTINGS query_plan_top_k_through_join = 0));
+SELECT
+    (SELECT groupArray((k, v)) FROM (SELECT l.k AS k, r2.v AS v FROM t_tj_left AS l LEFT JOIN t_tj_right AS r1 ON r1.id = l.id LEFT JOIN t_tj_right AS r2 ON r2.id = l.id + 1 ORDER BY l.k LIMIT 10))
+    = (SELECT groupArray((k, v)) FROM (SELECT l.k AS k, r2.v AS v FROM t_tj_left AS l LEFT JOIN t_tj_right AS r1 ON r1.id = l.id LEFT JOIN t_tj_right AS r2 ON r2.id = l.id + 1 ORDER BY l.k LIMIT 10 SETTINGS query_plan_top_k_through_join = 0));
 
 DROP TABLE t_tj_left;
 DROP TABLE t_tj_right;
