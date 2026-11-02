@@ -484,8 +484,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         else:
             results = select_replica_failures(replica_log_pairs)
             if not crashed:
-                # The row about why the server was killed reports it, unless the logs name more.
-                results = [f for f in results if f[0] != FuzzerLogParser.UNKNOWN_ERROR]
+                # A killed server did not die of a memory limit, and the row about why it was
+                # killed reports it, unless the logs name a defect.
+                results = [
+                    f
+                    for f in results
+                    if f[0]
+                    not in (
+                        FuzzerLogParser.UNKNOWN_ERROR,
+                        FuzzerLogParser.MEMORY_LIMIT_EXCEEDED,
+                    )
+                ]
             if results:
                 # The crash named in the server logs is the cause, so drop the rows
                 # about its consequences to report it once.
