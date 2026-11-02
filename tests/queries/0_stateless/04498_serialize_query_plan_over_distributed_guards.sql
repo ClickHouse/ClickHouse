@@ -1,11 +1,9 @@
 -- Regression tests for the plan-level distributed read over a Distributed table, gated on
 -- serialize_query_plan. Plain cases pin the new path with no MPP machinery involved. The cases
--- that additionally set make_distributed_plan = 1 pin the MPP-interaction guards: the
--- initiator-side MPP conversion must be skipped for plans that already read from remote shards
--- (WITH TOTALS, ROLLUP), and the forwarded-settings reset in ClusterProxy must keep
--- make_distributed_plan off on shards so legacy fallback paths (shardNum,
--- distributed_group_by_no_merge) do not throw SUPPORT_IS_DISABLED. The make-only section pins the
--- same guards with the plan path disabled (make_distributed_plan = 1, serialize_query_plan = 0).
+-- that additionally set make_distributed_plan = 1 use the classic read, which make_distributed_plan
+-- distributes itself, and must not throw SUPPORT_IS_DISABLED (WITH TOTALS, ROLLUP,
+-- distributed_group_by_no_merge). The make-only section pins the same cases with the plan path
+-- disabled (make_distributed_plan = 1, serialize_query_plan = 0).
 
 SET serialize_query_plan = 1;
 
@@ -34,14 +32,11 @@ SELECT k, count() AS c FROM mdp_dist GROUP BY k WITH ROLLUP ORDER BY k, c SETTIN
 SELECT '-- shardNum in select list (fallback to the legacy read path)';
 SELECT shardNum() AS s, count() FROM mdp_dist GROUP BY s ORDER BY s;
 
-SELECT '-- shardNum with make_distributed_plan = 1 too (legacy fallback + shard-side settings reset)';
-SELECT shardNum() AS s, count() FROM mdp_dist GROUP BY s ORDER BY s SETTINGS make_distributed_plan = 1;
-
 SELECT '-- distributed_group_by_no_merge = 1 (legacy path)';
 -- Each shard returns its own groups without merging; sort on the initiator for determinism.
 SELECT k, c FROM (SELECT k, count() AS c FROM mdp_dist GROUP BY k) ORDER BY k, c SETTINGS distributed_group_by_no_merge = 1;
 
-SELECT '-- distributed_group_by_no_merge = 1 with make_distributed_plan = 1 too (settings reset)';
+SELECT '-- distributed_group_by_no_merge = 1 with make_distributed_plan = 1 too';
 SELECT k, c FROM (SELECT k, count() AS c FROM mdp_dist GROUP BY k) ORDER BY k, c SETTINGS distributed_group_by_no_merge = 1, make_distributed_plan = 1;
 
 SELECT '-- distributed-over-distributed';

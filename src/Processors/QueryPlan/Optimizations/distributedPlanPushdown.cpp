@@ -41,13 +41,14 @@ bool planReadsFromRemote(QueryPlan::Node & root)
         stack.pop_back();
 
         auto * step = node->step.get();
-        if (typeid_cast<const ReadFromRemotePlanStep *>(step) || typeid_cast<const ReadFromRemote *>(step))
+        /// A plain `ReadFromRemote` is distributed by `make_distributed_plan` itself.
+        if (typeid_cast<const ReadFromRemotePlanStep *>(step))
             return true;
 
         for (auto * child : node->children)
             stack.push_back(child);
 
-        /// A remote read in a child plan also fixes the distributed split.
+        /// A plan-level remote read in a child plan also fixes the distributed split.
         for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
             stack.push_back(child_plan->getRootNode());
     }

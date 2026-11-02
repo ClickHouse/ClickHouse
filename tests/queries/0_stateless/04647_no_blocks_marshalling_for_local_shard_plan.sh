@@ -183,6 +183,8 @@ $INITIAL_CLIENT -q "
     SETTINGS explain_query_plan_default = 'legacy';
 "
 
+# With `serialize_query_plan = 1` a multi-shard read sends a plan that only reads the columns and
+# aggregates on the initiator, so no shard plan has a `BlocksMarshalling` step.
 $CLIENT -q "
     SELECT '-- BlocksMarshalling steps for a serialized plan: total, above ReadFromRemote, ReadFromRemote steps';
     $(marshalling_counts_query "

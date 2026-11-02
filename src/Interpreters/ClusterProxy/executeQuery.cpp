@@ -78,7 +78,6 @@ namespace Setting
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsDouble limit;
     extern const SettingsLoadBalancing load_balancing;
-    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsSeconds max_execution_time;
@@ -110,7 +109,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
-    extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_for_object_storage_tables;
     extern const SettingsMilliseconds queue_max_wait_ms;
@@ -503,14 +501,6 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// until filter generation for these modes are done on query plan level
     if (context->canUseOffsetParallelReplicas())
         new_settings[Setting::serialize_query_plan] = false;
-
-    /// A shard must not redistribute a plan fragment received from the initiator.
-    new_settings[Setting::make_distributed_plan] = false;
-    new_settings[Setting::make_distributed_plan].changed = false;
-
-    /// Keep AST fallback shards remote so MPP conversion cannot redistribute their local reads.
-    if (settings[Setting::make_distributed_plan])
-        new_settings[Setting::prefer_localhost_replica] = false;
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

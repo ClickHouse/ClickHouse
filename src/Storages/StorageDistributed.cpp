@@ -196,6 +196,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
@@ -708,6 +709,8 @@ bool StorageDistributed::useDistributedPlanForReading(
     const auto & settings = local_context->getSettingsRef();
 
     return settings[Setting::serialize_query_plan]
+        /// `make_distributed_plan` distributes a plain `ReadFromRemote` itself.
+        && !settings[Setting::make_distributed_plan]
         && !settings[Setting::distributed_group_by_no_merge]
         /// `distributed_product_mode = 'local'` requires per-shard subquery rewriting.
         && settings[Setting::distributed_product_mode] != DistributedProductMode::LOCAL

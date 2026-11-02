@@ -23,9 +23,6 @@
 -- shardNum in select list (fallback to the legacy read path)
 1	20
 2	20
--- shardNum with make_distributed_plan = 1 too (legacy fallback + shard-side settings reset)
-1	20
-2	20
 -- distributed_group_by_no_merge = 1 (legacy path)
 0	5
 0	5
@@ -35,7 +32,7 @@
 2	5
 3	5
 3	5
--- distributed_group_by_no_merge = 1 with make_distributed_plan = 1 too (settings reset)
+-- distributed_group_by_no_merge = 1 with make_distributed_plan = 1 too
 0	5
 0	5
 1	5
