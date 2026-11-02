@@ -2,8 +2,10 @@
 #include <shared_mutex>
 #include <Processors/TopKThresholdTracker.h>
 #include <Columns/Collator.h>
+#include <Columns/IColumn.h>
 #include <Core/CompareHelper.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -47,16 +49,24 @@ void TopKThresholdTrackerNumeric<T>::testAndSet(const Field & value)
 
     if (sort_desc.direction == 1)
     {
-        while (CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction)
-            && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
+        while (CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction))
         {
+            if (threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
+            {
+                version.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
         }
     }
     else
     {
-        while (CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction)
-            && !threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
+        while (CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction))
         {
+            if (threshold.compare_exchange_weak(current, candidate, std::memory_order_relaxed))
+            {
+                version.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
         }
     }
 }
@@ -88,6 +98,13 @@ template class TopKThresholdTrackerNumeric<UInt64>;
 template class TopKThresholdTrackerNumeric<Int64>;
 template class TopKThresholdTrackerNumeric<Float64>;
 
+TopKThresholdTrackerGeneric::TopKThresholdTrackerGeneric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
+    : ITopKThresholdTracker(sort_desc_, std::move(data_type_))
+{
+    if (sort_desc.collator || anyInTypeTree(*data_type, [](const IDataType & node) { return node.isNullable() || isFloat(node); }))
+        empty_column = data_type->createColumn();
+}
+
 void TopKThresholdTrackerGeneric::testAndSet(const Field & value)
 {
     std::unique_lock lock(mutex);
@@ -95,15 +112,17 @@ void TopKThresholdTrackerGeneric::testAndSet(const Field & value)
     if (!is_set)
     {
         threshold = value;
+        version.fetch_add(1, std::memory_order_relaxed);
         is_set = true;
         return;
     }
 
     int cmp = compareFields(value, threshold);
-    if (sort_desc.direction == 1 && cmp < 0)
+    if ((sort_desc.direction == 1 && cmp < 0) || (sort_desc.direction == -1 && cmp > 0))
+    {
         threshold = value;
-    else if (sort_desc.direction == -1 && cmp > 0)
-        threshold = value;
+        version.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
 bool TopKThresholdTrackerGeneric::isValueInsideThreshold(const Field & value) const
@@ -140,11 +159,13 @@ int TopKThresholdTrackerGeneric::compareFields(const Field & lhs, const Field & 
     if (rhs_null)
         return -sort_desc.nulls_direction;
 
-    if (sort_desc.collator && lhs.getType() == Field::Types::String)
+    if (empty_column)
     {
-        const auto & l = lhs.safeGet<String>();
-        const auto & r = rhs.safeGet<String>();
-        return sort_desc.collator->compare(l.data(), l.size(), r.data(), r.size());
+        auto column = empty_column->cloneEmpty();
+        column->insert(lhs);
+        column->insert(rhs);
+        return sort_desc.collator ? column->compareAtWithCollation(0, 1, *column, sort_desc.nulls_direction, *sort_desc.collator)
+                                  : column->compareAt(0, 1, *column, sort_desc.nulls_direction);
     }
 
     if (lhs < rhs)

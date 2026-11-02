@@ -218,6 +218,9 @@ public:
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
+    /// Runtime counterpart of `hasDelayedBlocks`: whether the delayed blocks are processed at all.
+    /// Decided at latest in `onBuildPhaseFinish`, after that the returned value should not change.
+    virtual bool isDelayedBlocksProcessingEnabled() const { return hasDelayedBlocks(); }
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;

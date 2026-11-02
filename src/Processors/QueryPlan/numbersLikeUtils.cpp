@@ -6,6 +6,7 @@
 #include <base/arithmeticOverflow.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -156,15 +157,17 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
     return limit_with_offset;
 }
 
-void checkLimits(const Settings & settings, size_t rows)
+void checkLimits(const Context & context, size_t rows)
 {
+    const auto & settings = context.getSettingsRef();
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
     {
         const auto limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
         limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+    if (context.getClientInfo().distributed_depth > 0
+        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
     {
         const auto leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
         leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);

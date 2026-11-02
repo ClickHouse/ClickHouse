@@ -104,8 +104,7 @@
 #include <string.h> /* memset(), memcpy() */
 #include <assert.h>
 #include <limits.h> /* INT_MAX, UINT_MAX */
-#include <stdio.h>  /* fprintf */
-#include <stdlib.h> /* getenv */
+#include <stdlib.h>
 #include <stdint.h> /* SIZE_MAX, UINT64_MAX, uint64_t, uintptr_t */
 #include <math.h>   /* isnan */
 #include <errno.h>
@@ -465,15 +464,12 @@ typedef unsigned long long XmlBigCount;
 typedef struct accounting {
   XmlBigCount countBytesDirect;
   XmlBigCount countBytesIndirect;
-  unsigned long debugLevel;
   float maximumAmplificationFactor; // >=1.0
   unsigned long long activationThresholdBytes;
 } ACCOUNTING;
 
 typedef struct MALLOC_TRACKER {
   size_t bytesAllocated;
-  size_t peakBytesAllocated; // updated live only for debug level >=2
-  unsigned long debugLevel;
   float maximumAmplificationFactor; // >=1.0
   XmlBigCount activationThresholdBytes;
 } MALLOC_TRACKER;
@@ -482,7 +478,6 @@ typedef struct entity_stats {
   unsigned int countEverOpened;
   unsigned int currentDepth;
   unsigned int maximumDepthSeen;
-  unsigned long debugLevel;
 } ENTITY_STATS;
 #endif /* XML_GE == 1 */
 
@@ -625,20 +620,11 @@ static void parserInit(XML_Parser parser, const XML_Char *encodingName);
 
 #if XML_GE == 1
 static float accountingGetCurrentAmplification(XML_Parser rootParser);
-static void accountingReportStats(XML_Parser originParser, const char *epilog);
-static void accountingOnAbort(XML_Parser originParser);
-static void accountingReportDiff(XML_Parser rootParser,
-                                 unsigned int levelsAwayFromRootParser,
-                                 const char *before, const char *after,
-                                 ptrdiff_t bytesMore, int source_line,
-                                 enum XML_Account account);
 static XML_Bool accountingDiffTolerated(XML_Parser originParser, int tok,
                                         const char *before, const char *after,
                                         int source_line,
                                         enum XML_Account account);
 
-static void entityTrackingReportStats(XML_Parser parser, ENTITY *entity,
-                                      const char *action, int sourceLine);
 static void entityTrackingOnOpen(XML_Parser parser, ENTITY *entity,
                                  int sourceLine);
 static void entityTrackingOnClose(XML_Parser parser, ENTITY *entity,
@@ -647,9 +633,6 @@ static void entityTrackingOnClose(XML_Parser parser, ENTITY *entity,
 
 static XML_Parser getRootParserOf(XML_Parser parser,
                                   unsigned int *outLevelDiff);
-
-static unsigned long getDebugLevel(const char *variableName,
-                                   unsigned long defaultDebugLevel);
 
 static bool poolAppendChar(STRING_POOL *pool, XML_Char c);
 
@@ -848,20 +831,6 @@ struct XML_ParserStruct {
 #endif
 
 #if XML_GE == 1
-static void
-expat_heap_stat(XML_Parser rootParser, char operator, size_t absDiff,
-                size_t newTotal, size_t peakTotal, int sourceLine) {
-  // NOTE: This can be +infinity or -nan
-  const float amplification
-      = (float)newTotal / (float)rootParser->m_accounting.countBytesDirect;
-  fprintf(
-      stderr,
-      "expat: Allocations(%p): Direct " EXPAT_FMT_ULL("10") ", allocated %c" EXPAT_FMT_SIZE_T(
-          "10") " to " EXPAT_FMT_SIZE_T("10") " (" EXPAT_FMT_SIZE_T("10") " peak), amplification %8.2f (xmlparse.c:%d)\n",
-      (void *)rootParser, rootParser->m_accounting.countBytesDirect, operator,
-      absDiff, newTotal, peakTotal, (double)amplification, sourceLine);
-}
-
 static bool
 expat_heap_increase_tolerable(XML_Parser rootParser, size_t increase,
                               int sourceLine) {
@@ -889,9 +858,7 @@ expat_heap_increase_tolerable(XML_Parser rootParser, size_t increase,
     }
   }
 
-  if (! tolerable && (rootParser->m_alloc_tracker.debugLevel >= 1)) {
-    expat_heap_stat(rootParser, '+', increase, newTotal, newTotal, sourceLine);
-  }
+  (void)sourceLine;
 
   return tolerable;
 }
@@ -934,18 +901,6 @@ expat_malloc(XML_Parser parser, size_t size, int sourceLine) {
   // Update accounting
   rootParser->m_alloc_tracker.bytesAllocated += bytesToAllocate;
 
-  // Report as needed
-  if (rootParser->m_alloc_tracker.debugLevel >= 2) {
-    if (rootParser->m_alloc_tracker.bytesAllocated
-        > rootParser->m_alloc_tracker.peakBytesAllocated) {
-      rootParser->m_alloc_tracker.peakBytesAllocated
-          = rootParser->m_alloc_tracker.bytesAllocated;
-    }
-    expat_heap_stat(rootParser, '+', bytesToAllocate,
-                    rootParser->m_alloc_tracker.bytesAllocated,
-                    rootParser->m_alloc_tracker.peakBytesAllocated, sourceLine);
-  }
-
   return (char *)mallocedPtr + sizeof(size_t) + EXPAT_MALLOC_PADDING;
 }
 
@@ -974,12 +929,7 @@ expat_free(XML_Parser parser, void *ptr, int sourceLine) {
   assert(rootParser->m_alloc_tracker.bytesAllocated >= bytesAllocated);
   rootParser->m_alloc_tracker.bytesAllocated -= bytesAllocated;
 
-  // Report as needed
-  if (rootParser->m_alloc_tracker.debugLevel >= 2) {
-    expat_heap_stat(rootParser, '-', bytesAllocated,
-                    rootParser->m_alloc_tracker.bytesAllocated,
-                    rootParser->m_alloc_tracker.peakBytesAllocated, sourceLine);
-  }
+  (void)sourceLine;
 
   // NOTE: This may be freeing rootParser, so freeing has to come last
   parser->m_mem.free_fcn(mallocedPtr);
@@ -1044,18 +994,6 @@ expat_realloc(XML_Parser parser, void *ptr, size_t size, int sourceLine) {
     rootParser->m_alloc_tracker.bytesAllocated -= absDiff;
   }
 
-  // Report as needed
-  if (rootParser->m_alloc_tracker.debugLevel >= 2) {
-    if (rootParser->m_alloc_tracker.bytesAllocated
-        > rootParser->m_alloc_tracker.peakBytesAllocated) {
-      rootParser->m_alloc_tracker.peakBytesAllocated
-          = rootParser->m_alloc_tracker.bytesAllocated;
-    }
-    expat_heap_stat(rootParser, isIncrease ? '+' : '-', absDiff,
-                    rootParser->m_alloc_tracker.bytesAllocated,
-                    rootParser->m_alloc_tracker.peakBytesAllocated, sourceLine);
-  }
-
   // Update in-block recorded size
   *(size_t *)mallocedPtr = size;
 
@@ -1117,13 +1055,7 @@ gather_time_entropy(void) {
 
 static struct sipkey
 ENTROPY_DEBUG(const char *label, struct sipkey entropy_128) {
-  if (getDebugLevel("EXPAT_ENTROPY_DEBUG", 0) >= 1u) {
-    fprintf(stderr,
-            "expat: Entropy: %s --> [0x" EXPAT_FMT_LLX(
-                "016") ", 0x" EXPAT_FMT_LLX("016") "] (16 bytes)\n",
-            label, (unsigned long long)entropy_128.k[0],
-            (unsigned long long)entropy_128.k[1]);
-  }
+  (void)label;
   return entropy_128;
 }
 
@@ -1384,8 +1316,6 @@ parserCreate(const XML_Char *encodingName,
   // Initialize .m_alloc_tracker
   memset(&parser->m_alloc_tracker, 0, sizeof(MALLOC_TRACKER));
   if (parentParser == NULL) {
-    parser->m_alloc_tracker.debugLevel
-        = getDebugLevel("EXPAT_MALLOC_DEBUG", 0u);
     parser->m_alloc_tracker.maximumAmplificationFactor
         = EXPAT_ALLOC_TRACKER_MAXIMUM_AMPLIFICATION_DEFAULT;
     parser->m_alloc_tracker.activationThresholdBytes
@@ -1405,18 +1335,6 @@ parserCreate(const XML_Char *encodingName,
   assert(SIZE_MAX - rootParser->m_alloc_tracker.bytesAllocated >= increase);
   rootParser->m_alloc_tracker.bytesAllocated += increase;
 
-  // Report on allocation
-  if (rootParser->m_alloc_tracker.debugLevel >= 2) {
-    if (rootParser->m_alloc_tracker.bytesAllocated
-        > rootParser->m_alloc_tracker.peakBytesAllocated) {
-      rootParser->m_alloc_tracker.peakBytesAllocated
-          = rootParser->m_alloc_tracker.bytesAllocated;
-    }
-
-    expat_heap_stat(rootParser, '+', increase,
-                    rootParser->m_alloc_tracker.bytesAllocated,
-                    rootParser->m_alloc_tracker.peakBytesAllocated, __LINE__);
-  }
 #else
   parser->m_parentParser = NULL;
 #endif // XML_GE == 1
@@ -1581,14 +1499,12 @@ parserInit(XML_Parser parser, const XML_Char *encodingName) {
 
 #if XML_GE == 1
   memset(&parser->m_accounting, 0, sizeof(ACCOUNTING));
-  parser->m_accounting.debugLevel = getDebugLevel("EXPAT_ACCOUNTING_DEBUG", 0u);
   parser->m_accounting.maximumAmplificationFactor
       = EXPAT_BILLION_LAUGHS_ATTACK_PROTECTION_MAXIMUM_AMPLIFICATION_DEFAULT;
   parser->m_accounting.activationThresholdBytes
       = EXPAT_BILLION_LAUGHS_ATTACK_PROTECTION_ACTIVATION_THRESHOLD_DEFAULT;
 
   memset(&parser->m_entity_stats, 0, sizeof(ENTITY_STATS));
-  parser->m_entity_stats.debugLevel = getDebugLevel("EXPAT_ENTITY_DEBUG", 0u);
 #endif
 }
 
@@ -3515,7 +3431,6 @@ externalEntityInitProcessor2(XML_Parser parser, const char *start,
 #if XML_GE == 1
     if (! accountingDiffTolerated(parser, tok, start, next, __LINE__,
                                   XML_ACCOUNT_DIRECT)) {
-      accountingOnAbort(parser);
       return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
     }
 #endif /* XML_GE == 1 */
@@ -3644,7 +3559,6 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
               : next;
     if (! accountingDiffTolerated(parser, tok, s, accountAfter, __LINE__,
                                   account)) {
-      accountingOnAbort(parser);
       return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
     }
 #endif
@@ -4912,7 +4826,6 @@ doCdataSection(XML_Parser parser, const ENCODING *enc, const char **startPtr,
     int tok = XmlCdataSectionTok(enc, s, end, &next);
 #if XML_GE == 1
     if (! accountingDiffTolerated(parser, tok, s, next, __LINE__, account)) {
-      accountingOnAbort(parser);
       return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
     }
 #else
@@ -5084,7 +4997,6 @@ doIgnoreSection(XML_Parser parser, const ENCODING *enc, const char **startPtr,
 #  if XML_GE == 1
   if (! accountingDiffTolerated(parser, tok, s, next, __LINE__,
                                 XML_ACCOUNT_DIRECT)) {
-    accountingOnAbort(parser);
     return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
   }
 #  endif
@@ -5176,7 +5088,6 @@ processXmlDecl(XML_Parser parser, int isGeneralTextEntity, const char *s,
 #if XML_GE == 1
   if (! accountingDiffTolerated(parser, XML_TOK_XML_DECL, s, next, __LINE__,
                                 XML_ACCOUNT_DIRECT)) {
-    accountingOnAbort(parser);
     return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
   }
 #endif
@@ -5397,7 +5308,6 @@ entityValueInitProcessor(XML_Parser parser, const char *s, const char *end,
 #  if XML_GE == 1
       if (! accountingDiffTolerated(parser, tok, s, next, __LINE__,
                                     XML_ACCOUNT_DIRECT)) {
-        accountingOnAbort(parser);
         return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
       }
 #  endif
@@ -5450,7 +5360,6 @@ externalParEntProcessor(XML_Parser parser, const char *s, const char *end,
   else if (tok == XML_TOK_BOM) {
     if (! accountingDiffTolerated(parser, tok, s, next, __LINE__,
                                   XML_ACCOUNT_DIRECT)) {
-      accountingOnAbort(parser);
       return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
     }
 
@@ -5629,7 +5538,6 @@ doProlog(XML_Parser parser, const ENCODING *enc, const char *s, const char *end,
       break;
     default:
       if (! accountingDiffTolerated(parser, tok, s, next, __LINE__, account)) {
-        accountingOnAbort(parser);
         return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
       }
     }
@@ -6658,7 +6566,6 @@ epilogProcessor(XML_Parser parser, const char *s, const char *end,
 #if XML_GE == 1
     if (! accountingDiffTolerated(parser, tok, s, next, __LINE__,
                                   XML_ACCOUNT_DIRECT)) {
-      accountingOnAbort(parser);
       return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
     }
 #endif
@@ -6968,7 +6875,6 @@ appendAttributeValue(XML_Parser parser, const ENCODING *enc, XML_Bool isCdata,
     int tok = XmlAttributeValueTok(enc, ptr, end, &next);
 #if XML_GE == 1
     if (! accountingDiffTolerated(parser, tok, ptr, next, __LINE__, account)) {
-      accountingOnAbort(parser);
       return XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
     }
 #endif
@@ -7184,7 +7090,6 @@ storeEntityValue(XML_Parser parser, const ENCODING *enc,
 
     if (! accountingDiffTolerated(parser, tok, entityTextPtr, next, __LINE__,
                                   account)) {
-      accountingOnAbort(parser);
       result = XML_ERROR_AMPLIFICATION_LIMIT_BREACH;
       goto endEntityValue;
     }
@@ -8992,67 +8897,6 @@ accountingGetCurrentAmplification(XML_Parser rootParser) {
   return amplificationFactor;
 }
 
-static void
-accountingReportStats(XML_Parser originParser, const char *epilog) {
-  const XML_Parser rootParser = getRootParserOf(originParser, NULL);
-  assert(! rootParser->m_parentParser);
-
-  if (rootParser->m_accounting.debugLevel == 0u) {
-    return;
-  }
-
-  const float amplificationFactor
-      = accountingGetCurrentAmplification(rootParser);
-  fprintf(stderr,
-          "expat: Accounting(%p): Direct " EXPAT_FMT_ULL(
-              "10") ", indirect " EXPAT_FMT_ULL("10") ", amplification %8.2f%s",
-          (void *)rootParser, rootParser->m_accounting.countBytesDirect,
-          rootParser->m_accounting.countBytesIndirect,
-          (double)amplificationFactor, epilog);
-}
-
-static void
-accountingOnAbort(XML_Parser originParser) {
-  accountingReportStats(originParser, " ABORTING\n");
-}
-
-static void
-accountingReportDiff(XML_Parser rootParser,
-                     unsigned int levelsAwayFromRootParser, const char *before,
-                     const char *after, ptrdiff_t bytesMore, int source_line,
-                     enum XML_Account account) {
-  assert(! rootParser->m_parentParser);
-
-  fprintf(stderr,
-          " (+" EXPAT_FMT_PTRDIFF_T("6") " bytes %s|%u, xmlparse.c:%d) %*s\"",
-          bytesMore, (account == XML_ACCOUNT_DIRECT) ? "DIR" : "EXP",
-          levelsAwayFromRootParser, source_line, 10, "");
-
-  const char ellipis[] = "[..]";
-  const size_t ellipsisLength = sizeof(ellipis) /* because compile-time */ - 1;
-  const unsigned int contextLength = 10;
-
-  /* Note: Performance is of no concern here */
-  const char *walker = before;
-  if ((rootParser->m_accounting.debugLevel >= 3u)
-      || (after - before)
-             <= (ptrdiff_t)(contextLength + ellipsisLength + contextLength)) {
-    for (; walker < after; walker++) {
-      fprintf(stderr, "%s", unsignedCharToPrintable(walker[0]));
-    }
-  } else {
-    for (; walker < before + contextLength; walker++) {
-      fprintf(stderr, "%s", unsignedCharToPrintable(walker[0]));
-    }
-    fprintf(stderr, ellipis);
-    walker = after - contextLength;
-    for (; walker < after; walker++) {
-      fprintf(stderr, "%s", unsignedCharToPrintable(walker[0]));
-    }
-  }
-  fprintf(stderr, "\"\n");
-}
-
 static XML_Bool
 accountingDiffTolerated(XML_Parser originParser, int tok, const char *before,
                         const char *after, int source_line,
@@ -9071,9 +8915,7 @@ accountingDiffTolerated(XML_Parser originParser, int tok, const char *before,
   if (account == XML_ACCOUNT_NONE)
     return XML_TRUE; /* because these bytes have been accounted for, already */
 
-  unsigned int levelsAwayFromRootParser;
-  const XML_Parser rootParser
-      = getRootParserOf(originParser, &levelsAwayFromRootParser);
+  const XML_Parser rootParser = getRootParserOf(originParser, NULL);
   assert(! rootParser->m_parentParser);
 
   const int isDirect
@@ -9099,12 +8941,7 @@ accountingDiffTolerated(XML_Parser originParser, int tok, const char *before,
         || (amplificationFactor
             <= rootParser->m_accounting.maximumAmplificationFactor);
 
-  if (rootParser->m_accounting.debugLevel >= 2u) {
-    accountingReportStats(rootParser, "");
-    accountingReportDiff(rootParser, levelsAwayFromRootParser, before, after,
-                         bytesMore, source_line, account);
-  }
-
+  (void)source_line;
   return tolerated;
 }
 
@@ -9123,40 +8960,6 @@ testingAccountingGetCountBytesIndirect(XML_Parser parser) {
 }
 
 static void
-entityTrackingReportStats(XML_Parser rootParser, ENTITY *entity,
-                          const char *action, int sourceLine) {
-  assert(! rootParser->m_parentParser);
-  if (rootParser->m_entity_stats.debugLevel == 0u)
-    return;
-
-#  if defined(XML_UNICODE)
-  const char *const entityName = "[..]";
-#  else
-  const char *const entityName = entity->name;
-#  endif
-
-  const bool limitingWanted = rootParser->m_entity_stats.debugLevel < 2;
-  const int maxLimitedDepth = 10; // somewhat arbitrary
-  const int candidateIndentDepth
-      = (int)rootParser->m_entity_stats.currentDepth - 1;
-  const bool limitingNeeded
-      = limitingWanted && (candidateIndentDepth > maxLimitedDepth);
-  const char *const ellipisOrEmpty = limitingNeeded ? " [..] " : "";
-  const int indentDepth
-      = limitingNeeded ? (maxLimitedDepth - /* make space for ellipis */ 2)
-                       : candidateIndentDepth;
-
-  fprintf(
-      stderr,
-      "expat: Entities(%p): Count %9u, depth %2u/%2u %*s%s%s%s; %s length %d (xmlparse.c:%d)\n",
-      (void *)rootParser, rootParser->m_entity_stats.countEverOpened,
-      rootParser->m_entity_stats.currentDepth,
-      rootParser->m_entity_stats.maximumDepthSeen, indentDepth * 2, "",
-      ellipisOrEmpty, entity->is_param ? "%" : "&", entityName, action,
-      entity->textLen, sourceLine);
-}
-
-static void
 entityTrackingOnOpen(XML_Parser originParser, ENTITY *entity, int sourceLine) {
   const XML_Parser rootParser = getRootParserOf(originParser, NULL);
   assert(! rootParser->m_parentParser);
@@ -9168,7 +8971,8 @@ entityTrackingOnOpen(XML_Parser originParser, ENTITY *entity, int sourceLine) {
     rootParser->m_entity_stats.maximumDepthSeen++;
   }
 
-  entityTrackingReportStats(rootParser, entity, "OPEN ", sourceLine);
+  (void)entity;
+  (void)sourceLine;
 }
 
 static void
@@ -9176,7 +8980,8 @@ entityTrackingOnClose(XML_Parser originParser, ENTITY *entity, int sourceLine) {
   const XML_Parser rootParser = getRootParserOf(originParser, NULL);
   assert(! rootParser->m_parentParser);
 
-  entityTrackingReportStats(rootParser, entity, "CLOSE", sourceLine);
+  (void)entity;
+  (void)sourceLine;
   rootParser->m_entity_stats.currentDepth--;
 }
 
@@ -9195,551 +9000,4 @@ getRootParserOf(XML_Parser parser, unsigned int *outLevelDiff) {
     *outLevelDiff = stepsTakenUpwards;
   }
   return rootParser;
-}
-
-#if XML_GE == 1
-
-const char *
-unsignedCharToPrintable(unsigned char c) {
-  switch (c) {
-  case 0:
-    return "\\0";
-  case 1:
-    return "\\x1";
-  case 2:
-    return "\\x2";
-  case 3:
-    return "\\x3";
-  case 4:
-    return "\\x4";
-  case 5:
-    return "\\x5";
-  case 6:
-    return "\\x6";
-  case 7:
-    return "\\x7";
-  case 8:
-    return "\\x8";
-  case 9:
-    return "\\t";
-  case 10:
-    return "\\n";
-  case 11:
-    return "\\xB";
-  case 12:
-    return "\\xC";
-  case 13:
-    return "\\r";
-  case 14:
-    return "\\xE";
-  case 15:
-    return "\\xF";
-  case 16:
-    return "\\x10";
-  case 17:
-    return "\\x11";
-  case 18:
-    return "\\x12";
-  case 19:
-    return "\\x13";
-  case 20:
-    return "\\x14";
-  case 21:
-    return "\\x15";
-  case 22:
-    return "\\x16";
-  case 23:
-    return "\\x17";
-  case 24:
-    return "\\x18";
-  case 25:
-    return "\\x19";
-  case 26:
-    return "\\x1A";
-  case 27:
-    return "\\x1B";
-  case 28:
-    return "\\x1C";
-  case 29:
-    return "\\x1D";
-  case 30:
-    return "\\x1E";
-  case 31:
-    return "\\x1F";
-  case 32:
-    return " ";
-  case 33:
-    return "!";
-  case 34:
-    return "\\\"";
-  case 35:
-    return "#";
-  case 36:
-    return "$";
-  case 37:
-    return "%";
-  case 38:
-    return "&";
-  case 39:
-    return "'";
-  case 40:
-    return "(";
-  case 41:
-    return ")";
-  case 42:
-    return "*";
-  case 43:
-    return "+";
-  case 44:
-    return ",";
-  case 45:
-    return "-";
-  case 46:
-    return ".";
-  case 47:
-    return "/";
-  case 48:
-    return "0";
-  case 49:
-    return "1";
-  case 50:
-    return "2";
-  case 51:
-    return "3";
-  case 52:
-    return "4";
-  case 53:
-    return "5";
-  case 54:
-    return "6";
-  case 55:
-    return "7";
-  case 56:
-    return "8";
-  case 57:
-    return "9";
-  case 58:
-    return ":";
-  case 59:
-    return ";";
-  case 60:
-    return "<";
-  case 61:
-    return "=";
-  case 62:
-    return ">";
-  case 63:
-    return "?";
-  case 64:
-    return "@";
-  case 65:
-    return "A";
-  case 66:
-    return "B";
-  case 67:
-    return "C";
-  case 68:
-    return "D";
-  case 69:
-    return "E";
-  case 70:
-    return "F";
-  case 71:
-    return "G";
-  case 72:
-    return "H";
-  case 73:
-    return "I";
-  case 74:
-    return "J";
-  case 75:
-    return "K";
-  case 76:
-    return "L";
-  case 77:
-    return "M";
-  case 78:
-    return "N";
-  case 79:
-    return "O";
-  case 80:
-    return "P";
-  case 81:
-    return "Q";
-  case 82:
-    return "R";
-  case 83:
-    return "S";
-  case 84:
-    return "T";
-  case 85:
-    return "U";
-  case 86:
-    return "V";
-  case 87:
-    return "W";
-  case 88:
-    return "X";
-  case 89:
-    return "Y";
-  case 90:
-    return "Z";
-  case 91:
-    return "[";
-  case 92:
-    return "\\\\";
-  case 93:
-    return "]";
-  case 94:
-    return "^";
-  case 95:
-    return "_";
-  case 96:
-    return "`";
-  case 97:
-    return "a";
-  case 98:
-    return "b";
-  case 99:
-    return "c";
-  case 100:
-    return "d";
-  case 101:
-    return "e";
-  case 102:
-    return "f";
-  case 103:
-    return "g";
-  case 104:
-    return "h";
-  case 105:
-    return "i";
-  case 106:
-    return "j";
-  case 107:
-    return "k";
-  case 108:
-    return "l";
-  case 109:
-    return "m";
-  case 110:
-    return "n";
-  case 111:
-    return "o";
-  case 112:
-    return "p";
-  case 113:
-    return "q";
-  case 114:
-    return "r";
-  case 115:
-    return "s";
-  case 116:
-    return "t";
-  case 117:
-    return "u";
-  case 118:
-    return "v";
-  case 119:
-    return "w";
-  case 120:
-    return "x";
-  case 121:
-    return "y";
-  case 122:
-    return "z";
-  case 123:
-    return "{";
-  case 124:
-    return "|";
-  case 125:
-    return "}";
-  case 126:
-    return "~";
-  case 127:
-    return "\\x7F";
-  case 128:
-    return "\\x80";
-  case 129:
-    return "\\x81";
-  case 130:
-    return "\\x82";
-  case 131:
-    return "\\x83";
-  case 132:
-    return "\\x84";
-  case 133:
-    return "\\x85";
-  case 134:
-    return "\\x86";
-  case 135:
-    return "\\x87";
-  case 136:
-    return "\\x88";
-  case 137:
-    return "\\x89";
-  case 138:
-    return "\\x8A";
-  case 139:
-    return "\\x8B";
-  case 140:
-    return "\\x8C";
-  case 141:
-    return "\\x8D";
-  case 142:
-    return "\\x8E";
-  case 143:
-    return "\\x8F";
-  case 144:
-    return "\\x90";
-  case 145:
-    return "\\x91";
-  case 146:
-    return "\\x92";
-  case 147:
-    return "\\x93";
-  case 148:
-    return "\\x94";
-  case 149:
-    return "\\x95";
-  case 150:
-    return "\\x96";
-  case 151:
-    return "\\x97";
-  case 152:
-    return "\\x98";
-  case 153:
-    return "\\x99";
-  case 154:
-    return "\\x9A";
-  case 155:
-    return "\\x9B";
-  case 156:
-    return "\\x9C";
-  case 157:
-    return "\\x9D";
-  case 158:
-    return "\\x9E";
-  case 159:
-    return "\\x9F";
-  case 160:
-    return "\\xA0";
-  case 161:
-    return "\\xA1";
-  case 162:
-    return "\\xA2";
-  case 163:
-    return "\\xA3";
-  case 164:
-    return "\\xA4";
-  case 165:
-    return "\\xA5";
-  case 166:
-    return "\\xA6";
-  case 167:
-    return "\\xA7";
-  case 168:
-    return "\\xA8";
-  case 169:
-    return "\\xA9";
-  case 170:
-    return "\\xAA";
-  case 171:
-    return "\\xAB";
-  case 172:
-    return "\\xAC";
-  case 173:
-    return "\\xAD";
-  case 174:
-    return "\\xAE";
-  case 175:
-    return "\\xAF";
-  case 176:
-    return "\\xB0";
-  case 177:
-    return "\\xB1";
-  case 178:
-    return "\\xB2";
-  case 179:
-    return "\\xB3";
-  case 180:
-    return "\\xB4";
-  case 181:
-    return "\\xB5";
-  case 182:
-    return "\\xB6";
-  case 183:
-    return "\\xB7";
-  case 184:
-    return "\\xB8";
-  case 185:
-    return "\\xB9";
-  case 186:
-    return "\\xBA";
-  case 187:
-    return "\\xBB";
-  case 188:
-    return "\\xBC";
-  case 189:
-    return "\\xBD";
-  case 190:
-    return "\\xBE";
-  case 191:
-    return "\\xBF";
-  case 192:
-    return "\\xC0";
-  case 193:
-    return "\\xC1";
-  case 194:
-    return "\\xC2";
-  case 195:
-    return "\\xC3";
-  case 196:
-    return "\\xC4";
-  case 197:
-    return "\\xC5";
-  case 198:
-    return "\\xC6";
-  case 199:
-    return "\\xC7";
-  case 200:
-    return "\\xC8";
-  case 201:
-    return "\\xC9";
-  case 202:
-    return "\\xCA";
-  case 203:
-    return "\\xCB";
-  case 204:
-    return "\\xCC";
-  case 205:
-    return "\\xCD";
-  case 206:
-    return "\\xCE";
-  case 207:
-    return "\\xCF";
-  case 208:
-    return "\\xD0";
-  case 209:
-    return "\\xD1";
-  case 210:
-    return "\\xD2";
-  case 211:
-    return "\\xD3";
-  case 212:
-    return "\\xD4";
-  case 213:
-    return "\\xD5";
-  case 214:
-    return "\\xD6";
-  case 215:
-    return "\\xD7";
-  case 216:
-    return "\\xD8";
-  case 217:
-    return "\\xD9";
-  case 218:
-    return "\\xDA";
-  case 219:
-    return "\\xDB";
-  case 220:
-    return "\\xDC";
-  case 221:
-    return "\\xDD";
-  case 222:
-    return "\\xDE";
-  case 223:
-    return "\\xDF";
-  case 224:
-    return "\\xE0";
-  case 225:
-    return "\\xE1";
-  case 226:
-    return "\\xE2";
-  case 227:
-    return "\\xE3";
-  case 228:
-    return "\\xE4";
-  case 229:
-    return "\\xE5";
-  case 230:
-    return "\\xE6";
-  case 231:
-    return "\\xE7";
-  case 232:
-    return "\\xE8";
-  case 233:
-    return "\\xE9";
-  case 234:
-    return "\\xEA";
-  case 235:
-    return "\\xEB";
-  case 236:
-    return "\\xEC";
-  case 237:
-    return "\\xED";
-  case 238:
-    return "\\xEE";
-  case 239:
-    return "\\xEF";
-  case 240:
-    return "\\xF0";
-  case 241:
-    return "\\xF1";
-  case 242:
-    return "\\xF2";
-  case 243:
-    return "\\xF3";
-  case 244:
-    return "\\xF4";
-  case 245:
-    return "\\xF5";
-  case 246:
-    return "\\xF6";
-  case 247:
-    return "\\xF7";
-  case 248:
-    return "\\xF8";
-  case 249:
-    return "\\xF9";
-  case 250:
-    return "\\xFA";
-  case 251:
-    return "\\xFB";
-  case 252:
-    return "\\xFC";
-  case 253:
-    return "\\xFD";
-  case 254:
-    return "\\xFE";
-  case 255:
-    return "\\xFF";
-  // LCOV_EXCL_START
-  default:
-    assert(0); /* never gets here */
-    return "dead code";
-  }
-  assert(0); /* never gets here */
-  // LCOV_EXCL_STOP
-}
-
-#endif /* XML_GE == 1 */
-
-static unsigned long
-getDebugLevel(const char *variableName, unsigned long defaultDebugLevel) {
-  const char *const valueOrNull = getenv(variableName);
-  if (valueOrNull == NULL) {
-    return defaultDebugLevel;
-  }
-  const char *const value = valueOrNull;
-
-  errno = 0;
-  char *afterValue = NULL;
-  unsigned long debugLevel = strtoul(value, &afterValue, 10);
-  if ((errno != 0) || (afterValue == value) || (afterValue[0] != '\0')) {
-    errno = 0;
-    return defaultDebugLevel;
-  }
-
-  return debugLevel;
 }

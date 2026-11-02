@@ -574,6 +574,8 @@ SortAnalysisResult analyzeSort(
     actions_chain.addStep(std::move(actions_step_before_sort));
 
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    NameToNameMap interpolated_column_names;
+    NameToNameMap interpolate_target_column_names;
 
     /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
     if (query_node.hasInterpolate())
@@ -616,8 +618,16 @@ SortAnalysisResult analyzeSort(
             if (nodes.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interpolate expression must return single column");
             const auto * node = nodes.front();
-            node = &before_interpolate_actions_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
+            const auto & target_name = interpolate_node_typed.getExpressionName();
+            interpolated_column_names.emplace(target_name, node->result_name);
 
+            /// A target alias may be the name of another column, as in `count() AS c, n AS `count()``.
+            String column_name = target_name;
+            for (size_t i = 0; before_interpolate_actions_dag.tryFindInOutputs(column_name); ++i)
+                column_name = fmt::format("__interpolate_{}_{}", i, target_name);
+
+            interpolate_target_column_names.emplace(target_name, column_name);
+            node = &before_interpolate_actions_dag.addAlias(*node, column_name);
             before_interpolate_actions_dag.getOutputs().push_back(node);
         }
 
@@ -627,7 +637,12 @@ SortAnalysisResult analyzeSort(
 
     /// before_interpolate_actions is intentionally not added to the chain here;
     /// buildExpressionAnalysisResult appends it after analyzeLimitBy so the chain order matches plan execution order.
-    return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
+    return SortAnalysisResult{
+        std::move(before_sort_actions),
+        has_with_fill,
+        std::move(before_interpolate_actions),
+        std::move(interpolated_column_names),
+        std::move(interpolate_target_column_names)};
 }
 
 /** Construct limit by analysis result.
@@ -675,9 +690,10 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 /** Construct LIMIT AFTER/UNTIL analysis result.
   * The boundary expressions may reference columns that are not in the SELECT list. `LimitRangeStep` runs
   * before "Project names" in the plan but is not part of the actions chain, so no chain step requires those
-  * columns and chain finalization would prune them. This adds an identity step over every current column:
+  * columns and chain finalization would prune them. This adds an identity step over every current value column:
   * all of its inputs are its outputs, so the whole stream, boundary columns included, stays alive up to the
   * range step, which builds its conditions from the resulting header.
+  * `IN` set and lambda `Function` placeholders are not values and are not kept: a boundary expression builds its own.
   */
 LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
@@ -689,8 +705,17 @@ LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
             throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
     }
 
+    ColumnsWithTypeAndName value_columns;
+    value_columns.reserve(input_columns.size());
+    for (const auto & column : input_columns)
+    {
+        const WhichDataType which_type(column.type);
+        if (!which_type.isSet() && !which_type.isFunction())
+            value_columns.push_back(column);
+    }
+
     auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    before_limit_range_actions->dag = ActionsDAG(input_columns);
+    before_limit_range_actions->dag = ActionsDAG(value_columns);
     actions_chain.addStep(std::make_unique<ActionsChainStep>(before_limit_range_actions));
 
     return LimitRangeAnalysisResult{std::move(before_limit_range_actions)};
@@ -933,17 +958,14 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (input->column && source_constants.contains(input->result_name))
                 keep_inputs.insert(input);
 
-    if (query_node.hasInterpolate())
+    if (query_node.hasInterpolate() && sort_analysis_result_optional)
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
-        NameSet interpolate_names;
-        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
-        for (auto & interpolate_node : interpolate_list_node.getNodes())
-            interpolate_names.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
-
+        const auto & interpolated_column_names = sort_analysis_result_optional->interpolated_column_names;
+        /// A result column takes the interpolated values only if it is the column the target interpolates.
         for (auto & [name, alias] : project_names)
-            if (interpolate_names.contains(alias))
-                name = alias;
+            if (auto it = interpolated_column_names.find(alias); it != interpolated_column_names.end() && it->second == name)
+                name = sort_analysis_result_optional->interpolate_target_column_names.at(alias);
 
         project_names_actions->dag.project(project_names, keep_inputs);
     }
