@@ -50,7 +50,7 @@ SELECT count() FROM (SELECT number FROM numbers(10) SHUFFLE UNION ALL SELECT num
 
 SELECT 'Distributed';
 SELECT count(), sum(number) FROM (SELECT number FROM remote('127.0.0.{1,2}', numbers(1000)) SHUFFLE);
-SELECT count(), uniqExact(number) FROM (SELECT number FROM remote('127.0.0.{1,2}', numbers(1000)) SHUFFLE LIMIT 10);
+SELECT count(), uniqExact((s, number)) FROM (SELECT shardNum() AS s, number FROM remote('127.0.0.{1,2}', numbers(1000)) SHUFFLE LIMIT 10);
 SELECT count(), sum(c) FROM (SELECT number % 7 AS k, count() AS c FROM remote('127.0.0.{1,2}', numbers(1000)) GROUP BY k SHUFFLE);
 SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2}', numbers(1000)) SHUFFLE LIMIT 10 OFFSET 1995);
 
@@ -65,5 +65,5 @@ SELECT count(), uniqExact(id), countIf(s != toString(id)) FROM (SELECT id, s FRO
 SELECT 'Plan';
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT id FROM t_shuffle SHUFFLE) WHERE explain ILIKE '%shuffle%';
 -- The rest of the columns is read only for the selected rows.
-SELECT count() > 0 FROM (EXPLAIN SELECT id, s FROM t_shuffle SHUFFLE LIMIT 10 SETTINGS query_plan_optimize_lazy_materialization = 1) WHERE explain LIKE '%LazilyRead%';
+SELECT count() > 0 FROM (EXPLAIN SELECT id, s FROM t_shuffle SHUFFLE LIMIT 10 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000) WHERE explain LIKE '%LazilyRead%';
 DROP TABLE t_shuffle;
