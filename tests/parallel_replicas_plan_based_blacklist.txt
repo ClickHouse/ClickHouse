@@ -4,6 +4,7 @@
 04046_unique_key_ddl
 04105_unique_key_insert
 04107_unique_key_insert_concurrency
+04161_unique_key_insert_duplicate
 04168_unique_key_conflict_action
 04174_unique_key_insert_dedup
 04196_unique_key_read_skips_an_uncommitted_part
@@ -17,6 +18,8 @@
 
     A read from a temporary table is shipped, and the replica cannot access it (DATABASE_ACCESS_DENIED)
 00542_access_to_temporary_table_in_readonly_mode
+02766_prql
+02995_bad_formatting_union_intersect
 03045_unknown_identifier_alias_substitution
 03143_cte_scope
 
@@ -49,6 +52,7 @@
     `DISTINCT` and `LIMIT` are not shipped with the plan fragment, so replicas return every row they read
     https://github.com/ClickHouse/ClickHouse/issues/128560
 02862_sorted_distinct_sparse_fix
+04330_distinct_sorted_const_key_after_filter
 04549_virtual_row_distinct_in_order_boundary
 05217_aggregation_in_order_fixed_keys
 05401_aggregation_nullable_fixed_keys_batch_pack
@@ -72,6 +76,21 @@
     `groupArray` without `ORDER BY` depends on the order in which the replicas read
 01201_read_single_thread_in_order
 
+    A replica throws `NOT_FOUND_COLUMN_IN_BLOCK` for `_parent_part_offset` when reading a projection
+03546_merge_tree_projection_shared_snapshot
+05427_projection_where_order_by_columns
+
+    A replica throws `NOT_IMPLEMENTED` (`createColumn` for a `Function` type) for a lambda in the shipped fragment
+05033_lazy_materialization_column_function_structure_equals
+05034_lazy_materialization_column_function_set_capture
+
+    A replica throws `UNKNOWN_IDENTIFIER` in `timeSeriesIdToGroup`
+05175_time_series_table_functions_parallel_replicas
+05293_promql_constant_scalar_arithmetic
+
+    A window function over rows with equal `ORDER BY` keys depends on the order in which the replicas read
+02346_non_negative_derivative
+
     The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
 01710_projection_pk_trivial_count
 02998_projection_after_attach_partition
@@ -83,35 +102,10 @@
 05182_join_order_conflict_detector_cast_null_propagation
 
     The test checks EXPLAIN output, which parallel replicas wrap differently; the optimization itself still applies
-01576_alias_column_rewrite
-01582_move_to_prewhere_compact_parts
-01625_constraints_index_append
-01655_plan_optimizations_optimize_read_in_window_order
-01824_move_to_prewhere_many_columns
-02149_read_in_order_fixed_prefix
-02354_vector_search_queries
-02354_vector_search_subquery
-02451_order_by_monotonic
-02481_aggregation_in_order_plan
-02675_predicate_push_down_filled_join_fix
-02676_distinct_reading_in_order_analyzer
-02713_array_low_cardinality_string
 02725_agg_projection_respect_PK
-02809_prewhere_and_in
-02842_move_pk_to_end_of_prewhere
-02864_statistics_delayed_materialization_in_merge
-02864_statistics_usage
-02882_primary_key_index_in_function_different_types
-02911_analyzer_order_by_read_in_order_query_plan
-02911_support_alias_column_in_indices
-02943_tokenbf_and_ngrambf_indexes_support_match_function
-03036_join_filter_push_down_equivalent_sets
-03130_convert_outer_join_to_inner_join
-03152_join_filter_push_down_equivalent_columns
-03164_materialize_skip_index
-03166_skip_indexes_vertical_merge_1
-03257_reverse_sorting_key
-03272_partition_pruning_monotonic_func_bug
+03275_subcolumns_in_primary_key
+03277_json_subcolumns_in_primary_key
+03278_json_subcolumns_in_skipping_indexes
 03460_basic_projection_index
 03460_normal_projection_index
 03464_projections_with_subcolumns
@@ -123,7 +117,6 @@
 03892_grouping_sets_force_aggregation_in_order
 04076_pr_nested_view_union_subquery
 04303_key_condition_ifnull_coalesce_boolean
-04304_prewhere_statistics_column_grouping
 04327_stid_1499_6033_statistics_lc_cast
 04499_key_condition_bare_key_column_multi_atom
 04507_view_orderby_expression_no_pushdown
@@ -138,12 +131,16 @@
 01508_partition_pruning_long_1
 01508_partition_pruning_long_2
 02151_hash_table_sizes_stats
+02465_limit_trivial_max_rows_to_read
 02784_parallel_replicas_automatic_decision_join
 02877_optimize_read_in_order_from_view
 03143_prewhere_profile_events
+03174_exact_rows_before_aggregation
 04305_autopr_output_bytes_estimation_join
+04340_autopr_input_bytes_estimation_join
 04341_autopr_mode1_apply_join
 04836_merge_table_parallel_replicas_duplicate_announcement
+05175_autopr_lazy_read_statistics
 05292_autopr_stats_key_constants
 05399_autopr_plan_without_parallel_replicas
 
