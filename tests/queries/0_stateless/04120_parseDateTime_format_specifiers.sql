@@ -150,3 +150,13 @@ SELECT parseDateTime64InJodaSyntaxOrNull('bad', 'yyyy');
 
 SELECT '--- parseDateTime64 wrong type argument ---';
 SELECT parseDateTime64('2023', '%Y', 6); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '--- Weekday or ISO week following calendar date (#128267) ---';
+SELECT parseDateTime('2026-10-25 Sun 12:00:00', '%Y-%m-%d %a %H:%i:%s', 'UTC');
+SELECT parseDateTime('2026-10-25 Sunday', '%Y-%m-%d %W', 'UTC');
+SELECT parseDateTime('2026-10-25 7', '%Y-%m-%d %u', 'UTC');
+SELECT parseDateTime('2026-10-25 0', '%Y-%m-%d %w', 'UTC');
+SELECT parseDateTime('2026-10-25 43', '%Y-%m-%d %V', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2026-10-25 Sun 12:00:00', 'yyyy-MM-dd EEE HH:mm:ss', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2026-10-25 43', 'yyyy-MM-dd ww', 'UTC');
+SELECT parseDateTime('Sun 2026-10-25 12:00:00', '%a %Y-%m-%d %H:%i:%s', 'UTC');
