@@ -352,6 +352,16 @@ void IMergeTreeReader::fillMissingColumns(
     }
 }
 
+bool IMergeTreeReader::mayEvaluateMissingDefaults() const
+{
+    if (!may_evaluate_missing_defaults)
+        may_evaluate_missing_defaults = std::ranges::any_of(converted_requested_columns, [&](const NameAndTypePair & column)
+        {
+            return mayLeaveColumnToMissingDefaults(storage_snapshot, column);
+        });
+    return *may_evaluate_missing_defaults;
+}
+
 ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
 {
     auto storage_context = data_part_info_for_read->getContext();
