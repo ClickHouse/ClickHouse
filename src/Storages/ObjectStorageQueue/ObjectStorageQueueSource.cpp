@@ -1164,8 +1164,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         return false;
     };
 
-    /// In ordered mode without buckets any source can take any file, so reserve before claiming:
-    /// a claimed file must be committed by this INSERT.
+    /// In ordered mode without buckets a claimed file must be committed by this INSERT.
     const bool reserve_before_claim = mode == ObjectStorageQueueMode::ORDERED && !file_iterator->useBucketsForProcessing();
 
     while (true)
