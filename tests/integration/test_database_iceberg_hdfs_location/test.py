@@ -2,7 +2,7 @@
 
 The catalog reports the location as `hdfs://...`, and with the default `vended_credentials = 1`
 it vends no credentials for it: HDFS authenticates through the server's `hdfs` configuration.
-Neither may stop the table from resolving. Reading it still needs `READ ON HDFS` for its location,
+Neither may stop the table from resolving. Reading it still needs `READ ON HDFS` for its HDFS authority,
 as reading it through `icebergHDFS` does. Writing it would use the server's HDFS identity, so it is read-only.
 """
 
@@ -123,10 +123,11 @@ def test_hdfs_location_requires_hdfs_source_grant(started_cluster, hdfs_catalog)
     try:
         assert_denied()
 
-        node.query(f"GRANT READ ON HDFS('hdfs://hdfs1:9000/elsewhere/.*') TO {USER}")
+        node.query(f"GRANT READ ON HDFS('hdfs://elsewhere:9000') TO {USER}")
         assert_denied()
 
-        node.query(f"GRANT READ ON HDFS('{LOCATION}') TO {USER}")
+        # Like `icebergHDFS`, a grant filter matches the HDFS authority, not the table path.
+        node.query(f"GRANT READ ON HDFS('hdfs://hdfs1:9000') TO {USER}")
         assert (
             node.query(
                 "DESCRIBE hdfs_catalog.`ns.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1",

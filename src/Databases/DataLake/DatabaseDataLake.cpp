@@ -166,24 +166,24 @@ namespace FailPoints
 namespace
 {
 
-/// Throws `ACCESS_DENIED` unless the session of `context` has `READ ON HDFS` for `location`, normalized as
+/// Throws `ACCESS_DENIED` unless the session of `context` has `READ ON HDFS` for `uri`, normalized as
 /// `ITableFunction::getFunctionURINormalized` does so that grant filters match alike.
-void checkHDFSReadAccess(const ContextPtr & context, const String & location)
+void checkHDFSReadAccess(const ContextPtr & context, const String & uri)
 {
-    String normalized_location;
+    String normalized_uri;
     try
     {
-        Poco::URI uri(location);
-        uri.normalize();
-        normalized_location = uri.toString();
+        Poco::URI parsed(uri);
+        parsed.normalize();
+        normalized_uri = parsed.toString();
     }
     catch (const Poco::Exception &)
     {
-        /// An unparsable location matches only an unfiltered grant.
-        normalized_location.clear();
+        /// An unparsable URI matches only an unfiltered grant.
+        normalized_uri.clear();
     }
     context->getAccess()->checkAccessWithFilter(
-        AccessType::READ, toStringSource(AccessTypeObjects::Source::HDFS), normalized_location);
+        AccessType::READ, toStringSource(AccessTypeObjects::Source::HDFS), normalized_uri);
 }
 
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
@@ -1164,11 +1164,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto table_endpoint = args[0]->as<ASTLiteral>()->value.safeGet<String>();
     LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
 
-    /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`.
-    /// Checked before the stateful cache below, so that a cached storage is not handed to a user without the grant.
-    if (storage_type == DatabaseDataLakeStorageType::HDFS)
-        checkHDFSReadAccess(context_, table_endpoint);
-
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
@@ -1239,10 +1234,15 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
 #if USE_HDFS
-    /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
-    /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
     if (auto * hdfs_configuration = dynamic_cast<StorageHDFSConfiguration *>(configuration.get()))
+    {
+        /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`,
+        /// matched against the same URI: the HDFS authority, without the path.
+        checkHDFSReadAccess(context_, hdfs_configuration->getRawURI());
+        /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
+        /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
         hdfs_configuration->setReadOnly();
+    }
 #endif
 
 #if USE_AWS_S3
