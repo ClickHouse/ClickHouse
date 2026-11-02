@@ -16,3 +16,7 @@ SELECT count() FROM remote('127.0.0.2', currentDatabase(), asof_l) AS a ASOF JOI
 WITH SCHEMA AS d SELECT (SELECT count() FROM remote('127.0.0.2', currentDatabase(), asof_l) AS a ASOF JOIN asof_r AS b ON a.k = b.k AND a.t >= b.t AND d = currentDatabase());
 DROP TABLE asof_l;
 DROP TABLE asof_r;
+
+-- Every spelling of `now` has one value, even when the analysis between them takes over a second.
+SELECT a = b FROM (SELECT NOW AS a, (SELECT sleep(1)) AS pause, CURRENT_TIMESTAMP AS b);
+WITH CURRENT_TIMESTAMP AS a SELECT x = b FROM (SELECT a AS x, (SELECT sleep(1)) AS pause, NOW AS b);

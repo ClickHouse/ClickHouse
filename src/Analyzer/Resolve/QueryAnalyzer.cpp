@@ -1516,12 +1516,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             auto function_resolver = FunctionFactory::instance().tryGet(identifier.getFullName(), scope_to_resolve_alias_expression->context);
             if (function_resolver && function_resolver->allowsOmittingParentheses())
             {
-                auto function_node = std::make_shared<FunctionNode>(identifier.getFullName());
-                function_node->resolveAsFunction(function_resolver->build({}));
-                if (scope_to_resolve_alias_expression->isResolvingAsofJoinExpression())
-                    lookup_result.resolved_identifier = std::move(function_node);
-                else
-                    lookup_result.resolved_identifier = foldConstantCast(function_node);
+                lookup_result.resolved_identifier = resolveNiladicFunction(identifier.getFullName(), function_resolver, *scope_to_resolve_alias_expression);
                 lookup_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
             }
         }
@@ -1774,6 +1769,29 @@ static void correctColumnExpressionType(ColumnNode & column_node, const ContextP
     column_expression = buildCastFunction(column_expression, column_node.getColumnType(), context, true);
 }
 
+QueryTreeNodePtr QueryAnalyzer::resolveNiladicFunction(
+    const std::string & function_name, const FunctionOverloadResolverPtr & function_resolver, const IdentifierResolveScope & scope)
+{
+    FunctionBasePtr function_base;
+    if (!function_resolver->isDeterministic() && !function_resolver->isStateful() && function_resolver->isDeterministicInScopeOfQuery())
+    {
+        /// The key `resolveFunction` uses for the call `<name>()`, so that `NOW`, `CURRENT_TIMESTAMP` and `now()` share one value.
+        auto hash = std::make_shared<FunctionNode>(function_resolver->getName())->getTreeHash({ .compare_aliases = false });
+        auto & cached_function = functions_cache[hash];
+        if (!cached_function)
+            cached_function = function_resolver->build({});
+        function_base = cached_function;
+    }
+    else
+        function_base = function_resolver->build({});
+
+    auto function_node = std::make_shared<FunctionNode>(function_name);
+    function_node->resolveAsFunction(std::move(function_base));
+    if (scope.isResolvingAsofJoinExpression())
+        return function_node;
+    return foldConstantCast(function_node);
+}
+
 /** Resolve identifier in scope.
   *
   * If identifier was resolved resolve identified lookup status will be updated.
@@ -1956,12 +1974,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (function_resolver && function_resolver->allowsOmittingParentheses())
         {
-            auto function_node = std::make_shared<FunctionNode>(identifier_name);
-            function_node->resolveAsFunction(function_resolver->build({}));
-            if (scope.isResolvingAsofJoinExpression())
-                resolve_result.resolved_identifier = std::move(function_node);
-            else
-                resolve_result.resolved_identifier = foldConstantCast(function_node);
+            resolve_result.resolved_identifier = resolveNiladicFunction(identifier_name, function_resolver, scope);
             resolve_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
         }
     }
