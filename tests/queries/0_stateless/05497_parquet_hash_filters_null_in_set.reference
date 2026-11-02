@@ -6,3 +6,5 @@ s IN (NULL, 'b'), bloom: {"c":1,"rows_read":100}
 (id, s) IN ((NULL, 'a'), (5, 'y')), bloom: {"c":1,"rows_read":100}
 id IN (5), dictionary: {"c":0,"rows_read":0}
 id IN (5), bloom: {"c":0,"rows_read":0}
+has([NULL, 5]::Array(Nullable(Int64)), id), dictionary: {"c":1,"rows_read":200}
+has([NULL, 5]::Array(Nullable(Int64)), id), bloom: {"c":1,"rows_read":200}

@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # no-fasttest: needs the Parquet format which is not built in fasttest.
 
-# With `transform_null_in = 1`, the Parquet dictionary and bloom filters must not skip a row group whose NULL rows match an `IN` set holding NULL.
+# The Parquet dictionary and bloom filters must not skip a row group whose NULL rows match an `IN` set holding NULL (`transform_null_in = 1`) or a `has` array holding NULL.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,7 +19,7 @@ ${CLICKHOUSE_CLIENT} --query="
     SETTINGS output_format_parquet_row_group_size = 100, output_format_parquet_write_bloom_filter = 1,
         engine_file_truncate_on_insert = 1, max_block_size = 1000000, max_threads = 1"
 
-CH="${CLICKHOUSE_CLIENT} --transform_null_in=1 --use_query_condition_cache=0 --optimize_move_to_prewhere=0 --query_plan_optimize_prewhere=0 --use_cache_for_count_from_files=0"
+CH="${CLICKHOUSE_CLIENT} --use_query_condition_cache=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0"
 
 run() {
     for filter in dictionary bloom; do
@@ -29,7 +29,7 @@ run() {
             FLAGS="--input_format_parquet_bloom_filter_push_down=1 --input_format_parquet_dictionary_filter_push_down=0"
         fi
         echo -n "$1, ${filter}: "
-        ${CH} ${FLAGS} --query="SELECT count() FROM file('${DATA_FILE}', Parquet) WHERE $1 FORMAT JSON" \
+        ${CH} --transform_null_in="${2:-1}" ${FLAGS} --query="SELECT count() FROM file('${DATA_FILE}', Parquet) WHERE $1 FORMAT JSON" \
             | jq -c '{c: .data[0]["count()"], rows_read: .statistics.rows_read}'
     done
 }
@@ -38,3 +38,4 @@ run "id IN (NULL, 5)"
 run "s IN (NULL, 'b')"
 run "(id, s) IN ((NULL, 'a'), (5, 'y'))"
 run "id IN (5)"
+run "has([NULL, 5]::Array(Nullable(Int64)), id)" 0
