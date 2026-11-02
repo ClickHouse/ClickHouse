@@ -1,0 +1,49 @@
+-- Tests for mixed (cross-side non-equi) JOIN ON conditions in the partial merge join.
+-- The `hash` algorithm output is the reference: for every query the two algorithms must
+-- produce identical results.
+-- The companion tests (same data, split to keep every file within the flaky-check time limit):
+--   04838_join_on_mixed_conditions_partial_merge_splits.sql.j2 (block splitting and spilling),
+--   04838_join_on_mixed_conditions_partial_merge_any_nullable.sql.j2 (ANY/SEMI, Nullable/LC),
+--   04838_join_on_mixed_conditions_partial_merge.sql.j2 (randomized differential check).
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
+CREATE TABLE t1 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+CREATE TABLE t2 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+-- Duplicate keys on both sides to get cross products, plus keys with no pair on the other side.
+INSERT INTO t1 (key, a, attr) VALUES (1, 10, 'alpha'), (2, 15, 'beta'), (2, 2, 'beta2'), (3, 20, 'gamma'), (5, 5, 'epsilon');
+INSERT INTO t2 (key, a, attr) VALUES (1, 5, 'ALPHA'), (2, 10, 'BETA'), (2, 14, 'BETA2'), (2, 16, 'BETA3'), (4, 25, 'DELTA');
+
+SET enable_analyzer = 1;
+SET join_use_nulls = 0;
+-- The CI harness randomizes the swap setting: pin it so that both algorithms run the same plan.
+SET query_plan_join_swap_table = 'false';
+
+-- { echoOn }
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+{% set settings = "SETTINGS join_algorithm = '" ~ algorithm ~ "'" -%}
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL {{ settings }};
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL {{ settings }};
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL {{ settings }};
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL {{ settings }};
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL {{ settings }};
+{% endfor -%}
+{% endfor -%}
+-- { echoOff }
+
+DROP TABLE t1;
+DROP TABLE t2;
