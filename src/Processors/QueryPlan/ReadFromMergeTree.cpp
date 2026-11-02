@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
@@ -335,6 +336,7 @@ namespace Setting
     extern const SettingsFloat merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsBool optimize_read_in_reverse_order_final;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
@@ -717,7 +719,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         getActiveReplicasCountForSegmentSizing(),
-        data.getStorageID().getFullTableName()};
+        getParallelReplicasStreamId()};
 
     /// Set total rows in progress only on initiator with local plan, otherwise rows will be counted multiple times.
     /// The coordinator cannot report them in this case: it receives the initiator's announcement
@@ -1098,7 +1100,7 @@ Pipe ReadFromMergeTree::readInOrder(
         /// Each split gets its own stream_id so the coordinator maintains an independent
         /// ImplInterface instance per split. When splitting, suffix every split with `#split_{i}`.
         /// When the whole table is read by a single pool, keep the bare table name.
-        String stream_id = data.getStorageID().getFullTableName();
+        String stream_id = getParallelReplicasStreamId();
         if (split_index)
             stream_id += fmt::format("#split_{}", *split_index);
 
@@ -4317,6 +4319,23 @@ void ReadFromMergeTree::updateSortDescription()
         enable_vertical_final);
 }
 
+String ReadFromMergeTree::getParallelReplicasStreamId() const
+{
+    /// A read through a table function may read a storage whose name is local to each server: the target of
+    /// a `TimeSeries` table is named after a UUID the server assigned. Replicas that announced it under that
+    /// name would get a coordinator each and read everything, so it goes by the identity of its source.
+    /// A read shipped in a plan fragment names the storage itself, which a replica without it cannot read.
+    const auto * table_function_node
+        = !query_info.parallel_replicas_coordinated_under_storage_name && query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr;
+    if (table_function_node)
+    {
+        if (const auto & read_id = table_function_node->getParallelReplicasReadID())
+            return *read_id;
+    }
+
+    return data.getStorageID().getFullTableName();
+}
+
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
     return is_parallel_reading_from_replicas
@@ -6133,6 +6152,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         return;
     }
 
+    /// The filters added here belong to the query this read was planned in, which can have its own `SETTINGS`.
+    const bool optimize_constant_columns_after_filter = context->getSettingsRef()[Setting::optimize_constant_columns_after_filter];
+
     if (result.sampling.use_sampling)
     {
         auto sampling_actions = std::make_shared<ExpressionActions>(result.sampling.filter_expression->clone());
@@ -6142,12 +6164,17 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 header,
                 sampling_actions,
                 result.sampling.filter_function->getColumnName(),
-                false);
+                false,
+                /*on_totals_=*/ false,
+                /*rows_filtered_=*/ nullptr,
+                /*condition_=*/ std::nullopt,
+                /*update_row_numbers_info_=*/ false,
+                optimize_constant_columns_after_filter);
         });
     }
 
     /// apply row policy after FINAL if needed (must be applied before prewhere)
-    auto add_deferred_filter = [&pipe](ActionsDAG filter_dag, const String & column_name, bool remove_column)
+    auto add_deferred_filter = [&pipe, optimize_constant_columns_after_filter](ActionsDAG filter_dag, const String & column_name, bool remove_column)
     {
         NameSet input_names;
         for (const auto * input : filter_dag.getInputs())
@@ -6161,7 +6188,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
         pipe.addSimpleTransform([&, actions, remove_column](const SharedHeader & header)
         {
-            return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
+            return std::make_shared<FilterTransform>(
+                header,
+                actions,
+                column_name,
+                remove_column,
+                /*on_totals_=*/ false,
+                /*rows_filtered_=*/ nullptr,
+                /*condition_=*/ std::nullopt,
+                /*update_row_numbers_info_=*/ false,
+                optimize_constant_columns_after_filter);
         });
     };
 
@@ -6748,7 +6784,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         getActiveReplicasCountForSegmentSizing(),
-        data.getStorageID().getFullTableName());
+        getParallelReplicasStreamId());
 }
 
 bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
@@ -6763,7 +6799,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        data.getStorageID().getFullTableName()};
+        getParallelReplicasStreamId()};
 
     auto get_coordination_mode = [&]
     {
