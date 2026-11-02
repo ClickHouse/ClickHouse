@@ -1,16 +1,12 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
 
-#include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
-#include <Processors/QueryPlan/Fragments/FragmentGraphFormat.h>
+#include <Processors/QueryPlan/Fragments/PreparedFragmentGraph.h>
 #include <Processors/QueryPlan/Fragments/TextCanvas.h>
-#include <Processors/QueryPlan/GatherReceiveStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -30,18 +26,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// The exchange name of a receive step, or nullptr if the step is not a receive step.
-const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
-{
-    if (const auto * shuffle = typeid_cast<const ShuffleReceiveStep *>(&step))
-        return &shuffle->getExchangeId();
-    if (const auto * gather = typeid_cast<const GatherReceiveStep *>(&step))
-        return &gather->getExchangeId();
-    if (const auto * broadcast = typeid_cast<const BroadcastReceiveStep *>(&step))
-        return &broadcast->getExchangeId();
-    return nullptr;
-}
 
 /// The text of a step box is cut to this many columns.
 constexpr size_t max_step_text_width = 40;
@@ -81,8 +65,8 @@ struct FragmentFrame
 class TreeBuilder
 {
 public:
-    TreeBuilder(const FragmentGraph & graph_, const ExplainPlanOptions & options_)
-        : graph(graph_), options(options_)
+    explicit TreeBuilder(const PreparedFragmentGraph & prepared_)
+        : prepared(prepared_), graph(prepared.graph), options(prepared.options)
     {
         for (size_t i = 0; i < graph.fragments.size(); ++i)
             fragment_index_by_id[graph.fragments[i].id] = i;
@@ -116,6 +100,7 @@ public:
     }
 
 private:
+    const PreparedFragmentGraph & prepared;
     const FragmentGraph & graph;
     const ExplainPlanOptions & options;
     std::unordered_map<UInt32, size_t> fragment_index_by_id;
@@ -175,7 +160,7 @@ private:
     size_t addPlanBoxes(const QueryPlan::Node & node, size_t fragment)
     {
         size_t index = addBox(stepText(*node.step), fragment);
-        if (const auto * exchange_id = tryGetReceiveExchangeId(*node.step))
+        if (const auto * exchange_id = PreparedFragmentGraph::tryGetReceiveExchangeId(*node.step))
             receive_boxes[{fragment, *exchange_id}] = index;
         for (const auto * child : node.children)
         {
@@ -282,8 +267,8 @@ private:
         const auto & exchange = graph.exchanges[exchange_index];
         std::vector<String> lines;
         lines.push_back(TextCanvas::cutToWidth(
-            fmt::format("{} · {}", exchange.name, formatExchangeKind(exchange, options.pretty)), max_label_width));
-        String mode(formatExchangeMode(exchange.mode));
+            fmt::format("{} · {}", exchange.name, prepared.formatExchangeKind(exchange)), max_label_width));
+        String mode(PreparedFragmentGraph::formatExchangeMode(exchange.mode));
         if (exchange.source_buckets || exchange.destination_buckets)
             mode += fmt::format(" · {} → {}", exchange.source_buckets, exchange.destination_buckets);
         lines.push_back(std::move(mode));
@@ -536,18 +521,20 @@ void explainAsTree(
     const ExplainPlanOptions & options,
     size_t max_step_description_length)
 {
-    if (graph.fragments.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has no fragments");
+    const PreparedFragmentGraph prepared(graph, options);
 
     /// The plan was not cut: print it as `EXPLAIN` without options does.
-    if (tryExplainSingleFragment(graph, buf, options, max_step_description_length))
+    if (prepared.single_node)
+    {
+        writeSingleNode(prepared, buf, max_step_description_length);
         return;
+    }
 
     validateFragmentGraph(graph);
-    TreeBuilder(graph, options).draw(buf);
+    TreeBuilder(prepared).draw(buf);
 
     buf.write('\n');
-    writeExchangesSection(graph, buf, options.pretty);
+    writeExchangesSection(prepared, buf);
     writeLevelsSection(graph, buf);
 }
 

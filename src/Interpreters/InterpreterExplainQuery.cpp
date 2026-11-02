@@ -1270,7 +1270,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                         std::optional<String> fallback_reason;
                         if (plan.didFallBackToLocal())
                             fallback_reason = plan.getDistributedPlanFallbackReason();
-                        auto graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
+                        auto query_plan_as_fragment_graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
                         build_explain(query_plan_as_fragment_graph);
                     }
                     break;

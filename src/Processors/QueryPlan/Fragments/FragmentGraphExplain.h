@@ -11,7 +11,8 @@ class WriteBuffer;
 
 /// The text outputs of a `FragmentGraph`. The graph is only the model of the fragments and the exchanges; these functions
 /// consume it and write the `EXPLAIN` output. `explainAsFragments` is defined in `FragmentGraphExplain.cpp`, `explainAsTree`
-/// in `FragmentGraphTree.cpp`.
+/// in `FragmentGraphTree.cpp`. Both build a `PreparedFragmentGraph`, so they print the same `Exchanges` and `Levels`
+/// sections and name the exchange keys the same way.
 ///
 /// A graph with one `SingleNode` fragment (a plan that was not cut) is printed by both exactly as `QueryPlan::explainPlan`
 /// prints the plan of the fragment, followed by an empty line and `Not distributed: <reason>` when the fragment has a
