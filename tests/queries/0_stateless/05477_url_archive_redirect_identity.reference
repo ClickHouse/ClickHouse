@@ -1,0 +1,17 @@
+schema cold
+a
+Nullable(Int64)
+schema warm
+a
+Nullable(Int64)
+count cold	1
+count warm	1
+flipped
+schema after the redirect target changed
+b
+Nullable(Int64)
+count after the redirect target changed	2
+schema warm hit	1
+schema flip miss	1
+count warm hit	1
+count flip miss	1

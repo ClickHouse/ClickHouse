@@ -427,6 +427,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             if (header_name == "ETag")
                 metadata.etag = header_value;
         }
+        /// The resource identity is where the probe ended up, not where it started: `max_http_get_redirects`
+        /// lets one URL name different resources over time, and the caches keyed by this identity must not
+        /// answer with what a resource the read did not come from served. Reads are pinned to it as well, so
+        /// the redirect is resolved once rather than on every request.
+        metadata.resolved_url = response_buf->getCurrentURI().toString();
         return metadata;
     };
 
@@ -438,7 +443,6 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         auto metadata = get_metadata_from_uri(Poco::URI(*path.resolved_url, enable_url_encoding));
         if (!metadata)
             return std::nullopt;
-        metadata->resolved_url = *path.resolved_url;
         return metadata;
     }
 
@@ -467,7 +471,6 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             {
                 if (url_option->path_override)
                     metadata->resolved_path = *url_option->path_override;
-                metadata->resolved_url = resolved_url;
                 return metadata;
             }
             has_not_found = true;
