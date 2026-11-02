@@ -115,10 +115,10 @@
     M(UniqueKeyDedupProbes, "Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
-    M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
+    M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load an index file.", ValueType::Number) \
     M(StatisticsCacheHits, "Number of times the statistics of a column of a data part have been found in the statistics cache.", ValueType::Number) \
     M(StatisticsCacheMisses, "Number of times the statistics of a column of a data part have not been found in the statistics cache, so they had to be loaded from the part.", ValueType::Number) \
-    M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load an index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheStaleMisses, "Number of times iceberg metadata files have been found in the cache, but were considered stale and had to be read from (remote) disk.", ValueType::Number) \
@@ -209,6 +209,7 @@
     M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBlocksSkippedDense, "Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexFilledFromFoldedPostings, "Number of times a text index virtual column was filled for all rows of a read directly from the posting lists folded during the index analysis, instead of from posting lists built for each granule.", ValueType::Number) \
+    M(TextIndexDictionaryDFABuilds, "Number of times a DFA was built from a LIKE pattern to skip dictionary blocks of a text index. Reusing an already built DFA is not counted.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
@@ -553,6 +554,7 @@
     M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
+    M(JoinSpillingHashJoinSwitchedToMergeJoin, "Number of times a (Concurrent)HashJoin was switched to MergeJoin due to memory limit in SpillingHashJoin. MergeJoin is chosen instead of GraceHashJoin when the query plan requires the join to keep the row order of the left stream.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
@@ -1161,7 +1163,7 @@ The server successfully detected this situation and will download merged part fr
     M(MetadataFromKeeperIndividualOperations, "Number of paths read or written by single or multi requests to Keeper", ValueType::Number) \
     M(MetadataFromKeeperIndividualOperationsMicroseconds, "Time spend during single or multi requests to Keeper", ValueType::Microseconds) \
     M(MetadataFromKeeperReconnects, "Number of times a reconnect to Keeper was done", ValueType::Number) \
-    M(MetadataFromKeeperBackgroundCleanupObjects, "Number of times a old deleted object clean up was performed by background task", ValueType::Number) \
+    M(MetadataFromKeeperBackgroundCleanupObjects, "Number of times an old deleted object clean up was performed by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupTransactions, "Number of times old transaction idempotency token was cleaned up by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupBlobs, "Number of times an empty blob layout part was cleaned up by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupErrors, "Number of times an error was encountered in background cleanup task", ValueType::Number) \
@@ -1901,12 +1903,16 @@ The server successfully detected this situation and will download merged part fr
     \
     M(JoinBuildRowStoreMicroseconds, "Elapsed time transforming the right JOIN side payload into row-major format.", ValueType::Microseconds) \
     \
-    M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query, including cache reads and writes.", ValueType::Number) \
     M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AICacheReadTokens, "Prompt tokens read from the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
+    M(AICacheWriteTokens, "Prompt tokens written to the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
     M(AIAPICallsRetried, "Number of AI provider requests retried after a transient failure.", ValueType::Number) \
     M(AIAPICallsFailed, "Number of AI provider requests that failed after all retries.", ValueType::Number) \
     M(AIAPICallsThrottled, "Number of AI provider requests rejected with HTTP 429 (Too Many Requests).", ValueType::Number) \
+    M(AIRequestMicroseconds, "Total time spent in AI provider requests, including failed attempts and response parsing, excluding retry backoff. Summed across threads.", ValueType::Microseconds) \
+    M(AIRetryBackoffMicroseconds, "Total time spent waiting before retries of failed AI provider requests. Summed across threads.", ValueType::Microseconds) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
