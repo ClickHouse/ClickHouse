@@ -104,6 +104,13 @@ SELECT 'lowcardinality key pruned', count() FROM t3_120650 WHERE dictGet('d_1120
 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) = 'x' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
 SELECT 'lowcardinality subquery arm, key pruned', count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%' SETTINGS force_primary_key = 1;
 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
+-- A filter on a grouping key is pushed below `GROUP BY` and `LIMIT BY`, and the hint must go with it.
+SELECT 'group by, key pruned', count() FROM (SELECT nid FROM t2_120650 GROUP BY nid) WHERE dictGet('d_112032', 'a', nid) = 'x' SETTINGS force_primary_key = 1;
+SELECT count() FROM (SELECT nid FROM t2_120650 GROUP BY nid) WHERE dictGet('d_112032', 'a', nid) = 'x' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
+SELECT 'group by subquery arm, key pruned', count() FROM (SELECT nid FROM t2_120650 GROUP BY nid) WHERE dictGet('d_112032', 'a', nid) LIKE 'x%' SETTINGS force_primary_key = 1;
+SELECT count() FROM (SELECT nid FROM t2_120650 GROUP BY nid) WHERE dictGet('d_112032', 'a', nid) LIKE 'x%' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
+SELECT 'limit by, key pruned', count() FROM (SELECT nid FROM t2_120650 LIMIT 1 BY nid) WHERE dictGet('d_112032', 'a', nid) = 'x' SETTINGS force_primary_key = 1;
+SELECT count() FROM (SELECT nid FROM t2_120650 LIMIT 1 BY nid) WHERE dictGet('d_112032', 'a', nid) = 'x' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
 SELECT 'and spine, key pruned', count() FROM t2_120650 WHERE (dictGet('d_112032', 'a', nid) = 'x' AND bfc IS NOT NULL) AND lc IS NOT NULL SETTINGS force_primary_key = 1;
 SELECT count() FROM t2_120650 WHERE (dictGet('d_112032', 'a', nid) = 'x' AND bfc IS NOT NULL) AND lc IS NOT NULL SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
 SELECT 'prewhere, key pruned', count() FROM t2_120650 PREWHERE dictGet('d_112032', 'a', nid) = 'x' SETTINGS force_primary_key = 1;

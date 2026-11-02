@@ -26,6 +26,9 @@ const arm, key pruned	3
 subquery arm, key pruned	3
 lowcardinality key pruned	3
 lowcardinality subquery arm, key pruned	3
+group by, key pruned	3
+group by subquery arm, key pruned	3
+limit by, key pruned	3
 and spine, key pruned	3
 prewhere, key pruned	3
 and with a second set, key pruned	1

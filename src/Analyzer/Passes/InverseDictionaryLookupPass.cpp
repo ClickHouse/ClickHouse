@@ -28,6 +28,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
+#include <Functions/indexHint.h>
 #include <Storages/StorageDictionary.h>
 #include <TableFunctions/ITableFunction.h>
 
@@ -527,11 +528,11 @@ QueryTreeNodePtr restoreNullForNullKey(QueryTreeNodePtr key_expr, QueryTreeNodeP
     return if_node;
 }
 
-QueryTreeNodePtr makeIndexHint(QueryTreeNodePtr condition, const ContextPtr & context)
+QueryTreeNodePtr makeIndexHint(QueryTreeNodePtr condition)
 {
     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
     index_hint_node->getArguments().getNodes().push_back(std::move(condition));
-    resolveOrdinaryFunctionNodeByName(*index_hint_node, "indexHint", context);
+    index_hint_node->resolveAsFunction(FunctionIndexHint::createImplied());
     return index_hint_node;
 }
 
@@ -1165,7 +1166,7 @@ private:
     {
         if (auto it = null_in_replacements.find(node.get()); it != null_in_replacements.end())
         {
-            hints.push_back(makeIndexHint(it->second, getContext()));
+            hints.push_back(makeIndexHint(it->second));
             null_in_replacements.erase(it);
             return;
         }
