@@ -47,6 +47,7 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 
 #include <Common/DNSResolver.h>
@@ -1330,10 +1331,12 @@ The replica name in ZooKeeper.
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, streaming_exchange_sndbuf, 0, R"(The size of the SO_SNDBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket send buffer (clamped by net.core.wmem_max), at the cost of capping the stream at sndbuf/RTT on high-RTT links. Read per connection, so a config reload applies to new connections only.)", 0) \
+    DECLARE(UInt64, streaming_exchange_rcvbuf, 0, R"(The size of the SO_RCVBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket receive buffer (clamped by net.core.rmem_max). Read per connection, so a config reload applies to new connections only.)", 0) \
     DECLARE(UInt64, global_profiler_real_time_period_ns, default_global_profiler_period_ns, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
     DECLARE(UInt64, global_profiler_cpu_time_period_ns, default_global_profiler_period_ns, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
-    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
+    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materialized views", 0) \
     DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \
     DECLARE(String, merge_workload, "default", R"(
@@ -1616,7 +1619,7 @@ Disabled by default to avoid possible security issues which can be caused by bug
 ```
 )", 0) \
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
-    DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
+    DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materialized view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
     DECLARE(Bool, os_collect_psi_metrics, true, "Enable accounting PSI metrics from /proc/pressure/ files.", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
@@ -2087,7 +2090,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, logger_use_syslog, false, R"(Also forward log output to syslog.)", 0, "logger.use_syslog") \
     DECLARE(String, logger_syslog_level, "trace", R"(Log level for logging to syslog.)", 0, "logger.syslog_level") \
     DECLARE(Bool, logger_async, true, R"(When `<true>` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG.)", 0, "logger.async") \
-    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queue_max_size") \
+    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queue_max_size") \
     DECLARE(String, logger_startup_level, "", R"(Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `<level>` setting.)", 0, "logger.startup_level") \
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
@@ -3961,6 +3964,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_sndbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_rcvbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().rcvbuf), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
@@ -3981,9 +3988,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
 #if USE_AVRO
     if (context->getIcebergMetadataFilesCache())
+    {
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"iceberg_metadata_files_cache_max_entries",
+             {std::to_string(context->getIcebergMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
     if (context->getPaimonMetadataFilesCache())
     {
         changeable_settings.insert(
