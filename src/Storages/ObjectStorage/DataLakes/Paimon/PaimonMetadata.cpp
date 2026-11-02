@@ -114,7 +114,7 @@ String buildPaimonCacheKeyPrefix(
 }
 
 /// Whether reading the fields nested in `file_parent[key]` by name with the type `read_parent[key]` binds a name to another
-/// field id. Only ids and names are read. The paths name the field in the file and in the read schema.
+/// field id. Only ids and names are read.
 bool nestedFieldsDiffer(
     const Poco::JSON::Object::Ptr & file_parent,
     const Poco::JSON::Object::Ptr & read_parent,

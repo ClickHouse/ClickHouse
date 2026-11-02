@@ -1423,8 +1423,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         use_top_k_query_condition_cache_key = top_k_query_condition_cache_key && !object_info->file_bucket_info;
         skipped_row_groups_by_top_k_entry = false;
 
-        /// Such a file is read under the column names it was written with, which may belong to other columns now, and the
-        /// entries of the plain predicate are not scoped by schema.
+        /// A file with a schema transform is read under the column names it was written with, and the cache entries of the
+        /// plain predicate are not scoped by schema.
         initial_schema = configuration->getInitialSchemaByPath(context_, object_info);
         reads_file_under_own_names
             = initial_schema && object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform;
