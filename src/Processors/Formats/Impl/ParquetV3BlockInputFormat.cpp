@@ -439,7 +439,9 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
             }
         }
 
-        if (produced_rows || (top_k_statistics_only && row_group.skipped_by_top_k.load()))
+        /// Values beyond the top-K threshold may have been decoded as empty strings, which the filter rejected
+        /// (see `TopKStringBound`): a row group that produced no rows may still hold rows matching the predicate.
+        if (produced_rows || (top_k_statistics_only && row_group.skipped_by_top_k.load()) || reader->reader.top_k_string_bound_active)
             matched.push_back(row_group.row_group_idx);
     }
     return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());

@@ -1295,17 +1295,17 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 {
                     const PrimitiveColumnInfo & pc = primitive_columns[*top_k_primitive_idx];
                     if (isString(pc.decoded_type) && isString(removeNullable(removeLowCardinality(output_info.output_type)))
-                        && pc.max_array_def == 0 && pc.decoder.string_converter && pc.decoder.string_converter->isTrivial()
-                        /// Elsewhere the dictionary page is read with the data pages, held from the bound until the row group is read.
-                        && (prefetcher.isLocalFile() || prefetcher.isEntireFileInMemory()))
+                        && pc.max_array_def == 0 && pc.decoder.string_converter && pc.decoder.string_converter->isTrivial())
                     {
                         const String & column_name = format_filter_info->top_k_filter->column_name;
                         const auto & prewhere = format_filter_info->prewhere_info;
                         /// The filter pushed down to the source is applied to every row it returns, like PREWHERE.
                         const auto & filter_dag = format_filter_info->filter_actions_dag;
-                        top_k_dictionary_bound = (prewhere && prewhere->need_filter
+                        top_k_column_rejects_empty = (prewhere && prewhere->need_filter
                                 && filterRejectsEmptyString(prewhere->prewhere_actions, prewhere->prewhere_column_name, column_name))
                             || (filter_dag && filterRejectsEmptyString(*filter_dag, column_name));
+                        /// Elsewhere the dictionary page is read with the data pages, held from the bound until the row group is read.
+                        top_k_dictionary_bound = top_k_column_rejects_empty && (prefetcher.isLocalFile() || prefetcher.isEntireFileInMemory());
                     }
                 }
             }
@@ -1923,6 +1923,42 @@ void Reader::initializePrefetches()
     prefetcher.finalizeRanges();
 }
 
+/// Whether every node of the DAG that depends on the input `column_name`, directly or through other nodes, is a
+/// function that cannot throw, has no side effects and computes each row on its own, so that replacing a value
+/// with the empty string before the filter rejects the row cannot change anything but which rows the filter keeps.
+/// E.g. `intDiv(1, length(s))` or `runningDifference(length(s))` before the filter disables the replacement.
+static bool columnHasOnlyHarmlessReaders(const ActionsDAG & dag, const String & column_name)
+{
+    static const std::unordered_set<std::string_view> harmless = {
+        "notEmpty", "empty", "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+        "like", "notLike", "startsWith", "endsWith", "position", "length", "and", "or", "not"};
+    std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>> consumers;
+    std::vector<const ActionsDAG::Node *> to_visit;
+    for (const auto & node : dag.getNodes())
+    {
+        for (const auto * child : node.children)
+            consumers[child].push_back(&node);
+        if (node.type == ActionsDAG::ActionType::INPUT && node.result_name == column_name)
+            to_visit.push_back(&node);
+    }
+    std::unordered_set<const ActionsDAG::Node *> visited(to_visit.begin(), to_visit.end());
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+        for (const auto * consumer : consumers[node])
+        {
+            if (!visited.insert(consumer).second)
+                continue;
+            if (consumer->type != ActionsDAG::ActionType::ALIAS
+                && (consumer->type != ActionsDAG::ActionType::FUNCTION || !harmless.contains(consumer->function_base->getName())))
+                return false;
+            to_visit.push_back(consumer);
+        }
+    }
+    return true;
+}
+
 void Reader::preparePrewhere()
 {
     const auto & row_level_filter = format_filter_info->row_level_filter;
@@ -2149,6 +2185,30 @@ void Reader::preparePrewhere()
                 if (it != filters->end())
                     pc.string_value_filter = it->second;
             }
+        }
+    }
+
+    /// TopN dynamic filtering of a `String` sort column whose empty value the filter rejects (see `TopKStringBound`).
+    if (top_k_column_rejects_empty && !row_level_filter)
+    {
+        PrimitiveColumnInfo & pc = primitive_columns[*top_k_primitive_idx];
+        const String & column_name = format_filter_info->top_k_filter->column_name;
+        const auto & filter_dag = format_filter_info->filter_actions_dag;
+        bool harmless = (!prewhere_info || columnHasOnlyHarmlessReaders(prewhere_info->prewhere_actions, column_name))
+            && (!filter_dag || columnHasOnlyHarmlessReaders(*filter_dag, column_name));
+        /// A column decoded with replaced values could not be written to the columns cache.
+        if (columns_cache_writes_possible && columns_cache_identities.at(pc.idx_in_output_block) != 0)
+            harmless = false;
+        /// Behind an earlier step that filters rows, the column is decoded in short runs of the rows that passed it:
+        /// the checks would cost more than the copies they save.
+        const bool decoded_before_other_filters = steps.empty() || pc.first_step_to_calculate == 1;
+        if (harmless && decoded_before_other_filters && !pc.string_value_filter)
+        {
+            auto bound = std::make_shared<TopKStringBound>();
+            bound->tracker = format_filter_info->top_k_filter->threshold_tracker;
+            bound->ascending = bound->tracker->getDirection() == 1;
+            pc.top_k_string_bound = std::move(bound);
+            top_k_string_bound_active = true;
         }
     }
 
@@ -3992,6 +4052,13 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 }
 
 /// Advances page.{value_idx, next_row_idx}. The caller must advance page.data (encoded values).
+/// See `TopKStringBound`. Only the values that pass `filter` are gathered through the dictionary.
+NO_INLINE static void refreshTopKMaskForPage(
+    Dictionary & dictionary, const TopKStringBound & bound, const UInt8 * filter, size_t filter_offset, size_t num_values)
+{
+    dictionary.refreshTopKMask(bound, filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values);
+}
+
 static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page)
 {
     size_t new_value_idx = page.value_idx;
@@ -4037,7 +4104,8 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
+        page.decoder = column_info.decoder.makeDecoder(
+            page.encoding, page.data, column_info.string_value_filter.get(), column_info.top_k_string_bound.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.
@@ -4412,6 +4480,8 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
             if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
                 filter = nullptr;
+            if (column_info.top_k_string_bound && !subchunk.dictionary_values) [[unlikely]]
+                refreshTopKMaskForPage(column.dictionary, *column_info.top_k_string_bound, filter, filter_offset, encoded_values_to_read);
             if (subchunk.dictionary_values)
                 page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when

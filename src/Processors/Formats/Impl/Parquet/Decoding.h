@@ -14,12 +14,42 @@ namespace DB
 {
 class IDataType;
 class StringValueFilter;
+class ITopKThresholdTracker;
 }
 
 namespace DB::Parquet
 {
 
 struct PageDecoderInfo;
+
+/// TopN dynamic filtering of a `String` sort column (`WHERE s != '' ORDER BY s LIMIT n`): a value beyond the
+/// current threshold of the top-K heap can never reach the result, because the threshold only moves towards it.
+/// When the filter above the read rejects the empty string, such a value is decoded as an empty string without
+/// copying its data, and the filter drops the row. Shared by all readers of the column within one query.
+struct TopKStringBound
+{
+    std::shared_ptr<const ITopKThresholdTracker> tracker;
+    bool ascending = true;
+
+    /// The threshold as seen by one reader; refreshed when the tracker publishes a new one.
+    struct Snapshot
+    {
+        /// `ITopKThresholdTracker::getVersion` at which `value` was taken; 0 if no threshold was taken yet.
+        UInt64 version = 0;
+        String value;
+    };
+
+    /// Updates `snapshot` if the tracker has a newer threshold. Returns whether `snapshot` holds a threshold.
+    bool refresh(Snapshot & snapshot) const;
+
+    /// Whether the value is beyond the threshold of `snapshot`. A value equal to the threshold is not:
+    /// it may still enter the heap on the other sort columns. Bytewise, like `ColumnString::compareAt`.
+    bool isBeyond(const Snapshot & snapshot, const char * data, size_t size) const
+    {
+        int cmp = std::string_view(data, size).compare(snapshot.value);
+        return ascending ? cmp > 0 : cmp < 0;
+    }
+};
 
 struct Dictionary
 {
@@ -57,6 +87,30 @@ struct Dictionary
 
     PaddedPODArray<char> decompressed_buf;
     ColumnPtr col;
+
+    /// TopN dynamic filtering of a `String` sort column, only for `StringPlain` mode (see `TopKStringBound`):
+    /// `index` materializes empty strings for the entries the mask excludes.
+    struct TopKMask
+    {
+        /// If not empty, `mask[i]` is 0 if the i-th entry is beyond the threshold of `snapshot`.
+        PaddedPODArray<UInt8> mask;
+        TopKStringBound::Snapshot snapshot;
+        /// Values decoded through the dictionary since `mask` was last built.
+        size_t values_since_build = 0;
+        /// Values gathered through the current `mask`, and how many of them it replaced.
+        size_t values_with_mask = 0;
+        size_t replaced_with_mask = 0;
+        /// The mask replaced nothing for `count` values, e.g. because values arrive in the order of the sort:
+        /// the rest of the column chunk is decoded without it.
+        bool useless = false;
+    };
+    /// Created by the first `refreshTopKMask`. Out of line, so that reads without the bound keep their layout.
+    std::unique_ptr<TopKMask> top_k;
+
+    /// Called before `num_values` values are decoded through the dictionary. Rebuilds the mask if the threshold
+    /// changed since it was built, but only after at least `count` values were decoded since the last build
+    /// (including these ones), so that the rebuilds cost at most one comparison per decoded value.
+    void refreshTopKMask(const TopKStringBound & bound, size_t num_values);
 
     void reset();
     bool isInitialized() const;
@@ -234,8 +288,10 @@ struct PageDecoderInfo
     /// before `data` and after `end`.
     /// If `string_value_filter` is not nullptr, string values that do not match it may be decoded
     /// as empty strings (used for substring search conditions pushed down from PREWHERE).
+    /// If `top_k_bound` is not nullptr, string values beyond its threshold may be decoded as empty strings.
     std::unique_ptr<PageDecoder> makeDecoder(
-        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr) const;
+        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr,
+        const TopKStringBound * top_k_bound = nullptr) const;
 
     /// Decode a min/max value from Statistics.
     /// If not supported, allow_stats is false, or the value doesn't survive the conversion to
