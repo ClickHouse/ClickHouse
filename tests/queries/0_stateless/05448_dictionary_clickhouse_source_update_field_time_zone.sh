@@ -7,37 +7,45 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The lower bound of an incremental update (previous update time - update_lag) must be the same instant
 # whatever the time zones of the server and of the source column. update_lag puts it at B: in the second
 # occurrence of the hour repeated in Europe/Amsterdam at the end of DST (2026-10-25 01:30:00 UTC), and at
-# an 8-digit timestamp (1970-08-21), which the DateTime parser reads as YYYYMMDD.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE src (key UInt64, value String, t DateTime('Europe/Amsterdam')) ENGINE = TinyLog"
+# an 8-digit timestamp (1970-08-20), which the DateTime parser reads as YYYYMMDD.
+# A String update_field holds UTC text and is compared as text, so its rows are two days from B.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE src (key UInt64, value String, t DateTime('Europe/Amsterdam'), s String) ENGINE = TinyLog"
 
 for B in 1792891800 20000101; do
     LAG=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now()) - $B")
 
-    for source in "TABLE 'src'" "QUERY \$doc\$SELECT key, value FROM $CLICKHOUSE_DATABASE.src WHERE {condition}\$doc\$"; do
-        $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE src"
-        $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1, 'initial', now())"
-        $CLICKHOUSE_CLIENT -q "
-            CREATE DICTIONARY d (key UInt64, value String)
-            PRIMARY KEY key
-            SOURCE(CLICKHOUSE($source UPDATE_FIELD 't' UPDATE_LAG $LAG))
-            LAYOUT(HASHED())
-            LIFETIME(1)"
+    for field in t s; do
+        for source in "TABLE 'src'" "QUERY \$doc\$SELECT key, value FROM $CLICKHOUSE_DATABASE.src WHERE {condition}\$doc\$"; do
+            $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE src"
+            $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1, 'initial', now(), toString(now()))"
+            $CLICKHOUSE_CLIENT -q "
+                CREATE DICTIONARY d (key UInt64, value String)
+                PRIMARY KEY key
+                SOURCE(CLICKHOUSE($source UPDATE_FIELD '$field' UPDATE_LAG $LAG))
+                LAYOUT(HASHED())
+                LIFETIME(1)"
 
-        while clickhouse_test_time_left; do
-            [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM d WHERE key = 1") == 1 ]] && break
-            sleep 0.3
+            while clickhouse_test_time_left; do
+                [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM d WHERE key = 1") == 1 ]] && break
+                sleep 0.3
+            done
+
+            # One INSERT, so that one update sees all three rows. Key 3 is above any bound.
+            $CLICKHOUSE_CLIENT -q "
+                INSERT INTO src SELECT key, value, t, toString(toDateTime(s, 'UTC'))
+                FROM values('key UInt64, value String, t UInt32, s UInt32',
+                    (2, 'below the bound', $((B - 1200)), $((B - 172800))),
+                    (3, 'far future', 4102444800, 4102444800),
+                    (4, 'above the bound', $((B + 1200)), $((B + 172800))))"
+
+            while clickhouse_test_time_left; do
+                [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM d WHERE key = 3") == 1 ]] && break
+                sleep 0.3
+            done
+
+            $CLICKHOUSE_CLIENT -q "SELECT key, value FROM d ORDER BY key"
+            $CLICKHOUSE_CLIENT -q "DROP DICTIONARY d"
         done
-
-        # One INSERT, so that one update sees all three rows. Key 3 is above any bound.
-        $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (2, 'below the bound', $((B - 1200))), (3, 'far future', 4102444800), (4, 'above the bound', $((B + 1200)))"
-
-        while clickhouse_test_time_left; do
-            [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM d WHERE key = 3") == 1 ]] && break
-            sleep 0.3
-        done
-
-        $CLICKHOUSE_CLIENT -q "SELECT key, value FROM d ORDER BY key"
-        $CLICKHOUSE_CLIENT -q "DROP DICTIONARY d"
     done
 done
 
