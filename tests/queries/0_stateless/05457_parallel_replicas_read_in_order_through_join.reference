@@ -31,6 +31,9 @@ left join engine, order by
 0	150000	0
 0	225000	0
 0	300000	0
+left join, parallel_hash
+['ReadType: Default','ReadType: Default']
+['ReadType: Default','ReadType: InOrder']
 inner join, order by
 ['ReadType: Default','ReadType: Default']
 0	0	0

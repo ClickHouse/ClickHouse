@@ -126,6 +126,7 @@ public:
 
     bool preservesLeftBlockOrder() const override { return keep_left_block_order; }
     bool canPreserveLeftBlockOrder() const override;
+    bool canPreserveLeftBlockOrderOnEveryServer() const override;
     void keepLeftPipelineInOrder() override;
 
     void onBuildPhaseFinish() override;
@@ -145,6 +146,8 @@ public:
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
+    bool canPreserveLeftBlockOrderImpl(bool on_every_server) const;
+
     SpillableAdapter<SpillingHashJoin> spillable{*this};
 
     enum class State

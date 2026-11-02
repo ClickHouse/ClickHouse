@@ -2873,6 +2873,13 @@ void HashJoin::onBuildPhaseFinish()
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(total_bytes), getTotalRowCount());
 }
 
+bool HashJoin::canPreserveLeftBlockOrderOnEveryServer() const
+{
+    /// `ConcurrentHashJoin` uses a two-level map, which preserves the order, for every key but these.
+    return canPreserveLeftBlockOrder()
+        && (!table_join->allowParallelHashJoin() || (data->type != Type::key8 && data->type != Type::key16));
+}
+
 bool HashJoin::hasPostBuildPhase() const
 {
     /// key8/key16 are already FixedHashMap, so they don't go through tryConvertToFixedHashMap,

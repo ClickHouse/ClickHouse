@@ -415,10 +415,25 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
 bool SpillingHashJoin::canPreserveLeftBlockOrder() const
 {
+    return canPreserveLeftBlockOrderImpl(/* on_every_server */ false);
+}
+
+bool SpillingHashJoin::canPreserveLeftBlockOrderOnEveryServer() const
+{
+    return canPreserveLeftBlockOrderImpl(/* on_every_server */ true);
+}
+
+bool SpillingHashJoin::canPreserveLeftBlockOrderImpl(bool on_every_server) const
+{
     /// The in-memory join processes the probe side when the build fits under the threshold, so it
     /// must preserve the order on its own.
-    bool in_memory_join_preserves_order
-        = concurrent_join ? concurrent_join->preservesLeftBlockOrder() : hash_join->preservesLeftBlockOrder();
+    bool in_memory_join_preserves_order;
+    if (on_every_server)
+        in_memory_join_preserves_order = concurrent_join ? concurrent_join->canPreserveLeftBlockOrderOnEveryServer()
+                                                         : hash_join->canPreserveLeftBlockOrderOnEveryServer();
+    else
+        in_memory_join_preserves_order
+            = concurrent_join ? concurrent_join->preservesLeftBlockOrder() : hash_join->preservesLeftBlockOrder();
 
     /// Hash-key equality must survive the switch: the hash join matches the key's byte
     /// representation while MergeJoin matches with `compareAt`, and for some types the two

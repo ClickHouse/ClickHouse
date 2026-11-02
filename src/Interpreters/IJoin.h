@@ -256,6 +256,11 @@ public:
     /// unconditionally.
     virtual bool canPreserveLeftBlockOrder() const { return preservesLeftBlockOrder() && !hasDelayedBlocks(); }
 
+    /// Whether `canPreserveLeftBlockOrder` holds on every server that plans the same join. Parallel replicas
+    /// need that, because each replica decides on reading in order by itself. Hash joins override it: the
+    /// number of threads and the size statistics of the server choose between them.
+    virtual bool canPreserveLeftBlockOrderOnEveryServer() const { return canPreserveLeftBlockOrder(); }
+
     /// Notify the join that the query plan requires the left stream's row order. Must be called
     /// only when `canPreserveLeftBlockOrder` is true.
     virtual void keepLeftPipelineInOrder() {}

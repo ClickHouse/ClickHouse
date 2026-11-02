@@ -78,6 +78,11 @@ public:
     /// With a single-level map (a key materializing to UInt8 or UInt16) the block is scattered
     /// across the slots and emitted slot by slot, so equal left key values stop being contiguous.
     bool preservesLeftBlockOrder() const override { return slots == 1 || hash_joins[0]->data->twoLevelMapIsUsed(); }
+    /// Another server may have more slots.
+    bool canPreserveLeftBlockOrderOnEveryServer() const override
+    {
+        return canPreserveLeftBlockOrder() && hash_joins[0]->data->twoLevelMapIsUsed();
+    }
 
     /// Number of internal hash join slots.
     size_t getNumSlots() const { return slots; }

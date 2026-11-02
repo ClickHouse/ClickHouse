@@ -140,6 +140,16 @@ struct FindReadingStepContext
     std::vector<const IJoin *> traversed_joins = {};
 };
 
+/// With parallel replicas, every replica decides on reading in order through the joins by itself, so the
+/// decision must not depend on the replica.
+static bool replicasAgreeOnReadingInOrder(const ReadFromMergeTree & reading, const FindReadingStepContext & data)
+{
+    if (data.traversed_joins.empty() || !reading.isParallelReadingFromReplicas())
+        return true;
+    return reading.canReadInOrderThroughJoinWithParallelReplicas()
+        && std::ranges::all_of(data.traversed_joins, [](const IJoin * join) { return join->canPreserveLeftBlockOrderOnEveryServer(); });
+}
+
 /// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
 /// the steps findReadingStep itself descends.
 GatherExchangeStep * findGatherOverRead(QueryPlan::Node & node, FindReadingStepContext & data)
@@ -1426,8 +1436,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
         /// Replicas that disagree on reading in order make the coordinator see conflicting modes.
-        if (!find_reading_ctx.traversed_joins.empty() && reading->isParallelReadingFromReplicas()
-            && !reading->canReadInOrderThroughJoinWithParallelReplicas())
+        if (!replicasAgreeOnReadingInOrder(*reading, find_reading_ctx))
             return nullptr;
 
         auto order_info = buildInputOrderFromSortDescription(
@@ -1560,9 +1569,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// Same as above: replicas that disagree on reading in order make the coordinator see conflicting modes.
-        if (!find_reading_ctx.traversed_joins.empty() && reading->isParallelReadingFromReplicas()
-            && !reading->canReadInOrderThroughJoinWithParallelReplicas())
+        if (!replicasAgreeOnReadingInOrder(*reading, find_reading_ctx))
             return {};
 
         /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
@@ -1707,9 +1714,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// Same as above: replicas that disagree on reading in order make the coordinator see conflicting modes.
-        if (!find_reading_ctx.traversed_joins.empty() && reading->isParallelReadingFromReplicas()
-            && !reading->canReadInOrderThroughJoinWithParallelReplicas())
+        if (!replicasAgreeOnReadingInOrder(*reading, find_reading_ctx))
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
