@@ -139,7 +139,7 @@ struct AggregateFunctionSumData
     template <typename Value>
     void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(ptr, start, end);
@@ -238,7 +238,7 @@ struct AggregateFunctionSumData
     template <typename Value, bool add_if_zero>
     void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalInternalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, start, end);
@@ -266,9 +266,13 @@ struct AggregateFunctionSumData
         Impl::add(sum, rhs.sum);
     }
 
-    void write(WriteBuffer & buf) const
+    static constexpr size_t serialized_size_bound = sizeof(AccumulateResult);
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
     {
-        writeBinaryLittleEndian(sum, buf);
+        writeBinaryLittleEndian(sum, out);
     }
 
     void read(ReadBuffer & buf)
@@ -410,10 +414,14 @@ struct AggregateFunctionSumKahanData
         mergeImpl(sum, compensation, rhs.sum, rhs.compensation);
     }
 
-    void write(WriteBuffer & buf) const
+    static constexpr size_t serialized_size_bound = sizeof(T) * 2;
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
     {
-        writeBinary(sum, buf);
-        writeBinary(compensation, buf);
+        writeBinary(sum, out);
+        writeBinary(compensation, out);
     }
 
     void read(ReadBuffer & buf)
@@ -481,6 +489,18 @@ public:
     }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    /// The sum of unsigned integers qualifies for the `Subadditive` bound: the merged value is
+    /// the modular sum of the partial values, which never exceeds their saturating sum - even
+    /// when the accumulator wraps around. Signed and floating-point sums do not qualify
+    /// (negative addends break the bound), and neither do the decimal and wide-integer results
+    /// (the bound's arithmetic works on `UInt64` values).
+    MergedValueBound getMergedValueBound() const override
+    {
+        if constexpr (is_unsigned_v<T> && std::is_same_v<TResult, UInt64>)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -572,6 +592,17 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return Data::serialized_size_bound;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const override
+    {
+        this->data(place).write(dst);
+        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override

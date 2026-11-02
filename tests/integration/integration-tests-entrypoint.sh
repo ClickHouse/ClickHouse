@@ -75,7 +75,7 @@ function dump_stacktraces_on_shutdown()
             exit 0
         fi
         echo "Attaching gdb to obtain thread stacktraces"
-        gdb -batch -ex 'thread apply all bt' -p "$PID" > /var/log/clickhouse-server/stdout.log
+        gdb -batch -ex 'thread apply all bt' -x /debug/tests/integration/sanitizer-fault.gdb -p "$PID" > /var/log/clickhouse-server/stdout.log
     ) 9>"$GDB_ATTACH_LOCK"
 }
 dump_stacktraces_on_shutdown &

@@ -104,7 +104,7 @@ namespace
     ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * access_control, bool attach_mode)
     {
         auto query = make_intrusive<ASTCreateRoleQuery>();
-        query->names.emplace_back(role.getName());
+        query->names = make_intrusive<ASTUserNamesWithHost>(role.getName());
         query->attach = attach_mode;
 
         if (!role.settings.empty())

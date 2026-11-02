@@ -10,6 +10,8 @@ ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) �
 有关 ClickHouse Cloud 备份工作方式的更多详情，包括“全量备份”备份与“增量”备份的区别，请参阅[备份](/zh/products/cloud/guides/backups/review-and-restore-backups)文档。请注意，
 导出到您自己的云账户的备份与原位 Cloud 备份有一个重要区别：它们无法使用原生复制 (请参见下方说明) 。
 
+将备份导出到您自己的账户通常不会停用由 ClickHouse 管理的备份。由 ClickHouse 管理的备份无法通过自助方式停用。任何例外情况都需要获得 ClickHouse 批准并变更合同；请联系 [ClickHouse 支持团队](https://clickhouse.com/support/program)，沟通您的具体需求。
+
 本指南将通过示例说明如何将全量备份和增量备份导出到 AWS、GCP 和 Azure 对象存储，以及如何从这些备份中恢复。
 
 <Note>
@@ -27,17 +29,13 @@ ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) �
   备份比标准的原位 Cloud 备份更慢，并且会消耗更多资源。
 </Warning>
 
-<div id="requirements">
-  ## 要求
-</div>
+## 要求 {#requirements}
 
 在运行 `BACKUP` 命令之前，请确保您的 ClickHouse 用户拥有 `BACKUP` 权限。ClickHouse Cloud 中的 `default_role` 不包含此权限。请在导出备份之前联系 [ClickHouse 支持团队](https://clickhouse.com/support/program) 申请该权限。
 
 要将备份导出到您自己的 CSP 存储桶或从中恢复，您需要以下信息。
 
-<div id="aws">
-  ### AWS
-</div>
+### AWS {#aws}
 
 1. AWS S3 端点，格式为：
 
@@ -62,17 +60,13 @@ ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) �
   若要使用基于 Role 的身份验证，请遵循安全访问 S3 的[设置](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。此外，您还需要向[此处](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)所述的 IAM 策略添加 `s3:PutObject` 和 `s3:DeleteObject` 权限。
 </Note>
 
-<div id="azure">
-  ### Azure
-</div>
+### Azure {#azure}
 
 1. Azure 存储的连接字符串。
 2. 存储账户中的 Azure 容器名称。
 3. 容器中的 Azure Blob。
 
-<div id="google-cloud-storage-gcs">
-  ### Google Cloud Storage (GCS)
-</div>
+### Google Cloud Storage (GCS) {#google-cloud-storage-gcs}
 
 1. GCS 端点，格式如下：
 
@@ -83,17 +77,11 @@ ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) �
 
 <hr />
 
-<div id="backup-restore">
-  ## 备份 / 恢复
-</div>
+## 备份 / 恢复 {#backup-restore}
 
-<div id="backup--restore-to-aws-s3-bucket">
-  ## 备份到 AWS S3 存储桶 / 从中恢复
-</div>
+## 备份到 AWS S3 存储桶 / 从中恢复 {#backup--restore-to-aws-s3-bucket}
 
-<div id="take-a-db-backup">
-  ### 执行数据库备份
-</div>
+### 执行数据库备份 {#take-a-db-backup}
 
 **全量备份**
 
@@ -117,9 +105,7 @@ TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key
 SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
 ```
 
-<div id="restore-from-a-backup">
-  ### 从备份中恢复
-</div>
+### 从备份中恢复 {#restore-from-a-backup}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -129,13 +115,9 @@ FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<k
 
 参见：[配置 BACKUP/RESTORE 以使用 S3 端点](/zh/concepts/features/backup-restore/s3-endpoint)了解更多详情。
 
-<div id="backup--restore-to-azure-blob-storage">
-  ## 备份 / 恢复到 Azure Blob 存储
-</div>
+## 备份 / 恢复到 Azure Blob 存储 {#backup--restore-to-azure-blob-storage}
 
-<div id="take-a-db-backup">
-  ### 执行数据库备份
-</div>
+### 执行数据库备份 {#take-a-db-backup-1}
 
 **全量备份**
 
@@ -154,9 +136,7 @@ TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container
 SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
 ```
 
-<div id="restore-from-a-backup">
-  ### 从备份中恢复
-</div>
+### 从备份中恢复 {#restore-from-a-backup-1}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -166,13 +146,9 @@ FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<contain
 
 更多详情，请参阅：[配置 BACKUP/RESTORE 以使用 AzureBlobStorage 端点](/zh/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint)。
 
-<div id="backup--restore-to-google-cloud-storage-gcs">
-  ## 备份到 / 从 Google Cloud Storage (GCS) 恢复
-</div>
+## 备份到 / 从 Google Cloud Storage (GCS) 恢复 {#backup--restore-to-google-cloud-storage-gcs}
 
-<div id="take-a-db-backup">
-  ### 执行数据库备份
-</div>
+### 执行数据库备份 {#take-a-db-backup-2}
 
 **全量备份**
 
@@ -191,9 +167,7 @@ TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', '
 SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
 ```
 
-<div id="restore-from-a-backup">
-  ### 从备份中恢复
-</div>
+### 从备份中恢复 {#restore-from-a-backup-2}
 
 ```sql
 RESTORE DATABASE test_backups 

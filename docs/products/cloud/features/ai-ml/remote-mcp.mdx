@@ -14,7 +14,7 @@ These users and the agentic workloads acting on their behalf need a way to secur
 The remote MCP server capability in ClickHouse Cloud addresses this by exposing a standard interface that external agents can use to retrieve analytical context.
 MCP, or Model Context Protocol, is a standard for structured data access by AI applications powered by LLMs.
 With this integration, external agents can list databases and tables, inspect schemas, and run scoped, read-only SELECT queries.
-Authentication is handled via OAuth. The server is fully managed on ClickHouse Cloud, so no setup or maintenance is required.
+Authentication is handled via OAuth 2.0 or a [ClickHouse Cloud API key](/cloud/manage/openapi). The server is fully managed on ClickHouse Cloud, so no setup or maintenance is required.
 
 This makes it easier for agentic tools to plug into ClickHouse and retrieve the data they need, whether for analysis, summarization, code generation, or exploration.
 
@@ -27,7 +27,7 @@ ClickHouse offers two MCP servers.
 | **Source**         | Fully managed by ClickHouse Cloud                                                                    | [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) on GitHub |
 | **Transport**      | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)                                                 | Local stdio                                                              |
 | **Works with**     | ClickHouse Cloud services                                                                            | Any ClickHouse instance (self-hosted or Cloud)                           |
-| **Authentication** | OAuth 2.0 with your Cloud credentials                                                                | Environment variables                                                    |
+| **Authentication** | OAuth 2.0 with your Cloud credentials, or a ClickHouse Cloud API key                                 | Environment variables                                                    |
 | **Tools**          | 13 tools covering querying, schema exploration, service management, backups, ClickPipes, and billing | 3 tools: `run_select_query`, `list_databases`, `list_tables`             |
 | **Setup**          | Zero installation. Point your MCP client at the endpoint and authenticate.                           | Install and run the server locally                                       |
 
@@ -51,9 +51,18 @@ https://mcp.clickhouse.cloud/mcp
 
 ## Authentication {#authentication}
 
-All access to the remote MCP server is authenticated via OAuth 2.0.
-When an MCP client connects for the first time, it initiates an OAuth flow that opens a browser window for the user to sign in with their ClickHouse Cloud credentials.
-Access is scoped to the organizations and services the authenticated user has permission to access. No additional API key configuration is required.
+The remote MCP server supports two authentication methods:
+
+- **OAuth 2.0**: Recommended for interactive clients. When an MCP client connects for the first time, it opens a browser window for the user to sign in with their ClickHouse Cloud credentials. Access is scoped to the organizations and services the authenticated user has permission to access.
+- **ClickHouse Cloud API key**: Intended for remote, headless, and automated environments where a browser-based OAuth flow is not practical. Send the API key ID and secret using HTTP Basic authentication:
+
+  ```text
+  Authorization: Basic base64(<key_id>:<key_secret>)
+  ```
+
+API-key access is scoped by the roles, permissions, and expiration configured for the key. Use a dedicated, least-privilege key and inject it through a secret-management system. Base64 encoding does not encrypt the credentials, so do not commit the encoded value to source control or expose it in logs.
+
+For an example of configuring an MCP client in a headless environment, see [Authenticate from a headless environment](/products/cloud/features/ai-ml/mcp/remote-mcp#headless-mcp-client-authentication).
 
 ## Safety {#safety}
 

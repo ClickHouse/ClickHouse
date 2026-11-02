@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # ADD COLUMN on Iceberg writes a new metadata file to object storage before the
 # max_query_size check fires in alterTable, so the external schema is mutated
 # even though the ALTER is rejected.
-sub_path="iceberg_max_query_size_$RANDOM"
+sub_path="iceberg_max_query_size_${CLICKHOUSE_DATABASE}_${RANDOM}"
 cols=$($CLICKHOUSE_CLIENT -q "SELECT arrayStringConcat(arrayMap(i -> 'c' || toString(i) || ' Int32', range(200)), ', ')")
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ice SYNC"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ice (${cols}) ENGINE = Iceberg('http://localhost:11111/test/${sub_path}/', 'clickhouse', 'clickhouse')"

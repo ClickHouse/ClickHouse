@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ci.praktika.utils import Shell
 
-# Iceberg datasets unpacked into user_files as <database> -> (directory, tables); every job that downloads a tarball must also attach the database via iceberg_database_ddl_commands, or the tests querying it fail.
+# Iceberg datasets unpacked into user_files as <database> -> (directory, tables); every job that downloads a tarball must also create the database via iceberg_database_queries, or the tests querying it fail.
 ICEBERG_DATASETS = {
     "tpch_ice10": (
         "tpch_ice_sf10",
@@ -21,22 +21,17 @@ ICEBERG_DATASETS = {
 }
 
 
-def iceberg_database_ddl_commands(server_path):
-    """Attach the Iceberg datasets as databases on one server ({server_path}/db); must run after the server's db directory is materialized, because IcebergLocal stores an absolute path that differs per server."""
+def iceberg_database_queries(server_path):
+    """Queries that create the Iceberg datasets as databases (with the default engine, `Atomic`) on one running server ({server_path}/db). The paths are per server, because IcebergLocal stores an absolute path. Idempotent."""
     user_files = f"{server_path}/db/user_files"
-    metadata = f"{server_path}/db/metadata"
-    commands = []
+    queries = []
     for database, (directory, tables) in ICEBERG_DATASETS.items():
-        commands.append(f"mkdir -p {metadata}/{database}")
-        commands.append(
-            f'echo "ATTACH DATABASE {database} ENGINE=Ordinary" > {metadata}/{database}.sql'
-        )
+        queries.append(f"CREATE DATABASE IF NOT EXISTS {database}")
         for table in tables:
-            commands.append(
-                f"echo \"ATTACH TABLE {table} ENGINE = IcebergLocal('{user_files}/{directory}/{table}/')\""
-                f" > {metadata}/{database}/{table}.sql"
+            queries.append(
+                f"CREATE TABLE IF NOT EXISTS {database}.{table} ENGINE = IcebergLocal('{user_files}/{directory}/{table}/')"
             )
-    return commands
+    return queries
 
 
 def download_and_extract_datasets(dataset_urls, target_dir, retries=5):
