@@ -1,0 +1,22 @@
+-- row groups
+200
+200
+200
+200
+200
+200
+200
+10000
+10000
+-- pages
+200
+200
+200
+200
+200
+200
+10000
+10000
+-- row groups holding NULLs are still pruned for an ordinary predicate
+0
+2
