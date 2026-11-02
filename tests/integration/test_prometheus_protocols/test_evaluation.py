@@ -3603,9 +3603,9 @@ def test_alignment_with_subquery_step():
         "vector(1)[19:20]", 9999, '{"resultType": "matrix", "result": []}', ""
     )
 
-    # The offset makes the effective subquery timestamp negative without using a negative query timestamp.
+    # A negative @ timestamp isolates step alignment from offset timestamp shifting.
     do_query_test(
-        "vector(time())[40s:20s] offset 31s",
+        "vector(time())[40s:20s] @ -21",
         10,
         '{"resultType": "matrix", "result": [{"metric": {}, "values": [[-60, "-60"], [-40, "-40"]]}]}',
         [[
