@@ -42,6 +42,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 namespace ProfileEvents
 {
@@ -73,6 +74,7 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
     extern const int NO_AVAILABLE_DATA;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -820,6 +822,12 @@ void StorageABR::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    if (getEffectiveRowPolicyFilter(*this, context))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Row policies on table {} are not supported: the `ABR` engine executes the query on an underlying table, "
+            "where they cannot be applied. Define them on the underlying tables instead",
+            getStorageID().getNameForLogs());
+
     Stopwatch choose_watch;
     auto abr_info = context->getABRQueryInfoPtr();
     const size_t initial_table_idx = chooseBestTable(query_info, context);
@@ -910,6 +918,7 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 
 - `ABR` is read-only. `INSERT`, `ALTER` and mutations must target the underlying tables directly.
 - All underlying tables must share an identical column set.
+- `ABR` does not support row policies directly. Define them on the underlying tables instead.
 )DOCS_MD",
             .syntax = "ENGINE = ABR(table_prefix, sample_intervals, retention_expression)",
             .examples = {{
