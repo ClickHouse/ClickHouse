@@ -20,6 +20,9 @@ merge	x
 slow	x
 alias_merge	x	0
 ts	[]
+overlay	only_c	Alias
+overlay	only_c
+overlay	only_c	y	String
 parts_columns	1
 projection_parts	0
 mutations	0

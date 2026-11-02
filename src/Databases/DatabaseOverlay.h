@@ -154,6 +154,10 @@ private:
     /// The name of the first source database that has the table visible to the caller, or an empty string.
     String findSourceDatabase(const String & table_name, ContextPtr context) const;
 
+    /// Whether one of the sources has the table visible to the caller. A local source omits a table whose startup failed
+    /// from a listing with `skip_not_loaded`, but `findSourceDatabase` still resolves the name to it.
+    static bool hasTable(const std::vector<std::pair<String, DatabasePtr>> & sources, const String & table_name, const ContextPtr & context);
+
     const Strings source_databases;
 };
 
