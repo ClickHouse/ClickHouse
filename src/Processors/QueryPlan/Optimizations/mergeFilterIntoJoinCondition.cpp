@@ -520,7 +520,9 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
     const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
-    const bool allow_range_predicates = TableJoin::isEnabledAlgorithm(join_step->getJoinSettings().join_algorithms, JoinAlgorithm::HASH);
+    /// Range predicates can change the join algorithm and move existing keys to a post-join filter.
+    const bool allow_range_predicates = TableJoin::isEnabledAlgorithm(join_step->getJoinSettings().join_algorithms, JoinAlgorithm::HASH)
+        && !QueryPlanOptimizations::isSensitiveToEvaluationCount(*join_step->getExpressionActions().getActionsDAG());
 
     NameSet join_condition_names;
     for (const auto & condition : join_operator.expression)

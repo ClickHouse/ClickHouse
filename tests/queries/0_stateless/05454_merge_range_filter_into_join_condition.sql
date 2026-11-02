@@ -321,9 +321,51 @@ JOIN values('f Float64, k Int64, g Int64, x Int64', (nan, 3, 1, 2), (1, 4, 1, 2)
     ON (l.f = r.f OR l.k = r.k) AND l.g = r.g
 WHERE l.x < r.x
 SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+
 SELECT 'R20-or-eq', 1, count()
 FROM values('f Float64, k Int64, g Int64, x Int64', (nan, 1, 1, 1), (1, 2, 1, 1)) AS l
 JOIN values('f Float64, k Int64, g Int64, x Int64', (nan, 3, 1, 2), (1, 4, 1, 2)) AS r
     ON l.f = r.f OR l.k = r.k
 WHERE l.g = r.g
 SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+
+-- Nested runtime types can throw even when the outer types are identical.
+SELECT 'R21-tuple-dynamic', 0, count()
+FROM values('x Int64, t Tuple(Dynamic)', (0, tuple(CAST(toDate('2020-01-01'), 'Dynamic')))) AS l
+CROSS JOIN values('x Int64, t Tuple(Dynamic)', (1, tuple(CAST('bad', 'Dynamic')))) AS r
+WHERE l.x > r.x AND l.t < r.t
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R21-tuple-dynamic', 1, count()
+FROM values('x Int64, t Tuple(Dynamic)', (0, tuple(CAST(toDate('2020-01-01'), 'Dynamic')))) AS l
+CROSS JOIN values('x Int64, t Tuple(Dynamic)', (1, tuple(CAST('bad', 'Dynamic')))) AS r
+WHERE l.x > r.x AND l.t < r.t
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R21-plan', countIf(explain LIKE '%Expression: %less(%') = 0
+FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
+    SELECT count()
+    FROM values('x Int64, t Tuple(Dynamic)', (0, tuple(CAST(toDate('2020-01-01'), 'Dynamic')))) AS l
+    CROSS JOIN values('x Int64, t Tuple(Dynamic)', (1, tuple(CAST('bad', 'Dynamic')))) AS r
+    WHERE l.x > r.x AND l.t < r.t
+    SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+
+-- Range extraction must not move an existing stateful join key to a post-join filter.
+SELECT 'R22-stateful-on', 0, groupArraySorted(10)((l.id, r.id))
+FROM values('id UInt32, k Int64, x Int64, z Int64', (1, 0, 1, 3), (2, 0, 1, 3)) AS l
+JOIN values('id UInt32, k Int64, x Int64, z Int64', (11, 0, 2, 2), (12, 1, 2, 2)) AS r
+    ON l.k + rowNumberInAllBlocks() = r.k
+WHERE l.x < r.x AND l.z > r.z
+SETTINGS join_algorithm = 'ie_join,hash', max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R22-stateful-on', 1, groupArraySorted(10)((l.id, r.id))
+FROM values('id UInt32, k Int64, x Int64, z Int64', (1, 0, 1, 3), (2, 0, 1, 3)) AS l
+JOIN values('id UInt32, k Int64, x Int64, z Int64', (11, 0, 2, 2), (12, 1, 2, 2)) AS r
+    ON l.k + rowNumberInAllBlocks() = r.k
+WHERE l.x < r.x AND l.z > r.z
+SETTINGS join_algorithm = 'ie_join,hash', max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R22-plan', countIf(explain LIKE '%Expression: %less(%') = 0
+FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
+    SELECT l.id, r.id
+    FROM values('id UInt32, k Int64, x Int64, z Int64', (1, 0, 1, 3), (2, 0, 1, 3)) AS l
+    JOIN values('id UInt32, k Int64, x Int64, z Int64', (11, 0, 2, 2), (12, 1, 2, 2)) AS r
+        ON l.k + rowNumberInAllBlocks() = r.k
+    WHERE l.x < r.x AND l.z > r.z
+    SETTINGS join_algorithm = 'ie_join,hash', max_threads = 1, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);

@@ -156,3 +156,9 @@ R20-or	0	2
 R20-or	1	2
 R20-or-and	1	2
 R20-or-eq	1	2
+R21-tuple-dynamic	0	0
+R21-tuple-dynamic	1	0
+R21-plan	1
+R22-stateful-on	0	[(1,11),(2,12)]
+R22-stateful-on	1	[(1,11),(2,12)]
+R22-plan	1
