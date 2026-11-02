@@ -1105,7 +1105,12 @@ private:
             2. If column is already nullable we merge column null map with null map that we get from dict has.
           */
 
+        if (arguments[2].type->onlyNull())
+            return dictionary_get_func_impl.executeImpl(arguments, result_type, input_rows_count);
+
         auto dict_has_arguments = filterAttributeNameArgumentForDictHas(arguments);
+        /// `dictHas` expects a key that is not `Nullable`. `NULL` keys are already `NULL` in the `dictGet` result below.
+        dict_has_arguments[1] = columnGetNested(dict_has_arguments[1]);
         auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
         auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
         ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);

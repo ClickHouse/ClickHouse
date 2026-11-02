@@ -23,13 +23,13 @@ INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100);
 INSERT INTO t_skip_index_insert SELECT number, number / 50 FROM numbers(100, 100);
 
 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2;
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2;
+EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2 SETTINGS enable_parallel_replicas = 0;
 
 SYSTEM START MERGES t_skip_index_insert;
 OPTIMIZE TABLE t_skip_index_insert FINAL;
 
 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2;
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2;
+EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2 SETTINGS enable_parallel_replicas = 0;
 
 TRUNCATE TABLE t_skip_index_insert;
 
@@ -42,7 +42,7 @@ ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_a;
 ALTER TABLE t_skip_index_insert MATERIALIZE INDEX idx_b;
 
 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2;
-EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2;
+EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a < 130 AND b = 2 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_skip_index_insert;
 

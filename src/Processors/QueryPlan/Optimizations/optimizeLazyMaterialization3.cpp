@@ -380,7 +380,7 @@ void appendOutputToStep(IQueryPlanStep & step, const ActionsDAG::Node & step_nod
             name, step.getName(), former_header->dumpStructure(), header.dumpStructure());
 }
 
-/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter and JoinStepLogical ->
+/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter, ArrayJoin and JoinStepLogical ->
 /// sources` so that the columns the frontier defers are read for the rows the `LIMIT` returns only.
 ///
 /// The main branch is the original plan with fewer columns: every step is kept, with its own expressions
@@ -474,8 +474,16 @@ public:
 
             const auto & origin = merged.getOrigin(value);
             Carrying carrying{.value = value, .name = makeCarriedName(carried.size())};
+            /// An alias has the values of what it names, so the step outputting an alias of the value outputs the value,
+            /// as an `ARRAY JOIN` does its elements.
             const auto & values = merged.step_outputs.at(origin.plan_node);
-            if (const auto output_it = std::ranges::find(values, value); output_it != values.end())
+            const auto output_it = std::ranges::find_if(values, [value](const auto * output)
+            {
+                while (output != value && output->type == ActionsDAG::ActionType::ALIAS)
+                    output = output->children.front();
+                return output == value;
+            });
+            if (output_it != values.end())
                 carrying.position = output_it - values.begin();
             else if (origin.step_node
                 && (typeid_cast<const ExpressionStep *>(origin.plan_node->step.get())
