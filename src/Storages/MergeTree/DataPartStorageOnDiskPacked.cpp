@@ -341,7 +341,7 @@ String DataPartStorageOnDiskPacked::getUniqueId() const
     if (!disk->supportZeroCopyReplication())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support zero-copy replication", disk->getName());
 
-    return disk->getUniqueId(pathToGenericString(fs::path(getRelativePath()) / DATA_FILE_NAME));
+    return disk->getUniqueId(pathToGenericString(pathFromString(getRelativePath()) / DATA_FILE_NAME));
 }
 
 void DataPartStorageOnDiskPacked::prepareReadImpl(
@@ -691,7 +691,7 @@ bool DataPartStorageOnDiskPacked::isWrittenSeparately(const String & file_name) 
     if (files_written_separately.contains(file_name))
         return true;
 
-    auto path = fs::path(file_name);
+    auto path = pathFromString(file_name);
     return path.extension() == ".proj"
         || path.extension() == ".tmp_proj"
         || (path.extension() == ".tmp" && files_written_separately.contains(pathToGenericString(path.stem())));
@@ -723,7 +723,7 @@ void DataPartStorageOnDiskPacked::copyInvalidatedSystemColumnsFile(
     DataPartStorageOnDiskPacked & dest_storage, const ReadSettings & read_settings, const WriteSettings & write_settings) const
 {
     auto src_disk = volume->getDisk();
-    const String src_path = pathToGenericString(fs::path(getRelativePath()) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
+    const String src_path = pathToGenericString(pathFromString(getRelativePath()) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
     if (!src_disk->existsFile(src_path))
         return;
 
@@ -1002,7 +1002,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
 
     std::shared_ptr<DataPartStorageOnDiskPacked> dest_storage;
 
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
+    bool to_detached = dir_path.starts_with(pathToGenericString(fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""));
     if (params.external_transaction)
     {
         dest_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(single_disk_volume, to, dir_path, params.external_transaction, read_settings));
@@ -1109,7 +1109,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)
     {
-         if (src_disk->existsDirectory(pathToGenericString(fs::path(getRelativePath()) / file)))
+         if (src_disk->existsDirectory(pathToGenericString(pathFromString(getRelativePath()) / pathFromString(file))))
          {
              auto projection_storage = getProjection(file);
              auto params_copy = params;
@@ -1134,7 +1134,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     /// Make the clone durable before the caller commits the covering part, same as the Full-storage
     /// override (the hardlink/copy above fsyncs nothing). Runs once for the whole subtree here.
     if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
-        fsyncFrozenCloneTree(*disk, pathToGenericString(fs::path(to) / dir_path));
+        fsyncFrozenCloneTree(*disk, pathToGenericString(pathFromString(to) / pathFromString(dir_path)));
 
     return dest_storage;
 }
@@ -1154,7 +1154,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
 
     std::shared_ptr<DataPartStorageOnDiskPacked> dest_storage;
 
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
+    bool to_detached = dir_path.starts_with(pathToGenericString(fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""));
     if (params.external_transaction)
     {
         dest_storage = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(single_disk_volume, to, dir_path, params.external_transaction, read_settings));
@@ -1263,7 +1263,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)
     {
-         if (src_disk->existsDirectory(pathToGenericString(fs::path(getRelativePath()) / file)))
+         if (src_disk->existsDirectory(pathToGenericString(pathFromString(getRelativePath()) / pathFromString(file))))
          {
              auto projection_storage = getProjection(file);
              auto params_copy = params;
