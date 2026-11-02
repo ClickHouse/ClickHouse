@@ -790,11 +790,14 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(const std::vector<size_t> & processors)
 {
     std::lock_guard lock(mutex);
     for (auto & [processor, holders] : bucket_holders)
     {
+        if (std::find(processors.begin(), processors.end(), processor) == processors.end())
+            continue;
+
         std::string buckets_str;
         size_t released_holders = 0;
         for (auto it = holders->begin(); it != holders->end();)

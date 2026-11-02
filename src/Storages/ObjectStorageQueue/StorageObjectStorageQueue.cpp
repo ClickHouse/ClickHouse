@@ -1107,6 +1107,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
+        std::vector<size_t> processor_ids;
 
         pipes.reserve(threads);
         sources.reserve(threads);
@@ -1121,6 +1122,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         {
             /// Unique per source, so that concurrent inserts never share the buckets of an ordered queue.
             size_t processor_id = streaming_tasks_index * threads + i;
+            processor_ids.push_back(processor_id);
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
@@ -1190,7 +1192,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     message,
                     error_code);
 
-                file_iterator->releaseFinishedBuckets();
+                file_iterator->releaseFinishedBuckets(processor_ids);
                 file_iterator->refreshExpiringBucketLocks();
 
                 if (interrupted)
@@ -1228,7 +1230,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         });
 
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
-        file_iterator->releaseFinishedBuckets();
+        file_iterator->releaseFinishedBuckets(processor_ids);
         file_iterator->refreshExpiringBucketLocks();
         max_files_override = 0;
         total_rows += rows;

@@ -83,7 +83,9 @@ public:
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        void releaseFinishedBuckets();
+        /// Only the holders of the given processors are released: the other processors may belong to inserts
+        /// that have not committed yet, and their buckets must stay held until they do.
+        void releaseFinishedBuckets(const std::vector<size_t> & processors);
 
         /// Refresh bucket locks which were not refreshed for more than a quarter of
         /// the TTL, after which the cleanup removes them as abandoned (the TTL is
