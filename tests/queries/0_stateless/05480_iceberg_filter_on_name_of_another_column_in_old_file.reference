@@ -1,0 +1,28 @@
+-- Parquet, rotated names
+c = 1
+1	2	x
+a = 2
+1	2	x
+b = 'x'
+1	2	x
+c IS NULL
+\N	3	y
+NOT (c != 1)
+1	2	x
+indexHint(c = 1)
+1	2	x
+\N	3	y
+engine table: c = 1
+1	2	x
+-- ORC, rotated names
+c = 1
+1	2	x
+b = 'x'
+1	2	x
+-- Parquet, a dropped and added again
+a IS NULL
+x	\N
+a = 1
+-- Row groups are still pruned
+rot	1
+tuple	1

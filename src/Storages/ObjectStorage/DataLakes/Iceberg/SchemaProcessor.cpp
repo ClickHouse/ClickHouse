@@ -837,6 +837,12 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         old_id,
                         new_id);
                 }
+                /// An unchanged nested type passes through like an unchanged primitive one.
+                if (typesAreStructurallyIdentical(old_json->get(f_type), field->get(f_type), {}) && old_node->result_type->equals(*type))
+                {
+                    outputs.push_back(old_json->getValue<String>(f_name) == name ? old_node : &dag->addAlias(*old_node, name));
+                    continue;
+                }
                 auto old_type = getFieldType(old_json, "type", required);
                 auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
