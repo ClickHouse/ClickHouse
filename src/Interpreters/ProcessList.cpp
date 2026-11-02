@@ -19,6 +19,7 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -946,18 +947,11 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
 
 void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
 {
-    std::vector<QueryStatusPtr> cancelled_processes;
-
-    SCOPE_EXIT({
-        LockAndBlocker lock(mutex);
-        for (auto & cancelled_process : cancelled_processes)
-            cancelled_process->is_cancelling = false;
-        cancelled_cv.notify_all();
-    });
+    std::vector<QueryStatusPtr> processes_to_cancel;
 
     {
         LockAndBlocker lock(mutex);
-        cancelled_processes.reserve(processes.size());
+        processes_to_cancel.reserve(processes.size());
         for (auto & process : processes)
         {
             if (except_ddl_backups_and_restores
@@ -965,14 +959,34 @@ void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
                 && process->is_ddl_or_on_cluster_internal)
                 continue;
 
-            cancelled_processes.push_back(process);
-            process->is_cancelling = true;
+            processes_to_cancel.push_back(process);
         }
     }
 
-    for (auto & cancelled_process : cancelled_processes)
-        cancelled_process->cancelQuery(CancelReason::CANCELLED_BY_USER);
+    /// Mark, cancel and unmark the queries one at a time, as `killQuery` does, instead of marking all of them first.
+    /// Cancelling a query can wait for other queries of the list to finish: e.g. a distributed query plan joins
+    /// the threads of its local tasks, each of which has its own process list entry. The destructor of an entry
+    /// waits while the entry is marked, so with all of them marked the cancellation never finished.
+    for (auto & process : processes_to_cancel)
+    {
+        {
+            LockAndBlocker lock(mutex);
+            /// The query could have finished since the list was taken, and then there is nothing to cancel.
+            if (std::find(processes.begin(), processes.end(), process) == processes.end())
+                continue;
+            process->is_cancelling = true;
+        }
 
+        SCOPE_EXIT({
+            DENY_ALLOCATIONS_IN_SCOPE;
+
+            Lock lock(mutex);
+            process->is_cancelling = false;
+            cancelled_cv.notify_all();
+        });
+
+        process->cancelQuery(CancelReason::CANCELLED_BY_USER);
+    }
 }
 
 bool QueryStatus::updateProgressIn(const Progress & value)
