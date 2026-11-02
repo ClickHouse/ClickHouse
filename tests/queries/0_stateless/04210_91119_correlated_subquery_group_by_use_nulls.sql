@@ -192,11 +192,6 @@ FROM (EXPLAIN QUERY TREE
     SELECT (SELECT c) FROM (SELECT toInt32(3) AS c) t GROUP BY c WITH ROLLUP)
 WHERE explain ILIKE '%column_name: c,%result_type%';
 
-SELECT '-- type pin: compound correlated key (modulo) is Nullable ---';
-SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
-FROM (EXPLAIN QUERY TREE
-    SELECT (SELECT c % 2) FROM (SELECT toInt32(3) AS c) t GROUP BY c % 2 WITH ROLLUP)
-WHERE explain ILIKE '%function_name: modulo%result_type%';
 
 SELECT '-- type pin: aggregate argument stays non-Nullable ---';
 SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
@@ -339,4 +334,26 @@ SELECT x, c FROM (
     FROM (SELECT CAST('1', 'Bool') UNION ALL SELECT CAST('1', 'Bool')) AS t0(c0)
     GROUP BY GROUPING SETS ((if(82, c0, (1 IN tuple(2, toUInt128(covarSamp(x, y)))))), ())
 ) ORDER BY x NULLS LAST
+SETTINGS group_by_use_nulls = 1;
+
+-- A correlated function that matches an outer GROUP BY key is recomputed inside the subquery from its
+-- (Nullable) arguments, so it must keep the result type inferred by the function. Declaring it Nullable
+-- raised "Unexpected return type from isNull. Expected Nullable(UInt8). Got UInt8".
+SELECT '-- correlated function matching an outer key keeps its own result type ---';
+SELECT a, (SELECT isNull(a))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, isNull(a) WITH ROLLUP
+ORDER BY a NULLS LAST
+SETTINGS group_by_use_nulls = 1;
+
+SELECT a, (SELECT ifNull(a, toUInt64(42)))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, ifNull(a, toUInt64(42)) WITH ROLLUP
+ORDER BY a NULLS LAST
+SETTINGS group_by_use_nulls = 1;
+
+SELECT a, (SELECT assumeNotNull(a))
+FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
+GROUP BY a, assumeNotNull(a) WITH ROLLUP
+ORDER BY a NULLS LAST
 SETTINGS group_by_use_nulls = 1;

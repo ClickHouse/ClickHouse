@@ -3996,9 +3996,18 @@ void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, Id
                 /// intermediate query with a same-named key could match a correlated reference
                 /// whose real source is further out. Only the scope that owns the correlated
                 /// source may apply its keys.
+                ///
+                /// Only a correlated column is wrapped: its values are fed into the subquery from
+                /// the outer query's post-aggregation rows, where they are already Nullable. A
+                /// correlated function (e.g. `isNull(a)` matching the outer key `isNull(a)`) is
+                /// recomputed inside the subquery from its (already wrapped) arguments, so its
+                /// result type must stay the one inferred by the function itself.
+                /// `FunctionNode::convertToNullable` only changes the declared result type, so it
+                /// would not match the executed function for `isNull`, `ifNull`, `assumeNotNull`, etc.
                 if (ownsCorrelatedSource(*scope_ptr, *correlated_columns))
                 {
-                    node->convertToNullable();
+                    if (node->getNodeType() == QueryTreeNodeType::COLUMN)
+                        node->convertToNullable();
                     break;
                 }
             }
