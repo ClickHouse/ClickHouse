@@ -32,6 +32,7 @@ struct StorageID;
 class PullingPipelineExecutor;
 
 bool urlPathHasListableGlobs(std::string_view uri);
+String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers);
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
@@ -234,7 +235,7 @@ public:
         const ContextPtr & context,
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method,
+        CompressionMethod compression_method_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         const HTTPHeaderEntries & headers_ = {},
@@ -302,6 +303,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
+    HTTPHeaderEntries request_headers;
     /// A hash of the request headers of the table, which are a part of the query condition cache key,
     /// see `makeQueryConditionCacheFileKey`. The OpenTelemetry headers added per query are not included.
     UInt128 request_headers_hash;
@@ -309,6 +311,7 @@ private:
     StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    CompressionMethod compression_method;
 
     /// The query condition cache is used only for a plain `GET`, whose response depends on the URL alone.
     bool allow_query_condition_cache = false;

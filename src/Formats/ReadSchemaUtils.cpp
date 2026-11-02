@@ -578,18 +578,34 @@ std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
 }
 
 SchemaCache::Key getKeyForSchemaCache(
-    const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+    const String & source,
+    const String & format,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context,
+    const String & compression_method,
+    const String & headers)
 {
-    return getKeysForSchemaCache({source}, format, format_settings, context).front();
+    return getKeysForSchemaCache({source}, format, format_settings, context, compression_method, headers).front();
 }
 
-static SchemaCache::Key makeSchemaCacheKey(const String & source, const String & format, const String & additional_format_info, const String & schema_inference_mode)
+static SchemaCache::Key makeSchemaCacheKey(
+    const String & source,
+    const String & format,
+    const String & additional_format_info,
+    const String & schema_inference_mode,
+    const String & compression_method,
+    const String & headers)
 {
-    return SchemaCache::Key{source, format, additional_format_info, schema_inference_mode};
+    return SchemaCache::Key{source, format, additional_format_info, schema_inference_mode, compression_method, headers};
 }
 
 SchemaCache::Keys getKeysForSchemaCache(
-    const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+    const Strings & sources,
+    const String & format,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context,
+    const String & compression_method,
+    const String & headers)
 {
     /// For some formats data schema depends on some settings, so it's possible that
     /// two queries to the same source will get two different schemas. To process this
@@ -604,7 +620,7 @@ SchemaCache::Keys getKeysForSchemaCache(
         sources.begin(),
         sources.end(),
         std::back_inserter(cache_keys),
-        [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode); });
+        [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode, compression_method, headers); });
     return cache_keys;
 }
 

@@ -1,0 +1,68 @@
+Case A: File wrong row count
+1000
+Case B: File reverse order
+1000
+NOT_1000
+Case C: File schema inference
+CANNOT_DECOMPRESS
+Case D: File same-mode reuse
+50
+50
+Case E: File auto vs explicit matching
+100
+100
+Case F: Same-URL row count collision
+50
+50
+CANNOT_DECOMPRESS
+Case G: Same-URL schema inference collision
+c1	Nullable(Int64)
+c1	Nullable(Int64)
+CANNOT_DECOMPRESS
+Case H: Positive URL gzip caching
+50
+50
+c1	Nullable(Int64)
+Case I: Schema cache system table inspection
+URL	CSV		50
+URL	CSV	gzip	50
+File	LineAsString	gzip	50
+Case J: Header sensitivity plain first then gzip
+50
+50
+Case K: Header sensitivity gzip first then plain
+50
+CANNOT_DECOMPRESS
+Case L: Header canonicalization reuse
+50
+50
+Case M: Secret header redaction
+50
+URL	CSV	0	1
+Case N: Arbitrary custom credential header redaction
+50
+URL	CSV	0	0	1	1
+Case O: Duplicate header order sensitivity count
+50
+CANNOT_DECOMPRESS
+Case P: Duplicate header order sensitivity schema inference
+c1	Nullable(Int64)
+CANNOT_DECOMPRESS
+Case Q: Snappy wire mode file count cache isolation
+50
+SNAPPY_UNCOMPRESS_FAILED
+Case R: Snappy wire mode reverse order file count cache isolation
+50
+SNAPPY_UNCOMPRESS_FAILED
+Case S: Explicit tracing header row count cache partitioning
+1
+2
+Case T: Explicit tracing header schema inference partitioning
+col1	Nullable(Int64)
+col2	Nullable(Int64)
+col1	Nullable(Int64)
+col2	Nullable(String)
+Case U: Auto-tracing does not fragment schema cache
+50
+50
+URL	CSV	1

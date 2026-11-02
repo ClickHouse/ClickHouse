@@ -5,6 +5,7 @@
 #include <list>
 #include <mutex>
 #include <optional>
+#include <boost/container_hash/hash.hpp>
 
 namespace DB
 {
@@ -30,10 +31,17 @@ public:
         String format;
         String additional_format_info;
         String schema_inference_mode;
+        String compression_method;
+        String headers;
 
         bool operator==(const Key & other) const
         {
-            return source == other.source && format == other.format && additional_format_info == other.additional_format_info && schema_inference_mode == other.schema_inference_mode;
+            return source == other.source
+                && format == other.format
+                && additional_format_info == other.additional_format_info
+                && schema_inference_mode == other.schema_inference_mode
+                && compression_method == other.compression_method
+                && headers == other.headers;
         }
     };
 
@@ -43,7 +51,14 @@ public:
     {
         size_t operator()(const Key & key) const
         {
-            return std::hash<String>()(key.source + key.format + key.additional_format_info + key.schema_inference_mode);
+            size_t seed = 0;
+            boost::hash_combine(seed, key.source);
+            boost::hash_combine(seed, key.format);
+            boost::hash_combine(seed, key.additional_format_info);
+            boost::hash_combine(seed, key.schema_inference_mode);
+            boost::hash_combine(seed, key.compression_method);
+            boost::hash_combine(seed, key.headers);
+            return seed;
         }
     };
 

@@ -60,6 +60,7 @@
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
+#include <Common/Hex.h>
 #include <base/EnumReflection.h>
 
 #include <TableFunctions/TableFunctionURL.h>
@@ -187,6 +188,72 @@ bool urlPathHasListableGlobs(std::string_view uri)
     const size_t path_end = uri.find_first_of("?#", path_start);
     const auto path = uri.substr(path_start, path_end == std::string_view::npos ? std::string_view::npos : path_end - path_start);
     return path.contains('*');
+}
+String canonicalizeHTTPHeadersForSchemaCache(const HTTPHeaderEntries & headers)
+{
+    if (headers.empty())
+        return "";
+
+    auto trim = [](std::string_view s) -> std::string_view
+    {
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
+            s.remove_prefix(1);
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t'))
+            s.remove_suffix(1);
+        return s;
+    };
+
+    /// Use a map to enforce case-insensitive deduplication and last-value-wins
+    /// matching HTTP request transport semantics.
+    std::unordered_map<String, String> unique_headers;
+
+    for (const auto & entry : headers)
+    {
+        auto trimmed_name = trim(entry.name);
+        if (trimmed_name.empty())
+            continue;
+
+        String lower_name;
+        lower_name.reserve(trimmed_name.size());
+        for (char c : trimmed_name)
+            lower_name.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+
+        auto trimmed_val = trim(entry.value);
+
+        /// Never expose raw user-supplied header values in memory or system tables.
+        /// Hash every header value with SipHash to provide unconditional confidentiality
+        /// for all credentials (including custom/unknown headers) while preserving
+        /// distinct internal cache identities.
+        SipHash h;
+        h.update(trimmed_val.data(), trimmed_val.size());
+        UInt64 hash_val = h.get64();
+        unique_headers[lower_name] = "hash:" + getHexUIntLowercase(hash_val);
+    }
+
+    if (unique_headers.empty())
+        return "";
+
+    std::vector<std::pair<String, String>> normalized(unique_headers.begin(), unique_headers.end());
+    std::sort(normalized.begin(), normalized.end(), [](const auto & a, const auto & b)
+    {
+        return a.first < b.first;
+    });
+
+    /// Unambiguous length-delimited serialization: len(name):name=len(val):val;
+    /// Prevents delimiter injection collisions when values contain semicolons, colons, or equal signs.
+    String result;
+    for (const auto & [name, val] : normalized)
+    {
+        result.append(std::to_string(name.size()));
+        result.push_back(':');
+        result.append(name);
+        result.push_back('=');
+        result.append(std::to_string(val.size()));
+        result.push_back(':');
+        result.append(val);
+        result.push_back(';');
+    }
+    return result;
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -598,7 +665,7 @@ StorageURLSource::StorageURLSource(
     const ContextPtr & context_,
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
-    CompressionMethod compression_method,
+    CompressionMethod compression_method_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     const HTTPHeaderEntries & headers_,
@@ -620,10 +687,12 @@ StorageURLSource::StorageURLSource(
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_, context_))
+    , request_headers(headers_)
     , request_headers_hash(hashRequestHeaders(headers_))
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
+    , compression_method(compression_method_)
     , allow_query_condition_cache((http_method.empty() || http_method == Poco::Net::HTTPRequest::HTTP_GET) && !callback && params.empty())
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
@@ -1365,13 +1434,15 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
+    auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
+    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(request_headers));
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
+    auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
+    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(request_headers));
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
         /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
@@ -1667,7 +1738,8 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
-            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
+            auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
+            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
             StorageURL::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1676,7 +1748,8 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
-            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
+            auto compression_name = toContentEncodingName(compression_method, getContext()->getSettingsRef()[Setting::snappy_mode]);
+            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext(), compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
         }
 
@@ -1792,9 +1865,10 @@ namespace
                     return last_mod_time;
                 };
 
+                auto compression_name = toContentEncodingName(compression_method, context->getSettingsRef()[Setting::snappy_mode]);
                 if (format)
                 {
-                    auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context);
+                    auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context, compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         return columns;
                 }
@@ -1805,7 +1879,7 @@ namespace
                     /// If we have such entry for some format, we can use this format to read the file.
                     for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                     {
-                        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
+                        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context, compression_name, canonicalizeHTTPHeadersForSchemaCache(headers));
                         if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         {
                             format = format_name;

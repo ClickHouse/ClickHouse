@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Common/maskURIPassword.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -49,9 +50,53 @@ ColumnsDescription StorageSystemSchemaInferenceCache::getColumnsDescription()
         {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cached schema."},
         {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of rows in the file in given format. It's used for caching trivial count() from data files and for caching number of rows from the metadata during schema inference."},
         {"schema_inference_mode", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Scheme inference mode."},
+        {"compression_method", std::make_shared<DataTypeString>(), "Compression method name."},
+        {"headers", std::make_shared<DataTypeString>(), "Request headers used for URL storage."},
     };
 }
 
+
+static String redactHTTPHeadersForSystemTable(const String & headers)
+{
+    if (headers.empty())
+        return "";
+
+    String redacted;
+    size_t pos = 0;
+    while (pos < headers.size())
+    {
+        size_t colon_name = headers.find(':', pos);
+        if (colon_name == String::npos)
+            break;
+        size_t name_len = parse<size_t>(headers.substr(pos, colon_name - pos));
+        size_t name_start = colon_name + 1;
+        if (name_start + name_len >= headers.size() || headers[name_start + name_len] != '=')
+            break;
+        std::string_view name(headers.data() + name_start, name_len);
+
+        size_t val_len_start = name_start + name_len + 1;
+        size_t colon_val = headers.find(':', val_len_start);
+        if (colon_val == String::npos)
+            break;
+        size_t val_len = parse<size_t>(headers.substr(val_len_start, colon_val - val_len_start));
+        size_t val_start = colon_val + 1;
+        if (val_start + val_len >= headers.size() || headers[val_start + val_len] != ';')
+            break;
+
+        std::string_view hidden = "[HIDDEN]";
+        redacted.append(std::to_string(name.size()));
+        redacted.push_back(':');
+        redacted.append(name);
+        redacted.push_back('=');
+        redacted.append(std::to_string(hidden.size()));
+        redacted.push_back(':');
+        redacted.append(hidden);
+        redacted.push_back(';');
+
+        pos = val_start + val_len + 1;
+    }
+    return redacted.empty() ? "[HIDDEN]" : redacted;
+}
 
 static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cache, const String & storage_name)
 {
@@ -78,6 +123,8 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
         else
             res_columns[6]->insertDefault();
         res_columns[7]->insert(key.schema_inference_mode);
+        res_columns[8]->insert(key.compression_method);
+        res_columns[9]->insert(redactHTTPHeadersForSystemTable(key.headers));
     }
 }
 
