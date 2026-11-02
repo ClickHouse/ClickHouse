@@ -83,8 +83,6 @@ namespace mysqlxx
         size_t max_tries;
         /// Mutex for set of replicas.
         std::mutex mutex;
-        /// Guards the order of `replicas_by_priority`. `get` holds `mutex` across connects, so copies take only this one.
-        mutable std::mutex replicas_order_mutex;
         /// Can the Pool be shared
         bool shareable;
         /// Timeout for waiting free connection.

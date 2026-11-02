@@ -24,11 +24,6 @@ public:
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { read_rows.swap(counter); }
 
-    /// If limit < min_limit_for_partial_sort_optimization, skip optimization with threshold_block.
-    /// Because for small LIMIT partial sorting may be very faster then additional work
-    /// which is made if optimization is enabled (comparison with threshold, filtering).
-    static constexpr size_t min_limit_for_partial_sort_optimization = 1500;
-
 protected:
     void transform(Chunk & chunk) override;
 
@@ -46,6 +41,11 @@ private:
     IColumn::Filter filter;
 
     TopKThresholdTrackerPtr threshold_tracker;
+
+    /// If limit < min_limit_for_partial_sort_optimization, skip optimization with threshold_block.
+    /// Because for small LIMIT partial sorting may be very faster then additional work
+    /// which is made if optimization is enabled (comparison with threshold, filtering).
+    static constexpr size_t min_limit_for_partial_sort_optimization = 1500;
 };
 
 }

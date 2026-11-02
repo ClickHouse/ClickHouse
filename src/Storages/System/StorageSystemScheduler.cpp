@@ -6,13 +6,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Scheduler/ISchedulerNode.h>
-#include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
-#include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Interpreters/Context.h>
 
@@ -63,17 +62,17 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
             "Used during child activation as the new value of `vruntime`."
         },
 
-        // RequestQueue and AllocationQueue
+        // FifoQueue and AllocationQueue
         {"queue_length", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "For `request_queue` and `allocation_queue` nodes. Current number of resource requests residing in the queue."
+            "For `fifo` nodes only. Current number of resource requests residing in the queue."
         },
         {"queue_cost", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `request_queue` and `allocation_queue` nodes. Sum of costs (e.g. size in bytes) of all requests residing in the queue."
+            "For fifo nodes only. Sum of costs (e.g. size in bytes) of all requests residing in the queue."
         },
 
-        // RequestQueue
+        // FifoQueue
         {"budget", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `request_queue` nodes. The number of available 'cost units' for new resource requests. "
+            "For fifo nodes only. The number of available 'cost units' for new resource requests. "
             "Can appear in case of discrepancy of estimated and real costs of resource requests (e.g. after read/write failure)"
         },
 
@@ -115,14 +114,6 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"allocated", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
             "For space-shared nodes only. The currently allocated amount of resource under this node."
         },
-        {"reclaimable", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For space-shared nodes only. Memory available for new spill requests under this node. "
-            "For each allocation, outstanding requests are subtracted from its reported reclaimable memory and the result is clamped at zero before summing."
-        },
-        {"reclaiming", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For space-shared nodes only. Memory requested for spilling but not yet settled under this node, including requests that have not started executing. "
-            "Settlement retires the requested amount independently of the amount actually freed."
-        },
         {"allocations", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For space-shared nodes only. The current number of running resource allocations under this node."
         },
@@ -146,14 +137,6 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         },
         {"victims", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For space-shared nodes only. The total number of allocations that were evicted from this node."
-        },
-        {"spills", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "For space-shared nodes only. The total number of spill requests issued by this node due to its soft memory limit being exceeded."
-        },
-        // AllocationLimit
-        {"soft_limit", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `allocation_limit` nodes only. The effective soft memory limit above which reclaimable allocations are asked to spill "
-            "(the smaller of `max_memory_before_spill` and `max_memory_to_spill_ratio * max_memory`). Values not below the hard limit mean spilling is disabled."
         },
         // AllocationQueue
         {"rejects", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
@@ -203,8 +186,6 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field throttling_us;
         Field tokens;
         Field allocated;
-        Field reclaimable;
-        Field reclaiming;
         Field allocations;
         Field updates;
         Field increases;
@@ -213,8 +194,6 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field removes;
         Field killers;
         Field victims;
-        Field spills;
-        Field soft_limit;
         Field rejects;
         Field pending;
 
@@ -229,7 +208,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             canceled_cost = ptr->canceled_cost.load();
             rejected_cost = ptr->rejected_cost.load();
             busy_periods = ptr->busy_periods.load();
-            throughput = ptr->getThroughput();
+            throughput = ptr->throughput.rate(static_cast<double>(clock_gettime_ns())/1e9);
         }
         if (auto * parent = dynamic_cast<FairPolicy *>(node->parent))
         {
@@ -238,9 +217,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         }
         if (auto * ptr = dynamic_cast<FairPolicy *>(node))
             system_vruntime = ptr->getSystemVRuntime();
-        // Covers every time-shared leaf (RequestQueue) through the interface,
-        // so introspection does not depend on the concrete queue type.
-        if (auto * ptr = dynamic_cast<ISchedulerQueue *>(node))
+        if (auto * ptr = dynamic_cast<FifoQueue *>(node))
             std::tie(queue_length, queue_cost) = ptr->getQueueLengthAndCost();
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
             std::tie(queue_length, queue_cost) = ptr->getQueueLengthAndSize();
@@ -262,8 +239,6 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         if (auto * ptr = dynamic_cast<ISpaceSharedNode *>(node))
         {
             allocated = ptr->allocated;
-            reclaimable = ptr->reclaimable;
-            reclaiming = ptr->reclaiming;
             allocations = ptr->allocations;
             updates = ptr->updates;
             increases = ptr->increases;
@@ -272,10 +247,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             removes = ptr->removes;
             killers = ptr->killers;
             victims = ptr->victims;
-            spills = ptr->spills;
         }
-        if (auto * ptr = dynamic_cast<AllocationLimit *>(node))
-            soft_limit = ptr->getSoftLimit();
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
         {
             rejects = ptr->getRejects();
@@ -307,8 +279,6 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(throttling_us);
         res_columns[i++]->insert(tokens);
         res_columns[i++]->insert(allocated);
-        res_columns[i++]->insert(reclaimable);
-        res_columns[i++]->insert(reclaiming);
         res_columns[i++]->insert(allocations);
         res_columns[i++]->insert(updates);
         res_columns[i++]->insert(increases);
@@ -317,8 +287,6 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(removes);
         res_columns[i++]->insert(killers);
         res_columns[i++]->insert(victims);
-        res_columns[i++]->insert(spills);
-        res_columns[i++]->insert(soft_limit);
         res_columns[i++]->insert(rejects);
         res_columns[i++]->insert(pending);
     });

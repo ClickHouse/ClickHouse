@@ -21,8 +21,8 @@ namespace
 {
 
 /// Membership table for the optional second argument of trim* functions.
-/// Unlike `find_first_symbols` (a SIMD primitive with a compile-time set of at most
-/// 16 symbols), it supports a trim character set of any length and looks up each byte in O(1).
+/// Unlike `SearchSymbols` (a SIMD primitive capped at 16 symbols), it supports
+/// a trim character set of any length and looks up each byte in O(1).
 using TrimCharsTable = std::array<bool, 256>;
 
 class FunctionTrim final : public IFunction
@@ -42,9 +42,19 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(StringOrFixedString, [const String]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"input_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"trim_character", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

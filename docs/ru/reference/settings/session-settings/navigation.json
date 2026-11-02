@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Настройки сеанса",
+  "group": "Session Settings",
   "pages": [
     "ru/reference/settings/session-settings/additional",
     "ru/reference/settings/session-settings/aggregate",
@@ -35,7 +35,6 @@
     "ru/reference/settings/session-settings/cluster",
     "ru/reference/settings/session-settings/cluster-table",
     "ru/reference/settings/session-settings/collect-hash",
-    "ru/reference/settings/session-settings/columns-cache",
     "ru/reference/settings/session-settings/compatibility",
     "ru/reference/settings/session-settings/compatibility-ignore",
     "ru/reference/settings/session-settings/compile",
@@ -116,7 +115,6 @@
     "ru/reference/settings/session-settings/log",
     "ru/reference/settings/session-settings/log-queries",
     "ru/reference/settings/session-settings/log-query",
-    "ru/reference/settings/session-settings/logsql",
     "ru/reference/settings/session-settings/low-cardinality",
     "ru/reference/settings/session-settings/materialize",
     "ru/reference/settings/session-settings/materialize-statistics-on-insert",
@@ -259,7 +257,6 @@
     "ru/reference/settings/session-settings/vector-search",
     "ru/reference/settings/session-settings/wait-for",
     "ru/reference/settings/session-settings/webassembly-udf",
-    "ru/reference/settings/session-settings/weight-lowering",
     "ru/reference/settings/session-settings/write-through-distributed-cache",
     "ru/reference/settings/session-settings/other"
   ],

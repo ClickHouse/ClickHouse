@@ -1,0 +1,16 @@
+<clickhouse>
+    <!--
+        Negative case: a section shaped like a `GraphiteMergeTree` rollup whose `<pattern>` carries only
+        a `<regexp>` and neither a `<function>` nor any `<retention>` block. Every child *name* is a
+        recognized rollup key, but `appendGraphitePattern` still rejects the rule with
+        `NO_ELEMENTS_IN_CONFIG` ("at least one of an aggregate function or retention rules is mandatory
+        for rollup patterns in GraphiteMergeTree"), so the section would never load. The unknown-key
+        validator must mirror that semantic check and reject the whole section as an unknown top-level
+        key (a typo). The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <graphite_rule_no_aggregation>
+        <pattern>
+            <regexp>.*</regexp>
+        </pattern>
+    </graphite_rule_no_aggregation>
+</clickhouse>
