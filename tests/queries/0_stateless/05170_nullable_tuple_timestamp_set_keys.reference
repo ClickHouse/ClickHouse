@@ -91,17 +91,23 @@
 1	0	1
 1	1	1	1	1	1
 0, Int64	0	0
-0, Date	0	0
-0, Date32	0	0
-0, Time	0	0
-0, Time64(2)	0	0
+0, Nullable(Tuple(Int64))	0	0
+1, Nullable(Tuple(Int64))	0	0
 0, Decimal64(2)	0	0
-1, Int64	0	0
-1, Date	0	0
-1, Date32	0	0
-1, Time	0	0
-1, Time64(2)	0	0
-1, Decimal64(2)	0	0
+0, Nullable(Tuple(Decimal64(2)))	0	0
+1, Nullable(Tuple(Decimal64(2)))	0	0
+0, Date	0	0
+0, Nullable(Tuple(Date))	0	0
+1, Nullable(Tuple(Date))	0	0
+0, Date32	0	0
+0, Nullable(Tuple(Date32))	0	0
+1, Nullable(Tuple(Date32))	0	0
+0, Time	0	0
+0, Nullable(Tuple(Time))	0	0
+1, Nullable(Tuple(Time))	0	0
+0, Time64(2)	0	0
+0, Nullable(Tuple(Time64(2)))	0	0
+1, Nullable(Tuple(Time64(2)))	0	0
 1120	1
 1	0
 0	1

@@ -694,7 +694,7 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
         }
     }
 
-    non_member_rows = mergeNullMaps(std::move(non_member_rows), getDateTime64CastLossMap(probe, key_type));
+    non_member_rows = mergeNullMaps(std::move(non_member_rows), getDateTime64CastLossMap(probe, key_type, cast_cache.get()));
     return result;
 }
 

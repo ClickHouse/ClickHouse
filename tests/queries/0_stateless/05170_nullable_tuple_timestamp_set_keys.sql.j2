@@ -83,21 +83,36 @@ SELECT {{ mode }},
 SETTINGS transform_null_in = {{ mode }};
 {% endfor %}
 
--- Numeric and clock destinations reject only fractional digits that their scale discards.
-{% for mode in [0, 1] %}
-{% for target, scale in [('Int64', 0), ('Date', 0), ('Date32', 0), ('Time', 0), ('Time64(2)', 2), ('Decimal64(2)', 2)] %}
+-- A timestamp matches a numeric, date or time key only when the key converts back to it, as in a comparison.
+-- So a fraction below the scale of the key type, a time of day other than midnight for a date, a day other
+-- than the epoch day for a time, and a timestamp outside the range of the key type never match. The inputs
+-- are milliseconds since the epoch; -315619200000 is 1960-01-01, before the range of `Date`. Only the
+-- nullable tuple key takes a different path with `transform_null_in = 1`, so the scalar key runs in one mode.
+{% for target, matches in [
+    ('Int64', [0, 1000, 1767225600000, 1767268800000, -315619200000]),
+    ('Decimal64(2)', [0, 500, 1000, 1250, 1767225600000, 1767268800000, 1767268800500, -315619200000]),
+    ('Date', [0, 1767225600000]),
+    ('Date32', [0, 1767225600000, -315619200000]),
+    ('Time', [0, 1000]),
+    ('Time64(2)', [0, 500, 1000, 1250])
+] %}
+{% for mode, key, key_type in [
+    (0, 't', target),
+    (0, 'toNullable(tuple(t))', 'Nullable(Tuple(' ~ target ~ '))'),
+    (1, 'toNullable(tuple(t))', 'Nullable(Tuple(' ~ target ~ '))')
+] %}
 WITH inputs AS
 (
-    SELECT number, fromUnixTimestamp64Milli(toInt64(arrayElement([0, 500, 1000, 1250, 1125], number + 1)), 'UTC') AS t,
-        toNullable(tuple(t)) AS k
-    FROM numbers(5)
+    SELECT fromUnixTimestamp64Milli(
+            arrayJoin([0, 500, 1000, 1125, 1250, 1767225600000, 1767268800000, 1767268800500, -315619200000]), 'UTC') AS t,
+        {{ key }} AS k
 )
-SELECT '{{ mode }}, {{ target }}', countIf(actual != expected), countIf(negative != NOT expected)
+SELECT '{{ mode }}, {{ key_type }}', countIf(actual != expected), countIf(negative != NOT expected)
 FROM
 (
-    SELECT (k, 1) IN (SELECT CAST(k, 'Nullable(Tuple({{ target }}))'), 1 FROM inputs) AS actual,
-        (k, 1) NOT IN (SELECT CAST(k, 'Nullable(Tuple({{ target }}))'), 1 FROM inputs) AS negative,
-        toUnixTimestamp64Milli(t) % {{ 10 ** (3 - scale) }} = 0 AS expected
+    SELECT (k, 1) IN (SELECT CAST(k, '{{ key_type }}'), 1 FROM inputs) AS actual,
+        (k, 1) NOT IN (SELECT CAST(k, '{{ key_type }}'), 1 FROM inputs) AS negative,
+        toUnixTimestamp64Milli(t) IN ({{ matches | join(', ') }}) AS expected
     FROM inputs
 )
 SETTINGS transform_null_in = {{ mode }};

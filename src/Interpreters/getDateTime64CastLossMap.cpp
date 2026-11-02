@@ -1,4 +1,5 @@
 #include <Interpreters/getDateTime64CastLossMap.h>
+#include <Interpreters/castColumn.h>
 #include <Functions/CastOverloadResolver.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -7,7 +8,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
@@ -22,7 +22,6 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
-#include <limits>
 
 
 namespace DB
@@ -41,49 +40,56 @@ static ColumnPtr getDateTime64ToFloatLossMap(const ColumnDecimal<DateTime64> & c
     return result;
 }
 
-/// Marks the timestamps of `column`, of type `type`, that a cast to the non-composite type `to_type`
-/// changes: a timestamp that a floating-point type does not hold exactly, a fraction that the target scale
-/// discards, or a value outside the range of `DateTime`. Returns no column for a target that holds every
-/// timestamp exactly.
+/// Marks the timestamps of the `DateTime64` column `source` that do not come back unchanged from a cast to
+/// `to_type` and back, including those that either cast rejects. The internal casts drop the fraction below
+/// the scale of their type, the time of day for a date and the date for a time, and saturate a value outside
+/// the range of their type.
+static ColumnPtr getDateTime64RoundTripLossMap(
+    const ColumnWithTypeAndName & source, const DataTypePtr & to_type, InternalCastFunctionCache * cache)
+{
+    const auto converted = castColumnAccurateOrNull(source, to_type, cache);
+    const auto & converted_nullable = assert_cast<const ColumnNullable &>(*converted);
+    const auto restored = castColumnAccurateOrNull(
+        {converted_nullable.getNestedColumnPtr(), to_type, source.name}, source.type, cache);
+    const auto & restored_nullable = assert_cast<const ColumnNullable &>(*restored);
+
+    const auto & values = assert_cast<const ColumnDecimal<DateTime64> &>(*source.column).getData();
+    const auto & restored_values = assert_cast<const ColumnDecimal<DateTime64> &>(restored_nullable.getNestedColumn()).getData();
+    const auto & not_converted = converted_nullable.getNullMapData();
+    const auto & not_restored = restored_nullable.getNullMapData();
+    auto result = ColumnUInt8::create(values.size());
+    auto & loss_map = result->getData();
+    for (size_t row = 0; row < values.size(); ++row)
+        loss_map[row] = not_converted[row] || not_restored[row] || restored_values[row].value != values[row].value;
+    return result;
+}
+
+/// Marks the timestamps of the `DateTime64` column `source` that a cast to the non-composite type `to_type`
+/// changes. A timestamp matches a value of `to_type` only when the value converts back to it, as in a
+/// comparison of the two. The cast back from a floating-point type truncates, so a float is checked by
+/// rounding instead. Any other type that `DateTime64` converts to, like `String`, holds every timestamp
+/// exactly and needs no check.
 static ColumnPtr getDateTime64ToScalarLossMap(
-    const ColumnDecimal<DateTime64> & column, const DataTypeDateTime64 & type, const DataTypePtr & to_type)
+    const ColumnWithTypeAndName & source, const DataTypePtr & to_type, InternalCastFunctionCache * cache)
 {
     ColumnPtr float_loss_map;
     if (callOnBasicType<void, false, true, false, false>(to_type->getTypeId(), [&](const auto & types)
         {
             using FloatType = typename std::decay_t<decltype(types)>::RightType;
-            float_loss_map = getDateTime64ToFloatLossMap<FloatType>(column);
+            float_loss_map = getDateTime64ToFloatLossMap<FloatType>(assert_cast<const ColumnDecimal<DateTime64> &>(*source.column));
             return true;
         }))
         return float_loss_map;
 
-    UInt32 target_scale = 0;
     const WhichDataType target(to_type);
-    if (target.isDateTime64() || target.isTime64() || target.isDecimal())
-        target_scale = getDecimalScale(*to_type);
-    else if (!target.isDateOrDate32() && !target.isDateTime() && !target.isTime() && !target.isInteger())
-        return {};
+    if (target.isIntegerOrDecimal() || target.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
+        return getDateTime64RoundTripLossMap(source, to_type, cache);
 
-    const UInt32 source_scale = type.getScale();
-    if (target_scale >= source_scale && !target.isDateTime())
-        return {};
-
-    const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(source_scale > target_scale ? source_scale - target_scale : 0);
-    const Int64 source_multiplier = type.getScaleMultiplier().value;
-    const auto & values = column.getData();
-    auto result = ColumnUInt8::create(values.size(), UInt8(0));
-    auto & loss_map = result->getData();
-    for (size_t row = 0; row < values.size(); ++row)
-    {
-        const Int64 value = values[row];
-        const Int64 seconds = value / source_multiplier;
-        loss_map[row] = value % divisor != 0
-            || (target.isDateTime() && (value < 0 || seconds > std::numeric_limits<UInt32>::max()));
-    }
-    return result;
+    return {};
 }
 
-ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const DataTypePtr & target_type)
+ColumnPtr getDateTime64CastLossMap(
+    const ColumnWithTypeAndName & source, const DataTypePtr & target_type, InternalCastFunctionCache * cache)
 {
     if (source.type->equals(*target_type))
         return {};
@@ -100,7 +106,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
             return {};
 
         auto loss_map = getDateTime64CastLossMap(
-            {nullable.getNestedColumnPtr(), removeNullable(from_type), source.name}, to_type);
+            {nullable.getNestedColumnPtr(), removeNullable(from_type), source.name}, to_type, cache);
         if (!loss_map)
             return {};
 
@@ -127,7 +133,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
             const auto & variant = column_variant.getVariantPtrByGlobalDiscriminator(global_discriminator);
             if (!variant->empty())
                 variant_loss_maps[global_discriminator] = getDateTime64CastLossMap(
-                    {variant, variant_types[global_discriminator], source.name}, to_type);
+                    {variant, variant_types[global_discriminator], source.name}, to_type, cache);
         }
         if (std::ranges::none_of(variant_loss_maps, [](const ColumnPtr & loss_map) { return loss_map != nullptr; }))
             return {};
@@ -149,7 +155,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
     if (const auto * from_map = typeid_cast<const DataTypeMap *>(from_type.get()))
         return getDateTime64CastLossMap(
             {assert_cast<const ColumnMap &>(*column).getNestedColumnPtr(), from_map->getNestedTypeWithUnnamedTuple(), source.name},
-            to_type);
+            to_type, cache);
 
     if (const auto * to_map = typeid_cast<const DataTypeMap *>(to_type.get()))
     {
@@ -162,10 +168,10 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
             const auto & target_elements = to_map->getKeyValueTypes();
             for (size_t i = 0; i < 2; ++i)
                 result = mergeNullMaps(std::move(result), getDateTime64CastLossMap(
-                    {elements[i], from_tuple->getElements()[i], source.name}, std::make_shared<DataTypeArray>(target_elements[i])));
+                    {elements[i], from_tuple->getElements()[i], source.name}, std::make_shared<DataTypeArray>(target_elements[i]), cache));
             return result;
         }
-        return getDateTime64CastLossMap({column, from_type, source.name}, to_map->getNestedTypeWithUnnamedTuple());
+        return getDateTime64CastLossMap({column, from_type, source.name}, to_map->getNestedTypeWithUnnamedTuple(), cache);
     }
 
     if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_type.get()))
@@ -181,7 +187,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
                 {
                     const size_t from_index = *positions[i];
                     result = mergeNullMaps(std::move(result), getDateTime64CastLossMap(
-                        {elements[from_index], from_tuple->getElements()[from_index], source.name}, to_tuple->getElements()[i]));
+                        {elements[from_index], from_tuple->getElements()[from_index], source.name}, to_tuple->getElements()[i], cache));
                 }
             }
             return result;
@@ -194,7 +200,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
         {
             const auto & array = assert_cast<const ColumnArray &>(*column);
             auto element_loss = getDateTime64CastLossMap(
-                {array.getDataPtr(), from_array->getNestedType(), source.name}, to_array->getNestedType());
+                {array.getDataPtr(), from_array->getNestedType(), source.name}, to_array->getNestedType(), cache);
             if (!element_loss)
                 return {};
 
@@ -209,11 +215,10 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
         }
     }
 
-    const auto * datetime = typeid_cast<const DataTypeDateTime64 *>(from_type.get());
-    if (!datetime)
+    if (!typeid_cast<const DataTypeDateTime64 *>(from_type.get()))
         return {};
 
-    return getDateTime64ToScalarLossMap(assert_cast<const ColumnDecimal<DateTime64> &>(*column), *datetime, to_type);
+    return getDateTime64ToScalarLossMap({column, from_type, source.name}, to_type, cache);
 }
 
 }
