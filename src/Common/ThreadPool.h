@@ -50,8 +50,10 @@ using GlobalThreadType = std::thread;
 /// An idle worker of a local pool that holds a slot of the global pool while it is idle (see
 /// `ThreadFromThreadPool::global_slots_for_idle`). While it waits, it is linked into a process-wide list,
 /// so that the global pool can take the slot back when a thread needs it: the worker is woken, gives the
-/// slot back (or hands it over to the new thread, see `slot_taken_over`), and leaves its pool, which frees
-/// its thread of the global pool. All the fields are protected by the mutex of that list.
+/// slot back (or it is handed over to the new thread), and leaves its pool, which frees
+/// its thread of the global pool. The slot is given back to the counter by the code that evicts the worker,
+/// right when it does so, so that the next scheduling call sees it even before the worker wakes up.
+/// All the fields are protected by the mutex of that list.
 struct IdleGlobalSlotHolder
 {
     IdleGlobalSlotHolder * prev = nullptr;
@@ -60,9 +62,6 @@ struct IdleGlobalSlotHolder
     bool linked = false;
     /// Set when the slot is taken back. The worker leaves its pool when it sees it.
     bool evicted = false;
-    /// Set together with `evicted` when the slot was handed over to a thread that takes a slot. Then the
-    /// worker must not give it back to the counter.
-    bool slot_taken_over = false;
 };
 
 template <typename Thread>
@@ -137,6 +136,11 @@ public:
         /// slot from it while it waits in the idle stack, because an idle worker keeps its thread of the
         /// global pool for an unlimited time. If no slot can be taken, the worker leaves instead of waiting.
         std::atomic<int64_t> * global_slots_for_idle = nullptr;
+
+        /// Set together with `global_slots_for_idle`: the number of jobs waiting in the queue of the global
+        /// pool. While a job waits there, the worker does not wait in the idle stack, it leaves its pool to
+        /// free its thread of the global pool for that job.
+        std::atomic<size_t> * global_queued_jobs = nullptr;
 
         /// Per-thread condition variable for LIFO idle scheduling.
         /// Each idle thread waits on its own CV, so the scheduler can wake the
@@ -305,6 +309,9 @@ private:
     /// The counter of the free slots of the global pool (`remaining_thread_job_capacity`).
     static std::atomic<int64_t> & globalRemainingThreadJobCapacity();
 
+    /// The number of jobs waiting in the queue of the global pool (`queued_jobs_count`).
+    static std::atomic<size_t> & globalQueuedJobs();
+
     mutable std::mutex mutex;
     std::condition_variable job_finished;
 
@@ -349,6 +356,11 @@ private:
     // In the global pool, an idle worker of a local pool that keeps free threads also holds a slot while
     // it is idle (see `ThreadFromThreadPool::global_slots_for_idle`), but it never takes the last one.
     std::atomic<int64_t> remaining_thread_job_capacity;
+
+    /// The size of `jobs`, readable without `mutex`. Changed under `mutex`. In the global pool, an idle worker
+    /// of a local pool does not take a slot to wait in the idle stack while it is positive, see
+    /// `ThreadFromThreadPool::global_queued_jobs`.
+    std::atomic<size_t> queued_jobs_count = 0;
 
     bool finished = false;
     bool threads_remove_themselves = true;

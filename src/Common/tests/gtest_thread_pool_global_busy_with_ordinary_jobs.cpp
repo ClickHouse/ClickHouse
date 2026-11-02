@@ -410,6 +410,175 @@ TEST(ThreadPool, IdleLocalWorkerGivesBackItsSlot)
     long_lived_pool.wait();
 }
 
+/// The slot of an evicted idle worker must be visible to the next scheduling call at once, not only when the
+/// evicted worker wakes up and gives it back. Otherwise the second of two workers scheduled one after another
+/// is rejected, which is fatal for the mandatory spawn of an `AsyncLoader` worker, although the thread freed
+/// by the evicted worker is enough to run both of them one after another.
+TEST(ThreadPool, SlotOfEvictedIdleWorkerIsVisibleAtOnce)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 2;
+    static constexpr size_t num_other_pools = 4;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    /// Its worker runs a finite job, then stays idle and takes one of the two slots.
+    ThreadPool pool_with_free_threads(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+    pool_with_free_threads.scheduleOrThrowOnError([] {});
+    pool_with_free_threads.wait();
+
+    /// Takes the other thread of the global pool and the last slot.
+    std::atomic<bool> long_lived_started = false;
+    std::atomic<bool> release_long_lived = false;
+    ThreadFromGlobalPool long_lived_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+    {
+        long_lived_started = true;
+        while (!release_long_lived.load())
+        {
+        }
+    });
+    while (!long_lived_started)
+        ;
+
+    /// Their workers take no slot. They are scheduled right one after another, likely before the evicted
+    /// worker wakes up, and all of them must be accepted.
+    std::atomic<size_t> jobs_ran = 0;
+    std::vector<std::unique_ptr<ThreadPool>> other_pools;
+    size_t rejected = 0;
+    for (size_t i = 0; i < num_other_pools; ++i)
+    {
+        other_pools.push_back(std::make_unique<ThreadPool>(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0));
+        try
+        {
+            other_pools.back()->scheduleOrThrowOnError([&] { ++jobs_ran; });
+        }
+        catch (const DB::Exception &)
+        {
+            ++rejected;
+        }
+    }
+    EXPECT_EQ(rejected, 0) << "a worker that takes no slot must not be rejected while an evicted worker is waking up";
+
+    bool finished_in_time = true;
+    for (auto & pool : other_pools)
+        finished_in_time = pool->waitUntil(std::chrono::steady_clock::now() + std::chrono::seconds(60)) && finished_in_time;
+
+    release_long_lived = true;
+    long_lived_thread.join();
+    for (auto & pool : other_pools)
+        pool->wait();
+
+    EXPECT_TRUE(finished_in_time);
+    EXPECT_EQ(jobs_ran, num_other_pools - rejected);
+}
+
+/// A worker of a local pool that finishes its job while a job waits in the queue of the global pool must not
+/// go idle and keep its thread of the global pool: the queued job may be needed by the thread that scheduled
+/// it, which counted on a thread that holds no slot to free up. Here the outer thread schedules the worker of
+/// another local pool when two slots are left (enough for a nested wait), and waits for it. Only then the job
+/// of `pool_with_free_threads` finishes, and its worker would take one of the two slots and wait in the idle
+/// stack. Then the three threads of the global pool are held by the long-lived thread, by the waiting outer
+/// thread and by the idle worker, and the queued worker would never start.
+TEST(ThreadPool, IdleLocalWorkerLeavesWhileGlobalJobIsQueued)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 3;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    /// Holds one slot until released.
+    std::atomic<bool> long_lived_started = false;
+    std::atomic<bool> release_long_lived = false;
+    ThreadFromGlobalPool long_lived_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+    {
+        long_lived_started = true;
+        while (!release_long_lived.load())
+        {
+        }
+    });
+    while (!long_lived_started)
+        ;
+
+    /// Its worker runs a job on the second thread until released, and would stay idle after it.
+    std::atomic<bool> short_job_started = false;
+    std::atomic<bool> release_short_job = false;
+    ThreadPool pool_with_free_threads(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+    pool_with_free_threads.scheduleOrThrowOnError([&]
+    {
+        short_job_started = true;
+        while (!release_short_job.load())
+        {
+        }
+    });
+    while (!short_job_started)
+        ;
+
+    /// Runs on the third thread, takes no slot, and waits for the worker of `inner_pool`, which is queued.
+    ThreadPool inner_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+    std::atomic<bool> inner_scheduled = false;
+    std::atomic<bool> inner_ran = false;
+    std::atomic<int> error_code = 0;
+    ThreadFromGlobalPool outer_thread(ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker, [&]
+    {
+        try
+        {
+            inner_pool.scheduleOrThrowOnError([&] { inner_ran = true; });
+        }
+        catch (const DB::Exception & e)
+        {
+            error_code = e.code();
+        }
+        inner_scheduled = true;
+        inner_pool.wait();
+    });
+    while (!inner_scheduled)
+        ;
+    EXPECT_EQ(error_code, 0);
+
+    /// Now the worker of `pool_with_free_threads` finishes its job while the worker of `inner_pool` is queued.
+    release_short_job = true;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (error_code == 0 && !inner_ran && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    const bool ran_in_time = inner_ran;
+
+    /// If the idle worker did keep its thread, make it leave, so that the test does not hang.
+    pool_with_free_threads.setMaxFreeThreads(0);
+    outer_thread.join();
+    release_long_lived = true;
+    long_lived_thread.join();
+
+    EXPECT_TRUE(ran_in_time) << "an idle worker of a local pool must not keep its thread while a job of the global pool is queued";
+}
+
 TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)
 {
     GlobalThreadPool & global_pool = GlobalThreadPool::instance();
