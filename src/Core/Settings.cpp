@@ -3939,7 +3939,7 @@ use `max_bytes_before_external_distinct`, leaving room for additional memory usa
     DECLARE(UInt64, max_bytes_before_external_limit_by, 0, R"(
 Query memory threshold, in bytes, for spilling `LIMIT BY` data to disk. Actual memory usage can exceed
 this threshold. Spilling also waits until `LIMIT BY` itself holds the smaller of the threshold and about
-16 MiB, since spilling less would free little memory.
+16 MiB, since spilling less would free little memory. A negative limit or offset does not spill.
 
 `0` disables this threshold. If `max_bytes_ratio_before_external_limit_by` also provides a threshold,
 the smaller is used. Set both settings to `0` to disable spilling.

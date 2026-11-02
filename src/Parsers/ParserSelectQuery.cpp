@@ -3738,6 +3738,10 @@ defined, and the rows returned after spilling starts are grouped by the `LIMIT B
 When `LIMIT BY` uses input sorted by its keys, it keeps the count of one group at a time and does not
 spill.
 
+A negative limit or offset does not spill: `LIMIT -n BY` keeps the rows it may still return in memory until
+the input ends. When a negative limit or offset is combined with a positive one, as in `LIMIT -n OFFSET m BY`
+or `LIMIT n OFFSET -m BY`, only the positive part can spill.
+
 Spilling may treat floating-point keys that have different binary representations but compare equal,
 including `0.0` and `-0.0`, or `NaN` values with different payloads, as the same key.
 )DOCS_MD",

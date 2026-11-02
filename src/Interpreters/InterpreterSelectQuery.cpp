@@ -3483,6 +3483,9 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         return step;
     };
 
+    /// Only `LimitByStep` can spill to disk. `NegativeLimitByStep` keeps its rows in memory, so a negative
+    /// limit or offset never spills; a form that also has a positive limit or offset spills only in its
+    /// `LimitByStep`.
     if (!is_limit_length_negative && !is_limit_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case

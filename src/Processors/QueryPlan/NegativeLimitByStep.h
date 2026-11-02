@@ -5,7 +5,8 @@
 namespace DB
 {
 
-/// Executes negative LIMIT BY for specified columns. See NegativeLimitByTransform.
+/// Executes negative `LIMIT BY` for specified columns. See `NegativeLimitByTransform`. Unlike
+/// `LimitByStep`, it keeps its rows in memory and never spills to disk.
 class NegativeLimitByStep : public ITransformingStep
 {
 public:
