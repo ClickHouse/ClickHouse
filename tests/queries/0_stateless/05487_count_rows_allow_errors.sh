@@ -33,7 +33,8 @@ data()
 }
 
 # The fast path itself, without the count cache.
-SETTINGS="use_cache_for_count_from_files = 0"
+# `optimize_trivial_count_query` is randomized in tests, and without it `count()` reads the rows instead of counting them.
+SETTINGS="use_cache_for_count_from_files = 0, optimize_trivial_count_query = 1"
 
 count_with_errors()
 {
@@ -58,7 +59,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM $(data html.json JSONEachRow) SETTI
 # The count cache stores the number of rows in a file regardless of the structure and of the allowed errors.
 # It must not answer a count with allowed errors, and a read with allowed errors must not fill it.
 # Each sequence runs in one client call, so that it shares the cache with `clickhouse-local` as well.
-SETTINGS="use_cache_for_count_from_files = 1, optimize_count_from_files = 1"
+SETTINGS="use_cache_for_count_from_files = 1, optimize_count_from_files = 1, optimize_trivial_count_query = 1"
 
 # The cache is filled by a count without allowed errors.
 ${CLICKHOUSE_CLIENT} -q "
@@ -80,7 +81,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT 'cache read tsv plain', count() FROM $(data cache_read.tsv TSVWithNames) SETTINGS ${SETTINGS};
 "
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "
-    SELECT 'cache read json ratio', count() FROM $(data cache_read.json JSONEachRow) SETTINGS input_format_allow_errors_ratio = 1, optimize_count_from_files = 0, use_cache_for_count_from_files = 1;
+    SELECT 'cache read json ratio', count() FROM $(data cache_read.json JSONEachRow) SETTINGS input_format_allow_errors_ratio = 1, optimize_count_from_files = 0, use_cache_for_count_from_files = 1, optimize_trivial_count_query = 1;
     SELECT 'cache read json plain', count() FROM $(data cache_read.json JSONEachRow) SETTINGS ${SETTINGS};
 " 2>&1 | grep -o -E "^cache .*|INCORRECT_DATA"
 
