@@ -12,13 +12,14 @@ DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 trap 'rm -f "${DATA_FILE}".*' EXIT
 
 # Each case is a query writing a constant column and the query reading it back. `Geometry` is written as WKB.
-while IFS='|' read -r WRITE READ
+# DESC checks the inferred Geometry type; an explicit String read checks the raw WKB bytes.
+while IFS='|' read -r WRITE READ READ_OPTIONS
 do
     echo "--- ${WRITE}"
     ${CLICKHOUSE_LOCAL} --query "${WRITE} INTO OUTFILE '${DATA_FILE}.parquet' TRUNCATE FORMAT Parquet" < /dev/null
-    ${CLICKHOUSE_LOCAL} --query "DESC file('${DATA_FILE}.parquet'); ${READ} FROM file('${DATA_FILE}.parquet')" < /dev/null
+    ${CLICKHOUSE_LOCAL} --query "DESC file('${DATA_FILE}.parquet'); ${READ} FROM file('${DATA_FILE}.parquet'${READ_OPTIONS})" < /dev/null
 done <<'CASES'
-SELECT readWKT('POLYGON((0 0,1 0,1 1,0 0))') AS g|SELECT hex(g)
-SELECT [[(1.,2.),(3.,4.),(1.,2.)]]::Polygon::Geometry AS g FROM numbers(2)|SELECT hex(g)
+SELECT readWKT('POLYGON((0 0,1 0,1 1,0 0))') AS g|SELECT hex(g)|, Parquet, 'g String'
+SELECT [[(1.,2.),(3.,4.),(1.,2.)]]::Polygon::Geometry AS g FROM numbers(2)|SELECT hex(g)|, Parquet, 'g String'
 SELECT (1.5, 2.5)::Point AS p FROM numbers(2)|SELECT p
 CASES

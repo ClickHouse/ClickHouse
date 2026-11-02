@@ -83,6 +83,14 @@ PY
 echo "--- default: no logical type"
 $CLICKHOUSE_LOCAL -q "$QUERY INTO OUTFILE '${DATA_DIR}/old.parquet' FORMAT Parquet SETTINGS allow_suspicious_variant_types = 1"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('${DATA_DIR}/old.parquet', Parquet)"
+echo "--- default: mixed Geometry round trip"
+$CLICKHOUSE_LOCAL -q "
+    SELECT count() FROM
+    (
+        SELECT * FROM file('${DATA_DIR}/old.parquet', Parquet)
+        EXCEPT
+        $QUERY
+    ) SETTINGS allow_suspicious_variant_types = 1"
 $CLICKHOUSE_LOCAL -q "
     SELECT c.name, c.have_statistics, c.statistics.min IS NOT NULL, c.have_geospatial_statistics
     FROM file('${DATA_DIR}/old.parquet', ParquetMetadata) ARRAY JOIN row_groups AS rg ARRAY JOIN rg.columns AS c"
