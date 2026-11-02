@@ -23,11 +23,11 @@ void SlidingArguments::add(const Columns & materialized_columns, Int64 rows_coun
     for (auto && [positions, blocks] : std::views::zip(argument_positions, function_blocks))
         blocks.push_back(WindowArguments::Block{
             .columns = positions | std::views::transform([&](size_t position) { return materialized_columns[position].get(); }) | std::ranges::to<ColumnRawPtrs>(),
-            .begin_position = global_end_position,
-            .end_position = global_end_position + rows_count,
+            .begin_position = end_position,
+            .end_position = end_position + rows_count,
         });
 
-    global_end_position += rows_count;
+    end_position += rows_count;
 }
 
 void SlidingArguments::pop()

@@ -3,7 +3,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <base/types.h>
 
-#include <span>
+#include <deque>
 #include <vector>
 
 namespace DB
@@ -30,27 +30,24 @@ private:
 
 class WindowArguments
 {
-    size_t findBlock(size_t argument, Int64 position) const;
-
 public:
     struct Block
     {
-        std::span<const ColumnPtr> columns;
-        Int64 first_position = 0;
+        ColumnRawPtrs columns;
+        Int64 begin_position = 0;
         Int64 end_position = 0;
     };
 
-    explicit WindowArguments(std::vector<size_t> column_indices_);
+    WindowArguments(const std::deque<Block> & blocks_, Int64 first_row_position_, Int64 num_arguments_);
 
-    void setBlocks(const std::vector<Block> & blocks_);
-
-    size_t size() const;
-    ArgumentValue at(size_t argument, Int64 position) const;
+    Int64 size() const;
+    ArgumentValue at(size_t argument, Int64 row) const;
 
 private:
-    std::vector<size_t> column_indices;
-    std::vector<Block> blocks;
-    mutable std::vector<size_t> last_used_block_for_arg;
+    const std::deque<Block> & blocks;
+    const Int64 first_row_position;
+    const Int64 num_arguments;
+    mutable std::vector<size_t> last_used_block;
 };
 
 }
