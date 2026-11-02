@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 import re
@@ -729,6 +730,14 @@ def log_files(path):
     }
 
 
+def history_snapshot(history):
+    """The version and the files of the latest snapshot of a timeline history."""
+    with open(os.path.join(history, "_version_")) as f:
+        version = int(f.read())
+    with open(os.path.join(history, f"manifest_{version}")) as f:
+        return version, {entry["fileName"] for entry in json.load(f)["files"]}
+
+
 @pytest.mark.parametrize("table_version", [6, 9])
 def test_merge_on_read_log_files(started_cluster, table_version):
     """Log files of a Merge-on-Read table are not read, so a table whose latest
@@ -870,23 +879,58 @@ def test_merge_on_read_log_files(started_cluster, table_version):
                 "hoodie.keep.min.commits": "2",
                 "hoodie.keep.max.commits": "3",
                 "hoodie.cleaner.commits.retained": "1",
+                "hoodie.timeline.compaction.batch.size": "2",
             }
             history = os.path.join(path, timeline, "history")
-            for i in range(8, 14):
-                if not os.path.exists(
-                    os.path.join(path, timeline, delta_commit)
-                ) and os.path.isdir(history):
+
+            def history_compacted():
+                return os.path.exists(os.path.join(history, "_version_")) and any(
+                    not n.endswith("_0.parquet") for n in history_snapshot(history)[1]
+                )
+
+            for i in range(8, 18):
+                if (
+                    not os.path.exists(os.path.join(path, timeline, delta_commit))
+                    and history_compacted()
+                ):
                     break
                 expected[i] = 999000 + i
                 write([i], 6 + i, extra_options=archive)
             assert not os.path.exists(os.path.join(path, timeline, delta_commit))
-            assert any(
-                re.fullmatch(r"\d+_\d+_\d+\.parquet", n) for n in os.listdir(history)
-            )
+            assert history_compacted()
+            version, snapshot = history_snapshot(history)
+            superseded = {
+                n
+                for n in os.listdir(history)
+                if re.fullmatch(r"\d+_\d+_\d+\.parquet", n) and n not in snapshot
+            }
+            assert superseded
             assert logs <= log_files(path)
             remove_directory(minio_client, bucket, f"{name}/{timeline}")
             upload_hudi_table(minio_client, bucket, path, prefix)
             check()
+
+            # G1: only the files of the snapshot named by `_version_` are read.
+            history_key = f"{prefix}{timeline}/history"
+
+            def put(key, data):
+                minio_client.put_object(bucket, key, io.BytesIO(data), len(data))
+
+            uncommitted = f"{requested}_{requested}_0.parquet"
+            assert uncommitted not in snapshot
+            uncommitted_manifest = {"files": [{"fileName": uncommitted, "fileLen": 3}]}
+            put(f"{history_key}/{uncommitted}", b"bad")
+            put(
+                f"{history_key}/manifest_{version + 1}",
+                json.dumps(uncommitted_manifest).encode(),
+            )
+            check()
+            minio_client.remove_object(bucket, f"{history_key}/{uncommitted}")
+            minio_client.remove_object(bucket, f"{history_key}/manifest_{version + 1}")
+            # G2: without `_version_` the newest manifest is the snapshot.
+            minio_client.remove_object(bucket, f"{history_key}/_version_")
+            check()
+            upload_hudi_table(minio_client, bucket, path, prefix)
             remove_directory(minio_client, bucket, f"{name}/{timeline}/history")
             assert_refused(source)
             upload_hudi_table(minio_client, bucket, path, prefix)
