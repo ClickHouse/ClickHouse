@@ -3276,9 +3276,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             /// The parts that the initiator copied did not have such files, but this replica's copy of the source
             /// table may differ, so fetch the part instead of cloning stale index files.
-            if (auto found = findSourcePartWithFilesOfDestinationOnlyIndex({src_part}, src_metadata_snapshot, dst_metadata_snapshot))
+            if (auto found = findSourcePartWithIndexFilesUnreadBySource({src_part}, src_metadata_snapshot, dst_metadata_snapshot))
             {
-                LOG_DEBUG(log, "Part {} of {} has files of a previous index {} that only this table declares",
+                LOG_DEBUG(log, "Part {} of {} has files of a previous index {} that only this table reads",
                     part_desc->src_part_name, source_table_id.getNameForLogs(), found->first);
                 continue;
             }
@@ -9874,7 +9874,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     }
 
     assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
-    checkSourcePartsHaveNoFilesOfDestinationOnlyIndices(src_all_parts, source_metadata_snapshot, metadata_snapshot);
+    checkSourcePartsHaveNoIndexFilesUnreadBySource(src_all_parts, source_metadata_snapshot, metadata_snapshot);
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
@@ -10230,7 +10230,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
 
         assertNoPatchesForParts(src_all_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
-        checkSourcePartsHaveNoFilesOfDestinationOnlyIndices(src_all_parts, metadata_snapshot, dest_metadata_snapshot);
+        checkSourcePartsHaveNoIndexFilesUnreadBySource(src_all_parts, metadata_snapshot, dest_metadata_snapshot);
 
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",

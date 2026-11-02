@@ -90,6 +90,14 @@ ALTER TABLE src_e MODIFY SETTING escape_index_filenames = 1;
 ALTER TABLE dst_e ATTACH PARTITION ALL FROM src_e; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM dst_e;
 
+-- The same holds when both tables declare the index again: the source reads it under the escaped file name and
+-- skips it in the old part, but the destination would read the raw file name, which still has the old files.
+ALTER TABLE src_e ADD COLUMN `b-x` UInt64 ALIAS a + 1000000;
+ALTER TABLE dst_e ATTACH PARTITION ALL FROM src_e; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM dst_e;
+SELECT count() FROM src_e WHERE `b-x` = 1000001;
+ALTER TABLE src_e DROP COLUMN `b-x`;
+
 -- With the policies the other way around, the destination looks for the escaped file name, which the part does not
 -- have, so the import is accepted and the index of the destination is absent from the imported part.
 ALTER TABLE src_e MODIFY SETTING escape_index_filenames = 0;

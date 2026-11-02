@@ -13838,7 +13838,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     return *src_data;
 }
 
-std::optional<std::pair<String, MergeTreeData::DataPartPtr>> MergeTreeData::findSourcePartWithFilesOfDestinationOnlyIndex(
+std::optional<std::pair<String, MergeTreeData::DataPartPtr>> MergeTreeData::findSourcePartWithIndexFilesUnreadBySource(
     const DataPartsVector & src_parts, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot)
 {
     /// The destination may have indices that the source does not declare, but the parts of the source may still
@@ -13850,32 +13850,47 @@ std::optional<std::pair<String, MergeTreeData::DataPartPtr>> MergeTreeData::find
     for (const auto & index : src_snapshot->getSecondaryIndices())
         src_index_names.insert(index.name);
 
-    Names destination_only_indices;
-    for (const auto & index : my_snapshot->getSecondaryIndices())
-        if (!src_index_names.contains(index.name))
-            destination_only_indices.push_back(index.name);
+    /// An index that both tables declare is also checked when the two tables derive different file names from its
+    /// name (they differ in `escape_index_filenames` and escaping changes the name). The source reads only the files
+    /// under its own file name, so files under the file name of the destination are not validated by the source:
+    /// changing `escape_index_filenames` does not rename the existing files, so they can be left from a previous
+    /// index with the same name (e.g. the implicit index of a dropped `ALIAS` column), and the destination would read
+    /// them as files of its own index.
+    const bool same_filename_policy = src_snapshot->escape_index_filenames == my_snapshot->escape_index_filenames;
+    const auto file_names_differ = [&](const String & index_name)
+    {
+        if (same_filename_policy)
+            return false;
+        const String unescaped = String(SKIP_INDEX_FILE_PREFIX) + index_name;
+        return escapeForFileName(unescaped) != unescaped;
+    };
 
-    if (destination_only_indices.empty())
+    Names indices_to_check;
+    for (const auto & index : my_snapshot->getSecondaryIndices())
+        if (!src_index_names.contains(index.name) || file_names_differ(index.name))
+            indices_to_check.push_back(index.name);
+
+    if (indices_to_check.empty())
         return {};
 
     /// The copied files are read by the destination, so they are looked up under the file names that the destination
     /// derives from the index names. The source may use a different `escape_index_filenames`, and changing it does
     /// not rename the existing files, so probing with the policy of the source could miss them.
     for (const auto & part : src_parts)
-        for (const auto & index_name : destination_only_indices)
+        for (const auto & index_name : indices_to_check)
             if (part->hasSecondaryIndex(index_name, my_snapshot->escape_index_filenames))
                 return std::make_pair(index_name, part);
 
     return {};
 }
 
-void MergeTreeData::checkSourcePartsHaveNoFilesOfDestinationOnlyIndices(
+void MergeTreeData::checkSourcePartsHaveNoIndexFilesUnreadBySource(
     const DataPartsVector & src_parts, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot)
 {
-    if (auto found = findSourcePartWithFilesOfDestinationOnlyIndex(src_parts, src_snapshot, my_snapshot))
+    if (auto found = findSourcePartWithIndexFilesUnreadBySource(src_parts, src_snapshot, my_snapshot))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Tables have different secondary indices: index {} is not declared in the source table, "
-            "but its part {} has files of a previous index with the same name",
+            "Tables have different secondary indices: the source table does not read the files of index {} "
+            "under the file name of the destination table, but its part {} has such files of a previous index with the same name",
             backQuote(found->first), found->second->name);
 }
 

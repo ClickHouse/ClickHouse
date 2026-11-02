@@ -4182,7 +4182,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
     }
 
-    checkSourcePartsHaveNoFilesOfDestinationOnlyIndices(src_parts, source_metadata_snapshot, my_metadata_snapshot);
+    checkSourcePartsHaveNoIndexFilesUnreadBySource(src_parts, source_metadata_snapshot, my_metadata_snapshot);
 
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
     /// silently drop the destination partition's data without writing anything in its place
@@ -4408,7 +4408,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     }
 
     src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
-    checkSourcePartsHaveNoFilesOfDestinationOnlyIndices(src_parts, metadata_snapshot, dest_metadata_snapshot);
+    checkSourcePartsHaveNoIndexFilesUnreadBySource(src_parts, metadata_snapshot, dest_metadata_snapshot);
 
     if (src_parts.size() > settings[Setting::max_parts_to_move])
     {
