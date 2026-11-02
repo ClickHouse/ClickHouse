@@ -524,7 +524,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     const auto & settings = getContext()->getSettingsRef();
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
+    {
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+        UserDefinedSQLFunctionVisitor::visitApplyTransformersInDefinitions(query_ptr, getContext());
+    }
 
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());

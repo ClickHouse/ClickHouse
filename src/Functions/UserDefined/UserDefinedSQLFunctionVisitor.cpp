@@ -8,7 +8,9 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -16,6 +18,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Core/Settings.h>
@@ -78,11 +81,56 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 
 namespace
 {
+
+void visitApplyTransformers(IAST & ast, const ContextPtr & context, bool inside_definition)
+{
+    inside_definition = inside_definition || ast.as<ASTColumnDeclaration>() || ast.as<ASTIndexDeclaration>();
+
+    auto * apply = ast.as<ASTColumnsApplyTransformer>();
+    if (apply && inside_definition)
+    {
+        if (!apply->lambda && !apply->parameters)
+        {
+            auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(apply->func_name);
+            if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
+            {
+                /// `APPLY f` -> `APPLY __apply_argument -> f(__apply_argument)`, then `f` is inlined below.
+                static constexpr auto argument_name = "__apply_argument";
+                auto lambda = makeASTOperator(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>(argument_name)),
+                    makeASTFunction(apply->func_name, make_intrusive<ASTIdentifier>(argument_name)));
+                lambda->setIsLambdaFunction(true);
+                lambda->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
+                apply->lambda = std::move(lambda);
+                apply->lambda_arg = argument_name;
+                apply->func_name.clear();
+            }
+        }
+
+        if (apply->lambda)
+            UserDefinedSQLFunctionVisitor::visit(apply->lambda, context);
+    }
+
+    for (const auto & child : ast.children)
+        if (child)
+            visitApplyTransformers(*child, context, inside_definition);
+
+    if (apply && apply->lambda)
+        visitApplyTransformers(*apply->lambda, context, inside_definition);
+}
+
 bool isVariadic(const ASTPtr & arg)
 {
     return arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
         || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>();
 }
+}
+
+void UserDefinedSQLFunctionVisitor::visitApplyTransformersInDefinitions(ASTPtr & ast, ContextPtr context_)
+{
+    chassert(ast);
+    visitApplyTransformers(*ast, context_, /*inside_definition=*/ false);
 }
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)

@@ -2389,7 +2389,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
+    {
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+        UserDefinedSQLFunctionVisitor::visitApplyTransformersInDefinitions(query_ptr, getContext());
+    }
 
     /// SQL UDF expansion can introduce unqualified table names into persisted metadata. Resolve
     /// them in the query's current database without revisiting scalar aliases generated during

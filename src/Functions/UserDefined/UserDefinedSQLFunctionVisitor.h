@@ -25,6 +25,15 @@ class UserDefinedSQLFunctionVisitor
 public:
     static void visit(ASTPtr & ast, ContextPtr context_);
 
+    /// `visit` does not reach the functions applied by the `APPLY` transformers of column matchers: the lambda of
+    /// `APPLY (x -> ...)` is not among the children of the transformer, and `APPLY f` keeps only the name of `f`.
+    /// In the column and index declarations of `ast`, inlines the user-defined functions of these transformers
+    /// too, turning `APPLY f` with a user-defined `f` into the lambda form. Column default and index expressions
+    /// are stored with the user-defined functions inlined, so that their column matchers are expanded against
+    /// the schema of the table. Other `APPLY` transformers, like those of `SELECT` queries, are left alone,
+    /// because inlining `APPLY f` would change the names of the result columns.
+    static void visitApplyTransformersInDefinitions(ASTPtr & ast, ContextPtr context_);
+
 private:
     static ASTPtr tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_);
 
