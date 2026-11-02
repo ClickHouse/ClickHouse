@@ -73,6 +73,7 @@ public:
     /// which materializes the nested table anyway.
     bool supportsTTL() const override { return getNested()->supportsTTL(); }
     bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
+    bool supportsSubcolumnCodecs() const override { return getNested()->supportsSubcolumnCodecs(); }
     /// The same holds for `DELETE`, `UPDATE` and `ALTER ... DELETE/UPDATE`: their interpreters probe
     /// these on the catalog object before handing the mutation to `mutate` or `updateLightweight`.
     bool supportsDelete() const override { return getNested()->supportsDelete(); }
@@ -294,6 +295,11 @@ public:
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
+    /// Asked while planning a read of the table, which loads it anyway.
+    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
+    {
+        return getNested()->totalRowsInSnapshot(storage_snapshot, query_context);
+    }
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter, ContextPtr query_context) const override
     {
         return getNested()->totalRowsByPartitionPredicate(filter, query_context);

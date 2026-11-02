@@ -1318,6 +1318,10 @@ def check_storage_proxy_forwards(files) -> str:
         "addInferredEngineArgsToCreateQuery",
         # A storage calls this on itself while reading, so it is already the nested one.
         "parallelizeOutputAfterReading",
+        # `StorageTableProxy` answers it without loading a table that nothing has touched.
+        "checkTableCanBeRenamedByDatabaseRename",
+        # `QueryAnalyzer` resolves the proxy before asking, and skips a table that is not loaded.
+        "getStorageForParallelReplicasRead",
     }
 
     # The header of every deferrable engine, found by its declaration, so a class added to the cast
