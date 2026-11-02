@@ -1699,6 +1699,15 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table, context)))
         return true;
 
+    /// A populating `CREATE TABLE ... AS SELECT` also needs `INSERT` on its final destination: the `Atomic`
+    /// path checks it in `doCreateOrReplaceTable` before the populate, and with an explicit structure that
+    /// check precedes any analysis of the populating `SELECT`. The destination is not a collected table, so
+    /// the generic access preflight does not cover it. The columns are not known here, so the table-level
+    /// grant is required — erring toward suppressing randomization for a column-level grant.
+    if (create.table && !create.isTemporary() && !create.isView() && create.isCreateQueryWithImmediateInsertSelect()
+        && !context->getAccess()->isGranted(AccessType::INSERT, destination_database, destination_table))
+        return true;
+
     /// Parameterized views never analyze their SELECT when they are created, and validating a column
     /// alias list for an ordinary view can fail before its SELECT is analyzed. Conservatively skip the
     /// hook for both forms: this also covers an invalid alias list without reattaching its source first.
@@ -1919,7 +1928,13 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     /// `setEngine` resolves an `AS table` / `CLONE AS table` source and `getSampleBlock` analyzes a
     /// populating `SELECT` before the plain-create destination-name checks below. Keep those sources
     /// eligible even when the destination is already taken: the query has already touched them by then.
-    if (create.select || create.is_clone_as || !create.as_table.empty())
+    /// A populating `SELECT` is analyzed there only when the structure is inferred from it: with an explicit
+    /// column list `getTablePropertiesAndNormalizeCreateQuery` takes the `columns_list` branch instead, and a
+    /// taken name stops the statement (`TABLE_ALREADY_EXISTS`, or a no-op with `IF NOT EXISTS`) before the
+    /// `SELECT` is read. A materialized view is the exception: `validateMaterializedViewColumnsAndEngine`
+    /// analyzes its `SELECT` against the explicit columns before the name checks.
+    const bool select_analyzed_before_name_check = create.select && (!create.columns_list || create.is_materialized_view);
+    if (select_analyzed_before_name_check || create.is_clone_as || !create.as_table.empty())
         return false;
 
     /// Probing the destination must itself be side-effect free: in databases that do not support
@@ -3400,7 +3415,10 @@ static bool containsSQLUserDefinedFunctionCall(const IAST & ast)
 
 /// `joinGet`, the `dictGet` family, `hasColumnInTable` and the dictionary-backed models (`predictXGBoost`, the
 /// `naiveBayesClassifier` family, `assignCentroid`) take the storage they read as a string argument, resolve
-/// it and check the access to it only when they run, so it is seen by none of the preflights.
+/// it and check the access to it only when they run, so it is seen by none of the preflights. The same
+/// goes for the scalar functions that check a grant of their own when they are created: `getServerSetting`
+/// and `getMergeTreeSetting` (`SELECT` on `system.server_settings` / `system.merge_tree_settings`),
+/// `getMacro` (`SELECT` on `system.macros`), and scalar `file` (`READ ON FILE`).
 static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
 {
     std::vector<const IAST *> stack{&ast};
@@ -3413,7 +3431,9 @@ static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
         {
             const String & name = function->name;
             if (name.starts_with("dict") || name == "joinGet" || name == "joinGetOrNull" || name == "hasColumnInTable"
-                || name == "predictXGBoost" || name.starts_with("naiveBayesClassifier") || name == "assignCentroid")
+                || name == "predictXGBoost" || name.starts_with("naiveBayesClassifier") || name == "assignCentroid"
+                || name == "getServerSetting" || name == "getMergeTreeSetting" || name == "getMacro"
+                || name == "file")
                 return true;
         }
 

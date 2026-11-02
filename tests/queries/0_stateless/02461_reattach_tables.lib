@@ -13,6 +13,7 @@
 #   `05398_reattach_tables_bindings_quota_limits` - `IN` bindings, SQL UDFs, quotas, `CREATE` table limits
 #   `05441_reattach_tables_indirect_sources` - `Alias` targets, table functions, CTE-named columns
 #   `05479_reattach_tables_type_gates_refreshable_view` - setting-gated `AggregateFunction` types, refreshable views
+#   `05480_reattach_tables_create_explicit_schema_scalars` - explicit-schema `CREATE ... AS SELECT`, scalar grant checks
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
