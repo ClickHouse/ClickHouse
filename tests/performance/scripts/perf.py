@@ -593,6 +593,14 @@ def _normalize_value(value):
     return value
 
 
+class ServerDigest:
+    """The (rows, hash) that the server computed for a statement, see `digest_statement`."""
+
+    def __init__(self, rows, digest):
+        self.rows = rows
+        self.digest = digest
+
+
 def result_digest(statement_results):
     """(rows, digest) of the results of the statements of a query, or None when
     a result is too large. The digest does not depend on the order of rows."""
@@ -601,6 +609,11 @@ def result_digest(statement_results):
     for i, result in enumerate(statement_results):
         if result is None:
             return None
+        if isinstance(result, ServerDigest):
+            rows += result.rows
+            h = hashlib.blake2b(repr((i, result.digest)).encode(), digest_size=8)
+            digest = (digest + int.from_bytes(h.digest(), "little")) % 2**64
+            continue
         if not isinstance(result, list):
             continue
         rows += len(result)
@@ -644,7 +657,8 @@ def query_digest(connection, q_item, query_id, settings, statement_results=None)
     for i, statement in enumerate(q_item["statements"]):
         digest_query = digest_statement(connection, statement, settings)
         if digest_query is not None:
-            results.append(connection.execute(digest_query, query_id=f"{query_id}.digest{i}", settings=settings))
+            ((count, server_hash),) = connection.execute(digest_query, query_id=f"{query_id}.digest{i}", settings=settings)
+            results.append(ServerDigest(count, server_hash))
         elif statement_results is not None:
             results.append(statement_results[i])
         else:
