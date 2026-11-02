@@ -84,6 +84,25 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "</coordination_settings></keeper_server></clickhouse>"));
 }
 
+TEST(CoordinationSettingsValidation, RemoteDiskStreamingRequiresChunks)
+{
+    auto load = [](const std::string & chunk_size_setting)
+    {
+        std::istringstream stream( // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            "<clickhouse><keeper_server><coordination_settings>"
+            "<snapshot_transfer_remote_disk_streaming>true</snapshot_transfer_remote_disk_streaming>"
+            + chunk_size_setting + "</coordination_settings></keeper_server></clickhouse>");
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+    };
+
+    /// The default zero chunk size sends the whole snapshot as one object, so streaming would not bound memory.
+    EXPECT_THROW(load(""), DB::Exception);
+    EXPECT_THROW(load("<snapshot_transfer_chunk_size>0</snapshot_transfer_chunk_size>"), DB::Exception);
+    EXPECT_NO_THROW(load("<snapshot_transfer_chunk_size>4096</snapshot_transfer_chunk_size>"));
+}
+
 TEST(CoordinationSettingsValidation, CommitProfilerRequiresSamplingProfiler)
 {
     auto load = [](const std::string & xml)

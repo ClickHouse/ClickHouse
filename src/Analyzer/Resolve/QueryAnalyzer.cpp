@@ -68,6 +68,7 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
@@ -120,7 +121,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool validate_group_by_all_key_types;
     extern const SettingsBool allow_correlated_subqueries;
-    extern const SettingsBool allow_experimental_lateral_join;
+    extern const SettingsBool enable_lateral_join;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -5796,6 +5797,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insert_columns = *scope_context->getInsertionTableColumnsDescription();
         const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
         DB::ColumnsDescription structure_hint;
+        NameToNameSetMap insertion_columns_by_hint_column;
 
         bool use_columns_from_insert_query = true;
 
@@ -5837,6 +5839,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                       * A source column has a single type, so the hint is usable only if all the
                       * insert table columns that it is mapped to agree on the type.
                       */
+                    insertion_columns_by_hint_column[column.name].insert(*insert_column_name_it);
                     if (const auto * already_hinted = structure_hint.tryGet(column.name))
                     {
                         if (!already_hinted->type->equals(*column.type))
@@ -5930,12 +5933,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         ColumnDescription column = insert_columns.get(*insert_column_name_it);
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
+                        insertion_columns_by_hint_column[column.name].insert(column.name);
                         structure_hint.add(std::move(column));
                     }
                 }
 
                 if (!structure_hint.empty())
+                {
+                    removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                     table_function_ptr->setStructureHint(structure_hint);
+                }
             }
             else if (use_structure_from_insertion_table_in_table_functions == 1)
                 throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
@@ -6403,9 +6410,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     /// Check the experimental setting for any LATERAL JOIN, regardless of whether the subquery is correlated
     if (join_node_typed.isLateral())
     {
-        if (!scope.context->getSettingsRef()[Setting::allow_experimental_lateral_join])
+        if (!scope.context->getSettingsRef()[Setting::enable_lateral_join])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "LATERAL JOIN is experimental. Set 'allow_experimental_lateral_join = 1' to enable it");
+                "LATERAL JOIN is experimental. Set 'enable_lateral_join = 1' to enable it");
     }
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getRightTableExpressionNode()))

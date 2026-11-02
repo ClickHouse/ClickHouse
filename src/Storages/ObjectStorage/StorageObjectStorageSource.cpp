@@ -842,6 +842,7 @@ void StorageObjectStorageSource::lazyInitialize()
     if (reader)
     {
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
         reader_future = createReaderAsync();
     }
     initialized = true;
@@ -1122,9 +1123,10 @@ Chunk StorageObjectStorageSource::generate()
         /// A file the filter was not applied to (see `createReader`; the reader also declines it for a
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
-        /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read not populate the cache at all.
+        /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read (unless statistics-only) not populate the cache at all.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
-            && !(format_filter_info->top_k_filter && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+            && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows
+                && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
@@ -1230,6 +1232,7 @@ Chunk StorageObjectStorageSource::generate()
             break;
 
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1238,6 +1241,21 @@ Chunk StorageObjectStorageSource::generate()
     }
 
     return {};
+}
+
+void StorageObjectStorageSource::addTotalRowsApproxFromMetadata(const ObjectInfo & object_info)
+{
+    /// A file split into buckets is read by several readers, so its number of rows would be counted
+    /// once per bucket. Buckets which only leave out the row groups the query condition cache proved
+    /// to have no match are read by a single reader. A lazily materialized read only reads the rows
+    /// already counted by the main read.
+    if (object_info.file_bucket_info && !object_info.file_bucket_info_from_query_condition_cache)
+        return;
+    if (object_info.rows_to_read)
+        return;
+
+    if (auto num_rows = object_info.getNumRowsHint())
+        addTotalRowsApprox(*num_rows);
 }
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
@@ -1256,7 +1274,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
 {
     return createReader(
         0,
@@ -1274,7 +1292,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         parser_shared_resources,
         format_filter_info,
         need_only_count,
-        top_k_query_condition_cache_key);
+        top_k_query_condition_cache_key,
+        prefetch_input_format);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1293,7 +1312,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
+    bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
     bool use_top_k_query_condition_cache_key = false;
@@ -1341,6 +1361,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// setting is on), a file also consults the entries a previous run of the same TopN over the same
     /// snapshot has written. They tell which row groups hold no row of the result, which holds whether
     /// or not this file applies the filter. A row group may be skipped iff either verdict excludes it.
+    /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
     const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
     if ((format_filter_info && format_filter_info->condition_hash) || top_k_query_condition_cache_key)
@@ -1401,7 +1422,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         skipped_row_groups_by_top_k_entry = false;
 
         const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
-            && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter);
+            && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter
+                || !format_filter_info->top_k_filter->filter_rows);
 
         if (query_condition_cache && !object_info->file_bucket_info && (consult_plain_condition || use_top_k_query_condition_cache_key))
         {
@@ -1714,7 +1736,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
-                    result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper
+                        ? format_filter_info->current_schema_column_mapper
+                        : format_filter_info->column_mapper;
                     if (top_k_filter_allowed)
                         result->top_k_filter = format_filter_info->top_k_filter;
                     return result;
@@ -1728,11 +1752,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 column_mapper = configuration->getColumnMapperForObject(object_info);
 
             if (!format_supports_prewhere)
-                return std::make_shared<FormatFilterInfo>(
+            {
+                auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     column_mapper,
                     nullptr, nullptr);
+                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                return result;
+            }
 
             if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed)
                 || column_mapper != format_filter_info->column_mapper)
@@ -1742,6 +1770,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->context.lock(),
                     column_mapper,
                     row_level_filter, prewhere_info);
+                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
                 return result;
@@ -1749,6 +1778,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             return format_filter_info;
         }();
+
+        if (filter_info && filter_info != format_filter_info)
+            filter_info->need_row_numbers = format_filter_info->need_row_numbers;
 
         if (object_info->rows_to_read)
         {
@@ -1760,8 +1792,40 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info ? filter_info->column_mapper : nullptr,
                 filter_info ? filter_info->row_level_filter : nullptr,
                 filter_info ? filter_info->prewhere_info : nullptr);
+            if (filter_info)
+                filter_info_with_rows->current_schema_column_mapper = filter_info->current_schema_column_mapper;
             filter_info_with_rows->rows_to_read = object_info->rows_to_read;
+            filter_info_with_rows->need_row_numbers = true;
             filter_info = filter_info_with_rows;
+        }
+
+        /// A delete transform added to this source's pipeline below reads the physical row numbers
+        /// of every chunk out of its `ChunkInfoRowNumbers`, and a format attaches those only when
+        /// the filter info asks for them. Ask here, from the same `object_info` the transforms are
+        /// built from, rather than relying on the caller having asked: a caller that reads a data
+        /// lake object without going through `ReadFromObjectStorageStep` would otherwise assemble
+        /// a pipeline whose delete transform has no row numbers to filter by. The same holds for a
+        /// requested `_row_number` (or another row-dependent virtual column): it is materialized from
+        /// `ChunkInfoRowNumbers` too, and callers like `S3Queue` / `AzureQueue` pass no filter info.
+        const bool need_row_numbers = hasAttachedDeletes(*object_info)
+            || VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
+        if (need_row_numbers && (!filter_info || !filter_info->need_row_numbers))
+        {
+            auto filter_info_with_row_numbers = std::make_shared<FormatFilterInfo>(
+                filter_info ? filter_info->filter_actions_dag : nullptr,
+                context_,
+                filter_info ? filter_info->column_mapper : nullptr,
+                filter_info ? filter_info->row_level_filter : nullptr,
+                filter_info ? filter_info->prewhere_info : nullptr);
+            if (filter_info)
+            {
+                filter_info_with_row_numbers->current_schema_column_mapper = filter_info->current_schema_column_mapper;
+                filter_info_with_row_numbers->condition_hash = filter_info->condition_hash;
+                filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
+                filter_info_with_row_numbers->top_k_filter = filter_info->top_k_filter;
+            }
+            filter_info_with_row_numbers->need_row_numbers = true;
+            filter_info = filter_info_with_row_numbers;
         }
 
         /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the
@@ -1863,6 +1927,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (need_only_count)
             input_format->needOnlyCount();
+
+        if (prefetch_input_format)
+            input_format->prefetch();
 
         builder.init(Pipe(input_format));
 
@@ -2057,7 +2124,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
 }
 
 ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags)
