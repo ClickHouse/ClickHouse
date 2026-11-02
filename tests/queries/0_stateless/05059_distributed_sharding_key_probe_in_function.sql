@@ -3,7 +3,6 @@
 -- that stage does a `Distributed` child evaluate its sharding-key predicate against the planner
 -- context that `ReadFromMerge` derives per child. A derived planner context owns no registered sets.
 SET explain_query_plan_default = 'legacy';
-SET allow_experimental_analyzer = 1;
 SET optimize_skip_unused_shards = 1;
 SET optimize_distributed_group_by_sharding_key = 1;
 SET prefer_localhost_replica = 0;

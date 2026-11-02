@@ -16,8 +16,6 @@ SET max_rows_to_sort = 0;
 SET max_bytes_to_sort = 0;
 SET optimize_use_implicit_projections = 0;
 SET allow_suspicious_low_cardinality_types = 1;
--- The EXPLAIN QUERY TREE arms below are analyzer-only; old-analyzer jobs would error on them.
-SET enable_analyzer = 1;
 
 -- { echo }
 
