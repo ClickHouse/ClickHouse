@@ -32,6 +32,7 @@
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/getDateTime64CastLossMap.h>
 #include <Interpreters/Context.h>
 
 #include <Processors/Chunk.h>
