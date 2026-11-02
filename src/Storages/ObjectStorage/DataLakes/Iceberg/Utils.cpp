@@ -1980,7 +1980,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
         auto field = fields->getObject(field_index);
         auto source_id = field->getValue<Int64>(f_source_id);
         auto column = source_id_to_column_name.find(source_id);
-        /// A sort field whose source column is not in the current schema cannot be applied: drop the sort order, as for an unknown transform.
+        /// No such column in the current schema: drop the sort order, as for an unknown transform.
         if (column == source_id_to_column_name.end())
             return KeyDescription{};
         const auto & column_name = column->second;
