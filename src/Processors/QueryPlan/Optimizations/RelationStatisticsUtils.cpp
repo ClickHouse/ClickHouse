@@ -1,11 +1,12 @@
 #include <memory>
 #include <ranges>
+#include <vector>
 
-#include <fmt/ranges.h>
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
+#include <fmt/ranges.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -31,23 +32,27 @@ namespace DB
 
 String dumpRelationStatsForLogs(const RelationStats & stats)
 {
+    auto dump_column = [](const auto & column)
+    {
+        const auto & [name, column_stats] = column;
+        /// No min/max: they can be values of rows hidden by a row policy, and this line reaches clients with `send_logs_level`.
+        std::vector<String> fields;
+        if (column_stats.null_fraction)
+            fields.push_back(fmt::format("null {}", *column_stats.null_fraction));
+        if (column_stats.avg_bytes != 0)
+            fields.push_back(fmt::format("avg_bytes {}", column_stats.avg_bytes));
+        /// The provenance goes last: tests match the NDV and the optional `[...]` fields right after the column name.
+        const String provenance = fmt::format(
+            "(ndv: {}, range: {})", column_stats.ndv_provenance.toString(), column_stats.range_provenance.toString());
+        if (fields.empty())
+            return fmt::format("{}: {} {}", name, column_stats.num_distinct_values, provenance);
+        return fmt::format("{}: {} [{}] {}", name, column_stats.num_distinct_values, fmt::join(fields, ", "), provenance);
+    };
     return fmt::format(
         "{}: {} rows, columns: [{}]",
         stats.table_name.empty() ? "<unknown>" : stats.table_name,
         stats.estimated_rows ? fmt::format("{}", stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform(
-                    [](const auto & p)
-                    {
-                        return fmt::format(
-                            "{}: {} (ndv: {}, range: {})",
-                            p.first,
-                            p.second.num_distinct_values,
-                            p.second.ndv_provenance.toString(),
-                            p.second.range_provenance.toString());
-                    }),
-            ", "));
+        fmt::join(stats.column_stats | std::views::transform(dump_column), ", "));
 }
 
 /* Read a table statistics hint from the query parameter.

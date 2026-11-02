@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/Statistics/ColumnStatsProvenance.h>
+#include <Storages/Statistics/RelationProfile.h>
 #include <Storages/Statistics/Statistics.h>
 
 #include <Core/Field.h>
@@ -11,27 +11,6 @@ namespace DB
 {
 
 class RPNBuilderTreeNode;
-
-struct ColumnStats
-{
-    UInt64 num_distinct_values = 0;
-    ColumnStatsProvenance ndv_provenance = {};
-    /// Average uncompressed size of one value; 0 means unknown.
-    Float64 avg_bytes = 0;
-    /// Value range from `basic`/`minmax` statistics; unset when unknown.
-    std::optional<Field> min_value = {};
-    std::optional<Field> max_value = {};
-    ColumnStatsProvenance range_provenance = {};
-    /// Fraction of NULL values; unset when unknown. This is a value fact for the same rows as
-    /// `min_value` and `max_value`, so consumers must consult `range_provenance` before using it.
-    std::optional<Float64> null_fraction = {};
-};
-
-struct RelationProfile
-{
-    UInt64 rows = 0;
-    std::unordered_map<String, ColumnStats> column_stats = {};
-};
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
@@ -189,6 +168,8 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
+    /// See `ColumnStatistics::setCardinality`; the column must have statistics.
+    void setCardinality(const String & column_name, UInt64 cardinality);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:

@@ -29,6 +29,7 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -102,6 +103,25 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         addTransformation(aggregation_stats.column_stats, NonUniformRowSubset);
 
     return aggregation_stats;
+}
+
+/// Raises a read with rows to 1 row and 1 value per column: 1% of `=` and the 10% guess of distinct values truncate to 0
+/// on a table of a few rows, and the joins and aggregations above multiply them.
+void floorReadWithRows(RelationProfile & profile)
+{
+    profile.rows = std::max<UInt64>(profile.rows, 1);
+    for (auto & [_, column_stats] : profile.column_stats)
+        column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
+}
+
+/// A filter on the elements or on the output of an array join leaves its row count unknown unless the input is empty.
+void forgetFilteredArrayJoinRows(RelationStats & stats)
+{
+    if (!stats.estimated_rows || *stats.estimated_rows == 0)
+        return;
+    stats.estimated_rows.reset();
+    stats.imprecise_estimate = true;
+    stats.rows_exact = false;
 }
 
 enum class UnaryStepStatsKind : UInt8
@@ -199,6 +219,23 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
     return false;
 }
 
+/// The conditions on the rows of a read: the filter above it and the `PREWHERE`, as MergeTree estimates them, and the row policy.
+std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter)
+{
+    std::vector<RPNBuilderTreeNode> conditions;
+    auto add_condition = [&](const ActionsDAG::Node * condition)
+    {
+        if (condition && !prunesNothingAtPlanTime(condition))
+            conditions.emplace_back(condition, reading.getContext());
+    };
+    add_condition(filter);
+    if (const auto & prewhere_info = reading.getPrewhereInfo())
+        add_condition(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
+    if (const auto & row_level_filter = reading.getRowLevelFilter())
+        add_condition(row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name));
+    return conditions;
+}
+
 }
 
 std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step, RelationStats input_stats)
@@ -236,17 +273,20 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             return input_stats;
         }
         case UnaryStepStatsKind::ArrayJoin: {
-            if (input_stats.estimated_rows)
+            const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(&step);
+            if (array_join_step && array_join_step->hasElementFilter())
+                forgetFilteredArrayJoinRows(input_stats);
+            else if (input_stats.estimated_rows)
                 input_stats.estimated_rows = toUInt64Saturating(Float64(*input_stats.estimated_rows) * array_join_rows_multiplier);
             /// Only an empty input gives an exact output: no rows.
             input_stats.rows_exact = input_stats.rows_exact && input_stats.estimated_rows == 0;
 
             /// Array-joined columns lose their statistics.
-            if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
-                remapColumnStats(input_stats.column_stats, expression_step->getExpression());
-            else
-                for (const auto & column : static_cast<const ArrayJoinStep &>(step).getColumns())
+            if (array_join_step)
+                for (const auto & column : array_join_step->getColumns())
                     input_stats.column_stats.erase(column);
+            else
+                remapColumnStats(input_stats.column_stats, static_cast<const ExpressionStep &>(step).getExpression());
 
             /// The other columns keep their values, but each row repeats once per array element and
             /// ARRAY JOIN drops rows with empty arrays: the distinct set and range can only shrink, and
@@ -539,35 +579,72 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
-        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
+        const auto & settings = reading->getContext()->getSettingsRef();
+        if (!settings[Setting::use_iceberg_manifest_statistics] || !settings[Setting::use_statistics])
             return RelationStats{};
 
-        auto estimate = reading->estimateReadFromDataLakeMetadata();
+        const auto estimate = reading->estimateReadFromDataLakeMetadata();
         if (!estimate)
             return RelationStats{};
 
-        String table_display_name = reading->getStorageID().getTableName();
-        RelationStats unknown{
+        /// No rows, as `RelationStats{}`, so the join order is the same; but the metadata was read, so it names the table
+        /// and its source: `EXPLAIN` shows `t[no_stats~?]` and the data lake hint line lists it.
+        RelationStats stats{
             .estimated_rows = {},
-            .table_name = table_display_name,
+            .table_name = reading->getStorageID().getTableName(),
             .imprecise_estimate = true,
             .source = RowEstimateSource::DataLakeMetadata};
         if (!estimate->rows)
-            return unknown;
+            return stats;
+        const UInt64 rows = *estimate->rows;
 
-        /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
-        const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
+        /// The manifest statistics describe every row of the remaining files, deleted rows included. As for MergeTree, a
+        /// filter that prunes nothing at plan time is not among the conditions, but it still drops rows at execution.
+        const bool has_row_subset = estimate->has_delete_files || filter || reading->getFilterActionsDAG()
+            || reading->getPrewhereInfo() || reading->getRowLevelFilter();
+        const bool may_stop_reading_early = mayStopReadingEarly(reading->getQueryInfo());
+        const auto add_provenance = [&](std::unordered_map<String, ColumnStats> & column_stats)
+        {
+            if (has_row_subset)
+                addTransformation(column_stats, RowSubset);
+            if (may_stop_reading_early)
+                addTransformation(column_stats, NonUniformRowSubset);
+        };
 
-        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
-        if (has_filter && !estimate->pruned_data_files && *estimate->rows != 0)
-            return unknown;
+        const auto conditions = getConditionsToEstimate(*reading, filter);
+        if (conditions.empty() || rows == 0)
+        {
+            stats.estimated_rows = rows;
+            if (estimate->estimator)
+            {
+                auto profile = estimate->estimator->estimateRelationProfile();
+                if (rows != 0)
+                    floorReadWithRows(profile);
+                stats.column_stats = std::move(profile.column_stats);
+                add_provenance(stats.column_stats);
+            }
+            /// Without conditions, the rows of the remaining files, imprecise with delete files.
+            stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
+            return stats;
+        }
 
-        const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
-        return RelationStats{
-            .estimated_rows = estimate->rows,
-            .table_name = table_display_name,
-            .imprecise_estimate = !exact,
-            .source = RowEstimateSource::DataLakeMetadata};
+        if (estimate->estimator)
+        {
+            auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
+            floorReadWithRows(filtered);
+            stats.estimated_rows = filtered.rows;
+            stats.column_stats = std::move(filtered.column_stats);
+            add_provenance(stats.column_stats);
+            return stats;
+        }
+
+        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
+        if (!estimate->pruned_data_files)
+            return stats;
+
+        /// The remaining files bound the rows, as the selected parts bound a MergeTree read.
+        stats.estimated_rows = rows;
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -642,7 +719,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     }
 
     auto input_stats = estimateReadRowsCount(*node.children.front(), child_filter, options);
-    return estimateUnaryStepStats(*node.step, std::move(input_stats)).value_or(RelationStats{});
+    auto stats = estimateUnaryStepStats(*node.step, std::move(input_stats));
+    if (stats && kind == UnaryStepStatsKind::ArrayJoin && filter)
+        forgetFilteredArrayJoinRows(*stats);
+    return std::move(stats).value_or(RelationStats{});
 }
 
 }
