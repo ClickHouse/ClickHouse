@@ -11,25 +11,29 @@ SET max_rows_in_set_to_optimize_join = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET enable_join_runtime_filters = 1;
-SET materialize_statistics_on_insert = 1;
-SET use_statistics = 1;
+SET use_statistics = 0;
+SET use_hash_table_stats_for_join_reordering = 0;
 
 DROP TABLE IF EXISTS pr_sorted1;
 DROP TABLE IF EXISTS pr_sorted2;
 
-CREATE TABLE pr_sorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE pr_sorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE pr_sorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE pr_sorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 
-INSERT INTO pr_sorted1 SELECT number, number FROM numbers(3000000);
-INSERT INTO pr_sorted2 SELECT number, number FROM numbers(3000000);
+INSERT INTO pr_sorted1 SELECT number, number FROM numbers(1000);
+INSERT INTO pr_sorted2 SELECT number, number FROM numbers(1000);
+
+-- The plan is chosen for the sizes of the hint: large enough for a sort-merge join.
+SET param__internal_join_table_stat_hints = '{
+    "pr_sorted1": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "pr_sorted2": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } }
+}';
 
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
 -- Pin the manual mode, so that the query is distributed whatever the randomized automatic mode decides.
 SET automatic_parallel_replicas_mode = 0;
--- Every replica may read whole tables, which can go past the test profile's `max_rows_to_read`.
-SET max_rows_to_read = 0;
 
 SELECT count(), sum(pr_sorted1.v + pr_sorted2.v) FROM pr_sorted1 JOIN pr_sorted2 ON pr_sorted1.k = pr_sorted2.k
 SETTINGS log_comment = 'dpsub_pr_merge';

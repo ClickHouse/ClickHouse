@@ -1,4 +1,5 @@
 -- DPsub with `query_plan_join_order_use_interesting_orders` picks `full_sorting_merge` for joins of inputs sorted by the join key.
+-- The tables are small; the statistics hint below gives the sizes the plans are chosen for.
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsub';
@@ -13,8 +14,8 @@ SET query_plan_optimize_join_order_limit = 10;
 SET optimize_sorting_by_input_stream_properties = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
-SET materialize_statistics_on_insert = 1;
-SET use_statistics = 1;
+SET use_statistics = 0;
+SET use_hash_table_stats_for_join_reordering = 0;
 
 DROP TABLE IF EXISTS sorted1;
 DROP TABLE IF EXISTS sorted2;
@@ -32,44 +33,70 @@ DROP TABLE IF EXISTS two_keys_a;
 DROP TABLE IF EXISTS two_keys_b;
 DROP TABLE IF EXISTS two_sorted_a;
 DROP TABLE IF EXISTS two_sorted_b;
+DROP TABLE IF EXISTS tenant_a;
+DROP TABLE IF EXISTS tenant_b;
 
-CREATE TABLE sorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE sorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE sorted3 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE sorted4 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE unsorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE unsorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE tiny (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE build_narrow (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE build_wide (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE float_a (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE float_b (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE two_keys_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE two_keys_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE two_sorted_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s) SETTINGS auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE two_sorted_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s) SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE sorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE sorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE sorted3 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE sorted4 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE unsorted1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE unsorted2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tiny (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE build_narrow (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE build_wide (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE float_a (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE float_b (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE two_keys_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE two_keys_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE two_sorted_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s);
+CREATE TABLE two_sorted_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s);
+CREATE TABLE tenant_a (tenant UInt64, k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (tenant, k);
+CREATE TABLE tenant_b (tenant UInt64, k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (tenant, k);
 
--- A merge join pays a fixed cost, so it wins only for inputs of a few million rows.
-INSERT INTO sorted1 SELECT number, number FROM numbers(3000000);
-INSERT INTO sorted2 SELECT number, number FROM numbers(3000000);
-INSERT INTO sorted3 SELECT number, number FROM numbers(3000000);
-INSERT INTO sorted4 SELECT number, number FROM numbers(3000000);
-INSERT INTO unsorted1 SELECT number, number FROM numbers(3000000);
-INSERT INTO unsorted2 SELECT number, number FROM numbers(3000000);
+INSERT INTO sorted1 SELECT number, number FROM numbers(1000);
+INSERT INTO sorted2 SELECT number, number FROM numbers(1000);
+INSERT INTO sorted3 SELECT number, number FROM numbers(1000);
+INSERT INTO sorted4 SELECT number, number FROM numbers(1000);
+INSERT INTO unsorted1 SELECT number, number FROM numbers(1000);
+INSERT INTO unsorted2 SELECT number, number FROM numbers(1000);
 INSERT INTO tiny SELECT number * 1000, number FROM numbers(10);
--- Build keys in a quarter of the probe range, or spread over all of it.
-INSERT INTO probe SELECT number, number FROM numbers(10000000);
-INSERT INTO build_narrow SELECT number, number FROM numbers(2500000);
-INSERT INTO build_wide SELECT number * 4, number FROM numbers(2500000);
+INSERT INTO probe SELECT number, number FROM numbers(1000);
+INSERT INTO build_narrow SELECT number, number FROM numbers(100);
+INSERT INTO build_wide SELECT number * 10, number FROM numbers(100);
 -- A merge join matches `-0.0` with `0.0`, as `=` does.
-INSERT INTO float_a SELECT if(number = 0, -0., toFloat64(number)), number FROM numbers(3000000);
-INSERT INTO float_b SELECT toFloat64(number), number FROM numbers(3000000);
--- Two values of `k` and a shuffled `s`: sorted by `k` only, the merge join would sort each half by `s`.
-INSERT INTO two_keys_a SELECT number % 2, intHash64(number), number FROM numbers(3000000);
-INSERT INTO two_keys_b SELECT number % 2, intHash64(number), number FROM numbers(3000000);
-INSERT INTO two_sorted_a SELECT number % 2, intHash64(number), number FROM numbers(3000000);
-INSERT INTO two_sorted_b SELECT number % 2, intHash64(number), number FROM numbers(3000000);
+INSERT INTO float_a SELECT if(number = 0, -0., toFloat64(number)), number FROM numbers(1000);
+INSERT INTO float_b SELECT toFloat64(number), number FROM numbers(1000);
+INSERT INTO two_keys_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
+INSERT INTO two_keys_b SELECT number % 2, intHash64(number), number FROM numbers(1000);
+INSERT INTO two_sorted_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
+INSERT INTO two_sorted_b SELECT number % 2, intHash64(number), number FROM numbers(1000);
+INSERT INTO tenant_a SELECT 1, number % 2, intHash64(number), number FROM numbers(1000);
+INSERT INTO tenant_b SELECT 1, number % 2, intHash64(number), number FROM numbers(1000);
+
+-- A merge join pays a fixed cost, so it wins only for inputs of millions of rows. `build_narrow` covers a tenth of the
+-- probe key range, `build_wide` all of it. `two_*` and `tenant_*` have two values of `k`.
+SET param__internal_join_table_stat_hints = '{
+    "sorted1": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "sorted2": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "sorted3": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "sorted4": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "unsorted1": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "unsorted2": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "tiny": { "cardinality": 10, "distinct_keys": { "k": 10 } },
+    "probe": { "cardinality": 200000000, "distinct_keys": { "k": 200000000 }, "key_ranges": { "k": [0, 200000000] } },
+    "build_narrow": { "cardinality": 20000000, "distinct_keys": { "k": 20000000 }, "key_ranges": { "k": [0, 20000000] } },
+    "build_wide": { "cardinality": 20000000, "distinct_keys": { "k": 20000000 }, "key_ranges": { "k": [0, 200000000] } },
+    "float_a": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "float_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "two_keys_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
+    "two_keys_b": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
+    "two_sorted_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
+    "two_sorted_b": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
+    "tenant_a": { "cardinality": 50000000, "distinct_keys": { "tenant": 1, "k": 2, "s": 50000000 } },
+    "tenant_b": { "cardinality": 50000000, "distinct_keys": { "tenant": 1, "k": 2, "s": 50000000 } }
+}';
 
 SELECT '-- both inputs sorted by the key: merge join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
@@ -122,6 +149,11 @@ SELECT '-- two keys, sorted by both, written in another order: a merge join on t
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN actions = 1
     SELECT count() FROM two_sorted_a JOIN two_sorted_b ON two_sorted_a.s = two_sorted_b.s AND two_sorted_a.k = two_sorted_b.k)
 WHERE explain LIKE '%Algorithm:%' OR explain LIKE '%Join conditions:%';
+
+SELECT '-- two keys after a filter that fixes the first storage key column: sorted by the first join key only, a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT * FROM tenant_a WHERE tenant = 1) AS a JOIN (SELECT * FROM tenant_b WHERE tenant = 1) AS b ON a.k = b.k AND a.s = b.s)
+WHERE explain LIKE '%Algorithm:%';
 
 SELECT '-- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the second join hashes';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1
@@ -180,3 +212,5 @@ DROP TABLE two_keys_a;
 DROP TABLE two_keys_b;
 DROP TABLE two_sorted_a;
 DROP TABLE two_sorted_b;
+DROP TABLE tenant_a;
+DROP TABLE tenant_b;

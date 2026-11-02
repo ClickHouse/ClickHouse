@@ -234,8 +234,7 @@ private:
         /// Only with `use_interesting_orders`, which needs the classes to fit into a 64-bit mask.
         bool interesting_orders = false;
         std::vector<char> class_single_type;   /// per class: one type up to `Nullable` and `LowCardinality`
-        std::vector<UInt64> rel_sorted_classes; /// per relation: classes it can be read in order of
-        std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: classes of `read_in_order_prefixes`
+        std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
         TUInt prepared_storage_mask = 0;
 
@@ -422,13 +421,15 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     const size_t num_classes = dpsub_data.class_members.size();
     dpsub_data.interesting_orders = query_graph.use_interesting_orders && num_classes <= std::numeric_limits<UInt64>::digits;
     dpsub_data.class_single_type.assign(num_classes, 0);
-    dpsub_data.rel_sorted_classes.assign(num_relations, 0);
     dpsub_data.rel_prefix_classes.assign(num_relations, {});
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
     dpsub_data.key_ranges.assign(dpsub_data.interesting_orders ? num_relations * num_classes : 0, {});
     if (dpsub_data.interesting_orders)
     {
+        /// The columns of each relation that can be merge keys; a relation with two columns in a class is not sorted by the
+        /// class until they are equated.
+        std::vector<NameSet> candidates(num_relations);
         std::map<std::pair<size_t, String>, Int32> column_class;
         for (size_t c = 0; c < num_classes; ++c)
         {
@@ -439,22 +440,19 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 return removeLowCardinalityAndNullable(column.getType())->equals(*type);
             });
 
-            /// A relation with two columns in the class is not sorted by the class until they are equated.
             std::unordered_map<size_t, size_t> columns_per_relation;
             for (const auto & column : columns)
                 ++columns_per_relation[*column.getSourceRelations().getSingleBit()];
             for (const auto & column : columns)
             {
                 const size_t relation = *column.getSourceRelations().getSingleBit();
-                if (columns_per_relation[relation] == 1 && relation < query_graph.read_in_order_columns.size()
-                    && query_graph.read_in_order_columns[relation].contains(column.getColumnName()))
-                    dpsub_data.rel_sorted_classes[relation] |= static_cast<UInt64>(1) << c;
-
-                if (columns_per_relation[relation] == 1)
-                    column_class.emplace(std::make_pair(relation, column.getColumnName()), static_cast<Int32>(c));
+                if (columns_per_relation[relation] != 1)
+                    continue;
+                candidates[relation].insert(column.getColumnName());
+                column_class.emplace(std::make_pair(relation, column.getColumnName()), static_cast<Int32>(c));
 
                 const auto & column_stats = query_graph.relation_stats[relation].column_stats;
-                if (auto it = column_stats.find(column.getColumnName()); columns_per_relation[relation] == 1 && it != column_stats.end())
+                if (auto it = column_stats.find(column.getColumnName()); it != column_stats.end())
                 {
                     auto min = toNumber(it->second.min_value);
                     auto max = toNumber(it->second.max_value);
@@ -464,15 +462,13 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             }
         }
 
-        for (size_t relation = 0; relation < num_relations && relation < query_graph.read_in_order_prefixes.size(); ++relation)
+        /// Probing the storage order is not free, so it waits until DPsub plans this graph with interesting orders.
+        if (query_graph.find_read_in_order_prefixes)
         {
-            for (const auto & name : query_graph.read_in_order_prefixes[relation])
-            {
-                auto it = column_class.find({relation, name});
-                if (it == column_class.end())
-                    break;
-                dpsub_data.rel_prefix_classes[relation].push_back(it->second);
-            }
+            const auto prefixes = query_graph.find_read_in_order_prefixes(candidates);
+            for (size_t relation = 0; relation < num_relations && relation < prefixes.size(); ++relation)
+                for (const auto & name : prefixes[relation])
+                    dpsub_data.rel_prefix_classes[relation].push_back(column_class.at({relation, name}));
         }
 
         for (size_t i = 0; i < n; ++i)
@@ -771,7 +767,8 @@ UInt64 DPSubJoinOrderOptimizer::mergeKeyClasses(
 
 bool DPSubJoinOrderOptimizer::isReadInOrder(UInt32 relation_mask, Int32 order_class) const
 {
-    return (dpsub_data.rel_sorted_classes[std::countr_zero(relation_mask)] >> order_class) & 1;
+    const auto & prefix = dpsub_data.rel_prefix_classes[std::countr_zero(relation_mask)];
+    return !prefix.empty() && prefix.front() == order_class;
 }
 
 double DPSubJoinOrderOptimizer::mergeJoinCost(

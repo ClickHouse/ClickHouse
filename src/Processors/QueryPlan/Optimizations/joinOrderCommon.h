@@ -229,9 +229,10 @@ inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr 
 /// Per-row costs relative to a hash table probe, measured with `parallel_hash` and `full_sorting_merge` on `MergeTree` tables.
 constexpr double HASH_BUILD_ROW_COST = 4.0;
 constexpr double HASH_PROBE_ROW_COST = 1.0;
-/// Merging an input read in order costs about as much as a probe, plus a fixed cost per join.
+/// Merging an input read in order costs about as much as a probe, plus a fixed cost per join: with jemalloc a hash join
+/// of sorted inputs stays faster up to about 5M rows per side. Interim values until a full calibration.
 constexpr double MERGE_SORTED_ROW_COST = 1.0;
-constexpr double MERGE_JOIN_FIXED_COST = 5'000'000;
+constexpr double MERGE_JOIN_FIXED_COST = 15'000'000;
 /// A full sort costs `SORT_ROW_COST * log2(rows)` per row, with the logarithm rounded up to an integer.
 constexpr double SORT_ROW_COST = 0.8;
 

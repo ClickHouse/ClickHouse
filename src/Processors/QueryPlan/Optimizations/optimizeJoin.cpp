@@ -1050,43 +1050,29 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-/// The columns of each relation's equi-join conditions that `optimizeReadInOrder` could read the relation in order of,
-/// and the longest sequence of them it could be read in order of, for joins on several keys.
-static void fillReadInOrderColumns(
-    QueryGraph & query_graph, const std::vector<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings)
+/// For each input, the longest sequence of its `candidates` columns that `optimizeReadInOrder` could read it in order of.
+static std::vector<Names> findReadInOrderPrefixes(
+    const std::vector<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings, const std::vector<NameSet> & candidates)
 {
-    std::vector<NameSet> candidates(inputs.size());
-    for (const auto & edge : query_graph.edges)
-    {
-        if (!edge)
-            continue;
-        auto [op, lhs, rhs] = edge.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals)
-            continue;
-        for (const auto & side : {lhs, rhs})
-        {
-            auto column = side.resolveAliases();
-            auto relation = column.getSourceRelations().getSingleBit();
-            if (column.getNode()->type == ActionsDAG::ActionType::INPUT && relation && *relation < inputs.size())
-                candidates[*relation].insert(column.getColumnName());
-        }
-    }
+    /// A longer sequence only matters for a join on all of its columns, and joins on more keys are rare.
+    constexpr size_t max_prefix_size = 8;
 
-    auto & columns = query_graph.read_in_order_columns;
-    auto & prefixes = query_graph.read_in_order_prefixes;
-    columns.assign(inputs.size(), {});
-    prefixes.assign(inputs.size(), {});
-    for (size_t i = 0; i < inputs.size(); ++i)
+    std::vector<Names> prefixes(inputs.size());
+    for (size_t i = 0; i < inputs.size() && i < candidates.size(); ++i)
     {
-        if (candidates[i].empty())
+        const auto & header = inputs[i]->step->getOutputHeader();
+        Names columns;
+        for (const auto & column : candidates[i])
+            if (header->has(column))
+                columns.push_back(column);
+        if (columns.empty())
             continue;
         auto * reading_node = findReadingStepForReadInOrder(*inputs[i], /*read_in_order_through_join=*/ false);
         auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
         if (!reading || reading->isParallelReadingFromReplicas())
             continue;
 
-        const auto & header = inputs[i]->step->getOutputHeader();
-        /// Whether the relation can be read in order of all of `names`, not only of a prefix of them.
+        /// Whether the input can be read in order of all of `names`: storage key columns fixed by a filter do not count.
         auto is_read_in_order = [&](const Names & names)
         {
             SortDescription sort_description;
@@ -1094,39 +1080,35 @@ static void fillReadInOrderColumns(
                 sort_description.emplace_back(name);
             SortingStep sorting(header, std::move(sort_description), 0, sorting_settings);
             auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), *inputs[i]);
-            return order && order->direction == 1 && order->used_prefix_of_sorting_key_size >= names.size();
+            return order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size();
         };
 
-        Names sorted_candidates(candidates[i].begin(), candidates[i].end());
-        std::ranges::sort(sorted_candidates);
-        for (const auto & column : sorted_candidates)
+        std::ranges::sort(columns);
+        auto & prefix = prefixes[i];
+        for (const auto & first : columns)
         {
-            if (!header->has(column) || !is_read_in_order({column}))
+            if (!is_read_in_order({first}))
                 continue;
-            columns[i].insert(column);
-
-            /// Extend the sequence greedily by the next column of the sorting key among the join keys.
-            Names prefix{column};
-            for (bool extended = true; extended;)
+            prefix = {first};
+            /// Extend by the next column of the storage order among the candidates.
+            for (bool extended = true; extended && prefix.size() < max_prefix_size;)
             {
                 extended = false;
-                for (const auto & next : sorted_candidates)
+                for (const auto & next : columns)
                 {
-                    if (std::ranges::contains(prefix, next) || !header->has(next))
+                    if (std::ranges::contains(prefix, next))
                         continue;
                     prefix.push_back(next);
-                    if (is_read_in_order(prefix))
-                    {
-                        extended = true;
+                    extended = is_read_in_order(prefix);
+                    if (extended)
                         break;
-                    }
                     prefix.pop_back();
                 }
             }
-            if (prefix.size() > prefixes[i].size())
-                prefixes[i] = std::move(prefix);
+            break;
         }
     }
+    return prefixes;
 }
 
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
@@ -1161,7 +1143,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             || std::ranges::contains(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE);
         /// `CreateSetAndFilterOnTheFlyStep` (`max_rows_in_set_to_optimize_join`) prevents reading in order.
         if (query_graph.use_interesting_orders && context.optimization_settings.read_in_order && join_settings.max_rows_in_set_to_optimize_join == 0)
-            fillReadInOrderColumns(query_graph, query_graph_builder.inputs, context.sorting_settings);
+            query_graph.find_read_in_order_prefixes = [inputs = query_graph_builder.inputs, sorting_settings = context.sorting_settings](
+                const std::vector<NameSet> & candidates) { return findReadInOrderPrefixes(inputs, sorting_settings, candidates); };
     }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());

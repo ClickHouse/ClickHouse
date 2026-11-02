@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <functional>
 #include <vector>
 #include <Core/Joins.h>
 #include <Core/Names.h>
@@ -172,10 +173,9 @@ struct QueryGraph
     /// A hash join's runtime filter prunes the granules of the probe side by its primary key (`enable_join_runtime_filters_index_analysis`).
     bool runtime_filter_prunes_probe = false;
 
-    /// Per relation: the columns of its equi-join conditions that it can be read in order of.
-    std::vector<NameSet> read_in_order_columns;
-    /// Per relation: the longest sequence of the columns of its equi-join conditions that it can be read in order of.
-    std::vector<Names> read_in_order_prefixes;
+    /// Per relation: the longest sequence of its `candidates` it can be read in order of. Called by DPsub only when it
+    /// uses interesting orders, since it probes the storage order of every input.
+    std::function<std::vector<Names>(const std::vector<NameSet> & candidates)> find_read_in_order_prefixes;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
