@@ -1,0 +1,15 @@
+v	1	1
+v	1	2
+v	1	3
+v_definer	1	1
+v_definer	1	2
+v_definer	1	3
+v_definer, no pushdown	1	1
+v_definer, no pushdown	1	2
+v_definer, no pushdown	1	3
+v_dist	1	1
+v_dist	1	2
+v_dist	1	3
+mv	1	1
+mv	1	2
+mv	1	3
