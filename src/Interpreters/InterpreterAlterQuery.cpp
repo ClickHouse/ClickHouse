@@ -148,8 +148,17 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
             commands.emplace_back(std::move(*command));
     }
 
+    /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it, e.g. that
+    /// a renamed column exists.
+    commands.validate(table, context);
+
+    bool share_nested = true;
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
     StorageInMemoryMetadata metadata_copy = *metadata;
-    commands.prepare(metadata_copy);
+    commands.prepare(metadata_copy, share_nested);
+    table->checkAlterIsPossible(commands, context);
     commands.apply(metadata_copy, context);
 }
 
