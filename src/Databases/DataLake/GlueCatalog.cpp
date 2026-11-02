@@ -137,8 +137,11 @@ bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
 constexpr size_t MAX_UPDATE_TABLE_ATTEMPTS = 100;
 
 /// Glue answered the only attempt with a client error, so the update was not applied.
+/// `OperationTimeoutException` is an HTTP 400 that does not say whether the update was applied.
 bool isDefiniteRejection(const Aws::Client::AWSError<Aws::Glue::GlueErrors> & error)
 {
+    if (error.GetErrorType() == Aws::Glue::GlueErrors::OPERATION_TIMEOUT)
+        return false;
     const auto code = static_cast<int>(error.GetResponseCode());
     return code >= 400 && code < 500 && !Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
 }

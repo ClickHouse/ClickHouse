@@ -29,7 +29,10 @@ FAULTS = {
 # - `lostfinal_`: like `lostresp_`, but the next `UpdateTable` (the SDK retry) is refused with `AccessDeniedException`
 #   without being checked or applied;
 # - `lostnoretry_`: the request is applied, but the client gets an HTTP 501, which its SDK does not retry;
+# - `losttimeout_`: the request is applied, but the client gets `OperationTimeoutException` (HTTP 400), which its
+#   SDK does not retry;
 # - `failnoretry_`: the request is not applied and the client gets an HTTP 501;
+# - `failtimeout_`: the request is not applied and the client gets `OperationTimeoutException` (HTTP 400);
 # - `rejected_`: the request is not applied and the client gets `AccessDeniedException`;
 # - `held_`: the request waits until `GET /release/<database>` (`GET /waiting/<database>` counts it), then is
 #   checked and applied as usual.
@@ -41,7 +44,9 @@ UPDATE_FAULTS = (
     "readbackfail_",
     "lostfinal_",
     "lostnoretry_",
+    "losttimeout_",
     "failnoretry_",
+    "failtimeout_",
     "rejected_",
     "held_",
 )
@@ -209,6 +214,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             if fault == "failnoretry_":
                 self.reply_glue_error(501, "InternalServiceException", "Injected failure.")
                 return
+            if fault == "failtimeout_":
+                self.reply_glue_error(400, "OperationTimeoutException", "Injected timeout.")
+                return
             if fault == "rejected_":
                 self.reply_glue_error(400, "AccessDeniedException", "Injected access denied")
                 return
@@ -246,6 +254,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     deny_next_update.add(database)
             elif fault == "lostnoretry_":
                 self.reply_glue_error(501, "InternalServiceException", "Injected lost response.")
+                return
+            elif fault == "losttimeout_":
+                self.reply_glue_error(400, "OperationTimeoutException", "Injected timeout.")
                 return
             self.reply_glue_error(500, "InternalServiceException", "Injected lost response.")
 

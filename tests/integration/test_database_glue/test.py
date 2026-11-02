@@ -2546,7 +2546,9 @@ def test_glue_expire_snapshots_retries_after_concurrent_commit(started_cluster):
         "readback_fails",
         "lost_final_error",
         "lost_no_retry",
+        "lost_timeout",
         "failed_no_retry",
+        "failed_timeout",
         "rejected",
     ],
 )
@@ -2563,7 +2565,9 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         "readback_fails": "readbackfail_",
         "lost_final_error": "lostfinal_",
         "lost_no_retry": "lostnoretry_",
+        "lost_timeout": "losttimeout_",
         "failed_no_retry": "failnoretry_",
+        "failed_timeout": "failtimeout_",
         "rejected": "rejected_",
     }[mode]
     test_ref = uuid.uuid4().hex[:12]
@@ -2574,7 +2578,7 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
     _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}]])
     create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
     insert = f"INSERT INTO {db_name}.`{namespace}.{table_name}` VALUES (2)"
-    if mode in ("touch", "lost_response", "superseded", "lost_final_error", "lost_no_retry"):
+    if mode in ("touch", "lost_response", "superseded", "lost_final_error", "lost_no_retry", "lost_timeout"):
         node.query(insert, settings=GLUE_WRITE_SETTINGS)
     elif mode == "rejected":
         error = node.query_and_get_error(insert, settings=GLUE_WRITE_SETTINGS)
@@ -2584,7 +2588,7 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
 
     parameters = get_glue_table(started_cluster, namespace, table_name)["Parameters"]
-    if mode in ("failed_no_retry", "rejected"):
+    if mode in ("failed_no_retry", "failed_timeout", "rejected"):
         assert parameters["metadata_location"] == table.metadata_location, parameters
     if mode != "rejected":
         ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
@@ -2593,7 +2597,7 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         assert read_ids(started_cluster, ours) == [1, 2]
         if mode in ("superseded", "superseded_unknown"):
             assert parameters["metadata_location"] == ours + "-superseded", parameters
-        elif mode != "failed_no_retry":
+        elif mode not in ("failed_no_retry", "failed_timeout"):
             assert parameters["metadata_location"] == ours, parameters
     if mode == "touch":
         assert parameters["concurrent_touch"] == "1", parameters
