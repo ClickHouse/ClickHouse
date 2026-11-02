@@ -13,6 +13,7 @@
 #include <Common/Throttler.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <IO/SeekableReadBuffer.h>
 #include <base/sleep.h>
 
@@ -372,6 +373,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     {
         /// Measures time-to-first-byte: just the `Download` API call, not data transfer.
         /// Each download attempt is logged individually as a separate `Read` event.
+        HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
         Stopwatch blob_log_watch;
         try
         {
@@ -557,6 +559,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
+        HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
         Stopwatch blob_log_watch;
 
         try
@@ -574,15 +577,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             checkReturnedRange(download_response.Value, range_begin, path);
             checkReturnedGeneration(download_response.Value.Details);
 
-            if (blob_storage_log)
-            {
-                blob_storage_log->addEvent(
-                    BlobStorageLogElement::EventType::Read,
-                    /* bucket */ container_for_logging, /* remote_path */ path, /* local_path */ {},
-                    n,
-                    blob_log_watch.elapsedMicroseconds(),
-                    /* error_code */ 0, /* error_message */ {});
-            }
+            /// Time-to-first-byte: just the `Download` API call, not data transfer.
+            const UInt64 time_to_first_byte_microseconds = blob_log_watch.elapsedMicroseconds();
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
@@ -594,6 +590,20 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->throttle(bytes_copied);
+
+            /// Logged only after the body has been transferred, so that one request produces exactly one
+            /// `Read` row: either this one, or the error row below if the body transfer or the throttler
+            /// throws. Otherwise the success row would take the connection info and the error row of the
+            /// same request would have none.
+            if (blob_storage_log)
+            {
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Read,
+                    /* bucket */ container_for_logging, /* remote_path */ path, /* local_path */ {},
+                    n,
+                    time_to_first_byte_microseconds,
+                    /* error_code */ 0, /* error_message */ {});
+            }
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
