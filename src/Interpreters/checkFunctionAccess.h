@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <base/types.h>
 
 
@@ -20,5 +21,10 @@ namespace DB
 /// Only ordinary and user defined functions are covered: aggregate names are rejected when the
 /// configuration is loaded, so they never reach this check.
 void checkFunctionAccess(const ContextPtr & context, const String & function_name);
+
+/// The same for every function call in the expression `ast`, as written. For an expression analyzed by the legacy
+/// `ExpressionAnalyzer`: its `TreeRewriter` renames some calls (`in` to `nullIn` under `transform_null_in`, ...)
+/// before `ActionsVisitor` checks them. Only for a standalone expression, not for a query with table functions.
+void checkFunctionAccessInExpression(const ContextPtr & context, const ASTPtr & ast);
 
 }

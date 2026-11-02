@@ -20,6 +20,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <IO/Operators.h>
@@ -445,6 +446,9 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         tokens.emplace_back(prev_end->begin, prev_end->size());
         ++prev_end;
     }
+
+    /// `TreeRewriter` may rename a call before `ExpressionAnalyzer` checks it, so check the calls as written first.
+    checkFunctionAccessInExpression(context, expression);
 
     addNodesToCastResult(result_type, expression, null_as_default);
 

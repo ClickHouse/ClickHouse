@@ -205,23 +205,31 @@ def test_rewritten_call_requires_grant():
 
 def test_values_expression_requires_grant():
     """Expressions in `VALUES` are evaluated by the legacy `ExpressionAnalyzer`, which handles
-    `IN` and `indexHint` itself before the function is looked up."""
+    `IN` and `indexHint` itself before the function is looked up, and whose `TreeRewriter`
+    renames `in` to `nullIn` under `transform_null_in`. Sent over HTTP: `clickhouse-client`
+    would evaluate `VALUES` itself, without the server configuration."""
     instance.query("CREATE TABLE t (x UInt8) ENGINE = Memory")
     instance.query("CREATE USER A")
     instance.query("GRANT INSERT ON t TO A")
 
-    for query, function in [
-        ("INSERT INTO t VALUES (1 IN [materialize(1)])", "in"),
-        ("INSERT INTO t VALUES (indexHint(1))", "indexHint"),
+    for query, functions in [
+        ("INSERT INTO t VALUES (1 IN [materialize(1)])", ["in"]),
+        ("INSERT INTO t VALUES (indexHint(1))", ["indexHint"]),
+        (
+            "INSERT INTO t SETTINGS transform_null_in = 1 VALUES (1 IN [materialize(1)])",
+            ["nullIn", "in"],
+        ),
     ]:
-        assert "Not enough privileges" in instance.query_and_get_error(
-            query, user="A"
-        ), query
+        instance.query("REVOKE FUNCTION ON * FROM A")
+        for function in functions:
+            assert "Not enough privileges" in instance.http_query_and_get_error(
+                query, user="A"
+            ), (query, function)
+            instance.query(f"GRANT FUNCTION ON {function} TO A")
 
-        instance.query(f"GRANT FUNCTION ON {function} TO A")
-        instance.query(query, user="A")
+        instance.http_query(query, user="A")
 
-    assert instance.query("SELECT x FROM t") == "1\n1\n"
+    assert instance.query("SELECT x FROM t") == "1\n1\n1\n"
 
 
 def test_rewrite_target_requires_grant():
