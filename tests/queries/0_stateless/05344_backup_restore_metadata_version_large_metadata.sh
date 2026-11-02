@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-shared-merge-tree
+# Tag no-shared-merge-tree: the test checks the metadata version handling of `ReplicatedMergeTree`, which `SharedMergeTree` does not share
 # RESTORE raises the metadata version of a ReplicatedMergeTree table by re-setting its `metadata` znode once per version,
 # several versions per ZooKeeper transaction. Each of them repeats the whole value, so with a large value the number of
 # versions per transaction must be lower, to keep the transaction below the request size limit of ZooKeeper.

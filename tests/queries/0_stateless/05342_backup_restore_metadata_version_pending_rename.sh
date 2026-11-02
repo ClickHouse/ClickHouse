@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-shared-merge-tree
+# Tag no-shared-merge-tree: the test checks the metadata version handling of `ReplicatedMergeTree`, which `SharedMergeTree` does not share
 # RESTORE raises the metadata version of an existing ReplicatedMergeTree table to the version saved in the backup, and
 # the restored parts get that version. A replica lagging behind on a RENAME COLUMN does not have the structure the table
 # has at that version, so the RESTORE must fail instead of loading parts which would lose the values of the column.

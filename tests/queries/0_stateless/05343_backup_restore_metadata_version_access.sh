@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-shared-merge-tree
+# Tag no-shared-merge-tree: the test checks the metadata version handling of `ReplicatedMergeTree`, which `SharedMergeTree` does not share
 # RESTORE into an existing ReplicatedMergeTree table can raise its metadata version on all its replicas, so it requires
 # `INSERT` on the table even when no data is restored, and not only `SHOW TABLES`.
 

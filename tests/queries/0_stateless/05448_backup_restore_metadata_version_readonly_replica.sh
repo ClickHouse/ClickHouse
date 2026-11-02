@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tag no-shared-merge-tree: the test checks the metadata version handling of `ReplicatedMergeTree`, which `SharedMergeTree` does not share
 # Restoring a metadata version higher than the one in ZooKeeper into a read-only replica is rejected
 # before /metadata or the replication log of the table are changed.
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-shared-merge-tree
+# Tag no-shared-merge-tree: the test checks the metadata version handling of `ReplicatedMergeTree`, which `SharedMergeTree` does not share
 # RESTORE raises the metadata version of an existing ReplicatedMergeTree table with an ALTER_METADATA log entry.
 # Column comments are not replicated through ZooKeeper, so the entry must keep the comments of the restoring replica,
 # otherwise processing it would erase them.

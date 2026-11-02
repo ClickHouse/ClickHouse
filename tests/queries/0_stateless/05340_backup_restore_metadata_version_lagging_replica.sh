@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-shared-merge-tree
+# Tag no-shared-merge-tree: the test checks the metadata version handling of `ReplicatedMergeTree`, which `SharedMergeTree` does not share
 # The definition of a ReplicatedMergeTree table is written to a backup from ZooKeeper, so on a replica lagging
 # behind on an ALTER it already has the altered structure. The metadata version saved next to it must match that
 # definition, not the older version the lagging replica has in memory, even when no data is backed up.
