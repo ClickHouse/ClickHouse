@@ -234,7 +234,6 @@ struct BitPackedRLEDecoder : public PageDecoder
         chassert(to_span.size() == value_size * num_values);
         char * to = to_span.data();
         const char * dict = dictionary.data.data();
-        const T value_mask = T((1ul << bit_width) - 1);
         const size_t width = bit_width;
         const size_t max_index = limit - 1;
 
@@ -256,22 +255,23 @@ struct BitPackedRLEDecoder : public PageDecoder
             }
             else
             {
-                /// A corrupt index is clamped so that the gather stays inside the dictionary; the run is rejected below.
-                const char * run_data = data;
-                size_t pos = bit_idx;
-                size_t max_seen = 0;
-                for (size_t i = 0; i < n; ++i)
+                for (size_t done = 0; done < n;)
                 {
-                    size_t x = 0;
-                    memcpy(&x, run_data + (pos >> 3), 8);
-                    x = (x >> (pos & 7)) & value_mask;
-                    max_seen = std::max(max_seen, x);
-                    memcpy(to + i * value_size, dict + std::min(x, max_index) * value_size, value_size);
-                    pos += width;
+                    constexpr size_t batch = 256;
+                    T buf[batch];
+                    const size_t m = std::min(n - done, batch);
+                    unpack(data, bit_idx, m, buf);
+                    bit_idx += m * width;
+                    T max_seen = 0;
+                    for (size_t i = 0; i < m; ++i)
+                        max_seen = std::max(max_seen, buf[i]);
+                    if (max_seen > max_index)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+                    char * dst = to + done * value_size;
+                    for (size_t i = 0; i < m; ++i)
+                        memcpy(dst + i * value_size, dict + size_t(buf[i]) * value_size, value_size);
+                    done += m;
                 }
-                bit_idx = pos;
-                if (max_seen >= limit)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
 
                 if (!run_length)
                     data += run_bytes;
