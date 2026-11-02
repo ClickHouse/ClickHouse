@@ -12,7 +12,6 @@ CREATE TABLE t_right (b String) ENGINE = MergeTree ORDER BY b;
 INSERT INTO t_left VALUES ('a'), ('b');
 INSERT INTO t_right VALUES ('a'), ('c');
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;

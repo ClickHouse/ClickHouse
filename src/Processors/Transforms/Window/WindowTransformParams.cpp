@@ -5,7 +5,7 @@
 
 #include <Interpreters/convertFieldToType.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
@@ -189,7 +189,7 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
     if (!frame.is_default || functions.size() != 1)
         return frame;
 
-    const auto * window_function = dynamic_cast<const IWindowFunction *>(functions[0].aggregate_function.get());
+    const auto window_function = asGeneralWindowFunction(functions[0].aggregate_function);
     if (!window_function)
         return frame;
 

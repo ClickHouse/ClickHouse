@@ -542,3 +542,26 @@ def test_code_single_use(started_cluster):
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user=user, password=f"pw+{next_code}"
     )
+
+
+def test_secret_rotation_on_reload(started_cluster):
+    """A changed secret in the users config applies on `SYSTEM RELOAD USERS`."""
+    query_text = "SELECT currentUser() || toString(42)"
+    user = "totuser_rotation"
+    config_path = "/etc/clickhouse-server/users.d/users.xml"
+    old_secret = "MFRGGZDFMZTWQ2LK"
+    new_secret = "QTUD6Q3PJBFU2OMU"
+
+    node.replace_in_config(config_path, old_secret, new_secret)
+    try:
+        node.query("SYSTEM RELOAD USERS")
+
+        assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+            query_text, user=user, password=f"pw+{get_otp(user)}"
+        )
+        assert f"{user}42\n" == node.query(
+            query_text, user=user, password=f"pw+{get_one_time_password(new_secret)}"
+        )
+    finally:
+        node.replace_in_config(config_path, new_secret, old_secret)
+        node.query("SYSTEM RELOAD USERS")

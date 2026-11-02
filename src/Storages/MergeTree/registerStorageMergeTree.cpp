@@ -730,6 +730,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
+    /// Like the check above, but a full-definition `ATTACH` is exempt too, so an existing table with such a column stays loadable.
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
+        MergeTreeData::checkLossyCodecOnLowCardinality(columns);
+
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
@@ -2644,14 +2648,14 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
-|----------|----------------------------------------------------|------|-----------------------|----------------|
-| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
-| countmin | ✔                                                  | ✔    | ✔                     | ✗              |
-| minmax   | ✔                                                  | ✔    | ✗                     | ✗              |
-| tdigest  | ✔                                                  | ✗    | ✗                     | ✗              |
-| uniq     | ✔                                                  | ✔    | ✔                     | ✗              |
-| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✗              |
+|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | UUID | Any other type |
+|----------|----------------------------------------------------|------|-----------------------|------|----------------|
+| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) | ✔ (default count only) |
+| countmin | ✔                                                  | ✔    | ✔                     | ✗    | ✗              |
+| minmax   | ✔                                                  | ✔    | ✗                     | ✗    | ✗              |
+| tdigest  | ✔                                                  | ✗    | ✗                     | ✗    | ✗              |
+| uniq     | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
+| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 
