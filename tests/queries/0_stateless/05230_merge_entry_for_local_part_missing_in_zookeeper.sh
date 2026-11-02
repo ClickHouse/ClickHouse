@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
-# no-parallel: the log entry below is written into ZooKeeper by hand, which needs the table's queue
-#   to itself while it is processed.
+# Tags: zookeeper, no-shared-merge-tree, no-replicated-database
 # no-shared-merge-tree: the part's node under `replicas/<r>/parts/` that the test removes by hand
 #   is a `ReplicatedMergeTree` structure, and the entry it then watches is a `ReplicatedMergeTree`
 #   queue entry; neither exists when the engine is substituted.
@@ -38,8 +36,16 @@ SYSTEM SYNC REPLICA t_merge_missing_znode_r2;
 "
 
 part_name=$(${CLICKHOUSE_CLIENT} -q "
-    SELECT name FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_merge_missing_znode_r2' AND active")
+    SELECT any(name) FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_merge_missing_znode_r2' AND active
+    HAVING count() = 1 AND sum(rows) = 100")
+
+# The nodes below are written by hand, so the state built above is checked first: a replica that
+# pulls a log entry naming no part, or a part intersecting its own, terminates the server.
+if [[ -z "$part_name" ]]; then
+    echo "the setup did not leave the merged part on r2"
+    exit 1
+fi
 
 # `MergeFromLogEntryTask` names its logger after the table's UUID, not after `<database>.<table>`.
 table_uuid=$(${CLICKHOUSE_CLIENT} -q "

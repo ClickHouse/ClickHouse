@@ -1,7 +1,6 @@
 -- `LIMIT` passes every column through, so the columns nobody reads above it are removed below it
 -- too, down to the read. `WITH TIES` still needs the columns it compares rows by.
 
-SET enable_analyzer = 1;
 SET query_plan_remove_unused_columns = 1;
 -- The plan is checked on one node.
 SET enable_parallel_replicas = 0;

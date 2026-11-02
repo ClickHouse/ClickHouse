@@ -1242,6 +1242,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
                 storage_id,
+                /* query_condition_cache_table_id */ UUIDHelpers::Nil,
                 file_iterator,
                 configuration,
                 object_storage,

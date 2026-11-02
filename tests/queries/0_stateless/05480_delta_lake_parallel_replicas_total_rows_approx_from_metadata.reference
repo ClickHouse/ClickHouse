@@ -1,0 +1,4 @@
+parallel replicas
+"total_rows_to_read":"300"
+deltaLakeCluster
+"total_rows_to_read":"300"

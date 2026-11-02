@@ -18,7 +18,7 @@ SELECT sum(id) FROM test_alter_codec_index;
 INSERT INTO test_alter_codec_index (value) VALUES (1);
 SELECT sum(id) FROM test_alter_codec_index;
 
-ALTER TABLE test_alter_codec_index MODIFY COLUMN id UInt64 ALIAS 3 CODEC(Delta, LZ4); -- { serverError INCORRECT_QUERY }
+ALTER TABLE test_alter_codec_index MODIFY COLUMN id UInt64 ALIAS 3 CODEC(Delta, LZ4); -- { serverError BAD_ARGUMENTS }
 
 ALTER TABLE test_alter_codec_index MODIFY COLUMN id UInt64 MATERIALIZED 3 CODEC(Delta, LZ4);
 SELECT sum(id) FROM test_alter_codec_index;
