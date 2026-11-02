@@ -1250,7 +1250,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.query_plan_options.fragments || settings.query_plan_options.tree)
                 {
                     const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
-                    const auto explain_graph = [&](const FragmentGraph & graph)
+                    const auto build_explain = [&](const FragmentGraph & graph)
                     {
                         if (settings.query_plan_options.tree)
                             explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
@@ -1259,12 +1259,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     };
                     if (plan.staysDistributed())
                     {
-                        /// The cut consumes the plan. That is intended: `EXPLAIN` owns this plan and discards it
-                        /// after printing. The plan is not cloned, because not every step implements `clone`.
-                        /// `cut` must outlive `graph`, whose fragments point to the plans of its stages.
-                        auto cut = plan.cutIntoDistributedPlan(optimization_settings);
-                        auto graph = buildFragmentGraph(cut.distributed_plan);
-                        explain_graph(graph);
+                        /// The distributed_plan_cut consumes the plan since `EXPLAIN` owns this plan and discards it after printing.
+                        /// `distributed_plan_cut` must outlive `graph`, whose fragments point to the plans of its stages.
+                        auto distributed_plan_cut = plan.cutIntoDistributedPlan(optimization_settings);
+                        auto query_plan_as_fragment_graph = buildFragmentGraph(distributed_plan_cut.distributed_plan);
+                        build_explain(query_plan_as_fragment_graph);
                     }
                     else
                     {
@@ -1272,7 +1271,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                         if (plan.didFallBackToLocal())
                             fallback_reason = plan.getDistributedPlanFallbackReason();
                         auto graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
-                        explain_graph(graph);
+                        build_explain(query_plan_as_fragment_graph);
                     }
                     break;
                 }
