@@ -5,6 +5,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -27,6 +29,98 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool input_format_parquet_filter_push_down;
+    extern const SettingsBool input_format_parquet_bloom_filter_push_down;
+    extern const SettingsUInt64 input_format_parquet_dictionary_filter_push_down;
+    extern const SettingsBool input_format_parquet_page_filter_push_down;
+    extern const SettingsBool input_format_parquet_spatial_filter_push_down;
+    extern const SettingsBool input_format_orc_filter_push_down;
+    extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
+    extern const SettingsBool input_format_orc_case_insensitive_column_matching;
+    extern const SettingsBool input_format_arrow_case_insensitive_column_matching;
+    extern const SettingsBool input_format_parquet_allow_missing_columns;
+    extern const SettingsBool input_format_orc_allow_missing_columns;
+    extern const SettingsBool input_format_arrow_allow_missing_columns;
+    extern const SettingsBool input_format_parquet_use_offset_index;
+    extern const SettingsBool input_format_parquet_local_time_as_utc;
+    extern const SettingsBool input_format_null_as_default;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool input_format_parquet_allow_geoparquet_parser;
+    extern const SettingsBool input_format_parquet_enable_json_parsing;
+    extern const SettingsBool input_format_parquet_detect_variant_by_structure;
+    extern const SettingsBool type_json_use_partial_match_to_skip_paths_by_regexp;
+    extern const SettingsBool precise_float_parsing;
+}
+
+/// The entries for files are written from the row groups the reader pruned, not from evaluating the
+/// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
+/// still has rows the query returns when it is not pruned, so a read with another set of enabled
+/// pruning methods must not consult the entries of this one. The column matching settings decide
+/// which physical column a predicate is evaluated against, so they are part of the key as well. So are
+/// the settings allowing missing columns: a read that fills a missing column with defaults may cache
+/// a verdict, and a read that must throw for that column would otherwise skip the file instead.
+/// `input_format_parquet_use_offset_index` enables page pruning, and `input_format_parquet_local_time_as_utc`
+/// decides the time zone in which the timestamp statistics are decoded. `input_format_null_as_default`
+/// decides whether a `NULL` read into a non-`Nullable` column becomes the default, or throws: a read that
+/// fills defaults may cache a verdict, and a read that must throw would otherwise skip the file instead.
+/// `date_time_overflow_behavior` decides whether an out-of-range date is saturated or throws, for the same reason.
+/// The rest change the values decoded from a file without changing their types, as in the identity of the
+/// columns cache (see `ParquetV3BlockInputFormat`): e.g. `type_json_use_partial_match_to_skip_paths_by_regexp`
+/// decides which paths of a `JSON` column decoded from a variant are skipped.
+/// `queryConditionCacheSettingsSalt` covers it for the session, but a table may pin another value at `CREATE`.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
+{
+    SipHash hash;
+    hash.update(settings[Setting::input_format_parquet_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_bloom_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_dictionary_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_page_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_spatial_filter_push_down].value);
+    hash.update(settings[Setting::input_format_orc_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_orc_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_arrow_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_parquet_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_parquet_use_offset_index].value);
+    hash.update(settings[Setting::input_format_parquet_local_time_as_utc].value);
+    hash.update(settings[Setting::input_format_null_as_default].value);
+    hash.update(static_cast<UInt64>(settings[Setting::date_time_overflow_behavior].value));
+    hash.update(settings[Setting::input_format_parquet_allow_geoparquet_parser].value);
+    hash.update(settings[Setting::input_format_parquet_enable_json_parsing].value);
+    hash.update(settings[Setting::input_format_parquet_detect_variant_by_structure].value);
+    hash.update(settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp].value);
+    hash.update(settings[Setting::precise_float_parsing].value);
+    return hash.get64();
+}
+
+/// The same settings as above, taken from the format settings a reader actually uses. Keep them in sync.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
+{
+    SipHash hash;
+    hash.update(format_settings.parquet.filter_push_down);
+    hash.update(format_settings.parquet.bloom_filter_push_down);
+    hash.update(static_cast<UInt64>(format_settings.parquet.dictionary_filter_push_down));
+    hash.update(format_settings.parquet.page_filter_push_down);
+    hash.update(format_settings.parquet.spatial_filter_push_down);
+    hash.update(format_settings.orc.filter_push_down);
+    hash.update(format_settings.parquet.case_insensitive_column_matching);
+    hash.update(format_settings.orc.case_insensitive_column_matching);
+    hash.update(format_settings.arrow.case_insensitive_column_matching);
+    hash.update(format_settings.parquet.allow_missing_columns);
+    hash.update(format_settings.orc.allow_missing_columns);
+    hash.update(format_settings.arrow.allow_missing_columns);
+    hash.update(format_settings.parquet.use_offset_index);
+    hash.update(format_settings.parquet.local_time_as_utc);
+    hash.update(format_settings.null_as_default);
+    hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
+    hash.update(format_settings.parquet.allow_geoparquet_parser);
+    hash.update(format_settings.parquet.enable_json_parsing);
+    hash.update(format_settings.parquet.detect_variant_by_structure);
+    hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    hash.update(format_settings.precise_float_parsing);
+    return hash.get64();
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -94,7 +188,10 @@ std::optional<size_t> FormatFilterInfo::computeConditionHash(
     if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
         return {};
 
-    return queryConditionCacheHash(filter_actions_dag.getHash(), queryConditionCacheSettingsSalt(context->getSettingsRef()));
+    const auto & settings = context->getSettingsRef();
+    return queryConditionCacheHash(
+        filter_actions_dag.getHash(),
+        queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;

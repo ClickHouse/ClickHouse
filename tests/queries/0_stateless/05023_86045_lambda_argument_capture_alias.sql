@@ -1,8 +1,6 @@
 -- An expression bound to an alias outside of a lambda must not see the lambda arguments,
 -- even when an argument has the same name as an identifier of that expression.
 
-SET enable_analyzer = 1;
-
 -- The original report: the aggregate argument inside `steps` was captured by the lambda argument `step`.
 SELECT
     groupArray(step) AS steps,
@@ -34,7 +32,7 @@ SELECT arrayMap(x -> (x * 2 AS d) + arrayMap(y -> y + d, [10])[1], [1, 2]);
 SELECT id AS id2, arrayMap(id -> id + id2, [1, 2]) FROM (SELECT 5 AS id);
 
 -- A subquery between the lambda and the scope owning the alias.
-SELECT number + 1 AS n, arrayMap(number -> (SELECT n), [1, 2]) FROM numbers(2);
+SELECT number + 1 AS n, arrayMap(number -> (SELECT n), [1, 2]) FROM numbers(2) ORDER BY n;
 
 -- An alias that does reference the argument of the lambda it is written in still works.
 SELECT arrayMap(x -> (x * 2 AS d) + d, [1, 2]);
@@ -59,7 +57,7 @@ SELECT arrayMap(x -> (x * 2 AS d) + arrayMap(x -> x + d, [10])[1], [1, 2]);
 SELECT id, (WITH id + 1 AS d SELECT arrayMap(id -> id + d, [1, 2])) FROM (SELECT 5 AS id)
 SETTINGS allow_experimental_correlated_subqueries = 1;
 
-SELECT number + 1 AS n, (SELECT arrayMap(number -> number + n, [1, 2])) FROM numbers(2)
+SELECT number + 1 AS n, (SELECT arrayMap(number -> number + n, [1, 2])) FROM numbers(2) ORDER BY n
 SETTINGS allow_experimental_correlated_subqueries = 1;
 
 -- With `enable_global_with_statement = 0` an alias of an outer query is not visible in the

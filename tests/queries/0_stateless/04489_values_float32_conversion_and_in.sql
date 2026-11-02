@@ -55,9 +55,9 @@ SELECT '-- the fall-through Variant conversion path prefers a lossless alternati
 -- These cases need the analyzer: the old query analysis eagerly computes a common type for the
 -- array literal (mixing huge Int64 with Float64) and rejects it with NO_COMMON_TYPE before the
 -- value reaches the Variant column type.
-SELECT x FROM values('x Array(Variant(Array(Int64), Array(Float64)))', [[9223372036854775807, -9223372036854775808], [0.9999, 7]]) SETTINGS allow_experimental_analyzer = 1;
+SELECT x FROM values('x Array(Variant(Array(Int64), Array(Float64)))', [[9223372036854775807, -9223372036854775808], [0.9999, 7]]);
 -- When no alternative can represent the value exactly, the nearest representable value is used.
-SELECT x FROM values('x Array(Variant(Array(Float32), Array(String)))', [[0.1, 0.2]]) SETTINGS allow_experimental_analyzer = 1;
+SELECT x FROM values('x Array(Variant(Array(Float32), Array(String)))', [[0.1, 0.2]]);
 
 SELECT '-- the exact-first preference does not extend to a directly-insertable field (pre-existing ColumnVariant order, unchanged)';
 -- This documents the scope of the contract above: the exact-first preference only governs the
@@ -68,7 +68,7 @@ SELECT '-- the exact-first preference does not extend to a directly-insertable f
 -- rounded to 16777216. Reworking that selection is a core `ColumnVariant` change outside the scope
 -- of this fix. `Variant(Float32, Float64)` is itself a suspicious type (the two float alternatives
 -- are ambiguous), so it requires `allow_suspicious_variant_types`.
-SELECT x, variantType(x) FROM values('x Variant(Float32, Float64)', toFloat64(16777217)) SETTINGS allow_experimental_analyzer = 1, allow_suspicious_variant_types = 1;
+SELECT x, variantType(x) FROM values('x Variant(Float32, Float64)', toFloat64(16777217)) SETTINGS allow_suspicious_variant_types = 1;
 
 SELECT '-- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path';
 DROP TABLE IF EXISTS t_values_insert_float;

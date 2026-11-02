@@ -97,6 +97,7 @@ public:
     virtual void setException(const String & /*exception_message*/) {}
 
     virtual std::unordered_map<String, size_t> getColumnSizesOnDisk() const { return {}; }
+    virtual std::vector<UInt64> getRowGroupOffsets() const { return {}; }
 
     /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
     /// packets (progress, logs, profile events, exceptions) in the output stream. The format must
