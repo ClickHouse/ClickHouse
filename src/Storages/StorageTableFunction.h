@@ -80,6 +80,23 @@ public:
     bool hasUnreplicatedTableDataOnDisk() const override { return has_unreplicated_table_data_on_disk; }
     bool supportsReplication() const override { return false; }
 
+    /// A table defined from a table function keeps no data of its own, so `BACKUP` and `RESTORE` store and recreate only
+    /// its definition. Forwarding these would run the table function, which fails while its source is missing.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        IStorage::applyMetadataChangesToCreateQueryForBackup(create_query);
+    }
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        IStorage::backupData(backup_entries_collector, data_path_in_backup, partitions);
+    }
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        IStorage::restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    }
+    bool supportsBackupPartition() const override { return false; }
+    void finalizeRestoreFromBackup() override {}
+
     /// A table function that has not been resolved yet holds no data and has started no background
     /// activity, so size and lock queries have a correct answer that does not require resolving it.
     ActionLock getActionLock(StorageActionBlockType action_type) override
