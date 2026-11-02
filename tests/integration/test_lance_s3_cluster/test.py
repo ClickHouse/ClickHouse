@@ -124,6 +124,44 @@ def test_lance_s3_cluster_matches_single_node(started_cluster):
     )
     assert virtuals == "64\t1\t1\t0\n"
 
+    # The worker's task iterator does not know the snapshot, so the version of
+    # `_data_lake_snapshot_version` must come from the task, both with several packs and a single one.
+    single_version = node.query(
+        """
+        SELECT count(), count(_data_lake_snapshot_version), uniqExact(_data_lake_snapshot_version), any(_data_lake_snapshot_version)
+        FROM lanceS3(nc_s3, filename = 'lance/multi_frag.lance')
+        """
+    )
+    assert single_version.startswith("64\t64\t1\t"), single_version
+    version = single_version.strip().split("\t")[3]
+    for pack_settings in [
+        "lance_enable_fragment_parallelism = 1, lance_max_fragment_packs = 8",
+        "lance_enable_fragment_parallelism = 0",
+    ]:
+        clustered_version = node.query(
+            f"""
+            SELECT count(), count(_data_lake_snapshot_version), uniqExact(_data_lake_snapshot_version), any(_data_lake_snapshot_version)
+            FROM lanceS3Cluster(
+                'cluster_simple',
+                nc_s3,
+                filename = 'lance/multi_frag.lance')
+            SETTINGS {pack_settings}
+            """
+        )
+        assert clustered_version == single_version, pack_settings
+        filtered = node.query(
+            f"""
+            SELECT count()
+            FROM lanceS3Cluster(
+                'cluster_simple',
+                nc_s3,
+                filename = 'lance/multi_frag.lance')
+            WHERE _data_lake_snapshot_version = {version}
+            SETTINGS {pack_settings}
+            """
+        )
+        assert filtered == "64\n", pack_settings
+
 
 def test_lance_s3_cluster_pure_count_uses_fragment_tasks(started_cluster):
     node = started_cluster.instances["s0_0_0"]

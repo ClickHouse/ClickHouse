@@ -59,6 +59,7 @@ struct LanceDatasetObjectInfo final : public ObjectInfo
 
     std::optional<std::string> getPathForVirtualColumns() const override { return dataset_path; }
     std::optional<std::string> getFileNameForVirtualColumns() const override;
+    std::optional<UInt64> getSnapshotVersionForVirtualColumns() const override { return snapshot.version; }
 
     const Lance::TableStateSnapshot snapshot;
     /// Empty handle is valid on workers after cluster deserialization; open via session/snapshot.

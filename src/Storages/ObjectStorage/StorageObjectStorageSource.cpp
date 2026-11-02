@@ -959,6 +959,11 @@ Chunk StorageObjectStorageSource::generate()
 
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
+            /// A task of a cluster read carries its snapshot, while the worker's `ReadTaskIterator` does not know it.
+            auto data_lake_snapshot_version = object_info->getSnapshotVersionForVirtualColumns();
+            if (!data_lake_snapshot_version)
+                data_lake_snapshot_version = file_iterator->getSnapshotVersion();
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -974,7 +979,7 @@ Chunk StorageObjectStorageSource::generate()
                         : std::nullopt,
                     .etag = &(object_metadata->etag),
                     .tags = &(object_metadata->tags),
-                    .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
+                    .data_lake_snapshot_version = data_lake_snapshot_version,
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
                     .last_updated_sequence_number = last_updated_sequence_number,
                     .first_row_id = first_row_id,
