@@ -1363,7 +1363,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS) || defined(OS_DARWIN)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1559,7 +1559,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS) || defined(OS_DARWIN)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1585,13 +1585,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
+#if !defined(OS_FREEBSD) && !defined(OS_SUNOS) && !defined(OS_DARWIN)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
-#if !defined(OS_SUNOS)
+#if !defined(OS_SUNOS) && !defined(OS_DARWIN)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
@@ -1608,7 +1608,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         struct rusage rusage{};
         if (!getrusage(RUSAGE_SELF, &rusage))
         {
-            new_values["MemoryResidentMax"] = { rusage.ru_maxrss * 1024 /* KiB -> bytes */,
+#if defined(OS_DARWIN)
+            /// Unlike other platforms, on macOS `ru_maxrss` is in bytes, not in KiB.
+            UInt64 max_resident_bytes = rusage.ru_maxrss;
+#else
+            UInt64 max_resident_bytes = rusage.ru_maxrss * 1024 /* KiB -> bytes */;
+#endif
+            new_values["MemoryResidentMax"] = { max_resident_bytes,
                 "Maximum amount of physical memory used by the server process, in bytes." };
         }
         else
