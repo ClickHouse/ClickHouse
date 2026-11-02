@@ -20,6 +20,18 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #endif
 
+#if USE_PARQUET
+#include <Core/Block.h>
+#include <Core/Defines.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/QueryPipeline.h>
+#endif
+
 #include <unordered_map>
 #include <unordered_set>
 
@@ -107,6 +119,17 @@ std::optional<std::pair<std::string_view, std::string_view>> parseLogFileName(st
     if (!re2::RE2::FullMatch(file_name, pattern, &file_id, &instant))
         return std::nullopt;
     return std::pair{file_id, instant};
+}
+
+/// {minimum, maximum} requested time of the instants in a timeline history file `<min>_<max>_<level>.parquet`.
+std::optional<std::pair<std::string_view, std::string_view>> parseHistoryFileName(std::string_view file_name)
+{
+    static const re2::RE2 pattern(R"((\d+)_(\d+)_\d+\.parquet)");
+    std::string_view min_time;
+    std::string_view max_time;
+    if (!re2::RE2::FullMatch(file_name, pattern, &min_time, &max_time))
+        return std::nullopt;
+    return std::pair{min_time, max_time};
 }
 
 /// Parses the Java `Properties.load` format. Returns nothing for a malformed `\uXXXX` escape.
@@ -337,6 +360,59 @@ void collectReplacedFileGroups(
     LOG_TRACE(log, "Hudi instant {} replaces {} file groups", instant.relative_path, num_replaced);
 }
 
+/// Adds the completion times of `instants` recorded in the timeline history files to `completion_times`.
+void readArchivedCompletionTimes(
+    std::vector<RelativePathWithMetadata> & history_files,
+    const std::unordered_set<UInt64> & instants,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context,
+    const LoggerPtr & log,
+    std::unordered_map<UInt64, UInt64> & completion_times)
+{
+#if USE_PARQUET
+    auto read_settings = context->getReadSettings();
+    read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput("Parquet", context);
+    auto format_settings = getFormatSettings(context);
+    format_settings.parquet.allow_missing_columns = true;
+    const auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+    const Block header{ColumnWithTypeAndName(type, "instantTime"), ColumnWithTypeAndName(type, "completionTime")};
+
+    for (auto & file : history_files)
+    {
+        const String file_name = file.getFileName();
+        auto range = parseHistoryFileName(file_name);
+        UInt64 min_time = 0;
+        UInt64 max_time = 0;
+        if (!range || !tryParse(min_time, range->first) || !tryParse(max_time, range->second))
+            continue;
+        if (std::none_of(instants.begin(), instants.end(), [&](UInt64 instant) { return min_time <= instant && instant <= max_time; }))
+            continue;
+
+        auto buf = createReadBuffer(file, object_storage, context, log, read_settings);
+        auto input = FormatFactory::instance().getInput("Parquet", *buf, header, context, DEFAULT_BLOCK_SIZE, format_settings);
+        QueryPipeline pipeline(std::move(input));
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
+        {
+            const auto & requested_column = *block.getByName("instantTime").column;
+            const auto & completion_column = *block.getByName("completionTime").column;
+            for (size_t row = 0; row < block.rows(); ++row)
+            {
+                UInt64 requested = 0;
+                UInt64 completion = 0;
+                if (!requested_column.isNullAt(row) && !completion_column.isNullAt(row)
+                    && tryParse(requested, requested_column.getDataAt(row)) && tryParse(completion, completion_column.getDataAt(row))
+                    && instants.contains(requested))
+                    completion_times.emplace(requested, completion);
+            }
+        }
+    }
+#else
+    UNUSED(history_files, instants, object_storage, context, log, completion_times);
+#endif
+}
+
 }
 
 /**
@@ -376,6 +452,7 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     std::optional<RelativePathWithMetadata> backup_file;
     std::vector<RelativePathWithMetadata> instants;
     std::vector<String> timeline_files;
+    std::vector<RelativePathWithMetadata> history_files;
     /// Listed before the data files, so the new files of every instant applied below are listed too.
     listFiles(
         *object_storage,
@@ -387,8 +464,11 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             if (!key.starts_with(table_path))
                 return false;
             std::string_view path_in_table = std::string_view(key).substr(table_path.size());
-            if (directoryInTable(key, table_path) == ".hoodie/timeline")
+            std::string_view directory = directoryInTable(key, table_path);
+            if (directory == ".hoodie/timeline")
                 timeline_files.push_back(object.getFileName());
+            else if (directory == ".hoodie/timeline/history" && parseHistoryFileName(object.getFileName()))
+                history_files.push_back(object);
             if (path_in_table == ".hoodie/hoodie.properties")
                 properties_file.emplace(object);
             else if (path_in_table == ".hoodie/hoodie.properties.backup")
@@ -462,10 +542,11 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     {
         Partition partition;
         FileID file_id;
-        UInt64 time = 0;
+        std::optional<UInt64> instant;
         String key;
     };
     std::vector<LogFileInfo> log_files;
+    std::unordered_set<UInt64> unknown_completions;
 
     for (const auto & key : keys)
     {
@@ -480,18 +561,12 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             if (auto it = replaced.find(partition); it != replaced.end() && it->second.contains(String(log_file_id)))
                 continue;
 
-            /// The instant of a log is the base instant of its file slice in layout 0 and 1, and the requested time of its
-            /// delta commit in layout 2, where the log belongs to the last file slice that started before the commit completed.
-            UInt64 time = std::numeric_limits<UInt64>::max();
-            UInt64 parsed = 0;
-            if (timeline && tryParse(parsed, instant))
-            {
-                if (!timeline->layout_2)
-                    time = parsed;
-                else if (auto it = completion_times.find(parsed); it != completion_times.end())
-                    time = it->second;
-            }
-            log_files.push_back({partition, String(log_file_id), time, key});
+            std::optional<UInt64> log_instant;
+            if (UInt64 parsed = 0; timeline && tryParse(parsed, instant))
+                log_instant = parsed;
+            if (timeline && timeline->layout_2 && log_instant && !completion_times.contains(*log_instant))
+                unknown_completions.insert(*log_instant);
+            log_files.push_back({partition, String(log_file_id), log_instant, key});
             continue;
         }
 
@@ -517,13 +592,27 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
         }
     }
 
+    if (!unknown_completions.empty() && !history_files.empty())
+        readArchivedCompletionTimes(history_files, unknown_completions, object_storage, local_context, log, completion_times);
+
     for (const auto & log_file : log_files)
     {
+        /// The instant of a log is the base instant of its file slice in layout 0 and 1, and the requested time of its
+        /// delta commit in layout 2, where the log belongs to the last file slice that started before the commit completed.
+        UInt64 time = std::numeric_limits<UInt64>::max();
+        if (timeline && log_file.instant)
+        {
+            if (!timeline->layout_2)
+                time = *log_file.instant;
+            else if (auto it = completion_times.find(*log_file.instant); it != completion_times.end())
+                time = it->second;
+        }
+
         const FileInfo * base_file = nullptr;
         if (auto partition_it = files.find(log_file.partition); partition_it != files.end())
             if (auto it = partition_it->second.find(log_file.file_id); it != partition_it->second.end())
                 base_file = &it->second;
-        if (!base_file || log_file.time >= base_file->timestamp)
+        if (!base_file || time >= base_file->timestamp)
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Reading a Hudi table with log files that are not compacted is not supported: the changes in '{}' would be "

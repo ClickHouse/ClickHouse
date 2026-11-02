@@ -862,6 +862,36 @@ def test_merge_on_read_log_files(started_cluster, table_version):
         upload_hudi_table(minio_client, bucket, path, prefix)
         check()
 
+        if table_version == 9:
+            # G: the completion time of an archived delta commit is read from the timeline history.
+            archive = {
+                "hoodie.compact.inline": "true",
+                "hoodie.compact.inline.max.delta.commits": "1",
+                "hoodie.keep.min.commits": "2",
+                "hoodie.keep.max.commits": "3",
+                "hoodie.cleaner.commits.retained": "1",
+            }
+            history = os.path.join(path, timeline, "history")
+            for i in range(8, 14):
+                if not os.path.exists(
+                    os.path.join(path, timeline, delta_commit)
+                ) and os.path.isdir(history):
+                    break
+                expected[i] = 999000 + i
+                write([i], 6 + i, extra_options=archive)
+            assert not os.path.exists(os.path.join(path, timeline, delta_commit))
+            assert any(
+                re.fullmatch(r"\d+_\d+_\d+\.parquet", n) for n in os.listdir(history)
+            )
+            assert logs <= log_files(path)
+            remove_directory(minio_client, bucket, f"{name}/{timeline}")
+            upload_hudi_table(minio_client, bucket, path, prefix)
+            check()
+            remove_directory(minio_client, bucket, f"{name}/{timeline}/history")
+            assert_refused(source)
+            upload_hudi_table(minio_client, bucket, path, prefix)
+            check()
+
         # D: a new update after the compaction.
         expected[6] = 999006
         write([6], 4)
