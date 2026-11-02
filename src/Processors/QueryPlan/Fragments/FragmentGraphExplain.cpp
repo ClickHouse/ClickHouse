@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/GatherReceiveStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
@@ -11,7 +12,10 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include <optional>
 #include <ranges>
+#include <string_view>
+#include <vector>
 
 namespace DB
 {
@@ -20,6 +24,51 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
+
+/// Prepares what every part of the `fragments = 1` output shares: the print order and, with `pretty`, the names.
+/// `graph` and `options` must outlive the object.
+class FragmentGraphExplain
+{
+public:
+    FragmentGraphExplain(const FragmentGraph & graph_, const ExplainPlanOptions & options_, size_t max_step_description_length_);
+
+    void explain(WriteBuffer & buf) const;
+
+private:
+    const FragmentGraph & graph;
+    const ExplainPlanOptions & options;
+    const size_t max_step_description_length;
+
+    /// The plan was not cut: it is printed as `EXPLAIN` without `fragments` prints it.
+    const bool single_node;
+
+    /// By descending id. The cutter numbers the stages in post-order, so a fragment comes before the fragments it reads,
+    /// and the fragment that produces the result (`main`) comes first.
+    std::vector<const QueryFragment *> print_order;
+
+    /// With `pretty`, one registry for all fragments, so that a column, a runtime filter or a set has the same name in
+    /// every fragment and in the `Exchanges` section. The names are built over the fragments joined at their exchanges,
+    /// so they are the names plain `EXPLAIN` gives the plan before the cut.
+    PrettyNamesPerPlan pretty_names;
+
+    void explainSingleNode(WriteBuffer & buf) const;
+    void explainFragments(WriteBuffer & buf) const;
+    void explainExchanges(WriteBuffer & buf) const;
+    void explainLevels(WriteBuffer & buf) const;
+
+    /// With `pretty`, the keys and the sort columns are named as in the fragments.
+    String formatKind(const FragmentExchange & exchange) const;
+
+    /// Every receive step of a fragment with the plan of the fragment that sends to it.
+    FragmentInputs getFragmentInputs() const;
+
+    static std::string_view formatMode(ExchangeDescription::Kind mode);
+    static const QueryPlan & getPlan(const QueryFragment & fragment);
+    static std::optional<std::string_view> tryGetReceiveExchangeId(const IQueryPlanStep & step);
+};
 
 FragmentGraphExplain::FragmentGraphExplain(
     const FragmentGraph & graph_, const ExplainPlanOptions & options_, size_t max_step_description_length_)
@@ -212,6 +261,17 @@ FragmentInputs FragmentGraphExplain::getFragmentInputs() const
         }
     }
     return inputs;
+}
+
+}
+
+void explainAsFragments(
+    const FragmentGraph & graph,
+    WriteBuffer & buf,
+    const ExplainPlanOptions & options,
+    size_t max_step_description_length)
+{
+    FragmentGraphExplain(graph, options, max_step_description_length).explain(buf);
 }
 
 }

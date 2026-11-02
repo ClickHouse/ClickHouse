@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/Fragments/FragmentGraphTree.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
 
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
@@ -530,7 +530,7 @@ private:
 
 }
 
-void explainFragmentGraphTree(
+void explainAsTree(
     const FragmentGraph & graph,
     WriteBuffer & buf,
     const ExplainPlanOptions & options,

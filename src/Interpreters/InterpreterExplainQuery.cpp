@@ -40,7 +40,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
-#include <Processors/QueryPlan/Fragments/FragmentGraphTree.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1254,9 +1253,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     const auto explain_graph = [&](const FragmentGraph & graph)
                     {
                         if (settings.query_plan_options.tree)
-                            explainFragmentGraphTree(graph, buf, settings.query_plan_options, max_step_description_length);
+                            explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
                         else
-                            FragmentGraphExplain(graph, settings.query_plan_options, max_step_description_length).explain(buf);
+                            explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
                     };
                     if (plan.staysDistributed())
                     {
