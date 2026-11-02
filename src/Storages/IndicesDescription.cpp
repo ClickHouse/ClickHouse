@@ -28,9 +28,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
 /// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
 void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
 {
@@ -49,6 +46,9 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
         }
     }
 }
+
+namespace
+{
 
 void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
 {

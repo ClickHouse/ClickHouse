@@ -1,0 +1,6 @@
+1. The dispatched transform is the expansion of the alias.
+text(tokenizer = \'splitByNonAlpha\', preprocessor = lower(val))
+2. CREATE AS with an explicit engine and no privilege on the source.
+SHOW COLUMNS ON default.tab
+3. The same for a source that does not exist.
+SHOW COLUMNS ON default.missing

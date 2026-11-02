@@ -94,6 +94,10 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
 void checkTextIndexPreAndPostProcessorPermissions(
     const ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context);
 
+/// Replaces, in place, the `ALIAS` columns in the `preprocessor` and `postprocessor` arguments of a text index
+/// by their expressions.
+void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns);
+
 /// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);
 

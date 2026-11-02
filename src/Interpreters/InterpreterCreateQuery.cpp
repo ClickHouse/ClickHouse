@@ -4136,8 +4136,16 @@ BlockIO InterpreterCreateQuery::execute()
                 /// declares their transforms anew. Authorize them here as the local path does.
                 if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
                 {
+                    /// With an explicit engine `setEngine` does not look at the source, so authorize describing
+                    /// it before resolving it, as `getTablePropertiesAndNormalizeCreateQuery` does: an error from
+                    /// the inspection below would otherwise disclose the source to a user who cannot see it.
+                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
                     StoragePtr as_storage = resolveStorageProxyLoading(
                         DatabaseCatalog::instance().getTable({create.as_database, create.as_table}, getContext()));
+                    if (const auto * alias = as_storage->as<StorageAlias>();
+                        alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                                        StorageID{create.as_database, create.as_table}.getNameForLogs());
                     auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
                     for (const auto & index : as_storage_metadata->getSecondaryIndices())
                         if (!index.isImplicitlyCreated())
