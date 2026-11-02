@@ -24,6 +24,7 @@ EOF
 # target would answer for the second one, which serves a different archive under the same path, the same
 # `Last-Modified` and the same ETag.
 python3 - "${work_dir}" ${CLICKHOUSE_LOCAL} <<'PY'
+import base64
 import io
 import subprocess
 import sys
@@ -49,6 +50,12 @@ current_target = "1"
 target_reads = {"1": 0, "2": 0}
 
 
+# The target requires Basic authentication, and the `Location` is absolute, so it carries no userinfo:
+# the credentials have to survive the hop, or the pinned read of the archive fails with 401. The password
+# is percent-encoded, so a round trip that decodes it would authenticate with different bytes.
+EXPECTED_AUTHORIZATION = "Basic " + base64.b64encode(b"user:p%25ass").decode()
+
+
 class Handler(BaseHTTPRequestHandler):
     def respond(self, head):
         global current_target
@@ -64,10 +71,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             return
 
+        if self.headers.get("Authorization") != EXPECTED_AUTHORIZATION:
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="archive"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         if url.path == "/archive.zip":
-            # The URL the query names; it never serves content itself.
+            # The URL the query names; it never serves content itself. The absolute target has no
+            # userinfo, which is what makes the authentication a separate thing from the identity.
             self.send_response(302)
-            self.send_header("Location", f"/target.zip?which={current_target}")
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/target.zip?which={current_target}")
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
@@ -121,7 +136,7 @@ server_thread = threading.Thread(target=server.serve_forever, daemon=True)
 server_thread.start()
 base_url = f"http://127.0.0.1:{server.server_port}"
 work_dir = Path(sys.argv[1])
-archive_url = f"{base_url}/archive.zip::data.json"
+archive_url = f"http://user:p%25ass@127.0.0.1:{server.server_port}/archive.zip::data.json"
 try:
     # This is a private loopback server; inherited proxy settings must not route readiness elsewhere.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

@@ -431,7 +431,19 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         /// lets one URL name different resources over time, and the caches keyed by this identity must not
         /// answer with what a resource the read did not come from served. Reads are pinned to it as well, so
         /// the redirect is resolved once rather than on every request.
-        metadata.resolved_url = response_buf->getCurrentURI().toString();
+        /// The credentials are not part of the redirect target: `ReadWriteBufferFromHTTP` keeps them across
+        /// hops, while the pinned read derives them from this URL again, so an absolute `Location` that
+        /// carries no userinfo would otherwise lose the authentication of the request that reached it.
+        /// `Poco::URI::setUserInfo` decodes its argument, which would turn a percent-encoded password into a
+        /// different one, so the raw userinfo of that request is spliced into the string form instead.
+        String final_url = response_buf->getCurrentURI().toString();
+        const auto & request_user_info = uri.getUserInfo();
+        if (!request_user_info.empty() && response_buf->getCurrentURI().getUserInfo().empty())
+        {
+            if (const size_t scheme_end = final_url.find("://"); scheme_end != String::npos)
+                final_url.insert(scheme_end + 3, request_user_info + "@");
+        }
+        metadata.resolved_url = final_url;
         return metadata;
     };
 
