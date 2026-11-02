@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
@@ -342,11 +343,17 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
         columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
 
+    /// Set by `tryOptimizeTopK` in the first pass of the optimizations.
+    String top_k_string_sort_column;
+    if (const auto * top_k_filter = source_step_with_filter->getTopKFilter(); top_k_filter && !top_k_filter->filter_rows)
+        top_k_string_sort_column = top_k_filter->column_name;
+
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final,
-        columns_read_before_filter);
+        columns_read_before_filter,
+        top_k_string_sort_column);
 
     if (optimize_result.prewhere_nodes.empty())
         return;

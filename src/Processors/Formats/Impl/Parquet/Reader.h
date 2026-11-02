@@ -226,7 +226,7 @@ struct Reader
         std::vector<UInt64> bloom_filter_hashes;
 
         /// TopN dynamic filtering of this `String` sort column: values beyond the threshold are decoded as empty
-        /// strings, which the filter above the read rejects. See `TopKStringBound`.
+        /// strings, which PREWHERE rejects. See `TopKStringBound`.
         std::shared_ptr<const TopKStringBound> top_k_string_bound;
 
         PrimitiveColumnInfo() = default;
@@ -854,7 +854,7 @@ private:
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(
         const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info,
-        bool build_string_value_filter_mask = true);
+        bool build_entry_masks = true);
     /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
     void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;

@@ -485,6 +485,7 @@ public:
     /// and only for a sort column it physically reads from the file.
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+    const FormatTopKFilterInfo * getTopKFilter() const override { return top_k_filter.get(); }
     bool supportsTopKStatisticsOnlyFilter() const override { return true; }
 
     bool supportsMinMaxFromStatistics() const override;

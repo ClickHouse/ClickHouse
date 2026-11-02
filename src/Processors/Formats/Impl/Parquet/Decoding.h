@@ -92,9 +92,10 @@ struct Dictionary
     /// `index` materializes empty strings for the entries the mask excludes.
     struct TopKMask
     {
-        /// If not empty, `mask[i]` is 0 if the i-th entry is beyond the threshold of `snapshot`.
+        /// `count` entries; `mask[i]` is 0 if the i-th entry is beyond the threshold of `version`.
         PaddedPODArray<UInt8> mask;
-        TopKStringBound::Snapshot snapshot;
+        /// `ITopKThresholdTracker::getVersion` of the threshold the mask was built from; 0 if not built yet.
+        UInt64 version = 0;
         /// Values decoded through the dictionary since `mask` was last built.
         size_t values_since_build = 0;
         /// Values gathered through the current `mask`, and how many of them it replaced.
@@ -104,9 +105,12 @@ struct Dictionary
         /// the rest of the column chunk is decoded without it.
         bool useless = false;
     };
-    /// Created by the first `refreshTopKMask`. Out of line, so that reads without the bound keep their layout.
+    /// Created by `initTopKMask`. Out of line, so that reads without the bound keep their layout.
     std::unique_ptr<TopKMask> top_k;
 
+    /// Allocates the mask (nothing excluded), see `decodedFootprintUpperBound`. Only in `StringPlain` mode.
+    void initTopKMask();
+    bool hasTopKMask() const { return top_k && top_k->version != 0 && !top_k->useless; }
     /// Called before `num_values` values are decoded through the dictionary. Rebuilds the mask if the threshold
     /// changed since it was built, but only after at least `count` values were decoded since the last build
     /// (including these ones), so that the rebuilds cost at most one comparison per decoded value.
@@ -151,12 +155,12 @@ struct Dictionary
     /// in the prefetch buffer and are accounted separately by the caller, so charging them here would
     /// double-count them. `codec` is the column chunk's compression codec, which decides whether the
     /// payload is materialized in `decompressed_buf` at all (see `Reader::decodeDictionaryPageImpl`).
-    /// `has_string_value_filter` says whether `buildStringValueFilterMask` will be called after
-    /// `decode()`, allocating a per-entry mask on top (only in `StringPlain` mode).
-    /// Must be kept in sync with `decode()` and `buildStringValueFilterMask()`.
+    /// `builds_entry_mask` says whether `buildStringValueFilterMask` or `initTopKMask` will be called after
+    /// `decode()`, allocating a per-entry mask on top (only in `StringPlain` mode; never both).
+    /// Must be kept in sync with `decode()`, `buildStringValueFilterMask()` and `initTopKMask()`.
     static size_t decodedFootprintUpperBound(
         parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool has_string_value_filter);
+        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool builds_entry_mask);
 };
 
 struct PageDecoder

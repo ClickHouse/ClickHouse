@@ -54,11 +54,14 @@ public:
     /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
+    /// `top_k_string_sort_column` is the `String` sort column of an `ORDER BY ... LIMIT` whose threshold a format source
+    /// uses only by statistics (`FormatTopKFilterInfo::filter_rows` is false), if any.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
-        const NameSet & columns_read_before_filter = {});
+        const NameSet & columns_read_before_filter = {},
+        const String & top_k_string_sort_column = {});
 
 private:
     struct Condition
@@ -151,6 +154,7 @@ private:
         bool use_statistics = false;
         bool apply_string_filters_during_scan = false;
         const NameSet * columns_read_before_filter = nullptr;
+        String top_k_string_sort_column;
     };
 
     struct OptimizeResult
@@ -180,6 +184,14 @@ private:
     /// (see `extractStringValueFilters`). Such a condition is worth moving to PREWHERE even when
     /// it involves all queried columns: the reader then skips copying the non-matching values.
     bool isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+
+    /// Whether the condition rejects the empty string on `top_k_string_sort_column` (`s != ''`, `notEmpty(s)`, `s > ''`, `'' < s`).
+    /// Worth moving to PREWHERE even when it involves all queried columns: the reader then skips copying the values beyond
+    /// the top-K threshold (see `TopKStringBound`).
+    bool isConditionRejectingEmptyTopKString(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+
+    bool isStringColumnNotReadBeforeFilter(
+        const RPNBuilderTreeNode & argument, const WhereOptimizerContext & where_optimizer_context, bool allow_low_cardinality) const;
 
     bool isSortingKey(const String & column_name) const;
 

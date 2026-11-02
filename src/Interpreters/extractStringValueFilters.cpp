@@ -332,8 +332,11 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
     }
 }
 
-bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const String & column_name)
+/// With `readers`, collects the nodes of every conjunct that rejects the empty `column_name` which read the column directly.
+bool filterNodeRejectsEmptyString(
+    const ActionsDAG::Node * filter_node, const String & column_name, std::unordered_set<const ActionsDAG::Node *> * readers = nullptr)
 {
+    bool rejects = false;
     std::vector<const ActionsDAG::Node *> stack;
     stack.push_back(skipAliases(filter_node));
     while (!stack.empty())
@@ -351,14 +354,12 @@ bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const St
             continue;
         }
 
+        bool node_rejects = false;
         if (name == "notEmpty" && node->children.size() == 1)
         {
-            if (tryGetStringOrLowCardinalityInputName(node->children[0]) == column_name)
-                return true;
-            continue;
+            node_rejects = tryGetStringOrLowCardinalityInputName(node->children[0]) == column_name;
         }
-
-        if ((name == "notEquals" || name == "greater" || name == "less") && node->children.size() == 2)
+        else if ((name == "notEquals" || name == "greater" || name == "less") && node->children.size() == 2)
         {
             for (size_t column_pos : {0, 1})
             {
@@ -366,8 +367,17 @@ bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const St
                     continue;
                 auto constant = tryGetConstString(node->children[1 - column_pos]);
                 if (constant && constant->empty() && tryGetStringOrLowCardinalityInputName(node->children[column_pos]) == column_name)
-                    return true;
+                    node_rejects = true;
             }
+        }
+
+        if (node_rejects)
+        {
+            if (!readers)
+                return true;
+            rejects = true;
+            readers->insert(node);
+            continue;
         }
 
         /// The conditions of string value filters never match the empty string.
@@ -375,9 +385,38 @@ bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const St
         tryExtractConditionsFromAtom(node, conditions_by_column);
         auto it = conditions_by_column.find(column_name);
         if (it != conditions_by_column.end() && !it->second.conditions.empty())
-            return true;
+        {
+            if (!readers)
+                return true;
+            rejects = true;
+            readers->insert(it->second.allowed_readers.begin(), it->second.allowed_readers.end());
+        }
     }
-    return false;
+    return rejects;
+}
+
+/// The columns of `conditions_by_column` that a node of `dag` reads directly although it is not one of their `allowed_readers`.
+std::unordered_set<String> columnsWithOtherReaders(const ActionsDAG & dag, const ConditionsByColumn & conditions_by_column)
+{
+    std::unordered_set<String> res;
+    for (const auto & node : dag.getNodes())
+    {
+        /// Aliases are transparent: the consumer of the alias is checked instead.
+        if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+            continue;
+
+        for (const auto * child : node.children)
+        {
+            const auto * input = skipAliases(child);
+            if (input->type != ActionsDAG::ActionType::INPUT)
+                continue;
+
+            auto it = conditions_by_column.find(input->result_name);
+            if (it != conditions_by_column.end() && !it->second.allowed_readers.contains(&node))
+                res.insert(input->result_name);
+        }
+    }
+    return res;
 }
 
 }
@@ -392,6 +431,18 @@ bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & colu
 {
     const auto & outputs = filter_dag.getOutputs();
     return outputs.size() == 1 && filterNodeRejectsEmptyString(outputs.front(), column_name);
+}
+
+bool filterReadsColumnOnlyInConjunctsRejectingEmptyString(
+    const ActionsDAG & dag, const String & filter_column_name, const String & column_name)
+{
+    const auto * root = dag.tryFindInOutputs(filter_column_name);
+    if (!root)
+        return false;
+    ConditionsByColumn candidate;
+    if (!filterNodeRejectsEmptyString(root, column_name, &candidate[column_name].allowed_readers))
+        return false;
+    return columnsWithOtherReaders(dag, candidate).empty();
 }
 
 bool likePatternHasStringValueFilterConditions(const String & pattern)
@@ -443,23 +494,8 @@ StringValueFiltersPtr extractStringValueFilters(
     /// would start throwing on rows that the `LIKE` rejects.
     /// Note that reading the column itself (an output of the expression) is fine: those values are
     /// observed only for the rows that passed the filter, and for them nothing was substituted.
-    for (const auto & node : filter_dag.getNodes())
-    {
-        /// Aliases are transparent: the consumer of the alias is checked instead.
-        if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-            continue;
-
-        for (const auto * child : node.children)
-        {
-            const auto * input = skipAliases(child);
-            if (input->type != ActionsDAG::ActionType::INPUT)
-                continue;
-
-            auto it = conditions_by_column.find(input->result_name);
-            if (it != conditions_by_column.end() && !it->second.allowed_readers.contains(&node))
-                it->second.conditions.clear();
-        }
-    }
+    for (const auto & column_name : columnsWithOtherReaders(filter_dag, conditions_by_column))
+        conditions_by_column[column_name].conditions.clear();
 
     /// The row-level filter (row policy) is a separate expression that the readers evaluate on the
     /// scanned columns before this one, so it observes the substituted values of every row, including

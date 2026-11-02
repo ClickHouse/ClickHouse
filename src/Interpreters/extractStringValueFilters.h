@@ -33,6 +33,11 @@ bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & filt
 /// Same for a filter DAG whose only output is the filter.
 bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & column_name);
 
+/// Whether a conjunct of the filter rejects every row with an empty `column_name` (see `filterRejectsEmptyString`), and no node of the
+/// DAG reads the column other than those conjuncts: then a value of the column may be read as '' for a row the filter drops anyway.
+bool filterReadsColumnOnlyInConjunctsRejectingEmptyString(
+    const ActionsDAG & dag, const String & filter_column_name, const String & column_name);
+
 /// Whether a LIKE pattern contains fixed substrings that can be used as a string value filter.
 bool likePatternHasStringValueFilterConditions(const String & pattern);
 

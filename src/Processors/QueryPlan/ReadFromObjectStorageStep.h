@@ -54,6 +54,7 @@ public:
     /// identity partitions rewrite the values the reader returns).
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+    const FormatTopKFilterInfo * getTopKFilter() const override { return top_k_filter.get(); }
     bool supportsTopKStatisticsOnlyFilter() const override { return true; }
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter != nullptr; }
     /// A filter above the read whose contents the key does not cover (a join runtime filter) changes the
