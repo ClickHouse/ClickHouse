@@ -45,6 +45,9 @@ public:
      */
     virtual bool supportsNesting() const { return false; }
 
+    /// Does the combined function return the nested function's state (an `AggregateFunction` value), like State?
+    virtual bool returnsNestedState() const { return false; }
+
     /** Does this combinator transform argument types (like Merge, Array) rather than just adding logic?
       *
       * If true, the combinator expects arguments to be of specific types (e.g., Merge expects AggregateFunction type)
