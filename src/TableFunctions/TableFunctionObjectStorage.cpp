@@ -251,12 +251,14 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
+    /// A change data feed read does not consume the task iterator either.
     const auto can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query
+        && !isDeltaLakeChangeDataFeedRead(*configuration, query_settings))
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,

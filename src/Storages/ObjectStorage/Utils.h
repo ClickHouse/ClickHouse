@@ -29,6 +29,13 @@ void validateSupportedColumns(
     ColumnsDescription & columns,
     const StorageObjectStorageConfiguration & configuration);
 
+/// A change data feed is requested by either bound; -1 is the unset value of both.
+bool deltaLakeChangeDataFeedSettingsSet(const Settings & settings);
+
+/// A change data feed read is served by a delta-kernel iterator that never asks the initiator for a
+/// read task, so it cannot be divided between nodes; a bound left set on a non-Delta read is not one.
+bool isDeltaLakeChangeDataFeedRead(const StorageObjectStorageConfiguration & configuration, const Settings & settings);
+
 /// Throws `ACCESS_DENIED` if the client of `object_storage` uses the server's own Azure identity and the session of
 /// `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
 void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
