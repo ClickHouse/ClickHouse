@@ -16,16 +16,33 @@ CREATE TABLE d_none_sampling AS v_none_sampling ENGINE = Distributed(test_cluste
 CREATE TABLE d_definer_sampling AS v_definer_sampling ENGINE = Distributed(test_cluster_one_shard_two_replicas, currentDatabase(), v_definer_sampling);
 CREATE TABLE d_none_plain AS v_none_plain ENGINE = Distributed(test_cluster_one_shard_two_replicas, currentDatabase(), v_none_plain);
 
+-- The view reads a `Distributed` table: the slice must survive the next cluster hop.
+CREATE TABLE inner_d_sampling AS t_sampling ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_sampling);
+CREATE TABLE inner_d_plain AS t_plain ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_plain);
+CREATE VIEW v_none_nested SQL SECURITY NONE AS SELECT id FROM inner_d_plain;
+CREATE VIEW v_definer_nested DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id FROM inner_d_sampling;
+CREATE TABLE d_none_nested AS v_none_nested ENGINE = Distributed(test_cluster_one_shard_two_replicas, currentDatabase(), v_none_nested);
+CREATE TABLE d_definer_nested AS v_definer_nested ENGINE = Distributed(test_cluster_one_shard_two_replicas, currentDatabase(), v_definer_nested);
+
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_mode = 'sampling_key',
     prefer_localhost_replica = 0, serialize_query_plan = 0, optimize_trivial_count_query = 0;
 
 SELECT count(), sum(id) FROM d_none_sampling;
 SELECT count(), sum(id) FROM d_definer_sampling;
 SELECT count(), sum(id) FROM d_none_plain;
+SELECT count(), sum(id) FROM d_none_nested;
+SELECT count(), sum(id) FROM d_definer_nested;
+SELECT count(), sum(id) FROM d_none_nested SETTINGS analyzer_inline_views = 1;
 
 DROP TABLE d_none_sampling;
 DROP TABLE d_definer_sampling;
 DROP TABLE d_none_plain;
+DROP TABLE d_none_nested;
+DROP TABLE d_definer_nested;
+DROP VIEW v_none_nested;
+DROP VIEW v_definer_nested;
+DROP TABLE inner_d_sampling;
+DROP TABLE inner_d_plain;
 DROP VIEW v_none_sampling;
 DROP VIEW v_definer_sampling;
 DROP VIEW v_none_plain;
