@@ -121,9 +121,17 @@ def test_geometry_parts_without_multipoint(start_cluster):
         assert node.query(query) == expected[table], table
     assert node.query("SELECT id FROM t WHERE variantType(g) = 'LineString'") == "2\n"
 
-    node.query("ALTER TABLE t UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2")
-    assert node.query("SELECT sum(v) FROM t") == "35\n"
+    node.query(
+        "ALTER TABLE t UPDATE g = [(5., 6.), (7., 8.)]::MultiPoint WHERE id = 3 SETTINGS mutations_sync = 2"
+    )
+    assert "3\t\\N\tNone\n" in expected["t"]
+    expected["t"] = expected["t"].replace("3\t\\N\tNone\n", "3\t[(5,6),(7,8)]\tMultiPoint\n")
     assert node.query(QUERIES["t"]) == expected["t"]
+    part = node.query("SELECT _part FROM t WHERE id = 3").strip()
+    path = node.query(
+        f"SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't' AND name = '{part}'"
+    ).strip()
+    assert "MultiPoint" in node.exec_in_container(["cat", f"{path}columns_substreams.txt"])
 
     node.query("INSERT INTO t VALUES (8, 8, [(7., 8.), (9., 10.)]::MultiPoint)")
     for table in QUERIES:

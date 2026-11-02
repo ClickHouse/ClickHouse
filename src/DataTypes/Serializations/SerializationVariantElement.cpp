@@ -249,6 +249,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             *variant_limit += (discriminators_data[i] == variant_discriminator);
     }
 
+    if (variant_element_state->variant_absent_in_storage && *variant_limit)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} has no streams in storage, but {} rows reference it",
+            variant_element_name, *variant_limit);
+
     /// Now we know the limit for our variant and can deserialize it.
 
     /// A Nullable wrapper added by the extraction is unknown to nested_serialization, so its null map
