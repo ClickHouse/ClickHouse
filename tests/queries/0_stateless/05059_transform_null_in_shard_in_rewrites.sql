@@ -294,14 +294,20 @@ SELECT 'stateful key subquery arm not rewritten', count() FROM (EXPLAIN QUERY TR
 SELECT 'rand in lambda key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', toNullable(arrayMax(arrayMap(x -> x + rand() % 2, [assumeNotNull(nid)])))) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
 SELECT 'rand in lambda key twin rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', toNullable(arrayMax(arrayMap(x -> x + 1, [assumeNotNull(nid)])))) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
 
--- A key expression that needs a conversion keeps its comparison: `dictGet` casts it to the key type
--- with `castColumnAccurate`, while both rewrite arms would compare it against bare key values in a
--- common supertype, so the cast that must throw for an out-of-range value would never run.
+-- A signed key reaches the rewrite through the `accurateCast` to `UInt64` that mirrors the conversion
+-- in `dictGet`, so it is rewritten and an out-of-range value still throws. A narrower unsigned key
+-- reaches it unconverted and keeps its comparison.
 SELECT 'int64 key value', count(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x'),
        sum(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x') FROM t_112032;
 SELECT 'int64 key value, rewrite off', count(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x'),
        sum(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x') FROM t_112032 SETTINGS optimize_inverse_dictionary_lookup = 0;
-SELECT 'int64 key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x') FROM t_112032) WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'int64 key rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', toNullable(toInt64(id))) = 'x') FROM t_112032) WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'negative int64 key', count() FROM t_112032 WHERE dictGet('d_112032', 'a', toNullable(toInt64(id) - 1)) = 'x'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT 'uint32 key value', count(dictGet('d_112032', 'a', toNullable(toUInt32(id))) = 'x'),
+       sum(dictGet('d_112032', 'a', toNullable(toUInt32(id))) = 'x') FROM t_112032;
+SELECT 'uint32 key value, rewrite off', count(dictGet('d_112032', 'a', toNullable(toUInt32(id))) = 'x'),
+       sum(dictGet('d_112032', 'a', toNullable(toUInt32(id))) = 'x') FROM t_112032 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'uint32 key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', toNullable(toUInt32(id))) = 'x') FROM t_112032) WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
 
 -- A complex key is a tuple of declared columns whatever its width, and the set holds bare key values,
 -- so a complex-key dictionary keeps its comparison at any width.

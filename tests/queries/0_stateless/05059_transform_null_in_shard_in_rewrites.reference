@@ -110,7 +110,10 @@ rand in lambda key not rewritten	0
 rand in lambda key twin rewritten	3
 int64 key value	100	3
 int64 key value, rewrite off	100	3
-int64 key not rewritten	0
+int64 key rewritten	1
+uint32 key value	100	3
+uint32 key value, rewrite off	100	3
+uint32 key not rewritten	0
 complex key like value	90	3
 complex key like value, rewrite off	90	3
 complex key where	3
