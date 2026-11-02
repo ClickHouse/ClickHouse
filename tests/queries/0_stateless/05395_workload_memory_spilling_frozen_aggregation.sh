@@ -28,7 +28,8 @@ fi
 $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD $workload SETTINGS max_memory = '1Gi', max_memory_before_spill = '16Mi'"
 
 # Frozen tables keep growing through local hits, without staging any records. Only workload pressure
-# can spill them, and the small states built before freezing are below `min_bytes_to_spill`.
+# can spill them, and the small states built before freezing are below `min_bytes_to_spill`. A spill
+# request writes a frozen table to disk, and its producer learns its keys again.
 settings=(
     --workload "$workload"
     --enable_adaptive_aggregator 1
@@ -66,7 +67,7 @@ $CLICKHOUSE_CLIENT -q "
 SELECT splitByChar('/', log_comment)[-1], count() = 1,
     max(ProfileEvents['AdaptiveAggregationLocalFreezes']) > 0,
     max(ProfileEvents['AdaptiveAggregationStagedRecords']) = 0,
-    max(ProfileEvents['AdaptiveAggregationPressureStandDowns']) > 0,
+    max(ProfileEvents['AdaptiveAggregationFrozenTableSpills']) > 0,
     max(ProfileEvents['MemoryReservationSpilledBytes']) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday()
