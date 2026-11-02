@@ -4015,6 +4015,11 @@ void Context::reportObsoleteSettingChange(const SettingChange & change) const
     if (Settings::tryGetTierOfBuiltin(change.name) != SettingsTierType::OBSOLETE)
         return;
 
+    /// The client refuses obsolete settings on its command line. Besides, it applies the settings of the user's
+    /// profile it receives from the server (`apply_settings_from_server`), and the server reports them itself.
+    if (getApplicationType() == ApplicationType::CLIENT)
+        return;
+
     /// The initiator of a distributed query sends its changed settings on (and always sends some obsolete ones,
     /// such as `allow_experimental_analyzer`, for compatibility with older servers). The initiator reports them itself.
     if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
