@@ -237,7 +237,9 @@ static Plan getPlan(
     }
     plan.initial_metadata_object = initial_metadata_object;
 
+    /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
+    std::unordered_set<Iceberg::IcebergPathFromMetadata> seen_position_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
@@ -259,7 +261,8 @@ static Plan getPlan(
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                all_positional_delete_files.push_back(pos_delete_file);
+                if (seen_position_delete_files.insert(pos_delete_file->parsed_entry->file_path_key).second)
+                    all_positional_delete_files.push_back(pos_delete_file);
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
@@ -288,13 +291,13 @@ static Plan getPlan(
                         .partition_specification = data_file->common_partition_specification,
                         .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[data_file_path] = data_file_ptr;
+                    plan.partitions[partition_index].push_back(data_file_ptr);
                 }
                 else
                 {
                     data_file_ptr = plan.path_to_data_file[data_file_path];
                 }
-                plan.partitions[partition_index].push_back(data_file_ptr);
-                plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
+                plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(data_file_ptr);
             }
         }
     }
@@ -1103,7 +1106,7 @@ static bool writeMetadataFiles(
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
 
-    std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
+    std::unordered_map<Int64, Int64> snapshot_id_to_records_count;
 
     for (const auto & history_record : plan.history)
     {
@@ -1114,16 +1117,21 @@ static bool writeMetadataFiles(
             continue;
         }
 
-        Int32 total_records_count = 0;
+        Int64 records_count = 0;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
-            total_records_count += data_file->new_records_count;
+            records_count += data_file->new_records_count;
+        /// `total-records` adds `added_records` to the parent's total only when the parent is rewritten too.
+        Int64 parent_records_count = 0;
+        if (auto it = snapshot_id_to_records_count.find(history_record.parent_id); it != snapshot_id_to_records_count.end())
+            parent_records_count = it->second;
+        snapshot_id_to_records_count[history_record.snapshot_id] = records_count;
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
             history_record.parent_id,
             append->added_files,
-            total_records_count,
+            records_count - parent_records_count,
             append->added_files_size,
             append->num_partitions,
             0,
