@@ -33,9 +33,9 @@ REGISTER_FUNCTION(MultiMatchAnyIndex)
         "Usage example",
         "SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);",
         R"(
-┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
-│                                                             3 │
-└───────────────────────────────────────────────────────────────┘
+┌─multiMatchAn⋯, 'Click'])─┐
+│                        3 │
+└──────────────────────────┘
         )"
     }
     };

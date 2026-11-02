@@ -19,21 +19,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Columns/ColumnsCommon.h>
-#include <base/TypeLists.h>
 
-#include <algorithm>
 #include <cstring>
-#include <numeric>
-#include <optional>
+#include <algorithm>
 
-namespace ProfileEvents
-{
-    extern const Event ShortCircuitArgumentsReordered;
-}
 
 namespace DB
 {
@@ -48,7 +38,6 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
-The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 )";
         FunctionDocumentation::Syntax syntax = "and(val1, val2[, ...])";
@@ -63,7 +52,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT and(0, 1, -2);", "0"},
-            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "\\N"}
+            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -80,7 +69,6 @@ Setting [`short_circuit_function_evaluation`](/reference/settings/session-settin
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
-The order of evaluation can differ from the order of the arguments when it doesn't change the result and doesn't introduce exceptions, see setting [`short_circuit_function_evaluation_reorder_arguments`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_reorder_arguments).
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 )";
         FunctionDocumentation::Syntax syntax = "or(val1, val2[, ...])";
@@ -95,7 +83,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
-            {"With NULL", "SELECT or(0, NULL);", "\\N"}
+            {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -160,6 +148,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
@@ -698,8 +687,42 @@ llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & v
 #endif
 }
 
-/// The result type of `and`/`or`/`xor` is derived from the declarative signature in
-/// `FunctionAnyArityLogical::getSignatureString` (the base `getReturnTypeImpl` applies it).
+template <typename Impl, typename Name>
+DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    if (arguments.size() < 2)
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function \"{}\" should be at least 2: passed {}",
+                    getName(), arguments.size());
+
+    bool has_nullable_arguments = false;
+    bool has_bool_arguments = false;
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        const auto & arg_type = arguments[i];
+
+        if (isBool(arg_type))
+            has_bool_arguments = true;
+
+        if (!has_nullable_arguments)
+        {
+            has_nullable_arguments = arg_type->isNullable();
+            if (has_nullable_arguments && !Impl::specialImplementationForNulls())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
+                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
+        }
+
+        if (!(isNativeNumber(arg_type)
+            || (Impl::specialImplementationForNulls() && (arg_type->onlyNull() || isNativeNumber(removeNullable(arg_type))))))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type ({}) of {} argument of function {}",
+                arg_type->getName(), i + 1, getName());
+    }
+
+    auto result_type = has_bool_arguments ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
+    return has_nullable_arguments
+            ? makeNullable(result_type)
+            : result_type;
+}
 
 template <bool inverted>
 static void applyTernaryLogicImpl(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
@@ -724,47 +747,34 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
         applyTernaryLogicImpl<false>(mask, null_bytemap);
 }
 
-/** Chooses the order in which `and`/`or` executes its arguments. The first argument is executed on all rows and stays
-  * first. An argument with statistics can be executed on more rows than in the original order: it cannot throw, it is
-  * not stateful and has no observable side effects, so this changes nothing but the time. An argument without
-  * statistics must be executed only on the rows that passed all the arguments preceding it in the original order.
-  * So these arguments stay in place, and split the arguments with statistics into groups, which are sorted by rank
-  * inside. Arguments that have not been executed yet go first in their group, to collect their statistics.
-  * Returns whether the order has changed.
-  */
-static bool orderArgumentsByStatistics(VectorWithMemoryTracking<size_t> & order, const VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> & statistics)
-{
-    VectorWithMemoryTracking<double> ranks(order.size());
-    for (size_t i = 1; i < order.size(); ++i)
-        if (statistics[i])
-            ranks[i] = statistics[i]->getRank();
-
-    auto group_begin = order.begin() + 1;
-    while (group_begin != order.end())
-    {
-        auto group_end = std::find_if(group_begin, order.end(), [&](size_t i) { return statistics[i] == nullptr; });
-        /// The rank is negative for the arguments that have not been executed yet.
-        std::stable_sort(group_begin, group_end, [&](size_t lhs, size_t rhs) { return ranks[lhs] < ranks[rhs]; });
-        group_begin = group_end == order.end() ? group_end : group_end + 1;
-    }
-
-    return !std::is_sorted(order.begin(), order.end());
-}
-
 template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
-    ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
     executeColumnIfNeeded(arguments[0]);
 
-    /// A set mask bit means that the row still needs evaluation: it has not encountered
-    /// false for `and`, or true for `or`. `NULL` does not decide either operation, so it leaves
-    /// the row active and is remembered separately. A later decisive value clears the
-    /// `NULL` state in `applyTernaryLogic`; otherwise the final result remains `NULL`.
-    /// The `or` mask contains inverted values and is inverted once at the end.
+    /// Let's denote x_i' = maskedExecute(x_i, mask).
+    /// 1) AND(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = x_0 & x_1 & ... & x_i.
+    /// Base:
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// Iteration:
+    /// mask_i = extractMask(mask_{i - 1}, x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 1 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is mask_n.
+    ///
+    /// 1) OR(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = !x_0 & !x_1 & ... & !x_i.
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// mask = extractMask(mask, !x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 0 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is !mask_n.
 
     bool inverted = Name::name != NameAnd::name;
     UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
@@ -776,57 +786,20 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    /// Statistics are present for the lazy arguments that are allowed to be executed before the arguments that
-    /// precede them (see ExpressionActions.cpp). They are used to choose the order in which the arguments are executed.
-    VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> statistics(arguments.size());
-    bool has_statistics = false;
-    for (size_t i = 1; i < arguments.size(); ++i)
+    MaskInfo mask_info{};
+    for (size_t i = 1; i <= arguments.size(); ++i)
     {
-        if (const auto * column_function = checkAndGetShortCircuitArgument(arguments[i].column))
-        {
-            statistics[i] = column_function->getShortCircuitArgumentStatistics().get();
-            has_statistics |= statistics[i] != nullptr;
-        }
-    }
-
-    VectorWithMemoryTracking<size_t> order(arguments.size());
-    std::iota(order.begin(), order.end(), 0);
-    bool lazy_arguments_reordered = has_statistics && orderArgumentsByStatistics(order, statistics);
-
-    /// Counted once per block, after the final execution order is known.
-    if (eager_arguments_reordered || lazy_arguments_reordered)
-        ProfileEvents::increment(ProfileEvents::ShortCircuitArgumentsReordered);
-
-    MaskInfo mask_info{.has_ones = true, .has_zeros = false};
-    /// The number of rows that are still undecided, if it is known.
-    std::optional<size_t> undecided_rows = mask.size();
-    for (size_t i : order)
-    {
-        if (statistics[i])
-        {
-            size_t executed_rows = undecided_rows ? *undecided_rows : countBytesInFilter(mask);
-            Stopwatch watch;
-            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value);
-            UInt64 elapsed = watch.elapsedNanoseconds();
-
-            if (!mask_info.has_ones)
-                undecided_rows = 0;
-            else if (!mask_info.has_zeros)
-                undecided_rows = mask.size();
-            else
-                undecided_rows = countBytesInFilter(mask);
-
-            statistics[i]->add(executed_rows, *undecided_rows, elapsed);
-        }
+        if (inverted)
+            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
         else
-        {
-            mask_info = maskedExecuteAndUpdateMask(arguments[i], mask, mask_info, inverted, nulls.get(), null_value);
-            undecided_rows.reset();
-        }
+            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
 
-        /// Stop when every row has a decisive result.
-        if (!mask_info.has_ones)
+        /// If mask doesn't have ones, we don't need to execute the rest arguments,
+        /// because the result won't change.
+        if (!mask_info.has_ones || i == arguments.size())
             break;
+
+        maskedExecute(arguments[i], mask, mask_info);
     }
     /// For OR function we need to inverse mask to get the resulting column.
     if (inverted)
@@ -861,7 +834,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
-        size_t last_not_short_circuit_arg_index = 0;
         VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
@@ -870,16 +842,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
             if (checkAndGetShortCircuitArgument(arguments[i].column))
                 short_circuit_args_index.emplace_back(i);
             else
-            {
                 not_short_circuit_args.emplace_back(arguments[i].column.get());
-                last_not_short_circuit_arg_index = i;
-            }
         }
-
-        /// Eager (cheap) arguments are executed before all the lazy ones. It changes the order of the query if a lazy
-        /// argument precedes an eager one (see `arguments_are_commutative` in ExpressionActions.cpp).
-        bool eager_arguments_reordered = !not_short_circuit_args.empty() && !short_circuit_args_index.empty()
-            && short_circuit_args_index.front() < last_not_short_circuit_arg_index;
 
         ColumnPtr partial_result = nullptr;
         if (not_short_circuit_args.size() > 1)
@@ -893,18 +857,10 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
             for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));
         }
-        else if (not_short_circuit_args.size() == 1 && last_not_short_circuit_arg_index != 0)
-        {
-            /// The first argument is lazy, because it is heavy while another one is cheap (see `arguments_are_commutative`).
-            /// Start from the cheap one.
-            new_args.emplace_back(std::move(arguments[last_not_short_circuit_arg_index]));
-            for (const auto & index : short_circuit_args_index)
-                new_args.emplace_back(std::move(arguments[index]));
-        }
         else
             new_args.swap(arguments);
 
-        return executeShortCircuit(new_args, result_type, eager_arguments_reordered);
+        return executeShortCircuit(new_args, result_type);
     }
 
     ColumnRawPtrs args_in;
@@ -1013,14 +969,17 @@ template <template <typename> class Impl, typename Name>
 ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     ColumnPtr res;
-    TypeListUtils::forEach(TypeListNativeNumber{}, [&]<typename T>(TypeList<T>)
-    {
-        if (!res)
-            res = functionUnaryExecuteType<Impl, T>(arguments);
-    });
-
-    if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+    if (!((res = functionUnaryExecuteType<Impl, UInt8>(arguments))
+        || (res = functionUnaryExecuteType<Impl, UInt16>(arguments))
+        || (res = functionUnaryExecuteType<Impl, UInt32>(arguments))
+        || (res = functionUnaryExecuteType<Impl, UInt64>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int8>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int16>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int32>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int64>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Float32>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Float64>(arguments))))
+       throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Illegal column {} of argument of function {}",
             arguments[0].column->getName(),
             getName());

@@ -1,12 +1,9 @@
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/KeeperConstants.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
-#include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <base/sanitizer_defs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -18,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /** These settings represent fine tunes for internal details of Coordination storages
@@ -68,7 +64,6 @@ namespace ErrorCodes
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     DECLARE(Bool, compress_logs, false, "Write compressed coordination logs in ZSTD format", 0) \
     DECLARE(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
-    DECLARE(Int64, snapshot_zstd_compression_level, DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL, "ZSTD compression level for snapshots. Lower levels use less CPU but produce larger snapshots. Used only when compress_snapshots_with_zstd_format is enabled.", 0) \
     DECLARE(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0) \
     DECLARE(UInt64, max_log_file_size, 50 * 1024 * 1024, "Max size of the Raft log file. If possible, each created log file will preallocate this amount of bytes on disk. Set to 0 to disable the limit", 0) \
     DECLARE(UInt64, log_file_overallocate_size, 50 * 1024 * 1024, "If max_log_file_size is not set to 0, this value will be added to it for preallocating bytes on disk. If a log record is larger than this value, it could lead to uncaught out-of-space issues so a larger value is preferred", 0) \
@@ -125,8 +120,6 @@ namespace ErrorCodes
     DECLARE(UInt64, commit_profiler_real_time_period_ns, 0, "Period for real clock timer of the query profiler on the Keeper commit thread (in nanoseconds). The profiling results appear in system.trace_log with query_id = 'KeeperCommit'. 0 means disabled.", 0) \
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
-    DECLARE(Milliseconds, slow_member_backpressure_no_progress_timeout_ms, 300000, "How long the leader keeps waiting for a replica that makes no progress at all, while the slow member backpressure is switched on with the `bpon` four letter command, before leaving it behind. Progress means an accepted response: log entries taken, or a snapshot object saved, so a replica that is merely slow keeps resetting this and only one that is stuck stops being waited for. The default is five minutes, and it is meant to be that large: a replica applying a large snapshot can be quiet for minutes and is exactly the one worth waiting for, so a timeout in seconds would abandon it just as waiting started to pay off. A replica the leader cannot reach at all is dropped straight away, without waiting for this. 0 means the leader never stops waiting for a replica it can reach.", 0) \
-    DECLARE(UInt64, slow_member_backpressure_max_uncommitted_log_entries, 0, "The value `nuraft_max_uncommitted_log_entries` takes while the slow member backpressure is switched on with the `bpon` four letter command. Holding the commit index back does not stop the leader appending, so without a tighter limit the log runs further ahead and the replica falls further behind instead of catching up. Tightening it makes the leader refuse new requests with a retriable error until the replica closes the gap. 0 leaves the limit unchanged.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
     DECLARE(Milliseconds, nuraft_snapshot_sync_ctx_timeout_ms, 0, "Timeout for a single snapshot-install round trip to a follower. 0 means derive it from raft_limits_response_limit * heart_beat_interval_ms (~10 s), which is a request-responsiveness budget and is usually far below the time a large snapshot needs to apply, so a follower that installed the snapshot successfully can have its acknowledgement discarded. Also applies to the add-server snapshot path. Size it against the slowest single-object install round trip - read, queue, transfer, save, apply and response delivery - not against apply time alone. Requires a restart.", 0) \
     DECLARE(Bool, log_readahead_enabled, true, "Enable per-peer decoded read-ahead for changelog catch-up reads.", 0) \
@@ -179,14 +172,6 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
     if ((*this)[CoordinationSetting::commit_logs_cache_size_threshold].changed
         && !(*this)[CoordinationSetting::log_readahead_commit_window_bytes].changed)
         (*this)[CoordinationSetting::log_readahead_commit_window_bytes] = (*this)[CoordinationSetting::commit_logs_cache_size_threshold];
-
-#if defined(MEMORY_SANITIZER)
-    if ((*this)[CoordinationSetting::commit_profiler_real_time_period_ns].changed
-        && (*this)[CoordinationSetting::commit_profiler_real_time_period_ns].value != 0)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "The Keeper setting `commit_profiler_real_time_period_ns` is not supported in a MemorySanitizer build");
-#endif
 }
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
@@ -232,7 +217,7 @@ const String KeeperConfiguration::DEFAULT_FOUR_LETTER_WORD_CMD =
 #if USE_JEMALLOC
 "jmst,jmfp,jmep,jmdp,"
 #endif
-"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,bpon,bpof,pfev,lgrq";
+"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,pfev,lgrq";
 
 KeeperConfiguration::KeeperConfiguration()
     : server_id(NOT_EXIST)

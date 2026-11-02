@@ -11,8 +11,6 @@ SET use_skip_indexes = 1;
 -- mask the actual index behavior, so disable it for this test.
 SET use_query_condition_cache = 0;
 SET query_plan_optimize_count_from_text_index = 0;
--- The assertions on `TextIndexReadPostings` below count posting lists read by one query, so keep them independent of what earlier queries have already put into the server-wide postings cache.
-SET use_text_index_postings_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_cost;

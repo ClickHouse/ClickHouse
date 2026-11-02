@@ -20,8 +20,8 @@ CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);
 CREATE WORKLOAD $workload SETTINGS max_memory = '1Gi';
 "
 
-# The query keeps the workload's scheduler nodes alive after the workload is dropped and must
-# still be able to finish/KILLed.
+# The query keeps the dropped workload's queue alive. DROP WORKLOAD fails the query's memory reservation,
+# so the query may end on its own before KILL.
 $CLICKHOUSE_CLIENT --query_id "$query_id" --workload "$workload" --max_block_size 1 -q "SELECT sleepEachRow(1) FROM numbers(300) FORMAT Null" 2>/dev/null &
 
 while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$query_id'") != 1 ]]; do

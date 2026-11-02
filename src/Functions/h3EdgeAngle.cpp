@@ -17,6 +17,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
 }
@@ -37,9 +38,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt8) -> Float64";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt8())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                arg->getName(), 1, getName());
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -111,8 +119,8 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "Get edge angle for resolution 10",
             "SELECT h3EdgeAngle(10) AS edgeAngle",
             R"(
-┌─────────────edgeAngle─┐
-│ 0.0006822586214258879 │
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
 └───────────────────────┘
             )"
         }

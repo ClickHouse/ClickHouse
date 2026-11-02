@@ -22,9 +22,6 @@ public:
     static constexpr auto name = "mergeTreeProjection";
     std::string getName() const override { return name; }
 
-    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
-    bool canBeUsedToCreateTable() const override { return false; }
-
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
@@ -169,7 +166,7 @@ DESCRIBE mergeTreeProjection(currentDatabase(), test, order_by_item_id) SETTINGS
 2. │ _parent_part_offset │ UInt64 │
    └─────────────────────┴────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true}
     );
 }

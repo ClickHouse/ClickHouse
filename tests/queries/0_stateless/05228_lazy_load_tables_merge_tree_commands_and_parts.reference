@@ -1,9 +1,0 @@
-stand-in	TableProxy
-in system.parts	0
-in system.parts_columns	0
-loaded	MergeTree
-in system.parts	1
-in system.parts_columns	1
-loaded	MergeTree
-loaded	MergeTree
-loaded	MergeTree

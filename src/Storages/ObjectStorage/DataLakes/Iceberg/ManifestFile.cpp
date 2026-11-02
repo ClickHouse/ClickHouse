@@ -6,8 +6,6 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
-#include <Poco/String.h>
-
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 
@@ -60,8 +58,8 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
 
 std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
 {
-    return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value, lhs->sequence_number)
-        <=> std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value, rhs->sequence_number);
+    return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value, lhs->sequence_number)
+        <=> std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value, rhs->sequence_number);
 }
 
 static String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
@@ -104,17 +102,12 @@ static String dumpPartitionKeyValue(const DB::Row & partition_key_value)
 }
 
 
-bool ParsedManifestFileEntry::isDeletionVector() const
-{
-    return content_type == FileContentType::POSITION_DELETE && Poco::toLower(file_format) == "puffin";
-}
-
 String ProcessedManifestFileEntry::dumpDeletesMatchingInfo() const
 {
     return fmt::format(
         "Partition specification: {}, partition key value: {}, added sequence number: {}",
         dumpPartitionSpecification(*common_partition_specification),
-        dumpPartitionKeyValue(normalized_partition_key_value),
+        dumpPartitionKeyValue(parsed_entry->partition_key_value),
         sequence_number);
 }
 }

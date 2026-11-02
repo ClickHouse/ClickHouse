@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# Tag no-replicated-database: the replica parses the DDL entry with `dialect = clickhouse_json`, https://github.com/ClickHouse/ClickHouse/issues/123323
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
