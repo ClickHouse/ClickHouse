@@ -408,7 +408,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
                 else
                 {
-                    readStringBinary(data_type_name, *structure_stream);
+                    readStringBinaryGrowing(data_type_name, *structure_stream);
                     data_type = getDataTypesCache().getType(data_type_name);
                 }
 
@@ -454,7 +454,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
-                    readStringBinary(data_type_name, *structure_stream);
+                    readStringBinaryGrowing(data_type_name, *structure_stream);
                     variants.push_back(getDataTypesCache().getType(data_type_name));
                 }
             }
