@@ -10,7 +10,9 @@ CREATE TABLE right (g UInt32, i UInt32)
 INSERT INTO right VALUES
 (0,0), (0, 3), (0, 4), (0, 6), (1, 0);
 
-SELECT 'run';
+SET enable_analyzer = 1;
+
+SELECT 'run enable-analyzer=1';
 with differences as
     (
         (
@@ -36,7 +38,7 @@ diff_counts as
 select * from diff_counts
 ORDER BY g;
 
-SELECT 'run ignore';
+SELECT 'run enable-analyzer=1 ignore';
 with differences as
     (
         (

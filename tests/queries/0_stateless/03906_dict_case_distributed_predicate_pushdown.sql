@@ -1,10 +1,7 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/87403
 -- Dictionary + CASE + distributed table: predicate pushdown should not filter out rows incorrectly.
 
-SET optimize_move_to_prewhere = 1;
-SET optimize_respect_aliases = 1;
-SET optimize_inverse_dictionary_lookup = 1;
-SET optimize_multiif_to_if = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_dict_dist_local;
 DROP DICTIONARY IF EXISTS d_dict_dist;

@@ -25,7 +25,6 @@ TEST(ColumnDynamic, CreateEmpty)
 TEST(ColumnDynamic, InsertDefault)
 {
     auto column = ColumnDynamic::create(254);
-    ASSERT_TRUE(column->hasOnlyTypeDefaults());
     column->insertDefault();
     ASSERT_TRUE(column->size() == 1);
     ASSERT_EQ(column->getVariantInfo().variant_type->getName(), "Variant(SharedVariant)");
@@ -36,10 +35,6 @@ TEST(ColumnDynamic, InsertDefault)
     ASSERT_TRUE(column->getVariantColumn().getVariantByGlobalDiscriminator(0).empty());
     ASSERT_TRUE(column->isNullAt(0));
     ASSERT_EQ((*column)[0], Field(Null()));
-    ASSERT_TRUE(column->hasOnlyTypeDefaults());
-
-    column->insert(Field{42u});
-    ASSERT_FALSE(column->hasOnlyTypeDefaults());
 }
 
 TEST(ColumnDynamic, InsertFields)
@@ -58,13 +53,13 @@ TEST(ColumnDynamic, InsertFields)
     ASSERT_TRUE(column->size() == 10);
 
     ASSERT_EQ(column->getVariantInfo().variant_type->getName(), "Variant(Float64, Int8, SharedVariant, String)");
-    Names expected_names = {"Float64", "Int8", "SharedVariant", "String"};
+    std::vector<String> expected_names = {"Float64", "Int8", "SharedVariant", "String"};
     ASSERT_EQ(column->getVariantInfo().variant_names, expected_names);
-    UnorderedMapWithMemoryTracking<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
+    std::unordered_map<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
     ASSERT_TRUE(column->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
-static ColumnDynamic::MutablePtr getDynamicWithManyVariants(size_t num_variants, Field tuple_element = Field(42))
+ColumnDynamic::MutablePtr getDynamicWithManyVariants(size_t num_variants, Field tuple_element = Field(42))
 {
     auto column = ColumnDynamic::create(254);
     for (size_t i = 0; i != num_variants; ++i)
@@ -144,7 +139,7 @@ TEST(ColumnDynamic, InsertFieldsOverflow2)
     ASSERT_EQ(field, 42);
 }
 
-static ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
+ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
 {
     auto column_from = ColumnDynamic::create(254);
     for (size_t i = 0; i != num; ++i)
@@ -156,7 +151,7 @@ static ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
     return column_from;
 }
 
-static void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const std::vector<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertFrom(*column_from, 0);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -280,7 +275,7 @@ TEST(ColumnDynamic, InsertFromOverflow3)
     ASSERT_EQ(field, 42.42);
 }
 
-static void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const std::vector<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertManyFrom(*column_from, 0, 2);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -596,7 +591,7 @@ TEST(ColumnDynamic, SameLayoutSharedVariantKeepsInvariant)
     check(Range);
 }
 
-static void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const std::vector<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertRangeFrom(*column_from, 0, 3);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -982,9 +977,9 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
     ASSERT_EQ((*column_to)[column_to->size() - 2], "str");
     ASSERT_EQ((*column_to)[column_to->size() - 1], Null());
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), "Variant(Float64, Int8, SharedVariant, String)");
-    Names expected_names = {"Float64", "Int8", "SharedVariant", "String"};
+    std::vector<String> expected_names = {"Float64", "Int8", "SharedVariant", "String"};
     ASSERT_EQ(column_to->getVariantInfo().variant_names, expected_names);
-    UnorderedMapWithMemoryTracking<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
+    std::unordered_map<String, UInt8> expected_variant_name_to_discriminator = {{"Float64", 0}, {"Int8", 1}, {"SharedVariant", 2}, {"String", 3}};
     ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
@@ -1058,6 +1053,33 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow2)
     ASSERT_EQ(column_to->getSharedVariant().size(), 2);
 }
 
+TEST(ColumnDynamic, skipSerializedInArena)
+{
+    auto column_from = ColumnDynamic::create(3);
+    column_from->insert(Field(42));
+    column_from->insert(Field(42.42));
+    column_from->insert(Field("str"));
+    column_from->insert(Field(Null()));
+
+    Arena arena;
+    const char * pos = nullptr;
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
+
+    auto column_to = ColumnDynamic::create(254);
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    column_to->skipSerializedInArena(in);
+    column_to->skipSerializedInArena(in);
+    column_to->skipSerializedInArena(in);
+    column_to->skipSerializedInArena(in);
+
+    ASSERT_TRUE(in.eof());
+    ASSERT_EQ(column_to->getVariantInfo().variant_name_to_discriminator.at("SharedVariant"), 0);
+    ASSERT_EQ(column_to->getVariantInfo().variant_names, Names{"SharedVariant"});
+}
+
 TEST(ColumnDynamic, compare)
 {
     auto column_from = ColumnDynamic::create(3);
@@ -1088,7 +1110,7 @@ TEST(ColumnDynamic, compare)
 
 TEST(ColumnDynamic, rollback)
 {
-    auto check_variant = [](const ColumnVariant & column_variant, VectorWithMemoryTracking<size_t> sizes)
+    auto check_variant = [](const ColumnVariant & column_variant, std::vector<size_t> sizes)
     {
         ASSERT_EQ(column_variant.getNumVariants(), sizes.size());
         size_t num_rows = 0;
@@ -1102,7 +1124,7 @@ TEST(ColumnDynamic, rollback)
         ASSERT_EQ(num_rows, column_variant.size());
     };
 
-    auto check_checkpoint = [&](const ColumnCheckpoint & cp, UnorderedMapWithMemoryTracking<String, size_t> sizes)
+    auto check_checkpoint = [&](const ColumnCheckpoint & cp, std::unordered_map<String, size_t> sizes)
     {
         const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(cp).variants_checkpoints;
         size_t num_rows = 0;
@@ -1116,8 +1138,8 @@ TEST(ColumnDynamic, rollback)
         ASSERT_EQ(num_rows, cp.size);
     };
 
-    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> variant_checkpoints_sizes;
-    VectorWithMemoryTracking<std::pair<ColumnCheckpointPtr, UnorderedMapWithMemoryTracking<String, size_t>>> dynamic_checkpoints;
+    std::vector<std::vector<size_t>> variant_checkpoints_sizes;
+    std::vector<std::pair<ColumnCheckpointPtr, std::unordered_map<String, size_t>>> dynamic_checkpoints;
 
     auto column = ColumnDynamic::create(2);
     auto checkpoint = column->getCheckpoint();
@@ -1127,27 +1149,27 @@ TEST(ColumnDynamic, rollback)
     column->insert(Field("str1"));
     column->rollback(*checkpoint);
 
-    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{0, 1, 0});
-    dynamic_checkpoints.emplace_back(checkpoint, UnorderedMapWithMemoryTracking<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 0}});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 0});
+    dynamic_checkpoints.emplace_back(checkpoint, std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 0}});
 
     check_checkpoint(*checkpoint, dynamic_checkpoints.back().second);
     check_variant(column->getVariantColumn(), variant_checkpoints_sizes.back());
 
     column->insert("str1");
-    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{0, 1, 1});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), UnorderedMapWithMemoryTracking<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 1}});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 1});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 1}});
 
     column->insert("str2");
-    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{0, 1, 2});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), UnorderedMapWithMemoryTracking<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 2}});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 2});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 2}});
 
     column->insert(Array({1, 2}));
-    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{1, 1, 2});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), UnorderedMapWithMemoryTracking<String, size_t>{{"SharedVariant", 1}, {"Int8", 1}, {"String", 2}});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{1, 1, 2});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 1}, {"Int8", 1}, {"String", 2}});
 
     column->insert(Field(42.42));
-    variant_checkpoints_sizes.emplace_back(VectorWithMemoryTracking<size_t>{2, 1, 2});
-    dynamic_checkpoints.emplace_back(column->getCheckpoint(), UnorderedMapWithMemoryTracking<String, size_t>{{"SharedVariant", 2}, {"Int8", 1}, {"String", 2}});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{2, 1, 2});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 2}, {"Int8", 1}, {"String", 2}});
 
     for (size_t i = 0; i != variant_checkpoints_sizes.size(); ++i)
     {

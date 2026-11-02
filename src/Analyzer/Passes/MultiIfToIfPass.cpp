@@ -12,7 +12,6 @@ namespace Setting
 {
     extern const SettingsBool optimize_multiif_to_if;
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -42,8 +41,7 @@ public:
             return;
 
         auto if_function_value = if_function_ptr->build(function_node->getArgumentColumns());
-        /// A `group_by_use_nulls` copy of a `GROUP BY` key is the key made `Nullable`; `resolveAsFunction` keeps it `Nullable`.
-        if (!if_function_value->getResultType()->equals(*function_node->getFunctionOrThrow()->getResultType()))
+        if (!if_function_value->getResultType()->equals(*function_node->getResultType()))
         {
             /** We faced some corner case, when result type of `if` and `multiIf` are different.
               * For example, currently `if(NULL`, a, b)` returns type of `a` column,
@@ -65,8 +63,7 @@ void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context
 {
     const auto & settings = context->getSettingsRef();
     auto if_function_ptr
-        = createInternalFunctionIfOverloadResolver(
-            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
+        = createInternalFunctionIfOverloadResolver(settings[Setting::use_variant_as_common_type]);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

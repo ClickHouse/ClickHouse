@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
@@ -17,10 +18,6 @@ NameSet injectRequiredColumns(
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns);
-
-/// Whether the virtual columns of a text index can be read from the index in a part (direct read).
-/// Otherwise they are computed by their default expressions.
-bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
@@ -52,7 +49,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -107,7 +104,7 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-    MergeTreeDataPartInfoForReaderPtr data_part;
+    DataPartPtr data_part;
 
     struct ColumnInfo
     {

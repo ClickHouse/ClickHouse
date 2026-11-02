@@ -16,6 +16,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class ASTSelectQuery;
 class ASTFunction;
 class MergeTreeData;
 struct StorageInMemoryMetadata;
@@ -41,8 +42,9 @@ public:
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
-        bool supported_columns_include_subcolumns_,
         LoggerPtr log_);
+
+    void optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const;
 
     struct FilterActionsOptimizeResult
     {
@@ -51,49 +53,41 @@ public:
         bool fully_moved_to_prewhere = false;
     };
 
-    /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
-    /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
-    /// during the scan to them (see `extractStringValueFilters`).
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
-        bool is_final,
-        const NameSet & columns_read_before_filter = {});
+        bool is_final);
 
 private:
     struct Condition
     {
-        explicit Condition(std::vector<RPNBuilderTreeNode> nodes_)
-            : nodes(std::move(nodes_))
+        explicit Condition(RPNBuilderTreeNode node_)
+            : node(std::move(node_))
         {}
 
-        /// One or more conjuncts that share the same required column set and are
-        /// treated as a single unit for PREWHERE reordering and selectivity estimation.
-        std::vector<RPNBuilderTreeNode> nodes;
+        RPNBuilderTreeNode node;
 
         UInt64 columns_size = 0;
         NameSet table_columns;
+        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
+        /// Used for grouping: conditions on subcolumns of the same storage column
+        /// (e.g. `map.key_k0` and `map.key_k1`) are grouped and moved to PREWHERE together.
+        NameSet table_storage_columns;
 
         /// Can condition be moved to prewhere?
         bool viable = false;
-
-        /// Does the condition contain a function that reports `isExpensive`?
-        /// Such a condition is moved to PREWHERE after all other conditions.
-        bool expensive = false;
 
         /// Does the condition presumably have good selectivity?
         bool good = false;
 
         /// the lower the better
-        UInt64 estimated_row_count = 0;
+        Float64 estimated_row_count = 0;
 
-        /// Lower is better: bytes_per_row * total_rows / (total_rows - estimated_row_count), +inf
-        /// when the condition rejects no rows. Comparable across conditions only in the same unit,
-        /// hence a column of unknown size is charged an estimated per-row size, never a row count.
-        double bytes_per_rejected_row = 0;
-
-        /// Every conjunct is a join runtime filter, which is estimated to pass every row.
-        bool is_runtime_filter = false;
+        /// Combined I/O cost and selectivity score (lower is better): cost per rejected row,
+        /// columns_size / (total_rows - estimated_row_count). A condition that rejects no rows
+        /// gets +inf (scheduled last), and when per-column sizes are unavailable (columns_size=0,
+        /// e.g. compact parts) it falls back to estimated_row_count so selectivity ordering is kept.
+        double cost_with_selectivity = 0;
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
@@ -103,32 +97,22 @@ private:
         /// For debugging purposes
         String toString() const
         {
-            String names;
-            for (const auto & n : nodes)
-            {
-                if (!names.empty())
-                    names += " AND ";
-                names += n.getColumnName();
-            }
             return fmt::format(
-                "Condition(exp:{} viable: {}, expensive: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, is_runtime_filter: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
-                names,
+                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
+                "columns_size: {}, cost_with_selectivity: {}, table_columns.size: {})",
+                node.getColumnName(),
                 viable,
-                expensive,
                 good,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
-                is_runtime_filter,
-                bytes_per_rejected_row,
+                cost_with_selectivity,
                 table_columns.size());
         }
 
         auto tuple() const
         {
-            return std::make_tuple(
-                !viable, expensive, !good, -min_position_in_primary_key, is_runtime_filter, bytes_per_rejected_row, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, cost_with_selectivity, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -149,8 +133,6 @@ private:
         bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
-        bool apply_string_filters_during_scan = false;
-        const NameSet * columns_read_before_filter = nullptr;
     };
 
     struct OptimizeResult
@@ -166,22 +148,20 @@ private:
     /// Transform conjunctions chain in WHERE expression to Conditions list.
     Conditions analyze(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
-    UInt64 getColumnsSize(const NameSet & columns) const;
+    /// Reconstruct AST from conditions
+    static ASTPtr reconstructAST(const Conditions & conditions);
 
-    double approximateBytesPerRow(const NameSet & columns) const;
-    double approximateBytesPerRowAndColumn(const String & column) const;
+    void optimizeArbitrary(ASTSelectQuery & select) const;
+
+    UInt64 getColumnsSize(const NameSet & columns) const;
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
-    bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
-
-    /// Whether the condition is a substring search on a String column that can be used as
-    /// a string value filter during the scan when `apply_string_filters_during_scan` is enabled
-    /// (see `extractStringValueFilters`). Such a condition is worth moving to PREWHERE even when
-    /// it involves all queried columns: the reader then skips copying the non-matching values.
-    bool isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+    bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
 
     bool isSortingKey(const String & column_name) const;
+
+    bool isConstant(const ASTPtr & expr) const;
 
     bool isSubsetOfTableColumns(const NameSet & columns) const;
 
@@ -193,15 +173,13 @@ private:
       */
     bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
-    /// Whether the expression contains a function that reports `isExpensive`.
-    static bool isExpensiveExpression(const RPNBuilderTreeNode & node);
+    static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
     ConditionSelectivityEstimatorPtr estimator;
 
     const NameSet table_columns;
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
-    const bool supported_columns_include_subcolumns;
     const NameSet sorting_key_names;
     const NameToIndexMap primary_key_names_positions;
     StorageMetadataPtr storage_metadata;

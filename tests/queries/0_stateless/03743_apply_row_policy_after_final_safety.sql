@@ -4,7 +4,7 @@
 --   3. Non-SK row policy keeps PREWHERE deferred even when PREWHERE is
 --      itself SK-only — otherwise `throwIf` leak hidden rows
 
-SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 
 SELECT '= non-deterministic row policy that structurally only uses SK columns must remain deferred =';
 
@@ -25,7 +25,8 @@ SET apply_row_policy_after_final = 1;
 SELECT '--- non-deterministic row policy stays deferred (count of "Deferred row level filter" lines)';
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT * FROM tab_nondet_policy FINAL ORDER BY x)
-WHERE explain LIKE '%Deferred row level filter%';
+WHERE explain LIKE '%Deferred row level filter%'
+SETTINGS enable_analyzer = 1;
 
 DROP ROW POLICY pol_nondet ON tab_nondet_policy;
 SET apply_row_policy_after_final = 0;
@@ -56,7 +57,8 @@ SELECT * FROM tab_sk_no_pw FINAL ORDER BY x;
 SELECT '--- no Deferred filters expected (count of any "Deferred" lines)';
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT * FROM tab_sk_no_pw FINAL ORDER BY x)
-WHERE explain LIKE '%Deferred%';
+WHERE explain LIKE '%Deferred%'
+SETTINGS enable_analyzer = 1;
 
 DROP ROW POLICY pol_sk_no_pw ON tab_sk_no_pw;
 SET apply_row_policy_after_final = 0;

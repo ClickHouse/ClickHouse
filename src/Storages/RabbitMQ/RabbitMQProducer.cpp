@@ -153,7 +153,7 @@ void RabbitMQProducer::setupChannel()
 void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
-    chassert(record_iter != delivery_record.end());
+    assert(record_iter != delivery_record.end());
 
     if (multiple)
     {
@@ -268,12 +268,10 @@ void RabbitMQProducer::startProducingTaskLoop()
         }
     }
 
+    int res = 0;
     size_t try_num = 0;
-    while (++try_num <= FINISH_PRODUCER_NUM_TRIES)
+    while (++try_num <= FINISH_PRODUCER_NUM_TRIES && (res = iterateEventLoop()))
     {
-        int res = iterateEventLoop();
-        if (!res)
-            break;
         LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
     }
 

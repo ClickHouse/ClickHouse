@@ -10,7 +10,7 @@ namespace DB
 
 void NormalizeAndEvaluateConstants::visit(const ASTPtr & ast, Data & data)
 {
-    chassert(data.create_query_context->hasQueryContext());
+    assert(data.create_query_context->hasQueryContext());
 
     /// Looking for functions in column default expressions and dictionary source definition
     if (const auto * function = ast->as<ASTFunction>())

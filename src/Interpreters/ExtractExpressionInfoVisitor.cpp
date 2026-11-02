@@ -1,10 +1,6 @@
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -28,10 +24,6 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     {
         data.is_array_join = true;
     }
-    else if (ast_function.name == "untuple")
-    {
-        data.is_untuple = true;
-    }
     // "is_aggregate_function" is used to determine whether we can move a filter
     // (1) from HAVING to WHERE or (2) from WHERE of a parent query to HAVING of
     // a subquery.
@@ -50,37 +42,7 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     }
     else
     {
-        /// User-defined functions are not registered in `FunctionFactory`, so they have to be resolved
-        /// through their own factories, the same way `ActionsVisitor` and `TreeOptimizer` do. Otherwise
-        /// a non-deterministic `EXECUTABLE` or `WASM` UDF looks like an unknown function here and is
-        /// treated as deterministic, so a predicate over it may be pushed into a subquery and the
-        /// function evaluated twice per row.
-        ///
-        /// An `EXECUTABLE` UDF is not stateful, so only its `deterministic` flag matters. Read it from the
-        /// configuration instead of instantiating the function: `UserDefinedExecutableFunctionFactory::tryGet`
-        /// builds a `UserDefinedFunction` with an empty `parameters` array, and that constructor throws
-        /// `BAD_ARGUMENTS` for a parametric UDF such as `test_function_parameter_python(1)(k)`, which would
-        /// turn a mere optimizer walk into a query failure.
-        if (auto is_deterministic = UserDefinedExecutableFunctionFactory::tryGetIsDeterministic(ast_function.name, data.getContext()))
-        {
-            if (!*is_deterministic)
-                data.is_deterministic_function = false;
-            return;
-        }
-
-        FunctionOverloadResolverPtr function;
-
-        {
-            auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(ast_function.name);
-            if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
-            {
-                UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(data.getContext());
-                function = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(ast_function.name, data.getContext());
-            }
-        }
-
-        if (!function)
-            function = FunctionFactory::instance().tryGet(ast_function.name, data.getContext());
+        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.getContext());
 
         /// Skip lambda, tuple and other special functions
         if (function)
@@ -130,13 +92,8 @@ bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context)
         ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
         ExpressionInfoVisitor(expression_info).visit(select_expression);
 
-        /// `untuple` expands at execution build time: its output names are not referenceable here.
-        /// A predicate over the result of a non-deterministic function must not be pushed down either:
-        /// the pushed copy refers to the function again and may see a different value than the outer one.
         if (expression_info.is_stateful_function
-            || expression_info.is_window_function
-            || expression_info.is_untuple
-            || !expression_info.is_deterministic_function)
+            || expression_info.is_window_function)
         {
             // If an outer query has a WHERE on window function, we can't move
             // it into the subquery, because window functions are not allowed in
