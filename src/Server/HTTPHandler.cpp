@@ -1047,9 +1047,9 @@ void HTTPHandler::processQuery(
         /// right identifier parts instead of being split on every `.`.
         String qualified_table;
         if (!path_info.database.empty())
-            qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
+            qualified_table = backQuote(path_info.database) + "." + backQuote(path_info.table);
         else
-            qualified_table = backQuoteIfNeed(path_info.table);
+            qualified_table = backQuote(path_info.table);
 
         /// Validate up-front that the table from the URL path actually exists, so a typo like
         /// `/sashboards` produces a single clean response that combines the closest table-name
