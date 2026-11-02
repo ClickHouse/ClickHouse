@@ -90,8 +90,15 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     std::optional<size_t> getFileSizeHint() const override
     {
-        if (info.file_size_in_bytes.has_value())
+        if (info.file_size_in_bytes.has_value() && *info.file_size_in_bytes > 0)
             return static_cast<size_t>(*info.file_size_in_bytes);
+        return std::nullopt;
+    }
+
+    std::optional<size_t> getNumRowsHint() const override
+    {
+        if (info.record_count.has_value() && *info.record_count >= 0)
+            return static_cast<size_t>(*info.record_count);
         return std::nullopt;
     }
 

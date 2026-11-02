@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="allow_suspicious_codecs">
-  ## allow_suspicious_codecs
-</div>
+## allow_suspicious_codecs {#allow_suspicious_codecs}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,27 +21,23 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 如果将其设为 true，则允许指定无意义的压缩编解码器。
 
-<div id="allow_suspicious_fixed_string_types">
-  ## allow_suspicious_fixed_string_types
-</div>
+## allow_suspicious_fixed_string_types {#allow_suspicious_fixed_string_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 在 CREATE TABLE 语句 中，允许创建类型为 FixedString(n) 且 n &gt; 256 的列。长度 &gt;= 256 的 FixedString 很不寻常，通常表明存在误用
 
-<div id="allow_suspicious_indices">
-  ## allow_suspicious_indices
-</div>
+## allow_suspicious_indexes {#allow_suspicious_indexes}
+
+**别名**：`allow_suspicious_indices`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "如果为 true，则可以使用相同的表达式定义索引"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置别名 `allow_suspicious_indices`。"}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "如果为 true，则可以使用相同的表达式定义索引"}]}]} />
 
 拒绝使用相同表达式的主索引/次级索引和排序键
 
-<div id="allow_suspicious_low_cardinality_types">
-  ## allow_suspicious_low_cardinality_types
-</div>
+## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,9 +56,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 1 — 不限制使用 `LowCardinality`。
 * 0 — 限制使用 `LowCardinality`。
 
-<div id="allow_suspicious_primary_key">
-  ## allow_suspicious_primary_key
-</div>
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -72,9 +64,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 允许在 MergeTree 中使用可疑的 `PRIMARY KEY`/`ORDER BY` (即 SimpleAggregateFunction) 。
 
-<div id="allow_suspicious_ttl_expressions">
-  ## allow_suspicious_ttl_expressions
-</div>
+## allow_suspicious_ttl_expressions {#allow_suspicious_ttl_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,9 +72,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 拒绝不依赖表中任何列的 TTL 表达式。这在大多数情况下都表明是用户误用。
 
-<div id="allow_suspicious_types_in_group_by">
-  ## allow_suspicious_types_in_group_by
-</div>
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -92,9 +80,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 控制是否允许在 GROUP BY 键中使用 [Variant](/zh/reference/data-types/variant) 和 [Dynamic](/zh/reference/data-types/dynamic) 类型。
 
-<div id="allow_suspicious_types_in_order_by">
-  ## allow_suspicious_types_in_order_by
-</div>
+## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -102,9 +88,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 允许或限制在 ORDER BY 键中使用 [Variant](/zh/reference/data-types/variant) 和 [Dynamic](/zh/reference/data-types/dynamic) 类型。
 
-<div id="allow_suspicious_variant_types">
-  ## allow_suspicious_variant_types
-</div>
+## allow_suspicious_variant_types {#allow_suspicious_variant_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

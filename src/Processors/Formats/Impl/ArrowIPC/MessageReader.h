@@ -5,12 +5,14 @@
 #if USE_ARROW
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 class ReadBuffer;
+class SeekableReadBuffer;
 }
 
 namespace DB::ArrowIPC
@@ -65,6 +67,17 @@ public:
 private:
     ReadBuffer & in;
     PODArray<char> metadata_storage;
+};
+
+/// Buffers a non-seekable Arrow file in chunks (64 KiB, doubling up to 16 MiB), so growing it never
+/// reallocates already written bytes.
+class InMemoryFile : public MemoryWriteBuffer
+{
+public:
+    InMemoryFile() : MemoryWriteBuffer(0, 64 << 10, 2.0, 16 << 20) { }
+
+    /// Random access to the written bytes, valid while this object lives.
+    std::unique_ptr<SeekableReadBuffer> getSeekableReadBuffer();
 };
 
 }

@@ -1,17 +1,14 @@
 #pragma once
 
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Executors/Runtime/IExecutor.h>
 #include <Processors/Executors/Runtime/V1/ExecutorTasks.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 
 #include <queue>
 #include <memory>
-
-#include <boost/container/devector.hpp>
-
 
 namespace DB
 {
@@ -50,6 +47,8 @@ public:
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
 
 private:
+    /// Outlives graph registrations, including when construction fails.
+    QueryStatusPtr process_list_element;
     ExecutingGraphPtr graph;
 
     ExecutorTasks tasks;
@@ -88,15 +87,12 @@ private:
 
     LoggerPtr log = getLogger("PipelineExecutor");
 
-    QueryStatusPtr process_list_element;
-
     ReadProgressCallbackPtr read_progress_callback;
     StepProfilerPtr step_profiler;
 
-    /// This queue can grow a lot and lead to OOM. That is why we use non-default
-    /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
-    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
+    /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
+    /// allocator that throws instead of overcommitting.
+    using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
@@ -106,6 +102,7 @@ private:
     void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
+    void detachSpillables();
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);

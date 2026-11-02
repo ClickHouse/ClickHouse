@@ -35,6 +35,8 @@ public:
     StatisticsBasic(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
     void build(const ColumnPtr & column) override;
+    /// A NULL bound leaves min/max unknown; `null_count` counts only for a column whose default is NULL.
+    void build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
@@ -43,8 +45,10 @@ public:
     std::optional<Float64> estimateLess(const Field & val) const override;
     std::optional<Float64> estimateEqual(const Field & val) const override;
     String getNameForLogs() const override;
+    size_t allocatedBytes() const override;
 
     bool isCompatibleWith(const IStatistics & other) const override;
+    void copyStructureFrom(const IStatistics & other) override;
 
     bool hasNumericMinMax() const { return tracks_numeric; }
     bool hasStringLengthAvg() const { return tracks_string; }

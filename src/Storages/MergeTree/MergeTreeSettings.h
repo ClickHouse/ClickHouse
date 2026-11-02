@@ -64,6 +64,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
+    M(CLASS_NAME, MergeTreeObjectTypedSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreePatchPartsVersion) \
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
@@ -84,6 +85,7 @@ struct MergeTreeSettings
     MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     bool has(std::string_view name) const;
+    bool isChanged(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;

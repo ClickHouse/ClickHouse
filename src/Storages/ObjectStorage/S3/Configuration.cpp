@@ -111,6 +111,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     "upload_checksum_algorithm",
+    "use_idempotency_id",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -145,7 +146,7 @@ std::string StorageS3Configuration::getPathInArchive() const
 void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
+    url.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }

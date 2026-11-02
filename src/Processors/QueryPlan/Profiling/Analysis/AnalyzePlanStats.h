@@ -47,6 +47,7 @@ public:
 
 private:
     void collectIOStats(const Processors & processors);
+    void collectSpillStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const StepProfiler & step_profiler, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
     void computeJoinBranchCosts(const QueryPlan & plan);
@@ -58,6 +59,7 @@ private:
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
+    std::unordered_map<const IQueryPlanStep *, UInt64> spilled_bytes_by_step;
 
     ReportsByStep join_raw_reports;
 
