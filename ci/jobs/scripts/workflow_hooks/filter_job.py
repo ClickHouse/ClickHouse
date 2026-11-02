@@ -1106,8 +1106,10 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, the docs examples, and the
-    limited clang-tidy check). Two of them are conditional. The limited
+    `amd_binary` build, the stateless flaky check, the stateless and integration
+    targeted checks, the docs examples, and the limited clang-tidy check). The
+    targeted checks select from CIDB and skip themselves when the selection is
+    empty. Two of the others are conditional here. The limited
     clang-tidy check has nothing to analyze when the change touches neither a C
     or C++ file, nor an input of a code generator producing C++, nor the
     clang-tidy configuration or the check's own logic, so a docs- or test-only
