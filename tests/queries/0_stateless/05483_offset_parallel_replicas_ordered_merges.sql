@@ -41,6 +41,19 @@ SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_q
 SELECT count() FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample) GROUP BY k)
 SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_group_by';
 
+-- Merged all at once instead of bucket by bucket, so the replicas still share the shard.
+SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample) GROUP BY k)
+SETTINGS parallel_replicas_mode = 'sampling_key', distributed_aggregation_memory_efficient = 0,
+    enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0,
+    use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_plain_merge';
+
+-- A full sort and an aggregation that is not in order take the parts in any order too.
+SELECT k FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) ORDER BY k LIMIT 10
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_full_sort';
+
+SELECT sum(k) FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_aggregating';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT initial.log_comment, count()
@@ -49,7 +62,7 @@ INNER JOIN
 (
     SELECT query_id, log_comment FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
-        AND log_comment IN ('offset_pr_count', 'offset_pr_group_by')
+        AND log_comment IN ('offset_pr_count', 'offset_pr_group_by', 'offset_pr_plain_merge', 'offset_pr_full_sort', 'offset_pr_aggregating')
 ) AS initial ON secondary.initial_query_id = initial.query_id
 WHERE secondary.event_date >= yesterday() AND NOT secondary.is_initial_query AND secondary.type = 'QueryFinish'
 GROUP BY initial.log_comment
