@@ -1296,16 +1296,34 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     ActionsDAG merged_alias_columns_actions_dag(current_header->getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
 
+    ActionsDAG::NodeNameToNode node_name_to_node;
     for (auto & alias_column_expression : alias_column_expressions)
     {
         auto & alias_column_actions_dag = alias_column_expression.second;
         const auto & current_outputs = alias_column_actions_dag.getOutputs();
         action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
-        merged_alias_columns_actions_dag.mergeNodes(std::move(alias_column_actions_dag));
+        merged_alias_columns_actions_dag.mergeNodes(std::move(alias_column_actions_dag), node_name_to_node);
     }
 
-    for (const auto * output_node : action_dag_outputs)
-        merged_alias_columns_actions_dag.addOrReplaceInOutputs(*output_node);
+    /// Same result as `addOrReplaceInOutputs` for each of `action_dag_outputs`, without rescanning the outputs.
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> name_to_last_node;
+    for (const auto * node : action_dag_outputs)
+        name_to_last_node.insert_or_assign(node->result_name, node);
+
+    auto & outputs = merged_alias_columns_actions_dag.getOutputs();
+    for (auto & output : outputs)
+        if (auto it = name_to_last_node.find(output->result_name); it != name_to_last_node.end())
+            output = it->second;
+    for (const auto * output : outputs)
+        name_to_last_node.erase(output->result_name);
+    for (const auto * node : action_dag_outputs)
+    {
+        if (auto it = name_to_last_node.find(node->result_name); it != name_to_last_node.end())
+        {
+            outputs.push_back(it->second);
+            name_to_last_node.erase(it);
+        }
+    }
     merged_alias_columns_actions_dag.removeUnusedActions(false);
 
     auto alias_column_step = std::make_unique<ExpressionStep>(current_header, std::move(merged_alias_columns_actions_dag));
