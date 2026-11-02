@@ -889,6 +889,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
 
+        /// A `TTL ... GROUP BY ... SET` assignment can give such a column non-default values.
+        NameSet group_by_ttl_set_columns;
+        for (const auto & group_by_ttl : global_ctx->metadata_snapshot->getGroupByTTLs())
+            for (const auto & set_part : group_by_ttl.set_parts)
+                group_by_ttl_set_columns.insert(set_part.column_name);
+
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
@@ -896,6 +902,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !renamed_column_targets.contains(storage_column.name)
                 && !missing_columns_to_materialize.contains(storage_column.name)
+                && !group_by_ttl_set_columns.contains(storage_column.name)
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }

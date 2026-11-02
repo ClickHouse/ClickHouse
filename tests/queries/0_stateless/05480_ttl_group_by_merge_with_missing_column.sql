@@ -37,6 +37,6 @@ SETTINGS enable_vertical_merge_algorithm = 0;
 INSERT INTO t_set SELECT 1, number, '2000-01-01', 1 FROM numbers(10);
 INSERT INTO t_set SELECT 1, number + 10, '2000-01-01', 1 FROM numbers(10);
 ALTER TABLE t_set ADD COLUMN x UInt64;
-ALTER TABLE t_set MODIFY TTL d + INTERVAL 1 DAY GROUP BY k SET s = sum(s), x = max(x) SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_set MODIFY TTL d + INTERVAL 1 DAY GROUP BY k SET s = sum(s), x = sum(s) SETTINGS materialize_ttl_after_modify = 0;
 OPTIMIZE TABLE t_set FINAL;
 SELECT 'set', k, s, x FROM t_set;
