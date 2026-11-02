@@ -185,9 +185,12 @@ private:
 
     Set & getExactValues();
     const Set & getExactValues() const;
+    ColumnPtr toFilterColumnType(const ColumnPtr & set_elements) const;
 
     const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;
+    /// The set holds only the non-NULL keys, as values of the nested type.
+    const bool drop_null_keys;
     const UInt64 bytes_limit;
     const UInt64 exact_values_limit;
 

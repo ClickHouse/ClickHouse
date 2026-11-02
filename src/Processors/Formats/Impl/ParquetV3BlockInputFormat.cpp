@@ -195,7 +195,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 else
                     parser_shared_resources->parsing_runner.initThreadPool(
                         getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, ThreadName::PARQUET_DECODER, CurrentThread::getGroup());
-
+            });
+        parser_shared_resources->initOpaqueOnce([&]
+            {
                 auto ext = std::make_shared<Parquet::SharedResourcesExt>();
 
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
@@ -393,7 +395,8 @@ Chunk ParquetV3BlockInputFormat::read()
 
 
         auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+        if (format_filter_info && format_filter_info->need_row_numbers)
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
         return chunk;
@@ -418,6 +421,8 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
 {
     if (!reader || min_max_from_statistics)
         return std::nullopt;
+    /// A row group skipped by a statistics-only threshold was never checked against the filter, so it may match.
+    const bool top_k_statistics_only = format_filter_info->top_k_filter && !format_filter_info->top_k_filter->filter_rows;
     std::vector<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
     {
@@ -434,7 +439,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
             }
         }
 
-        if (produced_rows)
+        if (produced_rows || (top_k_statistics_only && row_group.skipped_by_top_k.load()))
             matched.push_back(row_group.row_group_idx);
     }
     return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
@@ -455,7 +460,7 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
 {
     /// The reader installs `__topKFilter` only for a file that stores the sort column.
     return reader && reader->reader.format_filter_info && reader->reader.format_filter_info->top_k_filter
-        && reader->reader.top_k_column_is_read;
+        && reader->reader.format_filter_info->top_k_filter->filter_rows && reader->reader.top_k_column_is_read;
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)

@@ -18,9 +18,22 @@ ClickStack includes role-based access control (RBAC) so you can define custom ro
 RBAC is only available in Managed ClickStack deployments.
 </Info>
 
-## User access prerequisites {#user-access-prerequisites}
+## ClickHouse Cloud users and ClickStack users {#cloud-users-and-clickstack-users}
 
-ClickStack authenticates through ClickHouse Cloud. Before you can assign ClickStack roles, each user must:
+ClickStack users sign in with their ClickHouse Cloud accounts, but access is controlled in two places that work independently:
+
+| | ClickHouse Cloud console | ClickStack |
+|---|---|---|
+| **What it controls** | Who belongs to your organization, which services they can reach, and their SQL Console access level. | What each user can do inside ClickStack: dashboards, saved searches, sources, alerts, webhooks, notebooks, and team settings. |
+| **Where users are managed** | **Users and roles** in the Cloud console. This is where you invite and remove users. | **Team Settings** in ClickStack. You can change a user's ClickStack role here, but you can't invite or remove users. |
+| **Roles** | Organization roles (such as Organization Admin) and service-level SQL Console access. | ClickStack roles: the built-in Admin, Member, and ReadOnly roles plus any custom roles you create. |
+| **Scope** | Organization and service. | A ClickStack team, which covers either a whole ClickHouse Observability instance or a single service. Roles are assigned per team. |
+
+In short, the Cloud console decides **whether** someone can open ClickStack, and ClickStack RBAC decides **what they can do** once they're in.
+
+### User access prerequisites {#user-access-prerequisites}
+
+Before you can assign ClickStack roles, each user must:
 
 1. **Be invited to your ClickHouse Cloud organization.** An organization admin invites users from the Cloud console. See [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for details.
 2. **Have SQL Console access on the service.** Navigate to your service's **Settings** → **SQL Console Access** and set the appropriate permission level:
@@ -31,7 +44,7 @@ ClickStack authenticates through ClickHouse Cloud. Before you can assign ClickSt
 | **SQL Console Read Only** (Read Only) | Can view observability data and create dashboards. |
 | **No access** | Can't access ClickStack. |
 
-Once a user has Cloud access, they appear in the ClickStack **Team Settings** page where you can assign a ClickStack role.
+Once a user has Cloud access and has [opened ClickStack](#when-users-appear), they appear on the ClickStack **Team Settings** page where you can assign a ClickStack role. To invite or remove users, use **Manage in Console** on the **Team Members** card, which opens the Cloud console members page.
 
 <Tabs>
 <Tab title="Cloud Users and roles">
@@ -42,9 +55,48 @@ Once a user has Cloud access, they appear in the ClickStack **Team Settings** pa
 </Tab>
 </Tabs>
 
+### When users appear in ClickStack {#when-users-appear}
+
+ClickStack adds a user to its team the **first time they open ClickStack** from the Cloud console. Until then, they don't appear in **Team Settings**, even if they're already a member of your Cloud organization. That means you can't give a user a role before they've opened ClickStack.
+
+When a user opens ClickStack for the first time, they get a role as follows:
+
+- **The first user to open ClickStack for a team** becomes a ClickStack **Admin**. For a ClickHouse Observability instance, opening ClickStack from any of its services counts.
+- **Everyone after that** gets the team's [default new user role](#default-new-user-role). This is **Member** unless an Admin has changed it.
+
+<Tip>
+To control what new users can do before they sign in, set the [default new user role](#default-new-user-role) first. For example, set it to **ReadOnly**, then upgrade specific users after they've opened ClickStack.
+</Tip>
+
+<Note>
+We're improving how ClickStack syncs with Cloud organization membership, so users added in the Cloud console will appear in ClickStack without first opening it.
+</Note>
+
+### ClickStack roles are separate from Cloud console roles {#roles-are-separate}
+
+ClickStack roles and Cloud console roles don't sync with each other:
+
+- **A Cloud Organization Admin isn't automatically a ClickStack Admin.** Their ClickStack role is whatever they got when they first opened ClickStack, or whatever a ClickStack Admin has set it to since.
+- **Changing a user's role in the Cloud console doesn't change their ClickStack role**, and changing their ClickStack role doesn't change their Cloud console role.
+- **ClickStack roles apply to one team.** A ClickHouse Observability instance has a single team shared by all of its services. Any other service you open ClickStack from has its own team. If your organization has more than one ClickStack team, a user can have a different role on each one. Being an Admin on one team doesn't make them an Admin on another.
+
+Cloud console access still comes first. A user with a ClickStack Admin role can't open ClickStack if they lose SQL Console access to the service or are removed from the organization.
+
+### Removing users {#removing-users}
+
+Remove users from the Cloud console. See [Remove a user](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#remove-user). After that, they can't sign in to ClickStack.
+
+Removing someone from the Cloud organization doesn't remove them from ClickStack yet. They may still be listed in **Team Settings** with their last ClickStack role, but they can't access ClickStack. We're working on removing these users automatically.
+
+<Warning>
+**Keep at least one other ClickStack Admin**
+
+Only ClickStack Admins can change user roles and the default new user role. Before you remove a user who is a ClickStack Admin from your Cloud organization, make sure another user has the ClickStack **Admin** role. If no remaining user is a ClickStack Admin, contact [ClickHouse support](https://clickhouse.com/support/program) to restore admin access.
+</Warning>
+
 ## Built-in roles {#built-in-roles}
 
-ClickStack includes three system roles. You can't edit or delete these. The Admin role is assigned to the team creator by default.
+ClickStack includes three system roles. You can't edit or delete these. The first user to open ClickStack for a team gets the Admin role. Users who join later get the [default new user role](#default-new-user-role).
 
 | Permission | Admin | Member | ReadOnly |
 |---|:---:|:---:|:---:|
@@ -63,7 +115,9 @@ ClickStack includes three system roles. You can't edit or delete these. The Admi
 The **Team Settings** page lists all team members with their current role. To change a role, click **Edit** next to the user's name and select a new role. Each user has exactly one role.
 
 ### Default new user role {#default-new-user-role}
-You can set a default role for new users under [Security policies](#security-policies). New users who auto-join the team are automatically assigned this role.
+You can set a default role for new users under [Security policies](#security-policies). ClickStack gives this role to every user who joins the team by [opening ClickStack for the first time](#when-users-appear), except the first user, who becomes an Admin. If you don't set a default, new users get the **Member** role.
+
+The default only applies when a user joins. Changing it doesn't affect existing team members. To change their roles, edit them one at a time on the **Team Settings** page.
 
 ## Creating a custom role {#creating-a-role}
 
@@ -163,7 +217,7 @@ You can add multiple rules per resource type. Each rule is checked independently
 
 The **Security Policies** section in **Team Settings** provides additional controls.
 
-**Default New User Role** sets the role automatically assigned to new users who join the team.
+**Default New User Role** sets the role ClickStack gives to new users when they first open ClickStack. If you don't set it, new users get **Member**. See [Default new user role](#default-new-user-role).
 
 **Generative AI** lets you enable or disable LLM-powered features (such as natural language query generation) powered by Anthropic or Amazon Bedrock. When disabled, no data is sent to AI providers.
 
