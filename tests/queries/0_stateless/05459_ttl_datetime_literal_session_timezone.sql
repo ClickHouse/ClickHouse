@@ -13,6 +13,9 @@ DROP TABLE IF EXISTS t_modify_column;
 DROP TABLE IF EXISTS t_add_column;
 DROP TABLE IF EXISTS t_clear_column;
 DROP TABLE IF EXISTS t_untyped;
+DROP TABLE IF EXISTS t_lambda_create;
+DROP TABLE IF EXISTS t_lambda_modify;
+DROP TABLE IF EXISTS t_lambda_element;
 DROP TABLE IF EXISTS t_rollup_create;
 DROP TABLE IF EXISTS t_rollup_modify;
 
@@ -73,6 +76,25 @@ ALTER TABLE t_rollup_modify MODIFY TTL event + INTERVAL 1 SECOND GROUP BY k
 SELECT 'MODIFY TTL GROUP BY SET', position(engine_full, 'sumIf(value, event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))') > 0
 FROM system.tables WHERE database = currentDatabase() AND name = 't_rollup_modify';
 
+-- A lambda parameter shadows the column of the same name: its comparison keeps the string.
+CREATE TABLE t_lambda_create (event DateTime, tags Array(String)) ENGINE = MergeTree ORDER BY tuple()
+TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(event -> event = 'keep', tags) AND event = '2020-01-01 00:00:00';
+SELECT 'lambda', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_create';
+
+CREATE TABLE t_lambda_modify (event DateTime, tags Array(String)) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_lambda_modify MODIFY TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(event -> event = 'keep', tags) AND event = '2020-01-01 00:00:00';
+SELECT 'MODIFY TTL lambda', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_modify';
+
+-- An element of a lambda parameter is not the column with the same compound name either.
+CREATE TABLE t_lambda_element (`n.event` DateTime, arr Array(Tuple(event String))) ENGINE = MergeTree ORDER BY tuple()
+TTL `n.event` + INTERVAL 1 SECOND DELETE WHERE arrayExists(n -> n.event = 'keep', arr);
+SELECT 'lambda element', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_element';
+
+-- The mutations share the rewrite.
+INSERT INTO t_lambda_modify SETTINGS session_timezone = '' VALUES ('2100-01-01 00:00:00', ['keep']), ('2100-01-01 00:00:00', ['other']);
+ALTER TABLE t_lambda_modify DELETE WHERE arrayExists(event -> event = 'keep', tags) SETTINGS mutations_sync = 2;
+SELECT 'DELETE lambda', tags FROM t_lambda_modify;
+
 DROP TABLE t_create;
 DROP TABLE t_modify;
 DROP TABLE t_source;
@@ -83,3 +105,6 @@ DROP TABLE t_untyped;
 DROP TABLE t_rollup_create;
 DROP TABLE t_rollup_modify;
 DROP TABLE t_clear_column;
+DROP TABLE t_lambda_create;
+DROP TABLE t_lambda_modify;
+DROP TABLE t_lambda_element;

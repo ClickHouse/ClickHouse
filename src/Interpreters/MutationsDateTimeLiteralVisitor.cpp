@@ -1,4 +1,5 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
+#include <Core/Names.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -41,6 +42,15 @@ DataTypePtr getDateTimeColumnType(const String & identifier_name, const ColumnsD
     return nullptr;
 }
 
+/// The same for an identifier, which is not a column when it names a parameter of an enclosing lambda or an element of
+/// one, such as `n.event` in `n -> n.event = '...'`.
+DataTypePtr getDateTimeColumnType(const ASTIdentifier & identifier, const ColumnsDescription & columns, const NameSet & lambda_parameters)
+{
+    if (lambda_parameters.contains(identifier.name_parts.front()))
+        return nullptr;
+    return getDateTimeColumnType(identifier.name(), columns);
+}
+
 /// Wraps a string literal AST with toDateTime('...', 'tz') or toDateTime64('...', scale, 'tz').
 ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime_type, const String & timezone)
 {
@@ -58,7 +68,7 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
 /// For a comparison like `column >= 'datetime-string'`, try to wrap the string
 /// literal with an explicit timezone cast. Modifies the AST in place.
 /// Returns true if any literal was wrapped.
-bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription & columns, const String & timezone)
+bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription & columns, const NameSet & lambda_parameters, const String & timezone)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
         return false;
@@ -70,7 +80,7 @@ bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription &
     /// Check left=identifier, right=string-literal
     if (const auto * id = left->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(id->name(), columns))
+        if (auto dt = getDateTimeColumnType(*id, columns, lambda_parameters))
         {
             if (const auto * lit = right->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
             {
@@ -83,7 +93,7 @@ bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription &
     /// Check right=identifier, left=string-literal (e.g. '2000-01-01' <= time)
     if (const auto * id = right->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(id->name(), columns))
+        if (auto dt = getDateTimeColumnType(*id, columns, lambda_parameters))
         {
             if (const auto * lit = left->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
             {
@@ -98,7 +108,7 @@ bool tryWrapComparisonLiteral(ASTFunction & function, const ColumnsDescription &
 
 /// For an IN expression like `column IN ('dt1', 'dt2')`, wrap each string literal.
 /// Returns true if any literal was wrapped.
-bool tryWrapInLiterals(ASTFunction & function, const ColumnsDescription & columns, const String & timezone)
+bool tryWrapInLiterals(ASTFunction & function, const ColumnsDescription & columns, const NameSet & lambda_parameters, const String & timezone)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
         return false;
@@ -110,7 +120,7 @@ bool tryWrapInLiterals(ASTFunction & function, const ColumnsDescription & column
     if (!id)
         return false;
 
-    auto dt = getDateTimeColumnType(id->name(), columns);
+    auto dt = getDateTimeColumnType(*id, columns, lambda_parameters);
     if (!dt)
         return false;
 
@@ -154,10 +164,15 @@ public:
         const ColumnsDescription & columns;
         const String & session_timezone;
         bool modified = false;
+        /// The parameters of the enclosing lambdas: they shadow the columns of the same names.
+        NameSet lambda_parameters = {};
     };
 
     static bool needChildVisit(const ASTPtr & ast, const ASTPtr & /*child*/)
     {
+        /// A lambda visits its body itself.
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+            return false;
         return !ast->as<ASTSelectQuery>();
     }
 
@@ -186,16 +201,36 @@ public:
 
     static void visit(ASTFunction & function, Data & data)
     {
-        if (comparison_functions.contains(function.name))
+        if (function.name == "lambda")
+            visitLambda(function, data);
+        else if (comparison_functions.contains(function.name))
         {
-            if (tryWrapComparisonLiteral(function, data.columns, data.session_timezone))
+            if (tryWrapComparisonLiteral(function, data.columns, data.lambda_parameters, data.session_timezone))
                 data.modified = true;
         }
         else if (in_functions.contains(function.name))
         {
-            if (tryWrapInLiterals(function, data.columns, data.session_timezone))
+            if (tryWrapInLiterals(function, data.columns, data.lambda_parameters, data.session_timezone))
                 data.modified = true;
         }
+    }
+
+    /// Visit the body of `lambda(tuple(x, ...), body)` with its parameters shadowing the columns of the same names.
+    static void visitLambda(ASTFunction & lambda, Data & data)
+    {
+        if (!lambda.arguments || lambda.arguments->children.size() != 2)
+            return;
+        const auto * parameters = lambda.arguments->children[0]->as<ASTFunction>();
+        if (!parameters || parameters->name != "tuple" || !parameters->arguments)
+            return;
+
+        Data body_data{data.columns, data.session_timezone, false, data.lambda_parameters};
+        for (const auto & parameter : parameters->arguments->children)
+            if (const auto * identifier = parameter->as<ASTIdentifier>())
+                body_data.lambda_parameters.insert(identifier->name());
+
+        InDepthNodeVisitor<RewriteDateTimeLiteralsMatcher, true>(body_data).visit(lambda.arguments->children[1]);
+        data.modified |= body_data.modified;
     }
 };
 

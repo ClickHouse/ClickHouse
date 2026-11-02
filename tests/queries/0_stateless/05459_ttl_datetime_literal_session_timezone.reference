@@ -7,3 +7,7 @@ ADD COLUMN, MODIFY TTL	WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/
 CLEAR COLUMN, MODIFY TTL	WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
 GROUP BY SET	1
 MODIFY TTL GROUP BY SET	1
+lambda	WHERE arrayExists(event -> (event = \'keep\'), tags) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))
+MODIFY TTL lambda	WHERE arrayExists(event -> (event = \'keep\'), tags) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))
+lambda element	WHERE arrayExists(n -> (n.event = \'keep\'), arr)
+DELETE lambda	['other']
