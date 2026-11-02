@@ -45,9 +45,12 @@ export CLICKHOUSE_CLIENT_OPT="${CLICKHOUSE_CLIENT_OPT0:-} ${CLICKHOUSE_CLIENT_OP
 export CLICKHOUSE_CLIENT_EXPECT_OPT="${CLICKHOUSE_CLIENT_OPT} --disable_suggestion --no-warnings --enable-progress-table-toggle 0 --progress no --output-format-pretty-color 0 --highlight 0"
 export CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:="$CLICKHOUSE_CLIENT_BINARY ${CLICKHOUSE_CLIENT_OPT:-}"}
 # local
-[ -x "${CLICKHOUSE_BINARY}-local" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
-[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY} local"}
-export CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
+# Note: --tmp gives every invocation its own temporary directory, because tests run in parallel
+# and must not share (and lock) the default designated data directory in the home directory.
+# An explicit --path passed by a test takes precedence over this --tmp.
+[ -x "${CLICKHOUSE_BINARY}-local" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local --tmp"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY} local --tmp"}
+export CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local --tmp"}
 # server
 [ -x "${CLICKHOUSE_BINARY}-server" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY}-server"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY} server"}

@@ -26,6 +26,22 @@ workflow = Workflow.Config(
         # `Targeting.get_merge_queue_drift_tests`). Self-skips when there are no
         # such tests.
         *JobConfigs.stateless_tests_flaky_mq_jobs,
+        # Rerun the targeted selection of the PR (its changed tests and the tests
+        # covering its changed lines) against the merge group state. A PR tested
+        # against an older `master` can break tests that landed after its last CI
+        # run, e.g. https://github.com/ClickHouse/ClickHouse/pull/117198 broke two
+        # `test_storage_delta` tests added to `master` meanwhile, and
+        # https://github.com/ClickHouse/ClickHouse/pull/123832 merged an
+        # integration test already broken by a `master` change. The changed
+        # stateless tests and those `master` changed after the PR's last CI run
+        # are left to the flaky check above; the integration job reruns the
+        # integration test modules `master` changed (see
+        # `Targeting.get_merge_queue_drift_tests`). The queue is meant to fail
+        # fast: both jobs stop at 3 failed tests, and at 20 minutes from their
+        # start without failing, so they do not extend the queue latency past
+        # the flaky check.
+        *JobConfigs.stateless_tests_targeted_mq_jobs,
+        *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
         # pull request and a `master` commit that are each green on their own
         # cannot break them together. Cheap enough to run unconditionally - see

@@ -39,8 +39,8 @@
     else window.addEventListener('galaxy:ready', track, { once: true });
   }
 
-  // Wait briefly for Kapa to mount (it's loaded async), then open. Passing a
-  // page query prefills context without submitting a synthetic question.
+  // Load Kapa if needed and wait for it to mount, then open. Passing a page
+  // query prefills context without submitting a synthetic question.
   function clearKapaQuery() {
     var widgetContainer = document.getElementById('kapa-widget-container');
     var input = widgetContainer && widgetContainer.shadowRoot
@@ -73,6 +73,7 @@
       opts.query = query;
       opts.submit = Boolean(submit);
     }
+    if (typeof window.chLoadKapa === 'function') window.chLoadKapa();
     var attempts = 0;
     var iv = setInterval(function () {
       attempts++;
@@ -85,7 +86,7 @@
           var complete = query ? focusKapaQueryEnd() : clearKapaQuery();
           if (complete || inputAttempts > 20) clearInterval(prepareInput);
         }, 50);
-      } else if (attempts > 60) {
+      } else if (attempts > 200) {
         clearInterval(iv);
       }
     }, 50);
@@ -238,11 +239,17 @@
     bindTaggedEntries();
     bindShortcut();
 
+    var scheduled = false;
     var observer = new MutationObserver(function () {
-      injectSidebarButton();
-      injectPageButton();
-      enhanceHomeButton();
-      injectMobileButton();
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(function () {
+        scheduled = false;
+        injectSidebarButton();
+        injectPageButton();
+        enhanceHomeButton();
+        injectMobileButton();
+      });
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
