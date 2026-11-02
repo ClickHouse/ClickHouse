@@ -22,6 +22,14 @@ SELECT toTypeName(c1) FROM format(CSV, 'Nov-2024') SETTINGS date_time_input_form
 -- Malformed day or year is rejected.
 SELECT parseDateTimeBestEffortOrNull('Nov-123-2024', 'UTC');
 SELECT parseDateTimeBestEffortOrNull('Nov-08-202', 'UTC');
+SELECT parseDateTimeBestEffortOrNull('Nov-32-2024', 'UTC');
+SELECT parseDateTimeBestEffortOrNull('Nov-31-2024', 'UTC');
+SELECT parseDateTimeBestEffortOrNull('Feb-30-2024', 'UTC');
+SELECT parseDateTimeBestEffortOrNull('Feb-29-2023', 'UTC');
+SELECT parseDateTimeBestEffort('Feb-29-2024', 'UTC');
+
+-- Only '-' and '/' are handled after a month name; a '.' is not, and the value is not parsed, as before.
+SELECT parseDateTimeBestEffortOrNull('Nov.08.2024', 'UTC');
 
 -- Forms that already worked, including real time zone offsets, are not affected.
 SELECT parseDateTimeBestEffort('2024-11-08 10:00:00-08', 'UTC');
