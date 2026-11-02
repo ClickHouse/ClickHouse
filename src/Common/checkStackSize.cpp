@@ -123,6 +123,18 @@ static NO_INLINE size_t getStackSize(void ** out_address)
     return size;
 }
 
+namespace
+{
+#if !defined(THREAD_SANITIZER)
+/// It's overkill to use more then half of stack.
+constexpr size_t STACK_SIZE_FREE_RATIO = 2;
+#else
+/// Under TSan recursion eats too much RAM, so half of stack is too much.
+/// So under TSan only 5% of a stack is allowed (this is ~400K)
+constexpr size_t STACK_SIZE_FREE_RATIO = 20;
+#endif
+}
+
 /// Kept out of line so the rare error paths do not bloat checkStackSize (which is inlined into many callers).
 [[noreturn]] [[gnu::cold]] NO_INLINE static void throwFrameAddressError()
 {
@@ -160,15 +172,6 @@ void checkStackSize()
     uintptr_t int_frame_address = reinterpret_cast<uintptr_t>(frame_address);
     uintptr_t int_stack_address = reinterpret_cast<uintptr_t>(stack_bounds.address);
 
-#if !defined(THREAD_SANITIZER)
-    /// It's overkill to use more then half of stack.
-    static constexpr size_t STACK_SIZE_FREE_RATIO = 2;
-#else
-    /// Under TSan recursion eats too much RAM, so half of stack is too much.
-    /// So under TSan only 5% of a stack is allowed (this is ~400K)
-    static constexpr size_t STACK_SIZE_FREE_RATIO = 20;
-#endif
-
     /// We assume that stack grows towards lower addresses. And that it starts to grow from the end of a chunk of memory of max_size.
     if (unlikely(int_frame_address > int_stack_address + stack_bounds.max_size))
         throwFrameAddressError();
@@ -179,4 +182,32 @@ void checkStackSize()
     /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
     if (unlikely(stack_size > max_stack_size_allowed))
         throwTooDeepRecursion(stack_size, stack_bounds.max_size);
+}
+
+size_t getStackSizeHeadroom()
+{
+    /// Not checked for coroutines, as in `checkStackSize`.
+    if (StackfulCoroutine::getCurrentCoroutine())
+        return SIZE_MAX;
+
+#if USE_SILK
+    if (silk::FiberScheduler::getCurrentFiberId().raw)
+        return SIZE_MAX;
+#endif
+
+    if (unlikely(!stack_bounds.address))
+        stack_bounds.max_size = getStackSize(&stack_bounds.address);
+
+    if (unlikely(!stack_bounds.max_size))
+        return SIZE_MAX;
+
+    const uintptr_t int_frame_address = reinterpret_cast<uintptr_t>(__builtin_frame_address(0));
+    const uintptr_t int_stack_address = reinterpret_cast<uintptr_t>(stack_bounds.address);
+
+    if (unlikely(int_frame_address > int_stack_address + stack_bounds.max_size))
+        return 0;
+
+    const size_t stack_size = int_stack_address + stack_bounds.max_size - int_frame_address;
+    const size_t max_stack_size_allowed = stack_bounds.max_size / STACK_SIZE_FREE_RATIO;
+    return stack_size > max_stack_size_allowed ? 0 : max_stack_size_allowed - stack_size;
 }
