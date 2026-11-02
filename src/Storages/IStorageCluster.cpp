@@ -5,6 +5,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -230,8 +231,26 @@ void IStorageCluster::read(
         {
             /// Replicas interpret the filter with their own current database.
             ASTPtr filter_ast = query_info.additional_filter_ast->clone();
+            const auto columns = storage_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+            auto is_column = [&](const String & name)
+            {
+                if (!name.contains('.'))
+                {
+                    /// The prefix of `Nested` columns, e.g. `nest` for `nest.x Array(UInt64)`.
+                    const String prefix = name + ".";
+                    for (const auto & column : columns)
+                        if (column.name.starts_with(prefix) && isArray(column.type))
+                            return true;
+                }
+
+                for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+                    if (auto column = columns.tryGetByName(String(column_name)); column && column->type->tryGetSubcolumnType(subcolumn_name))
+                        return true;
+                return false;
+            };
             AddDefaultDatabaseVisitor(context, context->getCurrentDatabase())
-                .visitStandaloneExpression(filter_ast, storage_snapshot->getColumns(GetColumnsOptions::All).getNameSet());
+                .visitStandaloneExpression(filter_ast, columns.getNameSet(), is_column);
 
             /// A replica names the storage after the canonical name of the function, not after its spelling in the query.
             String function_name = table_function->name;

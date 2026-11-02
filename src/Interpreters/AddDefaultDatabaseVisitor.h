@@ -24,6 +24,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
+#include <functional>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -114,7 +115,10 @@ public:
 
     /// Prepare a standalone expression, e.g. a filter, to be interpreted with another current database:
     /// qualify the table names in it and replace `currentDatabase()`, also written without parentheses, with the database.
-    void visitStandaloneExpression(ASTPtr & ast, const NameSet & column_names) const
+    /// `is_column` tells whether the analyzer resolves a name which is not in `column_names` as a column,
+    /// e.g. the subcolumn `tup.arr` written in backquotes.
+    void visitStandaloneExpression(
+        ASTPtr & ast, const NameSet & column_names, const std::function<bool(const String &)> & is_column) const
     {
         /// In a select list the aliases defined in the expression are collected, so they are not taken for tables.
         /// The columns the expression reads are listed there as well: the analyzer resolves them before a table.
@@ -129,6 +133,7 @@ public:
             expression_list.children.push_back(std::move(column));
         }
         standalone_expression_select = select.get();
+        standalone_expression_is_column = &is_column;
         visitTableExpressions(*select);
         standalone_expression_select = nullptr;
         /// A call of a lambda with the alias of the same name is kept.
@@ -138,6 +143,7 @@ public:
         NameSet names_in_scope = column_names;
         collectAliasesInScope(*expression_list.children.at(0), names_in_scope);
         substituteCurrentDatabaseIdentifiers(expression_list.children.at(0), expression_list, names_in_scope);
+        standalone_expression_is_column = nullptr;
         ast = expression_list.children.at(0);
     }
 
@@ -205,6 +211,7 @@ private:
     bool only_replace_in_join = false;
 
     mutable const ASTSelectQuery * standalone_expression_select = nullptr;
+    mutable const std::function<bool(const String &)> * standalone_expression_is_column = nullptr;
     /// Whether the walk is in a select query nested in a standalone expression, whose columns are not known.
     mutable bool in_select_with_unknown_columns = false;
 
@@ -389,7 +396,12 @@ private:
                     return;
 
                 /// Nor when it may be a column, which the analyzer resolves before a table.
-                if (in_select_with_unknown_columns)
+                if (in_select_with_unknown_columns
+                    || (standalone_expression_is_column && (*standalone_expression_is_column)(identifier->name())))
+                    return;
+
+                /// The analyzer does not resolve an alias of a qualified table name used elsewhere.
+                if (standalone_expression_select && !identifier->alias.empty())
                     return;
 
                 if (auto maybe_table_identifier = identifier->createTable())
@@ -761,7 +773,8 @@ private:
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
             if (!identifier->compound() && isCurrentDatabaseFunctionName(identifier->name())
-                && !names_in_scope.contains(identifier->name()))
+                && !names_in_scope.contains(identifier->name())
+                && !(standalone_expression_is_column && (*standalone_expression_is_column)(identifier->name())))
             {
                 ASTPtr old_ast = ast;
                 auto literal = make_intrusive<ASTLiteral>(database_name);
