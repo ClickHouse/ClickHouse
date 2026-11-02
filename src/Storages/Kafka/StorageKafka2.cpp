@@ -1565,6 +1565,11 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
 
     if (isConsumeCancelRequested(cycle_epoch))
     {
+        /// The batch (if there is one) is abandoned before the insert started, so there is nothing
+        /// to deduplicate. Discard the intent along with the offsets, otherwise the next batch
+        /// would needlessly replay exactly the same messages.
+        if (maybe_blocks_and_guard.has_value())
+            maybe_blocks_and_guard->guard.rollbackBeforeInsert();
         block_io.onCancelOrConnectionLoss();
         return std::nullopt;
     }

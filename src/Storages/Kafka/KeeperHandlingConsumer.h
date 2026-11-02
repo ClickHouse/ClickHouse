@@ -65,6 +65,10 @@ public:
         ~OffsetGuard();
 
         void commit();
+        /// Rolls back the offsets and discards the saved intent. Only valid when the insert of the
+        /// batch has not started: then there is nothing to deduplicate, so the intent would only
+        /// force the next batch to replay the same messages for no reason.
+        void rollbackBeforeInsert();
     private:
         bool needs_rollback{true};
         KeeperHandlingConsumer * consumer;
@@ -205,6 +209,9 @@ private:
 
     void saveCommittedOffset(int64_t new_offset);
     void saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, uint64_t intent);
+    /// Drops the intent of a batch that was abandoned before its insert started. Callable while an
+    /// exception is propagating, where a throw would terminate the server.
+    void discardIntentSizeNoThrow() noexcept;
     // To build and execute the transactions that save the commit and intent nodes
     void addSetOrCreateRequest(Coordination::Requests & ops, const std::filesystem::path & path, const String & data);
     void executeMultiInKeeper(Coordination::Requests ops);

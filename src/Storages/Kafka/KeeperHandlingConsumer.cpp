@@ -107,6 +107,14 @@ void KeeperHandlingConsumer::OffsetGuard::commit()
     needs_rollback = false;
 }
 
+void KeeperHandlingConsumer::OffsetGuard::rollbackBeforeInsert()
+{
+    chassert(needs_rollback && consumer);
+    consumer->discardIntentSizeNoThrow();
+    consumer->rollbackToCommittedOffsetsNoThrow();
+    needs_rollback = false;
+}
+
 KeeperHandlingConsumer::KeeperHandlingConsumer(
     const KafkaConsumer2Ptr & kafka_consumer_,
     const std::shared_ptr<zkutil::ZooKeeper> & keeper_,
@@ -627,6 +635,35 @@ void KeeperHandlingConsumer::saveCommittedOffset(const int64_t new_offset)
     LOG_TEST(
         log, "Saved offset {} for topic-partition [{}:{}]", new_offset, topic_partition.topic, topic_partition.partition_id);
     kafka_consumer->commit(TopicPartitionOffset{{topic_partition}, new_offset});
+}
+
+void KeeperHandlingConsumer::discardIntentSizeNoThrow() noexcept
+{
+    /// Callable while an exception or a cancellation is propagating, so it must not throw. The
+    /// removal is best effort: a leftover intent describes messages that were never inserted, so
+    /// replaying it just inserts them, it cannot cause duplicates.
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    try
+    {
+        if (topic_partition_index_to_consume_from >= assigned_topic_partitions.size())
+            return;
+
+        auto & topic_partition = assigned_topic_partitions[topic_partition_index_to_consume_from];
+        {
+            std::lock_guard lock(topic_partition_locks_mutex);
+            getTopicPartitionLockLocked(topic_partition).intent_size.reset();
+        }
+        keeper->tryRemove(getTopicPartitionPath(topic_partition) / intent_file_name, -1);
+        LOG_TEST(
+            log,
+            "Discarded the intent for topic-partition [{}:{}], because the batch was abandoned before the insert started",
+            topic_partition.topic,
+            topic_partition.partition_id);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to discard the intent of an abandoned batch");
+    }
 }
 
 void KeeperHandlingConsumer::addSetOrCreateRequest(Coordination::Requests & ops, const std::filesystem::path & path, const String & data)
