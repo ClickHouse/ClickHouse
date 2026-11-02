@@ -2890,8 +2890,7 @@ def main():
         skip_list = test_discovery.iceberg_skip_list("./tests/performance/")
         changed_files = info.get_changed_files() if info.pr_number > 0 else None
         changed_tests = test_discovery.changed_iceberg_tests(changed_files or [], "./tests/performance/")
-        # The `ci-performance` label asks for all the tests.
-        if changed_tests and not test_discovery.iceberg_code_changed(changed_files) and "ci-performance" not in info.pr_labels:
+        if changed_tests and not test_discovery.iceberg_code_changed(changed_files):
             # The pull request changes only performance tests: check that they run in this configuration.
             # Every job runs them all, there are few.
             print(f"Only the added or changed tests: {changed_tests}")

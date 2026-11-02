@@ -771,12 +771,9 @@ def should_skip_job(job_name):
             )
         return False, ""
 
-    if (
-        job_name in ICEBERG_PERFORMANCE_JOBS
-        and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
-        and not _has_iceberg_performance_changes(changed_files)
-    ):
-        return True, "Skipped, no changes in the Iceberg, object storage or Parquet code or in a performance test it runs (add the 'ci-performance' label to run)"
+    # Not even with the `ci-performance` label: the configuration measures the Iceberg code.
+    if job_name in ICEBERG_PERFORMANCE_JOBS and not _has_iceberg_performance_changes(changed_files):
+        return True, "Skipped, no changes in the Iceberg, object storage or Parquet code or in a performance test it runs"
 
     # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
     # of these jobs takes up to 1-3 hours and they rarely catch anything a change
