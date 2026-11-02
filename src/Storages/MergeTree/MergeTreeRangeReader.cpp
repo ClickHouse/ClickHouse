@@ -1919,8 +1919,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         FilterWithCachedCount current_filter(current_step_filter);
         result.optimize(current_filter, can_read_incomplete_granules, false);
-        /// Null when predicate_statistics_sample_rate = 0 (default). The rows that passed all steps so far, also when the
-        /// filters of the earlier steps were combined but not applied.
+        /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
         if (performance_counters)
             performance_counters->rows_passed_filter += result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
 

@@ -480,9 +480,7 @@ bool tryBuildPrewhereSteps(
 
     /// 9. Build PrewhereExprInfo
     {
-        /// With `force_short_circuit_execution` every step filters its block, so that nothing later sees the rows it rejects.
-        /// Not needed before a step that can be evaluated on more rows, if the reader neither converts nor fills a PREWHERE
-        /// column (`read_ahead_columns`) and the last step filters before the columns read after PREWHERE.
+        /// Deferring a step filter needs a reader that neither converts nor fills PREWHERE columns, and a filtering last step.
         const bool can_skip_forced_filters = force_short_circuit_execution && read_ahead_columns && prewhere_info->need_filter;
 
         for (size_t step_index = 0; step_index < steps.size(); ++step_index)

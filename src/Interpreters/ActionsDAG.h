@@ -733,7 +733,6 @@ private:
     NameToNodeIndex index;
 };
 
-/// The types of the nodes, and whether each of them is a constant.
 DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes);
 
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.

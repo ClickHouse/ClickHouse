@@ -1939,8 +1939,7 @@ public:
             return true;
         if (!comparisonCanThrow(arguments[0].type, arguments[1].type))
             return false;
-        /// A constant string is converted to the type of the other argument once, before any row is compared
-        /// (see `executeWithConstString`), and then the values of that type are compared.
+        /// A constant string is converted to the other argument's type once, before any row is compared (`executeWithConstString`).
         for (size_t i = 0; i < 2; ++i)
         {
             const ColumnConst * constant = arguments[i].column ? checkAndGetColumnConstStringOrFixedString(arguments[i].column) : nullptr;
