@@ -41,8 +41,8 @@ namespace ErrorCodes
 
 ReadFromABR::ReadFromABR(
     const SelectQueryInfo & query_info_,
-    std::span<const StoragePtr> tables_,
-    std::span<const UInt64> sample_intervals_,
+    std::vector<StoragePtr> tables_,
+    std::vector<UInt64> sample_intervals_,
     size_t initial_table_idx_,
     StorageABR::Attempt initial_attempt_,
     ContextPtr context_,
@@ -50,8 +50,8 @@ ReadFromABR::ReadFromABR(
     LoggerPtr logger_)
     : ISourceStep(std::move(initial_attempt_.header))
     , query_info(query_info_)
-    , tables(tables_)
-    , sample_intervals(sample_intervals_)
+    , tables(std::move(tables_))
+    , sample_intervals(std::move(sample_intervals_))
     , initial_table_idx(initial_table_idx_)
     , initial_interpreter(std::move(initial_attempt_.interpreter))
     , context(std::move(context_))
@@ -186,8 +186,8 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto create_lazy_stream = [
         header = output_header,
         ls_query_info = query_info,
-        ls_tables = std::vector<StoragePtr>(tables.begin(), tables.end()),
-        ls_sample_intervals = std::vector<UInt64>(sample_intervals.begin(), sample_intervals.end()),
+        ls_tables = tables,
+        ls_sample_intervals = sample_intervals,
         ls_initial_table_idx = initial_table_idx,
         ls_initial_interpreter = initial_interpreter,
         ls_context = context,

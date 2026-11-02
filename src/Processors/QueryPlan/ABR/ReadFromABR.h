@@ -21,10 +21,11 @@ public:
     /// for the chosen table. It is reused on the first attempt so the analysis pass
     /// that computed the result header is not repeated. Retries (after a fallback
     /// error) build a fresh interpreter for the next coarser table.
+    /// `tables_` are the source tables resolved for the query, which the step keeps alive until it is executed.
     ReadFromABR(
         const SelectQueryInfo & query_info_,
-        std::span<const StoragePtr> tables_,
-        std::span<const UInt64> sample_intervals_,
+        std::vector<StoragePtr> tables_,
+        std::vector<UInt64> sample_intervals_,
         size_t initial_table_idx_,
         StorageABR::Attempt initial_attempt_,
         ContextPtr context_,
@@ -53,8 +54,8 @@ private:
     static void addTotalsAndExtremes(Pipe & pipe, const BufferedResult & buf_result);
 
     SelectQueryInfo query_info;
-    std::span<const StoragePtr> tables;
-    std::span<const UInt64> sample_intervals;
+    std::vector<StoragePtr> tables;
+    std::vector<UInt64> sample_intervals;
     size_t initial_table_idx;
     /// Pre-built interpreter for tables[initial_table_idx]; consumed by the
     /// first attempt in initializePipeline().

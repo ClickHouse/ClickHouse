@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int NO_AVAILABLE_DATA;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace
@@ -179,7 +180,7 @@ StorageABR::StorageABR(
         const auto & table_partition_key = table_metadata->getPartitionKey();
         const NamesAndTypesList table_minmax_columns = MergeTreeData::getMinMaxColumns(
             table_partition_key, merge_tree->getSettings(), MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
-        if (tables.empty())
+        if (source_table_ids.empty())
             minmax_columns = table_minmax_columns;
         else if (table_minmax_columns.getNames() != minmax_columns.getNames())
             throw Exception(
@@ -189,7 +190,7 @@ StorageABR::StorageABR(
                 first_table_name, fmt::join(minmax_columns.getNames(), ", "), name, fmt::join(table_minmax_columns.getNames(), ", "));
 
         check_retention_columns_are_direct(table_partition_key, name);
-        tables.emplace_back(merge_tree);
+        source_table_ids.emplace_back(merge_tree->getStorageID());
         LOG_DEBUG(logger, "Registered underlying table {}", name);
     }
 
@@ -232,7 +233,7 @@ StorageABR::StorageABR(
         fmt::join(retention_expression, ", "),
         time_column,
         column_info_minmax.at(time_column).idx_in_minmax,
-        tables.size());
+        source_table_ids.size());
 }
 
 ASTPtr StorageABR::rewriteQueryForStorage(const SelectQueryInfo & query_info, const StoragePtr & target, const ContextPtr & context)
@@ -397,29 +398,77 @@ TableNamesSet StorageABR::getSourceTableNames(const ASTFunction & engine, const 
     return names;
 }
 
+std::vector<StoragePtr> StorageABR::getSourceTables(const ContextPtr & context, size_t up_to_index) const
+{
+    std::vector<StoragePtr> source_tables(up_to_index + 1);
+
+    for (size_t i = 0; i <= up_to_index; ++i)
+    {
+        const StorageID & table_id = source_table_ids.at(i);
+        const StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+        if (!table)
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE,
+                "Source table {} of {} does not exist. If it was dropped and created again, "
+                "detach and attach the `ABR` table to use the new table",
+                table_id.getNameForLogs(), getStorageID().getNameForLogs());
+
+        auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+        if (!merge_tree)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Source table {} is not from MergeTree family, which is not supported", table_id.getNameForLogs());
+
+        source_tables.at(i) = std::move(merge_tree);
+    }
+
+    return source_tables;
+}
+
+std::vector<StoragePtr> StorageABR::tryGetSourceTables() const
+{
+    try
+    {
+        return getSourceTables(Context::getGlobalContextInstance(), source_table_ids.size() - 1);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
+}
+
+/// The methods below have no query context, so they resolve the source tables with the global context.
+/// If one of the source tables does not exist anymore, the features are reported as unsupported and
+/// the column sizes as unknown rather than throwing, so that `system.columns` stays readable: a query
+/// on the table fails anyway with `UNKNOWN_TABLE`.
 StorageABR::ColumnSizeByName StorageABR::getColumnSizes() const
 {
-    return tables.front()->getColumnSizes();
+    const auto source_tables = tryGetSourceTables();
+    return source_tables.empty() ? ColumnSizeByName{} : source_tables.front()->getColumnSizes();
 }
 
 bool StorageABR::supportsPrewhere() const
 {
-    return std::ranges::all_of(tables, [](const auto & t) { return t->supportsPrewhere(); });
+    const auto source_tables = tryGetSourceTables();
+    return !source_tables.empty() && std::ranges::all_of(source_tables, [](const auto & t) { return t->supportsPrewhere(); });
 }
 
 bool StorageABR::canMoveConditionsToPrewhere() const
 {
-    return std::ranges::all_of(tables, [](const auto & t) { return t->canMoveConditionsToPrewhere(); });
+    const auto source_tables = tryGetSourceTables();
+    return !source_tables.empty() && std::ranges::all_of(source_tables, [](const auto & t) { return t->canMoveConditionsToPrewhere(); });
 }
 
 bool StorageABR::supportsFinal() const
 {
-    return std::ranges::all_of(tables, [](const auto & t) { return t->supportsFinal(); });
+    const auto source_tables = tryGetSourceTables();
+    return !source_tables.empty() && std::ranges::all_of(source_tables, [](const auto & t) { return t->supportsFinal(); });
 }
 
 bool StorageABR::supportsSubcolumns() const
 {
-    return std::ranges::all_of(tables, [](const auto & t) { return t->supportsSubcolumns(); });
+    const auto source_tables = tryGetSourceTables();
+    return !source_tables.empty() && std::ranges::all_of(source_tables, [](const auto & t) { return t->supportsSubcolumns(); });
 }
 
 void StorageABR::copyTableMetadata(const StoragePtr & storage)
@@ -719,7 +768,7 @@ std::optional<StorageABR::UnixTimePoint> StorageABR::timeValueToUnixTimePoint(co
     return UnixTimePoint{.seconds = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value), .nanoseconds = 0};
 }
 
-size_t StorageABR::chooseBestTable(SelectQueryInfo & query_info, ContextPtr context) const
+size_t StorageABR::chooseBestTable(SelectQueryInfo & query_info, ContextPtr context, const std::vector<StoragePtr> & source_tables) const
 {
     ProfileEventTimeIncrement<Time::Microseconds> watch(ProfileEvents::ABRChooseBestTableDurationMicroseconds);
     const auto abr_info = context->getABRQueryInfoPtr();
@@ -784,7 +833,7 @@ size_t StorageABR::chooseBestTable(SelectQueryInfo & query_info, ContextPtr cont
     /// Iterate finest to coarsest within [start, end].
     for (size_t i = start; i <= end; ++i)
     {
-        const StoragePtr & storage = tables.at(i);
+        const StoragePtr & storage = source_tables.at(i);
         const String name = storage->getStorageID().getNameForLogs();
         const auto storage_metadata = storage->getInMemoryMetadataPtr(context, false);
         const StorageSnapshotPtr snapshot = storage->getStorageSnapshot(storage_metadata, context);
@@ -824,9 +873,9 @@ size_t StorageABR::chooseBestTable(SelectQueryInfo & query_info, ContextPtr cont
 
     if (fallback_min_date.has_value())
         LOG_DEBUG(logger, "No table covers query range, falling back to {} (oldest timestamp at day precision: {})",
-            tables[fallback_idx]->getStorageID().getNameForLogs(), DateLUT::instance().dateToString(fallback_min_date->seconds));
+            source_tables[fallback_idx]->getStorageID().getNameForLogs(), DateLUT::instance().dateToString(fallback_min_date->seconds));
     else
-        LOG_DEBUG(logger, "No table covers query range, falling back to {}", tables[fallback_idx]->getStorageID().getNameForLogs());
+        LOG_DEBUG(logger, "No table covers query range, falling back to {}", source_tables[fallback_idx]->getStorageID().getNameForLogs());
 
     return fallback_idx;
 }
@@ -843,7 +892,7 @@ size_t StorageABR::getLastCandidateTableIndex(const ContextPtr & context) const
 {
     const UInt64 last_suffix = context->getSettingsRef()[Setting::abr_last_table_suffix];
     if (last_suffix == 0)
-        return tables.size() - 1;
+        return source_table_ids.size() - 1;
     return getTableIndexFromSuffix(last_suffix);
 }
 
@@ -889,25 +938,30 @@ void StorageABR::read(
             "where they cannot be applied. Define them on the underlying tables instead",
             getStorageID().getNameForLogs());
 
+    const size_t last_table_idx = getLastCandidateTableIndex(context);
+
+    /// The source tables are resolved once, so that the table is chosen and read from the same tables,
+    /// and they are kept alive only for the duration of the query.
+    std::vector<StoragePtr> source_tables = getSourceTables(context, last_table_idx);
+
     Stopwatch choose_watch;
     auto abr_info = context->getABRQueryInfoPtr();
-    const size_t initial_table_idx = chooseBestTable(query_info, context);
+    const size_t initial_table_idx = chooseBestTable(query_info, context, source_tables);
     if (abr_info)
         abr_info->duration_ms.fetch_add(choose_watch.elapsedMilliseconds());
-    const size_t last_table_idx = getLastCandidateTableIndex(context);
 
     /// The retries go from the chosen table to the one of abr_last_table_suffix, and the limits are split between them.
     const size_t num_candidates = last_table_idx - initial_table_idx + 1;
     auto initial_attempt = buildAttempt(
-        query_info, tables.at(initial_table_idx), context, num_candidates, num_candidates, processed_stage);
+        query_info, source_tables.at(initial_table_idx), context, num_candidates, num_candidates, processed_stage);
     LOG_DEBUG(logger, "Starting read from table {} ({} candidates for retry)",
-        tables.at(initial_table_idx)->getStorageID().getNameForLogs(),
+        source_tables.at(initial_table_idx)->getStorageID().getNameForLogs(),
         num_candidates);
 
     auto step = std::make_unique<ReadFromABR>(
         query_info,
-        std::span<const StoragePtr>(tables).first(last_table_idx + 1),
-        std::span<const UInt64>(sample_intervals).first(last_table_idx + 1),
+        std::move(source_tables),
+        std::vector<UInt64>(sample_intervals.begin(), sample_intervals.begin() + last_table_idx + 1),
         initial_table_idx,
         std::move(initial_attempt),
         context,
@@ -937,6 +991,11 @@ an `ABR` table requires `SHOW COLUMNS` on all its underlying tables, and reading
 
 The source tables are registered as dependencies of the `ABR` table: they are loaded and restored from a backup before it, and
 dropping or renaming one of them while the `ABR` table exists is refused, unless `check_table_dependencies` is disabled.
+
+The source tables are bound to the `ABR` table when it is created, and resolved on every query by their UUID. A source table
+that is dropped or detached makes the queries on the `ABR` table fail with `UNKNOWN_TABLE`. A source table created again under
+the same name is a different table: detach and attach the `ABR` table to use it. In an `Ordinary` database, where tables have
+no UUID, the source tables are resolved by name.
 
 **Engine parameters**
 
