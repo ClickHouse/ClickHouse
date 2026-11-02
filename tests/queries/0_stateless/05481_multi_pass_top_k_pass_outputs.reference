@@ -20,7 +20,10 @@ h28	1660
 h27	1640
 h26	1620
 h25	1600
+heaviest values hold most rows
+1	heavy	64
 outputs_01_restricted_and_hot	1	0	0	1	2	0	43
 outputs_02_fallback	1	1	1	0	0	0	15
 outputs_03_fallback_learns	1	1	1	0	0	0	52
 outputs_04_learned	0	1	0	0	0	0	35
+outputs_05_single_value	1	0	0	1	0	1	1

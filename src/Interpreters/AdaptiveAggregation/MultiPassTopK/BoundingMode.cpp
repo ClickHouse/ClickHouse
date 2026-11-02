@@ -272,11 +272,21 @@ private:
     TopKValueRowsPtr first_rows;
     UInt64 restricted_rows = 0;
 
+    /// Whether the mode pays off with restricted passes that aggregate `rows` rows (see `max_restricted_rows_share`).
+    bool paysOff(UInt64 rows) const
+    {
+        return static_cast<double>(rows) <= max_restricted_rows_share * static_cast<double>(input_rows);
+    }
+
     /// After the sketch pass: the first restricted pass takes the candidates of the cells of the most rows.
     TopKNext afterSketch()
     {
         input_rows = sketch->rows();
         first_values = sketch->candidatesOfHeaviestCells(first_restricted_values_per_top * templ->top);
+        /// The first restricted pass aggregates at least the rows that the votes of its values show. If the mode does
+        /// not pay off with these alone, that pass would repeat most of the original aggregation, so the run declines.
+        if (!paysOff(sketch->minRowsOf(first_values)))
+            return {.decline = "the heaviest values of the bounding key hold most rows"};
         auto values = templ->input->bounding_key->type->createColumn();
         for (const UInt64 value : first_values)
             insertKeyValue(*values, value);
@@ -337,7 +347,7 @@ private:
     /// a small share of the rows, or else run the original aggregation.
     TopKNext finish(Chunks result)
     {
-        if (static_cast<double>(restricted_rows) > max_restricted_rows_share * static_cast<double>(input_rows))
+        if (!paysOff(restricted_rows))
         {
             LOG_DEBUG(log, "The restricted passes aggregated {} of {} rows", restricted_rows, input_rows);
             memo->keepOriginal();

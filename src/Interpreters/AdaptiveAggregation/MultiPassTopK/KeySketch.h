@@ -81,6 +81,10 @@ struct TopKKeySketchCell
         }
     }
 
+    /// The fewest rows that `candidate` holds: its votes when it is the candidate of the cell, which count its rows
+    /// less those that the rows of other values cancelled, and none otherwise.
+    UInt64 minRowsOf(UInt64 candidate) const { return value == candidate ? votes : 0; }
+
     /// The most rows that a value of the cell other than the candidate holds: the cancelled votes pair the rows of
     /// different values, so another value holds at most half of the rows that the votes of the candidate miss.
     UInt64 maxRowsOfOther() const { return (rows - votes) / 2; }
@@ -116,6 +120,10 @@ public:
 
     /// The candidates of the `count` cells of the most rows, each value once. `count` is positive.
     std::unordered_set<UInt64> candidatesOfHeaviestCells(size_t count) const;
+
+    /// The fewest rows that `values` hold together: the votes of those that are the candidates of their cells (see
+    /// `TopKKeySketchCell::minRowsOf`).
+    UInt64 minRowsOf(const std::unordered_set<UInt64> & values) const;
 
     /// The bounds of the values other than `taken`, the values that a pass took, whose rows it counted in
     /// `rows_of_taken`. A value of a cell other than `taken` holds at most the rows of the cell less those of `taken`,

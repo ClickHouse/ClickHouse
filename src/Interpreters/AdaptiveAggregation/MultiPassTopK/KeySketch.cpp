@@ -201,6 +201,14 @@ std::unordered_set<UInt64> TopKKeySketch::candidatesOfHeaviestCells(size_t count
     return candidates;
 }
 
+UInt64 TopKKeySketch::minRowsOf(const std::unordered_set<UInt64> & values) const
+{
+    UInt64 rows = 0;
+    for (const UInt64 value : values)
+        rows += merged[keySketchCell(value)].minRowsOf(value);
+    return rows;
+}
+
 TopKOtherValueBounds TopKKeySketch::boundsOfOtherValues(
     const std::unordered_set<UInt64> & taken, const std::unordered_map<UInt64, UInt64> & rows_of_taken) const
 {
