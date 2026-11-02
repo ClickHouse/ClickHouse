@@ -1,9 +1,12 @@
 #include <algorithm>
 #include <limits>
 #include <optional>
+
+#include <base/arithmeticOverflow.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Common/DateLUT.h>
@@ -15,13 +18,13 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <base/arithmeticOverflow.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Databases/IDatabase.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -29,6 +32,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -427,6 +431,15 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
     sample_intervals.erase(std::unique(sample_intervals.begin(), sample_intervals.end()), sample_intervals.end());
     if (sample_intervals.front() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "All sample intervals must be greater than 0");
+
+    /// The constructor reads the columns and keys of the underlying tables under the global context
+    /// Check that the user is allowed to see them first
+    if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+    {
+        for (const auto & interval : sample_intervals)
+            args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, args.table_id.database_name,
+                fmt::format("{}_{}", table_prefix, interval));
+    }
 
     /// retention_expression -- tuple of columns which we use to calculate retention
     auto retention_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], context);
@@ -871,7 +884,8 @@ that store the same data at different sampling granularities. It picks the fines
 the query's time range, and on `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED` it transparently retries the query on the next coarser table.
 
 The underlying tables are expected to follow a naming convention of `{table_prefix}_{sample_interval}`, where `sample_interval`
-distinguishes the granularity. The engine never writes; data must be ingested directly into the underlying tables.
+distinguishes the granularity. The engine never writes; data must be ingested directly into the underlying tables. Creating
+an `ABR` table requires `SHOW COLUMNS` on all its underlying tables, and reading from it requires `SELECT` on them.
 
 **Engine parameters**
 

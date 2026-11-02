@@ -1,0 +1,13 @@
+CREATE without privileges on the underlying tables
+ACCESS_DENIED
+CREATE with an explicit column list without privileges on the underlying tables
+ACCESS_DENIED
+CREATE over underlying tables that do not exist
+ACCESS_DENIED
+CREATE with privileges on only some of the underlying tables
+ACCESS_DENIED
+0
+CREATE with privileges on all the underlying tables
+ts	DateTime
+account_id	String
+value	UInt64
