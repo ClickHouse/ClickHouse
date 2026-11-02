@@ -4686,8 +4686,7 @@ class TestCase:
                         result.reason = FailureReason.NOT_SUPPORTED_IN_CLOUD_POSTFILTER
                         break
 
-            # Jinja tests are named `<test>.gen`, while the lists use the bare test name.
-            if removesuffix(self.name, ".gen") in suite.blacklist_check:
+            if self.name in suite.blacklist_check:
                 if result.status == TestStatus.OK:
                     result.status = TestStatus.NOT_FAILED
                     result.reason = FailureReason.NOT_FAILED
