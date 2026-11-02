@@ -736,7 +736,10 @@ object_storages_properties = {
     "azure": {
         "check_objects_after_upload": true_false_lambda,
         "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
-        "max_blocks_in_multipart_upload": threshold_generator(0.2, 0.2, 1, 100000),
+        # Floor 10, as `s3_max_part_number` above: with `max_single_part_upload_size=0` every write
+        # is multipart, and a floor of 1 cannot fit even the disk's startup `checkAccess` probe, so
+        # the server rejects the disk with INVALID_CONFIG_PARAMETER and never starts.
+        "max_blocks_in_multipart_upload": threshold_generator(0.2, 0.2, 10, 100000),
         "max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 1, 100),
         "max_single_download_retries": threshold_generator(0.2, 0.2, 1, 16),
         "max_single_part_copy_size": threshold_generator(
