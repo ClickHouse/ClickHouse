@@ -4,9 +4,9 @@
 #if USE_AVRO
 
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <vector>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
@@ -91,6 +91,9 @@ public:
     /// Check if incremental read mode is enabled
     bool isIncrementalReadEnabled() const;
 
+    /// The columns of a data file that has a schema transform, under the names the file was written with.
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+
 private:
     enum class ManifestKind : UInt8
     {
@@ -99,7 +102,14 @@ private:
         Both,
     };
 
-    Strings collectDataFilesFromManifests(
+    /// `schema_transforms[i]` is the schema transform of `paths[i]`, nullptr if the file is read by column name.
+    struct DataFilesToRead
+    {
+        Strings paths;
+        std::vector<std::shared_ptr<ActionsDAG>> schema_transforms;
+    };
+
+    DataFilesToRead collectDataFilesFromManifests(
         const std::vector<PaimonTableStatePtr> & snapshots,
         const PaimonTableSchema & read_schema,
         ManifestKind kind,
@@ -120,12 +130,9 @@ private:
     /// Throws if the snapshot's index manifest lists deletion vectors. Pass the cursor of an incremental read for its recovery hint.
     void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
 
-    /// Throws if a data file written with schema `file_schema_id` cannot be read by column name with `read_schema`.
-    void checkDataFileSchema(
-        const String & file_path,
-        Int64 file_schema_id,
-        const PaimonTableSchema & read_schema,
-        std::optional<Int64> incremental_cursor) const;
+    /// The transform from the columns of a data file written with schema `file_schema_id` to the columns of `read_schema`,
+    /// matched by field id. nullptr if reading the file by column name gives the same columns.
+    std::shared_ptr<ActionsDAG> getDataFileSchemaTransform(Int64 file_schema_id, const PaimonTableSchema & read_schema) const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
@@ -163,7 +170,7 @@ private:
 
     /// Collect data files for incremental read (from committed snapshot to current).
     /// `committed` is the watermark observed under the processing lock.
-    Strings collectIncrementalDataFiles(
+    DataFilesToRead collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
         const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
@@ -176,13 +183,13 @@ private:
     void checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)
-    Strings collectDeltaFilesForSnapshot(
+    DataFilesToRead collectDeltaFilesForSnapshot(
         const PaimonTableStatePtr & state,
         const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Collect data files for full scan
-    Strings collectFullScanDataFiles(
+    DataFilesToRead collectFullScanDataFiles(
         const PaimonTableStatePtr & state,
         const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
@@ -197,9 +204,10 @@ private:
     /// Update mutex: only held briefly during state replacement
     mutable std::mutex update_mutex;
 
-    /// (file schema id, read schema id) pairs `checkDataFileSchema` found compatible. A schema never changes once written.
-    mutable std::mutex checked_file_schemas_mutex;
-    mutable std::set<std::pair<Int64, Int64>> checked_file_schemas TSA_GUARDED_BY(checked_file_schemas_mutex);
+    /// `getDataFileSchemaTransform` by (file schema id, read schema id). A schema never changes once written.
+    mutable std::mutex file_schema_transforms_mutex;
+    mutable std::map<std::pair<Int64, Int64>, std::shared_ptr<ActionsDAG>>
+        file_schema_transforms TSA_GUARDED_BY(file_schema_transforms_mutex);
 
     /// Persistent components: thread-safe or immutable
     PaimonPersistentComponents persistent_components;

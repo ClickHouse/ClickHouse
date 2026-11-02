@@ -255,6 +255,13 @@ protected:
         IDataLakeMetadata::FileProgressCallback callback_,
         UInt64 snapshot_version_) const;
 
+    /// `schema_transforms_` is empty or has the `DataLakeObjectMetadata::schema_transform` of each data file, nullptr for none.
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        std::vector<std::shared_ptr<ActionsDAG>> && schema_transforms_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_) const;
+
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method `{}` is not implemented for {}", method, getName());

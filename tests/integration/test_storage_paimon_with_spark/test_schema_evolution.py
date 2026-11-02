@@ -2,13 +2,16 @@ import pytest
 
 from helpers.paimon_utils import (
     PAIMON_CATALOG,
+    assert_cluster_fan_out,
     create_incremental_paimon_table,
+    create_paimon_table,
     create_spark_paimon_table,
     drop_tables_at_exit,
     execute_spark_query,
     get_creation_expression,
     get_schema_and_data,
     get_uuid_str,
+    query_profile_events,
     spark_table,
     wait_until_query_result,
 )
@@ -83,8 +86,8 @@ def test_schema_evolution(started_cluster_paimon_with_spark, storage_type):
 def test_schema_evolution_rename_column(
     started_cluster_paimon_with_spark, storage_type
 ):
-    """Files written before a RENAME COLUMN store the field under its old name,
-    so reading them by the new name would return NULL: the read must fail."""
+    """Files written before a RENAME COLUMN store the field under its old name.
+    They are read by field id, so the renamed column returns the old values."""
     started_cluster = started_cluster_paimon_with_spark
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -114,21 +117,83 @@ def test_schema_evolution_rename_column(
         f"INSERT INTO {spark_table(table_name)} VALUES (3, 'three')",
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {table_expr}")
-    assert "NOT_IMPLEMENTED" in error
-    assert "field id 1 is column 'b' in schema 0" in error
-    assert "but column 'b2' in the current schema 1" in error
-    assert "INSERT OVERWRITE" in error
+    schema, data = get_schema_and_data(instance, table_expr, order_by="a")
+    assert schema == [["a", "Int32"], ["b2", "Nullable(String)"]]
+    assert data == [["1", "one"], ["2", "two"], ["3", "three"]]
+    assert instance.query(f"SELECT a FROM {table_expr} WHERE b2 = 'one'") == "1\n"
+    assert instance.query(f"SELECT count() FROM {table_expr}") == "3\n"
 
-    # Rewriting the table with the current schema makes the old rows readable under the new name.
+    if storage_type == "s3":
+        # node2 reads every file, so the schema of the file written before the rename travels with the task.
+        cluster_expr = get_creation_expression(
+            storage_type,
+            table_name,
+            started_cluster,
+            table_function=True,
+            run_on_cluster=True,
+            cluster_name="cluster_node2",
+        )
+        query_id = f"paimon-rename-cluster-{get_uuid_str()}"
+        assert (
+            instance.query(
+                f"SELECT * FROM {cluster_expr} ORDER BY a", query_id=query_id
+            )
+            == "1\tone\n2\ttwo\n3\tthree\n"
+        )
+        assert_cluster_fan_out(started_cluster.instances["node2"], query_id)
+
+    # A copy-on-write UPDATE rewrites the file written before the rename with the current schema.
     execute_spark_query(
         started_cluster,
         storage_type,
         table_name,
-        f"INSERT OVERWRITE {spark_table(table_name)} SELECT * FROM {spark_table(table_name)}",
+        f"UPDATE {spark_table(table_name)} SET b2 = 'uno' WHERE a = 1",
     )
-    schema, data = get_schema_and_data(instance, table_expr, order_by="a")
-    assert schema == [["a", "Int32"], ["b2", "Nullable(String)"]]
+    _, data = get_schema_and_data(instance, table_expr, order_by="a")
+    assert data == [["1", "uno"], ["2", "two"], ["3", "three"]]
+
+
+@pytest.mark.parametrize("file_format", ["orc", "avro"])
+def test_schema_evolution_rename_column_file_format(
+    started_cluster_paimon_with_spark, file_format
+):
+    """The ORC and Avro readers also read a file written before a RENAME COLUMN by field id."""
+    started_cluster = started_cluster_paimon_with_spark
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    table_name = "test_schema_evolution_rename_" + file_format + "_" + get_uuid_str()
+
+    table_expr = get_creation_expression(
+        "s3", table_name, started_cluster, table_function=True
+    )
+    table_expr = table_expr[:-1] + f", format = '{file_format.upper()}')"
+
+    create_spark_paimon_table(
+        spark,
+        table_name,
+        "a INT NOT NULL, b STRING",
+        tblproperties={"file.format": file_format},
+    )
+    execute_spark_query(
+        started_cluster,
+        "s3",
+        table_name,
+        f"INSERT INTO {spark_table(table_name)} VALUES (1, 'one'), (2, 'two')",
+    )
+    execute_spark_query(
+        started_cluster,
+        "s3",
+        table_name,
+        f"ALTER TABLE {spark_table(table_name)} RENAME COLUMN b TO b2",
+    )
+    execute_spark_query(
+        started_cluster,
+        "s3",
+        table_name,
+        f"INSERT INTO {spark_table(table_name)} VALUES (3, 'three')",
+    )
+
+    _, data = get_schema_and_data(instance, table_expr, order_by="a")
     assert data == [["1", "one"], ["2", "two"], ["3", "three"]]
 
 
@@ -137,9 +202,9 @@ def test_schema_evolution_drop_and_add_same_name(
     started_cluster_paimon_with_spark, storage_type
 ):
     """After DROP COLUMN email + ADD COLUMN email, files written before the drop
-    hold the dropped field under the same name, so reading them by name would
-    return the dropped values: the read must fail. Names are compared
-    case-insensitively, as the Parquet reader can match them that way."""
+    hold the dropped field under the same name. The re-added column is another
+    field id, so it reads NULL for them, also when the name differs only in case
+    and the Parquet reader matches names case-insensitively."""
     started_cluster = started_cluster_paimon_with_spark
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -176,24 +241,10 @@ def test_schema_evolution_drop_and_add_same_name(
         f"INSERT INTO {spark_table(table_name)} VALUES (3, 'carol@example.com')",
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {table_expr}")
-    assert "NOT_IMPLEMENTED" in error
-    assert "column 'email' is field id 1 in schema 0" in error
-    assert "but field id 2 in the current schema 2" in error
-    assert "INSERT OVERWRITE" in error
-
-    # Rewriting the table with the current schema drops the old email values.
-    execute_spark_query(
-        started_cluster,
-        storage_type,
-        table_name,
-        f"INSERT OVERWRITE {spark_table(table_name)} SELECT * FROM {spark_table(table_name)}",
-    )
     schema, data = get_schema_and_data(instance, table_expr, order_by="a")
     assert schema == [["a", "Int32"], ["email", "Nullable(String)"]]
     assert data == [["1", "\\N"], ["2", "\\N"], ["3", "carol@example.com"]]
 
-    # The same name in another case, under a new field id: the old files hold the dropped email values.
     execute_spark_query(
         started_cluster,
         storage_type,
@@ -213,22 +264,136 @@ def test_schema_evolution_drop_and_add_same_name(
         f"INSERT INTO {spark_table(table_name)} VALUES (4, 'dave@example.com')",
     )
     for settings in [
-        "",
-        " SETTINGS input_format_parquet_case_insensitive_column_matching = 1",
+        None,
+        {"input_format_parquet_case_insensitive_column_matching": 1},
     ]:
-        error = instance.query_and_get_error(f"SELECT * FROM {table_expr}{settings}")
-        assert "NOT_IMPLEMENTED" in error
-        assert "column 'email' is field id 2 in schema 2" in error
-        assert "but column 'EMAIL' is field id 3 in the current schema 4" in error
+        schema, data = get_schema_and_data(
+            instance, table_expr, order_by="a", settings=settings
+        )
+        assert schema == [["a", "Int32"], ["EMAIL", "Nullable(String)"]]
+        assert data == [
+            ["1", "\\N"],
+            ["2", "\\N"],
+            ["3", "\\N"],
+            ["4", "dave@example.com"],
+        ]
+
+
+def test_schema_evolution_rotate_columns(started_cluster_paimon_with_spark):
+    """After the names of three columns are rotated, every name of the old file
+    belongs to another column of the same or another type. Neither the query
+    condition cache, the reader's filter nor the transform may bind them by name.
+    A table engine keeps its UUID, so its cache entries outlive the rename."""
+    started_cluster = started_cluster_paimon_with_spark
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    table_name = "test_schema_evolution_rotate_" + get_uuid_str()
+
+    create_spark_paimon_table(spark, table_name, "a INT, b INT, c STRING")
+    execute_spark_query(
+        started_cluster,
+        "s3",
+        table_name,
+        f"INSERT INTO {spark_table(table_name)} VALUES (1, 2, 'x')",
+    )
+
+    with drop_tables_at_exit(instance, table_name):
+        create_paimon_table("s3", instance, table_name, started_cluster)
+
+        query = f"SELECT c, a, b FROM {table_name} WHERE a = 2 SETTINGS use_query_condition_cache = 1"
+        assert instance.query(query) == ""
+        # The query condition cache now has the entry that no row of the file matches a = 2.
+        assert query_profile_events(
+            instance, query, ["ObjectStorageQueryConditionCacheSkippedFiles"]
+        ) == [1]
+
+        for rename in ["a TO tmp", "b TO a", "c TO b", "tmp TO c"]:
+            execute_spark_query(
+                started_cluster,
+                "s3",
+                table_name,
+                f"ALTER TABLE {spark_table(table_name)} RENAME COLUMN {rename}",
+            )
+        execute_spark_query(
+            started_cluster,
+            "s3",
+            table_name,
+            f"INSERT INTO {spark_table(table_name)} VALUES (10, 20, 'y')",
+        )
+
+        assert (
+            instance.query(
+                f"SELECT c, a, b FROM {table_name} WHERE a = 2 SETTINGS use_query_condition_cache = 0"
+            )
+            == "1\t2\tx\n"
+        )
+        assert instance.query(query) == "1\t2\tx\n"
+        assert instance.query(f"SELECT b FROM {table_name} ORDER BY b") == "x\ny\n"
+        schema, data = get_schema_and_data(instance, table_name, order_by="c")
+        assert schema == [
+            ["c", "Nullable(Int32)"],
+            ["a", "Nullable(Int32)"],
+            ["b", "Nullable(String)"],
+        ]
+        assert data == [["1", "2", "x"], ["10", "20", "y"]]
+
+
+def test_schema_evolution_no_shared_column(started_cluster_paimon_with_spark):
+    """Every column of the old file was dropped and its names were added again,
+    so the file has no field of the current schema: its rows read NULL."""
+    started_cluster = started_cluster_paimon_with_spark
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    table_name = "test_schema_evolution_no_shared_" + get_uuid_str()
+
+    create_spark_paimon_table(spark, table_name, "a INT, b STRING")
+    execute_spark_query(
+        started_cluster,
+        "s3",
+        table_name,
+        f"INSERT INTO {spark_table(table_name)} VALUES (1, 'x')",
+    )
+    for alter in [
+        "ADD COLUMN k INT",
+        "DROP COLUMN a",
+        "DROP COLUMN b",
+        "ADD COLUMN a INT",
+        "ADD COLUMN b STRING",
+    ]:
+        execute_spark_query(
+            started_cluster,
+            "s3",
+            table_name,
+            f"ALTER TABLE {spark_table(table_name)} {alter}",
+        )
+    execute_spark_query(
+        started_cluster,
+        "s3",
+        table_name,
+        f"INSERT INTO {spark_table(table_name)} VALUES (2, 3, 'y')",
+    )
+
+    for run_on_cluster in [False, True]:
+        table_expr = get_creation_expression(
+            "s3",
+            table_name,
+            started_cluster,
+            table_function=True,
+            run_on_cluster=run_on_cluster,
+            cluster_name="cluster_node2",
+        )
+        assert (
+            instance.query(f"SELECT k, a, b FROM {table_expr} ORDER BY k NULLS FIRST")
+            == "\\N\t\\N\t\\N\n2\t3\ty\n"
+        )
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_incremental_read_across_rename_column(
     started_cluster_paimon_with_spark, storage_type
 ):
-    """A caught-up incremental read continues across a RENAME COLUMN. A lagging
-    one is refused with its cursor kept, and resumes once the cursor is moved to
-    the last snapshot committed before the rename."""
+    """An incremental read continues across a RENAME COLUMN, also when it
+    reaches the snapshots committed before the rename only after it."""
     started_cluster = started_cluster_paimon_with_spark
     spark = started_cluster.spark_session
     table_name = "test_schema_evolution_inc_" + storage_type + "_" + get_uuid_str()
@@ -255,51 +420,47 @@ def test_incremental_read_across_rename_column(
         )
         wait_until_query_result(instance, f"SELECT * FROM {table_name}", "1\tone\n")
 
-        keeper_path = f"/clickhouse/paimon/{table_name}"
+        # Not consumed before the next rename: its delta holds a file written with column val2.
+        execute_spark_query(
+            started_cluster,
+            storage_type,
+            table_name,
+            f"INSERT INTO {spark_table(table_name)} VALUES (2, 'two')",
+        )
+        before_rename = spark.sql(
+            f"SELECT max(snapshot_id) FROM {PAIMON_CATALOG}.default.`{table_name}$snapshots`"
+        ).collect()[0][0]
+        execute_spark_query(
+            started_cluster,
+            storage_type,
+            table_name,
+            f"ALTER TABLE {spark_table(table_name)} RENAME COLUMN val2 TO val3",
+        )
+        execute_spark_query(
+            started_cluster,
+            storage_type,
+            table_name,
+            f"INSERT INTO {spark_table(table_name)} VALUES (3, 'three')",
+        )
+        latest = spark.sql(
+            f"SELECT max(snapshot_id) FROM {PAIMON_CATALOG}.default.`{table_name}$snapshots`"
+        ).collect()[0][0]
+
+        assert (
+            instance.query(f"SELECT * FROM {table_name} ORDER BY id")
+            == "2\ttwo\n3\tthree\n"
+        )
+        assert instance.query(f"SELECT * FROM {table_name}") == ""
         zk = started_cluster.get_kazoo_client("zoo1")
         try:
-            cursor = zk.get(f"{keeper_path}/committed_snapshot")[0]
-
-            # Not consumed before the next rename: its delta holds a file written with column val2.
-            execute_spark_query(
-                started_cluster,
-                storage_type,
-                table_name,
-                f"INSERT INTO {spark_table(table_name)} VALUES (2, 'two')",
-            )
-            before_rename = spark.sql(
-                f"SELECT max(snapshot_id) FROM {PAIMON_CATALOG}.default.`{table_name}$snapshots`"
-            ).collect()[0][0]
-            execute_spark_query(
-                started_cluster,
-                storage_type,
-                table_name,
-                f"ALTER TABLE {spark_table(table_name)} RENAME COLUMN val2 TO val3",
-            )
-            execute_spark_query(
-                started_cluster,
-                storage_type,
-                table_name,
-                f"INSERT INTO {spark_table(table_name)} VALUES (3, 'three')",
-            )
-
-            def assert_refused(query):
-                error = instance.query_and_get_error(query)
-                assert "NOT_IMPLEMENTED" in error
-                assert "field id 1 is column 'val2'" in error
-                assert "but column 'val3'" in error
-                return error
-
-            for _ in range(2):
-                error = assert_refused(f"SELECT * FROM {table_name}")
-                assert f"set '{keeper_path}/committed_snapshot'" in error
-                assert zk.get(f"{keeper_path}/committed_snapshot")[0] == cursor
-            assert_refused(
-                f"SELECT * FROM {table_name} SETTINGS paimon_target_snapshot_id = {before_rename}"
-            )
-
-            # Abandons only the snapshot of (2, 'two').
-            zk.set(f"{keeper_path}/committed_snapshot", str(before_rename).encode())
-            assert instance.query(f"SELECT * FROM {table_name}") == "3\tthree\n"
+            committed = zk.get(f"/clickhouse/paimon/{table_name}/committed_snapshot")[0]
+            assert int(committed) == latest
         finally:
             zk.stop()
+
+        assert (
+            instance.query(
+                f"SELECT * FROM {table_name} SETTINGS paimon_target_snapshot_id = {before_rename}"
+            )
+            == "2\ttwo\n"
+        )
