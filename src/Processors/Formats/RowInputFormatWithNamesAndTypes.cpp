@@ -435,8 +435,8 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::isGarbageAfterField(size
 template <typename FormatReaderImpl>
 void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::setReadBuffer(ReadBuffer & in_)
 {
-    format_reader->setReadBuffer(in_);
     IInputFormat::setReadBuffer(in_);
+    format_reader->setReadBuffer(*in);
 }
 
 FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(

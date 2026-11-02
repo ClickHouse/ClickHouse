@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
+#include <IO/UTFConvertingReadBuffer.h>
 
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
@@ -111,7 +112,7 @@ void CSVRowInputFormat::syncAfterError()
 
 void CSVRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
+    buf = std::make_unique<PeekableReadBuffer>(wrapReadBufferForBOMIfNeeded(in_));
     RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
