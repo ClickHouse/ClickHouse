@@ -22,7 +22,6 @@ CREATE TABLE t_algo_right (item_id UInt64) ENGINE = MergeTree ORDER BY item_id;
 INSERT INTO t_algo_left SELECT number, number % 10 FROM numbers(1000);
 INSERT INTO t_algo_right SELECT number FROM numbers(0, 1000, 2);
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',

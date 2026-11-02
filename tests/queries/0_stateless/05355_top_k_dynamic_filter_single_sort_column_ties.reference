@@ -1,0 +1,37 @@
+string asc	1	30
+string desc	1	30
+string offset	1	50
+string where	1	30
+ties	1	1000
+nullable nulls first	1	30	30
+nullable desc nulls last, NULL threshold	1	14000	667
+nullable ties	1	1000	0
+with ties	1	406
+distinct	1	10
+limit by	1	10
+two columns	1	30
+returned rows exist	30
+correlated subquery, unbuffered	10	30
+sparse	['Sparse','Sparse']
+sparse string	1	30
+sparse string desc	1	30
+sparse number	1	30
+sparse number desc	1	30
+05355_one_column	1
+05355_one_column_nullable	1
+05355_two_columns	0
+cache read	1
+no cache entries after dropping ties	1
+cache entries with ties kept	1	1
+cached same plan	1	600
+cached same plan, 4 threads	1	600
+cached same LIMIT + OFFSET	1	200
+cached larger limit	1	1000
+cached smaller limit	1	300
+cached desc	1	600
+cached where	1	600
+cached nullable	1	600	0
+group by smallest key	1	[(0,310,4645815)]
+group by largest key	1	[(1000,30,464970)]
+group by three smallest keys	1	[(0,310,4645815),(1,29,435000),(2,30,435030)]
+group by dominating smallest key	1	[(0,18000,269973000)]

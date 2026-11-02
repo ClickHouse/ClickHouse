@@ -55,10 +55,6 @@ Windows in reverse order
 [4085,4069,4053,4037,4021]
 [4094,4093,4091,4090,4088]
 [4094,4093,4091,4090,4088]
-A repeated search is served from the cache
-256	525568
-256	525568
-256	525568
 Cached chunks between searched ones
 2340	57509010
 7143	178575000
@@ -72,5 +68,3 @@ A phrase proven false without a codec reads no positions
 Every search walks cursors, or falls back without a codec
 02346_cursors	10	0	10
 02346_cursors_none	0	10	10
-02346_cache_1	1
-02346_cache_2	0

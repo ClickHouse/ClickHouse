@@ -23,6 +23,8 @@
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -48,6 +50,29 @@ namespace
 
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
+
+bool hasClusterVariant(std::string_view engine_name)
+{
+    static constexpr std::string_view engines[] = {
+        AzureClusterDefinition::non_clustered_storage_engine_name,
+        S3ClusterDefinition::non_clustered_storage_engine_name,
+        HDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergClusterDefinition::non_clustered_storage_engine_name,
+        IcebergS3ClusterDefinition::non_clustered_storage_engine_name,
+        IcebergAzureClusterDefinition::non_clustered_storage_engine_name,
+        IcebergHDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergLocalClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeS3ClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeAzureClusterDefinition::non_clustered_storage_engine_name,
+        HudiClusterDefinition::non_clustered_storage_engine_name,
+        PaimonClusterDefinition::non_clustered_storage_engine_name,
+        PaimonS3ClusterDefinition::non_clustered_storage_engine_name,
+        PaimonAzureClusterDefinition::non_clustered_storage_engine_name,
+        PaimonHDFSClusterDefinition::non_clustered_storage_engine_name,
+    };
+    return std::ranges::find(engines, engine_name) != std::end(engines);
+}
 
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
@@ -136,6 +161,9 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         metadata.settings_changes = args.storage_def->settings->ptr();
         storage->setInMemoryMetadata(metadata);
     }
+
+    if (hasClusterVariant(args.engine_name))
+        storage->setHasClusterVariant();
 
     return storage;
 }
@@ -1270,11 +1298,11 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 
 The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `FixedString`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. `Bool` is stored as Iceberg `boolean`. Iceberg has no 8-bit or 16-bit integer types, so `Int8`, `UInt8`, `Int16`, and `UInt16` columns are widened to Iceberg `int` and are therefore read back as `Int32`.
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
-- For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
+- For data files containing types whose bounds ClickHouse cannot serialize, such as `Float32`, `Float64`, and `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
@@ -1982,7 +2010,7 @@ The Keeper cursor at `paimon_keeper_path` records how far the stream has consume
 
 Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
 
-**Rewinding the warehouse requires resetting the cursor in the same operation.** ClickHouse cannot reconstruct which snapshots a consumer already received once ids are reused, so a cursor left behind after a rewind produces undefined delivery: snapshots at reused ids may be skipped.
+**Rewinding the warehouse requires resetting the cursor in the same operation.** The cursor also records which snapshot it points at, so once the writer has reused the cursor's snapshot id, the read fails with `INVALID_STATE`: nothing is read and the cursor is left untouched. To recover, point the cursor at the snapshot the warehouse was rewound to, which reads every snapshot written since the rewind, or set it to its current value, which skips the snapshots at the reused ids. A cursor set by hand, or written by an older version, is trusted as written until a read advances it. Nothing can be checked once Paimon has expired the snapshot the cursor points at, nor for a rewind that keeps the cursor's snapshot and lands while a read is loading the snapshots after it.
 
 When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
 
@@ -2101,6 +2129,7 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - The table engine is read-only; data modification is not supported.
 - Incremental read does not handle historical data deletions from the Paimon source. If upstream Paimon data is deleted or updated, the corresponding rows already written to a ClickHouse MergeTree destination table will not be automatically removed. You must manually issue `ALTER TABLE ... DELETE` on the MergeTree table to clean up stale data.
 - If the underlying Paimon table is dropped and recreated at the same object-storage path (e.g. via Flink or Spark), you must `DROP` and re-`CREATE` the corresponding ClickHouse table. ClickHouse detects the recreation by comparing the schema-0 creation timestamp and raises an error; the stale ClickHouse table cannot be used until it is recreated.
+- Columns are matched to data files by name, not by Paimon field id. Reading a data file written before a column was renamed, or before a column was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one. Adding and dropping columns is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
 
 ## Aliases {#aliases}
 
@@ -2126,7 +2155,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |FLOAT     |Float32      |
 |DOUBLE     |Float64      |
 |STRING,VARCHAR,BYTES,VARBINARY     |String      |
-|DATE     |Date      |
+|DATE     |Date32      |
 |TIME(p),TIME     |Time('UTC')      |
 |TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
 |TIMESTAMP(p)     |DateTime64('UTC')      |
@@ -2135,6 +2164,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 
