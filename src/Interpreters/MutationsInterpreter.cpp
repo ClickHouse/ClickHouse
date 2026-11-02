@@ -340,6 +340,8 @@ std::vector<UInt64> countDeletedRowsByCommandPrefixes(
     return deleted_rows_by_command;
 }
 
+}
+
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
