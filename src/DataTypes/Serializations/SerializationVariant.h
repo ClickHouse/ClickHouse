@@ -74,11 +74,11 @@ public:
     using VariantTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 private:
-    explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+    explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_, bool fixed_discriminator_order_);
 
 public:
-    static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_);
-    static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+    static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_, bool fixed_discriminator_order_);
+    static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_, bool fixed_discriminator_order_);
 
     /// Whether a resolved subcolumn is really this variant, which its name alone cannot tell: a
     /// sibling element can flatten to the same name.
@@ -266,6 +266,8 @@ private:
     std::vector<size_t> deserialize_text_order;
     /// Name of Variant data type for better exception messages.
     String variant_name;
+    /// A variant can be appended to a Variant with a fixed discriminator order, so older data may have no streams for it.
+    bool fixed_discriminator_order;
 };
 
 }
