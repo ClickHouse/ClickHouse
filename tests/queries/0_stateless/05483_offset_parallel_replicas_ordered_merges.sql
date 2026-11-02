@@ -69,7 +69,8 @@ SELECT sum(k) FROM
 SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_union';
 
 -- Any other consumer, and the plan root, read a shard from one replica.
-SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample) LIMIT 3
+-- The limit is above the row count, so no secondary query is cancelled.
+SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample) LIMIT 100000
 SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_limit'
 FORMAT Null;
 
