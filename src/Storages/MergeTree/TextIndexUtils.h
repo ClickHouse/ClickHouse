@@ -222,7 +222,8 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size);
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead = true);
 
 /// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
 size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);

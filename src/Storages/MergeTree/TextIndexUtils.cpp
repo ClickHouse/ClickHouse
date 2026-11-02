@@ -548,7 +548,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         for (const auto & substream : substreams)
         {
             /// The merge reads the dictionary and the postings of a source part sequentially,
-            /// so their streams take the regular read buffer size.
+            /// so their streams take the regular read buffer size and keep the page cache lookahead.
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name,
@@ -1385,7 +1385,8 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size)
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1400,8 +1401,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        /// use_page_cache_lookahead: the index merge reads every substream in file order.
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, /*use_page_cache_lookahead=*/ true));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
 }
 
 }
