@@ -255,12 +255,23 @@ private:
 
         /// The candidates include the best `top` keys of the sample by their rank, whose rows reach it.
         chassert(num_candidates >= templ->top);
+        const auto & rows = countsOf(result, rowsColumnOf(*templ));
+        const auto candidates_with_rows
+            = static_cast<size_t>(std::ranges::count_if(rows, [](UInt64 group_rows) { return group_rows != 0; }));
+
+        /// Candidates that an earlier run kept may hold no rows of this one, when the data or a literal of the query
+        /// changed (see `TopKMemo`). With fewer than `top` candidates holding rows, the top takes groups that no
+        /// candidate covers, at any rank: also at a rank of 0, which no bound of a cell excludes. Only the original
+        /// aggregation finds them.
+        if (candidates_with_rows < templ->top)
+            return {.decline = "fewer candidates than the top hold rows"};
+
         const UInt64 nth_rank = nthBest(countsOf(result, rankColumnOf(*templ)), templ->top);
 
         ColumnRawPtrs keys;
         for (size_t i = 0; i < templ->aggregating->getParams().keys_size; ++i)
             keys.push_back(result.getByPosition(i).column.get());
-        auto proof = candidates->prove(keys, countsOf(result, rowsColumnOf(*templ)), nth_rank);
+        auto proof = candidates->prove(keys, rows, nth_rank);
 
         Columns columns = result.getColumns();
         if (proof.num_proven < num_candidates)

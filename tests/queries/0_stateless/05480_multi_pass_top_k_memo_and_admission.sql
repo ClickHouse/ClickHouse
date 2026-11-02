@@ -1,7 +1,8 @@
 -- The multi-pass top-K aggregation where its runs or its passes could see different data, or exceed the
 -- limits of the query. The profile events show which passes ran.
--- Candidates that an earlier run kept hold no rows once the table loses their keys, so they are no groups of
--- the result. With fewer candidates than the top left, the next runs run the original aggregation.
+-- Candidates that an earlier run kept hold no rows once the table loses their keys. With fewer candidates
+-- holding rows than the top takes, the top takes groups that no candidate covers, at any rank, also at a rank
+-- of 0 that no bound of a cell excludes, so the run declines, and so do the next runs.
 -- An input that a pass could read differently keeps the strategy off: a column that a part lacks and whose
 -- default the reader computes in every pass, also read as a subcolumn, and a set of a table, also captured by
 -- a lambda.
@@ -30,22 +31,23 @@ DROP TABLE IF EXISTS t_inputs;
 DROP TABLE IF EXISTS t_allowed;
 DROP TABLE IF EXISTS t_runs;
 
-CREATE TABLE t_memo (k String, x UInt64) ENGINE = MergeTree ORDER BY x
+CREATE TABLE t_memo (k String, x UInt64, ok UInt8) ENGINE = MergeTree ORDER BY x
 SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 -- The keys `heavy0` to `heavy4` hold 1 of every 20 rows each, and every other key one row.
-INSERT INTO t_memo SELECT if(number % 20 < 5, concat('heavy', toString(number % 5)), toString(number)), number FROM numbers(67584)
+INSERT INTO t_memo SELECT if(number % 20 < 5, concat('heavy', toString(number % 5)), toString(number)), number, 1 FROM numbers(67584)
 SETTINGS max_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
 -- The first run keeps its candidates, the keys `heavy0` to `heavy4`, which the next runs start from.
 SET collect_hash_table_stats_during_aggregation = 1;
-SELECT k, count() AS c FROM t_memo GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'memo_01_first';
+SELECT k, uniqExactIf(x, ok) AS c FROM t_memo GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'memo_01_first';
 
+-- The only key of the refill has a rank of 0, as its condition never holds.
 TRUNCATE TABLE t_memo;
-INSERT INTO t_memo SELECT 'only', number FROM numbers(67584)
+INSERT INTO t_memo SELECT 'only', number, 0 FROM numbers(67584)
 SETTINGS max_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 SELECT 'candidates that hold no rows';
-SELECT k, count() AS c FROM t_memo GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'memo_02_refilled';
-SELECT k, count() AS c FROM t_memo GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'memo_03_after';
+SELECT k, uniqExactIf(x, ok) AS c FROM t_memo GROUP BY k ORDER BY c DESC LIMIT 5 SETTINGS log_comment = 'memo_02_refilled';
+SELECT k, uniqExactIf(x, ok) AS c FROM t_memo GROUP BY k ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'memo_03_after';
 
 -- Without the hash table statistics, every admitted query takes its pilot.
 SET collect_hash_table_stats_during_aggregation = 0;
