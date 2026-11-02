@@ -332,6 +332,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
+    extern const MergeTreeSettingsBool immutable;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsBool fsync_after_insert;
@@ -445,6 +446,7 @@ namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
     extern const int NOT_IMPLEMENTED;
+    extern const int IMMUTABLE_TABLE;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
     extern const int DUPLICATE_DATA_PART;
@@ -2216,6 +2218,20 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
         }
     }
     auto new_table_ttl = new_metadata.table_ttl;
+
+    if ((*getSettings())[MergeTreeSetting::immutable])
+    {
+        if (!new_column_ttls.empty())
+            throw Exception(ErrorCodes::IMMUTABLE_TABLE,
+                "Column TTL is not allowed for table {} with setting `immutable` = 1, because it resets the values of existing rows",
+                getStorageID().getNameForLogs());
+
+        if (new_table_ttl.rows_ttl.expression_ast || !new_table_ttl.rows_where_ttl.empty() || !new_table_ttl.group_by_ttl.empty())
+            throw Exception(ErrorCodes::IMMUTABLE_TABLE,
+                "TTL that deletes or aggregates rows is not allowed for table {} with setting `immutable` = 1. "
+                "Only TTL ... TO DISK, TO VOLUME and RECOMPRESS are allowed",
+                getStorageID().getNameForLogs());
+    }
 
     if (new_table_ttl.definition_ast)
     {
@@ -5996,6 +6012,50 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
     }
 }
 
+static void checkImmutableTableMutationCommands(const MutationCommands & commands, const StorageID & table_id)
+{
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            /// These do not change the stored values of existing rows.
+            case MutationCommand::EMPTY:
+            case MutationCommand::ALTER_WITHOUT_MUTATION:
+            case MutationCommand::MATERIALIZE_INDEX:
+            case MutationCommand::MATERIALIZE_PROJECTION:
+            case MutationCommand::MATERIALIZE_STATISTICS:
+            case MutationCommand::DROP_INDEX:
+            case MutationCommand::DROP_PROJECTION:
+            case MutationCommand::DROP_STATISTICS:
+            case MutationCommand::MATERIALIZE_TTL:
+            case MutationCommand::REWRITE_PARTS:
+                continue;
+
+            case MutationCommand::DELETE:
+            case MutationCommand::UPDATE:
+            case MutationCommand::READ_COLUMN:
+            case MutationCommand::DROP_COLUMN:
+            case MutationCommand::RENAME_COLUMN:
+            case MutationCommand::MATERIALIZE_COLUMN:
+            case MutationCommand::APPLY_DELETED_MASK:
+            case MutationCommand::APPLY_PATCHES:
+                break;
+        }
+
+        throw Exception(ErrorCodes::IMMUTABLE_TABLE,
+            "Mutation {} is not allowed for table {} with setting `immutable` = 1",
+            command.type == MutationCommand::DROP_COLUMN && command.clear ? std::string_view{"CLEAR COLUMN"} : magic_enum::enum_name(command.type),
+            table_id.getNameForLogs());
+    }
+}
+
+void MergeTreeData::assertNotImmutable(std::string_view operation) const
+{
+    if ((*getSettings())[MergeTreeSetting::immutable])
+        throw Exception(ErrorCodes::IMMUTABLE_TABLE,
+            "{} is not allowed for table {} with setting `immutable` = 1", operation, getStorageID().getNameForLogs());
+}
+
 void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
@@ -6016,6 +6076,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             "but setting `allow_non_metadata_alters` is disabled",
                             mutation_commands.ast()->formatForErrorMessage());
     }
+
+    /// `StorageMergeTree::alter` queues these without `checkMutationIsPossible`.
+    if ((*settings_from_storage)[MergeTreeSetting::immutable])
+        checkImmutableTableMutationCommands(
+            commands.getMutationCommands(
+                old_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
+                /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]),
+            getStorageID());
 
     /// Block the case of alter table add projection for special merge trees.
     if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::ADD_PROJECTION; }))
@@ -7368,6 +7436,9 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                         "The following mutation commands: '{}' will modify data on disk, "
                         "but setting `allow_non_metadata_alters` is disabled",
                         commands.ast()->formatForErrorMessage());
+
+    if ((*getSettings())[MergeTreeSetting::immutable])
+        checkImmutableTableMutationCommands(commands, getStorageID());
 
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
@@ -9883,8 +9954,21 @@ void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
     const auto disks = getDisks();
+    const bool immutable = (*getSettings())[MergeTreeSetting::immutable];
     for (const auto & command : commands)
     {
+        if (immutable)
+        {
+            const bool removes_data = command.type == PartitionCommand::DROP_PARTITION
+                || (command.type == PartitionCommand::REPLACE_PARTITION && command.replace)
+                || (command.type == PartitionCommand::MOVE_PARTITION
+                    && (command.move_destination_type == PartitionCommand::TABLE || command.move_destination_type == PartitionCommand::SHARD));
+            if (removes_data)
+                throw Exception(ErrorCodes::IMMUTABLE_TABLE,
+                    "ALTER TABLE {} is not allowed for table {} with setting `immutable` = 1",
+                    command.typeToString(), getStorageID().getNameForLogs());
+        }
+
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION && !settings[Setting::allow_drop_detached])
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                 "Cannot execute query: DROP DETACHED PART "

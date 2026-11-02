@@ -1223,6 +1223,9 @@ public:
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
+    /// Throws `IMMUTABLE_TABLE` if the table has the setting `immutable`.
+    void assertNotImmutable(std::string_view operation) const;
+
     /// Checks that partition name in all commands is valid
     void checkAlterPartitionIsPossible(
         const PartitionCommands & commands,

@@ -2927,6 +2927,20 @@ the whole duration of that `ALTER`: it accepts writes again only once the statem
 This setting is not supported for `ReplicatedMergeTree`.
 )", 0, \
         {"26.3", false, false, "New setting to mark table as read-only, preventing inserts and modifications"}) \
+    DECLARE(Bool, immutable, false, R"(
+If set to true, the rows of the table are append-only: once inserted, they can be neither changed nor removed.
+
+`INSERT`, `SELECT`, background merges, replication fetches, backups, moves between disks and volumes (including `TTL ... TO DISK`/`TO VOLUME`),
+recompression, and metadata-only `ALTER` queries (for example `ADD COLUMN`, `ADD INDEX`, `MATERIALIZE INDEX`) remain allowed.
+
+The following operations are rejected with the `IMMUTABLE_TABLE` error: `ALTER TABLE ... UPDATE`/`DELETE`, `DELETE FROM`, `UPDATE`,
+`TRUNCATE`, `DROP`/`DETACH PARTITION` and `PART`, `REPLACE PARTITION`, `MOVE PARTITION ... TO TABLE`/`TO SHARD`, `ALTER` queries that rewrite
+the values of existing columns (`MODIFY COLUMN` with a type change, `DROP`/`CLEAR`/`RENAME COLUMN`, `MATERIALIZE COLUMN`), and table or column `TTL`
+that deletes, aggregates, or resets rows.
+
+The setting can only be specified at table creation and cannot be changed afterwards.
+)", 0, \
+        {"26.11", false, false, "New setting to make the rows of a table append-only"}) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
 Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection)
@@ -3750,6 +3764,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "table_disk"
         || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
+        || name == "immutable"
     ;
 }
 

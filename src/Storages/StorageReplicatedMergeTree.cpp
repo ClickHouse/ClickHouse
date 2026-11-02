@@ -7815,6 +7815,7 @@ void StorageReplicatedMergeTree::truncate(
     table_lock.release();   /// Truncate is done asynchronously.
 
     assertNotReadonly();
+    assertNotImmutable("TRUNCATE");
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "TRUNCATE cannot be done on this replica because it is not a leader");
 
@@ -9096,6 +9097,7 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
 
 QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
 {
+    assertNotImmutable("Lightweight UPDATE");
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::updateLightweight");
     auto context_copy = Context::createCopy(query_context);
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
