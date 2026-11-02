@@ -112,15 +112,35 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
     static const ColumnsDescription no_columns;
     const ColumnsDescription & columns = metadata ? metadata->getColumns() : no_columns;
 
+    bool adds_index = false;
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
         if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
             continue;
 
+        adds_index = true;
         if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
             checkTextIndexPreAndPostProcessorPermissions(*declaration, columns, context);
     }
+
+    /// The check above sees the schema before this statement, but a later command of the same
+    /// statement can change what an alias in a transform expands to, and the hosts that apply it
+    /// run without the user. `AlterCommands::apply` authorizes the declared indices against the
+    /// schema the whole statement produces, so run it here as the user on a copy of the metadata.
+    if (!adds_index || !metadata)
+        return;
+
+    AlterCommands commands;
+    for (const auto & child : alter.command_list->children)
+    {
+        if (auto command = AlterCommand::parse(child->as<ASTAlterCommand>()))
+            commands.emplace_back(std::move(*command));
+    }
+
+    StorageInMemoryMetadata metadata_copy = *metadata;
+    commands.prepare(metadata_copy);
+    commands.apply(metadata_copy, context);
 }
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)

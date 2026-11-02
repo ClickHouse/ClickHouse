@@ -4084,14 +4084,24 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The normalized path does this in `getTablePropertiesAndNormalizeCreateQuery`. Aliases
-            /// and indices inherited from `AS src` are not in this query, so they stay uncovered.
-            if (create.columns_list && create.columns_list->indices)
+            /// The normalized path does this in `getTablePropertiesAndNormalizeCreateQuery`. Indices
+            /// inherited from `AS src` are not in this query, so they stay uncovered. The columns of
+            /// this query are built as the worker builds them, so that an `ALIAS` column used in a
+            /// transform is expanded here too.
+            if (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty())
             {
+                ColumnsDescription columns;
+                if (create.columns_list->columns)
+                    columns = getColumnsDescription(
+                        *create.columns_list,
+                        getContext(),
+                        getLoadingStrictnessLevel(create.attach, /*force_attach=*/ false, /*force_restore=*/ false, /*secondary=*/ false),
+                        is_restore_from_backup);
+
                 for (const auto & index : create.columns_list->indices->children)
                 {
                     if (const auto * declaration = index->as<ASTIndexDeclaration>())
-                        checkTextIndexPreAndPostProcessorPermissions(*declaration, ColumnsDescription{}, getContext());
+                        checkTextIndexPreAndPostProcessorPermissions(*declaration, columns, getContext());
                 }
             }
 

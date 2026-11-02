@@ -2,12 +2,19 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <fmt/ranges.h>
 
@@ -34,9 +41,55 @@ void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name,
         replaceExpressionToIdentifier(child, expression_name, identifier_name);
 }
 
+namespace
+{
+
+/// A transform is analysed under the global context, so whatever reads a table or a dictionary
+/// during analysis does it with full access, and constant folding can put the result (or an
+/// exception text carrying it) in front of the user before `validateTransformActionsDAG` runs.
+/// Such access depends on the arguments, not on the function name, so checking the names as the
+/// declaring user does not cover it. A transform must be a pure function of the indexed value,
+/// so reject these constructs before any analysis.
+void rejectDataDependentConstructs(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTTableIdentifier>())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "A text index transform expression must not contain subqueries or table references");
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto & set = function->arguments->children[1];
+            if (set->as<ASTIdentifier>() || set->as<ASTTableIdentifier>())
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "A text index transform expression must not use a table or a set as the right side of `{}`", function->name);
+        }
+
+        /// Only the name is resolved here, which for `dictGet`, `joinGet` and the like does not touch
+        /// the dictionary or the table; their analysis would.
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "A text index transform expression must not contain non-deterministic functions. Got `{}`", function->name);
+    }
+
+    for (const auto & child : ast->children)
+        rejectDataDependentConstructs(child, context);
+}
+
+}
+
 ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns)
 {
     auto context = Context::getGlobalContextInstance();
+
+    {
+        /// `TreeRewriter` inlines SQL UDF bodies, so look into them as well.
+        auto inlined = expression_ast->clone();
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(inlined, context);
+        rejectDataDependentConstructs(inlined, context);
+    }
+
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, source_columns);
     auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false, true);
 

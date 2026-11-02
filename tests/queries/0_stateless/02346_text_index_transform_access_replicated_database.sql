@@ -51,9 +51,42 @@ CREATE TABLE tab_on_cluster_legacy ON CLUSTER test_shard_localhost
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
+SELECT '5. So is an ALIAS column of the same query on the legacy entry-format path.';
+
+CREATE TABLE tab_on_cluster_legacy ON CLUSTER test_shard_localhost
+(
+    id UInt64,
+    val String,
+    mangled String ALIAS demangle(val),
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = mangled)
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+
 SET distributed_ddl_entry_format_version = DEFAULT;
 
-SELECT '5. Accepted with the privilege.';
+SELECT '6. An alias renamed by an earlier command of the same ALTER is denied.';
+
+-- The initiator has to authorize against the schema the whole statement produces: the hosts run it
+-- without the user, and only after the rename does `renamed` expand to `demangle(val)`.
+SET allow_introspection_functions = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_alias (id UInt64, val String, mangled String ALIAS demangle(val))
+ENGINE = MergeTree ORDER BY id FORMAT Null;
+CREATE TABLE tab_on_cluster_alias (id UInt64, val String, mangled String ALIAS demangle(val)) ENGINE = MergeTree ORDER BY id;
+SET allow_introspection_functions = 0;
+
+ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_alias
+    RENAME COLUMN mangled TO renamed,
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '7. Also with ON CLUSTER.';
+
+ALTER TABLE tab_on_cluster_alias ON CLUSTER test_shard_localhost
+    RENAME COLUMN mangled TO renamed,
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+
+DROP TABLE tab_on_cluster_alias;
+
+SELECT '8. Accepted with the privilege.';
 
 SET allow_introspection_functions = 1;
 
