@@ -31,7 +31,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 데이터 `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 는 데이터 포맷 파서 또는 빠른 스트림 파서가 파싱합니다.
 
 <Accordion title="전체 파서 활성화">
-  [`input_format_values_interpret_expressions`](/ko/reference/settings/formats#input_format_values_interpret_expressions) 설정을 사용하면 데이터에도 전체 파서를
+  [`input_format_values_interpret_expressions`](/ko/reference/settings/formats/input-format#input_format_values_interpret_expressions) 설정을 사용하면 데이터에도 전체 파서를
   적용할 수 있습니다.
 
   앞서 언급한 설정을 `1`로 지정하면
@@ -40,7 +40,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 </Accordion>
 
 데이터는 어떤 포맷이든 사용할 수 있습니다.
-쿼리를 수신하면 서버는 요청 중 [max&#95;query&#95;size](/ko/reference/settings/session-settings#max_query_size)바이트를 넘지 않는 부분만 RAM에서 처리하고
+쿼리를 수신하면 서버는 요청 중 [max&#95;query&#95;size](/ko/reference/settings/session-settings/max#max_query_size)바이트를 넘지 않는 부분만 RAM에서 처리하고
 (기본값은 1 MB), 나머지는 스트림 파싱합니다.
 이는 대용량 `INSERT` 쿼리에서 발생할 수 있는 문제를 방지하기 위한 것으로, ClickHouse에 데이터를 삽입할 때 권장되는 방식입니다.
 
@@ -492,7 +492,7 @@ expr AS alias
   ### 사용 시 참고 사항
 </div>
 
-* 별칭은 쿼리 또는 하위 쿰리 전체에 전역으로 적용되며, 어떤 표현식이든 쿼리의 어느 부분에서나 별칭으로 정의할 수 있습니다. 예시는 다음과 같습니다:
+* 별칭은 쿼리 또는 하위 쿌리 전체에 전역으로 적용되며, 어떤 표현식이든 쿼리의 어느 부분에서나 별칭으로 정의할 수 있습니다. 예시는 다음과 같습니다:
 
 ```sql
 SELECT (1 AS n) + 2, n`.
@@ -525,18 +525,18 @@ SELECT
     sum(b) AS b
 FROM t;
 
-서버에서 예외가 수신되었습니다 (버전 18.14.17):
+Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
 앞선 예시에서는 컬럼 `b`를 가진 테이블 `t`를 선언했습니다.
-그런 다음 데이터를 선택할 때 `sum(b) AS b` alias를 정의했습니다.
-alias는 전역적으로 적용되므로,
+그런 다음 데이터를 선택할 때 `sum(b) AS b` 별칭를 정의했습니다.
+별칭는 전역적으로 적용되므로,
 ClickHouse는 표현식 `argMax(a, b)`의 리터럴 `b`를 표현식 `sum(b)`로 대체했습니다.
 이 대체로 인해 예외가 발생했습니다.
 
 <Note>
-  [prefer&#95;column&#95;name&#95;to&#95;alias](/ko/reference/settings/session-settings#prefer_column_name_to_alias)를 `1`로 설정하면 이 기본 동작을 변경할 수 있습니다.
+  [prefer&#95;column&#95;name&#95;to&#95;alias](/ko/reference/settings/session-settings/prefer#prefer_column_name_to_alias)를 `1`로 설정하면 이 기본 동작을 변경할 수 있습니다.
 </Note>
 
 <div id="asterisk">

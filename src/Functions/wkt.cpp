@@ -1,8 +1,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
+#include <Functions/geometryFormatting.h>
 #include <Columns/ColumnString.h>
 
+#include <locale>
 #include <string>
 #include <memory>
 
@@ -34,9 +36,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "(Any) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -49,6 +51,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnString::create();
+        const std::locale locale(std::locale::classic(), new ShortestFloatNumPut);
 
         callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
         {
@@ -61,6 +64,7 @@ public:
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 str.exceptions(std::ios::failbit);
+                str.imbue(locale);
                 str << boost::geometry::wkt(figures[i]);
                 std::string serialized = str.str();
                 res_column->insertData(serialized.data(), serialized.size());
@@ -89,7 +93,7 @@ Converts a ClickHouse geometry object to its [Well-Known Text (WKT)](https://en.
         {"geometry", "Geometry object (Point, MultiPoint, Ring, LineString, MultiLineString, Polygon, MultiPolygon).", {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the WKT string representation of the geometry.", {"String"}};
-    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT wkt((0.0, 1.0))", "POINT (0 1)"}};
+    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT wkt((0.0, 1.0))", "POINT(0 1)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

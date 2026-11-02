@@ -1,9 +1,11 @@
 import urllib
+import uuid
 
 import pytest
 import requests
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
@@ -11,6 +13,7 @@ from .prometheus_test_utils import (
     extract_data_from_http_api_response,
     extract_error_from_http_api_response,
     get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
     send_protobuf_to_remote_write,
 )
 
@@ -63,6 +66,10 @@ def send_test_data():
             for i in range(STREAM_ERROR_SERIES_COUNT)
         ]
     )
+    # `rfc3339_metric` is used by the tests of RFC3339 times.
+    send_to_clickhouse(
+        [({"__name__": "rfc3339_metric", "job": "vmalert"}, {1700000000: 1.0, 1700000030: 2.0, 1700000060: 3.0})]
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -70,6 +77,15 @@ def start_cluster():
     try:
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE prometheus_seconds "
+            "(samples Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+        )
+        node.query(
+            "INSERT INTO prometheus_seconds (metric_name, tags, samples) VALUES"
+            " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
+            " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
+        )
         send_test_data()
         yield cluster
     finally:
@@ -119,6 +135,118 @@ def test_range_query_post_urlencoded():
     assert get_data == post_data
 
 
+def test_range_query_rejects_non_positive_step_for_equal_start_and_end():
+    for step in (0, -1):
+        error = execute_range_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/api/v1/query_range",
+            "vector(1)",
+            10,
+            10,
+            step,
+            expect_error=True,
+        )
+        assert "step must be positive" in error
+
+
+def test_range_query_accepts_positive_step_for_equal_start_and_end():
+    result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        1000,
+        1000,
+        1,
+    )
+    assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
+
+
+# As in Prometheus, a range query is rejected with 400 bad_data if (end - start) / step is greater than 11000.
+def test_range_query_max_points_per_series():
+    def range_query(end, params=None):
+        return get_response_to_http_api_range_query(
+            node.ip_address, 9093, "/api/v1/query_range", "vector(1)", 0, end, 1, params
+        )
+
+    response = range_query(11001)
+    assert response.status_code == 400
+    assert response.json()["errorType"] == "bad_data"
+    assert response.json()["error"] == (
+        "exceeded maximum resolution of 11000 points per timeseries. "
+        "Try decreasing the query resolution (?step=XX) or increasing the setting promql_max_points_per_series"
+    )
+
+    response = range_query(11000)
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 11001
+
+    response = range_query(20000, {"promql_max_points_per_series": 0})
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 20001
+
+
+def test_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+    timestamp = 151
+
+    expected = '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [151, "16"]}]}'
+    assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp) == expected
+
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+            params={"lookback_delta": "500ms"},
+        )
+        == '{"resultType": "vector", "result": []}'
+    )
+
+    for lookback_delta in ("0", "-1"):
+        assert (
+            execute_query_via_http_api(
+                node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+                params={"lookback_delta": lookback_delta},
+            )
+            == expected
+        )
+
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+        params={"lookback_delta": "banana"}, expect_error=True,
+    )
+    assert "Cannot parse duration" in error
+
+
+def test_query_lookback_delta_low_timestamp_precision():
+    old_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_old{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert old_sample == '{"resultType": "vector", "result": []}'
+
+    exact_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_exact{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert exact_sample == '{"resultType": "vector", "result": [{"metric": {"__name__": "foo_seconds_exact", "shape": "circle"}, "value": [151, "17"]}]}'
+
+
+def test_range_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+
+    expected = '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[150, "16"]]}]}'
+    assert (
+        execute_range_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_range", query, 150, 151, 1,
+            params={"lookback_delta": "0.5"},
+        )
+        == expected
+    )
+
+
 # Malformed PromQL is rejected at parse time.
 # The response must be a well-formed Prometheus error response `{"status":"error",...}`
 def test_error_while_parsing():
@@ -127,6 +255,40 @@ def test_error_while_parsing():
     )
     error_message = extract_error_from_http_api_response(response)
     assert "while parsing PromQL query" in error_message
+
+
+# Errors raised before the query runs (a bad setting, a wrong password) keep their HTTP status
+# and come as a Prometheus error response `{"status":"error",...}` too.
+def test_error_before_dispatch():
+    node.query("CREATE USER IF NOT EXISTS prometheus_password_user IDENTIFIED BY 'right'")
+    for params, status_code, error_type, error in (
+        ({"no_such_setting": "1"}, 404, "not_found", "UNKNOWN_SETTING"),
+        ({"max_threads": "abc"}, 400, "bad_data", "CANNOT_PARSE"),
+        ({"user": "prometheus_password_user", "password": "wrong"}, 403, "bad_data", "AUTHENTICATION_FAILED"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == status_code, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == error_type
+        assert error in extract_error_from_http_api_response(response)
+    node.query("DROP USER prometheus_password_user")
+
+
+# A time-series table that cannot be found keeps its HTTP status too.
+def test_unknown_table_before_query():
+    for params, error in (
+        ({"table": "no_such_table"}, "UNKNOWN_TABLE"),
+        ({"database": "no_such_database", "table": "prometheus"}, "UNKNOWN_DATABASE"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/dynamic_table/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == 404, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == "not_found"
+        assert error in extract_error_from_http_api_response(response)
 
 
 # Checks the case when an exception appears before any block has been written to the response buffer.
@@ -262,3 +424,90 @@ def test_table_query_param():
         params={"database": "other"}, expect_error=True,
     )
     assert "cannot be overridden" in error
+
+
+def test_generated_sql_always_runs_with_materialized_cte():
+    # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which the handler
+    # honors by turning enable_materialized_cte on. The materialization itself is covered by
+    # 04816_promql_shared_subqueries_materialized; here it is enough to check the setting the
+    # generated query ran with. `AS MATERIALIZED` also needs the analyzer, but that is no
+    # longer a setting the handler has to pin: the analyzer is the only query analysis since
+    # 26.9, so it is not in the changed settings this row records.
+    for path, time_params in (
+        ("/api/v1/query", "time=1000"),
+        ("/api/v1/query_range", "start=999&end=1002&step=1"),
+    ):
+        query_id = f"promql-analyzer-{uuid.uuid4()}"
+        url = (
+            f"http://{node.ip_address}:9093{path}"
+            f"?query=post_body_metric&{time_params}"
+        )
+        response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+        extract_data_from_http_api_response(response)  # raises unless a success envelope
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        # The response is flushed to the client before the QueryFinish row is queued, so a
+        # flush can run before there is anything to flush and the row then waits for the
+        # background interval. Retry for longer than that interval.
+        assert_eq_with_retry(
+            node,
+            "SELECT Settings['enable_materialized_cte'] "
+            f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+            "1\n",
+            retry_count=30,
+            sleep_time=1,
+        )
+
+
+# The SQL that `/api/v1/query` executes is generated by the server, so the request settings passed as URL
+# parameters must not change how it is parsed: neither another `dialect` nor a small `max_query_size`.
+def test_generated_sql_ignores_request_dialect_and_parser_limits():
+    expected = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "post_body_metric", timestamp=1000
+    )
+    for params in ({"dialect": "kusto"}, {"max_query_size": "20"}, {"max_parser_depth": "5"}):
+        assert (
+            execute_query_via_http_api(
+                node.ip_address, 9093, "/api/v1/query", "post_body_metric", timestamp=1000, params=params
+            )
+            == expected
+        )
+
+
+# vmalert and other Go clients send times in RFC3339 format; they must give the same result as Unix times.
+@pytest.mark.parametrize(
+    "path, unix_params, rfc3339_params",
+    [
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14T22:14:20Z"}),
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-15T00:14:20+02:00"}),
+        ("/api/v1/query", {"time": "1700000045.123"}, {"time": "2023-11-14T17:14:05.123456789-05:00"}),
+        (
+            "/api/v1/query_range",
+            {"start": "1700000000", "end": "1700000060", "step": "15s"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T22:14:20Z", "step": "15s"},
+        ),
+        (
+            "/api/v1/series",
+            {"start": "1700000000", "end": "1700000060"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T17:14:20-05:00"},
+        ),
+    ],
+)
+def test_rfc3339_times(path, unix_params, rfc3339_params):
+    selector = {"match[]": "rfc3339_metric"} if path == "/api/v1/series" else {"query": "rfc3339_metric"}
+    url = f"http://{node.ip_address}:9093{path}"
+    unix_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **unix_params}))
+    rfc3339_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **rfc3339_params}))
+    assert "rfc3339_metric" in unix_data
+    assert rfc3339_data == unix_data
+
+
+@pytest.mark.parametrize(
+    "time",
+    ["2023-11-14T22:14:20+24:00", "2023-11-14T22:14:20+0200", "2023-11-14T22:14:20z", "2023-11-14T22:14:20Z "],
+)
+def test_rfc3339_times_invalid(time):
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "rfc3339_metric", params={"time": time}, expect_error=True
+    )
+    assert "Cannot parse a timestamp" in error

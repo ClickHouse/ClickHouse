@@ -54,7 +54,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
             "Size of sparse column ({}) should be greater than last position of non-default value ({})",
                 _size, offsets_concrete->getData().back());
 
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     const auto & offsets_data = getOffsetsData();
     const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
@@ -78,6 +78,15 @@ MutableColumnPtr ColumnSparse::cloneResized(size_t new_size) const
 bool ColumnSparse::isDefaultAt(size_t n) const
 {
     return getValueIndex(n) == 0;
+}
+
+bool ColumnSparse::hasOnlyTypeDefaults() const
+{
+    if (_size == 0)
+        return true;
+    /// All rows map to values[0] when offsets is empty, but values[0] may
+    /// not be the type-default (e.g. after deserialization), so verify it.
+    return getOffsetsData().empty() && values->isDefaultAt(0);
 }
 
 bool ColumnSparse::isNullAt(size_t n) const
@@ -176,11 +185,6 @@ std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColu
 void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
-}
-
-void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
-{
-    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -340,6 +344,63 @@ void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
     getOffsetsData().resize_assume_reserved(nested.size - 1);
 }
 
+namespace
+{
+
+/// Counts the rows a filter keeps before rows visited in ascending order, along 64-row words of the filter's bitmask.
+class FilterWordsCursor
+{
+public:
+    FilterWordsCursor(const UInt8 * filt_, size_t size_) : filt(filt_), size(size_), bits(loadWord(0)) {}
+
+    /// The number of kept rows before `row`, and whether `row` itself is kept. `row` must not decrease between calls.
+    std::pair<size_t, bool> seek(size_t row)
+    {
+        const size_t row_word = row / 64;
+        if (row_word != word)
+        {
+            kept_before_word += std::popcount(bits);
+            if (row_word > word + 1)
+                kept_before_word += countBytesInFilter(filt, (word + 1) * 64, row_word * 64);
+            word = row_word;
+            bits = loadWord(word);
+        }
+        const UInt64 row_bit = UInt64(1) << (row % 64);
+        return {kept_before_word + std::popcount(bits & (row_bit - 1)), (bits & row_bit) != 0};
+    }
+
+    /// The number of rows the whole filter keeps.
+    size_t countAll() const
+    {
+        size_t res = kept_before_word + std::popcount(bits);
+        const size_t next_word_begin = (word + 1) * 64;
+        if (next_word_begin < size)
+            res += countBytesInFilter(filt, next_word_begin, size);
+        return res;
+    }
+
+private:
+    UInt64 loadWord(size_t w) const
+    {
+        const size_t begin = w * 64;
+        if (begin + 64 <= size)
+            return bytes64MaskToBits64Mask(filt + begin);
+
+        UInt64 res = 0;
+        for (size_t i = begin; i < size; ++i)
+            res |= static_cast<UInt64>(filt[i] != 0) << (i - begin);
+        return res;
+    }
+
+    const UInt8 * filt;
+    size_t size;
+    size_t word = 0;
+    size_t kept_before_word = 0;
+    UInt64 bits;
+};
+
+}
+
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 {
     if (_size != filt.size())
@@ -360,36 +421,26 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
-    /// Walk the offsets array (small: only non-default rows) and for the runs of default
-    /// rows between offsets accumulate `res_offset` via SIMD popcount over `filt`. This
-    /// is O(non_defaults + _size/64) instead of O(_size).
+    /// Walk the offsets array (small: only non-default rows) along the 64-row words of the filter: O(non_defaults + _size/64).
     const auto & src_offsets_data = getOffsetsData();
     const size_t num_offsets = src_offsets_data.size();
-    const UInt8 * filt_data = filt.data();
 
-    size_t res_offset = 0;
-    size_t prev = 0;
+    FilterWordsCursor cursor(filt.data(), _size);
     for (size_t k = 0; k < num_offsets; ++k)
     {
-        const size_t row = src_offsets_data[k];
-        if (row > prev)
-            res_offset += countBytesInFilter(filt_data, prev, row);
-
-        if (filt_data[row])
+        const auto [kept_before, kept] = cursor.seek(src_offsets_data[k]);
+        if (kept)
         {
-            res_offsets_data.push_back(res_offset);
+            res_offsets_data.push_back(kept_before);
             values_filter.push_back(static_cast<UInt8>(1));
-            ++res_offset;
             ++values_result_size_hint;
         }
         else
         {
             values_filter.push_back(static_cast<UInt8>(0));
         }
-        prev = row + 1;
     }
-    if (_size > prev)
-        res_offset += countBytesInFilter(filt_data, prev, _size);
+    const size_t res_offset = cursor.countAll();
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
@@ -414,33 +465,23 @@ void ColumnSparse::filter(const Filter & filt)
     values_filter.reserve_exact(values->size());
     values_filter.push_back(static_cast<UInt8>(1));
 
-    /// See the const overload for the algorithm: walk the offsets and SIMD-popcount the
-    /// runs of default rows between them. In-place write into `res_offsets_data` is safe
-    /// because `res_offsets_pos <= k` always.
-    const UInt8 * filt_data = filt.data();
-    size_t res_offset = 0;
-    size_t prev = 0;
+    /// See the const overload. In-place write into `res_offsets_data` is safe because `res_offsets_pos <= k` always.
+    FilterWordsCursor cursor(filt.data(), _size);
     for (size_t k = 0; k < num_offsets; ++k)
     {
-        const size_t row = res_offsets_data[k];
-        if (row > prev)
-            res_offset += countBytesInFilter(filt_data, prev, row);
-
-        if (filt_data[row])
+        const auto [kept_before, kept] = cursor.seek(res_offsets_data[k]);
+        if (kept)
         {
-            res_offsets_data[res_offsets_pos] = res_offset;
+            res_offsets_data[res_offsets_pos] = kept_before;
             values_filter.push_back(static_cast<UInt8>(1));
             ++res_offsets_pos;
-            ++res_offset;
         }
         else
         {
             values_filter.push_back(static_cast<UInt8>(0));
         }
-        prev = row + 1;
     }
-    if (_size > prev)
-        res_offset += countBytesInFilter(filt_data, prev, _size);
+    const size_t res_offset = cursor.countAll();
 
     values->filter(values_filter);
     res_offsets_data.resize_assume_reserved(res_offsets_pos);
@@ -452,7 +493,9 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
     if (mask.size() < _size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    auto res_offsets = offsets->cloneEmpty();
+    /// Every non-default value moves to the position of its row in the mask. The iterator reads the old offsets,
+    /// so the new ones go into a copy.
+    auto res_offsets = offsets->cloneResized(offsets->size());
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
     auto it = begin();
@@ -470,6 +513,10 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
         }
     }
 
+    if (it.getCurrentRow() != _size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    offsets = std::move(res_offsets);
     _size = mask.size();
 }
 
@@ -502,6 +549,32 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
+    auto insert_run = [&](size_t value_index, size_t output_start, size_t length)
+    {
+        if (value_index == 0)
+            return;
+
+        if (length == 1)
+        {
+            res_values->insertFrom(*values, value_index);
+            res_offsets_data.push_back(output_start);
+            return;
+        }
+
+        res_values->insertManyFrom(*values, value_index, length);
+        for (size_t i = 0; i < length; ++i)
+            res_offsets_data.push_back(output_start + i);
+    };
+
+    auto get_run_end = [&](size_t start)
+    {
+        const auto index = indexes[start];
+        size_t end = start + 1;
+        while (end < limit && indexes[end] == index)
+            ++end;
+        return end;
+    };
+
     /// If we need to permute full column, or if limit is large enough,
     /// it's better to save indexes of values in O(size)
     /// and avoid binary search for obtaining every index.
@@ -516,26 +589,41 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         for (size_t i = 0; i < _size; ++i, ++offset_it)
             values_index[i] = offset_it.getValueIndex();
 
-        for (size_t i = 0; i < limit; ++i)
+        for (size_t i = 0; i < limit;)
         {
-            size_t index = values_index[indexes[i]];
-            if (index != 0)
-            {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
-            }
+            size_t run_end = get_run_end(i);
+            insert_run(values_index[indexes[i]], i, run_end - i);
+            i = run_end;
         }
     }
     else
     {
-        for (size_t i = 0; i < limit; ++i)
+        /// Sorted indexes (e.g. a sparse filter's offsets) gallop forward instead of a binary search over all offsets per row.
+        const auto * offsets_begin = getOffsetsData().begin();
+        const auto * offsets_end = getOffsetsData().end();
+        size_t i = 0;
+        for (const auto * pos = offsets_begin; i < limit && (pos == offsets_begin || pos[-1] < indexes[i]);)
         {
-            size_t index = getValueIndex(indexes[i]);
-            if (index != 0)
+            chassert(indexes[i] < _size);
+            size_t run_end = get_run_end(i);
+            size_t step = 1;
+            while (step <= static_cast<size_t>(offsets_end - pos) && pos[step - 1] < indexes[i])
             {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
+                pos += step;
+                step *= 2;
             }
+            pos = std::lower_bound(pos, pos + std::min<size_t>(step - 1, offsets_end - pos), indexes[i]);
+            const bool found = pos != offsets_end && *pos == indexes[i];
+            pos += found;
+            insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
+            i = run_end;
+        }
+
+        while (i < limit)
+        {
+            size_t run_end = get_run_end(i);
+            insert_run(getValueIndex(indexes[i]), i, run_end - i);
+            i = run_end;
         }
     }
 
@@ -1012,8 +1100,9 @@ ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
     if (!column)
         return column;
 
-    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+    /// Order matters: the BLOB holds the serialized form of everything below it, and we can have
+    /// only Replicated(Sparse) but not Sparse(Replicated).
+    return recursiveRemoveSparse(column->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated());
 }
 
 }

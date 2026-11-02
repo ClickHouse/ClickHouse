@@ -1,13 +1,13 @@
-DROP TABLE IF EXISTS t_dedup_sparse_src SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_dst SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_nested_src SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_nested_dst SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_landing SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_mv_target SETTINGS ignore_drop_queries_probability = 0;
-DROP VIEW IF EXISTS t_dedup_sparse_mv SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_top_src SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_top_dst SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_dedup_sparse_plain_dst SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_dedup_sparse_src;
+DROP TABLE IF EXISTS t_dedup_sparse_dst;
+DROP TABLE IF EXISTS t_dedup_sparse_nested_src;
+DROP TABLE IF EXISTS t_dedup_sparse_nested_dst;
+DROP TABLE IF EXISTS t_dedup_sparse_landing;
+DROP TABLE IF EXISTS t_dedup_sparse_mv_target;
+DROP VIEW IF EXISTS t_dedup_sparse_mv;
+DROP TABLE IF EXISTS t_dedup_sparse_top_src;
+DROP TABLE IF EXISTS t_dedup_sparse_top_dst;
+DROP TABLE IF EXISTS t_dedup_sparse_plain_dst;
 
 -- The INSERT SELECT dedup token embeds how the source read was chunked, so the retry only
 -- collides if both attempts chunk identically. Pin everything that shapes the read, or

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
@@ -16,6 +17,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char reverse_index_build_index_throw[];
 }
 
 template <typename ColumnType, bool with_saved_hash, bool has_base_index>
@@ -316,7 +323,7 @@ class ReverseIndex
 {
 public:
     ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
-        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), external_saved_hash_ptr(nullptr) {}
+        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), external_saved_hash_snapshot(nullptr) {}
 
     void setColumn(ColumnType * column_);
 
@@ -346,24 +353,33 @@ public:
     ColumnType * getColumn() const { return column; }
     size_t size() const;
 
-    const UInt64 * tryGetSavedHash() const
+    /// The span covers the dictionary as it was when the hashes were first calculated, and is never
+    /// extended: positions inserted afterwards are outside it.
+    std::span<const UInt64> tryGetSavedHash() const
     {
         if (!use_saved_hash)
-            return nullptr;
+            return {};
 
-        UInt64 * ptr = external_saved_hash_ptr.load();
-        if (!ptr)
+        /// Data and length both come from the one published column, so they always describe the
+        /// same buffer. Only the thread that wins the exchange assigns the owner, so the owning
+        /// member is never read by another thread.
+        const ColumnUInt64 * snapshot = external_saved_hash_snapshot.load(std::memory_order_acquire);
+        if (!snapshot)
         {
             auto hash = calcHashes();
-            ptr = &hash->getData()[0];
-            UInt64 * expected = nullptr;
-            if (external_saved_hash_ptr.compare_exchange_strong(expected, ptr))
+            const ColumnUInt64 * expected = nullptr;
+            if (external_saved_hash_snapshot.compare_exchange_strong(
+                    expected, hash.get(), std::memory_order_release, std::memory_order_acquire))
+            {
+                snapshot = hash.get();
                 external_saved_hash = std::move(hash);
+            }
             else
-                ptr = expected;
+                snapshot = expected;
         }
 
-        return ptr;
+        const auto & hash_data = snapshot->getData();
+        return {hash_data.data(), hash_data.size()};
     }
 
     size_t allocatedBytes() const { return index ? index->getBufferSizeInBytes() : 0; }
@@ -378,9 +394,9 @@ private:
     /// Lazy initialized.
     std::unique_ptr<IndexMapType> index;
     mutable ColumnUInt64::MutablePtr saved_hash;
-    /// For usage during GROUP BY
+    /// For usage during GROUP BY. Owns the column published by external_saved_hash_snapshot.
     mutable ColumnUInt64::MutablePtr external_saved_hash;
-    mutable std::atomic<UInt64 *> external_saved_hash_ptr;
+    mutable std::atomic<const ColumnUInt64 *> external_saved_hash_snapshot;
 
     void buildIndex();
 
@@ -432,17 +448,25 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex can't build index because index column wasn't set.");
 
+    /// Build everything into local variables and publish them only at the end, so that an exception
+    /// thrown midway (for example, `MEMORY_LIMIT_EXCEEDED` from an allocation in `calcHashes`) does not
+    /// leave a half-built index behind: a non-null `index` with a null `saved_hash` would make the next
+    /// `insert` dereference a null pointer.
     auto size = column->size();
-    index = std::make_unique<IndexMapType>(size);
+    auto new_index = std::make_unique<IndexMapType>(size);
 
+    fiu_do_on(FailPoints::reverse_index_build_index_throw,
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure while building ReverseIndex"););
+
+    ColumnUInt64::MutablePtr new_saved_hash;
     if constexpr (use_saved_hash)
-        saved_hash = calcHashes();
+        new_saved_hash = calcHashes();
 
-    auto & state = index->getState();
+    auto & state = new_index->getState();
     state.index_column = column;
     state.base_index = base_index;
     if constexpr (use_saved_hash)
-        state.saved_hash_column = &saved_hash->getData();
+        state.saved_hash_column = &new_saved_hash->getData();
 
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;
@@ -452,15 +476,18 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
     {
         UInt64 hash = 0;
         if constexpr (use_saved_hash)
-            hash = saved_hash->getElement(row);
+            hash = new_saved_hash->getElement(row);
         else
             hash = getHash(column->getDataAt(row));
 
-        index->reverseIndexEmplace(row + base_index, iterator, inserted, hash, column->getDataAt(row));
+        new_index->reverseIndexEmplace(row + base_index, iterator, inserted, hash, column->getDataAt(row));
 
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicating keys found in ReverseIndex.");
     }
+
+    index = std::move(new_index);
+    saved_hash = std::move(new_saved_hash);
 }
 
 template <typename IndexType, typename ColumnType>
@@ -484,37 +511,58 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(std::string_view data)
     if (!index)
         buildIndex();
 
-    using IteratorType = typename IndexMapType::iterator;
-    IteratorType iterator;
-    bool inserted = false;
-
-    auto hash = getHash(data);
-    UInt64 num_rows = size();
-
-    if constexpr (use_saved_hash)
+    try
     {
-        auto & column_data = saved_hash->getData();
-        if (column_data.size() <= num_rows)
-            column_data.resize(num_rows + 1);
-        column_data[num_rows] = hash;
-    }
-    else
-        column->insertData(data.data(), data.size());
+        using IteratorType = typename IndexMapType::iterator;
+        IteratorType iterator;
+        bool inserted = false;
 
-    index->reverseIndexEmplace(num_rows + base_index, iterator, inserted, hash, data);
+        auto hash = getHash(data);
+        UInt64 num_rows = size();
 
-    if constexpr (use_saved_hash)
-    {
-        if (inserted)
+        if constexpr (use_saved_hash)
+        {
+            auto & column_data = saved_hash->getData();
+            if (column_data.size() <= num_rows)
+                column_data.resize(num_rows + 1);
+            column_data[num_rows] = hash;
+        }
+        else
             column->insertData(data.data(), data.size());
-    }
-    else
-    {
-        if (!inserted)
-            column->popBack(1);
-    }
 
-    return iterator->getValue();
+        index->reverseIndexEmplace(num_rows + base_index, iterator, inserted, hash, data);
+
+        if constexpr (use_saved_hash)
+        {
+            if (inserted)
+                column->insertData(data.data(), data.size());
+        }
+        else
+        {
+            if (!inserted)
+                column->popBack(1);
+        }
+
+        return iterator->getValue();
+    }
+    catch (...)
+    {
+        /// The hash table may now disagree with the column: for example, the key was already added to the
+        /// hash table, but `insertData` failed, so the key refers to a row that does not exist. Drop the index,
+        /// it is rebuilt from the column on the next use.
+        index = nullptr;
+        saved_hash = nullptr;
+
+        if constexpr (std::is_same_v<ColumnType, ColumnString>)
+        {
+            /// `ColumnString::insertData` appends to `chars` before it grows `offsets`. If the latter failed, the bytes
+            /// of the row that was never added are still there and would become a prefix of the next inserted value.
+            const auto & offsets = column->getOffsets();
+            column->getChars().resize_assume_reserved(offsets.empty() ? 0 : offsets.back());
+        }
+
+        throw;
+    }
 }
 
 template <typename IndexType, typename ColumnType>

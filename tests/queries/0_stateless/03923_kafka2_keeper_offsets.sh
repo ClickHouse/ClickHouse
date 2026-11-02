@@ -107,7 +107,7 @@ echo "Created topic."
 produce_ids 1 3 batch1
 
 # Create Kafka2 engine table (with keeper path for offset storage)
-$CLICKHOUSE_CLIENT --allow_experimental_kafka_offsets_storage_in_keeper 1 -q "
+$CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
     CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka (id UInt64, data String)
     ENGINE = Kafka
     SETTINGS kafka_broker_list = '$KAFKA_BROKER',
@@ -116,7 +116,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_kafka_offsets_storage_in_keeper 1 -q "
              kafka_format = 'JSONEachRow',
              kafka_max_block_size = 100,
              kafka_keeper_path = '$KEEPER_PATH',
-             kafka_replica_name = 'r1';
+             kafka_replica_name = '{replica}';
 "
 
 # Create destination table

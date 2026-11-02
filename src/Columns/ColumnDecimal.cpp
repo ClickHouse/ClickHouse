@@ -36,7 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
@@ -79,52 +78,28 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
 }
 
 template <is_decimal T>
-[[nodiscard]] Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int) const
+Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
-    auto & other = assert_cast<const Self &>(rhs);
-    const T * pa = &data[n];
-    const T * pb = &other.data[m];
+    const auto & other = assert_cast<const Self &>(rhs_);
+    const T * lhs_data = data.data();
+    const T * rhs_data = other.data.data();
+    const T a = lhs_data[n];
+    const T b = rhs_data[m];
+    static constexpr size_t linear_probe = 16;
 
+    /// The scale dispatch is hoisted out of the run search; same-scale probes are native comparisons.
     if (scale == other.scale)
-    {
-        Int64 res = (*pa) > (*pb) ? 1 : ((*pa) < (*pb) ? -1 : 0);
+        return compareTrackAtImpl(
+            a > b ? 1 : (a < b ? -1 : 0),
+            n, m, data.size(), other.data.size(), linear_probe,
+            [&](size_t row) { return lhs_data[row] < b; },
+            [&](size_t row) { return rhs_data[row] < a; });
 
-        if (res < 0)
-        {
-            const T * pa_end = data.data() + size();
-            ++pa;
-            for (; pa < pa_end && (*pa) < (*pb); ++pa)
-                --res;
-        }
-        else if (res > 0)
-        {
-            const T * pb_end = other.data.data() + other.size();
-            ++pb;
-            for (; pb < pb_end && (*pb) < (*pa); ++pb)
-                ++res;
-        }
-        return res;
-    }
-    else
-    {
-        Int64 res = decimalLess<T>(*pb, *pa, other.scale, scale) ? 1 : (decimalLess<T>(*pa, *pb, scale, other.scale) ? -1 : 0);
-
-        if (res < 0)
-        {
-            const T * pa_end = data.data() + size();
-            ++pa;
-            for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
-                --res;
-        }
-        else if (res > 0)
-        {
-            const T * pb_end = other.data.data() + other.size();
-            ++pb;
-            for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
-                ++res;
-        }
-        return res;
-    }
+    return compareTrackAtImpl(
+        decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0),
+        n, m, data.size(), other.data.size(), linear_probe,
+        [&](size_t row) { return decimalLess<T>(lhs_data[row], b, scale, other.scale); },
+        [&](size_t row) { return decimalLess<T>(rhs_data[row], a, other.scale, scale); });
 }
 
 template <is_decimal T>
@@ -153,12 +128,6 @@ void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
     T dec{};
     readBinaryLittleEndian(dec, in);
     data.push_back(std::move(dec));
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
 }
 
 template <is_decimal T>
@@ -328,8 +297,9 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 
         if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
         {
-            bool try_sort = trySort(begin, end, pred);
-            if (try_sort)
+            /// `trySort` can reorder equal values even when it returns false.
+            /// Stable radix sorting must preserve the incoming order within equal ranges.
+            if (!sort_is_stable && trySort(begin, end, pred))
                 return;
 
             PaddedPODArray<ValueWithIndex<NativeT>> pairs(size);
@@ -460,10 +430,8 @@ void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
-    if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnDecimal<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+    if (start > src_vec.data.size() || length > src_vec.data.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnDecimal<T>", start, length, src_vec.data.size());
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -510,11 +478,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
             {
                 size_t index = std::countr_zero(mask);
                 res_data.push_back(data_pos[index]);
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
@@ -570,11 +534,7 @@ void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
             {
                 size_t index = std::countr_zero(mask);
                 res_data[res_size++] = data_pos[index];
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
@@ -692,6 +652,12 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
+}
+
+template <is_decimal T>
+bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <is_decimal T>

@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-replicated-database
--- ^^ PromQL grammar needs ANTLR4 (disabled in fast-test); the experimental TimeSeries engine does
--- not round-trip through DatabaseReplicated.
+-- Tags: no-fasttest
+-- ^^ PromQL grammar needs ANTLR4 (disabled in fast-test).
 --
 -- The `prometheusQuery` / `timeSeriesSelector` table functions read their String arguments via
 -- `evaluateConstantExpressionAsColumn` (no `Field`). This pins the compatibility contract the
@@ -22,11 +21,11 @@ SELECT value FROM prometheusQuery(CAST(NULL, 'Nullable(String)'), '1 + 2', 1000)
 SELECT value FROM prometheusQuery('ts', CAST(NULL, 'Nullable(String)'), 1000); -- { serverError BAD_ARGUMENTS }
 
 -- timeSeriesSelector: same contract (empty table -> 0 rows)
-SELECT count() FROM timeSeriesSelector(CAST('ts', 'Nullable(String)'), 'up', 0, 1000);
-SELECT count() FROM timeSeriesSelector(toLowCardinality('ts'), 'up', 0, 1000);
-SELECT count() FROM timeSeriesSelector('ts', CAST('up', 'Nullable(String)'), 0, 1000);
+SELECT count() FROM timeSeriesSelector(CAST('ts', 'Nullable(String)'), 'up', 0, 1000, 'samples');
+SELECT count() FROM timeSeriesSelector(toLowCardinality('ts'), 'up', 0, 1000, 'samples');
+SELECT count() FROM timeSeriesSelector('ts', CAST('up', 'Nullable(String)'), 0, 1000, 'samples');
 -- timeSeriesSelector: NULL string argument rejected
-SELECT count() FROM timeSeriesSelector(CAST(NULL, 'Nullable(String)'), 'up', 0, 1000); -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM timeSeriesSelector('ts', CAST(NULL, 'Nullable(String)'), 0, 1000); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM timeSeriesSelector(CAST(NULL, 'Nullable(String)'), 'up', 0, 1000, 'samples'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM timeSeriesSelector('ts', CAST(NULL, 'Nullable(String)'), 0, 1000, 'samples'); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE ts;

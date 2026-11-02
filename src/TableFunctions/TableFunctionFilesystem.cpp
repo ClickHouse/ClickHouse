@@ -29,7 +29,7 @@ void registerTableFunctionFilesystem(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFilesystem>(
         {.description = R"DOCS_MD(
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge/>
 
@@ -113,7 +113,7 @@ SELECT name, type
 FROM filesystem('my_directory')
 WHERE depth = 0;
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {}, TableFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {}, TableFunctionFactory::Case::Insensitive);
 }
 
 void TableFunctionFilesystem::parseArguments(const ASTPtr & ast_function, ContextPtr context)

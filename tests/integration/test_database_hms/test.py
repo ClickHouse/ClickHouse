@@ -10,7 +10,6 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["config.xml"],
             user_configs=["users.xml"],
             stay_alive=True,
             with_hms_catalog=True,

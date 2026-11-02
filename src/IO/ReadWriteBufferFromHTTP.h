@@ -6,7 +6,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
@@ -24,10 +23,34 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 
+#include <condition_variable>
 #include <filesystem>
+#include <mutex>
 
 namespace DB
 {
+
+/// Identifies an exception produced by stopping one HTTP request after its owner was cancelled.
+/// This marker belongs to the request, not to every reader sharing its Cancellation.
+class ReadInterruptedException final : public Exception
+{
+public:
+    explicit ReadInterruptedException(std::exception_ptr original_exception_ = nullptr);
+
+    /// Without these overrides `copyMutableException` slices the exception back to a plain
+    /// `Exception` (it rethrows through the virtual `Poco::Exception::rethrow`), and the callers
+    /// which recognize the interruption by its type, such as `StorageURLSource::generate`, stop
+    /// recognizing it. That happens on every path which hands an exception over between threads,
+    /// e.g. the background reads of the native `Parquet` reader.
+    ReadInterruptedException * clone() const override { return new ReadInterruptedException(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+
+private:
+    const char * name() const noexcept override { return "DB::ReadInterruptedException"; }
+    const char * className() const noexcept override { return "DB::ReadInterruptedException"; }
+
+    std::exception_ptr original_exception;
+};
 
 class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize, public IReadBufferMetadataProvider
 {
@@ -39,12 +62,76 @@ public:
         // nullopt if the server doesn't report it.
         std::optional<size_t> file_size;
         std::optional<time_t> last_modified;
+        /// The `Date` of the response: the time by the clock of the server that reported `last_modified`.
+        std::optional<time_t> response_date;
         bool seekable = false;
     };
 
-    using OutStreamCallback = std::function<void(std::ostream &)>;
+    using OutStreamCallback = std::function<void(WriteBuffer &)>;
     using NextCallback = std::function<void(size_t)>;
     using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
+
+    /** A one-shot flag which the code that reads from the buffer sets when it does not need the data
+      * anymore, for example when the query pipeline it reads for is being torn down. The buffer only
+      * uses it to stop retrying: unlike a predicate it can be waited on, which makes the backoff
+      * between the retry attempts interruptible, so a cancellation does not have to be waited out.
+      */
+    class Cancellation
+    {
+    public:
+        /// Called from a cancellation handler, which is not allowed to throw. `softly` means the
+        /// cancellation is one after which the query must still succeed with what it has already
+        /// read (see StorageURLSource::cancel): the code in between the requests may then report
+        /// the interruption with a cancellation error of its own, which the owner of this flag
+        /// discards. After a hard teardown - the query is killed, the pipeline has already failed
+        /// elsewhere, or the client has disconnected - a synthesized error could mask the failure
+        /// that really happened, so nothing is allowed to invent one, see
+        /// StorageURLSource::getFirstAvailableURIAndReadBuffer.
+        void cancel(bool softly) noexcept
+        {
+            {
+                std::lock_guard lock(mutex);
+                /// A hard cancellation is final even after a soft one: ExecutingGraph::cancel
+                /// upgrades PartialResult to the reason of a later hard cancellation and delivers
+                /// the upgrade here, after which the query fails and nothing may report the
+                /// interruption as a cancellation anymore. The opposite downgrade does not exist,
+                /// so the read stays soft only while every reason so far has been soft.
+                cancelled_softly = cancelled ? (cancelled_softly && softly) : softly;
+                cancelled = true;
+            }
+            changed.notify_all();
+        }
+
+        /// Returns true if the read has been cancelled, either already or before the time has passed.
+        bool waitForCancellation(std::chrono::milliseconds duration)
+        {
+            std::unique_lock lock(mutex);
+            return changed.wait_for(lock, duration, [this] { return cancelled; });
+        }
+
+        /// A non-blocking check for the code in between the requests, which must not go on making
+        /// more of them after the read has been cancelled.
+        bool isCancelled()
+        {
+            std::lock_guard lock(mutex);
+            return cancelled;
+        }
+
+        /// Whether the read has been cancelled softly, see cancel.
+        bool isCancelledSoftly()
+        {
+            std::lock_guard lock(mutex);
+            return cancelled_softly;
+        }
+
+    private:
+        std::mutex mutex;
+        std::condition_variable changed;
+        bool cancelled = false;
+        bool cancelled_softly = false;
+    };
+
+    using CancellationPtr = std::shared_ptr<Cancellation>;
 
     const Poco::URI & getCurrentURI() const { return current_uri; }
 
@@ -56,20 +143,8 @@ private:
         std::optional<size_t> end;
     };
 
-    struct CallResult
-    {
-        HTTPSessionPtr session;
-        std::istream * response_stream = nullptr;
-
-        CallResult(HTTPSessionPtr && session_, std::istream & response_stream_)
-            : session(session_)
-            , response_stream(&response_stream_)
-        {}
-        CallResult(CallResult &&) = default;
-        CallResult & operator= (CallResult &&) = default;
-
-        std::unique_ptr<ReadBuffer> transformToReadBuffer(size_t buf_size) &&;
-    };
+    /// The body of the response, which keeps the session it reads from alive.
+    using CallResult = std::unique_ptr<HTTPResponseReadBuffer>;
 
     const HTTPConnectionGroupType connection_group;
     const Poco::URI initial_uri;
@@ -90,10 +165,17 @@ private:
     bool has_not_found_url = false;
 
     OutStreamCallback out_stream_callback;
+    /// When set, the request body produced by `out_stream_callback` is sent with a fixed
+    /// Content-Length instead of chunked transfer encoding. Some HTTP servers (e.g. the
+    /// Snowflake Horizon Iceberg REST catalog) reject chunked request bodies.
+    std::optional<size_t> out_stream_fixed_content_length;
     RedirectCallback redirect_callback;
 
     Poco::URI current_uri;
     size_t redirects = 0;
+    /// Set when a `303 See Other` redirect has rewritten the request to `GET`: `current_uri` then points to a
+    /// resource that has to be requested with `GET` and without the original request body, also on retries.
+    bool rewritten_to_get_by_redirect = false;
 
     std::string content_encoding;
     std::unique_ptr<ReadBuffer> impl;
@@ -111,19 +193,40 @@ private:
 
     LoggerPtr log;
 
+    /// Set by the code that reads from this buffer when it does not need the data anymore. Retrying an
+    /// HTTP request stops as soon as it is set, see doWithRetries.
+    CancellationPtr cancellation;
+
     bool withPartialContent() const;
 
-    void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
+    void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const;
 
-    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
+    void doWithRetries(
+        std::function<void()> && callable,
+        std::function<void()> on_retry = nullptr,
+        bool mute_logging = false,
+        bool stop_before_first_attempt_when_cancelled = true) const;
 
-    CallResult  callImpl(
+    /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
+    bool waitBeforeRetry(size_t milliseconds) const;
+
+    /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
+    bool isReadCancelled() const;
+
+    /// For the catch blocks of the helpers which treat the failure of a metadata request as an
+    /// answer: rethrows the exception being handled when it is the interruption of a request the
+    /// cancellation has abandoned - nothing may go on requesting after it. Must be called from a
+    /// catch block.
+    void rethrowIfReadInterrupted() const;
+
+    CallResult callImpl(
         Poco::Net::HTTPResponse & response,
         const std::string & method_,
         const std::optional<HTTPRange> & range,
-        bool allow_redirects) const;
+        bool allow_redirects,
+        bool with_request_body = true) const;
 
-    CallResult  callWithRedirects(
+    CallResult callWithRedirects(
         Poco::Net::HTTPResponse & response,
         const String & method_,
         const std::optional<HTTPRange> & range);
@@ -160,6 +263,8 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
+        CancellationPtr cancellation_,
+        std::optional<size_t> out_stream_fixed_content_length_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
@@ -194,6 +299,10 @@ public:
 
     std::optional<time_t> tryGetLastModificationTime();
 
+    /// The `Date` of the response which the file metadata came from, if the metadata is already known.
+    /// Does not send any request.
+    std::optional<time_t> tryGetResponseDateOfFileInfo() const { return file_info ? file_info->response_date : std::nullopt; }
+
     bool hasNotFoundURL() const { return has_not_found_url; }
 
     HTTPFileInfo getFileInfo();
@@ -218,10 +327,12 @@ class BuilderRWBufferFromHTTP
     size_t max_redirects = 0;
     bool enable_url_encoding = false;
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = nullptr;
+    std::optional<size_t> out_stream_fixed_content_length = std::nullopt;
     ReadWriteBufferFromHTTP::RedirectCallback redirect_callback = nullptr;
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
 
 public:
@@ -247,15 +358,27 @@ public:
     setterMember(withRedirects, max_redirects)
     setterMember(withEnableUrlEncoding, enable_url_encoding)
     setterMember(withOutCallback, out_stream_callback)
+    setterMember(withOutCallbackFixedContentLength, out_stream_fixed_content_length)
     setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
+    setterMember(withCancellation, cancellation)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
+    /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
+
+    /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(const std::string & bearer_token_);
+
+    /// Authenticate with the bearer token when it is non-empty, otherwise with the Basic
+    /// credentials: both occupy the `Authorization` header, so a request carries one or the
+    /// other, never both.
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(
+        const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).

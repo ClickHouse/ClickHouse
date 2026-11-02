@@ -1,12 +1,10 @@
--- Tags: no-random-merge-tree-settings
-
 DROP TABLE IF EXISTS t_shared_offsets_wide;
 DROP TABLE IF EXISTS t_shared_offsets_granules;
 DROP TABLE IF EXISTS t_shared_offsets_wrapped;
 DROP TABLE IF EXISTS t_shared_offsets_compact;
 
--- A prefetch positions a stream for the column that issued it. Under `share_nested_offsets` several
--- Nested siblings name one offsets stream, so every other column reading it must still seek.
+-- Under `share_nested_offsets` a re-added Nested member and its siblings share one offsets stream,
+-- so its group and element types must be rebuilt from metadata or the siblings read wrong values.
 CREATE TABLE t_shared_offsets_wide
 (
     `id` UInt64,
@@ -36,12 +34,11 @@ FROM (EXPLAIN header = 1
     SELECT sum(length(nb)), countIf(aid != arrayMap(x -> x + 10, range(id % 3 + 1)))
     FROM (SELECT id, `arr.nested`.b AS nb, `arr.id` AS aid FROM t_shared_offsets_wide));
 
-SET local_filesystem_read_prefetch = 1;
+SET local_filesystem_read_prefetch = 1, remote_filesystem_read_prefetch = 1;
 
 -- A nonzero `filesystem_prefetches_limit` below the number of columns read skips prefetching
 -- entirely, which would make every assertion below pass without taking the prefetch path. Read the
 -- effective value rather than pinning it, so such a limit fails this test instead of silencing it.
--- No query below reads more than 8 columns; 0 means unlimited.
 SELECT 'prefetch limit permits prefetching', getSetting('filesystem_prefetches_limit') = 0 OR getSetting('filesystem_prefetches_limit') > 8;
 
 SELECT 'missing subcolumn first', sum(length(nb)), countIf(aid != arrayMap(x -> x + 10, range(id % 3 + 1))), countIf(s != arrayMap(x -> concat('s', toString(x)), range(id % 3 + 1)))
@@ -55,9 +52,9 @@ FROM (SELECT id, `arr.id` AS aid, `arr.nested`.b AS nb, `arr.s` AS s FROM t_shar
 
 SELECT 'prefetch off', sum(length(nb)), countIf(aid != arrayMap(x -> x + 10, range(id % 3 + 1)))
 FROM (SELECT id, `arr.nested`.b AS nb, `arr.id` AS aid FROM t_shared_offsets_wide)
-SETTINGS local_filesystem_read_prefetch = 0;
+SETTINGS local_filesystem_read_prefetch = 0, remote_filesystem_read_prefetch = 0;
 
--- More than one granule, so the seek must be right for every mark, not only the first.
+-- More than one granule, so group and type resolution must hold for every mark, not only the first.
 CREATE TABLE t_shared_offsets_granules
 (
     `id` UInt64,

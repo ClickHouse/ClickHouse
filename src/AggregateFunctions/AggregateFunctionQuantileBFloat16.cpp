@@ -94,7 +94,7 @@ SELECT quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers at different levels simultaneously.
 
-This function is equivalent to [`quantileBFloat16`](/sql-reference/aggregate-functions/reference/quantilebfloat16) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileBFloat16`](/reference/functions/aggregate-functions/quantileBFloat16) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesBFloat16(level1, level2, ...)(expr)

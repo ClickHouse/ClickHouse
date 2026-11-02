@@ -320,7 +320,7 @@ LIMIT 10;
 Kafka 常常被当作数据“堆放场”使用。这会导致 topic 中混杂着不同的消息格式和不一致的字段名。应尽量避免这种情况，并利用 Kafka 的功能 (例如 Kafka Streams 或 ksqlDB) ，确保消息在写入 Kafka 之前就是格式良好且一致的。如果无法采用这些方案，ClickHouse 也提供了一些可用于缓解问题的功能。
 
 * 将消息字段按字符串处理。如有需要，可以在 materialized view 语句中使用函数进行清洗和类型转换。虽然这不应视为生产环境方案，但对于一次性摄取可能会有帮助。
-* 如果你从某个 topic 中消费 JSON，并使用 JSONEachRow format，请使用设置 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats#input_format_skip_unknown_fields)。写入数据时，默认情况下，如果输入数据包含目标表中不存在的列，ClickHouse 会抛出异常。但如果启用此选项，这些多出的列会被忽略。同样，这也不是生产级方案，而且可能会让其他人感到困惑。
+* 如果你从某个 topic 中消费 JSON，并使用 JSONEachRow format，请使用设置 [`input_format_skip_unknown_fields`](/zh/reference/settings/formats/input-format#input_format_skip_unknown_fields)。写入数据时，默认情况下，如果输入数据包含目标表中不存在的列，ClickHouse 会抛出异常。但如果启用此选项，这些多出的列会被忽略。同样，这也不是生产级方案，而且可能会让其他人感到困惑。
 * 可以考虑使用设置 `kafka_skip_broken_messages`。该设置要求用户为每个块中格式错误的消息指定容忍度，并结合 `kafka_max_block_size` 来判断。如果超过这个容忍度 (按消息绝对数量计算) ，则会恢复默认的异常行为，并跳过其他消息。
 
 <div id="delivery-semantics-and-challenges-with-duplicates">
@@ -333,7 +333,7 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
   ##### 基于仲裁的插入
 </div>
 
-在 ClickHouse 中，如果需要更高的投递保障，可能需要使用[基于仲裁的插入](/zh/reference/settings/session-settings#insert_quorum)。这项设置不能在 materialized view 或目标表上配置，但可以为用户 profile 设置，例如：
+在 ClickHouse 中，如果需要更高的投递保障，可能需要使用[基于仲裁的插入](/zh/reference/settings/session-settings/insert-quorum#insert_quorum)。这项设置不能在 materialized view 或目标表上配置，但可以为用户 profile 设置，例如：
 
 ```xml
 <profiles>
@@ -499,13 +499,13 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
   #### 性能调优
 </div>
 
-在尝试提升 Kafka Engine 表的吞吐性能时，请考虑以下几点：
+在尝试提升 Kafka 引擎表的吞吐性能时，请考虑以下几点：
 
-* 性能会因消息大小、格式以及目标表类型而异。对于单个表引擎，达到 100k 行/秒通常是可实现的。默认情况下，消息会按块读取，由参数 `kafka_max_block_size` 控制。其默认值为 [max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings#max_insert_block_size)，默认为 1,048,576。除非消息特别大，否则几乎总是应该增大该值。500k 到 1M 的取值并不少见。请测试并评估其对吞吐性能的影响。
+* 性能会因消息大小、格式以及目标表类型而异。对于单个表引擎，达到 100k 行/秒通常是可实现的。默认情况下，消息会按块读取，由参数 `kafka_max_block_size` 控制。其默认值为 [max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)，默认为 1,048,576。除非消息特别大，否则几乎总是应该增大该值。500k 到 1M 的取值并不少见。请测试并评估其对吞吐性能的影响。
 * 可以使用 `kafka_num_consumers` 增加表引擎的消费者数量。不过，默认情况下，除非将 `kafka_thread_per_consumer` 从默认值 1 改为其他值，否则插入会被串行化到单个线程中。将其设为 1 以确保 flush 操作并行执行。请注意，创建一个具有 N 个消费者 (且 `kafka_thread_per_consumer=1`) 的 Kafka 引擎表，在逻辑上等同于创建 N 个 Kafka 引擎，每个引擎各自配有一个 materialized view，且 `kafka_thread_per_consumer=0`。
 * 增加消费者并非没有代价。每个消费者都会维护自己的缓冲区和线程，从而增加 server 开销。如有可能，请先优先通过集群线性扩展来分摊负载，同时留意消费者带来的额外开销。
 * 如果 Kafka 消息吞吐量波动较大且可以接受一定延迟，可考虑增大 `stream_flush_interval_ms`，以确保刷出更大的块。
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size) 用于设置执行后台任务的线程数。这些线程会用于 Kafka 流式处理。该设置会在 ClickHouse server 启动时生效，且不能在用户 session 中更改，默认值为 16。如果你在日志中看到超时，适当增大该值可能是合适的。
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size) 用于设置执行后台任务的线程数。这些线程会用于 Kafka 流式处理。该设置会在 ClickHouse server 启动时生效，且不能在用户 session 中更改，默认值为 16。如果你在日志中看到超时，适当增大该值可能是合适的。
 * 与 Kafka 通信时使用的是 `librdkafka` 库，而它本身也会创建线程。因此，大量 Kafka 表或消费者可能会导致大量上下文切换。可以将这部分负载分散到整个集群中，并尽可能只复制目标表；或者考虑使用一个表引擎从多个 topic 读取数据——支持值列表。单个表也可以被多个 materialized view 读取，每个视图分别过滤特定 topic 的数据。
 
 任何设置变更都应经过测试。我们建议监控 Kafka 消费者滞后，以确保扩容得当。
@@ -516,7 +516,7 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
 
 除了上文介绍的设置外，以下内容也值得关注：
 
-* [Kafka&#95;max&#95;wait&#95;ms](/zh/reference/settings/session-settings#kafka_max_wait_ms) - 重试前从 Kafka 读取消息的等待时间，以毫秒为单位。在用户 profile 级别设置，默认值为 5000。
+* [kafka&#95;max&#95;wait&#95;ms](/zh/reference/settings/session-settings/kafka#kafka_max_wait_ms) - 重试前从 Kafka 读取消息的等待时间，以毫秒为单位。在用户 profile 级别设置，默认值为 5000。
 
 底层 librdkafka 的[所有设置 ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)也可以放在 ClickHouse 配置文件中的 *kafka* 元素内——设置名称应写成 XML 元素，并将句点替换为下划线，例如：
 

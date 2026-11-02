@@ -42,14 +42,26 @@ public:
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
 
-    /// Column was dropped by a pending mutation (data in part is stale)
+    /// Column was dropped by a pending mutation (data in part is stale).
+    /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
 
+    /// Adds the columns changed on the fly by the command.
+    static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
+
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
+
+    /// The columns a skip index must not depend on to be usable for this part: the columns updated on
+    /// the fly (`getAllUpdatedColumns`) plus every name touched by a pending `DROP COLUMN` or
+    /// `RENAME COLUMN`. A name dropped or renamed away can be reused by a new column right away (and
+    /// an index with the old name can be added on it), while the part still holds the index file
+    /// built over the old column; which column that file was built over is not recorded, so any
+    /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
+    NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
@@ -76,24 +88,33 @@ private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
     void addPatchPart(PatchPartInfoForReader patch_part);
 
+    /// The commands of the on-fly chain a read task needs, and the storage columns that chain reads.
+    struct MutationChainForRead
+    {
+        MutationCommands commands;
+        Names read_columns;
+    };
+
+    MutationChainForRead buildMutationChainForRead(
+        const NamesAndTypesList & read_columns,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context) const;
+
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
     /// that affect columns from @read_columns.
     std::vector<MutationActions> getMutationActions(
         const IMergeTreeDataPartInfoForReader & part_info,
-        const NamesAndTypesList & read_columns,
+        MutationChainForRead chain,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
 
-    /// Adds source columns of expressions of MATERIALIZED columns from @read_columns if any.
-    void addColumnsRequiredForMaterialized(
+    /// Returns only mutations commands that affect columns from set, extending the set with the
+    /// columns those commands read.
+    MutationCommands filterMutationCommands(
         Names & read_columns,
         NameSet & read_columns_set,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context) const;
-
-    /// Returns only mutations commands that affect columns from set.
-    MutationCommands filterMutationCommands(Names & read_columns, NameSet read_columns_set) const;
+        const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
@@ -101,6 +122,10 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+
+    /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
+    /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
+    NameSet columns_touched_by_metadata_mutations;
 
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;

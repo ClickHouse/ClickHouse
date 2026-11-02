@@ -52,7 +52,7 @@ SELECT [1, 2] AS x, toTypeName(x)
   ## Trabalhando com Tipos de Dados
 </div>
 
-Ao criar um array dinamicamente, o ClickHouse define automaticamente o tipo do argumento como o tipo de dado mais específico capaz de armazenar todos os argumentos listados. Se houver valores [Nullable](/pt-BR/reference/data-types/nullable) ou literais [NULL](/pt-BR/reference/settings/formats#input_format_null_as_default), o tipo de um elemento do array também se torna [Nullable](/pt-BR/reference/data-types/nullable).
+Ao criar um array dinamicamente, o ClickHouse define automaticamente o tipo do argumento como o tipo de dado mais específico capaz de armazenar todos os argumentos listados. Se houver valores [Nullable](/pt-BR/reference/data-types/nullable) ou literais [NULL](/pt-BR/reference/settings/formats/input-format#input_format_null_as_default), o tipo de um elemento do array também se torna [Nullable](/pt-BR/reference/data-types/nullable).
 
 Se o ClickHouse não conseguir determinar o tipo de dado, ele gera uma exceção. Por exemplo, isso acontece ao tentar criar um array com strings e números ao mesmo tempo (`SELECT array(1, 'a')`).
 

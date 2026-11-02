@@ -32,9 +32,13 @@ namespace DB
 LazyPipeFDs TraceSender::pipe;
 std::atomic<bool> TraceSender::shutdown{false};
 std::atomic<int> TraceSender::in_flight{0};
+std::mutex TraceSender::flush_mutex;
+std::condition_variable TraceSender::flush_cv;
+UInt64 TraceSender::flush_requested = 0;
+UInt64 TraceSender::flush_completed = 0;
 
 static thread_local bool inside_send = false;
-void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept
 {
     /** The method shouldn't be called recursively or throw exceptions.
       * There are several reasons:

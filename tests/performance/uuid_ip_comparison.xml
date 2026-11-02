@@ -1,0 +1,51 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>uuid</value>
+                <value>ipv4</value>
+                <value>ipv6</value>
+                <value>fs16</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE cmp_uuid_ip
+        (
+            uuid_a UUID, uuid_b UUID,
+            ipv4_a IPv4, ipv4_b IPv4,
+            ipv6_a IPv6, ipv6_b IPv6,
+            fs16_a FixedString(16), fs16_b FixedString(16)
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO cmp_uuid_ip
+        SELECT
+            uuid_a, if(rand() % 2 = 0, uuid_a, generateUUIDv4()),
+            ipv4_a, if(rand() % 2 = 0, ipv4_a, toIPv4(rand())),
+            ipv6_a, if(rand() % 2 = 0, ipv6_a, CAST(randomFixedString(16), 'IPv6')),
+            fs16_a, if(rand() % 2 = 0, fs16_a, randomFixedString(16))
+        FROM
+        (
+            SELECT
+                generateUUIDv4() AS uuid_a,
+                toIPv4(rand()) AS ipv4_a,
+                CAST(randomFixedString(16), 'IPv6') AS ipv6_a,
+                randomFixedString(16) AS fs16_a
+            FROM numbers(20000000)
+        )
+    </fill_query>
+
+    <query>SELECT count() FROM cmp_uuid_ip WHERE {type}_a &lt; {type}_b</query>
+    <query>SELECT count() FROM cmp_uuid_ip WHERE {type}_a = {type}_b</query>
+    <query>SELECT count() FROM cmp_uuid_ip WHERE {type}_a &lt; (SELECT {type}_a FROM cmp_uuid_ip LIMIT 1)</query>
+
+    <drop_query>DROP TABLE IF EXISTS cmp_uuid_ip</drop_query>
+</test>

@@ -28,14 +28,16 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 `INSERT`의 블록 중복 제거를 활성화하거나 비활성화합니다(복제된 테이블(Replicated* tables)용).
 
+이 설정은 [`deduplicate_insert`](/ko/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)가 `backward_compatible_choice`로 설정된 경우에만 적용됩니다.
+
 가능한 값:
 
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
 기본적으로 `INSERT` 문으로 복제된 테이블에 삽입된 블록은 중복 제거됩니다([Data Replication](/ko/reference/engines/table-engines/mergetree-family/replication) 참조).
-복제된 테이블에서는 기본적으로 각 파티션에서 가장 최근의 100개 블록에 대해서만 중복 제거가 수행됩니다([replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 참조).
-복제되지 않은 테이블은 [non&#95;replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings#non_replicated_deduplication_window)를 참조하십시오.
+복제된 테이블에서는 기본적으로 각 파티션에서 가장 최근의 100개 블록에 대해서만 중복 제거가 수행됩니다([replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 참조).
+복제되지 않은 테이블은 [non&#95;replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)를 참조하십시오.
 
 <div id="insert_deduplication_token">
   ## insert_deduplication_token
@@ -51,8 +53,8 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 `insert_deduplication_token`은 비어 있지 않은 경우에만 중복 제거에 사용됩니다.
 
-복제된 테이블의 경우 기본적으로 각 파티션에서 가장 최근의 삽입 100개만 중복 제거됩니다([replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 참조).
-복제되지 않은 테이블은 [non&#95;replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings#non_replicated_deduplication_window)를 참조하십시오.
+복제된 테이블의 경우 기본적으로 각 파티션에서 가장 최근의 삽입 100개만 중복 제거됩니다([replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ko/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 참조).
+복제되지 않은 테이블은 [non&#95;replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)를 참조하십시오.
 
 <Note>
   `insert_deduplication_token`은 파티션별로 추적되므로, 하나의 삽입으로 기록된 여러 파티션에 동일한 토큰을 사용할 수 있습니다. 토큰이 없으면 기본 콘텐츠 체크섬이 삽입된 전체 블록을 기준으로 계산되므로, 삽입은 전체 데이터가 이전 삽입(재시도)과 완전히 일치할 때에만 중복 제거되며, 단일 파티션의 행이 우연히 다른 삽입과 일치하는 경우에는 중복 제거되지 않습니다.

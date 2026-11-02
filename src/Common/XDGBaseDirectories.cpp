@@ -19,7 +19,7 @@ namespace
     constexpr const char* ENV_XDG_STATE_HOME = "XDG_STATE_HOME";
     constexpr const char* STATE_PATH_PREFIX = ".local/state";
 
-    constexpr const char* ENV_XDG_CACHE_HOME = "XDG_STATE_HOME";
+    constexpr const char* ENV_XDG_CACHE_HOME = "XDG_CACHE_HOME";
     constexpr const char* CACHE_PATH_PREFIX = ".cache";
 
     constexpr const char* ENV_HOME = "HOME";

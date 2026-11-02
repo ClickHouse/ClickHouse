@@ -53,7 +53,7 @@ We recommend pausing inserts once (1) is guaranteed and until this command and t
 
 ## Choosing a primary/deduplication key {#choosing-a-primarydeduplication-key}
 
-Above, we highlighted an important additional constraint that must also be satisfied in the case of the ReplacingMergeTree: the values of columns of the `ORDER BY` uniquely identify a row across changes. If migrating from a transactional database like Postgres, the original Postgres primary key should thus be included in the Clickhouse `ORDER BY` clause.
+Above, we highlighted an important additional constraint that must also be satisfied in the case of the ReplacingMergeTree: the values of columns of the `ORDER BY` uniquely identify a row across changes. If migrating from a transactional database like Postgres, the original Postgres primary key should thus be included in the ClickHouse `ORDER BY` clause.
 
 Users of ClickHouse will be familiar with choosing the columns in their tables `ORDER BY` clause to [optimize for query performance](/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key). Generally, these columns should be selected based on your [frequent queries and listed in order of increasing cardinality](/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales). Importantly, the ReplacingMergeTree imposes an additional constraint - these columns must be immutable, i.e., if replicating from Postgres, only add columns to this clause if they don't change in the underlying Postgres data. While other columns can change, these are required to be consistent for unique row identification.
 For analytical workloads, the Postgres primary key is generally of little use as you will rarely perform point row lookups. Given we recommend that columns be ordered in order of increasing cardinality, as well as the fact that matches on [columns listed earlier in the ORDER BY will usually be faster](/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently), the Postgres primary key should be appended to the end of the `ORDER BY` (unless it has analytical value). In the case that multiple columns form a primary key in Postgres, they should be appended to the `ORDER BY`, respecting cardinality and the likelihood of query value. You may also wish to generate a unique primary key using a concatenation of values via a `MATERIALIZED` column.
@@ -65,22 +65,22 @@ CREATE TABLE stackoverflow.posts_updateable
 (
        `Version` UInt32,
        `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
         `Score` Int32,
-        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `ViewCount` UInt32 CODEC(Delta, Default),
         `Body` String,
         `OwnerUserId` Int32,
         `OwnerDisplayName` String,
         `LastEditorUserId` Int32,
         `LastEditorDisplayName` String,
-        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
         `LastActivityDate` DateTime64(3, 'UTC'),
         `Title` String,
         `Tags` String,
-        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `AnswerCount` UInt16 CODEC(Delta, Default),
         `CommentCount` UInt8,
         `FavoriteCount` UInt8,
         `ContentLicense` LowCardinality(String),
@@ -130,7 +130,7 @@ SELECT count() FROM stackoverflow.posts_updateable
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-We now update our post-answer statistics. Rather than updating these values, we insert new copies of 5000 rows and add one to their version number (this means 150 rows will exist in the table). We can simulate this with a simple `INSERT INTO SELECT`:
+We now update our post-answer statistics. Rather than updating these values, we insert new copies of 5000 rows and add one to their version number (this means 15000 rows will exist in the table). We can simulate this with a simple `INSERT INTO SELECT`:
 
 ```sql
 INSERT INTO posts_updateable SELECT
@@ -258,7 +258,7 @@ CREATE TABLE stackoverflow.posts_no_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         ...
 )
 ENGINE = ReplacingMergeTree
@@ -308,7 +308,7 @@ CREATE TABLE stackoverflow.posts_with_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         ...
 )
 ENGINE = ReplacingMergeTree

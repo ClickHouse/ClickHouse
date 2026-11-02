@@ -18,9 +18,10 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    В Linux и macOS при этом также устанавливается [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
-    в `~/.local/bin` (с символьной ссылкой `chctl`), чтобы вы могли управлять локальными
-    версиями и серверами ClickHouse.
+    В Linux и macOS при этом также устанавливается [`clickhousectl`](/ru/get-started/setup/self-managed/clickhousectl),
+    ClickHouse CLI, в `~/.local/bin` (с псевдонимом `chctl`). `clickhousectl`
+    помогает устанавливать и управлять несколькими локальными версиями ClickHouse, запускать серверы
+    в фоновом режиме и управлять ClickHouse Cloud. Инструкции по работе через CLI см. на [странице установки clickhousectl](/ru/get-started/setup/self-managed/clickhousectl).
 
     Чтобы установить только бинарный файл `clickhouse` без `clickhousectl`, задайте
     `CLICKHOUSE_ONLY=1`:

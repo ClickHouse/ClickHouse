@@ -451,7 +451,7 @@ Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类�
 
 <Steps>
   <Step title="插入数据" id="insert-the-data">
-    运行以下查询，以 Parquet 格式读取相同的数据，并再次使用 url 函数读取远程数据：
+    运行以下查询，使用 `url` 函数再次读取远程数据，并以 Parquet 格式读取相同的数据：
 
     ```sql
     DROP TABLE IF EXISTS hackernews;
@@ -461,26 +461,31 @@ Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类�
     ORDER BY id
     SETTINGS allow_nullable_key = 1 EMPTY AS
     SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 
     INSERT INTO hackernews SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
     ```
 
     <Info>
-      **Parquet 中的 `NULL` 键**
+      **Parquet 中的空键**
 
-      受 Parquet 格式特性的影响，我们必须接受键可能为 `NULL`，
-      即使数据中并不存在这些键。
+      推断出的 schema 会将列设为 `Nullable`，因此即使此数据集不包含
+      空 ID，仍需启用 `allow_nullable_key`。
     </Info>
 
-    运行以下命令以查看推断出的 schema：
+    运行以下命令查看推断出的 schema：
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews;
+    ```
 
     ```response title="Response"
     ┌─name────────┬─type───────────────────┬
     │ id          │ Nullable(Int64)        │
     │ deleted     │ Nullable(UInt8)        │
     │ type        │ Nullable(String)       │
+    │ by          │ Nullable(String)       │
     │ time        │ Nullable(Int64)        │
     │ text        │ Nullable(String)       │
     │ dead        │ Nullable(UInt8)        │
@@ -495,10 +500,12 @@ Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类�
     └─────────────┴────────────────────────┴
     ```
 
-    和前面的 CSV 文件一样，你也可以手动指定 schema，以便更好地控制所选类型，并将
-    数据直接从 S3 插入：
+    后续步骤将使用更清晰的列名，例如 `author` 和 `comment`，因此请继续使用手动指定的 schema。
+    首先删除自动推断出的表，然后创建该表，并直接从公网 S3 bucket 插入数据：
 
     ```sql
+    DROP TABLE IF EXISTS hackernews;
+
     CREATE TABLE hackernews
     (
         `id` UInt64,
@@ -523,6 +530,7 @@ Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类�
     INSERT INTO hackernews
     SELECT * FROM s3(
             'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            NOSIGN,
             'Parquet',
             'id UInt64,
              deleted UInt8,
@@ -542,102 +550,121 @@ Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类�
     ```
   </Step>
 
-  <Step title="添加数据跳过索引以加快查询速度" id="add-skipping-index">
+  <Step title="添加文本索引以加快搜索" id="add-skipping-index">
     要查看有多少条评论提到了 &quot;ClickHouse&quot;，请运行以下查询：
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'ClickHouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
-    ┌─count()─┐
-    │     516 │
-    └─────────┘
-    ```
-
-    接下来，您将在 &quot;comment&quot; 列上创建一个倒排[索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)，
-    以加快此查询。
-    请注意，comments 会以小写形式建立索引，以便在查找术语时不区分大小写。
-
-    运行以下命令来创建索引：
-
-    ```sql
-    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
-    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
-    ```
-
-    索引物化需要一些时间 (要检查索引是否已创建，请使用系统表 `system.data_skipping_indices`) 。
-
-    索引创建完成后，再次运行该查询：
-
-    ```sql title="Query"
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse');
-    ```
-
-    请注意：有了索引后，查询现在仅需 0.248 秒，而此前在没有索引时则需 0.843 秒：
-
-    ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
     ┌─count()─┐
     │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
     ```
 
-    可以使用 [`EXPLAIN`](/zh/reference/statements/explain) 子句来了解，为什么添加该索引后
-    查询性能提升了约 3.4 倍。
+    接下来，在 `comment` 列上创建一个[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)，
+    以加快此查询。文本索引使用倒排索引，将标记映射到包含这些标记的行。
+    `splitByNonAlpha` 分词器会按非字母数字字符拆分文本。索引和查询均使用 `lower(comment)`，
+    并采用小写搜索词，因此匹配时不区分大小写。查询表达式必须与索引表达式一致。
 
-    ```response text="Query"
-    EXPLAIN indexes = 1
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse')
+    运行以下命令创建索引：
+
+    ```sql
+    ALTER TABLE hackernews
+        ADD INDEX comment_idx lower(comment)
+        TYPE text(tokenizer = splitByNonAlpha);
+
+    ALTER TABLE hackernews
+        MATERIALIZE INDEX comment_idx
+        SETTINGS mutations_sync = 2;
     ```
 
-    ```response title="Response"
-    ┌─explain─────────────────────────────────────────┐
-    │ Expression ((Projection + Before ORDER BY))     │
-    │   Aggregating                                   │
-    │     Expression (Before GROUP BY)                │
-    │       Filter (WHERE)                            │
-    │         ReadFromMergeTree (default.hackernews)  │
-    │         Indexes:                                │
-    │           PrimaryKey                            │
-    │             Condition: true                     │
-    │             Parts: 4/4                          │
-    │             Granules: 3528/3528                 │
-    │           Skip                                  │
-    │             Name: comment_idx                   │
-    │             Description: inverted GRANULARITY 1 │
-    │             Parts: 4/4                          │
-    │             Granules: 554/3528                  │
-    └─────────────────────────────────────────────────┘
-    ```
+    物化会为现有数据构建索引。`mutations_sync` 设置会等待物化完成。
+    您可以在 `system.data_skipping_indices` 表中查看索引定义。
 
-    请注意，索引通过跳过大量粒度来加快了查询速度。
-
-    现在还可以高效地搜索单个词，或多个词中的全部词：
+    索引物化完成后，再次运行相同的查询：
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+
+    1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
+    ```
+
+    结果保持不变，因为索引改变的是 ClickHouse 查找匹配行的方式，而不是决定哪些行匹配。使用索引的
+    查询处理的数据量显著减少，执行速度也快得多。
+    使用 [`EXPLAIN`](/zh/reference/statements/explain) 确认 ClickHouse 计划使用该索引：
+
+    ```sql title="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response"
+    Output: count()
+
+    Aggregating
+    │  Keys:
+    │  Aggregates: count()
+    │  Skip merging: 0
+    └──Filter
+       │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+       └──ReadFromMergeTree (default.hackernews)
+             Read type: Default
+             Parts: 4 | Granules: 547
+             Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+             Indexes:
+               PrimaryKey
+                 Condition: true
+                 Parts: 4/4
+                 Granules: 3527/3527
+               Skip
+                 Name: comment_idx
+                 Description: text GRANULARITY 100000000
+                 Condition: (mode: Any; tokens: ["clickhouse"])
+                 Parts: 4/4
+                 Granules: 547/3527
+               Ranges: 437
+    ```
+
+    `comment_idx` 条目表明 ClickHouse 计划使用该文本索引。在此示例中，执行计划从 3527 个
+    粒度中选取了 547 个，大幅减少了需要扫描的数据量。
+
+    您还可以搜索多个标记中的任意一个或全部。这些函数匹配由索引分词器生成的完整标记。
+    当至少有一个标记需要匹配时，请使用 `hasAnyTokens`：
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'oltp olap');
     ```
 
     ```response title="Response"
     ┌─count()─┐
-    │    2177 │
+    │    2020 │
     └─────────┘
     ```
+
+    当所有标记都必须匹配且顺序不限时，使用 `hasAllTokens`：
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    WHERE hasAllTokens(lower(comment), 'avx sve');
     ```
 
     ```response title="Response"

@@ -1,0 +1,4 @@
+-- JSONEachRow depth, high limit then low limit must throw
+1
+-- JSONEachRow depth, low limit alone throws (control)
+1

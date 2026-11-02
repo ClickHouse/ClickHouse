@@ -23,6 +23,13 @@
 #    define SIZE_T_IS_A_DISTINCT_TYPE 1
 #endif
 
+/// `size_t` is `unsigned long` or `unsigned int`, so a platform where it is distinct from every
+/// fixed-width type is one where `long` is too. Getting this wrong makes `itoa(size_t)` ambiguous
+/// rather than failing anywhere obvious, so state the implication where both are defined.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE) && !defined(LONG_IS_A_DISTINCT_TYPE)
+#    error "SIZE_T_IS_A_DISTINCT_TYPE implies LONG_IS_A_DISTINCT_TYPE"
+#endif
+
 /// Whether the platform delivers POSIX signals to the process: handlers installed with
 /// `sigaction`, masked with `pthread_sigmask`, raised with `raise`. A WebAssembly sandbox has no
 /// signals at all - nothing can fault into one and nothing can send one - so arming a handler
@@ -64,6 +71,11 @@
 #define ALWAYS_INLINE __attribute__((__always_inline__))
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
+
+/// Keeps `-fstack-protector-strong` away from a function. Use it only where the canary buys nothing and
+/// costs something: code that reads the stack layout directly, or a hot function whose only reason to be
+/// instrumented is a small fixed buffer handed to a system call. Prefer removing the reason instead.
+#define NO_STACK_PROTECTOR __attribute__((no_stack_protector))
 
 #include <base/sanitizer_defs.h>
 
