@@ -556,6 +556,9 @@ bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
 
 std::pair<DataTypePtr, DataTypePtr> nameTupleElementsByPositionImpl(const DataTypePtr & from, const DataTypePtr & to, bool & renamed)
 {
+    if (from->equals(*to))
+        return {from, to};
+
     const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get());
     const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get());
     if (from_nullable || to_nullable)
@@ -598,8 +601,16 @@ std::pair<DataTypePtr, DataTypePtr> nameTupleElementsByPositionImpl(const DataTy
     DataTypes to_elements = to_tuple->getElements();
     const auto & to_names = to_tuple->getElementNames();
 
-    const bool by_name = from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
-        && std::ranges::any_of(to_names, [&](const auto & name) { return from_tuple->tryGetPositionByName(name).has_value(); });
+    std::unordered_map<std::string_view, size_t> from_positions;
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+    {
+        const auto & from_names = from_tuple->getElementNames();
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+    }
+
+    const bool by_name = std::ranges::any_of(to_names, [&](const auto & name) { return from_positions.contains(name); });
     const bool rename = !from_tuple->hasExplicitNames() && !to_tuple->hasExplicitNames() && from_elements.size() != to_elements.size();
     if (!by_name && !rename && from_elements.size() != to_elements.size())
         return {from, to};
@@ -607,9 +618,9 @@ std::pair<DataTypePtr, DataTypePtr> nameTupleElementsByPositionImpl(const DataTy
     if (by_name)
     {
         for (size_t i = 0; i < to_elements.size(); ++i)
-            if (auto from_position = from_tuple->tryGetPositionByName(to_names[i]))
-                std::tie(from_elements[*from_position], to_elements[i])
-                    = nameTupleElementsByPositionImpl(from_elements[*from_position], to_elements[i], renamed);
+            if (auto it = from_positions.find(to_names[i]); it != from_positions.end())
+                std::tie(from_elements[it->second], to_elements[i])
+                    = nameTupleElementsByPositionImpl(from_elements[it->second], to_elements[i], renamed);
     }
     else
     {
