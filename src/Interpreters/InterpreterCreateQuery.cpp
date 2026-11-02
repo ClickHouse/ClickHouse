@@ -2390,10 +2390,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// The `TTL` of a table is evaluated by background merges, which do not have the session, so a `DateTime` string literal
     /// in it, as in `TTL event + INTERVAL 1 DAY DELETE WHERE event = '2020-01-01 00:00:00'`, was read in the server time zone
     /// instead of `session_timezone`, and the rule removed other rows than it named. Make the time zone of such literals
-    /// explicit in the definition, as `InterpreterAlterQuery` does for mutations.
+    /// explicit in the definition, as `InterpreterAlterQuery` does for mutations. On a DDL worker (`ON CLUSTER` or a `Replicated`
+    /// database) the query was normalized on the initiator, which rewrote its own `TTL`, and a `TTL` copied there from the source
+    /// of `CREATE TABLE ... AS` looks like the query's own, so it is not rewritten again.
     if (const String & session_timezone = getContext()->getSettingsRef()[Setting::session_timezone].value;
-        !session_timezone.empty() && has_own_ttl && !create.attach_short_syntax && !is_restore_from_backup
-        && create.storage && create.storage->ttl_table)
+        !session_timezone.empty() && has_own_ttl && !getContext()->isDDLOrOnClusterInternal() && !create.attach_short_syntax
+        && !is_restore_from_backup && create.storage && create.storage->ttl_table)
     {
         rewriteDateTimeLiteralsWithTimezone(create.storage->ttl_table->ptr(), properties.columns, session_timezone);
     }
