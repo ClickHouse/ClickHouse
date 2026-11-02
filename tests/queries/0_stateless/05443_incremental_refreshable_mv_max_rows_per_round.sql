@@ -1,5 +1,5 @@
 -- Tags: atomic-database
--- `stream_max_rows_to_read` and `stream_max_bytes_to_read` in the view's SETTINGS limit how much one refresh
+-- `max_rows_to_read` and `max_bytes_to_read` in the view's SETTINGS limit how much one refresh
 -- of an incremental refreshable materialized view reads; the following refreshes continue from where it stopped.
 
 SET async_insert = 0, max_insert_threads = 1, max_block_size = 65505, max_insert_block_size = 1048449;
@@ -28,13 +28,13 @@ CREATE TABLE tgt_bytes (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE MATERIALIZED VIEW mv_rows
     REFRESH EVERY 10 YEAR APPEND INCREMENTAL
     TO tgt_rows EMPTY
-    AS SELECT k FROM src SETTINGS stream_max_rows_to_read = 30;
+    AS SELECT k FROM src SETTINGS max_rows_to_read = 30;
 
 -- A limit below one block still reads one block per refresh.
 CREATE MATERIALIZED VIEW mv_bytes
     REFRESH EVERY 10 YEAR APPEND INCREMENTAL
     TO tgt_bytes EMPTY
-    AS SELECT k FROM src SETTINGS stream_max_bytes_to_read = 1;
+    AS SELECT k FROM src SETTINGS max_bytes_to_read = 1;
 
 -- Ten blocks of ten rows each.
 INSERT INTO src SELECT number FROM numbers(0, 10);

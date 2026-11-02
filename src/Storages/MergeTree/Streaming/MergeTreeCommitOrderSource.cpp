@@ -31,8 +31,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Epoll.h>
 
-#include <Core/Settings.h>
-
 #include <base/defines.h>
 
 #include <algorithm>
@@ -42,12 +40,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsUInt64 stream_max_rows_to_read;
-    extern const SettingsUInt64 stream_max_bytes_to_read;
-}
 
 namespace ErrorCodes
 {
@@ -153,15 +145,13 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , subscription(std::move(subscription_))
     , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
     , reading_context(makeReadRoundContext(storage_, query_info_, std::move(context_), std::move(user_requested_columns_), requested_num_streams_, max_block_size_, header))
-    , max_rows_per_round(reading_context.context->getSettingsRef()[Setting::stream_max_rows_to_read])
-    , max_bytes_per_round(reading_context.context->getSettingsRef()[Setting::stream_max_bytes_to_read])
     , log(getLogger(fmt::format("MergeTreeCommitOrderSource::{}", UUIDHelpers::generateV4())))
     , read_state(stream_settings)
 {
     /// A partition left out of a round must not be reported idle, which would let the watermark pass its unread rows.
-    if (stream_settings.watermark && (max_rows_per_round || max_bytes_per_round))
+    if (stream_settings.watermark && (reading_context.max_rows_per_round || reading_context.max_bytes_per_round))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Settings `stream_max_rows_to_read` and `stream_max_bytes_to_read` are not supported for a stream with a watermark");
+            "Settings `max_rows_to_read` and `max_bytes_to_read` are not supported for a stream with a watermark");
 }
 
 IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
@@ -366,9 +356,14 @@ void MergeTreeCommitOrderSource::work()
         return;
 
     auto [safe_block_numbers, was_updated] = subscription->snapshot();
-    if (max_rows_per_round || max_bytes_per_round)
+    if (reading_context.max_rows_per_round || reading_context.max_bytes_per_round)
         safe_block_numbers = limitRoundBounds(
-            reading_context.storage, read_state, std::move(safe_block_numbers), static_cast<size_t>(finished_rounds), max_rows_per_round, max_bytes_per_round);
+            reading_context.storage,
+            read_state,
+            std::move(safe_block_numbers),
+            static_cast<size_t>(finished_rounds),
+            reading_context.max_rows_per_round,
+            reading_context.max_bytes_per_round);
 
     auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
 

@@ -3708,12 +3708,20 @@ The maximum number of rows that can be read from a table when running a query.
 The restriction is checked for each processed chunk of data, applied only to the
 deepest table expression and when reading from a remote server, checked only on
 the remote server.
+
+For a `STREAM` query over `MergeTree` the limit applies to each read round instead
+(one refresh of an incremental refreshable materialized view): the round reads about
+this many rows, at least one block, and the next round continues from where it stopped.
+`read_overflow_mode` is ignored in this case.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read, 0, R"(
 The maximum number of bytes (of uncompressed data) that can be read from a table when running a query.
 The restriction is checked for each processed chunk of data, applied only to the
 deepest table expression and when reading from a remote server, checked only on
 the remote server.
+
+For a `STREAM` query over `MergeTree` the limit applies to each read round, like `max_rows_to_read`;
+it is estimated from the uncompressed size of the source parts.
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.
@@ -10751,14 +10759,6 @@ at plan-build time. This is the umbrella gate for the streaming-queries
 feature; additional capabilities may be gated by their own settings.
 )", EXPERIMENTAL, \
         {"26.6", false, false, "New setting"}) \
-    DECLARE(UInt64, stream_max_rows_to_read, 0, R"(
-Approximate maximum number of rows that one read round of a `STREAM` query over `MergeTree` reads (one refresh of an incremental refreshable materialized view); 0 means no limit.
-)", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New setting"}) \
-    DECLARE(UInt64, stream_max_bytes_to_read, 0, R"(
-Like `stream_max_rows_to_read`, but limits the uncompressed size of the source parts that one read round reads. 0 means no limit.
-)", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New setting"}) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries

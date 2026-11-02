@@ -70,9 +70,6 @@ private:
     const MergeTreeBoundsSubscriptionPtr subscription;
     const StreamSettings stream_settings;
     const ReadRoundContext reading_context;
-    /// From `stream_max_rows_to_read` and `stream_max_bytes_to_read`, 0 means no limit.
-    const UInt64 max_rows_per_round;
-    const UInt64 max_bytes_per_round;
     const LoggerPtr log;
 
     /// Runtime information

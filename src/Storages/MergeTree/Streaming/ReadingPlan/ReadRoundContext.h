@@ -22,6 +22,9 @@ struct ReadRoundContext
     const size_t requested_num_streams;
     const UInt64 max_block_size;
     const SharedHeader output_header;
+    /// From `max_rows_to_read` and `max_bytes_to_read`, applied per read round; 0 means no limit.
+    const UInt64 max_rows_per_round;
+    const UInt64 max_bytes_per_round;
 };
 
 ReadRoundContext makeReadRoundContext(
