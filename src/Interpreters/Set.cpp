@@ -1057,6 +1057,60 @@ static UInt64 getNextMergeTreeSetIndexId()
     return counter.fetch_add(1, std::memory_order_relaxed);
 }
 
+template <typename T, typename FieldValueRange>
+static std::optional<BoolMask> checkInRangeSingleIntegerColumn(
+    const IColumn & column, const FieldValueRange & range, bool all_keys)
+{
+    if (!range.left.isNormal() || !range.right.isNormal())
+        return std::nullopt;
+
+    const auto * typed_column = typeid_cast<const ColumnVector<T> *>(&column);
+    if (!typed_column)
+        return std::nullopt;
+
+    const auto & values = typed_column->getData();
+    const T left = static_cast<const ColumnVector<T> &>(*range.left.column).getData()[0];
+    const T right = static_cast<const ColumnVector<T> &>(*range.right.column).getData()[0];
+    /// Let the general path validate ranges that can produce inverted search positions.
+    if (left > right || (left == right && !range.left_included && !range.right_included))
+        return std::nullopt;
+
+    size_t begin = 0;
+    size_t length = values.size();
+    while (length > 1)
+    {
+        const size_t half = length / 2;
+        const T value = values[begin + half - 1];
+        const bool below = value < left || (value == left && !range.left_included);
+        begin = below ? begin + half : begin;
+        length -= half;
+    }
+    if (length)
+        begin += values[begin] < left || (values[begin] == left && !range.left_included);
+
+    const bool can_be_true = begin < values.size()
+        && (values[begin] < right || (values[begin] == right && range.right_included));
+    return BoolMask{can_be_true, all_keys && left == right ? !can_be_true : true};
+}
+
+template <typename FieldValueRange>
+static std::optional<BoolMask> checkInRangeSingleColumn(
+    const IColumn & column, const FieldValueRange & range, bool all_keys)
+{
+    switch (column.getDataType())
+    {
+        case TypeIndex::UInt8: return checkInRangeSingleIntegerColumn<UInt8>(column, range, all_keys);
+        case TypeIndex::UInt16: return checkInRangeSingleIntegerColumn<UInt16>(column, range, all_keys);
+        case TypeIndex::UInt32: return checkInRangeSingleIntegerColumn<UInt32>(column, range, all_keys);
+        case TypeIndex::UInt64: return checkInRangeSingleIntegerColumn<UInt64>(column, range, all_keys);
+        case TypeIndex::Int8: return checkInRangeSingleIntegerColumn<Int8>(column, range, all_keys);
+        case TypeIndex::Int16: return checkInRangeSingleIntegerColumn<Int16>(column, range, all_keys);
+        case TypeIndex::Int32: return checkInRangeSingleIntegerColumn<Int32>(column, range, all_keys);
+        case TypeIndex::Int64: return checkInRangeSingleIntegerColumn<Int64>(column, range, all_keys);
+        default: return std::nullopt;
+    }
+}
+
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
@@ -1154,7 +1208,12 @@ MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuff
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(
+    const std::vector<int> & key_col_to_sparse_pos,
+    const Ranges & sparse_key_ranges,
+    const DataTypes & sparse_data_types,
+    size_t first_function_number,
+    bool single_point) const
 {
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -1167,8 +1226,12 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     FieldValueRanges scratch;
     FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    size_t function_number = first_function_number;
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        const size_t mapping_first_function_number = function_number;
+        function_number += indexes_mapping[i].functions.size();
+
         size_t key_column = indexes_mapping[i].key_index;
         auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
@@ -1192,6 +1255,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             sparse_key_ranges[sparse_pos],
             indexes_mapping[i].functions,
+            mapping_first_function_number,
             sparse_data_types[sparse_pos],
             single_point);
 
@@ -1203,6 +1267,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         range.left_included = new_range->left_included;
         range.right_included = new_range->right_included;
     }
+
+    if (tuple_size == 1)
+        if (auto result = checkInRangeSingleColumn(*ordered_set[0], ranges[0], has_all_keys))
+            return *result;
 
     /// lhs < rhs return -1
     /// lhs == rhs return 0
@@ -1321,20 +1389,25 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
     return {can_be_true, true};
 }
 
-BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
     FieldValueRanges scratch;
     FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    size_t function_number = first_function_number;
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        const size_t mapping_first_function_number = function_number;
+        function_number += indexes_mapping[i].functions.size();
+
         if (indexes_mapping[i].key_index >= key_ranges.size())
             return {true, true};
 
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
+            mapping_first_function_number,
             data_types[indexes_mapping[i].key_index],
             single_point);
 
@@ -1347,6 +1420,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         range.left_included = new_range->left_included;
         range.right_included = new_range->right_included;
     }
+
+    if (tuple_size == 1)
+        if (auto result = checkInRangeSingleColumn(*ordered_set[0], ranges[0], has_all_keys))
+            return *result;
 
     /// lhs < rhs return -1
     /// lhs == rhs return 0

@@ -3,8 +3,6 @@
 -- so a row whose whole tuple is NULL gives NULL either way, for a plain, an already-`Nullable` and a
 -- `LowCardinality` element alike.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_nullable_tuple_element_rewrite;
 
 CREATE TABLE t_nullable_tuple_element_rewrite

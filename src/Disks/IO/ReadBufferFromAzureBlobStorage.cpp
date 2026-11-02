@@ -101,7 +101,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     {
         tmp_buffer.resize(tmp_buffer_size);
         data_ptr = tmp_buffer.data();
-        data_capacity = tmp_buffer_size;
+        data_capacity = tmp_buffer.size();
     }
 }
 
@@ -667,7 +667,7 @@ void ReadBufferFromAzureBlobStorage::setMetadataFromResponse(const Azure::Storag
 {
     ObjectMetadata new_metadata;
     new_metadata.size_bytes = blob_size;
-    new_metadata.etag = details.ETag.ToString();
+    new_metadata.etag = AzureBlobStorage::getETag(details.ETag, path);
     new_metadata.last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
     if (!details.Metadata.empty())
     {
