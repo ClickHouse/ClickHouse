@@ -167,14 +167,23 @@ private:
     /// compares each table's surviving min date against the query lower bound.
     /// Falls back via pickFallbackTable() if none match.
     /// Records the skipped tables and the query lower bound in the `ABRQueryInfo` of the context.
-    size_t chooseBestTable(SelectQueryInfo & query_info, ContextPtr local_context) const;
+    /// `source_tables` are the source tables resolved for the query, see `getSourceTables`.
+    size_t chooseBestTable(SelectQueryInfo & query_info, ContextPtr local_context, const std::vector<StoragePtr> & source_tables) const;
 
-    /// Index in `tables` of the table with the given sample interval. Throws if there is none.
+    /// Index in `source_table_ids` of the table with the given sample interval. Throws if there is none.
     size_t getTableIndexFromSuffix(UInt64 suffix) const;
 
-    /// Index in `tables` of the coarsest table a query may be executed on: the one of abr_last_table_suffix,
+    /// Index in `source_table_ids` of the coarsest table a query may be executed on: the one of abr_last_table_suffix,
     /// or the coarsest table if it is not set. Bounds both the choice of the table and the retries.
     size_t getLastCandidateTableIndex(const ContextPtr & local_context) const;
+
+    /// Resolves the source tables from the first one to the one at `up_to_index`, included, for a query.
+    /// Throws `UNKNOWN_TABLE` if one of them does not exist anymore.
+    std::vector<StoragePtr> getSourceTables(const ContextPtr & local_context, size_t up_to_index) const;
+
+    /// Resolves all the source tables with the global context, for the methods that have no query context.
+    /// Returns an empty vector if one of them does not exist anymore.
+    std::vector<StoragePtr> tryGetSourceTables() const;
 
     /// Resolves the fallback table when no underlying table covers the query lower bound
     /// Picks the smallest min_storage_date at day precision
@@ -187,7 +196,10 @@ private:
     void copyTableMetadata(const StoragePtr & storage);
 
     std::vector<UInt64> sample_intervals;
-    std::vector<StoragePtr> tables;
+
+    /// The IDs of the source tables found at creation, ordered as `sample_intervals`.
+    /// Resolved for each query rather than kept alive, so that the source tables can be dropped and detached.
+    std::vector<StorageID> source_table_ids;
 
     String time_column;
 
