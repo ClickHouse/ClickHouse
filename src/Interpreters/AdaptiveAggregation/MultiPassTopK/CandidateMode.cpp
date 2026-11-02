@@ -117,8 +117,10 @@ private:
 
 /// The parameters of the candidate pass. The bound of a cell needs the rows of its candidates, which a `count()` of the
 /// pass gives when the aggregation has none (see `rowsColumnOf`). Its tables hold the candidates only, a few thousand
-/// keys at most, so they stay single-level and in memory. A conversion to two-level, which the memory of a thread can
-/// trigger, would only split each of them into many tiny tables for the merge.
+/// keys at most, which a conversion to two-level would only split into many tiny tables for the merge. With states of a
+/// fixed size, the tables stay that small, so they stay single-level and in memory: the threshold of bytes, which the
+/// memory of a thread can reach first, and the external aggregation do not apply. States that grow, as those of
+/// `uniqExact` do, keep them as in the original aggregation, so that their tables may spill.
 Aggregator::Params candidatePassParams(const MultiPassTopKTemplate & templ)
 {
     Aggregator::Params params = paramsOfOwnPass(*templ.aggregating);
@@ -128,9 +130,12 @@ Aggregator::Params candidatePassParams(const MultiPassTopKTemplate & templ)
         params.aggregates_size = params.aggregates.size();
     }
     params.group_by_two_level_threshold = 0;
-    params.group_by_two_level_threshold_bytes = 0;
-    params.max_bytes_before_external_group_by = 0;
-    params.min_bytes_before_external_group_by = 0;
+    if (hasFixedSizeStates(params))
+    {
+        params.group_by_two_level_threshold_bytes = 0;
+        params.max_bytes_before_external_group_by = 0;
+        params.min_bytes_before_external_group_by = 0;
+    }
     return params;
 }
 

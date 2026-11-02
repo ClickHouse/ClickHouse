@@ -35,6 +35,10 @@ Aggregator::Params paramsOfOwnPass(const AggregatingStep & aggregating);
 /// optimizations for the top stay valid: the best groups of the rows include every group of them that the top takes.
 Aggregator::Params paramsOfSubsetPass(const AggregatingStep & aggregating);
 
+/// Whether every aggregate of `params` keeps its state in place, in a fixed size: no state needs a destructor or
+/// allocates in the arena. The tables of a pass then grow only with their keys.
+bool hasFixedSizeStates(const Aggregator::Params & params);
+
 /// A copy of the read of the template for a pass, reading with the settings of `context`. The copy takes the
 /// filters the ranges of the analysis were selected by, which the reader applies as well: the skip indexes that
 /// it applies while reading and the conditions it records in the query condition cache.

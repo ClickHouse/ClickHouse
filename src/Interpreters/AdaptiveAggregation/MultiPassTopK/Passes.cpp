@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB::MultiPassTopKImpl
@@ -89,6 +90,12 @@ Aggregator::Params paramsOfSubsetPass(const AggregatingStep & aggregating)
     Aggregator::Params params = aggregating.getParams();
     params.stats_collecting_params.disable();
     return params;
+}
+
+bool hasFixedSizeStates(const Aggregator::Params & params)
+{
+    return std::ranges::all_of(params.aggregates, [](const AggregateDescription & aggregate)
+        { return aggregate.function->hasTrivialDestructor() && !aggregate.function->allocatesMemoryInArena(); });
 }
 
 std::unique_ptr<ReadFromMergeTree> cloneRead(const MultiPassTopKTemplate & templ, const ContextPtr & context)

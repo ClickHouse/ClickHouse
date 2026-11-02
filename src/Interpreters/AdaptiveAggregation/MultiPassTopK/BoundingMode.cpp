@@ -182,14 +182,17 @@ QueryPlan makeHotFineCellsPlan(
 {
     auto read = cloneReadWithKeyFilter(templ, makeHotFineCellsFilter(*templ.input->bounding_key, std::move(hot_cells), std::move(excluded)));
     QueryPlan plan = makeInputPlan(templ, std::move(read));
-    /// When the streams hold fewer rows of the hot cells than make a table two-level, most of their tables stay small and
-    /// single-level, and a single two-level table would make the merge convert all of them, which allocates the buckets
-    /// of every table. Single-level tables merge in parallel by partitions instead.
+    /// When the streams hold fewer rows of the hot cells than make a table two-level, most of their tables stay small
+    /// and single-level, and a single two-level table would make the merge convert all of them, which allocates the
+    /// buckets of every table. Single-level tables merge in parallel by partitions instead. States that grow, as those
+    /// of `uniqExact` do, keep the threshold of bytes, so that their tables may become two-level and spill as in the
+    /// original aggregation.
     Aggregator::Params params = paramsOfSubsetPass(*templ.aggregating);
     if (hot_rows / std::max<size_t>(1, params.max_threads) < params.group_by_two_level_threshold)
     {
         params.group_by_two_level_threshold = 0;
-        params.group_by_two_level_threshold_bytes = 0;
+        if (hasFixedSizeStates(params))
+            params.group_by_two_level_threshold_bytes = 0;
     }
     plan.addStep(templ.aggregating->cloneWithParams(plan.getCurrentHeader(), std::move(params)));
     filterByMinRank(plan, templ, min_rank);
