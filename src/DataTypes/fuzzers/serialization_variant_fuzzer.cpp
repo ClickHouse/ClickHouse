@@ -41,7 +41,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
 /// Auxiliary header at the start of the fuzz input:
 ///   [0]    variant_selector: chooses which Variant type to deserialize into
-///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes
+///   [1]    unused
 ///   [2..9] rows: uint64_t LE, capped at 65536
 ///
 /// Variant types exercised:
@@ -56,7 +56,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 struct AuxiliaryRandomData
 {
     uint8_t variant_selector;
-    uint8_t flags;
+    uint8_t unused;
     uint64_t rows;
 };
 
@@ -112,8 +112,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         const auto * aux = reinterpret_cast<const AuxiliaryRandomData *>(data);
         const size_t rows = static_cast<size_t>(aux->rows % 65536);
-        const bool use_native_format = (aux->flags & 1) != 0;
-        const bool use_specialized_prefixes = (aux->flags & 2) != 0;
 
         DataTypePtr variant_type = makeVariantType(aux->variant_selector);
         auto serialization = variant_type->getDefaultSerialization();
@@ -130,9 +128,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         ISerialization::DeserializeBinaryBulkSettings settings;
         settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &in; };
         settings.position_independent_encoding = false;
-        settings.native_format = use_native_format;
+        /// Fuzz input is untrusted: outside the Native format, inconsistent data is a LOGICAL_ERROR by design.
+        settings.native_format = true;
         settings.format_settings = &format_settings;
-        settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes;
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
