@@ -242,9 +242,9 @@ $CLICKHOUSE_CLIENT $url_settings -q "SELECT count() FROM url('$url_trace_count',
 
 # Case T: Explicit tracing header schema inference partitioning
 echo "Case T: Explicit tracing header schema inference partitioning"
-url_trace_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1+AS+col1%2C+if(getClientHTTPHeader(%27tracestate%27)+%3D+%27vendor%3Dtwo%27%2C+%27string_val%27%2C+%27100%27)+AS+col2+FORMAT+CSVWithNames&allow_get_client_http_header=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_schema"
-$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'CSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=one')) FORMAT TSV" | cut -f1,2
-$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'CSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=two')) FORMAT TSV" | cut -f1,2
+url_trace_schema="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1+AS+col1%2C+if(getClientHTTPHeader(%27tracestate%27)+%3D+%27vendor%3Dtwo%27%2C+%27string_val%27%2C+%27100%27)+AS+col2+FORMAT+TSVWithNames&allow_get_client_http_header=1&query_id=${CLICKHOUSE_TEST_UNIQUE_NAME}_trace_schema"
+$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'TSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=one')) FORMAT TSV" | cut -f1,2
+$CLICKHOUSE_CLIENT $url_settings -q "DESCRIBE url('$url_trace_schema', 'TSVWithNames', 'auto', 'none', headers('tracestate' = 'vendor=two')) FORMAT TSV" | cut -f1,2
 
 # Case U: Auto-tracing does not fragment schema cache
 echo "Case U: Auto-tracing does not fragment schema cache"
