@@ -1266,6 +1266,9 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     if (!isCompressionMethodHintAuto(configuration->compression_method))
         return;
 
+    if (!canUseNumRowsFromSchemaCache(format_settings, read_context))
+        return;
+
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
         object_info.getFileFormat().value_or(configuration->format),
@@ -1525,6 +1528,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
         /// not rejected) always reads the object as the actual read would.
         if (!isCompressionMethodHintAuto(configuration->compression_method))
+            return std::nullopt;
+
+        if (!canUseNumRowsFromSchemaCache(format_settings, context_))
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
