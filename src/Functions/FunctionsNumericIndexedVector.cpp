@@ -19,12 +19,13 @@ Creates a NumericIndexedVector from a map. The map's keys represent the vector's
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res, toTypeName(res);
+WITH numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS vec
+SELECT numericIndexedVectorToMap(vec) AS res, toTypeName(vec) AS type;
             )",
                 R"(
-┌─res─┬─toTypeName(res)────────────────────────────────────────────┐
-│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
-└─────┴────────────────────────────────────────────────────────────┘
+┌─res──────────────┬─type───────────────────────────────────────────────────────┐
+│ {1:10,2:20,3:30} │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
+└──────────────────┴────────────────────────────────────────────────────────────┘
             )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
@@ -121,9 +122,9 @@ SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec1, 2)) AS res2;
                 )",
                 R"(
-┌─res1──────────┬─res2─────────────┐
-│ {2:200,3:600} │ {1:20,2:40,3:60} │
-└───────────────┴──────────────────┘
+┌─res1──────────────────┬─res2─────────────┐
+│ {1:0,2:200,3:600,4:0} │ {1:20,2:40,3:60} │
+└───────────────────────┴──────────────────┘
                 )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
@@ -154,9 +155,9 @@ SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec1, 2)) AS res2;
             )",
                 R"(
-┌─res1────────┬─res2────────────┐
-│ {2:2,3:1.5} │ {1:5,2:10,3:15} │
-└─────────────┴─────────────────┘
+┌─res1────────────────┬─res2────────────┐
+│ {1:0,2:2,3:1.5,4:0} │ {1:5,2:10,3:15} │
+└─────────────────────┴─────────────────┘
             )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
@@ -395,9 +396,9 @@ SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseMax(vec1, vec2)) AS res;
                 )",
                 R"(
-┌─res───────────────────┐
-│ {1:10,2:20,3:30,4:5}  │
-└───────────────────────┘
+┌─res──────────────────┐
+│ {1:10,2:20,3:30,4:5} │
+└──────────────────────┘
                 )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
@@ -432,9 +433,9 @@ SELECT
     numericIndexedVectorToMap(numericIndexedVectorPointwiseMin(vec1, vec2)) AS res;
                 )",
                 R"(
-┌─res───────────────────┐
-│ {1:10,2:15,3:25,4:5}  │
-└───────────────────────┘
+┌─res──────────────────┐
+│ {1:10,2:15,3:25,4:5} │
+└──────────────────────┘
                 )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
@@ -576,12 +577,12 @@ This function is primarily used for debugging purposes.
         FunctionDocumentation::Examples examples
             = {{"Usage example",
                 R"(
-SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res\G;
+SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res FORMAT Vertical;
             )",
                 R"(
 Row 1:
 ──────
-res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":"0"},"non_zero_indexes_info":{"total_cardinality":"3","all_value_sum":60,"number_of_bitmaps":"8","bitmap_info":{"cardinality":{"0":"0","1":"2","2":"2","3":"2","4":"2","5":"0","6":"0","7":"0"}}}}
+res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":0},"non_zero_indexes_info":{"total_cardinality":3,"all_value_sum":60,"number_of_bitmaps":8,"bitmap_info":{"cardinality":{"0":0,"1":2,"2":2,"3":2,"4":2,"5":0,"6":0,"7":0}}}}
             )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
