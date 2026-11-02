@@ -5245,6 +5245,8 @@ The sample does not always show the top, for example when the rows of each key v
 
 Reading the table again costs less than aggregating many distinct keys, so the strategy pays off for queries with many keys. It applies only to reads of at least 1024 granules, and when the sample shows that it would not pay off, the query runs the ordinary aggregation.
 
+The strategy may read the table up to four times, so it applies only when the limits of the query allow that. For example, [max_rows_to_read](#max_rows_to_read) must be at least four times the rows that the query reads. A limit with the `break` overflow mode keeps the ordinary aggregation, because it would cut a pass short.
+
 With [collect_hash_table_stats_during_aggregation](#collect_hash_table_stats_during_aggregation), the next runs of the same query start from what an earlier run found and skip the sample (see also [adaptive_aggregator_top_k_cache_candidates](#adaptive_aggregator_top_k_cache_candidates)).
 
 Takes effect only with [query_plan_enable_optimizations](#query_plan_enable_optimizations).

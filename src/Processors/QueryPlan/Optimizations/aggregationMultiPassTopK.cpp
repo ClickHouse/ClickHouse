@@ -1,8 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Access/Common/QuotaDefs.h>
-#include <Access/EnabledQuota.h>
-#include <Access/QuotaUsage.h>
 #include <Core/Settings.h>
 #include <Interpreters/AdaptiveAggregation/MultiPassTopK/MultiPassTopK.h>
 #include <Interpreters/Context.h>
@@ -82,44 +79,20 @@ bool isPlainRead(const ReadFromMergeTree & read)
         && !read.getStorageMetadata()->hasUniqueKey();
 }
 
-/// Whether nothing measures or limits the volume that the read reads, which the passes increase.
-bool readVolumeIsUnlimited(const ReadFromMergeTree & read)
-{
-    if (const auto & storage_limits = read.getQueryInfo().storage_limits)
-    {
-        for (const auto & limits : *storage_limits)
-        {
-            const auto & local = limits.local_limits;
-            const auto & speed = local.speed_limits;
-            if (local.size_limits.hasLimits() || limits.leaf_limits.hasLimits() || local.timeout_overflow_mode == OverflowMode::BREAK
-                || speed.min_execution_rps || speed.max_execution_rps || speed.min_execution_bps || speed.max_execution_bps
-                || speed.max_estimated_execution_time.totalMicroseconds() != 0)
-                return false;
-        }
-    }
-    if (const auto quota = read.getContext()->getQuota())
-        for (const auto & usage : quota->getAllUsage())
-            for (const auto & interval : usage.intervals)
-                if (interval.max[static_cast<size_t>(QuotaType::READ_ROWS)] || interval.max[static_cast<size_t>(QuotaType::READ_BYTES)])
-                    return false;
-    return true;
-}
-
 }
 
 void tryEnableMultiPassTopKAggregation(QueryPlan::Node & node)
 {
     /// A top-K of the groups of a final aggregation by keys (see `findAggregationTopK`), by a lone `count`, `uniqExact`
     /// or `uniqExactIf`, which never exceed the rows of a group (see `isRowBoundedCount`). The candidate pass needs the
-    /// descending order: only it lets the rows bound the other keys. A limit of the groups would count fewer groups in
-    /// the passes than in the original aggregation, and in a merge of aggregate states a row stands for several rows of
-    /// the table.
+    /// descending order: only it lets the rows bound the other keys. In a merge of aggregate states a row stands for
+    /// several rows of the table.
     const auto top_k = findAggregationTopK(node);
     if (!top_k || top_k->ascending)
         return;
     auto & aggregating = *top_k->aggregating;
     const auto & params = aggregating.getParams();
-    if (!isRowBoundedCount(params.aggregates[top_k->rank_index]) || params.max_rows_to_group_by || params.only_merge)
+    if (!isRowBoundedCount(params.aggregates[top_k->rank_index]) || params.only_merge)
         return;
 
     /// Every pass reads the input again, so the input must be a read of a `MergeTree` table under expressions and
@@ -136,7 +109,7 @@ void tryEnableMultiPassTopKAggregation(QueryPlan::Node & node)
     std::ranges::reverse(input_steps);
 
     auto * read = typeid_cast<ReadFromMergeTree *>(child->step.get());
-    if (!read || !isPlainRead(*read) || !readVolumeIsUnlimited(*read))
+    if (!read || !isPlainRead(*read))
         return;
 
     /// The passes aggregate other rows than the original aggregation, which the count of the rows before the

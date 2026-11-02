@@ -24,8 +24,8 @@ const ActionsDAG * expressionOfInputStep(const IQueryPlanStep & step);
 /// `rank_index`, over `read` and `input_steps`, the expressions and filters between them, from the bottom up. The
 /// caller checks that reading the input again gives the same rows, and gives the read the analysis of its ranges. Null
 /// when the query takes more groups than the candidates may hold, when the read selects too few granules for the
-/// aggregation to pay off, when the pilot cannot identify the granules of the read, or when a copy of the read would
-/// output other columns.
+/// aggregation to pay off, when the pilot cannot identify the granules of the read, when the limits of the query would
+/// not hold for the passes, or when a copy of the read would output other columns.
 MultiPassTopKInputPtr makeMultiPassTopKInput(
     const AggregatingStep & aggregating,
     const ReadFromMergeTree & read,
