@@ -961,6 +961,24 @@ def test_merge_on_read_log_files(started_cluster, table_version):
             upload_hudi_table(minio_client, bucket, path, prefix)
             remove_directory(minio_client, bucket, f"{name}/{timeline}/history")
             assert_refused(source)
+
+            # G4: the history is in the directory named by `hoodie.timeline.history.path`.
+            for file in os.listdir(history):
+                minio_client.fput_object(
+                    bucket,
+                    f"{prefix}{timeline}/archived/{file}",
+                    os.path.join(history, file),
+                )
+            put_hudi_properties(
+                minio_client,
+                bucket,
+                path,
+                prefix,
+                "hoodie.timeline.history.path=history",
+                "hoodie.timeline.history.path=archived",
+            )
+            check()
+            remove_directory(minio_client, bucket, f"{name}/{timeline}/archived")
             upload_hudi_table(minio_client, bucket, path, prefix)
             check()
 

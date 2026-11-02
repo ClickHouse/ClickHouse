@@ -62,6 +62,15 @@ struct ActiveTimeline
 {
     String directory;
     bool layout_2 = false;
+    /// The directory of the timeline history (archived instants) in layout 2.
+    String history_directory;
+};
+
+/// The snapshot pointers listed in a timeline history directory.
+struct TimelineHistory
+{
+    bool has_version_file = false;
+    std::optional<UInt64> newest_manifest;
 };
 
 bool isNumber(std::string_view s)
@@ -271,14 +280,15 @@ std::optional<ActiveTimeline> getActiveTimeline(
     if (layout == properties->end())
         return std::nullopt;
     if (layout->second == "0" || layout->second == "1")
-        return ActiveTimeline{".hoodie", false};
+        return ActiveTimeline{".hoodie", false, {}};
     if (layout->second != "2")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported Hudi timeline layout version {}", layout->second);
 
     if (auto path = properties->find("hoodie.timeline.path"); path != properties->end() && path->second != "timeline")
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED, "Reading a Hudi table with a custom hoodie.timeline.path ('{}') is not supported", path->second);
-    return ActiveTimeline{".hoodie/timeline", true};
+    auto history = properties->find("hoodie.timeline.history.path");
+    return ActiveTimeline{".hoodie/timeline", true, ".hoodie/timeline/" + (history == properties->end() ? "history" : history->second)};
 }
 
 void collectReplacedFileGroups(
@@ -379,14 +389,13 @@ void collectReplacedFileGroups(
 /// Hudi reads it. The other files in `history_path` are superseded by a compaction of the history or not committed.
 Strings readHistorySnapshot(
     const String & history_path,
-    bool has_version_file,
-    std::optional<UInt64> newest_manifest,
+    const TimelineHistory & history,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context,
     const LoggerPtr & log)
 {
     std::optional<UInt64> version;
-    if (has_version_file)
+    if (history.has_version_file)
     {
         /// Hudi deletes and recreates `_version_` on every archive, so its listed size can be stale and the file can be
         /// gone. Hudi then reads the newest manifest.
@@ -406,7 +415,7 @@ Strings readHistorySnapshot(
         }
     }
     if (!version)
-        version = newest_manifest;
+        version = history.newest_manifest;
     if (!version)
         return {};
 
@@ -539,8 +548,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     std::optional<RelativePathWithMetadata> backup_file;
     std::vector<RelativePathWithMetadata> instants;
     std::vector<String> timeline_files;
-    bool history_has_version_file = false;
-    std::optional<UInt64> newest_history_manifest;
+    /// Directory in the table -> its timeline history pointers, as the history directory is known only from the properties.
+    std::unordered_map<String, TimelineHistory> histories;
     /// Listed before the data files, so the new files of every instant applied below are listed too.
     listFiles(
         *object_storage,
@@ -555,13 +564,16 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             std::string_view directory = directoryInTable(key, table_path);
             if (directory == ".hoodie/timeline")
                 timeline_files.push_back(object.getFileName());
-            else if (directory == ".hoodie/timeline/history")
+            else if (directory.starts_with(".hoodie/timeline/"))
             {
                 const String file_name = object.getFileName();
                 if (file_name == "_version_")
-                    history_has_version_file = true;
+                    histories[String(directory)].has_version_file = true;
                 else if (auto version = parseManifestVersion(file_name))
-                    newest_history_manifest = std::max(newest_history_manifest.value_or(0), *version);
+                {
+                    auto & newest = histories[String(directory)].newest_manifest;
+                    newest = std::max(newest.value_or(0), *version);
+                }
             }
             if (path_in_table == ".hoodie/hoodie.properties")
                 properties_file.emplace(object);
@@ -686,11 +698,11 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
         }
     }
 
-    if (!unknown_completions.empty())
+    if (auto history = timeline ? histories.find(timeline->history_directory) : histories.end();
+        !unknown_completions.empty() && history != histories.end())
     {
-        const String history_path = table_path + ".hoodie/timeline/history/";
-        const auto history_files
-            = readHistorySnapshot(history_path, history_has_version_file, newest_history_manifest, object_storage, local_context, log);
+        const String history_path = table_path + history->first + "/";
+        const auto history_files = readHistorySnapshot(history_path, history->second, object_storage, local_context, log);
         readArchivedCompletionTimes(history_path, history_files, unknown_completions, object_storage, local_context, log, completion_times);
     }
 
