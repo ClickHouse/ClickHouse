@@ -1,5 +1,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Interpreters/applyColumnsTransformer.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -62,6 +63,34 @@ ASTPtr getTableColumnsMatcherTransformers(const IAST & ast)
     return nullptr;
 }
 
+bool hasIdentifierRoot(const IAST & ast, const String & name)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && identifier->name_parts.front() == name)
+        return true;
+    for (const auto & child : ast.children)
+        if (hasIdentifierRoot(*child, name))
+            return true;
+    if (const auto * apply = ast.as<ASTColumnsApplyTransformer>(); apply && apply->lambda)
+        return hasIdentifierRoot(*apply->lambda, name);
+    return false;
+}
+
+/// A lambda parameter with the name the column is renamed to would capture the renamed references in the body:
+/// renaming `b` to `x` in `x -> x + b` must not give `x -> x + x`. So such a parameter is renamed first.
+void renameLambdaParameterCapturingRenamedColumn(IAST & ast, const RenameColumnData & data)
+{
+    auto * function = ast.as<ASTFunction>();
+    if (!function || !function->isLambdaFunction() || !function->arguments || function->arguments->children.size() != 2)
+        return;
+
+    const auto parameter_names = getASTLambdaArgumentNames(*function);
+    if (!std::ranges::contains(parameter_names, data.rename_to) || std::ranges::contains(parameter_names, data.column_name))
+        return;
+
+    if (hasIdentifierRoot(*function->arguments->children[1], data.column_name))
+        renameLambdaParametersCapturingNames(*function, {data.rename_to});
+}
+
 }
 
 bool RenameColumnMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/, const Data & data)
@@ -88,6 +117,9 @@ void RenameColumnMatcher::visit(ASTPtr & ast, Data & data)
             renameIdentifier(*identifier, data);
         return;
     }
+
+    if (data.rename_identifiers)
+        renameLambdaParameterCapturingRenamedColumn(*ast, data);
 
     if (isShadowingLambda(*ast, data))
     {
@@ -131,6 +163,11 @@ void RenameColumnMatcher::visit(ASTPtr & ast, Data & data)
                 lambda_data.rename_identifiers = false;
             RenameColumnVisitor visitor(lambda_data);
             visitor.visit(apply->lambda);
+
+            /// The visit may have renamed the parameter so that it does not capture the renamed column.
+            auto names = getASTLambdaArgumentNames(apply->lambda->as<const ASTFunction &>());
+            if (names.size() == 1)
+                apply->lambda_arg = names.front();
         }
         if (apply->parameters)
         {

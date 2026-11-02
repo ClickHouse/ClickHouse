@@ -432,6 +432,11 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
 
 }
 
+void renameLambdaParametersCapturingNames(ASTFunction & lambda, const std::unordered_set<String> & names)
+{
+    renameLambdaParametersCapturing(lambda, names);
+}
+
 void applyColumnsTransformer(const ASTPtr & transformer, ASTs & nodes)
 {
     if (const auto * apply = transformer->as<ASTColumnsApplyTransformer>())
