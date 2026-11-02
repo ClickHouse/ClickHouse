@@ -18,11 +18,17 @@ $CLICKHOUSE_LOCAL --path "$data_dir" --query "
     CREATE TABLE a.slow (x UInt64) ENGINE = Set;
     INSERT INTO a.slow SELECT number FROM numbers(1000000);
     CREATE TABLE a.broken (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS object_shared_data_serialization_version = 'advanced';
+    CREATE TABLE a.source (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE MATERIALIZED VIEW a.mv TO a.broken AS SELECT x FROM a.source;
+    CREATE MATERIALIZED VIEW a.rmv REFRESH EVERY 1 YEAR APPEND TO a.broken EMPTY AS SELECT x FROM a.good;
+    CREATE TABLE a.merge (x UInt64) ENGINE = Merge(a, '^broken');
+    CREATE TABLE a.alias ENGINE = Alias(a, broken);
     CREATE TABLE good_in_default (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE broken_in_default (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS object_shared_data_serialization_version = 'advanced';
 "
 
-# A value this version does not know, as in a table created by a newer version.
+# A value this version does not know, as in a table created by a newer version. The startup of the views writing
+# to `a.broken`, and of the source of `a.mv`, is then canceled, so they are skipped too.
 for f in $(find "$data_dir/store" -name 'broken*.sql'); do
     sed -i "s/object_shared_data_serialization_version = 'advanced'/object_shared_data_serialization_version = 'from_a_newer_version'/" "$f"
 done
@@ -40,6 +46,7 @@ $CLICKHOUSE_LOCAL --path "$data_dir" --query "
     SELECT * FROM system.tables FORMAT Null;
     SELECT table, sum(rows) FROM system.parts WHERE database = 'a' AND active GROUP BY table;
     SELECT table, name FROM system.columns WHERE database = 'a' ORDER BY table, name;
+    SELECT * FROM system.columns FORMAT Null;
     SELECT 'parts_columns', count() FROM system.parts_columns WHERE database = 'a' AND active;
     SELECT 'projection_parts', count() FROM system.projection_parts WHERE database = 'a';
     SELECT 'mutations', count() FROM system.mutations WHERE database = 'a';

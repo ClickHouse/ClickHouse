@@ -1,14 +1,19 @@
 Unexpected value of MergeTreeObjectSharedDataSerializationVersion: 'from_a_newer_version'
 ASYNC_LOAD_WAIT_FAILED
+alias	Alias
 good	MergeTree
+merge	Merge
 slow	Set
 good
+alias
 good
+merge
 slow
 good_in_default
 1
 good	1
 good	x
+merge	x
 slow	x
 parts_columns	1
 projection_parts	0

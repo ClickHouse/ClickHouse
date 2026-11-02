@@ -979,8 +979,26 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
         //  - not attached and thus will be missed in the snapshot;
         //  - not started, which is not good for DDL operations.
         waitTablesStarted(filter_by_table_name, /* no_throw */ false);
+        return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
     }
-    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+
+    /// A table whose startup failed or was canceled stays attached, but every access to it rethrows that error.
+    std::unordered_set<String> not_started;
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & [table_name, task] : startup_table)
+            for (const auto & job : task->goals())
+                if (auto status = job->status(); status == LoadStatus::FAILED || status == LoadStatus::CANCELED)
+                    not_started.insert(table_name);
+    }
+    if (not_started.empty())
+        return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+
+    auto filter = [&](const String & table_name)
+    {
+        return !not_started.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name));
+    };
+    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter, skip_not_loaded);
 }
 
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIterator(

@@ -33,6 +33,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ASYNC_LOAD_WAIT_FAILED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
@@ -81,6 +82,20 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     }
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+}
+
+StoragePtr StorageAlias::tryGetTargetTable() const
+{
+    try
+    {
+        return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext());
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::ASYNC_LOAD_WAIT_FAILED)
+            return nullptr;
+        throw;
+    }
 }
 
 bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const

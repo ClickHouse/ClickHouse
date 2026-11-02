@@ -133,6 +133,7 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int ACCESS_DENIED;
+extern const int ASYNC_LOAD_WAIT_FAILED;
 extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
@@ -699,13 +700,15 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     }
     catch (const Exception & e)
     {
-        /// The source database may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal
+        /// The source database may have been dropped (`UNKNOWN_DATABASE`), it may be the internal
         /// database of temporary tables, which `getDatabaseIterator` refuses to enumerate
-        /// (`DATABASE_ACCESS_DENIED`). Neither should prevent resolving the table's own metadata:
+        /// (`DATABASE_ACCESS_DENIED`), or a source table may have failed to load (`ASYNC_LOAD_WAIT_FAILED`).
+        /// None of these should prevent resolving the table's own metadata:
         /// the virtual columns of the source tables are a best-effort enrichment, and an actual read
         /// still throws in `getDatabaseIterators`. In particular, loading a stored table definition
         /// (`ATTACH`, backup `RESTORE`, replicated-database replay) validates the storage through here.
-        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::DATABASE_ACCESS_DENIED)
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::DATABASE_ACCESS_DENIED
+            && e.code() != ErrorCodes::ASYNC_LOAD_WAIT_FAILED)
             throw;
     }
 
@@ -2890,8 +2893,10 @@ std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() cons
         /// may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal database of temporary
         /// tables, which `getDatabaseIterator` refuses to enumerate (`DATABASE_ACCESS_DENIED`) - such a
         /// table can no longer be created, but a pre-existing definition still loads (`ATTACH`, backup
-        /// `RESTORE`, replicated-database replay) and must not break `system.columns`.
-        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED)
+        /// `RESTORE`, replicated-database replay) and must not break `system.columns`. Neither must a
+        /// source table that failed to load (`ASYNC_LOAD_WAIT_FAILED`).
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED
+            || e.code() == ErrorCodes::ASYNC_LOAD_WAIT_FAILED)
             return std::nullopt;
         throw;
     }

@@ -352,7 +352,7 @@ public:
     /// Waits for the tables matching the filter to be started up. With `no_throw`, a load or startup failure is not rethrown.
     virtual void waitTablesStarted(const FilterByNameFunction & /*filter_by_table_name*/, bool /*no_throw*/) const {}
 
-    /// Like `getTablesIterator`, but skips a table that failed to load instead of throwing. For reporting, e.g. system tables.
+    /// Like `getTablesIterator`, but skips a table that failed to load or start up instead of throwing. For reporting, e.g. system tables.
     DatabaseTablesIteratorPtr getTablesIteratorSkippingFailed(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const
     {
         waitTablesStarted(filter_by_table_name, /* no_throw */ true);
