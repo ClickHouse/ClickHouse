@@ -255,10 +255,10 @@ def rewrite_create(query, table_engine, test_name, rewritten_tables=()):
     after = after.strip()
 
     positions = sorted((p, k) for k in CLAUSES if (p := _find_keyword(after, k)) != -1)
+    # The `AS` inside `EMPTY AS` is not a clause of its own: it would end the `EMPTY AS` clause.
+    positions = [(p, k) for p, k in positions if not (k == "AS" and (p - len("EMPTY "), "EMPTY AS") in positions)]
     clauses = {}
     for i, (position, keyword) in enumerate(positions):
-        if keyword == "AS" and any(k == "EMPTY AS" and p + len("EMPTY ") == position for p, k in positions):
-            continue
         end = positions[i + 1][0] if i + 1 < len(positions) else len(after)
         clauses[keyword] = after[position + len(keyword):end].strip()
 

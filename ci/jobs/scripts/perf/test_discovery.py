@@ -121,7 +121,8 @@ def test_has_failpoint(test_path):
 ICEBERG_SKIP_LIST = "iceberg_skip_list.txt"
 
 # The engines that `perf.py --table-engine` rewrites, see `iceberg_engine.REWRITTEN_ENGINE`.
-_MERGE_TREE_ENGINE = re.compile(r"ENGINE\s*=\s*`?(\w*MergeTree|Memory)\b", re.IGNORECASE)
+# The `=` is optional in `ENGINE = Memory`.
+_MERGE_TREE_ENGINE = re.compile(r"ENGINE\s*=?\s*`?(\w*MergeTree|Memory)\b", re.IGNORECASE)
 
 
 def iceberg_skip_list(perf_dir):
