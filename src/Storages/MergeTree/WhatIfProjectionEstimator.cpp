@@ -283,7 +283,8 @@ String buildProjectionPart(
     ReadFromMergeTree * read_step,
     const SizeLimits & read_limits,
     bool need_row_bytes,
-    bool merged_by_blocks,
+    bool merged_part,
+    bool constant_granularity,
     UInt64 & total_rows_read,
     UInt64 & total_bytes_read,
     const ContextPtr & context)
@@ -313,6 +314,8 @@ String buildProjectionPart(
     Blocks batch;
     size_t batch_rows = 0;
     MutableColumns key_columns;
+    /// a merge sizes each block of a compact part, and of a wide part only without a constant granularity
+    bool merged_by_blocks = merged_part;
     /// the stored columns, as the writer gets them
     auto add = [&](Block projected)
     {
@@ -401,6 +404,11 @@ String buildProjectionPart(
         if (max_groups && merged.rows() > max_groups)
             return fmt::format(
                 "The projection part of part {} has more than max_rows_to_group_by = {} groups", part->name, max_groups);
+        /// the same part format as `buildSyntheticProjectionParts` chooses
+        if (merged_part && constant_granularity
+            && read_step->getMergeTreeData().choosePartFormat(merged.bytes(), merged.rows(), part->info.level, &projection).part_type
+                == MergeTreeDataPartType::Wide)
+            merged_by_blocks = false;
         add(std::move(merged));
     }
 
@@ -734,16 +742,15 @@ bool buildScenarios(
 
         /// row bytes only matter when granules are sized by bytes
         const bool adaptive = data.canUseAdaptiveGranularity() && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
-        /// a merge sizes each block of an aggregate projection part, but a constant granularity comes from the sizes of the merged parts
-        /// ponytail: a compact part also sizes each block under a constant granularity, its part type is known only after the scan
-        const bool merged_by_blocks = projection.type == ProjectionDescription::Type::Aggregate && part->info.level > 0
-            && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity];
+        /// a merge sizes an aggregate projection part from its states, a level-zero part comes from an insert
+        const bool merged_part = projection.type == ProjectionDescription::Type::Aggregate && part->info.level > 0;
+        const bool constant_granularity = adaptive && mt_settings[MergeTreeSetting::use_const_adaptive_granularity];
 
         const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
         if (auto reason = buildProjectionPart(
-                part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, merged_by_blocks,
-                total_rows_read, total_bytes_read, context);
+                part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, merged_part,
+                constant_granularity, total_rows_read, total_bytes_read, context);
             !reason.empty())
         {
             result.empirical_unsupported_reason = std::move(reason);

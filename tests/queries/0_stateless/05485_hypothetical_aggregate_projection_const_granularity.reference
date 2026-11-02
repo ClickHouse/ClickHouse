@@ -1,0 +1,16 @@
+-- groupArray and uniqExact states of a merged compact part
+part types: [\'Compact\']
+Baseline (after PK + partition + existing indexes):
+marks: 474
+With p (aggregate projection, hypothetical):
+marks: 500
+verdict: too close to call
+real projection part: 500 marks
+real: 474 marks
+Baseline (after PK + partition + existing indexes):
+marks: 474
+With p_u (aggregate projection, hypothetical):
+marks: 100
+verdict: chosen
+real projection part: 100 marks
+real: 100 marks
