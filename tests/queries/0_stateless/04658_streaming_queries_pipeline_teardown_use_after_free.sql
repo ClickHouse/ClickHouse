@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-darwin
+-- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
 -- no-parallel-replicas: streaming reads are always local.
 
 -- Regression test for a heap-use-after-free in `ExecutingGraph::updateNode` found by the AST fuzzer.
@@ -9,6 +10,7 @@
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100535&sha=0fb86507fb4817cb2418012cce69069f92e74972&name_0=PR&name_1=AST%20fuzzer%20%28arm_asan_ubsan%29
 
 SET enable_streaming_queries = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_stream_pipeline_teardown;
 

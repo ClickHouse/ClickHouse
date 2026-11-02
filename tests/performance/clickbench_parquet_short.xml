@@ -24,13 +24,9 @@
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>
 
-    <!-- The generator runs as one stream of fixed 50000-row blocks (one per row group), so both servers write
-         byte-identical files; otherwise Q19's work depends on bloom filter false positives in each server's copy. -->
     <fill_query><![CDATA[
         INSERT INTO FUNCTION file('test_clickbench_hits.parquet', Parquet)
-        SELECT * FROM
-        (
-            SELECT * FROM generateRandom('
+        SELECT * FROM generateRandom('
             WatchID Int64, JavaEnable Int16, Title String, GoodEvent Int16,
             EventTime DateTime, EventDate Date, CounterID Int32, ClientIP Int32,
             RegionID Int32, UserID Int64, CounterClass Int16, OS Int16,
@@ -66,9 +62,7 @@
             UTMCampaign String, UTMContent String, UTMTerm String,
             FromTag String, HasGCLID Int16, RefererHash Int64, URLHash Int64,
             CLID Int32', 1, 16, 2)
-            LIMIT 1000000
-            SETTINGS max_threads = 1, max_block_size = 50000, preferred_block_size_bytes = 0
-        )
+        LIMIT 1000000
         SETTINGS output_format_parquet_row_group_size = 50000
     ]]></fill_query>
 

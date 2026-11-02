@@ -28,21 +28,6 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-## use_top_k_dynamic_filtering_for_single_string_sort_column {#use_top_k_dynamic_filtering_for_single_string_sort_column}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}]}]}/>
-
-Apply `use_top_k_dynamic_filtering` to a `MergeTree` table when `ORDER BY` has a single `String` column (also inside `Nullable`), even if `use_top_k_dynamic_filtering_for_variable_length_types` is `0`.
-
-For such a column, the filter also drops the rows equal to the threshold once most rows of a block are equal to it (for example, a column of mostly empty strings). Each threshold value is checked on one block: the first one in which most rows pass the filter. Other sources, such as Parquet files, are not affected.
-
-Possible values:
-
-- 0 - Disabled.
-- 1 - Enabled.
-
 ## use_top_k_dynamic_filtering_for_variable_length_types {#use_top_k_dynamic_filtering_for_variable_length_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

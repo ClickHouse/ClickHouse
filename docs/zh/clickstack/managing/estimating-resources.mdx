@@ -11,7 +11,9 @@ import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
 
 <ResourceEstimation />
 
-## 针对您的环境细化容量估算假设 {#refining-sizing-assumptions}
+<div id="refining-sizing-assumptions">
+  ## 针对您的环境细化容量估算假设
+</div>
 
 该模型假设来自 ClickStack 的持续平均查询速率为 1 QPS，涵盖所有查询类型，包括搜索、仪表盘和告警。
 
@@ -21,7 +23,9 @@ import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
 
 以上假设查询分布相对均衡。若工作负载更偏向较重的历史查询或归档查询，则所需计算资源可能会有显著差异，应通过负载测试进行验证。我们计划推出一个更灵活的容量规划模型，以便根据不同的查询分布模式推算查询所需的计算资源。
 
-### 示例计算 {#worked-example}
+<div id="worked-example">
+  ### 示例计算
+</div>
 
 **需求：** 每月摄取 1.5 PB，5 QPS，保留 3 个月。
 
@@ -62,7 +66,9 @@ import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
 | 每月存储 (压缩后)  | 150 TB     |
 | 3 个月保留所需存储  | 450 TB     |
 
-## 隔离可观测性工作负载 {#isolating-workloads}
+<div id="isolating-workloads">
+  ## 隔离可观测性工作负载
+</div>
 
 如果你要将 ClickStack 添加到一个**现有的 ClickHouse Cloud 服务**中，而该服务已经承载了其他工作负载 (例如实时应用分析) ，则强烈建议将可观测性流量隔离开来。
 
@@ -74,7 +80,5 @@ import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
 * 在需要时跨服务共享相同的底层数据
 
 这种方式既能确保现有工作负载不受影响，又能让 ClickStack 随着可观测性数据的增长独立扩展。
-
-同样的功能也可用于将上文估算的摄取计算资源与查询计算资源分别部署为独立服务，从而各自独立扩展。请参阅我们的指南[隔离读写工作负载](/zh/clickstack/managing/isolating-read-write)。
 
 对于更大规模的部署或需要自定义规格建议的场景，请联系支持团队，以获得更准确的容量评估。

@@ -19,6 +19,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -123,11 +124,6 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
     select.limit_by_all = false;
-    /// The `LIMIT AFTER`/`UNTIL` boundaries are analyzed unconditionally too (appendLimitRange) and may
-    /// refer to columns of the removed joined table.
-    select.setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
-    select.setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
-    select.limit_after_all = false;
     /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
     /// a stale flag would be a logical error in InterpreterSelectQuery.
     select.limit_with_ties = false;
@@ -191,25 +187,34 @@ SharedHeader getHeaderForProcessingStage(
 
             SharedHeader result;
 
-            auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
-                                                          storage_snapshot->getAllColumnsDescription(),
-                                                          storage_snapshot);
-            /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
-            /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
-            /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
-            /// initiator computed from the same tree.
-            if (query_info.query_tree && !query_rewritten_for_join)
+            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
-                QueryTreeNodePtr query_tree = query_info.query_tree;
-                replaceStorageInQueryTree(query_tree, context, storage);
-                result = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                    query_tree, context, SelectQueryOptions(processed_stage).analyze());
+                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+                                                                                        storage_snapshot->getAllColumnsDescription(),
+                                                                                        storage_snapshot);
+                /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
+                /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
+                /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
+                /// initiator computed from the same tree.
+                if (query_info.query_tree && !query_rewritten_for_join)
+                {
+                    /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
+                    QueryTreeNodePtr query_tree = query_info.query_tree;
+                    replaceStorageInQueryTree(query_tree, context, storage);
+                    result = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                        query_tree, context, SelectQueryOptions(processed_stage).analyze());
+                }
+                else
+                {
+                    InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
+                    result = interpreter.getSampleBlock();
+                }
             }
             else
             {
-                InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
-                result = interpreter.getSampleBlock();
+                auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
+                        std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
+                result = InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
             }
 
             return result;

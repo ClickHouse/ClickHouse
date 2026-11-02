@@ -22,8 +22,9 @@ class ReadState
 public:
     explicit ReadState(const StreamSettings & stream_settings);
 
-    void startReadRound(const ClassifiedPartitions & partitions);
-    void finishReadRound(const ClassifiedPartitions & partitions, const std::map<std::string, int64_t> & safe_block_numbers);
+    void startReadRound(const ClassifiedPartitions & partitions, const std::map<std::string, Int64> & safe_block_numbers);
+    void finalizeReadRound();
+    bool readRoundInProgress() const;
 
     void updatePartitionCursor(const std::string & partition, PartitionCursor cursor);
     void updatePartitionWatermark(const std::string & partition, Field watermark);
@@ -32,18 +33,18 @@ public:
     void markSourceIdle();
 
     bool hasWork(const ClassifiedPartitions & partitions) const;
-    int64_t calculateTimeToNextIdle(const StreamSettings & stream_settings) const;
+    Int64 calculateTimeToNextIdle(const StreamSettings & stream_settings) const;
     bool isSourceMarkedIdle() const;
 
     PartitionCursor getPartitionCursor(const std::string & partition) const;
-    const std::map<std::string, PartitionCursor> & getPartitionCursors() const;
     Field getPartitionWatermark(const std::string & partition) const;
-    Field getGlobalWatermark() const;
     bool isPartitionIdle(const std::string & partition, const StreamSettings & stream_settings) const;
 
 private:
     /// Read position.
     std::map<std::string, PartitionCursor> partition_cursors;
+    std::map<std::string, Int64> reading_up_to_block_numbers;
+    bool round_in_progress = false;
 
     /// Watermarks
     std::map<std::string, Field> partition_watermarks;

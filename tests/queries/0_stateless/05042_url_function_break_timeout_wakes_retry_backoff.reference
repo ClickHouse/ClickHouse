@@ -1,3 +1,0 @@
-the query with a break timeout returned an empty partial result
-the timeout interrupted the retry backoff
-no retry request was started after the timeout

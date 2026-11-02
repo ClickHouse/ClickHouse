@@ -21,6 +21,7 @@ struct Settings;
 struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 struct ASTTableJoin;
 class IJoin;
@@ -156,6 +157,12 @@ public:
         const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
 
+    /** Checks if subquery is not a plain StorageSet.
+      * Because while making set we will read data from StorageSet which is not allowed.
+      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
+      */
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
+
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
@@ -227,12 +234,6 @@ struct ExpressionAnalysisResult
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
     bool second_stage = false;
-    /// Do I run on the initiating server over data the remote servers already aggregated, because they
-    /// processed the query up to `WithMergeableStateAfterAggregation` or further? Neither `first_stage` nor
-    /// `second_stage` is set then, yet the final clauses still run here, so `appendLimitRange` must build the
-    /// `LIMIT AFTER`/`UNTIL` expressions for execution: their `IN (subquery)` sets get created, unlike in the
-    /// types-only analysis that skips them.
-    bool from_aggregation_stage = false;
 
     bool need_aggregate = false;
     bool has_order_by   = false;
@@ -240,6 +241,9 @@ struct ExpressionAnalysisResult
 
     String where_column_name;
     bool remove_where_filter = false;
+    bool optimize_read_in_order = false;
+    bool optimize_aggregation_in_order = false;
+    bool join_has_delayed_stream = false;
 
     bool use_grouping_set_key = false;
 
@@ -256,9 +260,6 @@ struct ExpressionAnalysisResult
     ActionsAndProjectInputsFlagPtr before_window;
     ActionsAndProjectInputsFlagPtr before_order_by;
     ActionsAndProjectInputsFlagPtr before_limit_by;
-    ActionsAndProjectInputsFlagPtr before_limit_range;
-    String limit_range_start_column_name;
-    String limit_range_end_column_name;
     ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
@@ -275,6 +276,10 @@ struct ExpressionAnalysisResult
     FilterDAGInfoPtr row_policy_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
+    /// Actions by every element of ORDER BY
+    ManyExpressionActions order_by_elements_actions;
+    ManyExpressionActions group_by_elements_actions;
+
     ExpressionAnalysisResult() = default;
 
     ExpressionAnalysisResult(
@@ -282,7 +287,6 @@ struct ExpressionAnalysisResult
         const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
-        bool from_aggregation_stage,
         bool only_types,
         const FilterDAGInfoPtr & row_policy_info,
         const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
@@ -406,7 +410,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void validateGroupByKeyType(const DataTypePtr & key_type) const;
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -419,10 +423,9 @@ private:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types);
+    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
-    bool appendLimitRange(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };
 
