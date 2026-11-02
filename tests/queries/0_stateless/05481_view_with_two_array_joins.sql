@@ -1,3 +1,4 @@
+-- Tags: distributed
 -- A view whose query has more than one ARRAY JOIN must be readable (issue #128410).
 CREATE TABLE t (id UInt32, a Array(Array(UInt32))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t VALUES (1, [[1, 2], [3]]);
@@ -18,3 +19,11 @@ CREATE MATERIALIZED VIEW mv REFRESH AFTER 1 YEAR SETTINGS all_replicas = 1 APPEN
 SYSTEM REFRESH VIEW mv;
 SYSTEM WAIT VIEW mv;
 SELECT 'mv', * FROM dst ORDER BY y;
+
+-- The view over `Distributed` is not trivial, so the pushdown does not fire for it; a plain view is the positive control.
+-- The default EXPLAIN format does not print the `VIEW subquery` step.
+SET explain_query_plan_default = 'legacy';
+SET prefer_localhost_replica = 0;
+CREATE VIEW v_dist_plain AS SELECT id FROM t_dist;
+SELECT 'v_dist_plain pushdown', countIf(explain LIKE '%VIEW subquery%') = 0 FROM (EXPLAIN SELECT id FROM v_dist_plain SETTINGS optimize_trivial_view_pushdown_to_distributed = 1);
+SELECT 'v_dist no pushdown', countIf(explain LIKE '%VIEW subquery%') > 0 FROM (EXPLAIN SELECT id, y FROM v_dist SETTINGS optimize_trivial_view_pushdown_to_distributed = 1);
