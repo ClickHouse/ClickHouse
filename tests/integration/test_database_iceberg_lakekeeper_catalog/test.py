@@ -474,3 +474,48 @@ def test_invalid_auth_header_format(started_cluster):
         )
     assert "Invalid auth header format" in str(err.value)
 
+
+@pytest.mark.parametrize("depth", [1, 2])
+def test_namespace_writes(started_cluster, depth):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = (f"writes_{uuid.uuid4().hex}", "raw")[:depth]
+    db = "namespace_writes"
+    table = f"{db}.`{'.'.join(namespace)}.events`"
+    identifier = namespace + ("events",)
+    settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    if depth > 1:
+        catalog.create_namespace(namespace[:1])
+    create_clickhouse_iceberg_database(started_cluster, node, db)
+    try:
+        node.query(
+            f"CREATE TABLE {table} (id Int32) ENGINE = Iceberg",
+            settings=settings,
+        )
+        assert identifier in catalog.list_tables(namespace)
+        assert "events" in node.query(f"SHOW TABLES FROM {db}")
+
+        node.query(f"INSERT INTO {table} VALUES (1)", settings=settings)
+        node.query(
+            f"ALTER TABLE {table} ADD COLUMN data Nullable(String)",
+            settings=settings,
+        )
+        assert "data" in catalog.load_table(identifier).schema().column_names
+        node.query(f"INSERT INTO {table} VALUES (2, 'new')", settings=settings)
+
+        snapshots = catalog.load_table(identifier).metadata.snapshots
+        assert len(snapshots) == 2
+        node.query(
+            f"ALTER TABLE {table} EXECUTE expire_snapshots("
+            f"snapshot_ids = [{snapshots[0].snapshot_id}])",
+            settings={**settings, "allow_experimental_expire_snapshots": 1},
+        )
+        assert [s.snapshot_id for s in catalog.load_table(identifier).metadata.snapshots] == [
+            snapshots[1].snapshot_id
+        ]
+        assert node.query(f"SELECT id, data FROM {table} ORDER BY id") == "1\t\\N\n2\tnew\n"
+        node.query(f"DROP TABLE {table}", settings=settings)
+        assert identifier not in catalog.list_tables(namespace)
+    finally:
+        node.query(f"DROP DATABASE {db}")
