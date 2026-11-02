@@ -22,6 +22,7 @@ no PREWHERE: replaced == 0: True
 length in PREWHERE: replaced == 0: True
 length in the same PREWHERE: replaced == 0: True
 throwIf: replaced == 0: True
+shared conjunct: replaced == 0: True
 -- a single-column filter is moved to PREWHERE
 1
 0

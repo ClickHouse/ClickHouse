@@ -121,6 +121,7 @@ for F in "${P}" "${D}" "${DL}" "${DB}"; do
         "SELECT s, d FROM td WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0"
         "SELECT s, d FROM tp PREWHERE length(s) < 1000 WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0"
         "SELECT s FROM ${F} PREWHERE throwIf(length(s) = 0) = 0 AND s != '' ORDER BY s LIMIT 5"
+        "WITH notEmpty(s) AS ok SELECT s FROM ${F} PREWHERE throwIf(NOT ok) = 0 AND ok ORDER BY s LIMIT 5"
     )
     compare
 done
@@ -149,6 +150,7 @@ check "no PREWHERE" "SELECT s, d FROM tp WHERE s != '' ORDER BY s LIMIT 5 SETTIN
 check "length in PREWHERE" "SELECT s, d FROM tp PREWHERE length(s) < 1000 WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0" "replaced == 0"
 check "length in the same PREWHERE" "SELECT s FROM ${P} PREWHERE length(s) > 3 AND s != '' ORDER BY s LIMIT 5" "replaced == 0"
 check "throwIf" "SELECT s FROM ${P} PREWHERE throwIf(length(s) = 0) = 0 AND s != '' ORDER BY s LIMIT 5" "replaced == 0"
+check "shared conjunct" "WITH notEmpty(s) AS ok SELECT s FROM ${P} PREWHERE throwIf(NOT ok) = 0 AND ok ORDER BY s LIMIT 5" "replaced == 0"
 "${LOCAL[@]}" --query "${script}" | python3 -c "
 import sys
 before = 0

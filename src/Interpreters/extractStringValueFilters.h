@@ -34,7 +34,8 @@ bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & filt
 bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & column_name);
 
 /// Whether a conjunct of the filter rejects every row with an empty `column_name` (see `filterRejectsEmptyString`), and no node of the
-/// DAG reads the column other than those conjuncts: then a value of the column may be read as '' for a row the filter drops anyway.
+/// DAG depends on the column other than the conjunction those conjuncts are part of: then a value of the column may be read as '' for
+/// a row the filter drops anyway.
 bool filterReadsColumnOnlyInConjunctsRejectingEmptyString(
     const ActionsDAG & dag, const String & filter_column_name, const String & column_name);
 

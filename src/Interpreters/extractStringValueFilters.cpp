@@ -332,9 +332,12 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
     }
 }
 
-/// With `readers`, collects the nodes of every conjunct that rejects the empty `column_name` which read the column directly.
+/// With `conjunction_nodes`, collects the `and` nodes of the conjunction and the nodes of every conjunct that rejects the empty
+/// `column_name`, together with their nodes that read the column directly.
 bool filterNodeRejectsEmptyString(
-    const ActionsDAG::Node * filter_node, const String & column_name, std::unordered_set<const ActionsDAG::Node *> * readers = nullptr)
+    const ActionsDAG::Node * filter_node,
+    const String & column_name,
+    std::unordered_set<const ActionsDAG::Node *> * conjunction_nodes = nullptr)
 {
     bool rejects = false;
     std::vector<const ActionsDAG::Node *> stack;
@@ -349,6 +352,8 @@ bool filterNodeRejectsEmptyString(
         const String & name = node->function_base->getName();
         if (name == "and")
         {
+            if (conjunction_nodes)
+                conjunction_nodes->insert(node);
             for (const auto * child : node->children)
                 stack.push_back(skipAliases(child));
             continue;
@@ -373,10 +378,10 @@ bool filterNodeRejectsEmptyString(
 
         if (node_rejects)
         {
-            if (!readers)
+            if (!conjunction_nodes)
                 return true;
             rejects = true;
-            readers->insert(node);
+            conjunction_nodes->insert(node);
             continue;
         }
 
@@ -386,37 +391,14 @@ bool filterNodeRejectsEmptyString(
         auto it = conditions_by_column.find(column_name);
         if (it != conditions_by_column.end() && !it->second.conditions.empty())
         {
-            if (!readers)
+            if (!conjunction_nodes)
                 return true;
             rejects = true;
-            readers->insert(it->second.allowed_readers.begin(), it->second.allowed_readers.end());
+            conjunction_nodes->insert(node);
+            conjunction_nodes->insert(it->second.allowed_readers.begin(), it->second.allowed_readers.end());
         }
     }
     return rejects;
-}
-
-/// The columns of `conditions_by_column` that a node of `dag` reads directly although it is not one of their `allowed_readers`.
-std::unordered_set<String> columnsWithOtherReaders(const ActionsDAG & dag, const ConditionsByColumn & conditions_by_column)
-{
-    std::unordered_set<String> res;
-    for (const auto & node : dag.getNodes())
-    {
-        /// Aliases are transparent: the consumer of the alias is checked instead.
-        if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-            continue;
-
-        for (const auto * child : node.children)
-        {
-            const auto * input = skipAliases(child);
-            if (input->type != ActionsDAG::ActionType::INPUT)
-                continue;
-
-            auto it = conditions_by_column.find(input->result_name);
-            if (it != conditions_by_column.end() && !it->second.allowed_readers.contains(&node))
-                res.insert(input->result_name);
-        }
-    }
-    return res;
 }
 
 }
@@ -439,10 +421,52 @@ bool filterReadsColumnOnlyInConjunctsRejectingEmptyString(
     const auto * root = dag.tryFindInOutputs(filter_column_name);
     if (!root)
         return false;
-    ConditionsByColumn candidate;
-    if (!filterNodeRejectsEmptyString(root, column_name, &candidate[column_name].allowed_readers))
+    std::unordered_set<const ActionsDAG::Node *> conjunction_nodes;
+    if (!filterNodeRejectsEmptyString(root, column_name, &conjunction_nodes))
         return false;
-    return columnsWithOtherReaders(dag, candidate).empty();
+
+    /// A replaced value changes the result of every node that depends on the column, so all of them must be part of the
+    /// conjunction, where the only effect is that the filter rejects the row. Aliases are transparent: their consumers are checked.
+    std::unordered_map<const ActionsDAG::Node *, bool> depends_on_column;
+    std::vector<const ActionsDAG::Node *> stack;
+    for (const auto & node : dag.getNodes())
+    {
+        stack.push_back(&node);
+        while (!stack.empty())
+        {
+            const auto * current = stack.back();
+            if (depends_on_column.contains(current))
+            {
+                stack.pop_back();
+                continue;
+            }
+
+            bool children_known = true;
+            bool depends = current->type == ActionsDAG::ActionType::INPUT && current->result_name == column_name;
+            for (const auto * child : current->children)
+            {
+                auto it = depends_on_column.find(child);
+                if (it == depends_on_column.end())
+                {
+                    children_known = false;
+                    stack.push_back(child);
+                }
+                else
+                    depends = depends || it->second;
+            }
+
+            if (children_known)
+            {
+                depends_on_column.emplace(current, depends);
+                stack.pop_back();
+            }
+        }
+
+        if (depends_on_column.at(&node) && node.type != ActionsDAG::ActionType::INPUT && node.type != ActionsDAG::ActionType::ALIAS
+            && !conjunction_nodes.contains(&node))
+            return false;
+    }
+    return true;
 }
 
 bool likePatternHasStringValueFilterConditions(const String & pattern)
@@ -494,8 +518,23 @@ StringValueFiltersPtr extractStringValueFilters(
     /// would start throwing on rows that the `LIKE` rejects.
     /// Note that reading the column itself (an output of the expression) is fine: those values are
     /// observed only for the rows that passed the filter, and for them nothing was substituted.
-    for (const auto & column_name : columnsWithOtherReaders(filter_dag, conditions_by_column))
-        conditions_by_column[column_name].conditions.clear();
+    for (const auto & node : filter_dag.getNodes())
+    {
+        /// Aliases are transparent: the consumer of the alias is checked instead.
+        if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+            continue;
+
+        for (const auto * child : node.children)
+        {
+            const auto * input = skipAliases(child);
+            if (input->type != ActionsDAG::ActionType::INPUT)
+                continue;
+
+            auto it = conditions_by_column.find(input->result_name);
+            if (it != conditions_by_column.end() && !it->second.allowed_readers.contains(&node))
+                it->second.conditions.clear();
+        }
+    }
 
     /// The row-level filter (row policy) is a separate expression that the readers evaluate on the
     /// scanned columns before this one, so it observes the substituted values of every row, including
