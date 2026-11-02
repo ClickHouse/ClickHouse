@@ -2,6 +2,8 @@
 -- Tests if a text index ILIKE evaluation by scanning the inverted index dictionary is properly applied.
 SET explain_query_plan_default = 'legacy';
 
+SET enable_analyzer = 1;
+
 SELECT 'Test results are same with/without the like optimization';
 
 DROP TABLE IF EXISTS tab;
@@ -148,7 +150,7 @@ LIMIT 2, 3;
 SELECT '-- Text index for ILIKE function should choose all 4 parts and 40 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE message ILIKE '%house%'
+    SELECT count() FROM tab WHERE message ILIKE '%clickhouse%'
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
@@ -271,7 +273,7 @@ LIMIT 2, 3;
 SELECT '-- Text index for ILIKE function with array tokenizer should choose all 4 parts and 40 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE tag ILIKE '%house%'
+    SELECT count() FROM tab WHERE tag ILIKE '%clickhouse%'
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 

@@ -21,14 +21,12 @@ INSERT INTO aj_r SELECT number FROM numbers(1000);
 
 SELECT 'arrayJoin, empty input', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%')
 FROM (EXPLAIN actions = 1, keep_logical_steps = 1
-    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_l WHERE id > 1000) AS s INNER JOIN aj_r ON aj_r.id = s.k
-    SETTINGS query_plan_lower_array_join_function = 0)
+    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_l WHERE id > 1000) AS s INNER JOIN aj_r ON aj_r.id = s.k)
 WHERE explain ILIKE '%Join:%';
 
 SELECT 'lowered arrayJoin, empty input, LEFT JOIN', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%')
 FROM (EXPLAIN actions = 1, keep_logical_steps = 1
-    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_l WHERE id > 1000) AS s LEFT JOIN aj_r ON aj_r.id = s.k
-    SETTINGS query_plan_lower_array_join_function = 1)
+    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_l WHERE id > 1000) AS s LEFT JOIN aj_r ON aj_r.id = s.k)
 WHERE explain ILIKE '%Join:%';
 
 SELECT 'ARRAY JOIN, empty input', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%')
@@ -39,15 +37,13 @@ WHERE explain ILIKE '%Join:%';
 -- 5 input rows are estimated as 500 rows, fewer than the 1000 rows of `aj_r`.
 SELECT 'lowered arrayJoin, 5 rows', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%')
 FROM (EXPLAIN actions = 1, keep_logical_steps = 1
-    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_s) AS s INNER JOIN aj_r ON aj_r.id = s.k
-    SETTINGS query_plan_lower_array_join_function = 1)
+    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_s) AS s INNER JOIN aj_r ON aj_r.id = s.k)
 WHERE explain ILIKE '%Join:%';
 
 -- 100 input rows are estimated as 10000 rows (2000 in fact), more than the 1000 rows of `aj_r`.
 SELECT 'arrayJoin, 100 rows', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%')
 FROM (EXPLAIN actions = 1, keep_logical_steps = 1
-    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_l) AS s INNER JOIN aj_r ON aj_r.id = s.k
-    SETTINGS query_plan_lower_array_join_function = 0)
+    SELECT count() FROM (SELECT arrayJoin(arr) AS k FROM aj_l) AS s INNER JOIN aj_r ON aj_r.id = s.k)
 WHERE explain ILIKE '%Join:%';
 
 SELECT 'ARRAY JOIN, 100 rows', countIf(explain ILIKE '%Join: aj_r%'), countIf(explain ILIKE '%Join: s%')

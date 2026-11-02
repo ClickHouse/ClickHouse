@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "クエリと SQL",
+          "group": "クエリとSQL",
           "pages": [
             "ja/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ja/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -131,8 +131,7 @@
             "ja/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ja/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "ja/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "ja/resources/support-center/knowledge-base/materialized-views/projection-example",
-            "ja/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
+            "ja/resources/support-center/knowledge-base/materialized-views/projection-example"
           ]
         },
         {
@@ -181,12 +180,11 @@
             "ja/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "ja/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "ja/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "ja/resources/support-center/knowledge-base/setup-installation/production",
-            "ja/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
+            "ja/resources/support-center/knowledge-base/setup-installation/production"
           ]
         },
         {
-          "group": "一般事項とよくある質問",
+          "group": "一般情報とよくある質問",
           "pages": [
             "ja/resources/support-center/knowledge-base/general-faqs/faq-index",
             {

@@ -1,0 +1,23 @@
+<clickhouse>
+    <!--
+        Negative case: a `redirect` handler ignores `response_content` (only a `static` handler
+        consumes it, see `createStaticHandlerFactory`). The server therefore never reads
+        `config://redirect_ignored_payload`, so the unknown-key validator must NOT exempt the
+        top-level `<redirect_ignored_payload>` on the handler's behalf. The node must fail to
+        start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <redirect_ignored_payload>This is never read by a redirect handler.</redirect_ignored_payload>
+
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/redirect_rule</url>
+            <handler>
+                <type>redirect</type>
+                <location>/dashboard</location>
+                <response_content>config://redirect_ignored_payload</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

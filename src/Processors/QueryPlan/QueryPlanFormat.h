@@ -3,19 +3,16 @@
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace DB
 {
 
 class WriteBuffer;
 class IQueryPlanStep;
-class JoinStep;
 class QueryPlan;
 
 struct RuntimeFilterInfo
@@ -49,9 +46,6 @@ struct PrettyNames
     PrettyRuntimeFilterNameMap runtime_filter_names;
 };
 
-/// The plan of the fragment that sends to a receive step of a cut plan, by receive step.
-using FragmentInputs = std::unordered_map<const IQueryPlanStep *, const QueryPlan *>;
-
 /// Pretty column names are scoped per query plan: a child plan (e.g. a Merge sub-plan) is a separate
 /// naming scope, so each plan in the tree gets its own column-name map keyed by the plan pointer.
 /// Runtime-filter names are global ids and are shared across the tree (copied into every entry).
@@ -72,9 +66,8 @@ struct ExplainFormatSettings
     bool compact = false;
     bool pretty = false;
     bool compact_repeated_processor_chains = false;
-    /// Set when the plan is rendered as part of EXPLAIN ANALYZE: steps can skip parts of their
-    /// static description that the analyzed stats replace (e.g. the join estimation block).
-    bool inside_explain_analyze = false;
+    /// Print secret function arguments (keys, passwords) as written instead of `[HIDDEN]`.
+    bool show_secrets = false;
     const PrettyColumnNameMap & pretty_names;
     const PrettyRuntimeFilterNameMap & runtime_filter_names;
 };
@@ -83,25 +76,15 @@ namespace QueryPlanFormat
 {
     String trimColumnIdentifier(std::string_view name);
     void formatOutputColumns(const PrettyColumnNameMap & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
-    /// Input column lists of a join as metric groups, appended to its EXPLAIN ANALYZE report.
-    std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step);
-    /// The same input column lists rendered as text for EXPLAIN PLAN, in the format of the report groups.
-    void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix);
+    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
 
-    String formatNodePretty(
-        const ActionsDAG::Node * node,
-        const PrettyColumnNameMap & pretty_names,
-        const PrettyRuntimeFilterNameMap & runtime_filter_names,
-        PrettySetNameMap & subquery_set_names,
-        int parent_precedence = 0);
+    /// Renders a DAG node the way the outputs of an `Expression` step are rendered, for steps that describe
+    /// an expression computed inside the operator (a join condition) rather than a named plan column.
+    String formatNodePretty(const ActionsDAG::Node * node, const ExplainFormatSettings & settings, PrettySetNameMap & subquery_set_names);
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
-    /// For the fragments of a cut plan, starting with the fragment that produces the result. The walk follows every
-    /// receive step in `fragment_inputs` into the fragment that sends to it, so the fragments share one column naming
-    /// scope (their child plans keep their own) and get the same names as the plan before the cut in plain `EXPLAIN`.
-    PrettyNamesPerPlan buildPrettyNamesForFragments(const std::vector<const QueryPlan *> & fragment_plans, const FragmentInputs & fragment_inputs);
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool show_secrets);
 }
 
 }
