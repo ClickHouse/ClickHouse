@@ -211,10 +211,8 @@ std::optional<String> findColumnParameter(const Aws::Glue::Model::Column & colum
     return it->second;
 }
 
-/// Glue columns for the fields of an Iceberg schema. The existing column of a field, matched by field id, or by name
-/// for a column without one, keeps its comment (unless the field has a `doc`) and its other parameters. The existing
-/// columns of older schemas, then the existing columns the schema no longer has (renamed or dropped), follow as
-/// non-current, each name once.
+/// Glue columns for an Iceberg schema. Existing columns, matched by field id (else by name), keep their comment and
+/// parameters; existing columns the schema no longer has follow as non-current, each name once.
 Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
     const Poco::JSON::Object::Ptr & schema, const Aws::Vector<Aws::Glue::Model::Column> & existing_columns)
 {
@@ -982,7 +980,6 @@ bool GlueCatalog::commitTableUpdate(
         const auto metadata_location = findTableParameter(table, "metadata_location").value_or("");
         if (metadata_location != base_metadata_location)
         {
-            /// Without a pointer, writers find the base by listing, so another one may have built on the new file.
             if (metadata_location.empty() || base_metadata_location.empty())
                 throw DB::Exception(
                     DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
