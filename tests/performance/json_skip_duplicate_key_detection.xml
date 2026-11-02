@@ -1,0 +1,20 @@
+<test>
+    <!-- type_json_skip_duplicate_key_detection skips the per-object duplicate-key detection while parsing a JSON
+         object, which costs two passes and per-key bookkeeping for every object. The dataset is a large array of
+         small sub-objects (each with several keys), parsed with max_dynamic_subcolumns_in_json_type_parsing=0 so
+         every sub-object is traversed and the detection runs once per sub-object.
+
+         The setting does not exist on the reference (master) binary, so the probe below fails there and, via
+         do_not_check_in_pr, makes the whole test run on the new binary only (no master comparison on this PR; it
+         becomes a regression guard once merged). TODO: set do_not_check_in_pr to this PR's number before pushing,
+         otherwise the perf check fails on the reference binary. -->
+    <create_query do_not_check_in_pr="0">SELECT 1 SETTINGS type_json_skip_duplicate_key_detection = 1</create_query>
+
+    <fill_query>INSERT INTO FUNCTION file(test_json_skip_duplicate_key_detection.txt, Raw) SELECT toJSONString(map('TenantId', ('t' || toString(number))::Dynamic, 'Risk', map('Status', 'open'::Dynamic, 'Vulnerabilities', arrayMap(x -> map('IsResolved', (x % 2 = 0)::Dynamic, 'Cve', ('CVE-2024-' || toString(x))::Dynamic, 'Severity', 'high'::Dynamic, 'Package', 'libfoo'::Dynamic, 'Description', 'A vulnerability was found in the package.'::Dynamic, 'ResolutionVersions', [toString(1 + x % 5) || '.' || toString(x % 20)]::Dynamic)::Map(String, Dynamic), range(1000))::Dynamic)::Map(String, Dynamic)::Dynamic)::Map(String, Dynamic)) FROM numbers(100) SETTINGS use_variant_as_common_type = 1, engine_file_truncate_on_insert = 1</fill_query>
+
+    <!-- Detection off (default) vs on, both on the new binary, to show the incremental win side by side. -->
+    <query>SELECT * FROM file(test_json_skip_duplicate_key_detection.txt, JSONAsObject, 'json JSON') FORMAT Null SETTINGS max_dynamic_subcolumns_in_json_type_parsing = 0, input_format_try_infer_datetimes = 0</query>
+    <query>SELECT * FROM file(test_json_skip_duplicate_key_detection.txt, JSONAsObject, 'json JSON') FORMAT Null SETTINGS max_dynamic_subcolumns_in_json_type_parsing = 0, input_format_try_infer_datetimes = 0, type_json_skip_duplicate_key_detection = 1</query>
+
+    <drop_query>INSERT INTO FUNCTION file(test_json_skip_duplicate_key_detection.txt) SELECT * FROM numbers(0) SETTINGS engine_file_truncate_on_insert = 1</drop_query>
+</test>

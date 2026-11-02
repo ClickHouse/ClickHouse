@@ -2131,7 +2131,6 @@ public:
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
-        , dynamic_serialization(DataTypeDynamic().getDefaultSerialization())
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
@@ -2200,7 +2199,6 @@ public:
         auto & shared_data_values_chars = shared_data_values->getChars();
         auto & shared_data_values_offsets = shared_data_values->getOffsets();
         shared_data_values_offsets.reserve(shared_data_values_offsets.size() + paths_and_values_for_shared_data.size());
-        MutableColumnPtr tmp_dynamic_column;
         for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
         {
             const auto & [path, value] = paths_and_values_for_shared_data[i];
@@ -2218,7 +2216,7 @@ public:
             {
                 /// Serialize value directly into shared data chars.
                 WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
-                bool inserted = insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column);
+                bool inserted = insertIntoSharedData(value_buf, value, insert_settings, format_settings, error);
                 /// Finalize the buffer before `restoreColumnObject`: finalizing resizes the chars to the
                 /// buffer position, so doing it after the restore would bring back the popped values.
                 value_buf.finalize();
@@ -2290,6 +2288,21 @@ private:
 
         if (element.isObject() && (skip_typed_path_check || !typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
         {
+            if (format_settings.json.type_json_skip_duplicate_key_detection)
+            {
+                /// The user guarantees objects have no duplicated keys, so skip the two-pass duplicate
+                /// bookkeeping and insert each key directly. A real duplicate still cannot corrupt the column:
+                /// two occurrences that resolve to the same path are rejected or skipped by the per-path size
+                /// checks (typed and dynamic) and the sorted shared-data scan below, rolling the row back.
+                for (auto [key, value] : element.getObject())
+                {
+                    String child_path = buildChildPath(current_path, key, insert_settings, is_root);
+                    if (!traverseAndInsert(column_object, value, child_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1))
+                        return false;
+                }
+                return true;
+            }
+
             /// First pass: collect the set of distinct element types (LITERAL/OBJECT) per key.
             /// This lets us detect all duplicates upfront so we can:
             ///  - throw errors immediately for invalid duplicates (before any data is inserted),
@@ -2620,7 +2633,7 @@ private:
         return dynamic_node->insertResultToColumn(column_dynamic, element, insert_settings, format_settings, error);
     }
 
-    bool insertIntoSharedData(WriteBuffer & buf, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error, MutableColumnPtr & tmp_dynamic_column) const
+    bool insertIntoSharedData(WriteBuffer & buf, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
     {
         /// Fast track where we process simple data types explicitly and serialize them into
         /// shared data without inserting value into Dynamic column with subsequent binary serialization.
@@ -2672,24 +2685,25 @@ private:
                     }
                 }
 
-                if (format_settings.try_infer_datetimes && !format_settings.try_infer_datetimes_only_datetime64)
-                {
-                    time_t value = 0;
-                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                    {
-                        encodeDataType(getDataTypesCache().getType("DateTime"), buf);
-                        writeBinaryLittleEndian(static_cast<UInt32>(value), buf);
-                        return true;
-                    }
-                }
-
                 if (format_settings.try_infer_datetimes)
                 {
-                    DateTime64 value;
-                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                    bool is_datetime64 = false;
+                    time_t datetime_value = 0;
+                    DateTime64 datetime64_value = 0;
+                    if (tryInferDateTimeOrDateTime64FromString(
+                            data, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference,
+                            is_datetime64, datetime_value, datetime64_value))
                     {
-                        encodeDataType(getDataTypesCache().getType("DateTime64(9)"), buf);
-                        writeBinaryLittleEndian(value, buf);
+                        if (is_datetime64)
+                        {
+                            encodeDataType(getDataTypesCache().getType("DateTime64(9)"), buf);
+                            writeBinaryLittleEndian(datetime64_value, buf);
+                        }
+                        else
+                        {
+                            encodeDataType(getDataTypesCache().getType("DateTime"), buf);
+                            writeBinaryLittleEndian(static_cast<UInt32>(datetime_value), buf);
+                        }
                         return true;
                     }
                 }
@@ -2702,23 +2716,60 @@ private:
                 break;
         }
 
-        if (!tmp_dynamic_column)
-            tmp_dynamic_column = ColumnDynamic::create();
+        /// Non-scalar value. SerializationDynamic::serializeBinary writes encodeDataType(removeNullable(inferred))
+        /// followed by that type's binary value, so reproduce those bytes directly instead of routing the value
+        /// through a temporary Dynamic column. A per-inferred-type cache reuses the extract node and a scratch
+        /// column, avoiding the variant bookkeeping and the column allocation that dominate for large objects.
+        auto inferred_type = dynamic_node->elementToDataType(element, format_settings, error);
+        if (!inferred_type)
+            return false;
 
-        JSONExtractInsertSettings insert_settings_for_shared_data = insert_settings;
-        /// We use single temporary Dynamic column for all shared data paths because
-        /// creating it every time is very slow. And so we need to always infer
-        /// new type for new value and don't reuse existing variants.
-        insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
-        if (dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
+        auto value_type = removeNullable(inferred_type);
+        if (!checkIfTypeIsComplete(value_type))
         {
-            /// Use default format settings for binary serialization. Non-default settings may change
-            /// the binary representation of the values and break the future deserialization.
-            dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
-            return true;
+            error = fmt::format(
+                "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with "
+                "incomplete type, enable setting input_format_json_infer_incomplete_types_as_strings",
+                jsonElementToStringForError<JSONParser>(element, format_settings));
+            return false;
         }
 
-        return false;
+        auto type_name = value_type->getName();
+        auto builder_it = shared_data_value_builders.find(type_name);
+        if (builder_it == shared_data_value_builders.end())
+        {
+            /// Cap the cache so inputs with many distinct types cannot grow it without bound.
+            if (shared_data_value_builders.size() >= MAX_SHARED_DATA_VALUE_BUILDERS)
+                shared_data_value_builders.clear();
+
+            SharedDataValueBuilder builder;
+            builder.node = buildJSONExtractTree<JSONParser>(value_type, "Dynamic inference");
+            builder.column = value_type->createColumn();
+            builder.serialization = getDataTypesCache().getSerialization(type_name, value_type);
+            builder_it = shared_data_value_builders.emplace(type_name, std::move(builder)).first;
+        }
+
+        auto & builder = builder_it->second;
+        /// Infer a new type for every value and don't reuse existing variants, matching serialization through a
+        /// Dynamic column: a nested Dynamic value must not latch onto a variant created for a previous value.
+        JSONExtractInsertSettings insert_settings_for_shared_data = insert_settings;
+        insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
+
+        size_t size_before = builder.column->size();
+        if (!builder.node->insertResultToColumn(*builder.column, element, insert_settings_for_shared_data, format_settings, error))
+        {
+            /// A failed insert may leave the reused column partially filled, so drop it instead of relying on
+            /// popBack to find the right amount to remove.
+            builder.column = value_type->createColumn();
+            return false;
+        }
+
+        encodeDataType(value_type, buf);
+        /// Use default format settings for binary serialization. Non-default settings may change
+        /// the binary representation of the values and break the future deserialization.
+        builder.serialization->serializeBinary(*builder.column, size_before, buf, getDefaultFormatSettings());
+        builder.column->popBack(builder.column->size() - size_before);
+        return true;
     }
 
     template <typename ColumnType, typename ElementType>
@@ -2763,7 +2814,17 @@ private:
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
-    SerializationPtr dynamic_serialization;
+
+    /// Reused per-inferred-type machinery for serializing non-scalar values into shared data.
+    struct SharedDataValueBuilder
+    {
+        std::unique_ptr<JSONExtractTreeNode<JSONParser>> node;
+        MutableColumnPtr column;
+        SerializationPtr serialization;
+    };
+    mutable std::unordered_map<String, SharedDataValueBuilder> shared_data_value_builders;
+    static constexpr size_t MAX_SHARED_DATA_VALUE_BUILDERS = 256;
+
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 

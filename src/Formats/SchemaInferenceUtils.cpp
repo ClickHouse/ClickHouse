@@ -1723,6 +1723,27 @@ bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time
     return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone);
 }
 
+bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64)
+{
+    /// Run the invalid-datetime fast check once, then try DateTime and DateTime64 in turn.
+    if (fastCheckForInvalidDateTimeOrDateTime64(field))
+        return false;
+
+    if (!settings.try_infer_datetimes_only_datetime64 && tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone))
+    {
+        is_datetime64 = false;
+        return true;
+    }
+
+    if (tryInferDateTime64(field, date_time64, settings, time_zone, utc_time_zone))
+    {
+        is_datetime64 = true;
+        return true;
+    }
+
+    return false;
+}
+
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings)
 {
     return tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
