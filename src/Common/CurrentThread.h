@@ -74,6 +74,22 @@ public:
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
+    /// While an instance exists, the messages logged by the current thread are not sent to the client
+    /// (by `send_logs_level`), but they are still written to the server log and `system.text_log`.
+    /// For a message that is logged only once per server lifetime, which would otherwise reach
+    /// whichever client happens to trigger it first.
+    class SkipSendingLogsToClient
+    {
+    public:
+        SkipSendingLogsToClient();
+        ~SkipSendingLogsToClient();
+        SkipSendingLogsToClient(const SkipSendingLogsToClient &) = delete;
+        SkipSendingLogsToClient & operator=(const SkipSendingLogsToClient &) = delete;
+
+    private:
+        bool previous;
+    };
+
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 

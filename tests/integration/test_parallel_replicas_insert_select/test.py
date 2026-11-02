@@ -482,7 +482,6 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
             "cluster_for_parallel_replicas": "test_1_shard_3_replicas",
             "parallel_replicas_for_non_replicated_merge_tree": 1,
             "parallel_replicas_local_plan": local_plan,
-            "enable_analyzer": 1,
         },
         query_id=query_id,
     )
@@ -504,7 +503,6 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
             "parallel_replicas_for_non_replicated_merge_tree": 1,
             "parallel_replicas_local_plan": local_plan,
             "automatic_parallel_replicas_mode": 0,
-            "enable_analyzer": 1,
         },
     ) == "10000\t49995000\n"
 
@@ -523,7 +521,6 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
                 "parallel_replicas_local_plan": local_plan,
                 "parallel_replicas_plan_based": 1,
                 "automatic_parallel_replicas_mode": 0,
-                "enable_analyzer": 1,
             },
         )
         assert result == "10000\t49995000\n"

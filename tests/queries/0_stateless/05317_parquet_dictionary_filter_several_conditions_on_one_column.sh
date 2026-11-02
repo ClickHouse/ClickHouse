@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query="
     settings output_format_parquet_row_group_size = 8192, output_format_parquet_max_dictionary_size = 100000000, engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
-CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --input_format_parquet_bloom_filter_push_down=0 --optimize_move_to_prewhere=0 --query_plan_optimize_prewhere=0 --use_cache_for_count_from_files=0 --max_threads=1 --max_parsing_threads=1"
+CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --input_format_parquet_bloom_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0 --max_threads=1 --max_parsing_threads=1"
 
 # Comma-separated values `1000000 + [$1, $2]`, which no row group holds.
 absent() {

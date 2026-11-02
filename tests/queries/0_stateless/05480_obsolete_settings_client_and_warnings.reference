@@ -1,0 +1,13 @@
+-- An obsolete setting on the command line is refused
+Obsolete setting ['max_memory_usage_for_all_queries'] is specified on the command line
+Obsolete setting ['max_memory_usage_for_all_queries'] is specified on the command line
+Obsolete settings ['allow_experimental_analyzer', 'multiple_joins_rewriter_version'] are specified on the command line
+-- An obsolete setting in a query is accepted
+1
+2
+3
+4
+-- ... and it is shown in system.warnings
+1
+-- ... and logged
+1

@@ -25,7 +25,7 @@ mkdir -p "$DATA_DIR"
     SETTINGS engine_file_truncate_on_insert = 1;
 "
 
-"${LOCAL[@]}" --enable_analyzer=1 --query "
+"${LOCAL[@]}" --query "
     SELECT '-- no column of the file is read at all';
     SELECT _row_number FROM file('${DATA_DIR}/data.vortex', Vortex) ORDER BY _row_number;
 
