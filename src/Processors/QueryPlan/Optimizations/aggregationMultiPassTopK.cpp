@@ -57,10 +57,12 @@ bool readIsRepeatable(const ReadFromMergeTree & read)
     const auto & columns = read.getStorageMetadata()->getColumns();
     for (const auto & name : read.getAllColumnNames())
     {
-        if (!columns.getDefault(name))
+        /// A subcolumn takes the default of its column, which the reader evaluates for the parts that lack the column.
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (!column || !columns.getDefault(column->getNameInStorage()))
             continue;
         for (const auto & part : read.getAnalyzedResult()->parts_with_ranges)
-            if (!part.data_part->tryGetColumn(name))
+            if (!part.data_part->tryGetColumn(column->getNameInStorage()))
                 return false;
     }
     return true;
