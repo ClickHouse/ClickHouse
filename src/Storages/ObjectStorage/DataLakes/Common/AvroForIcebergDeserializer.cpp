@@ -54,6 +54,7 @@ try
     }
 
     metadata = manifest_file_reader->metadata();
+    bytes_read = buffer->count();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
     parsed_manifest_file_entries.resize(parsed_column->size());
