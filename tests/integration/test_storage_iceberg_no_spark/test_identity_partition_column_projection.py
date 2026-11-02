@@ -1654,4 +1654,5 @@ def test_identity_partition_uuid_column(started_cluster_iceberg_no_spark):
         query(f"SELECT v, u FROM {issue_table} ORDER BY v")
         == f"1\t{u1}\n2\t{u1}\n3\t{u2}"
     )
+    assert query(f"SELECT count() FROM {issue_table} WHERE u = toUUID('{u1}')") == "2"
     assert query(f"SELECT count() FROM {issue_table} WHERE u != toUUID('{u1}')") == "1"
