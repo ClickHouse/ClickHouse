@@ -272,11 +272,13 @@ if __name__ == "__main__":
     # store changed files
     # Fail-close for PR and merge-queue runs: the merge-queue flaky check
     # selects tests from this list, so an empty fallback would silently skip
-    # it. Do not fail for master/release CI workflows.
-    changed_files = (
-        GH.get_changed_files(strict=bool(info.pr_number) or info.is_merge_queue_event)
-        or []
+    # it. Do not fail for master/release CI workflows. For a push, unknown
+    # changed files stay `None`, so no job is filtered by them.
+    changed_files = GH.get_changed_files(
+        strict=bool(info.pr_number) or info.is_merge_queue_event
     )
+    if changed_files is None and not info.is_push_event:
+        changed_files = []
     info.store_kv_data("changed_files", changed_files)
 
     # The merge-queue flaky check also reruns the tests that `master` changed
