@@ -3494,15 +3494,15 @@ void Aggregator::writeToTemporaryFileImpl(
 
 bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const
 {
-    if (!params.shared_kept_keys_control)
-        return true;
-
     /// A rebuild or a re-seed of the kept keys is in flight: those merges re-insert data the
     /// table already held, so flushing it in the middle of them would drop the rest of the
-    /// rebuild (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). The cutoff must not be
-    /// abandoned here either — the kept keys are already frozen.
+    /// rebuild (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). With the shared cutoff
+    /// it must not be abandoned here either — the kept keys are already frozen.
     if (result.kept_keys_rebuild_in_progress)
         return false;
+
+    if (!params.shared_kept_keys_control)
+        return true;
 
     /// This stream has already stopped admitting keys. Its table may be flushed only once it has
     /// been rebuilt to the frozen kept keys: then it holds nothing but kept keys, and it is

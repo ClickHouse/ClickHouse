@@ -1664,6 +1664,12 @@ void AggregatingTransform::consume(Chunk chunk)
 void AggregatingTransform::seedTopKCandidates()
 {
     const auto & seed = params->top_k_candidates->seed;
+
+    /// The merge may not spill: the table would lose the candidates before it is restricted to them, and nothing would
+    /// re-seed it (see `Aggregator::reseedKeptKeysAfterSpill`).
+    variants.kept_keys_rebuild_in_progress = true;
+    SCOPE_EXIT({ variants.kept_keys_rebuild_in_progress = false; });
+
     bool seed_no_more_keys = false;
     params->aggregator.mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, variants, seed_no_more_keys, is_cancelled);
 
