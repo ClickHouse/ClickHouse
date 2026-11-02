@@ -58,7 +58,6 @@ def test_simple_distributed_aggregation_with_parallel_replicas(start_cluster):
         """,
         settings={
             "cluster_for_parallel_replicas": "parallel_replicas",
-            "enable_analyzer": 1,
             "allow_experimental_parallel_reading_from_replicas": 1,
             "max_parallel_replicas": 3,
             "merge_tree_min_bytes_per_task_for_remote_reading": 1,
@@ -77,7 +76,6 @@ def test_simple_distributed_aggregation_with_parallel_replicas(start_cluster):
         """,
         settings={
             "cluster_for_parallel_replicas": "parallel_replicas",
-            "enable_analyzer": 1,
             "allow_experimental_parallel_reading_from_replicas": 1,
             "max_parallel_replicas": 3,
             "merge_tree_min_bytes_per_task_for_remote_reading": 1,

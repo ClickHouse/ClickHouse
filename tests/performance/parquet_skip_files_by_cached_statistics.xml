@@ -1,0 +1,18 @@
+<!--
+    Filtered reads of the 84 Parquet files of the `tpch_ice_sf10` lineitem dataset, one file per `l_shipdate` month.
+    The files are unpacked from the dataset archive before the tests, so their version is settled and a read can keep
+    the statistics of the filter column with the cached metadata of each file. Later reads then skip the files whose
+    row groups cannot match without opening them. `max_threads = 1` keeps the cost of opening the other files from
+    being hidden behind the read of the matching one. Every file holds every range of `l_orderkey`, so nothing is
+    skipped for it.
+-->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count(), sum(l_extendedprice) FROM file('tpch_ice_sf10/lineitem/data/*.parquet') WHERE l_shipdate = '1996-07-04' FORMAT Null</query>
+    <query>SELECT count() FROM file('tpch_ice_sf10/lineitem/data/*.parquet') WHERE l_receiptdate = '1996-07-04' FORMAT Null</query>
+    <query>SELECT count() FROM file('tpch_ice_sf10/lineitem/data/*.parquet') WHERE l_shipdate >= '1999-01-01' FORMAT Null</query>
+    <query>SELECT count(), sum(l_extendedprice) FROM file('tpch_ice_sf10/lineitem/data/*.parquet') WHERE l_orderkey = 1234567 FORMAT Null</query>
+</test>

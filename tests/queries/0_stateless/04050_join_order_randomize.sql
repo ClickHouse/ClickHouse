@@ -13,7 +13,6 @@ INSERT INTO t1 SELECT number, number * 10 FROM numbers(100);
 INSERT INTO t2 SELECT number, number * 20 FROM numbers(100);
 INSERT INTO t3 SELECT number, number * 30 FROM numbers(100);
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_algorithm = 'greedy';

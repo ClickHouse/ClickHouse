@@ -366,7 +366,7 @@ public:
         std::shared_ptr<const ReadFromTextIndexCount::ResolvedQuery> resolved_,
         MergeTreeReaderSettings reader_settings_,
         QueryStatusPtr query_status_)
-        : ISource(std::move(header))
+        : ISource(std::move(header), /*enable_auto_progress=*/ false)
         , state(std::move(state_))
         , resolved(std::move(resolved_))
         , reader_settings(std::move(reader_settings_))
@@ -393,8 +393,12 @@ protected:
                 query_status->checkTimeLimit();
         };
 
-        UInt64 count = computeCountForPart(state->parts[part_idx], *resolved, reader_settings, check_cancelled);
+        const auto & part = state->parts[part_idx];
+        UInt64 count = computeCountForPart(part, *resolved, reader_settings, check_cancelled);
 
+        /// Report the rows of the selected ranges as processed instead of the one-row output chunk,
+        /// the same as `ReadFromMergeTree` does, so `read_rows` and the `READ_ROWS` quota match the unoptimized read.
+        progress(part.getRowsCount(), 0);
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
         return Chunk(Columns{createSingleCountStateColumn(agg_count, count)}, 1);
     }
@@ -436,10 +440,18 @@ void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline,
 
     size_t streams = std::max<size_t>(1, std::min(num_streams, state->parts.size()));
 
+    size_t total_rows = state->parts.getRowsCountAllParts();
+
     Pipes pipes;
     for (size_t i = 0; i < streams; ++i)
-        pipes.emplace_back(std::make_shared<TextIndexCountSource>(
-            getOutputHeader(), state, resolved, reader_settings, settings.process_list_element));
+    {
+        auto source = std::make_shared<TextIndexCountSource>(getOutputHeader(), state, resolved, reader_settings, settings.process_list_element);
+
+        if (i == 0)
+            source->addTotalRowsApprox(total_rows);
+
+        pipes.emplace_back(std::move(source));
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 

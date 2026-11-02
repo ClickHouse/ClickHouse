@@ -24,8 +24,9 @@
         ]
       },
       {
-        "group": "Notifications",
+        "group": "알림",
         "pages": [
+          "products/cloud/api-reference/notifications/notification-get-list",
           "products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
@@ -130,7 +131,7 @@
         ]
       },
       {
-        "group": "Snapshot",
+        "group": "스냅샷",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
           "products/cloud/api-reference/snapshot/snapshot-get",
@@ -139,7 +140,7 @@
         ]
       },
       {
-        "group": "Query API endpoints",
+        "group": "Query API endpoint",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
@@ -149,13 +150,13 @@
         ]
       },
       {
-        "group": "Saved queries",
+        "group": "저장된 쿼리",
         "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}"
         ]
       }
     ]
@@ -224,6 +225,7 @@
       "products/cloud/api-reference/clickstack/click-stack-delete-alert",
       "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
       "products/cloud/api-reference/clickstack/click-stack-create-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-validate-webhook",
       "products/cloud/api-reference/clickstack/click-stack-update-webhook",
       "products/cloud/api-reference/clickstack/click-stack-delete-webhook",
       "products/cloud/api-reference/clickstack/click-stack-list-roles",

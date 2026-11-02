@@ -1,0 +1,4 @@
+# Exceptions for the `broken_links` check in ci/jobs/check_style.py, which requires the links added
+# by a pull request to be reachable (see ci/jobs/scripts/check_style/check_broken_links.py).
+#
+# One URL prefix per line: a link that starts with any of them is not checked.
