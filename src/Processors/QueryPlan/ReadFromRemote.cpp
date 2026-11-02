@@ -473,7 +473,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                         temporary_table_name = table_identifier->name();
 
                     auto & external_table = (*external_tables)[temporary_table_name];
-                    /// The set fills one table, which every remote read the filter is pushed into sends, e.g. one read per `UNION ALL` branch.
+                    /// The set fills one table, sent by every remote read the filter is pushed into (e.g. one per `UNION ALL` branch).
                     if (!external_table && set_from_subquery->getSetAndKey()->external_table_holder)
                         external_table = set_from_subquery->getSetAndKey()->external_table_holder->getTable();
                     if (!external_table)
