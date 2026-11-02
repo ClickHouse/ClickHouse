@@ -42,6 +42,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 
 #include <Core/Settings.h>
 
@@ -3051,6 +3052,30 @@ static bool resolvedExpressionNameMayContainMatchedColumn(const QueryTreeNodePtr
     return false;
 }
 
+/** Whether the projection name `name` may contain the name of the matched column `column_name` as an identifier.
+  * The name of a resolved expression keeps the names of nested calls of named lambdas and SQL UDFs even when their bodies
+  * ignore the argument: `WITH (y -> 0) AS f, (y -> f(y) + 1) AS g SELECT * APPLY g` caches `plus(f(a), 1)`, while the
+  * resolved expression is the folded constant `plus(0, 1)`. Only the name tells whether it depends on the column.
+  * The check may report false positives (a string literal or another identifier spelled like the column), which only
+  * makes the alias requirement stricter.
+  */
+static bool projectionNameMayContainColumnName(std::string_view name, std::string_view column_name)
+{
+    if (column_name.empty())
+        return false;
+
+    for (size_t pos = name.find(column_name); pos != std::string_view::npos; pos = name.find(column_name, pos + 1))
+    {
+        size_t end = pos + column_name.size();
+        bool starts_at_boundary = pos == 0 || !isWordCharASCII(name[pos - 1]) || !isWordCharASCII(column_name.front());
+        bool ends_at_boundary = end == name.size() || !isWordCharASCII(name[end]) || !isWordCharASCII(column_name.back());
+        if (starts_at_boundary && ends_at_boundary)
+            return true;
+    }
+
+    return false;
+}
+
 /** Nearest scope, up to the enclosing QUERY/UNION scope, whose `member` is not empty.
   * `registered_table_expression_nodes` and `nullable_group_by_keys` are populated only on the scope
   * that owns the join tree, never on a lambda's child scope.
@@ -3647,9 +3672,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         else if (auto name_it = node_to_projection_name.find(node); name_it != node_to_projection_name.end())
                             argument_name_for_next_transformer = name_it->second;
 
+                        /// The cached name keeps the names of nested calls (`plus(f(a), 1)`) even if their resolved bodies
+                        /// no longer contain the column (`plus(0, 1)`), so the name itself is checked as well.
                         if (argument_name_for_next_transformer != natural_projection_name)
                             argument_name_derived_from_column = resolvedExpressionNameMayContainMatchedColumn(
-                                node, matched_columns_before_transformers.back().node);
+                                    node, matched_columns_before_transformers.back().node)
+                                || projectionNameMayContainColumnName(
+                                    argument_name_for_next_transformer, matched_columns_before_transformers.back().name);
                     }
                 }
                 node_projection_names.clear();
