@@ -1926,6 +1926,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
+        input_format->prefetch();
+
         builder.init(Pipe(input_format));
 
         if (!identity_partition_columns.empty())

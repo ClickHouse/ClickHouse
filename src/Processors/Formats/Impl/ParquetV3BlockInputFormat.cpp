@@ -172,6 +172,13 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
         format_filter_info = std::make_shared<FormatFilterInfo>();
 }
 
+void ParquetV3BlockInputFormat::prefetch()
+{
+    if (need_only_count)
+        return;
+    initializeIfNeeded();
+}
+
 void ParquetV3BlockInputFormat::initializeIfNeeded()
 {
     if (!reader)

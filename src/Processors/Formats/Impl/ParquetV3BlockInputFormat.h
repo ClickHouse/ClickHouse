@@ -79,6 +79,8 @@ public:
 private:
     Chunk read() override;
 
+    void prefetch() override;
+
     void onCancel() noexcept override;
 
     const FormatSettings format_settings;
