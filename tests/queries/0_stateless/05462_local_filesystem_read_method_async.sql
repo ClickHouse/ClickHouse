@@ -1,3 +1,7 @@
+-- Tags: linux
+-- Tag linux: 'io_uring' needs USE_LIBURING, which is Linux-only; on other
+-- platforms createReadBufferFromFileBase throws UNSUPPORTED_METHOD.
+
 -- Covers the two asynchronous branches of the local read buffer factory
 -- createReadBufferFromFileBase (src/Disks/IO/createReadBufferFromFileBase.cpp):
 -- 'io_uring' and 'pread_fake_async'.
