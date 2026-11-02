@@ -1,4 +1,4 @@
--- Tags: no-shared-merge-tree
+-- Tags: no-shared-merge-tree, no-msan
 -- no-shared-merge-tree: the parallel replicas cluster used here points every replica at this server.
 
 -- The server-side AST fuzzer (`ast_fuzzer_runs`) must not re-run a statement on a node that executes it

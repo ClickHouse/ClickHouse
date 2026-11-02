@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Core/ResultColumnOrigin.h>
 #include <base/types.h>
 #include <base/unit.h>
 
@@ -524,6 +525,8 @@ struct FormatSettings
          * By default, use Text ResultSet.
          */
         bool binary_protocol = false;
+        /// The table columns the result columns come from, reported in the column definitions. Not owned; may be null.
+        const ResultColumnOrigins * result_column_origins = nullptr;
     } mysql_wire{};
 
     struct
@@ -601,6 +604,12 @@ struct FormatSettings
         double output_dictionary_key_size_threshold = 0.0;
         UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
+
+    struct
+    {
+        bool filter_push_down = true;
+        bool preserve_order = false;
+    } vortex{};
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.

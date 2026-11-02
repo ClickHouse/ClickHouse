@@ -154,6 +154,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -342,7 +343,6 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-    extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -397,7 +397,6 @@ namespace Setting
     extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
-    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
@@ -3612,6 +3611,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
+            NameToNameSetMap insertion_columns_by_hint_column;
 
             bool use_columns_from_insert_query = true;
 
@@ -3652,6 +3652,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                           * A source column has a single type, so the hint is usable only if all the
                           * insert table columns that it is mapped to agree on the type.
                           */
+                        insertion_columns_by_hint_column[column.name].insert(*insert_column_name_it);
                         if (const auto * already_hinted = structure_hint.tryGet(column.name))
                         {
                             if (!already_hinted->type->equals(*column.type))
@@ -3746,12 +3747,16 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                             /// Change ephemeral columns to default columns.
                             column.default_desc.kind = ColumnDefaultKind::Default;
 
+                            insertion_columns_by_hint_column[column.name].insert(column.name);
                             structure_hint.add(std::move(column));
                         }
                     }
 
                     if (!structure_hint.empty())
+                    {
+                        removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                         table_function_ptr->setStructureHint(structure_hint);
+                    }
                 }
                 else if (use_structure_from_insertion_table_in_table_functions == 1)
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
@@ -9995,10 +10000,6 @@ ReadSettings Context::getReadSettings() const
 
     if (settings_ref[Setting::filesystem_cache_boundary_alignment])
         res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
-
-    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
-        = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];

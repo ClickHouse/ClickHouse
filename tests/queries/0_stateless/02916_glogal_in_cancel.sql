@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: on macOS ARM the GLOBAL IN set can exceed the query memory limit before the 0.5 s timeout, https://github.com/ClickHouse/ClickHouse/issues/127841
 -- The test profile in `tests/config/users.d/limits.yaml` sets `max_rows_to_transfer = 1G`
 -- and `max_bytes_to_transfer = 1G`. This test is purely about GLOBAL IN cancellation via
 -- `max_execution_time` + `timeout_overflow_mode = 'break'`, so opt out of the transfer
