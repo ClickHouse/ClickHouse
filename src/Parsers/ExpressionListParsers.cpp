@@ -1645,7 +1645,7 @@ static void expandSubscripts(ASTPtr & node)
         {
             auto & arguments = (*current)->as<ASTFunction &>().arguments->children;
             arguments[1] = subscript;
-            current = &arguments[0];
+            current = arguments.data();
         }
         *current = base;
         return;

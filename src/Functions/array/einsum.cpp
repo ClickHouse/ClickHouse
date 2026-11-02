@@ -14,6 +14,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/StringUtils.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/assert_cast.h>
@@ -66,11 +67,11 @@ constexpr size_t einsum_block_size = 65536;
 struct EinsumSpec
 {
     /// Indices are numbered in the order of the first appearance.
-    std::vector<std::vector<size_t>> inputs;
-    std::vector<size_t> output;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> inputs;
+    VectorWithMemoryTracking<size_t> output;
     /// The indices that are not in the output: the result is the sum over them.
-    std::vector<size_t> contracted;
-    std::vector<char> letters;
+    VectorWithMemoryTracking<size_t> contracted;
+    VectorWithMemoryTracking<char> letters;
 
     size_t numIndices() const { return letters.size(); }
 };
@@ -78,7 +79,7 @@ struct EinsumSpec
 EinsumSpec parseEinsumSpec(std::string_view str)
 {
     EinsumSpec spec;
-    std::array<int, 128> index_of_letter;
+    std::array<int, 128> index_of_letter{};
     index_of_letter.fill(-1);
     std::array<size_t, 128> occurrences{};
 
@@ -95,7 +96,7 @@ EinsumSpec parseEinsumSpec(std::string_view str)
         return static_cast<size_t>(index);
     };
 
-    std::optional<std::vector<size_t>> output;
+    std::optional<VectorWithMemoryTracking<size_t>> output;
     spec.inputs.emplace_back();
 
     for (size_t pos = 0; pos < str.size(); ++pos)
@@ -141,7 +142,7 @@ EinsumSpec parseEinsumSpec(std::string_view str)
     else
     {
         /// The implicit output consists of the indices that appear once, in the alphabetical order.
-        std::vector<char> once;
+        VectorWithMemoryTracking<char> once;
         for (char letter : spec.letters)
             if (occurrences[static_cast<UInt8>(letter)] == 1)
                 once.push_back(letter);
@@ -162,7 +163,7 @@ EinsumSpec parseEinsumSpec(std::string_view str)
 struct TensorType
 {
     /// The size of each dimension, if it is known from the type (`FixedArray`).
-    std::vector<std::optional<size_t>> dims;
+    VectorWithMemoryTracking<std::optional<size_t>> dims;
     DataTypePtr element;
 };
 
@@ -231,9 +232,9 @@ struct EinsumSignature
 {
     EinsumSpec spec;
     bool has_combiner = false;
-    std::vector<TensorType> tensors;
+    VectorWithMemoryTracking<TensorType> tensors;
     /// The size of each index, if it is known from the types.
-    std::vector<std::optional<size_t>> static_sizes;
+    VectorWithMemoryTracking<std::optional<size_t>> static_sizes;
     /// The products are calculated by multiplying numbers, without the combiner.
     bool is_product = false;
     /// The result is the sum or product of numbers, calculated in `result_element_type`.
@@ -278,7 +279,7 @@ TensorRows getTensorRows(const ColumnPtr & column, size_t rank, size_t input_row
     }
 
     /// The columns of the levels: level 0 is the column of tensors, level `rank` is the column of elements.
-    std::vector<const IColumn *> levels(rank + 1);
+    VectorWithMemoryTracking<const IColumn *> levels(rank + 1);
     levels[0] = full.get();
     for (size_t level = 0; level < rank; ++level)
     {
@@ -357,14 +358,14 @@ TensorRows getTensorRows(const ColumnPtr & column, size_t rank, size_t input_row
   */
 struct RowLayout
 {
-    std::vector<size_t> sizes;
+    VectorWithMemoryTracking<size_t> sizes;
     /// [tensor][index], zero if the tensor does not have the index.
-    std::vector<std::vector<size_t>> strides;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> strides;
     size_t num_output_elements = 1;
     size_t num_contracted_terms = 1;
 };
 
-void calculateRowLayout(const EinsumSpec & spec, const std::vector<TensorRows> & tensors, size_t row, RowLayout & layout, std::string_view function_name)
+void calculateRowLayout(const EinsumSpec & spec, const VectorWithMemoryTracking<TensorRows> & tensors, size_t row, RowLayout & layout, std::string_view function_name)
 {
     size_t num_indices = spec.numIndices();
     layout.sizes.assign(num_indices, TensorRows::unknown_size);
@@ -435,7 +436,7 @@ void calculateRowLayout(const EinsumSpec & spec, const std::vector<TensorRows> &
 struct Loop
 {
     size_t size;
-    std::vector<size_t> operand_strides;
+    VectorWithMemoryTracking<size_t> operand_strides;
     size_t output_stride;
 };
 
@@ -448,7 +449,7 @@ class LoopNest
 public:
     /// The loops are from the outermost to the innermost. If the innermost loop is a summation,
     /// the sum is accumulated in a register.
-    LoopNest(std::vector<Loop> loops_, std::vector<const T *> operands_, T * output_)
+    LoopNest(VectorWithMemoryTracking<Loop> loops_, VectorWithMemoryTracking<const T *> operands_, T * output_)
         : loops(std::move(loops_)), operands(std::move(operands_)), output(output_), offsets(operands.size())
     {
     }
@@ -464,10 +465,10 @@ public:
     }
 
 private:
-    std::vector<Loop> loops;
-    std::vector<const T *> operands;
+    VectorWithMemoryTracking<Loop> loops;
+    VectorWithMemoryTracking<const T *> operands;
     T * output;
-    std::vector<size_t> offsets;
+    VectorWithMemoryTracking<size_t> offsets;
 
     void runLevel(size_t level, size_t output_offset)
     {
@@ -599,8 +600,8 @@ void multiplyMatricesTransposed(size_t m, size_t n, size_t k, const T * __restri
                 for (size_t lane = 0; lane < lanes; ++lane)
                     sums[lane] += a_row[p + lane] * b_row[p + lane];
             T sum = 0;
-            for (size_t lane = 0; lane < lanes; ++lane)
-                sum += sums[lane];
+            for (const T & lane_sum : sums)
+                sum += lane_sum;
             for (; p < k; ++p)
                 sum += a_row[p] * b_row[p];
             c[i * n + j] += sum;
@@ -614,19 +615,19 @@ template <typename T>
 struct StridedTensor
 {
     const T * data;
-    std::vector<size_t> strides;
+    VectorWithMemoryTracking<size_t> strides;
 };
 
 template <typename T>
 class NumericContraction
 {
 public:
-    explicit NumericContraction(const std::vector<size_t> & sizes_) : sizes(sizes_) {}
+    explicit NumericContraction(const VectorWithMemoryTracking<size_t> & sizes_) : sizes(sizes_) {}
 
     /** output[...] = the contraction of `operands` with the indices `output_indices`.
       * The output is contiguous in the row-major order of `output_indices` and is filled with zeros before the call.
       */
-    void contract(const std::vector<StridedTensor<T>> & operands, const std::vector<size_t> & output_indices, T * output)
+    void contract(const VectorWithMemoryTracking<StridedTensor<T>> & operands, const VectorWithMemoryTracking<size_t> & output_indices, T * output)
     {
         if (operands.size() == 2 && contractPairAsMatrices(operands[0], operands[1], output_indices, output))
             return;
@@ -642,7 +643,7 @@ public:
         PODArray<T> storage;
         for (size_t next = 1; next + 1 < operands.size(); ++next)
         {
-            std::vector<size_t> intermediate_indices;
+            VectorWithMemoryTracking<size_t> intermediate_indices;
             for (size_t index = 0; index < sizes.size(); ++index)
             {
                 if (!isUsed(current, index) && !isUsed(operands[next], index))
@@ -665,13 +666,13 @@ public:
     }
 
 private:
-    const std::vector<size_t> & sizes;
+    const VectorWithMemoryTracking<size_t> & sizes;
 
     /// All sizes are positive here (otherwise there is nothing to calculate), so the stride of an index is zero
     /// if and only if the tensor does not have it.
     static bool isUsed(const StridedTensor<T> & tensor, size_t index) { return tensor.strides[index] != 0; }
 
-    size_t product(const std::vector<size_t> & indices) const
+    size_t product(const VectorWithMemoryTracking<size_t> & indices) const
     {
         size_t res = 1;
         for (size_t index : indices)
@@ -679,9 +680,9 @@ private:
         return res;
     }
 
-    std::vector<size_t> contiguousStrides(const std::vector<size_t> & indices) const
+    VectorWithMemoryTracking<size_t> contiguousStrides(const VectorWithMemoryTracking<size_t> & indices) const
     {
-        std::vector<size_t> strides(sizes.size(), 0);
+        VectorWithMemoryTracking<size_t> strides(sizes.size(), 0);
         size_t stride = 1;
         for (size_t i = indices.size(); i > 0; --i)
         {
@@ -692,7 +693,7 @@ private:
     }
 
     /// Whether the tensor already has the layout of a contiguous tensor with `indices`.
-    bool isContiguous(const StridedTensor<T> & tensor, const std::vector<size_t> & indices) const
+    bool isContiguous(const StridedTensor<T> & tensor, const VectorWithMemoryTracking<size_t> & indices) const
     {
         auto expected = contiguousStrides(indices);
         for (size_t index = 0; index < sizes.size(); ++index)
@@ -702,12 +703,12 @@ private:
     }
 
     /// The general implementation: a loop over all the indices of the operands.
-    void contractWithLoopNest(const std::vector<StridedTensor<T>> & operands, const std::vector<size_t> & output_indices, T * output)
+    void contractWithLoopNest(const VectorWithMemoryTracking<StridedTensor<T>> & operands, const VectorWithMemoryTracking<size_t> & output_indices, T * output)
     {
         auto output_strides = contiguousStrides(output_indices);
 
-        std::vector<Loop> loops;
-        std::vector<const T *> pointers;
+        VectorWithMemoryTracking<Loop> loops;
+        VectorWithMemoryTracking<const T *> pointers;
         for (const auto & operand : operands)
             pointers.push_back(operand.data);
 
@@ -733,7 +734,7 @@ private:
     }
 
     /// Copies (and sums over the indices that are not in `indices`) the tensor into a contiguous tensor with `indices`.
-    const T * toContiguous(const StridedTensor<T> & tensor, const std::vector<size_t> & indices, PODArray<T> & storage)
+    const T * toContiguous(const StridedTensor<T> & tensor, const VectorWithMemoryTracking<size_t> & indices, PODArray<T> & storage)
     {
         bool has_other_indices = false;
         for (size_t index = 0; index < sizes.size(); ++index)
@@ -753,12 +754,12 @@ private:
       * the columns (only in the second tensor and in the output) and the summation (in both tensors, not in the output).
       * The indices that are only in one tensor and not in the output are summed before the multiplication.
       */
-    bool contractPairAsMatrices(const StridedTensor<T> & a, const StridedTensor<T> & b, const std::vector<size_t> & output_indices, T * output)
+    bool contractPairAsMatrices(const StridedTensor<T> & a, const StridedTensor<T> & b, const VectorWithMemoryTracking<size_t> & output_indices, T * output)
     {
-        std::vector<size_t> batch;
-        std::vector<size_t> rows;
-        std::vector<size_t> columns;
-        std::vector<size_t> summation;
+        VectorWithMemoryTracking<size_t> batch;
+        VectorWithMemoryTracking<size_t> rows;
+        VectorWithMemoryTracking<size_t> columns;
+        VectorWithMemoryTracking<size_t> summation;
 
         for (size_t index = 0; index < sizes.size(); ++index)
         {
@@ -784,9 +785,9 @@ private:
         size_t columns_size = product(columns);
         bool use_dot_products = columns_size < 8;
 
-        auto concat = [](std::initializer_list<const std::vector<size_t> *> parts)
+        auto concat = [](std::initializer_list<const VectorWithMemoryTracking<size_t> *> parts)
         {
-            std::vector<size_t> res;
+            VectorWithMemoryTracking<size_t> res;
             for (const auto * part : parts)
                 res.insert(res.end(), part->begin(), part->end());
             return res;
@@ -915,7 +916,7 @@ public:
         size_t first_tensor = signature.has_combiner ? 2 : 1;
         size_t num_tensors = signature.tensors.size();
 
-        std::vector<TensorRows> tensors;
+        VectorWithMemoryTracking<TensorRows> tensors;
         tensors.reserve(num_tensors);
         for (size_t i = 0; i < num_tensors; ++i)
             tensors.push_back(getTensorRows(
@@ -1037,7 +1038,7 @@ private:
         return signature;
     }
 
-    static PaddedPODArray<UInt64> getOutputDims(const EinsumSignature & signature, const std::vector<RowLayout> & layouts)
+    static PaddedPODArray<UInt64> getOutputDims(const EinsumSignature & signature, const VectorWithMemoryTracking<RowLayout> & layouts)
     {
         size_t rank = signature.spec.output.size();
         PaddedPODArray<UInt64> output_dims(layouts.size() * rank);
@@ -1051,7 +1052,7 @@ private:
     template <typename T, typename ComputeT>
     ColumnPtr executeNumeric(
         const EinsumSignature & signature,
-        const std::vector<TensorRows> & tensors,
+        const VectorWithMemoryTracking<TensorRows> & tensors,
         size_t input_rows_count) const
     {
         static_assert(sizeof(T) == sizeof(ComputeT));
@@ -1059,11 +1060,11 @@ private:
         auto result_element_type = std::make_shared<DataTypeNumber<T>>();
 
         /// The elements of all tensors in the type of the result.
-        std::vector<ColumnPtr> elements;
+        VectorWithMemoryTracking<ColumnPtr> elements;
         for (size_t i = 0; i < tensors.size(); ++i)
             elements.push_back(castColumn({tensors[i].elements, signature.tensors[i].element, ""}, result_element_type));
 
-        std::vector<RowLayout> layouts(input_rows_count);
+        VectorWithMemoryTracking<RowLayout> layouts(input_rows_count);
         size_t total_output = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -1078,7 +1079,7 @@ private:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const auto & layout = layouts[row];
-            std::vector<StridedTensor<ComputeT>> operands;
+            VectorWithMemoryTracking<StridedTensor<ComputeT>> operands;
             for (size_t i = 0; i < tensors.size(); ++i)
             {
                 const auto & data = assert_cast<const ColumnVector<T> &>(*elements[i]).getData();
@@ -1099,7 +1100,7 @@ private:
     ColumnPtr executeGeneric(
         const EinsumSignature & signature,
         const ColumnsWithTypeAndName & arguments,
-        const std::vector<TensorRows> & tensors,
+        const VectorWithMemoryTracking<TensorRows> & tensors,
         size_t input_rows_count) const
     {
         const auto & spec = signature.spec;
@@ -1116,7 +1117,7 @@ private:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The second argument of function {} must be a lambda function", getName());
         }
 
-        std::vector<RowLayout> layouts(input_rows_count);
+        VectorWithMemoryTracking<RowLayout> layouts(input_rows_count);
         size_t total_output = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -1126,7 +1127,7 @@ private:
 
         /// The terms of a row are enumerated with the output indices first and the contracted indices last,
         /// so that the terms of each element of the result are adjacent.
-        std::vector<size_t> loop_indices = spec.output;
+        VectorWithMemoryTracking<size_t> loop_indices = spec.output;
         loop_indices.insert(loop_indices.end(), spec.contracted.begin(), spec.contracted.end());
 
         DataTypes element_types;
@@ -1142,9 +1143,9 @@ private:
         size_t row = 0;
         size_t term_in_row = 0;
         size_t output_offset = 0;
-        std::vector<size_t> counters(num_indices, 0);
+        VectorWithMemoryTracking<size_t> counters(num_indices, 0);
 
-        std::vector<ColumnUInt64::MutablePtr> positions(num_tensors);
+        VectorWithMemoryTracking<ColumnUInt64::MutablePtr> positions(num_tensors);
         PaddedPODArray<UInt64> output_positions;
         IColumn::Offsets rows_offsets;
 
