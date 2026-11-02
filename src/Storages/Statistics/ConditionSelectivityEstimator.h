@@ -42,11 +42,14 @@ class ConditionSelectivityEstimator : public WithContext
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
+    /// The rows and column statistics of the relation after the given predicates. A statistic whose type differs from
+    /// the type of its column in `metadata` is outdated (an `ALTER MODIFY COLUMN` is not materialized yet) and skipped;
+    /// without `metadata`, every statistic is used.
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata = {}) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata) const;
 
     struct RPNElement
     {

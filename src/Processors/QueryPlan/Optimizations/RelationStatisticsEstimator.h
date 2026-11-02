@@ -18,11 +18,7 @@ struct RelationStatsOptions
 };
 
 /// Estimate the number of rows and per-column statistics of the relation produced by the subtree
-/// rooted at `node`, keyed by the subtree's output column names. `filter` is an optional predicate
-/// over these columns to account for. Runtime filters prune nothing at plan time, so the row estimate
-/// ignores a predicate that holds whenever its runtime filters pass: a runtime filter, an `and` of
-/// them, or `__applyFilter(...) OR isNull(key)`. Such a predicate still drops rows at execution time,
-/// so the provenance of the result records it as a row subset.
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, RelationStatsOptions options = {});
+/// rooted at `node`, keyed by the subtree's output column names.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions options = {});
 
 }

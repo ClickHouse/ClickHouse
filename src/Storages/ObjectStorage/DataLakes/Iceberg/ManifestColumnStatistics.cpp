@@ -276,8 +276,9 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
     if (!estimator)
         return;
 
-    /// The merged bounds and NULL counts the numbers of distinct values come from.
-    const auto merged = estimator->estimateRelationProfile();
+    /// The merged bounds and NULL counts the numbers of distinct values come from. The statistics were built with the
+    /// current column types, so there are no outdated ones to skip.
+    const auto merged = estimator->estimateRelationProfile(/*metadata=*/nullptr);
     /// Next step estimates NDV count when possible, from data we have from min/max, primary key info, etc.
     /// Similar to MergeTree without `uniq` statistics, estimator would make a blind guess.
     for (size_t i = 0; i < targets.size(); ++i)

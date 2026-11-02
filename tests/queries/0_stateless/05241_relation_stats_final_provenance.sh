@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# `FINAL` can synthesize values (here `SummingMergeTree` sums the two rows into one), so the statistics of a `FINAL` read
+# are marked as a row subset with an unmodeled effect on values. The provenance is only visible in the trace log of the
+# estimate, hence a shell test.
+
 $CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE IF EXISTS t_relation_stats_final_l;
     DROP TABLE IF EXISTS t_relation_stats_final_r;
@@ -38,7 +42,7 @@ $CLICKHOUSE_CLIENT --query "
         enable_parallel_replicas = 0
 " --send_logs_level='trace' --send_logs_source_regexp='optimizeJoin' 2>&1 \
     | grep 'estimate statistics t_relation_stats_final_r:' \
-    | grep -oF 'b3: 1 (ndv: part-statistics[row-subset,unsupported], range: part-statistics[row-subset,unsupported])'
+    | grep -oF 'b3: 1 (ndv: measured-statistics[row-subset,unmodeled], range: measured-statistics[row-subset,unmodeled])'
 
 $CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE t_relation_stats_final_l;

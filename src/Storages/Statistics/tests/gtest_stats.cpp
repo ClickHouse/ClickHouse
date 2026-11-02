@@ -327,31 +327,31 @@ TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
     measured_builder.incrementRowCount(100);
     auto measured_estimator = measured_builder.getEstimator();
 
-    const auto measured_profile = measured_estimator->estimateRelationProfile();
+    const auto measured_profile = measured_estimator->estimateRelationProfile(/*metadata=*/nullptr);
     const auto & measured = measured_profile.column_stats.at("k");
-    EXPECT_EQ(measured.ndv_provenance.origin, ColumnStatsOrigin::PartStatistics);
-    EXPECT_EQ(measured.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
-    EXPECT_FALSE(measured.ndv_provenance.has(PartialPartCoverage));
-    EXPECT_FALSE(measured.range_provenance.has(PartialPartCoverage));
+    EXPECT_EQ(measured.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(measured.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_FALSE(measured.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(measured.range_provenance.has(PartialStatisticsCoverage));
 
     auto basic_stats = buildInt32Stats({StatisticsType::Basic}, 100);
     ConditionSelectivityEstimatorBuilder basic_builder(getContext().context);
     basic_builder.addStatistics("k", basic_stats);
     basic_builder.incrementRowCount(100);
-    const auto basic_profile = basic_builder.getEstimator()->estimateRelationProfile();
+    const auto basic_profile = basic_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
     const auto & basic = basic_profile.column_stats.at("k");
     EXPECT_EQ(basic.ndv_provenance.origin, ColumnStatsOrigin::SyntheticFallback);
-    EXPECT_EQ(basic.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_EQ(basic.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
 
     ConditionSelectivityEstimatorBuilder partial_builder(getContext().context);
     partial_builder.addStatistics("k", measured_stats);
     partial_builder.incrementRowCount(1000);
-    const auto partial_profile = partial_builder.getEstimator()->estimateRelationProfile();
+    const auto partial_profile = partial_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
     const auto & partial = partial_profile.column_stats.at("k");
-    EXPECT_EQ(partial.ndv_provenance.origin, ColumnStatsOrigin::PartStatistics);
-    EXPECT_EQ(partial.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
-    EXPECT_TRUE(partial.ndv_provenance.has(PartialPartCoverage));
-    EXPECT_TRUE(partial.range_provenance.has(PartialPartCoverage));
+    EXPECT_EQ(partial.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(partial.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
 
     /// The predicate reaches the estimator as an `ActionsDAG` node, as in `estimateRowsFor`.
     ContextPtr context = getContext().context;

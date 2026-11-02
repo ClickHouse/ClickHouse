@@ -54,7 +54,6 @@
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1317,22 +1316,22 @@ static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
     }
 }
 
-/// One of the value-range predicates of `RelationStatistics.h`, naming the guarantee a consumer needs.
-using IEJoinRangeGuarantee = bool (*)(const ColumnStatsProvenance &);
-
 /// The statistics range of a key operand, or std::nullopt when it is missing, not numeric, or
-/// its provenance does not give the guarantee the caller needs.
+/// does not give `guarantee`.
 static std::optional<IEJoinOperandRange> getIEJoinOperandRange(
-    const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand, IEJoinRangeGuarantee has_guarantee)
+    const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand, ValueRangeGuarantee guarantee)
 {
     auto it = column_stats.find(operand.getColumnName());
-    if (it == column_stats.end() || !it->second.min_value || !it->second.max_value || !has_guarantee(it->second.range_provenance))
+    if (it == column_stats.end())
         return {};
-    auto min_value = statisticsFieldToFloat64(*it->second.min_value);
-    auto max_value = statisticsFieldToFloat64(*it->second.max_value);
+    const auto range = it->second.valueRange(guarantee);
+    if (!range)
+        return {};
+    auto min_value = statisticsFieldToFloat64(range->min);
+    auto max_value = statisticsFieldToFloat64(range->max);
     if (!min_value || !max_value || !std::isfinite(*min_value) || !std::isfinite(*max_value))
         return {};
-    return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = it->second.null_fraction};
+    return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = range->null_fraction};
 }
 
 /// The fraction of row pairs satisfying the condition, estimated from per-column min/max
@@ -1352,8 +1351,8 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
         return {};
 
     /// Uniform interpolation tolerates inexact endpoints, but the values must be spread over the range.
-    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs, QueryPlanOptimizations::isRepresentativeValueRange);
-    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs, QueryPlanOptimizations::isRepresentativeValueRange);
+    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs, ValueRangeGuarantee::Representative);
+    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs, ValueRangeGuarantee::Representative);
     if (!left_range || !right_range)
         return {};
 
@@ -1408,11 +1407,10 @@ static Float64 estimateIEJoinKeyPairSelectivity(
     bool first_bound_is_upper = shared_column_on_left ? isLessFamily(first_op) : !isLessFamily(first_op);
     const auto & lower_bound = first_bound_is_upper ? second_bound : first_bound;
     const auto & upper_bound = first_bound_is_upper ? first_bound : second_bound;
-    /// Ordered bounds are a consequence of `lo <= hi` only for the true extremes of the joined rows. A range
-    /// that is merely representative (e.g. of a sample) can hide the disorder that refutes a pseudo-band;
-    /// without exact ranges the pair is scored as independent.
-    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound, QueryPlanOptimizations::isExactValueRange);
-    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound, QueryPlanOptimizations::isExactValueRange);
+    /// Refuting `lo <= hi` from min/max needs the true extremes of the joined rows; without them the
+    /// pair is scored as independent.
+    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound, ValueRangeGuarantee::Exact);
+    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound, ValueRangeGuarantee::Exact);
     bool bounds_ordered = lower_bound_range && upper_bound_range
         && lower_bound_range->min <= upper_bound_range->min && lower_bound_range->max <= upper_bound_range->max;
 

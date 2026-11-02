@@ -1,1 +1,1 @@
-b3: 1 (ndv: part-statistics[row-subset,unsupported], range: part-statistics[row-subset,unsupported])
+b3: 1 (ndv: measured-statistics[row-subset,unmodeled], range: measured-statistics[row-subset,unmodeled])

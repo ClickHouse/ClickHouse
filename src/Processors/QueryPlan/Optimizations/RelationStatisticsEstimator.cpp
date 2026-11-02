@@ -77,8 +77,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
             continue;
         }
 
-        ColumnStats grouping_key_stats = QueryPlanOptimizations::makeGroupingKeyStats(
-            key_stats->second, input_stats.estimated_rows, input_stats.rows_exact);
+        ColumnStats grouping_key_stats = makeGroupingKeyStats(key_stats->second, input_stats);
         const UInt64 key_number_of_distinct_values = grouping_key_stats.num_distinct_values;
         aggregation_stats.column_stats.emplace(key, std::move(grouping_key_stats));
 
@@ -95,13 +94,15 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     if (total_number_of_distinct_values)
         aggregation_stats.estimated_rows = toUInt64Saturating(*total_number_of_distinct_values);
 
+    /// Grouping sets and the overflow row of `WITH TOTALS` under `max_rows_to_group_by` add rows with default key
+    /// values, which need not occur in the input.
     if (aggregating_step.isGroupingSets() || aggregator_params.overflow_row)
-        addTransformation(aggregation_stats.column_stats, Unsupported);
+        aggregation_stats.addTransformation(Unmodeled);
 
     /// `max_rows_to_group_by` with overflow mode ANY keeps the first keys seen and BREAK stops reading:
-    /// either way the output key set is an order-dependent subset of the input's distinct keys.
+    /// either way the output keys are a subset of the input's.
     if (aggregator_params.max_rows_to_group_by && aggregator_params.group_by_overflow_mode != OverflowMode::THROW)
-        addTransformation(aggregation_stats.column_stats, NonUniformRowSubset);
+        aggregation_stats.addTransformation(RowSubset);
 
     return aggregation_stats;
 }
@@ -125,34 +126,56 @@ void forgetFilteredArrayJoinRows(RelationStats & stats)
     stats.rows_exact = false;
 }
 
+/// Applies `LIMIT limit OFFSET offset` to the row count of `stats` and returns whether the limit may drop rows.
+/// Only an exact input row count proves that the limit keeps every row, or gives the exact output row count.
+bool applyRowLimit(RelationStats & stats, UInt64 limit, UInt64 offset, bool with_ties)
+{
+    if (const auto input_rows = stats.exactRows())
+    {
+        if (offset == 0 && *input_rows <= limit)
+            return false;
+        /// `WITH TIES` can keep more than `limit` rows.
+        if (!with_ties)
+        {
+            stats.estimated_rows = std::min(*input_rows - std::min(*input_rows, offset), limit);
+            return true;
+        }
+    }
+    if (!stats.estimated_rows || *stats.estimated_rows > limit)
+        stats.estimated_rows = limit;
+    stats.rows_exact = false;
+    return true;
+}
+
+/// How `estimateUnaryStepStats` derives the statistics of a step from those of its only input.
 enum class UnaryStepStatsKind : UInt8
 {
+    /// The step is not estimated.
     Unsupported,
     Limit,
     Expression,
+    /// `ArrayJoinStep` or an `ExpressionStep` with `arrayJoin`.
     ArrayJoin,
     Filter,
     Aggregating,
     Sorting,
     LogicalExchange,
-    ValuePreservingTransform,
-    PreservingTransform,
+    /// Passes its input rows and values through unchanged.
+    PassThrough,
+    /// Keeps the number of rows, but its effect on values is not modeled.
+    UnmodeledRowPreserving,
 };
 
 UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
 {
     if (typeid_cast<const LimitStep *>(&step))
         return UnaryStepStatsKind::Limit;
-
-    /// ARRAY JOIN changes the number of rows. Keep both of its forms explicit instead of relying on the
-    /// generic transforming-step traits so the supported set cannot silently widen.
     if (typeid_cast<const ArrayJoinStep *>(&step))
         return UnaryStepStatsKind::ArrayJoin;
 
+    /// `arrayJoin` changes the number of rows, so such an expression is estimated as an array join.
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
-    {
         return expression_step->getExpression().hasArrayJoin() ? UnaryStepStatsKind::ArrayJoin : UnaryStepStatsKind::Expression;
-    }
 
     if (typeid_cast<const FilterStep *>(&step))
         return UnaryStepStatsKind::Filter;
@@ -163,28 +186,16 @@ UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
     if (dynamic_cast<const LogicalExchangeStep *>(&step))
         return UnaryStepStatsKind::LogicalExchange;
 
-    /// Tees the same rows and columns to multiple consumers.
-    if (typeid_cast<const CommonSubplanStep *>(&step))
-        return UnaryStepStatsKind::ValuePreservingTransform;
-    /// Copies selected columns to a buffer while passing the input through unchanged.
-    if (typeid_cast<const SaveSubqueryResultToBufferStep *>(&step))
-        return UnaryStepStatsKind::ValuePreservingTransform;
-    /// Adds an extremes port without changing the main stream.
-    if (typeid_cast<const ExtremesStep *>(&step))
-        return UnaryStepStatsKind::ValuePreservingTransform;
-    /// Appends window result columns while leaving existing columns unchanged.
-    if (typeid_cast<const WindowStep *>(&step))
-        return UnaryStepStatsKind::ValuePreservingTransform;
-    /// Builds a runtime filter while passing the input through unchanged.
-    if (typeid_cast<const BuildRuntimeFilterStep *>(&step))
-        return UnaryStepStatsKind::ValuePreservingTransform;
-    /// Writes to the query-result cache while passing the input through unchanged.
-    if (typeid_cast<const StreamInQueryResultCacheStep *>(&step))
-        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// These steps leave the rows and the existing columns unchanged: they tee their input to several consumers, copy it
+    /// into a buffer or the query result cache, build a runtime filter or extremes from it, or append window columns.
+    if (typeid_cast<const CommonSubplanStep *>(&step) || typeid_cast<const SaveSubqueryResultToBufferStep *>(&step)
+        || typeid_cast<const StreamInQueryResultCacheStep *>(&step) || typeid_cast<const BuildRuntimeFilterStep *>(&step)
+        || typeid_cast<const ExtremesStep *>(&step) || typeid_cast<const WindowStep *>(&step))
+        return UnaryStepStatsKind::PassThrough;
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(&step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return UnaryStepStatsKind::PreservingTransform;
+        return UnaryStepStatsKind::UnmodeledRowPreserving;
     return UnaryStepStatsKind::Unsupported;
 }
 
@@ -246,25 +257,8 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::Limit:
         {
             const auto & limit_step = static_cast<const LimitStep &>(step);
-            const auto limit = limit_step.getLimit();
-            const auto offset = limit_step.getOffset();
-            const bool preserves_all_rows = input_stats.rows_exact && input_stats.estimated_rows && offset == 0
-                && *input_stats.estimated_rows <= limit;
-            if (preserves_all_rows)
-                return input_stats;
-
-            if (input_stats.rows_exact && input_stats.estimated_rows && !limit_step.withTies())
-            {
-                const UInt64 rows_after_offset = *input_stats.estimated_rows > offset ? *input_stats.estimated_rows - offset : 0;
-                input_stats.estimated_rows = std::min<UInt64>(rows_after_offset, limit);
-            }
-            else
-            {
-                if (!input_stats.estimated_rows || input_stats.estimated_rows > limit)
-                    input_stats.estimated_rows = limit;
-                input_stats.rows_exact = false;
-            }
-            addTransformation(input_stats.column_stats, NonUniformRowSubset);
+            if (applyRowLimit(input_stats, limit_step.getLimit(), limit_step.getOffset(), limit_step.withTies()))
+                input_stats.addTransformation(RowSubset);
             return input_stats;
         }
         case UnaryStepStatsKind::Expression:
@@ -274,13 +268,14 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             return input_stats;
         }
         case UnaryStepStatsKind::ArrayJoin: {
+            /// Only an exactly empty input gives an exact output: no rows.
+            const bool is_exactly_empty = input_stats.exactRows() == 0;
             const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(&step);
             if (array_join_step && array_join_step->hasElementFilter())
                 forgetFilteredArrayJoinRows(input_stats);
             else if (input_stats.estimated_rows)
                 input_stats.estimated_rows = toUInt64Saturating(Float64(*input_stats.estimated_rows) * array_join_rows_multiplier);
-            /// Only an empty input gives an exact output: no rows.
-            input_stats.rows_exact = input_stats.rows_exact && input_stats.estimated_rows == 0;
+            input_stats.rows_exact = is_exactly_empty;
 
             /// Array-joined columns lose their statistics.
             if (array_join_step)
@@ -289,17 +284,17 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             else
                 remapColumnStats(input_stats.column_stats, static_cast<const ExpressionStep &>(step).getExpression());
 
-            /// The other columns keep their values, but each row repeats once per array element and
-            /// ARRAY JOIN drops rows with empty arrays: the distinct set and range can only shrink, and
-            /// the distribution follows the array sizes.
-            addTransformation(input_stats.column_stats, NonUniformRowSubset);
+            /// The other columns keep their values, but each row repeats once per array element, and unless the join is
+            /// LEFT, rows with empty arrays are dropped: the distinct set and range can only shrink, and the distribution
+            /// follows the array sizes.
+            input_stats.addTransformation(RowSubset);
             return input_stats;
         }
         case UnaryStepStatsKind::Filter:
         {
             const auto & filter_step = static_cast<const FilterStep &>(step);
             remapColumnStats(input_stats.column_stats, filter_step.getExpression());
-            addTransformation(input_stats.column_stats, RowSubset);
+            input_stats.addTransformation(RowSubset);
             input_stats.rows_exact = false;
             return input_stats;
         }
@@ -308,25 +303,18 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::Sorting:
         {
             const auto & sorting_step = static_cast<const SortingStep &>(step);
-            const auto limit = sorting_step.getLimit();
+            bool may_drop_rows
+                = sorting_step.getLimit() && applyRowLimit(input_stats, sorting_step.getLimit(), /*offset=*/0, /*with_ties=*/false);
             /// With a non-throwing overflow mode, `max_rows_to_sort` and `max_bytes_to_sort` stop a sorting stream
             /// once it exceeds them, so even a sort without a limit can return an order-dependent part of its input.
             const auto & size_limits = sorting_step.getSettings().size_limits;
-            const bool may_stop_early = size_limits.overflow_mode != OverflowMode::THROW && size_limits.hasLimits();
-            const bool may_truncate_rows = may_stop_early
-                || (limit && (!input_stats.rows_exact || !input_stats.estimated_rows || *input_stats.estimated_rows > limit));
-            if (limit)
+            if (size_limits.overflow_mode != OverflowMode::THROW && size_limits.hasLimits())
             {
-                /// A synthesized limit is not an exact row count when the input count is unknown.
-                if (!input_stats.estimated_rows)
-                    input_stats.rows_exact = false;
-                if (!input_stats.estimated_rows || input_stats.estimated_rows > limit)
-                    input_stats.estimated_rows = limit;
-            }
-            if (may_stop_early)
                 input_stats.rows_exact = false;
-            if (may_truncate_rows)
-                addTransformation(input_stats.column_stats, NonUniformRowSubset);
+                may_drop_rows = true;
+            }
+            if (may_drop_rows)
+                input_stats.addTransformation(RowSubset);
             return input_stats;
         }
         case UnaryStepStatsKind::LogicalExchange:
@@ -336,13 +324,11 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             /// exact phase from this estimate, and the build filter sits below the join shuffle, so
             /// the walk has to cross exchanges on every build.
             return input_stats;
-        case UnaryStepStatsKind::ValuePreservingTransform:
-            return input_stats;
-        case UnaryStepStatsKind::PreservingTransform:
-            /// Preserving row count alone does not prove that the key values are preserved. Known
-            /// value-preserving steps are allow-listed in `classifyUnaryStepStats`; anything else
-            /// fails closed. Keep observed values for diagnostics and record that they are unsupported.
-            addTransformation(input_stats.column_stats, Unsupported);
+        case UnaryStepStatsKind::PassThrough: return input_stats;
+        case UnaryStepStatsKind::UnmodeledRowPreserving:
+            /// Keeping the number of rows does not mean keeping the values. The steps known to pass values
+            /// through are listed in `classifyUnaryStepStats`; anything else fails closed.
+            input_stats.addTransformation(Unmodeled);
             return input_stats;
         case UnaryStepStatsKind::Unsupported:
             return std::nullopt;
@@ -372,6 +358,110 @@ bool mayStopReadingEarly(const SelectQueryInfo & query_info)
                 || (local_limits.timeout_overflow_mode != OverflowMode::THROW
                     && local_limits.speed_limits.max_execution_time.totalMicroseconds() != 0);
         });
+}
+
+/// What a read does to the rows and values that the statistics of its source describe. A filter step above the read
+/// records its own row subset; it counts here only where the estimate of the read accounts for it.
+struct ReadCoverage
+{
+    /// The read may return only some of the rows: it filters or limits them, skips deleted rows, or may stop early.
+    bool may_drop_rows = false;
+    /// The read may return values that the statistics did not measure.
+    bool may_rewrite_values = false;
+    /// The `n` of a top-K read (`ORDER BY ... LIMIT n`), see `mayDropRows`. The `__topKFilter` PREWHERE that a later
+    /// optimization pass adds to such a read makes it drop rows as any predicate; the estimates for join planning
+    /// are made before that.
+    std::optional<UInt64> top_k_limit;
+
+    /// Whether the read may return fewer rows than it selects. A top-K read keeps every row of the final top `n`:
+    /// range analysis drops only granules and parts that cannot hold one, and a running boundary drops rows once `n`
+    /// have been seen. So if nothing else drops rows, it keeps all `selected_rows` if there are at most `n`.
+    bool mayDropRows(UInt64 selected_rows) const { return may_drop_rows || (top_k_limit && selected_rows > *top_k_limit); }
+
+    /// Records in the column statistics of `stats` what the read may drop or rewrite.
+    void recordIn(RelationStats & stats, UInt64 selected_rows) const
+    {
+        if (mayDropRows(selected_rows))
+            stats.addTransformation(RowSubset);
+        if (may_rewrite_values)
+            stats.addTransformation(Unmodeled);
+    }
+};
+
+bool hasLightweightDeletedRows(const RangesInDataParts & parts)
+{
+    return std::ranges::any_of(
+        parts,
+        [](const RangesInDataPart & part)
+        { return part.data_part->hasLightweightDelete() || (part.parent_part && part.parent_part->hasLightweightDelete()); });
+}
+
+/// Whether a `UNIQUE KEY` read drops rows of `parts` superseded by later inserts. It drops them through the delete
+/// bitmaps of its snapshot; they are not `_row_exists` deletes and leave no mutation, but the part statistics still
+/// cover them. The bitmap of each part is checked, as the reader does: the analysis has already resolved them to drop
+/// fully dead granules, and the snapshot memoizes them for the read.
+bool hasUniqueKeyDeletedRows(const ReadFromMergeTree & reading, const RangesInDataParts & parts)
+{
+    const auto * delete_bitmap_snapshot = tryGetDeleteBitmapSnapshot(*reading.getStorageSnapshot());
+    return delete_bitmap_snapshot
+        && std::ranges::any_of(
+               parts, [&](const RangesInDataPart & part) { return !delete_bitmap_snapshot->bitmapAt(part.data_part->info)->empty(); });
+}
+
+/// Whether a metadata-only `RENAME COLUMN` / `DROP COLUMN` is pending for some of `parts`. Until it is materialized, the
+/// statistics of a part stay keyed by its old column names, while the reader resolves a renamed column through
+/// `AlterConversions`: after `DROP COLUMN a, RENAME COLUMN b TO a` the statistics found for `a` describe the dropped
+/// column, not the old `b`. The snapshot can keep such a mutation after every part has materialized it, so the commands
+/// still pending for each part are checked, as the reader does. A projection part has a fake data version, so its
+/// parent decides.
+bool hasPendingMetadataMutations(const ReadFromMergeTree & reading, const RangesInDataParts & parts)
+{
+    const auto mutations_snapshot = reading.getMutationsSnapshot();
+    if (!mutations_snapshot || !mutations_snapshot->hasMetadataMutations())
+        return false;
+    return std::ranges::any_of(
+        parts,
+        [&](const RangesInDataPart & part)
+        {
+            const auto & data_part = part.parent_part ? part.parent_part : part.data_part;
+            return std::ranges::any_of(
+                mutations_snapshot->getOnFlyMutationCommandsForPart(data_part),
+                [](const MutationCommand & command) { return AlterConversions::isSupportedMetadataMutation(command.type); });
+        });
+}
+
+/// Mutations and patch parts applied on the fly can rewrite values and delete rows.
+bool hasOnTheFlyDataChanges(const ReadFromMergeTree & reading)
+{
+    const auto mutations_snapshot = reading.getMutationsSnapshot();
+    return mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts());
+}
+
+/// The coverage of a MergeTree read of `parts`. With `has_plan_time_filter`, the estimate accounts for a filter above
+/// the read, so it describes a subset of the rows as well.
+ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const RangesInDataParts & parts, bool has_plan_time_filter)
+{
+    const auto & query_info = reading.getQueryInfo();
+    const bool has_predicates = has_plan_time_filter || reading.getPrewhereInfo() || reading.getRowLevelFilter()
+        || reading.getFilterActionsDAG() || reading.getDeferredPrewhereInfo() || reading.getDeferredRowLevelFilter();
+    const bool has_row_selecting_modifiers = query_info.isFinal() || query_info.isStream() || query_info.trivial_limit
+        || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio())
+        || reading.getVectorSearchParameters().has_value();
+    /// A transaction snapshot is deliberately absent: the visible parts are the exact input of the read.
+    const bool has_deleted_rows = hasLightweightDeletedRows(parts) || hasUniqueKeyDeletedRows(reading, parts);
+    const bool has_on_the_fly_data_changes = hasOnTheFlyDataChanges(reading);
+
+    return ReadCoverage{
+        .may_drop_rows = has_predicates || has_row_selecting_modifiers || has_deleted_rows || has_on_the_fly_data_changes
+            || mayStopReadingEarly(query_info),
+        /// `FINAL` can synthesize values in `SummingMergeTree`, `AggregatingMergeTree` and `GraphiteMergeTree`; every
+        /// `FINAL` read counts, so that new merge modes fail closed.
+        .may_rewrite_values = has_on_the_fly_data_changes || query_info.isFinal()
+            || reading.getMergeTreeData().hasEnabledMaskingPolicies(reading.getContext()) || hasPendingMetadataMutations(reading, parts),
+        .top_k_limit
+        = reading.isSelectedForTopKFilterOptimization() ? std::optional<UInt64>(reading.getTopKFilterInfo()->limit_n) : std::nullopt,
+    };
 }
 
 /// Statistics of a node that is estimated without first estimating a child: a read step or an
@@ -416,12 +506,10 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .source = RowEstimateSource::NoStatistics};
         }
 
-        /// A runtime filter prunes nothing at plan time, so it does not count as a filter for the row estimate.
-        /// It still drops rows at execution time, so the provenance flags below keep looking at the raw `filter`.
+        /// A runtime filter prunes nothing at plan time, so it does not count as a filter for the estimate.
         const ActionsDAG::Node * plan_time_filter = prunesNothingAtPlanTime(filter) ? nullptr : filter;
 
-        /// A PREWHERE that prunes nothing at plan time is likewise not a plan-time filter. As above, the
-        /// provenance flags below keep looking at the raw `prewhere_info`.
+        /// A PREWHERE that prunes nothing at plan time is likewise not a plan-time filter.
         const PrewhereInfoPtr prewhere_info = reading->getPrewhereInfo();
         const ActionsDAG::Node * prewhere_node = prewhere_info
             ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
@@ -468,74 +556,8 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .source = RowEstimateSource::NoStatistics};
         }
 
-        const auto & query_info = reading->getQueryInfo();
-        const bool has_final = query_info.isFinal();
-        const bool has_lightweight_deleted_rows
-            = analyzed_result
-            && std::ranges::any_of(
-                  analyzed_result->parts_with_ranges,
-                  [](const auto & part)
-                  { return part.data_part->hasLightweightDelete() || (part.parent_part && part.parent_part->hasLightweightDelete()); });
-        const auto mutations_snapshot = reading->getMutationsSnapshot();
-        const bool has_on_fly_data_changes = mutations_snapshot
-            && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts());
-        const bool has_masking_policy = reading->getMergeTreeData().hasEnabledMaskingPolicies(reading->getContext());
-        /// These transformations can rewrite values, so the on-disk NDVs and ranges are no longer bounds.
-        /// In particular, FINAL can synthesize values in SummingMergeTree, AggregatingMergeTree and
-        /// GraphiteMergeTree. Treat every FINAL read conservatively so new merge modes fail closed.
-        const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy || has_final;
-        /// A metadata-only `RENAME COLUMN` / `DROP COLUMN` does not rewrite a part. Until it is materialized, the part's
-        /// statistics stay keyed by its old column names, while the reader resolves a renamed column through
-        /// `AlterConversions`: after `DROP COLUMN a, RENAME COLUMN b TO a` the statistics found for `a` describe the
-        /// dropped column, not the old `b`. The snapshot can keep such a mutation after every part has materialized
-        /// it, so ask for the commands still pending for each part, as the reader does. A projection part has a fake
-        /// data version, so its parent decides. The mutation keeps every row, so it leaves the row count exact.
-        const auto has_pending_metadata_mutations = [&]
-        {
-            if (!mutations_snapshot || !mutations_snapshot->hasMetadataMutations())
-                return false;
-            const auto & parts = analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts();
-            return std::ranges::any_of(
-                parts,
-                [&](const RangesInDataPart & part)
-                {
-                    const auto & data_part = part.parent_part ? part.parent_part : part.data_part;
-                    return std::ranges::any_of(
-                        mutations_snapshot->getOnFlyMutationCommandsForPart(data_part),
-                        [](const MutationCommand & command) { return AlterConversions::isSupportedMetadataMutation(command.type); });
-                });
-        };
-        /// A `UNIQUE KEY` read drops the rows superseded by later inserts through the delete bitmaps of its snapshot. They
-        /// are not `_row_exists` deletes and leave no mutation, but the part statistics still cover them. Ask for the
-        /// bitmap of each part, as the reader does: the analysis has already resolved them to drop fully dead granules,
-        /// and the snapshot memoizes them for the read.
-        const auto * delete_bitmap_snapshot = tryGetDeleteBitmapSnapshot(*reading->getStorageSnapshot());
-        const bool has_unique_key_deleted_rows = delete_bitmap_snapshot
-            && std::ranges::any_of(
-                analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts(),
-                [&](const RangesInDataPart & part) { return !delete_bitmap_snapshot->bitmapAt(part.data_part->info)->empty(); });
-        /// Predicates cover explicit, deferred, row-policy and runtime filters; query modifiers cover `FINAL`,
-        /// `SAMPLE`, stream reads and trivial limits; deleted rows (lightweight or by a unique key) and vector-index
-        /// selection can prune rows without a filter step in the plan. A transaction snapshot is deliberately absent:
-        /// the visible parts are the exact input for that read.
-        const bool has_row_subset = filter || prewhere_info || reading->getRowLevelFilter() || reading->getFilterActionsDAG()
-            || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || has_final || query_info.isStream()
-            || query_info.trivial_limit || has_lightweight_deleted_rows || has_unique_key_deleted_rows
-            || reading->getVectorSearchParameters().has_value()
-            || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
-        /// Non-throwing read limits end the read early without a step in the plan; it returns rows in read order.
-        const bool may_stop_reading_early = mayStopReadingEarly(query_info);
-        const bool has_inexact_row_count = has_row_subset || has_on_fly_data_changes || may_stop_reading_early;
-        /// A top-K read keeps every row of the final top `limit_n`: range analysis drops only granules and parts
-        /// that cannot hold one, and a running boundary drops rows once `limit_n` have been seen. What is left holds
-        /// at least `limit_n` rows, or all rows if there are fewer, so neither drops a row from selected parts that
-        /// hold `input_rows <= limit_n` rows. Which rows are dropped depends on their values, so a top-K read that
-        /// may drop rows is a non-uniform subset.
-        const auto top_k_may_drop_rows = [&](UInt64 input_rows)
-        {
-            return reading->isSelectedForTopKFilterOptimization()
-                && (has_inexact_row_count || input_rows > reading->getTopKFilterInfo()->limit_n);
-        };
+        const auto coverage = analyzeReadCoverage(
+            *reading, analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts(), plan_time_filter != nullptr);
 
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
@@ -543,20 +565,13 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), plan_time_filter, prewhere_node);
-                /// The rows of the selected parts, which the statistics describe.
-                const bool is_top_k_subset = top_k_may_drop_rows(relation_profile.rows);
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
-                    .rows_exact = !has_inexact_row_count && !is_top_k_subset,
+                    .rows_exact = !coverage.mayDropRows(relation_profile.rows),
                     .source = RowEstimateSource::Statistics};
-                if (has_row_subset)
-                    addTransformation(stats.column_stats, RowSubset);
-                if (is_top_k_subset || may_stop_reading_early)
-                    addTransformation(stats.column_stats, NonUniformRowSubset);
-                if (has_unsupported_value_changes || has_pending_metadata_mutations())
-                    addTransformation(stats.column_stats, Unsupported);
+                coverage.recordIn(stats, relation_profile.rows);
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;
             }
@@ -584,7 +599,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             .estimated_rows = analyzed_result->selected_rows,
             .table_name = table_display_name,
             .imprecise_estimate = true,
-            .rows_exact = !has_inexact_row_count && !top_k_may_drop_rows(analyzed_result->selected_rows),
+            .rows_exact = !coverage.mayDropRows(analyzed_result->selected_rows),
             .source = RowEstimateSource::PrimaryIndex};
     }
 
@@ -609,18 +624,12 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             return stats;
         const UInt64 rows = *estimate->rows;
 
-        /// The manifest statistics describe every row of the remaining files, deleted rows included. As for MergeTree, a
-        /// filter that prunes nothing at plan time is not among the conditions, but it still drops rows at execution.
-        const bool has_row_subset = estimate->has_delete_files || filter || reading->getFilterActionsDAG()
-            || reading->getPrewhereInfo() || reading->getRowLevelFilter();
-        const bool may_stop_reading_early = mayStopReadingEarly(reading->getQueryInfo());
-        const auto add_provenance = [&](std::unordered_map<String, ColumnStats> & column_stats)
-        {
-            if (has_row_subset)
-                addTransformation(column_stats, RowSubset);
-            if (may_stop_reading_early)
-                addTransformation(column_stats, NonUniformRowSubset);
-        };
+        /// The manifest statistics describe every row of the remaining files, deleted rows included.
+        const ReadCoverage coverage{
+            .may_drop_rows = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
+                || reading->getRowLevelFilter() || mayStopReadingEarly(reading->getQueryInfo()),
+            .may_rewrite_values = false,
+            .top_k_limit = std::nullopt};
 
         const auto conditions = getConditionsToEstimate(*reading, filter);
         if (conditions.empty() || rows == 0)
@@ -628,11 +637,11 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             stats.estimated_rows = rows;
             if (estimate->estimator)
             {
-                auto profile = estimate->estimator->estimateRelationProfile();
+                auto profile = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata());
                 if (rows != 0)
                     floorReadWithRows(profile);
                 stats.column_stats = std::move(profile.column_stats);
-                add_provenance(stats.column_stats);
+                coverage.recordIn(stats, rows);
             }
             /// Without conditions, the rows of the remaining files, imprecise with delete files.
             stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
@@ -645,7 +654,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             floorReadWithRows(filtered);
             stats.estimated_rows = filtered.rows;
             stats.column_stats = std::move(filtered.column_stats);
-            add_provenance(stats.column_stats);
+            coverage.recordIn(stats, rows);
             return stats;
         }
 
@@ -675,17 +684,15 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
     }
 
     /// A join that has already been optimized enters its parent's join graph as a single relation,
-    /// and the row count it settled on is the only estimate that relation has. It is handled here,
-    /// before `estimateReadRowsCount` requires a single child, which a join never has.
+    /// and the row count it settled on is the only estimate that relation has.
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
         /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
         /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
         /// to keep the parent from appending a second estimate to it.
-        /// A plan-time filter above the join (from a `FilterStep`) is not accounted for, so like a storage
-        /// read with a filter it cannot use, the row count is then unknown. A runtime filter prunes nothing
-        /// at plan time. Either way the `FilterStep` itself records the row subset in the provenance.
+        /// A plan-time filter above the join is not accounted for, so like a storage read with a filter
+        /// it cannot use, the row count is then unknown. A runtime filter prunes nothing at plan time.
         const bool has_plan_time_filter = filter && !prunesNothingAtPlanTime(filter);
         auto stats = RelationStats{
             .estimated_rows = has_plan_time_filter ? std::nullopt : join_step->getResultRowsEstimation(),
@@ -693,27 +700,24 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = has_plan_time_filter || join_step->hasImpreciseEstimate(),
             .composite = true};
-        /// How a join transforms its inputs' column statistics is not modeled, so consumers that gate on
-        /// `ColumnStatsProvenance` fail closed on a sub-join's column statistics.
-        addTransformation(stats.column_stats, Unsupported);
-        const auto strictness = join_step->getJoinOperator().strictness;
-        if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
-            addTransformation(stats.column_stats, RowSubset);
+        /// How a join transforms the column statistics of its inputs is not modeled.
+        stats.addTransformation(Unmodeled);
         return stats;
     }
 
     return std::nullopt;
 }
 
-}
-
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
+/// The statistics of the subtree rooted at `node` under `filter`, the predicate of a `FilterStep` above it, which the
+/// estimate of a read or of a sub-join accounts for. The row estimate ignores a predicate that prunes nothing at plan
+/// time (see `prunesNothingAtPlanTime`). The `FilterStep` itself records the row subset in the column statistics.
+RelationStats estimateRelationStatsUnderFilter(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
 {
     if (auto direct_stats = estimateDirectRelationStats(node, filter, options))
         return std::move(*direct_stats);
 
     if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
-        return estimateReadRowsCount(*reference->getSubplanReferenceRoot(), filter, options);
+        return estimateRelationStatsUnderFilter(*reference->getSubplanReferenceRoot(), filter, options);
 
     const auto kind = classifyUnaryStepStats(*node.step);
     /// Unsupported steps must stop before their children are visited: the result is unknown anyway.
@@ -721,7 +725,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return {};
 
     /// A filter above an array join can read its output, which the statistics of the input do not describe.
-    /// Callers pass no filter, so it always comes from a `FilterStep`, which records the row subset itself.
     const ActionsDAG::Node * child_filter = kind == UnaryStepStatsKind::ArrayJoin ? nullptr : filter;
     if (const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get()))
     {
@@ -729,12 +732,18 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         child_filter = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
     }
 
-    auto input_stats = estimateReadRowsCount(*node.children.front(), child_filter, options);
+    auto input_stats = estimateRelationStatsUnderFilter(*node.children.front(), child_filter, options);
     auto stats = estimateUnaryStepStats(*node.step, std::move(input_stats));
     if (stats && kind == UnaryStepStatsKind::ArrayJoin && filter)
         forgetFilteredArrayJoinRows(*stats);
     return std::move(stats).value_or(RelationStats{});
 }
 
+}
+
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions options)
+{
+    return estimateRelationStatsUnderFilter(node, /*filter=*/nullptr, options);
+}
 }
 }

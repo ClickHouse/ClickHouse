@@ -97,7 +97,6 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
             {
                 auto & column_stats = stats.column_stats[key];
                 column_stats.num_distinct_values = value.convert<UInt64>();
-                /// Hints explicitly override the planner's statistics model for testing.
                 column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
             }
         }
@@ -151,7 +150,6 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
         UInt64 ndv = 1 + (rng() % stats.estimated_rows.value());
         auto & column_stats = stats.column_stats[col.name];
         column_stats.num_distinct_values = ndv;
-        /// Randomization supplies an internally consistent hypothetical statistics model.
         column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
     }
 
