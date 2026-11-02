@@ -65,6 +65,11 @@ def test_table_failed_to_load(started_cluster):
         f"CREATE TABLE {db}.broken (x UInt64) ENGINE = MergeTree ORDER BY x "
         "SETTINGS object_shared_data_serialization_version = 'advanced'"
     )
+    # src and mv are loaded, but their startup waits for the startup of broken, so it is canceled.
+    node1.query(f"CREATE TABLE {db}.src (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node1.query(
+        f"CREATE MATERIALIZED VIEW {db}.mv TO {db}.broken AS SELECT x FROM {db}.src"
+    )
     node2.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
     assert zk.get(r1 + "/digest")[0].decode() == metadata_digest(zk_path)
 
@@ -105,7 +110,7 @@ def test_table_failed_to_load(started_cluster):
 
     node1.stop_clickhouse()
     zk.set(r1 + "/digest", b"42")
-    # 2 stale tables of 4 (with the kept one): 4 * 0.6 >= 2, but 3 * 0.6 < 2 would refuse the recovery.
+    # 2 stale tables of 6 (with the 3 kept ones): 6 * 0.6 >= 2, but 3 * 0.6 < 2 would refuse the recovery.
     node2.query(f"DROP TABLE {db}.t1", settings={"distributed_ddl_task_timeout": 0})
     node2.query(f"DROP TABLE {db}.t2", settings={"distributed_ddl_task_timeout": 0})
     node2.query(

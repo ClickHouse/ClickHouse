@@ -1683,22 +1683,22 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// This is needed to generate intermediate name
     String salt = toString(thread_local_rng());
 
-    /// A table that failed to load cannot be renamed, moved or created again, and the iterator below rethrows its loading error.
+    /// A table whose load or startup failed cannot be renamed, moved or created again, and the iterator below rethrows its error.
     NameSet failed_tables_to_keep;
     {
-        Strings failed_tables;
+        std::vector<std::pair<String, LoadTaskPtr>> startup_tasks;
         {
             std::lock_guard lock{mutex};
-            for (const auto & table_name : tables_failed_to_load)
-                if (!tables.contains(table_name))
-                    failed_tables.push_back(table_name);
+            startup_tasks.assign(startup_table.begin(), startup_table.end());
         }
-        for (const auto & table_name : failed_tables)
+        for (const auto & [table_name, task] : startup_tasks)
         {
+            if (std::ranges::none_of(task->goals(), [](const LoadJobPtr & job) { return job->exception() != nullptr; }))
+                continue;
             auto in_zk = table_name_to_metadata.find(table_name);
             if (in_zk != table_name_to_metadata.end() && in_zk->second == readMetadataFile(table_name))
             {
-                LOG_WARNING(log, "Keeping table {} that failed to load, its metadata is the same as in Keeper", backQuoteIfNeed(table_name));
+                LOG_WARNING(log, "Keeping table {} that failed to load or start up, its metadata is the same as in Keeper", backQuoteIfNeed(table_name));
                 failed_tables_to_keep.insert(table_name);
             }
         }
