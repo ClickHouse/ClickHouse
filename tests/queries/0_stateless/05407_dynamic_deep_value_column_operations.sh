@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# The fast-test build is unoptimized and re-runs a new test several times under a 60s cap, while
+# materializing a deeply nested Dynamic value whose operation does not trip the recursion guard takes
+# superlinear time. The optimized stateless configurations run it within budget.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
