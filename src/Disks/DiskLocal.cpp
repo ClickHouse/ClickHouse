@@ -15,6 +15,7 @@
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <system_error>
@@ -61,6 +62,8 @@ namespace ErrorCodes
 
 namespace
 {
+
+std::atomic<UInt64> unsettled_file_reads{0};
 
 bool errnoIndicatesReadOnlyDisk(int err)
 {
@@ -392,10 +395,11 @@ void DiskLocal::prepareRead(
     /// (e.g. FILE_DOESNT_EXIST for broken projections). Mark the size unknown in
     /// that case so the reader opens the file rather than treating a zero size as
     /// an empty file.
-    std::error_code ec;
-    auto file_size = fs::file_size(full_path, ec);
+    struct stat file_stat{};
+    const bool is_regular_file = 0 == ::stat(full_path.c_str(), &file_stat) && S_ISREG(file_stat.st_mode);
+    const size_t file_size = is_regular_file ? static_cast<size_t>(file_stat.st_size) : StoredObject::UnknownSize;
 
-    StoredObject obj(full_path.string(), full_path.string(), ec ? StoredObject::UnknownSize : file_size);
+    StoredObject obj(full_path.string(), full_path.string(), file_size);
 
     /// No gather for local disk — the source buffer is returned directly.
     pipeline.setLocalFileSource(
@@ -435,7 +439,18 @@ void DiskLocal::prepareRead(
     }
 
     if (use_page_cache)
-        pipeline.needMemoryCache("local:", settings.page_cache_settings);
+    {
+        String file_version;
+        if (is_regular_file)
+        {
+            file_version = computeFileCacheVersionToken(file_stat);
+            /// Until the file settles, another file written at the same path in the same timestamp tick
+            /// can have the same token, so the read gets a version of its own.
+            if (!isFileCacheVersionTokenSettled(file_stat))
+                file_version += fmt::format("#{}", unsettled_file_reads.fetch_add(1, std::memory_order_relaxed));
+        }
+        pipeline.needMemoryCache("local:" + full_path.string(), std::move(file_version), settings.page_cache_settings);
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
