@@ -86,7 +86,32 @@ ALTER TABLE tab_on_cluster_alias ON CLUSTER test_shard_localhost
 
 DROP TABLE tab_on_cluster_alias;
 
-SELECT '8. Accepted with the privilege.';
+SELECT '8. Indices inherited by CREATE TABLE AS ON CLUSTER are denied on the legacy entry-format path.';
+
+-- The worker copies the source's indices with no user, so the initiator authorizes them.
+SET allow_introspection_functions = 1;
+CREATE TABLE tab_as_source
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))
+)
+ENGINE = MergeTree ORDER BY id;
+SET allow_introspection_functions = 0;
+
+SET distributed_ddl_entry_format_version = 2;
+CREATE TABLE tab_as_copy ON CLUSTER test_shard_localhost AS tab_as_source; -- { serverError FUNCTION_NOT_ALLOWED }
+SET distributed_ddl_entry_format_version = DEFAULT;
+
+DROP TABLE tab_as_source;
+
+SELECT '9. ALTER ADD INDEX ON CLUSTER with a transform needs the table on the initiator.';
+
+-- Without the table the initiator cannot expand an `ALIAS` column used in the transform.
+ALTER TABLE tab_missing_on_initiator ON CLUSTER test_shard_localhost
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)) GRANULARITY 1; -- { serverError UNKNOWN_TABLE }
+
+SELECT '10. Accepted with the privilege.';
 
 SET allow_introspection_functions = 1;
 

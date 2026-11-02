@@ -103,6 +103,25 @@ void checkTextIndexPreAndPostProcessorPermissions(
     checkTransformPermissions(arguments, context);
 }
 
+bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)
+{
+    const auto * type = declaration.getType() ? declaration.getType()->as<ASTFunction>() : nullptr;
+    if (!type || Poco::toLower(type->name) != TEXT_INDEX_NAME || !type->arguments)
+        return false;
+
+    for (const auto & child : type->arguments->children)
+    {
+        const auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+            return true;
+    }
+    return false;
+}
+
 IndexDescription::IndexDescription(const IndexDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)

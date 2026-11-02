@@ -94,6 +94,9 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
 void checkTextIndexPreAndPostProcessorPermissions(
     const ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context);
 
+/// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
+bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);
+
 /// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 {

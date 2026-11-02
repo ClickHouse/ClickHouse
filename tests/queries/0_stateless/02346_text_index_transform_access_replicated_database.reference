@@ -5,4 +5,6 @@
 5. So is an ALIAS column of the same query on the legacy entry-format path.
 6. An alias renamed by an earlier command of the same ALTER is denied.
 7. Also with ON CLUSTER.
-8. Accepted with the privilege.
+8. Indices inherited by CREATE TABLE AS ON CLUSTER are denied on the legacy entry-format path.
+9. ALTER ADD INDEX ON CLUSTER with a transform needs the table on the initiator.
+10. Accepted with the privilege.

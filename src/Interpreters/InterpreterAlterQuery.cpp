@@ -121,7 +121,17 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
 
         adds_index = true;
         if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+        {
+            /// Without the schema an `ALIAS` column in a transform stays unexpanded here, while the
+            /// hosts that have the table expand it and resolve its functions with full access.
+            if (!metadata && hasTextIndexPreOrPostProcessor(*declaration))
+                throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                    "Table {}.{} does not exist on this host. A text index with a preprocessor or a postprocessor "
+                    "is authorized on the host the query is submitted to, so it must be run from a host that has the table",
+                    backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
+
             checkTextIndexPreAndPostProcessorPermissions(*declaration, columns, context);
+        }
     }
 
     /// The check above sees the schema before this statement, but a later command of the same

@@ -4087,7 +4087,7 @@ BlockIO InterpreterCreateQuery::execute()
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
             /// The normalized path does this in `getTablePropertiesAndNormalizeCreateQuery`. Indices
-            /// inherited from `AS src` are not in this query, so they stay uncovered. The columns of
+            /// inherited from `AS src` are not in this query, they are checked below. The columns of
             /// this query are built as the worker builds them, so that an `ALIAS` column used in a
             /// transform is expanded here too.
             if (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty())
@@ -4131,6 +4131,18 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+
+                /// A worker copies the source's indices into a `MergeTree` destination, with no user, and so
+                /// declares their transforms anew. Authorize them here as the local path does.
+                if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
+                {
+                    StoragePtr as_storage = resolveStorageProxyLoading(
+                        DatabaseCatalog::instance().getTable({create.as_database, create.as_table}, getContext()));
+                    auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+                    for (const auto & index : as_storage_metadata->getSecondaryIndices())
+                        if (!index.isImplicitlyCreated())
+                            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                }
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
