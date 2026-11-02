@@ -70,7 +70,7 @@ public:
 
     /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
     /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
-    virtual bool allowMutatingIdempotentMethods(
+    [[nodiscard]] virtual bool allowMutatingIdempotentMethods(
         const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
     {
         return false;

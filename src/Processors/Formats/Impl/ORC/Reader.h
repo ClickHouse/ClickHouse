@@ -24,12 +24,12 @@ class InputStream
 public:
     virtual ~InputStream() = default;
 
-    virtual UInt64 getLength() const = 0;
+    [[nodiscard]] virtual UInt64 getLength() const = 0;
     /// Reads exactly `length` bytes at `offset`. Must be thread-safe if `readAsync` is used.
     virtual void read(void * buf, UInt64 length, UInt64 offset) = 0;
     /// Reads in the background. The default implementation reads synchronously.
     virtual std::future<void> readAsync(void * buf, UInt64 length, UInt64 offset);
-    virtual const std::string & getName() const = 0;
+    [[nodiscard]] virtual const std::string & getName() const = 0;
 };
 
 struct ReaderOptions
@@ -63,22 +63,22 @@ public:
     Reader(std::unique_ptr<InputStream> stream_, const ReaderOptions & options_);
     ~Reader();
 
-    const Type & getType() const { return *schema; }
-    UInt64 getNumberOfRows() const { return footer.number_of_rows; }
-    UInt64 getNumberOfStripes() const { return footer.stripes.size(); }
-    const Proto::StripeInformation & getStripe(size_t index) const { return footer.stripes.at(index); }
+    [[nodiscard]] const Type & getType() const { return *schema; }
+    [[nodiscard]] UInt64 getNumberOfRows() const { return footer.number_of_rows; }
+    [[nodiscard]] UInt64 getNumberOfStripes() const { return footer.stripes.size(); }
+    [[nodiscard]] const Proto::StripeInformation & getStripe(size_t index) const { return footer.stripes.at(index); }
     static UInt64 getStripeLength(const Proto::StripeInformation & stripe) { return stripe.index_length + stripe.data_length + stripe.footer_length; }
 
-    const Proto::Footer & getFooter() const { return footer; }
-    const Proto::PostScript & getPostScript() const { return postscript; }
-    CompressionKind getCompression() const { return postscript.compression; }
+    [[nodiscard]] const Proto::Footer & getFooter() const { return footer; }
+    [[nodiscard]] const Proto::PostScript & getPostScript() const { return postscript; }
+    [[nodiscard]] CompressionKind getCompression() const { return postscript.compression; }
     /// Whether the bloom filters of the file were written by a version of the C++ writer
     /// that hashed the integers incorrectly (ORC-1024), so they must not be used.
-    bool hasBadBloomFilters() const;
-    UInt64 getCompressionBlockSize() const { return postscript.compression_block_size; }
+    [[nodiscard]] bool hasBadBloomFilters() const;
+    [[nodiscard]] UInt64 getCompressionBlockSize() const { return postscript.compression_block_size; }
 
     /// The statistics of the whole file, one per column.
-    const std::vector<Proto::ColumnStatistics> & getStatistics() const { return footer.statistics; }
+    [[nodiscard]] const std::vector<Proto::ColumnStatistics> & getStatistics() const { return footer.statistics; }
     /// The statistics of the stripes, read on the first call. Can be empty.
     const Proto::Metadata & getMetadata();
 
@@ -104,7 +104,7 @@ public:
     std::vector<Slice> readRanges(const std::vector<std::pair<UInt64, UInt64>> & ranges);
 
     /// Decompresses a whole metadata stream (a footer, an index).
-    std::string decompress(std::string_view data, const std::string & name) const;
+    [[nodiscard]] std::string decompress(std::string_view data, const std::string & name) const;
 
 private:
     void readTail();
@@ -119,7 +119,7 @@ private:
     };
 
     /// Returns the ranges of the streams of the selected columns in the stripe, and the stripe footer.
-    std::vector<std::pair<UInt64, UInt64>> getStripeRanges(size_t stripe_index, const Proto::StripeFooter & stripe_footer, const std::vector<bool> & selected) const;
+    [[nodiscard]] std::vector<std::pair<UInt64, UInt64>> getStripeRanges(size_t stripe_index, const Proto::StripeFooter & stripe_footer, const std::vector<bool> & selected) const;
 
     std::unique_ptr<InputStream> stream;
     ReaderOptions options;
@@ -140,13 +140,13 @@ public:
     RowReader(Reader & reader_, const RowReaderOptions & options_);
     ~RowReader();
 
-    std::unique_ptr<ColumnVectorBatch> createRowBatch() const;
+    [[nodiscard]] std::unique_ptr<ColumnVectorBatch> createRowBatch() const;
 
     /// Fills the batch with the next rows, at most `max_rows`. Returns false at the end.
     bool next(ColumnVectorBatch & batch, size_t max_rows);
 
     /// The type of the file with only the selected columns. The batches have this structure.
-    const Type & getSelectedType() const { return *selected_type; }
+    [[nodiscard]] const Type & getSelectedType() const { return *selected_type; }
 
 private:
     class StripeStreamsImpl;
@@ -155,10 +155,10 @@ private:
     void loadStripeIndex();
     void pickRowGroups();
     void seekToRowGroup(size_t row_group);
-    UInt64 advanceToNextRowGroup(UInt64 current_row) const;
-    UInt64 computeBatchSize(UInt64 requested, UInt64 current_row) const;
-    bool evaluateStatistics(const std::vector<Proto::ColumnStatistics> & stats) const;
-    const DateLUTImpl & getWriterTimezone(const Proto::StripeFooter & stripe_footer) const;
+    [[nodiscard]] UInt64 advanceToNextRowGroup(UInt64 current_row) const;
+    [[nodiscard]] UInt64 computeBatchSize(UInt64 requested, UInt64 current_row) const;
+    [[nodiscard]] bool evaluateStatistics(const std::vector<Proto::ColumnStatistics> & stats) const;
+    [[nodiscard]] const DateLUTImpl & getWriterTimezone(const Proto::StripeFooter & stripe_footer) const;
 
     Reader & reader;
     RowReaderOptions options;

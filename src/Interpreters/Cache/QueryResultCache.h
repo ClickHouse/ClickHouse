@@ -314,7 +314,7 @@ public:
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
     std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
-    const ResultColumnOrigins & entryResultColumnOrigins() const;
+    [[nodiscard]] const ResultColumnOrigins & entryResultColumnOrigins() const;
 
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();

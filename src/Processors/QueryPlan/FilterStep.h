@@ -58,7 +58,7 @@ public:
     /// It can differ from the value in the query context, e.g. for a subquery with its own `SETTINGS`.
     /// If not set, `FilterTransform` reads the setting from the query context.
     void setOptimizeConstantColumnsAfterFilter(std::optional<bool> value) { optimize_constant_columns_after_filter = value; }
-    std::optional<bool> getOptimizeConstantColumnsAfterFilter() const { return optimize_constant_columns_after_filter; }
+    [[nodiscard]] std::optional<bool> getOptimizeConstantColumnsAfterFilter() const { return optimize_constant_columns_after_filter; }
     /// The value for a filter combined from two filters: the optimization stays disabled if either disabled it.
     static std::optional<bool> combineOptimizeConstantColumnsAfterFilter(std::optional<bool> lhs, std::optional<bool> rhs);
 

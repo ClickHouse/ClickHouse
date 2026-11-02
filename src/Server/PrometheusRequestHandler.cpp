@@ -87,7 +87,7 @@ public:
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
-    virtual bool sendsJSONErrors() const { return false; }
+    [[nodiscard]] virtual bool sendsJSONErrors() const { return false; }
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -471,7 +471,7 @@ public:
 
     [[nodiscard]] bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
-    bool sendsJSONErrors() const override { return true; }
+    [[nodiscard]] bool sendsJSONErrors() const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
@@ -759,7 +759,7 @@ public:
             current_impl->onException();
     }
 
-    bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
+    [[nodiscard]] bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
 
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,

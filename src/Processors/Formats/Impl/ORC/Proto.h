@@ -105,7 +105,7 @@ struct PostScript
     std::string magic;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct IntegerStatistics
@@ -190,7 +190,7 @@ struct ColumnStatistics
     std::optional<CollectionStatistics> collection_statistics;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct RowIndexEntry
@@ -204,7 +204,7 @@ struct RowIndex
     std::vector<RowIndexEntry> entry;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct BloomFilter
@@ -270,7 +270,7 @@ struct StripeFooter
     size_t encryption_variants = 0;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct StringPair
@@ -318,7 +318,7 @@ struct Metadata
     std::vector<StripeStatistics> stripe_stats;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct Footer
@@ -336,7 +336,7 @@ struct Footer
     std::optional<std::string> software_version;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 }
