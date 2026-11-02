@@ -73,7 +73,7 @@ Cloud에서만 사용할 수 있습니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "기본적으로 조정된 머지 사용"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-조정된 머지 전략을 사용하도록 설정합니다
+`SharedMergeTree`에서 코디네이터 기반의 머지 할당을 사용하도록 설정합니다. 머지 코디네이터는 독립적인 머지 선택에만 의존하는 대신, 머지 항목을 준비하여 활성 상태의 머지 worker에 분배합니다.
 
 ## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data}
 
@@ -89,7 +89,7 @@ Cloud에서만 사용할 수 있습니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
 
-오래된 파트 검사를 활성화합니다. ClickHouse Cloud에서만 사용할 수 있습니다
+더 이상 최신 상태가 아닌 데이터 파트를 감지하여 파트 업데이트 프로세스로 전달하는 `SharedMergeTree` 백그라운드 검사를 활성화합니다. ClickHouse Cloud에서만 사용할 수 있습니다.
 
 ## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds}
 
@@ -119,7 +119,7 @@ ClickHouse Cloud에서만 사용할 수 있습니다
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "새로운 설정"}]}]} />
 
-파트 업데이트의 초기 백오프입니다. ClickHouse Cloud에서만 사용할 수 있습니다
+`SharedMergeTree` 파트 업데이트 작업을 재시도하기 전에 대기하는 초기 시간으로, 단위는 밀리초입니다. 재시도가 반복될수록 대기 시간이 늘어나며, 최대 `shared_merge_tree_max_parts_update_backoff_ms`까지 증가합니다. ClickHouse Cloud에서만 사용할 수 있습니다.
 
 ## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms}
 
@@ -171,7 +171,7 @@ shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period에 0초에서 x초 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "새로운 설정"}]}]} />
 
-파트 업데이트의 최대 백오프 시간입니다. ClickHouse Cloud에서만 사용할 수 있습니다
+`SharedMergeTree` 파트 업데이트 작업의 재시도 간 최대 대기 시간(밀리초)입니다. ClickHouse Cloud에서만 사용할 수 있습니다.
 
 ## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total}
 
@@ -179,7 +179,7 @@ shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period에 0초에서 x초 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Cloud sync"}]}]} />
 
-파트 업데이트 리더의 최대 수입니다. ClickHouse Cloud에서만 사용할 수 있습니다
+서비스 전체에서 동시에 파트 업데이트 리더 역할을 맡을 수 있는 레플리카의 최대 수입니다. ClickHouse Cloud에서만 사용할 수 있습니다.
 
 ## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az}
 
@@ -187,7 +187,7 @@ shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period에 0초에서 x초 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Cloud sync"}]}]} />
 
-parts update leaders의 최대 수입니다. ClickHouse Cloud에서만 사용할 수 있습니다
+하나의 가용 영역(availability zone)에서 파트 업데이트 리더 역할을 동시에 맡을 수 있는 레플리카(replica)의 최대 수입니다. 이 제한과 `shared_merge_tree_max_parts_update_leaders_in_total`이 모두 적용됩니다. ClickHouse Cloud에서만 사용할 수 있습니다.
 
 ## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion}
 

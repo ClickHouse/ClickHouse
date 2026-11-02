@@ -19,6 +19,7 @@
 #include <Common/assert_cast.h>
 
 #include <algorithm>
+#include <type_traits>
 
 #include <Functions/FunctionsNumericIndexedVectorHelper.h>
 
@@ -72,19 +73,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = checkAndGetDataType<DataTypeMap>(arguments[0].get());
-        if (!arg)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Map type", getName());
-        DataTypes argument_types = {arg->getKeyType(), arg->getValueType()};
-        Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr numeric_indexed_vector_function;
-        auto action = NullsAction::EMPTY;
-        numeric_indexed_vector_function = AggregateFunctionFactory::instance().get(
-            NameAggregateFunctionGroupNumericIndexedVector::name, action, argument_types, params_row, properties);
-        return std::make_shared<DataTypeAggregateFunction>(numeric_indexed_vector_function, argument_types, params_row);
+        return "(Map(K, V)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -146,20 +137,55 @@ struct NameNumericIndexedVectorBuild
 
 using FunctionNumericIndexedVectorBuild = FunctionNumericIndexedVectorBuildImpl<NameNumericIndexedVectorBuild>;
 
-template <template <class> class FuncImpl>
-class FunctionNumericIndexedVector final : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVector<FuncImpl>>
+/// The pointwise functions differ only in the operation applied to each row, so they share one implementation.
+class FunctionNumericIndexedVectorPointwise : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorPointwise>
 {
 public:
-    /// The template parameters in BSINumericIndexedVector are randomly filled.
-    static constexpr auto name = FuncImpl<BSINumericIndexedVector<UInt8, Float64>>::name;
+    enum class Operation : UInt8
+    {
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        Equal,
+        NotEqual,
+        Less,
+        LessEqual,
+        Greater,
+        GreaterEqual,
+        Max,
+        Min,
+    };
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVector>(); }
-
-    String getName() const override { return name; }
+    explicit FunctionNumericIndexedVectorPointwise(Operation operation_) : operation(operation_) {}
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Binary operations on `NumericIndexedVector` sketches, scalars, or a `Bitmap`.
+    /// Both sketches must share inner index/value types, which the DSL does not
+    /// model, so the signature is documentation-only.
+    String getSignatureString() const override
+    {
+        String signature
+            = "(A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupNumericIndexedVector', Any, Any)) -> A"
+              " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupBitmap', Any)) -> A";
+        if (operation != Operation::Max && operation != Operation::Min)
+            signature += " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), Number) -> A";
+        return signature;
+    }
+
+    /// Keep the `getReturnTypeImpl` overload for `DataTypes` authoritative: `executeImpl` selects
+    /// the implementation from the first argument and reinterprets the second state as the same
+    /// specialization, so mismatched inner types must be rejected here.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -202,6 +228,14 @@ public:
                     "Second argument for function {} must be a NumericIndexedVector, (u)Int*, Float*, or Bitmap",
                     getName());
             }
+        }
+        else if (operation == Operation::Max || operation == Operation::Min)
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be a NumericIndexedVector or Bitmap, got {}",
+                getName(),
+                arguments[1]->getName());
         }
 
         return arguments[0];
@@ -248,6 +282,46 @@ public:
     }
 
 private:
+    const Operation operation;
+
+    template <typename VectorImpl, typename Rhs>
+    void apply(const NumericIndexedVector<VectorImpl> & lhs, const Rhs & rhs, NumericIndexedVector<VectorImpl> & res) const
+    {
+        using Vector = NumericIndexedVector<VectorImpl>;
+        switch (operation)
+        {
+            case Operation::Add: Vector::pointwiseAdd(lhs, rhs, res); break;
+            case Operation::Subtract: Vector::pointwiseSubtract(lhs, rhs, res); break;
+            case Operation::Multiply: Vector::pointwiseMultiply(lhs, rhs, res); break;
+            case Operation::Divide: Vector::pointwiseDivide(lhs, rhs, res); break;
+            case Operation::Equal: Vector::pointwiseEqual(lhs, rhs, res); break;
+            case Operation::NotEqual: Vector::pointwiseNotEqual(lhs, rhs, res); break;
+            case Operation::Less: Vector::pointwiseLess(lhs, rhs, res); break;
+            case Operation::LessEqual: Vector::pointwiseLessEqual(lhs, rhs, res); break;
+            case Operation::Greater: Vector::pointwiseGreater(lhs, rhs, res); break;
+            case Operation::GreaterEqual: Vector::pointwiseGreaterEqual(lhs, rhs, res); break;
+            case Operation::Max:
+            case Operation::Min:
+            {
+                if constexpr (std::is_same_v<Rhs, Vector>)
+                {
+                    if (operation == Operation::Max)
+                        Vector::pointwiseMax(lhs, rhs, res);
+                    else
+                        Vector::pointwiseMin(lhs, rhs, res);
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Scalar argument for function {} should have been rejected in getReturnTypeImpl",
+                        getName());
+                }
+                break;
+            }
+        }
+    }
+
     template <typename VectorImpl>
     ColumnPtr executeBSIData(
         const ColumnAggregateFunction * first_column_ptr,
@@ -284,7 +358,7 @@ private:
             if (is_numeric_indexed_vector)
             {
                 auto rhs = reinterpret_cast<const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(second_data_ptr);
-                FuncImpl<VectorImpl>::apply(*lhs, *rhs, *res);
+                apply(lhs->vector, rhs->vector, res->vector);
             }
             else
             {
@@ -292,7 +366,7 @@ private:
                 AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> rhs_vector;
                 rhs_vector.init = true;
                 rhs_vector.vector.initializeFromVectorAndBitmap(lhs->vector, *rhs);
-                FuncImpl<VectorImpl>::apply(*lhs, rhs_vector, *res);
+                apply(lhs->vector, rhs_vector.vector, res->vector);
             }
         }
         return col_to;
@@ -321,71 +395,68 @@ private:
             col_to->insertDefault();
             auto res = reinterpret_cast<AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(col_to->getData()[i]);
             res->init = true;
-            FuncImpl<VectorImpl>::apply(*lhs, value, *res);
+            apply(lhs->vector, value, res->vector);
         }
         return col_to;
     }
 };
 
+template <typename Name, FunctionNumericIndexedVectorPointwise::Operation op>
+class FunctionNumericIndexedVector final : public FunctionNumericIndexedVectorPointwise
+{
+public:
+    static constexpr auto name = Name::name;
 
-// clang-format off
-#define DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(OpName, op_method, supports_scalar) \
-    template <typename VectorImpl> \
-    struct NumericIndexedVector##OpName##Impl \
-    { \
-        static constexpr auto name = "numericIndexedVector" #OpName; \
-\
-        static void apply( \
-            [[maybe_unused]] const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs, \
-            [[maybe_unused]] const typename VectorImpl::ValueType & rhs, \
-            [[maybe_unused]] AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res) \
-        { \
-            if constexpr (supports_scalar) \
-                NumericIndexedVector<VectorImpl>::op_method(lhs.vector, rhs, res.vector); \
-            else \
-                throw Exception( \
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, \
-                    "The second parameter of {} does not currently support the scalar type.", \
-                    name); \
-        } \
-\
-        static void apply( \
-            const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs, \
-            const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs, \
-            AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res) \
-        { \
-            NumericIndexedVector<VectorImpl>::op_method(lhs.vector, rhs.vector, res.vector); \
-        } \
-    };
+    FunctionNumericIndexedVector() : FunctionNumericIndexedVectorPointwise(op) {}
 
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseAdd,          pointwiseAdd,          true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseSubtract,     pointwiseSubtract,     true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMultiply,     pointwiseMultiply,     true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseDivide,       pointwiseDivide,       true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseEqual,        pointwiseEqual,        true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseNotEqual,     pointwiseNotEqual,     true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseLess,         pointwiseLess,         true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseLessEqual,    pointwiseLessEqual,    true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseGreater,      pointwiseGreater,      true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseGreaterEqual, pointwiseGreaterEqual, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMax,          pointwiseMax,          false)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMin,          pointwiseMin,          false)
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVector>(); }
 
-#undef DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP
-// clang-format on
+    String getName() const override { return name; }
+};
 
-using FunctionNumericIndexedVectorPointwiseAdd = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseAddImpl>;
-using FunctionNumericIndexedVectorPointwiseSubtract = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseSubtractImpl>;
-using FunctionNumericIndexedVectorPointwiseMultiply = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseMultiplyImpl>;
-using FunctionNumericIndexedVectorPointwiseDivide = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseDivideImpl>;
-using FunctionNumericIndexedVectorPointwiseEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseEqualImpl>;
-using FunctionNumericIndexedVectorPointwiseNotEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseNotEqualImpl>;
-using FunctionNumericIndexedVectorPointwiseLess = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseLessImpl>;
-using FunctionNumericIndexedVectorPointwiseLessEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseLessEqualImpl>;
-using FunctionNumericIndexedVectorPointwiseGreater = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseGreaterImpl>;
-using FunctionNumericIndexedVectorPointwiseGreaterEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseGreaterEqualImpl>;
-using FunctionNumericIndexedVectorPointwiseMax = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseMaxImpl>;
-using FunctionNumericIndexedVectorPointwiseMin = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseMinImpl>;
+struct NameNumericIndexedVectorPointwiseAdd { static constexpr auto name = "numericIndexedVectorPointwiseAdd"; };
+struct NameNumericIndexedVectorPointwiseSubtract { static constexpr auto name = "numericIndexedVectorPointwiseSubtract"; };
+struct NameNumericIndexedVectorPointwiseMultiply { static constexpr auto name = "numericIndexedVectorPointwiseMultiply"; };
+struct NameNumericIndexedVectorPointwiseDivide { static constexpr auto name = "numericIndexedVectorPointwiseDivide"; };
+struct NameNumericIndexedVectorPointwiseEqual { static constexpr auto name = "numericIndexedVectorPointwiseEqual"; };
+struct NameNumericIndexedVectorPointwiseNotEqual { static constexpr auto name = "numericIndexedVectorPointwiseNotEqual"; };
+struct NameNumericIndexedVectorPointwiseLess { static constexpr auto name = "numericIndexedVectorPointwiseLess"; };
+struct NameNumericIndexedVectorPointwiseLessEqual { static constexpr auto name = "numericIndexedVectorPointwiseLessEqual"; };
+struct NameNumericIndexedVectorPointwiseGreater { static constexpr auto name = "numericIndexedVectorPointwiseGreater"; };
+struct NameNumericIndexedVectorPointwiseGreaterEqual { static constexpr auto name = "numericIndexedVectorPointwiseGreaterEqual"; };
+struct NameNumericIndexedVectorPointwiseMax
+{
+    static constexpr auto name = "numericIndexedVectorPointwiseMax";
+};
+struct NameNumericIndexedVectorPointwiseMin
+{
+    static constexpr auto name = "numericIndexedVectorPointwiseMin";
+};
+
+using FunctionNumericIndexedVectorPointwiseAdd
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseAdd, FunctionNumericIndexedVectorPointwise::Operation::Add>;
+using FunctionNumericIndexedVectorPointwiseSubtract
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseSubtract, FunctionNumericIndexedVectorPointwise::Operation::Subtract>;
+using FunctionNumericIndexedVectorPointwiseMultiply
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseMultiply, FunctionNumericIndexedVectorPointwise::Operation::Multiply>;
+using FunctionNumericIndexedVectorPointwiseDivide
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseDivide, FunctionNumericIndexedVectorPointwise::Operation::Divide>;
+using FunctionNumericIndexedVectorPointwiseEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseEqual, FunctionNumericIndexedVectorPointwise::Operation::Equal>;
+using FunctionNumericIndexedVectorPointwiseNotEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseNotEqual, FunctionNumericIndexedVectorPointwise::Operation::NotEqual>;
+using FunctionNumericIndexedVectorPointwiseLess
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseLess, FunctionNumericIndexedVectorPointwise::Operation::Less>;
+using FunctionNumericIndexedVectorPointwiseLessEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseLessEqual, FunctionNumericIndexedVectorPointwise::Operation::LessEqual>;
+using FunctionNumericIndexedVectorPointwiseGreater
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseGreater, FunctionNumericIndexedVectorPointwise::Operation::Greater>;
+using FunctionNumericIndexedVectorPointwiseGreaterEqual
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseGreaterEqual, FunctionNumericIndexedVectorPointwise::Operation::GreaterEqual>;
+using FunctionNumericIndexedVectorPointwiseMax
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseMax, FunctionNumericIndexedVectorPointwise::Operation::Max>;
+using FunctionNumericIndexedVectorPointwiseMin
+    = FunctionNumericIndexedVector<NameNumericIndexedVectorPointwiseMin, FunctionNumericIndexedVectorPointwise::Operation::Min>;
 
 template <typename ToType, typename FuncImpl>
 class FunctionNumericIndexedVectorToNumberImpl
@@ -402,6 +473,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> " + DataTypeNumber<ToType>{}.getName();
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -484,6 +560,14 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// The result type is the sketch's value type V (the second inner argument
+    /// of `groupNumericIndexedVector`). The DSL captures it directly inside
+    /// the matcher, so the signature is authoritative for this function.
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, V), Any) -> V";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -655,6 +739,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> String";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkAndGetNumericIndexedVectorType(arguments[0], getName());
@@ -720,6 +809,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', K, V)) -> Map(K, V)";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

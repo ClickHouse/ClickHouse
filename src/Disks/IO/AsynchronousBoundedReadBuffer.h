@@ -61,6 +61,7 @@ public:
     /// (when supported). An in-flight prefetch is consumed first (readBigAt must not run against impl
     /// concurrently with it) and its data is retained: readBigAt calls serve from it when covered.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
+    bool readsThroughPageCache() const override { return impl->readsThroughPageCache(); }
 
     /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
     /// Same reasoning as `AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode`.

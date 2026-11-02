@@ -1,0 +1,37 @@
+<test>
+    <settings>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+        <text_index_hint_max_selectivity>1.</text_index_hint_max_selectivity>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_text_index_phrase_cursor
+        (
+            message String,
+            INDEX idx (message) TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1, posting_list_codec = 'pfor')
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS allow_experimental_text_index_phrase_search = 1
+    </create_query>
+
+    <!-- Token tN is about twice as frequent as t(N-1): t19 is in almost every row, t1 in a few hundred. -->
+    <fill_query>
+        INSERT INTO t_text_index_phrase_cursor
+        SELECT arrayStringConcat(arrayMap(i -> concat('t', toString(toUInt8(log2(1 + cityHash64(number, i) % 1048576)))), range(12)), ' ')
+        FROM numbers(10000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_text_index_phrase_cursor FINAL</fill_query>
+
+    <query>SELECT count() FROM t_text_index_phrase_cursor WHERE hasPhrase(message, 't3 t19')</query>
+    <query>SELECT count() FROM t_text_index_phrase_cursor WHERE hasPhrase(message, 't5 t19')</query>
+    <query>SELECT count() FROM t_text_index_phrase_cursor WHERE hasPhrase(message, 't8 t19')</query>
+    <query>SELECT count() FROM t_text_index_phrase_cursor WHERE hasPhrase(message, 't10 t19')</query>
+    <query>SELECT count() FROM t_text_index_phrase_cursor WHERE hasPhrase(message, 't3 t19 t18')</query>
+    <query>SELECT count() FROM t_text_index_phrase_cursor WHERE hasPhrase(message, 't1 t19 t18 t17')</query>
+    <query>SELECT count() FROM t_text_index_phrase_cursor WHERE hasPhrase(message, 't19 t18')</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_text_index_phrase_cursor</drop_query>
+</test>
