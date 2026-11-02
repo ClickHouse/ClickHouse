@@ -10,6 +10,11 @@
     <!-- For `test_postgresql_cancel_request_while_waiting_in_queue` and `test_mysql_kill_query_while_waiting_in_queue`. -->
     <postgresql_port>5433</postgresql_port>
     <mysql_port>9004</mysql_port>
+    <!-- Clients may send in chunks, for `test_native_cancel_while_waiting_in_queue`. -->
+    <proto_caps>
+        <send>notchunked</send>
+        <recv>notchunked_optional</recv>
+    </proto_caps>
     <prometheus>
         <port>9363</port>
         <handlers>

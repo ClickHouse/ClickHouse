@@ -1486,22 +1486,28 @@ std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<Query
         if (!socket_alive())
             return false;
 
-        /// `in` can be refilled without waiting only when the bytes are already received by the socket (for TLS:
-        /// already decrypted, which the TLS-aware check above does for complete records). The chunked protocol
-        /// may wait for the rest of a chunk header, so it is not read ahead.
-        auto can_read_without_waiting = [&] { return !receive_chunked && socket().impl()->available() > 0; };
+        /// `in` can read from the socket without waiting only when the bytes are already received by the socket (for
+        /// TLS: already decrypted, which the TLS-aware check above does for complete records). Besides, `in` may have
+        /// buffered the next chunks of the chunked protocol, which `appendWithoutWaiting` takes as well.
+        auto can_read_socket_without_waiting = [&] { return socket().impl()->available() > 0; };
 
         if (!state.received_external_tables)
         {
-            /// The packet may arrive in fragments, so keep the buffered beginning of it and append the next received
-            /// bytes after it, but no more than the largest terminating packet, so that the buffering is bounded.
+            /// The packet may arrive in fragments (and in several chunks), so keep the buffered beginning of it and
+            /// append the next received bytes after it, but no more than the largest terminating packet, so that the
+            /// buffering is bounded.
             auto terminator = getExternalTablesTerminatorState(state);
-            while (terminator == ExternalTablesTerminatorState::Incomplete && can_read_without_waiting())
+            while (terminator == ExternalTablesTerminatorState::Incomplete)
             {
                 if (in->available() >= max_external_tables_terminator_packet_size)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "The terminating block of external tables is incomplete in {} bytes", in->available());
-                if (!in->appendFromSocket(max_external_tables_terminator_packet_size - in->available()))
+                const size_t buffered = in->available();
+                const bool read_socket = can_read_socket_without_waiting();
+                if (!in->appendWithoutWaiting(max_external_tables_terminator_packet_size - buffered, read_socket))
                     return false;
+                /// Without progress, try again at the next check.
+                if (in->available() == buffered)
+                    break;
                 terminator = getExternalTablesTerminatorState(state);
             }
 
@@ -1516,10 +1522,10 @@ std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<Query
 
         if (!in->available())
         {
-            if (!can_read_without_waiting())
-                return true;
-            if (!in->next())
+            if (!in->appendWithoutWaiting(1, can_read_socket_without_waiting()))
                 return false;
+            if (!in->available())
+                return true;
         }
 
         if (static_cast<UInt8>(*in->position()) == Protocol::Client::Cancel)

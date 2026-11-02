@@ -2643,11 +2643,14 @@ def create_protocol_user(name):
     node.query(f"GRANT SELECT ON *.* TO {name}")
 
 
-def test_native_cancel_while_waiting_in_queue(started_cluster):
+@pytest.mark.parametrize("proto_caps", ["notchunked", "send_chunked"])
+def test_native_cancel_while_waiting_in_queue(started_cluster, proto_caps):
     """
     A native client that cancels its queued query (Ctrl+C sends `Cancel` without closing the
     connection) must have it removed from the admission queue while the blockers are still
     running, even though the `Cancel` packet follows the external-tables terminator in the input.
+    With the chunked protocol, the terminator and `Cancel` come in their own chunks after the chunk
+    of the query.
     """
     prefix = uuid.uuid4().hex[:8]
     waiter_id = f"native_cancel_waiter_{prefix}"
@@ -2655,7 +2658,11 @@ def test_native_cancel_while_waiting_in_queue(started_cluster):
     blocker_ids = occupy_both_slots(pool, prefix)
     try:
         node.exec_in_container(
-            ["bash", "-c", f"clickhouse client --query_id {waiter_id} --queue_max_wait_ms 30000 -q 'SELECT 1' >/dev/null 2>&1"],
+            [
+                "bash",
+                "-c",
+                f"clickhouse client --query_id {waiter_id} --proto_caps {proto_caps} --queue_max_wait_ms 30000 -q 'SELECT 1' >/dev/null 2>&1",
+            ],
             detach=True,
         )
         wait_for_queue_length(node, 1)
