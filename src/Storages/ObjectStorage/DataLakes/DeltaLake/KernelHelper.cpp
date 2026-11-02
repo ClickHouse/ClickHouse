@@ -329,8 +329,48 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_key", connection_params.endpoint.account_key);
             break;
         }
-        case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
+        {
+            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+            if (!name.empty())
+                set_option("azure_storage_account_name", name);
+
+            /// Without the credentials the request is unsigned, see `azure_skip_signature` below.
+            if (drop_credentials)
+                break;
+
+            /// The same parameters as the Azure SDK credential uses: the defaults of the options come from the
+            /// environment (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_AUTHORITY_HOST`),
+            /// and `client_id` and `tenant_id` from `extra_credentials` override them.
+            Azure::Identity::WorkloadIdentityCredentialOptions workload_identity_options;
+            if (!connection_params.workload_identity_client_id.empty())
+                workload_identity_options.ClientId = connection_params.workload_identity_client_id;
+            if (!connection_params.workload_identity_tenant_id.empty())
+                workload_identity_options.TenantId = connection_params.workload_identity_tenant_id;
+
+            /// The object store of the kernel uses the workload identity only if all three are set, and otherwise
+            /// silently falls back to the managed identity of the machine.
+            if (workload_identity_options.ClientId.empty() || workload_identity_options.TenantId.empty()
+                || workload_identity_options.TokenFilePath.empty())
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Azure workload identity requires a client id, a tenant id and a federated token file "
+                    "(environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE`), "
+                    "but the {} is not set",
+                    workload_identity_options.ClientId.empty() ? "client id"
+                        : (workload_identity_options.TenantId.empty() ? "tenant id" : "federated token file"));
+
+            set_option("azure_client_id", workload_identity_options.ClientId);
+            set_option("azure_tenant_id", workload_identity_options.TenantId);
+            set_option("azure_federated_token_file", workload_identity_options.TokenFilePath);
+            /// The SDK default is `https://login.microsoftonline.com/`, while the object store appends `/<tenant>/...` itself.
+            std::string authority_host = workload_identity_options.AuthorityHost;
+            while (authority_host.ends_with('/'))
+                authority_host.pop_back();
+            if (!authority_host.empty())
+                set_option("azure_authority_host", authority_host);
+            break;
+        }
+        case 1: /// ClientSecretCredential
         case 5: /// StaticCredential
         case 6: /// TokenProviderCredential
         default:

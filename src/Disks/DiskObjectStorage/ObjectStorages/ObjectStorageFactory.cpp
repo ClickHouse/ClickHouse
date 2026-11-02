@@ -271,6 +271,9 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             .anonymous_fallback_for_server_credentials = remote_host_filter_check == RemoteHostFilterCheck::Warn
                 && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted],
             .follows_session_restriction = false,
+            /// A disk takes the workload identity from the environment (`use_workload_identity`).
+            .workload_identity_client_id = {},
+            .workload_identity_tenant_id = {},
         };
 
         const bool drop_credentials = params.checkOrDropServerManagedCredentials();

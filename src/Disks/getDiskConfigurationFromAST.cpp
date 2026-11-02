@@ -507,6 +507,9 @@ AzureBlobStorage::ConnectionParams getAzureDiskConnectionParams(
         .forbid_implicit_credentials = true,
         .anonymous_fallback_for_server_credentials = anonymous_fallback,
         .follows_session_restriction = false,
+        /// A disk takes the workload identity from the environment (`use_workload_identity`).
+        .workload_identity_client_id = {},
+        .workload_identity_tenant_id = {},
     };
 }
 
