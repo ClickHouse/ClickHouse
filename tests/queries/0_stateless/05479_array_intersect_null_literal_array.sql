@@ -29,3 +29,17 @@ FROM values('a Array(Nullable(UInt8))', ([1, NULL]), ([2]), ([]), ([NULL, NULL])
 SELECT 'only NULL arrays';
 SELECT arrayIntersect([NULL], [NULL]);
 SELECT toTypeName(arrayIntersect([NULL], [NULL]));
+
+SELECT 'arrays with more than one NULL';
+SELECT arrayIntersect([1, NULL], [NULL, NULL]);
+SELECT arrayIntersect([NULL, NULL, NULL], [1, 2, NULL]);
+SELECT arrayIntersect([1, 2], [NULL, NULL]);
+SELECT arrayIntersect([NULL, NULL], [NULL]);
+SELECT toTypeName(arrayIntersect([1, NULL], [NULL, NULL]));
+
+SELECT 'NULL instead of an array';
+SELECT arrayIntersect([1, NULL], NULL);
+SELECT arrayIntersect(NULL, [1, NULL]);
+SELECT arrayIntersect(NULL, [NULL]);
+SELECT arrayIntersect(NULL, NULL);
+SELECT toTypeName(arrayIntersect([1, NULL], NULL));

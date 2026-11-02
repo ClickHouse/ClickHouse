@@ -24,3 +24,15 @@ non-const arguments
 only NULL arrays
 [NULL]
 Array(Nullable(Nothing))
+arrays with more than one NULL
+[NULL]
+[NULL]
+[]
+[NULL]
+Array(Nullable(UInt8))
+NULL instead of an array
+\N
+\N
+\N
+\N
+Nullable(Nothing)
