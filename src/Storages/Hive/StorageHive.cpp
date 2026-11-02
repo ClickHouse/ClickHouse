@@ -610,6 +610,11 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFilesFromPartition(
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
             "Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size());
 
+    /// The table has no partition key, so the metastore partition has nothing to map to.
+    if (!partition_key_expr)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+            "Hive metastore returned a partition for table {}.{}, but the table has no partition key", hive_database, hive_table);
+
     /// Join partition values in CSV format
     WriteBufferFromOwnString wb;
     for (size_t i = 0; i < partition.values.size(); ++i)
