@@ -82,6 +82,7 @@ optimize_window_funnel.xml                               # a function needs the 
 optimized_select_final.xml                               # FINAL
 optimized_select_final_one_part.xml                      # FINAL
 parallel_final.xml                                       # FINAL
+parallel_insert.xml                                      # type UInt64 in CREATE ... AS hits_10m_single
 polymorphic_parts_l.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 polymorphic_parts_m.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 polymorphic_parts_s.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
