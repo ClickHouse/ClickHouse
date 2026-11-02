@@ -60,7 +60,6 @@ select tokensForLikePattern('abc你好', 'asciiCJK');         -- ASCII then Unic
 ['abc','你','好']
 select tokensForLikePattern('你好%世界', 'asciiCJK');       -- Unicode token with wildcards
 ['你','好','世','界']
-set enable_analyzer = 1;
 set enable_full_text_index = 1;
 drop table if exists tab;
 create table tab (key UInt64, str String, index text_idx(str) type text(tokenizer = asciiCJK)) engine MergeTree order by key;

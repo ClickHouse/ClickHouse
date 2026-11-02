@@ -13,9 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# enable_analyzer = 1: the query condition cache only works with the analyzer (query_info has no
-# filter DAG without it), like in the other query_condition_cache tests.
-common_settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, enable_analyzer = 1"
+common_settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true"
 
 # A single part mixing 'old' rows (which the condition does not match) with recent rows, so that the
 # old rows fill whole granules of their own and can only be pruned granule-wise - which is what the
