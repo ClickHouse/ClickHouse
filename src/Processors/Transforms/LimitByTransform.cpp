@@ -137,11 +137,29 @@ void LimitByTransform::processRunInsideWindow(
     UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run)
 {
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
+    const UInt64 group_rows_seen_after_run = group_rows_seen_before_run + run_row_count;
 
+    /// Growing `output_slices` is a call, and a function that makes a call saves the callee-saved
+    /// registers it uses. The row loop of `consumeImpl` keeps its state in those registers, and the
+    /// saving `stp` pairs and restoring `ldp` pairs make a register that waits for the hash-table
+    /// lookup of this row delay the one it is paired with, which can be the address of the next key.
+    /// So the growth goes to a separate function called as a tail call, and this one saves nothing.
     if (slice.length > 0)
-        output_slices.push_back(slice);
+    {
+        if (unlikely(output_slices.size() == output_slices.capacity()))
+            return appendOutputSliceWithGrowth(slice, group_idx, group_rows_seen_after_run);
 
-    group_counts[group_idx] = group_rows_seen_before_run + run_row_count;
+        output_slices.resize_assume_reserved(output_slices.size() + 1);
+        output_slices.back() = slice;
+    }
+
+    group_counts[group_idx] = group_rows_seen_after_run;
+}
+
+void LimitByTransform::appendOutputSliceWithGrowth(ChunkRowRange slice, size_t group_idx, UInt64 group_rows_seen_after_run)
+{
+    output_slices.push_back(slice);
+    group_counts[group_idx] = group_rows_seen_after_run;
 }
 
 /// LimitBy stores a group index in the cell's mapped slot, so it cannot use a set method. `chooseMethod`

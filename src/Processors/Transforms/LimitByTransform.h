@@ -64,6 +64,8 @@ private:
     NO_INLINE void
     processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run);
 
+    NO_INLINE void appendOutputSliceWithGrowth(ChunkRowRange slice, size_t group_idx, UInt64 group_rows_seen_after_run);
+
     template <typename Method>
     requires MapAggregationMethod<Method>
     void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
