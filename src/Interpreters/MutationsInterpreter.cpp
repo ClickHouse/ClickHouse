@@ -774,7 +774,8 @@ static bool usesColumn(const ASTPtr & ast, const String & column_name)
 
 /// Whether the column `name`, computed from its default for the part, is computed from the column `column_name`, also through
 /// the defaults of other such columns. An `ALIAS` is always computed from its expression when read, even if the part still
-/// stores data of a former column with its name.
+/// stores data of a former column with its name. A subcolumn, such as `x.v` of a `Tuple`, is computed with its column; the
+/// column metadata tells it from a column whose name has a dot.
 static bool isComputedFromColumn(
     const String & name,
     const String & column_name,
@@ -782,19 +783,23 @@ static bool isComputedFromColumn(
     const std::function<bool(const String &)> & is_computed_for_part,
     NameSet & visited)
 {
-    if (!visited.emplace(name).second)
+    const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+    if (!column)
+        return false;
+    const String name_in_storage = column->getNameInStorage();
+    if (!visited.emplace(name_in_storage).second)
         return false;
 
-    const auto column_default = columns.getDefault(name);
+    const auto column_default = columns.getDefault(name_in_storage);
     if (!column_default || !column_default->expression)
         return false;
-    if (column_default->kind != ColumnDefaultKind::Alias && !is_computed_for_part(name))
+    if (column_default->kind != ColumnDefaultKind::Alias && !is_computed_for_part(name_in_storage))
         return false;
 
     if (usesColumn(column_default->expression, column_name))
         return true;
     for (const auto * identifier : IdentifiersCollector::collect(column_default->expression))
-        if (columns.has(identifier->name()) && isComputedFromColumn(identifier->name(), column_name, columns, is_computed_for_part, visited))
+        if (isComputedFromColumn(identifier->name(), column_name, columns, is_computed_for_part, visited))
             return true;
     return false;
 }
