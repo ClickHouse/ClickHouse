@@ -95,9 +95,10 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
 
 ## Deliberately untested (and why) {#deliberately-untested}
 
-- **Primary-key tables** — the reader has no merge-on-read and returns a raw
-  union of data files (ClickHouse#113360); the correct semantics are asserted
-  by a strict xfail rather than pinning the wrong output.
+- **Primary-key merge-on-read** — not implemented: buckets that need merging
+  are refused (the buckets Paimon reads without merging are covered by
+  `test_paimon_primary_key`); the merged semantics are asserted by a strict
+  xfail.
 - **Deletion vectors** — not implemented by the reader.
 - **Snapshot expiration** — the write-locally-then-upload strategy never
   deletes remote files, so expiry cannot be faithfully reproduced.

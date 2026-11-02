@@ -4,9 +4,10 @@ Flink is the dominant real-world Paimon writer. The static fixture
 (test_reader_compat.py) proves ClickHouse reads Flink-written metadata; this
 module drives a *live* Flink SQL client commit-by-commit, so the incremental
 consumer sees Flink snapshots arrive over time — the streaming half of the
-Flink journey that a checked-in fixture cannot exercise. The CDC-into-
-primary-key half remains blocked on
-https://github.com/ClickHouse/ClickHouse/issues/113360.
+Flink journey that a checked-in fixture cannot exercise. It also rewrites a
+file index in place with `rewrite_file_index` and checks that a full-scan
+read keeps every file. The CDC-into-primary-key half remains blocked on
+merge-on-read: https://github.com/ClickHouse/ClickHouse/issues/128549.
 """
 
 import glob
