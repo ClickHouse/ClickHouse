@@ -1,7 +1,6 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/WindowDescription.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
