@@ -1,0 +1,5 @@
+--- the JSON keeps double quotes of identifier parts, aliases, CTE and window names
+1	1	1	1
+--- a query run from its JSON form binds like the SQL text
+-1 -2 -3 
+-3 -2 -1 

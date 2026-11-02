@@ -1,0 +1,21 @@
+--- direct
+UNKNOWN_IDENTIFIER
+1
+--- through an asterisk
+UNKNOWN_IDENTIFIER
+UNKNOWN_IDENTIFIER
+1
+--- through an explicit column reference
+UNKNOWN_IDENTIFIER
+1
+--- through a CTE
+UNKNOWN_IDENTIFIER
+--- an alias defines a new name
+1
+2
+--- unquoted definitions stay foldable
+1
+--- a query parameter keeps the quotes of its alias
+UNKNOWN_IDENTIFIER
+1	1
+1	1

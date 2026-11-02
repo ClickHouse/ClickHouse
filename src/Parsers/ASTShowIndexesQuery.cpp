@@ -33,6 +33,8 @@ void ASTShowIndexesQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("extended", extended);
     w.writeString("database", database);
     w.writeString("table", table);
+    w.writeQuote("database_quote", database_quote);
+    w.writeQuote("table_quote", table_quote);
     w.writeChild("where_expression", where_expression);
     writeOutputOptionsJSON(w);
 }
@@ -43,6 +45,8 @@ void ASTShowIndexesQuery::readJSON(const Poco::JSON::Object & json)
     extended = r.getBool("extended");
     database = r.getString("database");
     table = r.getString("table");
+    database_quote = r.readQuote("database_quote");
+    table_quote = r.readQuote("table_quote");
     if (table.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "SHOW INDEXES requires a non-empty 'table' field during AST JSON deserialization");
     where_expression = r.readChild("where_expression");

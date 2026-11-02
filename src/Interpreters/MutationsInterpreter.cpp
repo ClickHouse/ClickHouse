@@ -137,7 +137,7 @@ void checkNoRowPolicyForSetOperands(
             if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
             {
                 auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-                    Identifier(table_identifier->name_parts), context);
+                    Identifier(table_identifier->name_parts.spellings()), context, right_operand);
                 if (!resolved.resolved_identifier && throw_if_unresolved)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,

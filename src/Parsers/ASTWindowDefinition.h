@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
+
 #include <Interpreters/WindowDescription.h>
 
 #include <Parsers/IAST.h>
@@ -25,6 +27,8 @@ struct ASTWindowDefinition : public IAST
     WindowFrame::BoundaryType frame_end_type = WindowFrame::BoundaryType::Current;
     ASTPtr frame_end_offset;
     bool frame_end_preceding = false;
+    /// Quoting of the parent window name as written in the query. Last, so it fits in the tail padding.
+    IdentifierPartQuote parent_window_name_quote = IdentifierPartQuote::Unquoted;
 
     ASTPtr clone() const override;
 
@@ -52,6 +56,8 @@ protected:
 struct ASTWindowListElement : public IAST
 {
     String name;
+    /// Quoting of the window name as written in the query.
+    IdentifierPartQuote name_quote = IdentifierPartQuote::Unquoted;
 
     // ASTWindowDefinition
     ASTPtr definition;

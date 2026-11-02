@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTQueryWithOutput.h>
 
@@ -18,6 +19,8 @@ public:
 
     String database;
     String table;
+    IdentifierPartQuote database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote table_quote = IdentifierPartQuote::Unquoted;
 
     String getID(char) const override { return "ShowIndexes"; }
     ASTPtr clone() const override;

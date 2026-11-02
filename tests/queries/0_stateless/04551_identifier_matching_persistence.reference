@@ -1,0 +1,27 @@
+--- standard: MV with a folded TO target stores the canonical spelling
+1
+--- standard: view created through folded outer references stores the canonical database
+1
+--- standard: folded FROM spellings in the stored body are canonicalized
+1
+1
+--- standard: folded column spellings in the stored body are rejected at CREATE
+INCORRECT_QUERY
+INCORRECT_QUERY
+--- sensitive session: INSERT pushes through the MV, stored references ignore session mode
+1
+1
+1
+--- metadata reload: DETACH + ATTACH, sensitive session still uses the view and the MV
+1
+1
+2
+1
+2
+1
+2
+1
+2
+--- a sensitive-mode user reads the view created by the standard-mode session
+1
+2
