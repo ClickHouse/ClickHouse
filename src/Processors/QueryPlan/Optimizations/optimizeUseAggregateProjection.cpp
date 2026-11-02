@@ -42,6 +42,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/ProjectionsDescription.h>
 
 #include <algorithm>
@@ -613,6 +614,9 @@ struct AggregateProjectionCandidates
     /// This flag means that DAG for projection candidate should be used in FilterStep.
     bool has_filter = false;
 
+    /// The value of `optimize_constant_columns_after_filter` of the original filters, for the replacement FilterStep.
+    std::optional<bool> optimize_constant_columns_after_filter;
+
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
 
@@ -631,7 +635,7 @@ struct AggregateProjectionCandidates
 ///
 /// Statistics describe the physical rows of a part as they were written, so anything that changes
 /// the visible rows or values at read time disables the optimization: lightweight deletes, pending
-/// ALTER MODIFY/RENAME/DROP COLUMN mutations, the delete bitmap of a unique-key table, and masking
+/// ALTER MODIFY/RENAME/DROP COLUMN mutations (checked per part), the delete bitmap of a unique-key table, and masking
 /// policies.
 /// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
 /// and FINAL together with SAMPLE are rejected there as well.)
@@ -663,13 +667,11 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
         return {};
 
-    /// Pending metadata mutations (RENAME/DROP COLUMN) are applied at read time by AlterConversions,
-    /// so the column data (and statistics) physically stored in a part may not belong to the column
-    /// the query reads: `DROP COLUMN b, ADD COLUMN b` must read as the new default, and a name freed
-    /// by a drop can be taken over by a rename (see test 04872).
+    /// Pending alter and metadata mutations are checked per part in `makeBlockWithMinMaxFromStatistics`:
+    /// the counters of the snapshot also include finished mutations kept for `system.mutations`,
+    /// which must not disable the optimization for the parts they were already applied to.
     auto mutations_snapshot = reading.getMutationsSnapshot();
-    if (mutations_snapshot->hasLightweightDeletedMask() || mutations_snapshot->hasAlterMutations()
-        || mutations_snapshot->hasMetadataMutations())
+    if (mutations_snapshot->hasLightweightDeletedMask())
         return {};
 
     const auto & columns = metadata->getColumns();
@@ -799,6 +801,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     auto query_index = buildDAGIndex(*dag.dag);
 
     candidates.has_filter = dag.filter_node;
+    candidates.optimize_constant_columns_after_filter = dag.optimize_constant_columns_after_filter;
     /// We can't use minmax projection if filter has non-deterministic functions.
     if (dag.filter_node && !VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
         can_use_minmax_projection = false;
@@ -929,6 +932,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     auto query_index = buildDAGIndex(*dag.dag);
     candidates.has_filter = dag.filter_node;
+    candidates.optimize_constant_columns_after_filter = dag.optimize_constant_columns_after_filter;
 
     /// The header is passed through, so a replacement must reproduce all of it, positions included.
     const Names keys = distinct.getOutputHeader()->getNames();
@@ -988,6 +992,8 @@ static constexpr const char * STATISTICS_MIN_MAX_PROJECTION_NAME = "_statistics_
 static Block makeBlockWithMinMaxFromStatistics(
     const std::vector<StatisticsMinMaxAggregate> & stats_aggregates,
     ReadFromMergeTree::AnalysisResult & remaining_select_result,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const StorageMetadataPtr & metadata,
     const ContextPtr & context,
     const LoggerPtr & logger)
 {
@@ -1015,6 +1021,14 @@ static Block makeBlockWithMinMaxFromStatistics(
 
         /// A lightweight delete mask hides rows that the statistics still account for.
         if (part->hasLightweightDelete())
+            return false;
+
+        /// Pending alter mutations (MODIFY COLUMN) and metadata mutations (RENAME/DROP COLUMN) are
+        /// applied at read time by AlterConversions, so the column data (and statistics) physically
+        /// stored in the part may not describe the column the query reads: `DROP COLUMN b, ADD COLUMN b`
+        /// must read as the new default, and a name freed by a drop can be taken over by a rename
+        /// (see test 04872).
+        if (MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(part, mutations_snapshot))
             return false;
 
         /// Part-level statistics can only answer a full-part read.
@@ -1066,6 +1080,17 @@ static Block makeBlockWithMinMaxFromStatistics(
 
             auto it = estimates.find(stats_aggregate.column_name);
             if (it == estimates.end())
+                return false;
+
+            /// The statistics describe the values as they are stored in the part. When the part stores
+            /// the column with a different type, a read converts the values to the current type, even
+            /// without a pending mutation in the snapshot (e.g. with `apply_mutations_on_fly = 0` or
+            /// after `KILL MUTATION`). A conversion that keeps the representation (e.g. an extended
+            /// `Enum`) leaves the values, and so the statistics, valid.
+            auto part_column = part->tryGetColumn(stats_aggregate.column_name);
+            const auto * metadata_column = metadata->getColumns().tryGet(stats_aggregate.column_name);
+            if (!part_column || !metadata_column
+                || !isRepresentationPreservingConversion(part_column->type.get(), metadata_column->type.get()))
                 return false;
 
             const auto & estimate = it->second;
@@ -1299,7 +1324,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
         /// remaining parts (without statistics), to be used for normal reading.
         inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
         statistics_min_max_block = makeBlockWithMinMaxFromStatistics(
-            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, context, logger);
+            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result,
+            reading->getMutationsSnapshot(), metadata, context, logger);
 
         if (statistics_min_max_block.empty())
             return result;
@@ -1709,11 +1735,13 @@ UseProjectionsResult optimizeUseAggregateProjections(
         {
             /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
             const String result_name = best_candidate->dag.getOutputs().front()->result_name;
-            aggregate_projection_node->step = std::make_unique<FilterStep>(
+            auto filter_step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
                 result_name,
                 true);
+            filter_step->setOptimizeConstantColumnsAfterFilter(candidates.optimize_constant_columns_after_filter);
+            aggregate_projection_node->step = std::move(filter_step);
         }
         else
             aggregate_projection_node->step
