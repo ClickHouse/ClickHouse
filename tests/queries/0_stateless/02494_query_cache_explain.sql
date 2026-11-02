@@ -2,6 +2,7 @@
 -- Tag no-parallel: Messes with internal cache
 SET explain_query_plan_default = 'legacy';
 
+SET enable_analyzer = 1;
 SET query_cache_system_table_handling = 'save';
 
 SYSTEM CLEAR QUERY CACHE;

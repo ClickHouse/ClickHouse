@@ -40,6 +40,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int OPENSSL_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
@@ -239,9 +240,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String | FixedString | IPv6) -> FixedString(" + std::to_string(Impl::length) + ")";
+        if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeFixedString>(Impl::length);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

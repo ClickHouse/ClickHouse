@@ -37,23 +37,6 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
 
 Use background I/O pool to read from MergeTree tables. This setting may increase performance for I/O bound queries
 
-## allow_block_nested_loop_join {#allow_block_nested_loop_join}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting that gates the block nested loop join, which executes a `JOIN` whose `ON` section determines no join key instead of rejecting it with `INVALID_JOIN_ON_EXPRESSION`. The compatibility value 0 restores the previous behavior."}]}]}/>
-
-Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
-
-It examines every pair of rows, which costs the product of the two tables' row counts. The operator is the last resort of join planning, reached only when no [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) can execute the condition, so it is not selected through that setting.
-
-When the setting is disabled, a query that reaches the operator is rejected with `INVALID_JOIN_ON_EXPRESSION` while it is being planned.
-
-Possible values:
-
-- 0 — Reject such a query.
-- 1 — Execute it as a block nested loop join (default).
-
 ## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -77,7 +60,7 @@ If it's enabled, in hedged requests we can start new connection until receiving 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Added an alias for setting `allow_experimental_correlated_subqueries`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "1"},{"label": "Mark correlated subqueries support as Beta. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}]}, {"id": "row-3","items": [{"label": "25.4"},{"label": "0"},{"label": "Added new setting to allow correlated subqueries execution. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Added an alias for setting `allow_experimental_correlated_subqueries`."}]}]}/>
 
 Allow to execute correlated subqueries.
 
@@ -109,7 +92,7 @@ Enable custom error code in function throwIf(). If true, thrown exceptions may h
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_glue_catalog`"}]}, {"id": "row-2","items": [{"label": "25.3"},{"label": "0"},{"label": "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'. At the time the setting was named `allow_experimental_database_glue_catalog`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_glue_catalog`"}]}]}/>
 
 Allow database engine `DataLakeCatalog` with `catalog_type = 'glue'`
 
@@ -123,7 +106,7 @@ Cloud default value: `1`.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_iceberg`"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting. At the time the setting was named `allow_experimental_database_iceberg`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_iceberg`"}]}]}/>
 
 Allow database engine `DataLakeCatalog` with `catalog_type = 'iceberg'`
 
@@ -137,7 +120,7 @@ Cloud default value: `1`.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_unity_catalog`"}]}, {"id": "row-2","items": [{"label": "25.3"},{"label": "0"},{"label": "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'. At the time the setting was named `allow_experimental_database_unity_catalog`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_database_unity_catalog`"}]}]}/>
 
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 
@@ -179,7 +162,7 @@ Allow creating a new DeltaLake table using delta-kernel-rs or registering an exi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "New setting. At the time the setting was named `allow_experimental_delta_lake_writes`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."}]}]}/>
 
 Enables delta-kernel writes feature.
 
@@ -191,7 +174,7 @@ Enables delta-kernel writes feature.
 
 Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](/reference/settings/session-settings/force#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
 
-[max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) and [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) apply to the combined size of all partition sets while the streams remain separate.
+Not applied when [max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) or [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the cross-stream merge is kept to preserve their global meaning.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -212,16 +195,6 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "Disallow using Dynamic type in JOIN keys by default"}]}]}/>
 
 Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
-
-## allow_executable_tables {#allow_executable_tables}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."}]}]}/>
-
-Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
-
-Disabling this refuses reads only: creating, attaching, dropping and describing such tables still works. `ExecutablePool` processes that have already started are left running rather than terminated, but each read is still refused until the setting is enabled again.
 
 ## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
@@ -253,7 +226,7 @@ Allows a more general join planning algorithm that can handle more complex condi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_geo_types_in_iceberg`."}]}, {"id": "row-2","items": [{"label": "26.5"},{"label": "0"},{"label": "New setting to allow parsing Iceberg geometry\/geography fields as Geometry type. At the time the setting was named `allow_experimental_geo_types_in_iceberg`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_geo_types_in_iceberg`."}]}]}/>
 
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 
@@ -289,7 +262,7 @@ Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "New setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Insert into iceberg was moved to Beta"}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 Allow to execute `insert` queries into iceberg.
 
@@ -317,11 +290,9 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_join_right_table_sorting`."}]}, {"id": "row-2","items": [{"label": "24.9"},{"label": "0"},{"label": "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join. At the time the setting was named `allow_experimental_join_right_table_sorting`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_join_right_table_sorting`."}]}]}/>
 
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
-This setting is experimental and currently does not work together with all other join optimizations.
-In particular, when the right table is reranged, the per-key split controlled by `joined_block_split_single_row` is disabled, so neither `max_joined_block_size_rows` nor `max_joined_block_size_bytes` bounds the number of rows produced for a single left row.
 
 ## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
 
@@ -331,7 +302,7 @@ In particular, when the right table is reranged, the per-key split controlled by
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."}]}, {"id": "row-2","items": [{"label": "24.8"},{"label": "0"},{"label": "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper. At the time the setting was named `allow_experimental_kafka_offsets_storage_in_keeper`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."}]}]}/>
 
 Allow storing Kafka related offsets in ClickHouse Keeper. When enabled, a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
 
@@ -386,41 +357,17 @@ Set to false to force the old full-mutation behavior.
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
 index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
 
+## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Allow named collections' fields override by default.
+
 ## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Allows `ALTER` statements that modify data on disk, not only table metadata.
-
-When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejected with
-`ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
-scheduling a mutation (see `system.mutations`). This covers:
-
-- `ALTER TABLE ... MODIFY COLUMN` with a type change that rewrites the column,
-  `ALTER TABLE ... DROP COLUMN` or `... CLEAR COLUMN` of a physical column,
-  `ALTER TABLE ... RENAME COLUMN` of any column including an `ALIAS`,
-  `ALTER TABLE ... DROP INDEX`, `... CLEAR INDEX`, `... DROP PROJECTION`,
-  `... CLEAR PROJECTION`, `... DROP STATISTICS`, `... CLEAR STATISTICS`, and
-  `ALTER TABLE ... MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
-- `ALTER TABLE ... UPDATE` whenever it runs as a heavyweight mutation, which is the default
-  `alter_update_mode = 'heavy'` and every case the other modes fall back to,
-  `ALTER TABLE ... DELETE WHERE`, `ALTER TABLE ... MATERIALIZE INDEX`,
-  `... MATERIALIZE PROJECTION`, `... MATERIALIZE STATISTICS`, `... MATERIALIZE COLUMN`,
-  `... MATERIALIZE TTL` (unconditionally, unlike `MODIFY TTL` above),
-  `... APPLY DELETED MASK`, `... APPLY PATCHES` and `... REWRITE PARTS`.
-
-Other `ALTER` statements are allowed, including `ADD COLUMN`, `COMMENT COLUMN`,
-`MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS` column.
-
-The dedicated `DELETE FROM ...` and `UPDATE ... SET ...` statements are a different thing from
-the `ALTER TABLE ... DELETE WHERE` and `ALTER TABLE ... UPDATE` commands above, and this setting
-never refuses them, in any mode they support. It governs `ALTER` DDL only. Use `GRANT` and
-`REVOKE` of `ALTER DELETE` and `ALTER UPDATE` to restrict data modification as a whole; note that
-those privileges cover the dedicated statements and the `ALTER` commands together, so they cannot
-separate the two forms.
-
-The check applies only to `MergeTree`-family tables. Other engines, such as `Memory`,
-`Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.
+Allow to execute alters which affects not only tables metadata, but also data on disk
 
 ## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 
@@ -450,20 +397,6 @@ It does not control whether `Nullable(Tuple(...))` columns can be created in tab
 ClickHouse uses the value for this setting loaded at server startup.
 Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
-
-## allow_parallel_distinct {#allow_parallel_distinct}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to evaluate final `DISTINCT` in parallel using hash partitioning."}]}]}/>
-
-Evaluate the final `DISTINCT` on multiple threads by partitioning input streams by the hash of the `DISTINCT` columns. Equal keys reach the same stream, allowing each partition to be deduplicated independently.
-
-Unlike [allow_distinct_partitions_independently](/reference/settings/session-settings/allow#allow_distinct_partitions_independently), this does not require a relationship between the table's partition key and the `DISTINCT` columns. The number of input streams and hash partitions is capped independently of `max_threads` to bound the cost of splitting blocks and connecting streams.
-
-Hash partitioning is not applied to globally sorted input because `DISTINCT` preserves that order. [max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) and [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) apply to the combined size of all hash partitions.
-
-`DISTINCT` without `ORDER BY` has no defined row order, so this optimization may return the same distinct values in a different order. As a result, `LIMIT`, `OFFSET`, or `LIMIT BY` over unordered `DISTINCT` results may select a different subset of rows.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
@@ -569,7 +502,7 @@ Allow unrestricted (without condition on path) reads from system.zookeeper table
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages. At the time the setting was named `allow_experimental_url_wildcard_from_index_pages`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."}]}]}/>
 
 Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
 

@@ -2,6 +2,8 @@
 -- The validation lives in the analyzer, so force it on regardless of the CI variant.
 -- https://github.com/ClickHouse/ClickHouse/issues/74442
 
+SET enable_analyzer = 1;
+
 SELECT (1, 1) IN (SELECT 1); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT 1 IN (SELECT 1, 2); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT (1, 1, 1) IN (SELECT 1, 2); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
@@ -11,7 +13,7 @@ SELECT (1, 1) IN (SELECT 1, 2);
 -- Single Tuple column on the right is valid (compared as a single value).
 SELECT (1, 2) IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
 
-SET enable_nullable_tuple_type = 1;
+SET allow_experimental_nullable_tuple_type = 1;
 SELECT (1, 2) IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
 
 -- A `Nullable(Tuple(...))` left operand is compared as a single key column by `FunctionIn` (it unpacks

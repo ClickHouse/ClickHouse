@@ -19,7 +19,8 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | queries_per_normalized_hash} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
@@ -27,7 +28,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
 
 `IPV4_PREFIX_BITS` 和 `IPV6_PREFIX_BITS` 选项只能在 `KEYED BY` 为 `ip_address` 或 `forwarded_ip_address` 时使用。它们对应 [system.quotas](/zh/reference/system-tables/quotas) 表中的字段。
 
-参数 `queries`、`query_selects`、`query_inserts`、`errors`、`result_rows`、`result_bytes`、`read_rows`、`read_bytes`、`execution_time`、`written_bytes`、`written_rows`、`failed_sequential_authentications`、`queries_per_normalized_hash` 对应 [system.quotas&#95;usage](/zh/reference/system-tables/quotas_usage) 表中的字段。
+参数 `queries`、`query_selects`、`query_inserts`、`errors`、`result_rows`、`result_bytes`、`read_rows`、`read_bytes`、`execution_time`、`queries_per_normalized_hash` 对应 [system.quotas&#95;usage](/zh/reference/system-tables/quotas_usage) 表中的字段。
 
 `ON CLUSTER` 子句允许在集群上创建配额，参见 [Distributed DDL](/zh/reference/statements/distributed-ddl)。
 

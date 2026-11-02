@@ -311,7 +311,6 @@ SELECT timezone()
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
-    factory.registerAlias("current_timezone", "timezone", FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ServerTimezone)
