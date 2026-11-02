@@ -323,11 +323,11 @@ private:
     {
         auto & step_box = boxes[index];
         const auto width = static_cast<Int64>(step_box.width);
-        Int64 right;
+        /// The right bound of a leaf; a step with inputs computes it from the subtrees of its inputs below.
+        Int64 right = left + width + 2 * frame_padding;
         if (step_box.children.empty())
         {
             step_box.center = left + frame_padding + width / 2;
-            right = left + width + 2 * frame_padding;
         }
         else
         {
