@@ -176,7 +176,7 @@ QueryPlan makePilotPlan(const MultiPassTopKTemplate & templ, const TopKPilotCoun
     /// once, but for later tasks one at a time.
     auto read = cloneRead(templ, fineTasksContext(templ.input->context));
     auto analysis = std::make_shared<ReadFromMergeTree::AnalysisResult>(*templ.input->read->getAnalyzedResult());
-    keepEveryNthGranule(*analysis, std::max(min_pilot_period, analysis->selected_marks / pilot_granules));
+    keepEveryNthGranule(*analysis, std::max<size_t>(min_pilot_period, analysis->selected_marks / pilot_granules));
     read->setAnalyzedResult(std::move(analysis));
     /// A sample proves nothing about the granules it skips.
     read->disableQueryConditionCache();
