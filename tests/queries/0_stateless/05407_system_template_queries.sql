@@ -20,6 +20,10 @@ INSERT INTO system.template_queries (name, category, description, query) SELECT 
 INSERT INTO system.template_queries (name, category, description, query) SELECT '05407_big', 'test', 'big query', concat(repeat('a', 524289), repeat('a', 524288)); -- { serverError BAD_ARGUMENTS }
 INSERT INTO system.template_queries (name, category, description, query) SELECT concat('05407_n', toString(number)), 'test', 'many', 'SELECT 1' FROM numbers(10001); -- { serverError BAD_ARGUMENTS }
 
+-- ON CLUSTER is rejected and must not delete the local row
+DELETE FROM system.template_queries ON CLUSTER test_shard_localhost WHERE name = '05407_q1'; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM system.template_queries WHERE name = '05407_q1';
+
 -- Deleting a built-in is forbidden.
 DELETE FROM system.template_queries WHERE name = 'Biggest tables'; -- { serverError ACCESS_DENIED }
 

@@ -133,6 +133,11 @@ BlockIO InterpreterDeleteQuery::execute()
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
 
+        /// The mutation below runs on this host only, so ON CLUSTER would silently leave the other hosts untouched.
+        if (!delete_query.cluster.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DELETE ... ON CLUSTER is not supported for table {}", table->getStorageID().getFullTableName());
+
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
         MutationCommand mut_command;

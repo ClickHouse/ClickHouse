@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 
 # Ctrl-O with --enable-template-queries-search opens the template queries picker (skim, or a short
-# message when the build has no skim). Aborting it must leave the prompt usable and the line unchanged.
+# message when the build has no skim). The flag is passed bare, as documented. Aborting it must leave the prompt usable and the line unchanged.
 # Without skim or TERM (as in Fast test and the other CI jobs) the client prints why, and the line must be kept too.
 
 set basedir [file dirname $argv0]
@@ -25,7 +25,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --enable-template-queries-search=1 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --enable-template-queries-search --history_file=$history_file"
 expect ":) "
 
 # The query text differs from its result, so the echo of the typed line cannot match the expected output
