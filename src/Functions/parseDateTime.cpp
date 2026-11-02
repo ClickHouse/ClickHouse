@@ -176,6 +176,8 @@ namespace
 
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
         bool has_year = false; /// Whether year was explicitly specified.
+        bool has_month = false; /// Whether month was explicitly specified.
+        bool has_day_of_month = false; /// Whether day of month was explicitly specified.
 
         /// If hour_starts_at_1 = true, is_hour_of_half_day = true, hour's range is [1, 12]
         /// If hour_starts_at_1 = true, is_hour_of_half_day = false, hour's range is [1, 24]
@@ -211,6 +213,8 @@ namespace
 
             is_year_of_era = false;
             has_year = false;
+            has_month = false;
+            has_day_of_month = false;
 
             hour = 0;
             minute = 0;
@@ -286,6 +290,7 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_)
 
             month = month_;
+            has_month = true;
             week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
@@ -303,8 +308,11 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
-            week_date_format = true;
-            day_of_year_format = false;
+            if (!has_month && !has_day_of_month)
+            {
+                week_date_format = true;
+                day_of_year_format = false;
+            }
             if (!has_year)
             {
                 has_year = true;
@@ -337,6 +345,7 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month)
 
             day = day_of_month;
+            has_day_of_month = true;
             week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
@@ -354,8 +363,11 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
-            week_date_format = true;
-            day_of_year_format = false;
+            if (!has_month && !has_day_of_month)
+            {
+                week_date_format = true;
+                day_of_year_format = false;
+            }
             if (!has_year)
             {
                 has_year = true;
