@@ -151,6 +151,49 @@ def test_table_override(started_cluster):
     )
 
 
+def test_sorting_key_follows_index_column_order(started_cluster):
+    pk_table = "test_sorting_key_order_primary_key"
+    ri_table = "test_sorting_key_order_replica_identity"
+    pg_manager.create_postgres_table(
+        pk_table,
+        "",
+        """CREATE TABLE "{}" (id2 integer, id1 integer, value text, PRIMARY KEY (id1, id2))""",
+    )
+    pg_manager.create_postgres_table(
+        ri_table,
+        "",
+        """CREATE TABLE "{}" (b integer NOT NULL, a integer NOT NULL, z integer NOT NULL, value text)""",
+    )
+    pg_manager.execute(f"CREATE UNIQUE INDEX {ri_table}_idx ON {ri_table} (z, b, a)")
+    pg_manager.execute(
+        f"ALTER TABLE {ri_table} REPLICA IDENTITY USING INDEX {ri_table}_idx"
+    )
+    pg_manager.execute(f"INSERT INTO {pk_table} VALUES (1, 2, 'x')")
+    pg_manager.execute(f"INSERT INTO {ri_table} VALUES (1, 2, 3, 'x')")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{pk_table},{ri_table}'"],
+    )
+    for table, order_by in [(pk_table, "id1"), (ri_table, "z")]:
+        check_tables_are_synchronized(
+            instance,
+            table,
+            postgres_database=pg_manager.get_default_database(),
+            order_by=order_by,
+        )
+
+    assert (
+        instance.query(
+            f"SELECT name, sorting_key FROM system.tables WHERE database = 'test_database' AND name IN ('{pk_table}', '{ri_table}') ORDER BY name"
+        )
+        == f"{pk_table}\tid1, id2\n{ri_table}\tz, b, a\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_materialized_view(started_cluster):
     pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
@@ -2323,6 +2366,10 @@ def test_detach_table_with_pending_buffer(started_cluster):
     # throw on every insert: `syncTables()` then fails to flush the buffered row, so the table stays
     # in `tables_to_sync` and the consumer retries. `DETACH` removes its storage while that stale
     # entry remains - the exact precondition for the crash.
+    #
+    # The consumer must also back off between these failed retries instead of rescheduling itself
+    # immediately: retrying in a tight loop kept re-acquiring the task's mutex and could starve
+    # `DETACH TABLE` (which deactivates the task) for minutes.
     cursor = pg_manager.get_db_cursor()
     cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
     cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
@@ -2336,8 +2383,8 @@ def test_detach_table_with_pending_buffer(started_cluster):
         port=started_cluster.postgres_port,
         settings=[
             "materialized_postgresql_tables_list = 'test_detach_stuck,test_detach_healthy'",
-            "materialized_postgresql_backoff_min_ms = 100",
-            "materialized_postgresql_backoff_max_ms = 100",
+            "materialized_postgresql_backoff_min_ms = 1000",
+            "materialized_postgresql_backoff_max_ms = 1000",
         ],
     )
     # The initial snapshot must synchronize for both tables.
@@ -2349,19 +2396,28 @@ def test_detach_table_with_pending_buffer(started_cluster):
     )
 
     # A materialized view that always throws on insert. It is created without POPULATE, so it only
-    # affects rows replicated from now on (not the already-synchronized snapshot row).
-    instance.query("DROP VIEW IF EXISTS poison_mv")
+    # affects rows replicated from now on (not the already-synchronized snapshot row). Its name is
+    # unique, so that the log lines below cannot match the lines of an earlier run of this test.
+    poison_mv = f"poison_mv_{uuid.uuid4().hex}"
     instance.query(
-        "CREATE MATERIALIZED VIEW poison_mv ENGINE = MergeTree ORDER BY tuple() AS "
+        f"CREATE MATERIALIZED VIEW {poison_mv} ENGINE = MergeTree ORDER BY tuple() AS "
         "SELECT throwIf(value >= 0, 'poison') AS x FROM test_database.test_detach_stuck"
     )
 
     # This row cannot be flushed: the MV throws inside syncTables(), so test_detach_stuck stays queued
-    # in tables_to_sync and the consumer keeps retrying it. Wait for the actual push failure (a real
-    # progress signal that the sync was attempted and failed) - not the substring "poison" alone, which
-    # would also match the logged text of the CREATE MATERIALIZED VIEW query above and fire prematurely.
+    # in tables_to_sync and the consumer keeps retrying it. Wait for several actual push failures (a
+    # real progress signal that the sync was attempted and failed) - not the substring "poison" alone,
+    # which would also match the logged text of the CREATE MATERIALIZED VIEW query above.
+    start_time = time.time()
     cursor.execute("INSERT INTO test_detach_stuck VALUES (2, 2)")
-    instance.wait_for_log_line("while pushing to view default.poison_mv", timeout=60)
+    instance.wait_for_log_line(
+        f"while pushing to view default.{poison_mv}", timeout=60, repetitions=6
+    )
+    # With a fixed backoff of 1000 ms, six log lines (at most two per failed attempt) take at least
+    # two backoff intervals. Without the backoff the consumer retried back-to-back, producing these
+    # lines in a small fraction of a second.
+    elapsed = time.time() - start_time
+    assert elapsed >= 1.5, f"failed synchronization was retried without a backoff: {elapsed:.3f} s"
 
     # Before the fix this crashed the server (SIGSEGV in MaterializedPostgreSQLConsumer::syncTables()),
     # because DETACH removed the storage while the table was still queued in tables_to_sync.
@@ -2382,7 +2438,7 @@ def test_detach_table_with_pending_buffer(started_cluster):
     # a crashed `clickhouse-server`.
     assert "1" == instance.query("SELECT 1").strip()
 
-    instance.query("DROP VIEW IF EXISTS poison_mv")
+    instance.query(f"DROP VIEW IF EXISTS {poison_mv}")
     pg_manager.drop_materialized_db()
     cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
     cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
@@ -3350,6 +3406,158 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     )
     if cursor.fetchall():
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
+
+
+def test_whole_schema_database_restart_after_new_postgresql_table(started_cluster):
+    # A table created in PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
+    # `ATTACH TABLE`, so it has no nested table. On restart, the whole-schema database used to take
+    # the list of tables to replicate from the live PostgreSQL schema, failed on the missing nested
+    # table of the new one on every attempt, and never resumed replication of the other tables.
+    NUM_TABLES = 2
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    # Not in the publication: created in PostgreSQL after the database.
+    new_table = "postgresql_replica_created_later"
+    # In the publication, but without a nested table, as for a table whose initial snapshot has failed.
+    published_table = "postgresql_replica_published_later"
+    for table in (new_table, published_table):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
+        )
+    # The same, but with a name that contains a comma and a trailing space: it must be remembered exactly.
+    # It sorts after `published_table`, so the backup errors below report `published_table` first.
+    comma_table = "postgresql_replica_z,pending "
+    pg_manager.create_postgres_table(comma_table)
+
+    instance.stop_clickhouse()
+    pg_manager.execute(
+        f"ALTER PUBLICATION postgres_database_ch_publication ADD TABLE {published_table}, \"{comma_table}\""
+    )
+    instance.start_clickhouse()
+
+    for i in range(NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number FROM numbers(10, 10)"
+        )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+    assert (
+        instance.query(
+            f"SELECT count() FROM system.tables WHERE database = 'test_database' AND name IN ('{new_table}', '{published_table}')"
+        ).strip()
+        == "0"
+    )
+    assert instance.contains_in_log(
+        f"contains tables that are not replicated, because they were never materialized (for example, their initial snapshot has failed): {published_table}"
+    )
+
+    # A full database backup must not silently omit the published table that has no nested table.
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # `ATTACH TABLE` of another table persists the list of the replicated tables, which does not contain
+    # the published table without a nested table. It must still be remembered after the next restart.
+    instance.query(f"ATTACH TABLE test_database.{new_table}")
+    check_tables_are_synchronized(instance, new_table)
+
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(instance, new_table)
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_after_attach')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # A failed `ATTACH TABLE` of the published table must not make the backup omit it. `ATTACH TABLE`
+    # creates a temporary replication slot, so it fails while all replication slots are in use.
+    pg_manager.execute(
+        "SELECT current_setting('max_replication_slots')::int - (SELECT count(*) FROM pg_replication_slots)"
+    )
+    free_slots = pg_manager.cursor.fetchone()[0]
+    dummy_slots = [f"mpg_dummy_slot_{i}" for i in range(free_slots)]
+    try:
+        for slot in dummy_slots:
+            pg_manager.execute(f"SELECT pg_create_physical_replication_slot('{slot}')")
+        instance.query_and_get_error(f"ATTACH TABLE test_database.{published_table}")
+    finally:
+        for slot in dummy_slots:
+            pg_manager.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_after_failed_attach')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # The published table is added to replication with `ATTACH TABLE`.
+    instance.query(f"ATTACH TABLE test_database.{published_table}")
+    check_tables_are_synchronized(instance, published_table)
+
+    # The table with a comma in its name is still not replicated, and is still remembered after a restart.
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(instance, published_table)
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_comma_table')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and comma_table in error, error
+
+    pg_manager.drop_materialized_db()
+    for table in (new_table, published_table, comma_table):
+        pg_manager.execute(f'DROP TABLE "{table}"')
+
+
+def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
+    # Two databases with explicit tables lists and unique replication consumer identifiers have separate
+    # replication slots, but share the publication. `ATTACH TABLE` on one of them adds the table to the
+    # shared publication. It is not a table of the other database, so after a restart the backup of the
+    # other database must not be refused because of it.
+    good = "shared_publication_good"
+    later = "shared_publication_later"
+    for table in (good, later):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
+        )
+
+    databases = ("shared_publication_db1", "shared_publication_db2")
+    for database in databases:
+        pg_manager.create_materialized_db(
+            ip=started_cluster.postgres_ip,
+            port=started_cluster.postgres_port,
+            materialized_database=database,
+            settings=[
+                f"materialized_postgresql_tables_list = '{good}'",
+                "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+            ],
+        )
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+
+    instance.query(f"ATTACH TABLE {databases[0]}.{later}")
+    check_tables_are_synchronized(instance, later, materialized_database=databases[0])
+
+    instance.restart_clickhouse()
+    for database in databases:
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+
+    instance.query(
+        f"BACKUP DATABASE {databases[1]} TO Disk('backups', 'mpg_explicit_tables_list_shared_publication_backup')"
+    )
+
+    for database in databases:
+        pg_manager.drop_materialized_db(database)
+    for table in (good, later):
+        pg_manager.execute(f"DROP TABLE {table}")
 
 
 def test_user_managed_slot_with_unique_consumer_identifier_rejected(started_cluster):
