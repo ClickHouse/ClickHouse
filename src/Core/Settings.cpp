@@ -10046,7 +10046,7 @@ When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AN
 )", 0, \
         {"26.7", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."}) \
     DECLARE(Bool, analyzer_alias_hides_table_name, false, R"(
-When enabled, the alias of a table expression hides the table's own name from a qualifier, as SQL requires, whenever an enclosing query has a table expression addressed by that name.
+When enabled, the alias of a table expression hides the table's own name from a qualifier, as SQL requires, whenever an enclosing query gives the qualified identifier another reading: a table expression addressed by that name, or a column, an `ARRAY JOIN` output or an expression alias the identifier can be read from.
 
 SQL says an alias replaces the name of the table it stands for, so `t.x` inside `... FROM t AS c ...` refers to a table `t` of an enclosing query, and the subquery is correlated. ClickHouse also accepts the table's own name as a qualifier, which is harmless while the name means nothing else in the query but silently changes the meaning of a correlated subquery:
 
