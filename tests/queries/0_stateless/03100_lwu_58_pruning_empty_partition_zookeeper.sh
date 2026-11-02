@@ -70,7 +70,7 @@ block_count_before=$($CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT rmt_lightweight_update_sleep_after_block_allocation"
 
-$CLICKHOUSE_CLIENT --query "UPDATE $R1 SET v = 999 WHERE p = 2 SETTINGS enable_lightweight_update = 1" &
+$CLICKHOUSE_CLIENT --query "UPDATE $R1 SET v = 999 WHERE p = 2 SETTINGS enable_lightweight_update = 1, enable_shared_storage_snapshot_in_query = 1" &
 
 for _ in {0..300}; do
 	sleep 0.3
