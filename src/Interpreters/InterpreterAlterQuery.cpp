@@ -229,7 +229,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                     columns.modify(name, [&](ColumnDescription & column) { column.type = alter_command->data_type; });
                 else if (alter_command->type == AlterCommand::RENAME_COLUMN && columns.has(name) && !columns.has(alter_command->rename_to))
                     columns.rename(name, alter_command->rename_to);
-                else if (alter_command->type == AlterCommand::DROP_COLUMN && columns.has(name))
+                else if (alter_command->type == AlterCommand::DROP_COLUMN && !alter_command->clear && !alter_command->partition && columns.has(name))
                     columns.remove(name);
             }
 

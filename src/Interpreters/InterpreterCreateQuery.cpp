@@ -2394,10 +2394,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// database) the query was normalized on the initiator, which rewrote its own `TTL`, and a `TTL` copied there from the source
     /// of `CREATE TABLE ... AS` looks like the query's own, so it is not rewritten again.
     if (const String & session_timezone = getContext()->getSettingsRef()[Setting::session_timezone].value;
-        !session_timezone.empty() && has_own_ttl && !getContext()->isDDLOrOnClusterInternal() && !create.attach_short_syntax
-        && !is_restore_from_backup && create.storage && create.storage->ttl_table)
+        !session_timezone.empty() && !getContext()->isDDLOrOnClusterInternal() && !create.attach_short_syntax && !is_restore_from_backup)
     {
-        rewriteDateTimeLiteralsWithTimezone(create.storage->ttl_table->ptr(), properties.columns, session_timezone);
+        if (has_own_ttl && create.storage && create.storage->ttl_table)
+            rewriteDateTimeLiteralsWithTimezone(create.storage->ttl_table->ptr(), properties.columns, session_timezone);
+
+        /// The inner table of a materialized view is created from the engine of the view, by another `InterpreterCreateQuery` that
+        /// runs in the context of this one, so on a DDL worker it does not rewrite its `TTL` either.
+        if (const auto * inner_engine = create.getTargetInnerEngine(ViewTarget::To); inner_engine && inner_engine->ttl_table)
+            rewriteDateTimeLiteralsWithTimezone(inner_engine->ttl_table->ptr(), properties.columns, session_timezone);
     }
 
     DatabasePtr database;
