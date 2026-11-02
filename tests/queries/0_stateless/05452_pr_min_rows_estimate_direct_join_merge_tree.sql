@@ -18,6 +18,10 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET automatic_parallel_replicas_mode = 0;
+-- This test is about the plan built on the initiator. A direct join is not supported yet on a remote replica
+-- that receives a serialized query plan (it throws `NOT_IMPLEMENTED` there regardless of the setting below),
+-- see https://github.com/ClickHouse/ClickHouse/pull/105260.
+SET serialize_query_plan = 0;
 SET parallel_replicas_min_number_of_rows_per_replica = 1;
 
 SELECT count() FROM dj_l AS t0 INNER JOIN dj_r AS t1 ON t1.EventId = t0.Id;
