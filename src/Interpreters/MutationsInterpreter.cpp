@@ -366,8 +366,6 @@ ColumnDependencies getAllColumnDependencies(
     return dependencies;
 }
 
-}
-
 
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,

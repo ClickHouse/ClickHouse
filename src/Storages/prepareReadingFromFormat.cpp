@@ -1,4 +1,5 @@
 #include <Storages/prepareReadingFromFormat.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
@@ -19,6 +20,9 @@
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/typeid_cast.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <unordered_map>
 
@@ -189,17 +193,26 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
                 ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
                 {
+                    DataTypePtr step_type = type;
                     for (size_t i = 0; i < subpath.size() && i < resolved_path.size(); ++i)
                     {
                         if (subpath[i].type != resolved_path[i].type || subpath[i].name_of_substream != resolved_path[i].name_of_substream)
                             break;
 
-                        /// Allow `a.x` where `a` is array of tuples.
+                        /// Allow `a.x` where `a` is array of tuples. A `Map` is serialized as `Array(Tuple(keys, values))`,
+                        /// but `keys` and `values` are not tuple elements, so the whole map is read.
                         if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                        {
+                            const auto * array_type = typeid_cast<const DataTypeArray *>(step_type.get());
+                            if (!array_type)
+                                break;
+                            step_type = array_type->getNestedType();
                             continue;
+                        }
 
                         if (subpath[i].type != ISerialization::Substream::TupleElement)
                             break;
+                        step_type = subpath[i].data.type;
 
                         if (i + 1 > column_info.path.size())
                             column_info.path.assign(subpath.begin(), subpath.begin() + i + 1);
@@ -315,6 +328,21 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         }
     }
 
+    /// A subcolumn that the format does not read itself is extracted from its column after reading: `t.x` requested
+    /// together with `t` (see `filterTupleColumnsToRead`), or a dynamic subcolumn like `j.a` of a JSON column. Keep
+    /// requesting it while its column is still read, otherwise the filter left after PREWHERE cannot find it.
+    /// It goes before the hive partition and virtual columns, which the source appends after extracting.
+    size_t position = new_info.format_header.columns();
+    for (const auto & column : info.requested_columns)
+    {
+        if (!column.isSubcolumn() || new_info.format_header.has(column.name)
+            || !new_info.format_header.has(column.getNameInStorage()))
+            continue;
+        new_info.requested_columns.push_back(column);
+        new_info.source_header.insert(position, {column.type->createColumn(), column.type, column.name});
+        ++position;
+    }
+
     return new_info;
 }
 
@@ -420,7 +448,8 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
-    writeStringBinary(columns_description.toString(false), ctx.out);
+    /// The reader needs only names, types and defaults.
+    writeStringBinary(columns_description.toString(/* include_comments = */ false, /* include_codecs = */ false), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);
@@ -488,6 +517,13 @@ Block buildAllowedFilterInputs(
         if (!base.has(col.name))
             base.insert(col);
     return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
+}
+
+bool formatNeedsEagerKeyConditionSets(const String & format_name)
+{
+    return boost::iequals(format_name, "Parquet")
+        || boost::iequals(format_name, "ORC")
+        || boost::iequals(format_name, "Vortex");
 }
 
 void prepareEagerKeyConditionSets(

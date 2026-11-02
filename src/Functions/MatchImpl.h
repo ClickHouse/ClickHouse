@@ -180,7 +180,7 @@ struct MatchImpl
                     {
                         const auto * str_begin = reinterpret_cast<const uint8_t *>(haystack_data.data() + prev_offset);
                         const auto * str_end = reinterpret_cast<const uint8_t *>(haystack_data.data() + haystack_offsets[i]);
-                        const bool matched = matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
+                        const bool matched = callJITFunction(matcher.func, str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
                         res[i] = negate ^ matched;
                         prev_offset = haystack_offsets[i];
                     }

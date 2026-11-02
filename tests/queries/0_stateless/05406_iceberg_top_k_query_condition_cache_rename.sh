@@ -18,8 +18,9 @@ rm -rf "${ICEBERG_DIR}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05406_before"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05406_after"
-${CLICKHOUSE_CLIENT} --output_format_parquet_row_group_size 1000 --query "
-    CREATE TABLE t_05406_before (k Int64) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_05406_before (k Int64) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')
+    SETTINGS output_format_parquet_row_group_size = 1000"
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 --max_insert_threads 1 --query "
     INSERT INTO t_05406_before SELECT 1000000 + number FROM numbers(10000)"

@@ -3065,9 +3065,10 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
-        else
+        else if (!insert_query || !insert_query->returning)
         {
-            /// reset Input callbacks if query is not INSERT SELECT
+            /// reset Input callbacks if query is not INSERT SELECT,
+            /// and not INSERT ... RETURNING, which reads the data sent by the client with these callbacks.
             context->resetInputCallbacks();
         }
 
@@ -3085,6 +3086,8 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
+            else if (insert_query->returning)
+                reason = "the query has RETURNING";
             /// `INSERT ... SELECT` (including `FROM input()`) is routed through
             /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
             else if (!insert_query->select && insert_query->hasInlinedData())
@@ -3246,6 +3249,11 @@ static BlockIO executeQueryImpl(
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
 
+                        /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
+                        /// subqueries against the current data. Read them before `getSource` moves the source out of the reader.
+                        if (flags.collect_result_column_origins)
+                            result_details.result_column_origins = reader->entryResultColumnOrigins();
+
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
@@ -3256,6 +3264,10 @@ static BlockIO executeQueryImpl(
                 }
                 return false;
             };
+
+            /// Where the result columns come from. Collected for `QueryFlags::collect_result_column_origins` and to be stored with
+            /// the result in the query result cache.
+            ResultColumnOrigins result_column_origins;
 
             if (!get_result_from_query_result_cache())
             {
@@ -3286,7 +3298,10 @@ static BlockIO executeQueryImpl(
                     interpreter = InterpreterFactory::instance().get(
                         out_ast,
                         context,
-                        SelectQueryOptions(stage).setInternal(internal).positionalArgumentsAlreadyResolved(!internal && is_secondary_query));
+                        SelectQueryOptions(stage)
+                            .setInternal(internal)
+                            .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
+                            .secondaryQueryRoot(!internal && is_secondary_query));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -3301,7 +3316,13 @@ static BlockIO executeQueryImpl(
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                 // We need to force to build it here to check if we need to ignore quota.
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                {
                     interpreter_with_analyzer->getQueryPlan();
+
+                    result_column_origins = interpreter_with_analyzer->getResultColumnOrigins();
+                    if (flags.collect_result_column_origins)
+                        result_details.result_column_origins = result_column_origins;
+                }
 
                 if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
                 {
@@ -3378,6 +3399,8 @@ static BlockIO executeQueryImpl(
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
+                            if (result_column_origins.size() == key.header->columns())
+                                key.result_column_origins = result_column_origins;
 
                             const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
                             QueryResultCacheOnDiskPtr write_to_on_disk_cache
@@ -3976,7 +3999,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    QueryResultDetails * result_details)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -3990,8 +4014,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
-    QueryResultDetails result_details;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
+    QueryResultDetails local_result_details;
+    if (!result_details)
+        result_details = &local_result_details;
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, *result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = resolveOutputFormatName(context, ast_query_with_output);

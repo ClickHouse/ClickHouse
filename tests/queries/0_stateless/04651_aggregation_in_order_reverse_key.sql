@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-msan
 -- no-random-settings: optimize_aggregation_in_order is randomized and every assertion pins it per statement
 -- no-random-merge-tree-settings: index_granularity and min_bytes_for_wide_part change the part layout,
 --   which changes how many groups the pre-fix code collapsed, so the mutation must stay visible

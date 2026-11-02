@@ -1,3 +1,7 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
+-- Every query reads the whole table in one thread with tiny read tasks, so the run time grows with the
+-- number of granules: small randomized granules push the test past the timeout.
+
 -- When automatic parallel replicas switches a query, the sets the single-node plan has already
 -- prepared are handed to the parallel-replicas plan, paired by hash. A set that has no counterpart
 -- used to fail the query with "Cannot find a matching set in the map of sets from single-replica plan";
@@ -16,7 +20,6 @@ INSERT INTO r_autopr_unpaired_sets SELECT toString(number * 2) FROM numbers(1000
 -- One part, so that the plan the decision is matched against does not depend on how the insert was split.
 OPTIMIZE TABLE t_autopr_unpaired_sets FINAL;
 
-SET enable_analyzer = 1;
 -- With one reading thread the cost model sees replicas as a win on a table of this size, which is what
 -- makes the optimization actually rewrite the query rather than decline.
 SET max_threads = 1;
@@ -35,17 +38,19 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 
 -- The parallel-replicas plan is built from the query tree shipped to the replicas, where constants longer
 -- than `optimize_const_name_size` are replaced with `__getScalar` calls, also inside an `IN` subquery.
--- That changes the subquery's hash, which keys its set.
+-- That changes the subquery's hash, which keys its set. Only the query-based implementation of parallel
+-- replicas ships a query tree: the plan-based one ships a plan fragment, the sets hash alike in both plans,
+-- and the query switches. So these queries are pinned to the query-based implementation.
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != repeat('x', 300)))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS log_comment = '05401_long_warmup';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS parallel_replicas_plan_based = 0, log_comment = '05401_long_warmup';
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != repeat('x', 300)))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS log_comment = '05401_long_second';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS parallel_replicas_plan_based = 0, log_comment = '05401_long_second';
 
 -- The same with `optimize_const_name_size = 0`, which replaces every constant.
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != 'short'))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, log_comment = '05401_all_warmup';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, parallel_replicas_plan_based = 0, log_comment = '05401_all_warmup';
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != 'short'))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, log_comment = '05401_all_second';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, parallel_replicas_plan_based = 0, log_comment = '05401_all_second';
 
 -- `query_plan_convert_join_to_in` keys the set it makes of the right table by a random UUID, so the two
 -- plans never hash it alike. The query must still return its result, with or without switching.

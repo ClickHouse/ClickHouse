@@ -229,7 +229,7 @@ static Int32 parseMetadataVersion(const String & version_str, const String & fil
     return version;
 }
 
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))
@@ -640,6 +640,93 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
+String readMetadataJSONString(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    bool use_metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method)
+{
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONReads);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONReadMicroseconds);
+
+    ObjectInfo object_info(metadata_file_path);
+
+    auto read_settings = local_context->getReadSettings();
+    /// Do not utilize filesystem cache if more precise cache enabled
+    if (use_metadata_cache)
+        read_settings.enable_filesystem_cache = false;
+
+    auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
+
+    std::unique_ptr<ReadBuffer> buf;
+    if (compression_method != CompressionMethod::None)
+        /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
+        /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
+        /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
+        buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
+    else
+        buf = std::move(source_buf);
+
+    String json_str;
+    readJSONObjectPossiblyInvalid(json_str, *buf);
+    return json_str;
+}
+
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str)
+{
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
+
+    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+static Poco::Dynamic::Var deepCopyJSONValue(const Poco::Dynamic::Var & value);
+
+static Poco::JSON::Array::Ptr deepCopy(const Poco::JSON::Array::Ptr & array)
+{
+    Poco::JSON::Array::Ptr result = new Poco::JSON::Array(array->getEscapeUnicode() ? Poco::JSON_ESCAPE_UNICODE : 0);
+    for (const auto & element : *array)
+        result->add(deepCopyJSONValue(element));
+    return result;
+}
+
+static bool isJSONContainer(const Poco::Dynamic::Var & value)
+{
+    const auto & type = value.type();
+    return type == typeid(Poco::JSON::Object::Ptr) || type == typeid(Poco::JSON::Array::Ptr)
+        || type == typeid(Poco::JSON::Object) || type == typeid(Poco::JSON::Array);
+}
+
+static Poco::Dynamic::Var deepCopyJSONValue(const Poco::Dynamic::Var & value)
+{
+    const auto & type = value.type();
+    if (type == typeid(Poco::JSON::Object::Ptr))
+        return deepCopy(value.extract<Poco::JSON::Object::Ptr>());
+    if (type == typeid(Poco::JSON::Array::Ptr))
+        return deepCopy(value.extract<Poco::JSON::Array::Ptr>());
+    if (type == typeid(Poco::JSON::Object))
+        return deepCopy(Poco::JSON::Object::Ptr(new Poco::JSON::Object(value.extract<Poco::JSON::Object>())));
+    if (type == typeid(Poco::JSON::Array))
+        return deepCopy(Poco::JSON::Array::Ptr(new Poco::JSON::Array(value.extract<Poco::JSON::Array>())));
+    return value;
+}
+
+Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
+{
+    Poco::JSON::Object::Ptr result = new Poco::JSON::Object(*object);
+    for (const auto & [key, value] : *object)
+    {
+        if (isJSONContainer(value))
+            result->set(key, deepCopyJSONValue(value));
+    }
+    return result;
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -649,49 +736,21 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid)
 {
-    auto create_fn = [&]()
+    auto read_fn = [&]()
     {
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONReads);
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONReadMicroseconds);
-
-        ObjectInfo object_info(metadata_file_path);
-
-        auto read_settings = local_context->getReadSettings();
-        /// Do not utilize filesystem cache if more precise cache enabled
-        if (metadata_cache)
-            read_settings.enable_filesystem_cache = false;
-
-        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
-
-        std::unique_ptr<ReadBuffer> buf;
-        if (compression_method != CompressionMethod::None)
-            /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
-            /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
-            /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
-            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
-        else
-            buf = std::move(source_buf);
-
-        String json_str;
-        readJSONObjectPossiblyInvalid(json_str, *buf);
-        return json_str;
+        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
     };
 
-    String metadata_json_str;
-    if (metadata_cache && table_uuid.has_value())
-        metadata_json_str = metadata_cache->getOrSetTableMetadata(
-            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
-    else
-        metadata_json_str = create_fn();
+    if (!metadata_cache || !table_uuid.has_value())
+        return parseMetadataJSONString(read_fn());
 
-    /// The cache holds the raw content, so the file is parsed on every call.
-    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
-    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
-
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
-    return json.extract<Poco::JSON::Object::Ptr>();
+    return metadata_cache->getOrSetTableMetadata(
+        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
+        [&]()
+        {
+            auto metadata_json_str = read_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
+        });
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -715,7 +774,15 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+            if (isBool(type))
+                return {Iceberg::f_boolean, true};
+            [[fallthrough]];
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::UInt16:
         case TypeIndex::Int32:
+            /// Iceberg has no 8- or 16-bit integers.
             return {"int", true};
         case TypeIndex::UInt32:
         case TypeIndex::Int64:
@@ -819,6 +886,9 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
+            if (isBool(type))
+                return "boolean";
+            [[fallthrough]];
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
@@ -1298,7 +1368,39 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
+    setFormatVersion1SchemaAndPartitionSpec(new_metadata_file_content);
+
     return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
+}
+
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
+{
+    if (metadata->getValue<Int32>(f_format_version) != 1)
+        return;
+
+    metadata->set(f_schema, deepCopy(parseTableSchemaV2Method(metadata).first));
+
+    for (const auto * field : {f_default_spec_id, f_partition_specs})
+        if (!metadata->has(field))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot write Iceberg table metadata: '{}' field is missing", field);
+
+    const auto default_spec_id = metadata->getValue<Int32>(f_default_spec_id);
+    const auto partition_specs = metadata->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 i = 0; i < partition_specs->size(); ++i)
+    {
+        const auto spec = partition_specs->getObject(i);
+        if (spec->getValue<Int32>(f_spec_id) == default_spec_id)
+        {
+            metadata->set(f_partition_spec, deepCopy(spec->get(f_fields).extract<Poco::JSON::Array::Ptr>()));
+            return;
+        }
+    }
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot write Iceberg table metadata: there is no partition spec with '{}' {}",
+        f_spec_id,
+        default_spec_id);
 }
 
 /**
@@ -2024,6 +2126,10 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
     if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
         return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    /// ClickHouse used to write a `boolean` partition value as an Avro `int`.
+    if (value.getType() == Field::Types::Int64 && isBool(value_type))
+        return Field(static_cast<UInt64>(value.safeGet<Int64>() != 0));
 
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
