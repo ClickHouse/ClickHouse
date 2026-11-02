@@ -56,6 +56,21 @@ echo "-- hits (must be 0): $(hits_of_last_run "$QUERY")"
 $CLICKHOUSE_CLIENT --query "REVOKE demangle ON *.* FROM $user"
 run_user --allow_introspection_functions=1 --query "$QUERY"
 
+echo "-- a privileged function passed by name to a higher-order function inside an invoker view"
+$CLICKHOUSE_CLIENT --allow_introspection_functions=1 --query "
+    DROP VIEW IF EXISTS v_demangle_by_name;
+    CREATE VIEW v_demangle_by_name SQL SECURITY INVOKER AS SELECT arrayMap(demangle, ['_Z3foov']) AS s;
+    GRANT SELECT ON v_demangle_by_name TO $user;
+    GRANT demangle ON *.* TO $user;
+"
+$CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
+QUERY="SELECT s FROM v_demangle_by_name"
+run_user --allow_introspection_functions=1 --query "$QUERY"
+run_user --allow_introspection_functions=1 --query "$QUERY"
+echo "-- hits (must be 0): $(hits_of_last_run "$QUERY")"
+$CLICKHOUSE_CLIENT --query "REVOKE demangle ON *.* FROM $user"
+run_user --allow_introspection_functions=1 --query "$QUERY"
+
 echo "-- a Dictionary table read inside a folded scalar subquery"
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_dict_wrapper;
@@ -98,6 +113,7 @@ run_user --query_plan_cache_allow_scalar_subqueries=1 --query "$QUERY"
 
 $CLICKHOUSE_CLIENT --query "
     DROP VIEW v_demangle;
+    DROP VIEW v_demangle_by_name;
     DROP TABLE t_dict_wrapper;
     DROP DICTIONARY d_05407;
     DROP TABLE t_dict_source;

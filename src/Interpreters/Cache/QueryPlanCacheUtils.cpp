@@ -159,43 +159,6 @@ bool isSetFunction(const String & name)
         || name == "nullIn" || name == "notNullIn" || name == "globalNullIn" || name == "globalNotNullIn";
 }
 
-/// What a function argument passed by name refers to, when it names a user-defined function.
-enum class FunctionPassedByName : uint8_t
-{
-    None,
-    /// A SQL UDF (`CREATE FUNCTION`).
-    SQLUserDefinedFunction,
-    /// An executable or WebAssembly UDF (see `isFunctionResolvedOutsideFunctionFactory`).
-    ResolvedOutsideFunctionFactory,
-};
-
-/// A higher-order function can take a function by name, as a plain identifier: `arrayMap(f, xs)`,
-/// `arrayExists(f, [id])`. The analyzer turns such an identifier into a lambda, inlining the body
-/// of a SQL UDF with its own lookup, so an AST walk that looks only at `ASTFunction` nodes never
-/// sees the call. Returns what the arguments of `function` passed by name like that refer to (an
-/// executable or WebAssembly UDF takes precedence over a SQL UDF). An argument that is a column of the same name is classified the same way, which only makes
-/// the plan uncacheable. The right side of `IN` names a table, not a function, so it is skipped.
-FunctionPassedByName getFunctionPassedByName(const ASTFunction & function, const ContextPtr & context)
-{
-    if (!function.arguments || isSetFunction(function.name))
-        return FunctionPassedByName::None;
-
-    auto result = FunctionPassedByName::None;
-    for (const auto & argument : function.arguments->children)
-    {
-        const auto * identifier = argument->as<ASTIdentifier>();
-        if (!identifier || identifier->compound() || argument->as<ASTTableIdentifier>())
-            continue;
-
-        const String & name = identifier->name();
-        if (isFunctionResolvedOutsideFunctionFactory(name, context))
-            return FunctionPassedByName::ResolvedOutsideFunctionFactory;
-        if (UserDefinedSQLFunctionFactory::instance().has(name))
-            result = FunctionPassedByName::SQLUserDefinedFunction;
-    }
-    return result;
-}
-
 /// True for a function that checks access rights of the current user when it is created (introspection
 /// functions, AI functions using a named collection, ...). A deterministic call with constant arguments
 /// is folded into a constant during analysis, and the cached plan stores only the value: a hit never
@@ -228,6 +191,57 @@ bool isFunctionCheckingAccessOnCreate(const String & name)
         || effective_name.starts_with("ai")
         /// The dictionary functions check `dictGet` on the dictionary.
         || effective_name.starts_with("dict");
+}
+
+/// What a function argument passed by name refers to, when it names a function the plan cache
+/// cannot support.
+enum class FunctionPassedByName : uint8_t
+{
+    None,
+    /// A built-in function that checks access rights when it is created (see
+    /// `isFunctionCheckingAccessOnCreate`).
+    FunctionCheckingAccessOnCreate,
+    /// A SQL UDF (`CREATE FUNCTION`).
+    SQLUserDefinedFunction,
+    /// An executable or WebAssembly UDF (see `isFunctionResolvedOutsideFunctionFactory`).
+    ResolvedOutsideFunctionFactory,
+};
+
+/// A higher-order function can take a function by name, as a plain identifier: `arrayMap(f, xs)`,
+/// `arrayExists(f, [id])`. The analyzer turns such an identifier into a lambda, inlining the body
+/// of a SQL UDF with its own lookup, so an AST walk that looks only at `ASTFunction` nodes never
+/// sees the call. The same holds for a built-in function that checks access rights when it is
+/// created, e.g. `arrayMap(demangle, ['_Z3foov'])`: the call is folded into a constant, and a hit
+/// would not repeat the check. Returns what the arguments of `function` passed by name like that
+/// refer to (an executable or WebAssembly UDF takes precedence over a SQL UDF, which takes precedence
+/// over a built-in function checking access). An argument that is a column of the same name is
+/// classified the same way, which only makes the plan uncacheable. The right side of `IN` names a
+/// table, not a function, so it is skipped.
+FunctionPassedByName getFunctionPassedByName(const ASTFunction & function, const ContextPtr & context)
+{
+    if (!function.arguments || isSetFunction(function.name))
+        return FunctionPassedByName::None;
+
+    auto result = FunctionPassedByName::None;
+    for (const auto & argument : function.arguments->children)
+    {
+        const auto * identifier = argument->as<ASTIdentifier>();
+        if (!identifier || identifier->compound() || argument->as<ASTTableIdentifier>())
+            continue;
+
+        const String & name = identifier->name();
+        if (isFunctionResolvedOutsideFunctionFactory(name, context))
+            return FunctionPassedByName::ResolvedOutsideFunctionFactory;
+        if (UserDefinedSQLFunctionFactory::instance().has(name))
+            result = FunctionPassedByName::SQLUserDefinedFunction;
+        /// `isFunctionCheckingAccessOnCreate` matches name prefixes such as `dict` and `ai`, so make
+        /// sure the identifier names a function at all: an ordinary column such as `aid` must not
+        /// make every query that passes it to a function uncacheable.
+        else if (result == FunctionPassedByName::None && isFunctionCheckingAccessOnCreate(name)
+            && FunctionFactory::instance().hasNameOrAlias(name))
+            result = FunctionPassedByName::FunctionCheckingAccessOnCreate;
+    }
+    return result;
 }
 
 /// What a row-policy filter AST contains that the plan cache cannot support.
@@ -278,6 +292,9 @@ void collectRowPolicyFilterContents(const IAST & ast, const ContextPtr & context
         switch (getFunctionPassedByName(*function, context))
         {
             case FunctionPassedByName::None:
+                break;
+            case FunctionPassedByName::FunctionCheckingAccessOnCreate:
+                contents.has_function_checking_access = true;
                 break;
             case FunctionPassedByName::SQLUserDefinedFunction:
                 contents.has_sql_udf = true;
@@ -597,7 +614,8 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
 /// pure (same argument - same set of rows), so it is safe for the plan cache.
 bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr & context)
 {
-    /// A user-defined function passed by name to a higher-order function, see `getFunctionPassedByName`.
+    /// A user-defined function, or a built-in function checking access rights, passed by name to a
+    /// higher-order function, see `getFunctionPassedByName`.
     if (getFunctionPassedByName(function, context) != FunctionPassedByName::None)
         return true;
 

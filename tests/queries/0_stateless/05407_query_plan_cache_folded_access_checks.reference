@@ -3,6 +3,11 @@ foo()
 foo()
 -- hits (must be 0): 0
 ACCESS_DENIED
+-- a privileged function passed by name to a higher-order function inside an invoker view
+['foo()']
+['foo()']
+-- hits (must be 0): 0
+ACCESS_DENIED
 -- a Dictionary table read inside a folded scalar subquery
 30
 30
