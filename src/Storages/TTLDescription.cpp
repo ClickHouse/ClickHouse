@@ -21,7 +21,9 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -47,6 +49,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
 #include <optional>
 #include <unordered_set>
@@ -65,6 +68,8 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 TTLAggregateDescription::TTLAggregateDescription(const TTLAggregateDescription & other)
     : column_name(other.column_name)
     , expression_result_column_name(other.expression_result_column_name)
+    , expression_ast(other.expression_ast ? other.expression_ast->clone() : nullptr)
+    , expression_source_columns(other.expression_source_columns)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -81,6 +86,11 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
         expression = other.expression->clone();
     else
         expression.reset();
+    if (other.expression_ast)
+        expression_ast = other.expression_ast->clone();
+    else
+        expression_ast.reset();
+    expression_source_columns = other.expression_source_columns;
     return *this;
 }
 
@@ -1368,37 +1378,46 @@ static ExpressionAndSets buildExpressionAndSets(
     return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
 }
 
-/// Collect the argument expressions of every aggregate function found in the AST.
-static void collectAggregateFunctionArguments(const ASTPtr & ast, ASTs & arguments)
+/// Whether an `IN` in the expression takes its set from a subquery or a table: no TTL merge builds such a set.
+static bool hasInWithSubqueryOrTable(const IAST & ast)
 {
-    if (const auto * function = ast->as<ASTFunction>(); function && AggregateUtils::isAggregateFunction(*function))
+    if (const auto * function = ast.as<ASTFunction>();
+        function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
     {
-        if (function->arguments)
-            for (const auto & argument : function->arguments->children)
-                arguments.push_back(argument);
+        const auto & right = function->arguments->children[1];
+        if (right->as<ASTSubquery>() || right->as<ASTTableIdentifier>())
+            return true;
     }
-
-    for (const auto & child : ast->children)
-        collectAggregateFunctionArguments(child, arguments);
+    return std::ranges::any_of(ast.children, [](const ASTPtr & child) { return hasInWithSubqueryOrTable(*child); });
 }
 
-/// Validate the aggregate-function arguments of a `GROUP BY ... SET` assignment. These argument
-/// expressions (e.g. `toDateTime(ts)` in `SET out = max(toDateTime(ts))`) are evaluated later by
-/// TTLAggregationAlgorithm and are not part of the main TTL expression, so an unsupported
-/// AggregateFunction-state consumer there would otherwise pass CREATE TABLE and fail at merge time.
-static void checkTTLGroupBySetForAggregateFunctions(
-    const ASTPtr & assignment_expression, const NamesAndTypesList & columns, const ContextPtr & context)
+ExpressionActionsPtr TTLAggregateDescription::buildArgumentsExpression(const ContextPtr & context) const
 {
-    ASTs aggregate_arguments;
-    collectAggregateFunctionArguments(assignment_expression, aggregate_arguments);
+    const auto expression_context = getTTLExpressionContext(context);
+    auto ast = expression_ast->clone();
+    auto syntax_result = TreeRewriter(expression_context).analyze(ast, expression_source_columns, {}, {}, true);
+    ExpressionAnalyzer analyzer(ast, syntax_result, expression_context);
 
-    for (const auto & argument : aggregate_arguments)
-    {
-        auto argument_ast = argument->clone();
-        auto argument_expression = buildExpressionAndSets(
-            argument_ast, columns, context, nullptr, /*widen_temporal_columns=*/ false).expression;
-        checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
-    }
+    ASTs arguments;
+    for (const auto & aggregate : syntax_result->aggregates)
+        if (const auto & aggregate_arguments = aggregate->as<const ASTFunction &>().arguments)
+            arguments.insert(arguments.end(), aggregate_arguments->children.begin(), aggregate_arguments->children.end());
+    if (arguments.empty())
+        return nullptr;
+
+    if (std::ranges::any_of(arguments, [](const ASTPtr & argument) { return hasInWithSubqueryOrTable(*argument); }))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "An aggregate function argument in the TTL GROUP BY SET expression for column {} contains a subquery or a table "
+            "in the 'IN' operator, which cannot be evaluated during a TTL merge", backQuote(column_name));
+
+    ExpressionActionsChain chain(expression_context);
+    for (const auto & argument : arguments)
+        analyzer.appendExpression(chain, argument, /*only_types=*/ false);
+    chain.finalize();
+    auto arguments_expression = std::make_shared<ExpressionActions>(
+        std::move(chain.getLastActions()->dag), ExpressionActionsSettings(expression_context));
+    checkTTLExpressionPreservesRowCount(arguments_expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
+    return arguments_expression;
 }
 
 /// A stored TTL is screened again here, every time it is turned back into a runnable expression.
@@ -1569,9 +1588,6 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
-                if (!skip_validation)
-                    checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), expression_context);
-
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(ass_expression));
                 aggregation_columns_set.insert(assignment.column_name);
@@ -1584,6 +1600,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
             for (auto [name, value] : aggregations)
             {
+                auto assignment_ast = value->clone();
                 auto syntax_result = TreeRewriter(expression_context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                 auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, expression_context);
 
@@ -1591,13 +1608,19 @@ TTLDescription TTLDescription::getTTLFromAST(
                 set_part.column_name = name;
                 set_part.expression_result_column_name = value->getColumnName();
                 set_part.expression = expr_analyzer.getActions(false);
+                set_part.expression_ast = std::move(assignment_ast);
+                set_part.expression_source_columns = syntax_result->required_source_columns;
 
                 /// The post-aggregation expression (including the implicit cast to the target column type)
                 /// is executed later by TTLAggregationAlgorithm. When an aggregate returns an AggregateFunction
                 /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
                 /// must be rejected here instead of failing during the TTL merge.
                 if (!skip_validation)
+                {
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+                    if (auto arguments_expression = set_part.buildArgumentsExpression(expression_context))
+                        checkTTLExpressionForAggregateFunctions(arguments_expression, /*expression_kind=*/ "GROUP BY SET ");
+                }
 
                 if (validation_mode != TTLValidationMode::Attach)
                     checkTTLExpressionPreservesRowCount(set_part.expression, value, /*expression_kind=*/ "GROUP BY SET ");
