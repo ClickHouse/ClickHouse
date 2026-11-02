@@ -112,10 +112,7 @@ public:
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
-    static Int32 parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object,
-        Iceberg::IcebergSchemaProcessor & schema_processor,
-        LoggerPtr metadata_logger);
+    static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor);
 
     bool supportsUpdate() const override { return true; }
 
@@ -148,11 +145,12 @@ public:
     bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override;
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     SinkToStoragePtr write(
         SharedHeader sample_block,

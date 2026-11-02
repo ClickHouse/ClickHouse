@@ -26,6 +26,10 @@ public:
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    /// The call names the target table of the `TimeSeries` table it is given, so it denotes the same
+    /// table on every replica even though the target itself is a hidden table named after a UUID.
+    std::optional<String> getParallelReplicasReadID() const override;
+
     /// The returned storage is the target table itself, so a persisted table would rename a live table in memory.
     bool canBeUsedToCreateTable() const override { return false; }
 
