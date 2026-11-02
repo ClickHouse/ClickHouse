@@ -43,13 +43,14 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
-/// Returns the number of rows of the part deleted by each `DELETE` command, attributed to the first command that deletes the row
-/// as in `MutationsInterpreter`. Only the columns of the conditions are read, and the rows already deleted by a lightweight
-/// delete are not counted. It is used when the commands delete all rows of the part, which is then replaced by an empty part.
+/// Returns the number of rows of the part deleted by each `DELETE` command, attributed to the first command that deletes the row.
+/// If the part has no lightweight delete, the counts are calculated by `count()` queries that are answered without reading the part
+/// data if possible.
 std::vector<UInt64> countDeletedRowsByCommands(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::vector<MutationCommand> & commands,
+    bool has_lightweight_delete,
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled);
 

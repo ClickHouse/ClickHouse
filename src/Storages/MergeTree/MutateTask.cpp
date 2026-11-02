@@ -4815,15 +4815,15 @@ bool MutateTask::prepare()
 
         if (has_only_delete_commands)
         {
-            /// The part is not read by `MutationsInterpreter`, so the rows deleted by each command are counted by a separate
-            /// query that reads only the columns of the conditions. It is not done by `isStorageTouchedByMutations`, because
-            /// any other aggregate in its query prevents counting the rows by the primary key without reading them.
+            /// There will be no interpreter call, so the rows deleted by each command are counted separately.
             if (count_affected_rows)
             {
+                const bool has_lightweight_delete = ctx->source_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete();
                 const auto deleted_rows_by_command = countDeletedRowsByCommands(
                     ctx->source_part,
                     mutations_snapshot,
                     *commands_for_execution,
+                    has_lightweight_delete,
                     context_for_reading,
                     [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); });
 

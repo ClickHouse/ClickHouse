@@ -218,10 +218,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 namespace
 {
 
-/// Returns `sumMap([multiIf(NOT isZeroOrNull(condition_1), 1, NOT isZeroOrNull(condition_2), 2, ..., 0)], [1])` that counts
-/// the rows deleted by each `DELETE` command the same way as `MutationsInterpreter`: a row is attributed to the first command
-/// that deletes it. The result maps the 1-based index of a command to its count, and the commands that delete no rows are
-/// omitted. One `sumMap` keeps the query size linear in the number of commands.
+/// Returns `sumMap([multiIf(NOT isZeroOrNull(condition_1), 1, NOT isZeroOrNull(condition_2), 2, ..., 0)], [_row_exists])` that
+/// counts the rows deleted by each `DELETE` command the same way as `MutationsInterpreter`: a row is attributed to the first
+/// command that deletes it. The result maps the 1-based index of a command to its count, and the commands that delete no rows are omitted.
 ASTPtr makeDeletedRowsByCommandsExpression(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     auto multi_if = makeASTFunction("multiIf");
@@ -238,7 +237,7 @@ ASTPtr makeDeletedRowsByCommandsExpression(const std::vector<MutationCommand> & 
     multi_if->arguments->children.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(0)));
 
     auto keys = makeASTFunction("array", std::move(multi_if));
-    auto values = makeASTFunction("array", make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+    auto values = makeASTFunction("array", make_intrusive<ASTIdentifier>(RowExistsColumn::name));
     return makeASTFunction("sumMap", std::move(keys), std::move(values));
 }
 
@@ -305,6 +304,40 @@ Block executeQueryAffected(
     while (executor.pull(tmp_block));
 
     return block;
+}
+
+/// Calculates the number of rows of the part deleted by each command, and returns a vector of the counts. It is used when the part
+/// has no lightweight delete, so all rows of the part exist, and `count()` is answered from the metadata of the part without
+/// reading its data when possible, e.g. for a constant condition or a condition on the primary key.
+/// The counts stop once all rows are deleted, because the remaining commands delete no rows.
+std::vector<UInt64> countDeletedRowsByCommandPrefixes(
+    MergeTreeData::DataPartPtr source_part,
+    const StoragePtr & storage_from_part,
+    const std::vector<MutationCommand> & commands,
+    ContextPtr context,
+    const std::function<void(const Progress & value)> & check_operation_is_not_cancelled)
+{
+    std::vector<UInt64> deleted_rows_by_command(commands.size(), 0);
+    const UInt64 rows_count = source_part->rows_count;
+    UInt64 deleted_by_previous_commands = 0;
+    for (size_t i = 0; i < commands.size() && deleted_by_previous_commands < rows_count; ++i)
+    {
+        UInt64 deleted_by_commands = rows_count;
+        if (i + 1 < commands.size())
+        {
+            std::vector<MutationCommand> first_commands(commands.begin(), commands.begin() + i + 1);
+            auto count_query_tree = prepareQueryAffectedQueryTree(first_commands, storage_from_part, context);
+            Block block = executeQueryAffected(count_query_tree, context, check_operation_is_not_cancelled, "count()");
+            deleted_by_commands = block.rows() ? (*block.getByName("count()").column)[0].safeGet<UInt64>() : 0;
+        }
+
+        chassert(deleted_by_previous_commands <= deleted_by_commands && deleted_by_commands <= rows_count,
+            "The rows deleted by the first commands must not decrease and must not exceed the rows of the part");
+
+        deleted_rows_by_command[i] = deleted_by_commands - deleted_by_previous_commands;
+        deleted_by_previous_commands = deleted_by_commands;
+    }
+    return deleted_rows_by_command;
 }
 
 ColumnDependencies getAllColumnDependencies(
@@ -420,6 +453,7 @@ std::vector<UInt64> countDeletedRowsByCommands(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::vector<MutationCommand> & commands,
+    bool has_lightweight_delete,
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled)
 {
@@ -430,6 +464,12 @@ std::vector<UInt64> countDeletedRowsByCommands(
         return deleted_rows_by_command;
 
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
+
+    if (!has_lightweight_delete)
+        return countDeletedRowsByCommandPrefixes(source_part, storage_from_part, commands, context, check_operation_is_not_cancelled);
+
+    /// With a lightweight delete, the rows already deleted must not be counted, so the rows of the part are read with the
+    /// lightweight delete mask, and the rows deleted by each command are counted in one query.
     auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context, /*count_deleted_rows_by_commands=*/ true);
     Block block = executeQueryAffected(select_query_tree, context, check_operation_is_not_cancelled, "sumMap");
     if (!block.rows())
