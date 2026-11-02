@@ -498,7 +498,8 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
                 continue;
             }
 
-            adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+            if (!adjustRangeFromIndexIfNeeded(range, column_info, can_be_null))
+                range = Range::createWholeUniverse();
         }
         catch (Exception & e)
         {
@@ -596,7 +597,8 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
         /// Same validation as the static min/max pruning path: self-contradictory statistics
         /// (`min_value > max_value`) must fail closed rather than become pruning input. We get here
         /// only for chunks proven to have no nulls, hence `can_be_null = false`.
-        adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false);
+        if (!adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false))
+            return std::nullopt;
 
         return range;
     }
@@ -738,7 +740,7 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
                 if (left.isNull() || right.isNull())
                     return std::nullopt;
                 if (accurateLess(right, left))
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", left, right);
+                    return std::nullopt;
 
                 if (mins[i].isNull() || accurateLess(left, mins[i]))
                     mins[i] = std::move(left);
@@ -2832,9 +2834,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     = column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
                     && column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
-                if (stats_usable)
-                    adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
-                else
+                if (!stats_usable || !adjustRangeFromIndexIfNeeded(range, column_info, can_be_null))
                     range = Range::createWholeUniverse();
             }
 
@@ -2901,10 +2901,10 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     }
 }
 
-void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
+bool Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
 {
     if (accurateLess(range.right, range.left))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
+        return false;
 
     bool nullable = column_info.levels.back().def > 0;
     bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
@@ -2940,6 +2940,7 @@ void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
         if (range.right.isNull())
             range.right_included = false;
     }
+    return true;
 }
 
 void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
