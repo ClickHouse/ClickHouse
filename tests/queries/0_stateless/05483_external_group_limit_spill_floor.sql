@@ -18,9 +18,10 @@ FROM (SELECT DISTINCT k FROM (SELECT number % 1000000 AS k, number AS v FROM num
 SETTINGS max_bytes_before_external_distinct = 16000000, query_plan_remove_redundant_sorting = 0,
     log_comment = '05483_external_group_limit_spill_floor/distinct';
 
--- A threshold below 16 MiB lowers the floor with it, so the state of the first block spills.
+-- A threshold below 16 MiB lowers the floor with it, so the state of the first block spills. The spill holds
+-- the results back until the input ends, so this case reads less input than the others.
 SELECT count(), sum(v)
-FROM (SELECT k, v FROM (SELECT number % 1000000 AS k, number AS v FROM numbers(3000000)) ORDER BY v DESC LIMIT 1 BY k LIMIT 100)
+FROM (SELECT k, v FROM (SELECT number % 100000 AS k, number AS v FROM numbers(300000)) ORDER BY v DESC LIMIT 1 BY k LIMIT 100)
 SETTINGS max_bytes_before_external_limit_by = 100000, log_comment = '05483_external_group_limit_spill_floor/low_threshold';
 
 -- A parallel `DISTINCT` splits its groups among hash partitions, and each partition applies its share of the
