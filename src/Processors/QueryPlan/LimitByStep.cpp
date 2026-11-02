@@ -385,7 +385,7 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     if (preserve_input_order)
     {
         SortDescription input_order;
-        deserializeSortDescription(input_order, ctx.in, ctx.version);
+        deserializeSortDescription(input_order, ctx.in, ctx.version, ctx.max_type_complexity);
         step->preserveInputOrder(std::move(input_order));
     }
     return step;
