@@ -9,6 +9,7 @@
 #include <Core/ServerSettings.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ReadOnlyDiskWrapper.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -749,10 +750,17 @@ void validateResolvedS3DiskCredentials(
 /// credentials: Application Default Credentials, which can resolve the server's identity, or anything else for which
 /// the creating session had to opt in, such as a `from_env` header, as recorded by the `_server_credentials_allowed`
 /// marker of its definition. A disk from the server configuration may use them, so the walk stops there.
+///
+/// A disk with `read_only = 1` is a `ReadOnlyDiskWrapper` around the object storage disk built from the same
+/// definition, and only the outer wrapper is marked as custom. So the inner disk of such a wrapper belongs to the
+/// same custom disk and is inspected although it is not marked itself.
 static bool customDiskUsesGCSServerCredentials(DiskPtr disk)
 {
-    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
+    bool inner_disk_of_custom_disk = false;
+    for (; disk && (disk->isCustomDisk() || inner_disk_of_custom_disk); disk = disk->getDelegateDiskIfExists())
     {
+        inner_disk_of_custom_disk = dynamic_cast<const ReadOnlyDiskWrapper *>(disk.get()) != nullptr;
+
         auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
         if (!object_storage_disk)
             continue;
