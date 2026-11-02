@@ -43,7 +43,9 @@ JEMALLOC_PROFILER_SAMPLING_RATE=16
 # REPORT_LOCAL_{QUERY,SERVER}_SETTINGS in performance_tests.py.
 # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
 # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
-CHPC_REPORT_LOCAL_QUERY_SETTINGS="--max_bytes_before_external_group_by=0 --max_bytes_ratio_before_external_group_by=0 --max_bytes_before_external_sort=0 --max_bytes_ratio_before_external_sort=0"
+# --tmp: report-building invocations run concurrently and must not share
+# (and lock) the default designated data directory in the home directory.
+CHPC_REPORT_LOCAL_QUERY_SETTINGS="--tmp --max_bytes_before_external_group_by=0 --max_bytes_ratio_before_external_group_by=0 --max_bytes_before_external_sort=0 --max_bytes_ratio_before_external_sort=0"
 # Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
 CHPC_REPORT_LOCAL_SERVER_SETTINGS="--memory_worker_use_cgroup=0"
 
@@ -138,6 +140,14 @@ function configure
     fi
 }
 
+# Prints `--tmp` if `clickhouse local` of the binary $1 has the option (see local_command in ci/jobs/performance_tests.py).
+function local_tmp_option
+{
+    if grep -qE '^[[:space:]]*--tmp[[:space:]]' < <("$1" local --help 2>/dev/null); then
+        echo --tmp
+    fi
+}
+
 # addressToLine resolves a frame to "file:line" only where DWARF covers
 # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
 # table remains (addressToSymbol works) but there is no line info, so the patched
@@ -149,13 +159,15 @@ function configure
 # resolves comparably on both and is left untouched.
 function match_reference_debug_info
 {
-    local left right left_lines right_lines
+    local left right left_lines right_lines left_tmp right_tmp
     left=$(readlink -f left/clickhouse-server)
     right=$(readlink -f right/clickhouse-server)
+    left_tmp=$(local_tmp_option "$left")
+    right_tmp=$(local_tmp_option "$right")
     # Running clickhouse also decompresses the self-extracting binary in place.
     local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
-    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
-    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    left_lines=$("$left" local ${left_tmp:+"$left_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local ${right_tmp:+"$right_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
     if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
         strip --strip-debug "$left"
     fi
@@ -287,7 +299,7 @@ EOF
     done
 }
 
-function restart
+function restart # [static TLS surplus in bytes, for both servers]
 {
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
@@ -301,9 +313,20 @@ function restart
 
     match_reference_debug_info
 
-    # Intentionally unquoted below: expands to nothing on non-x86_64.
+    # Intentionally unquoted below: all expand to nothing when unused.
     local pinning_prefix
     pinning_prefix=$(cpu_pinning_prefix)
+    # ASLR off, so that both servers load the executable at the same address (Linux only).
+    local no_aslr_prefix=""
+    local tls_prefix=""
+    if [ "$(uname -s)" = "Linux" ]
+    then
+        no_aslr_prefix="setarch $(uname -m) -R"
+        if [ -n "${1:-}" ]
+        then
+            tls_prefix="env GLIBC_TUNABLES=${GLIBC_TUNABLES:+$GLIBC_TUNABLES:}glibc.rtld.optional_static_tls=$1"
+        fi
+    fi
 
     set -m # Spawn servers in their own process groups
 
@@ -327,7 +350,7 @@ function restart
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    $pinning_prefix $no_aslr_prefix $tls_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -349,7 +372,7 @@ function restart
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+    $pinning_prefix $no_aslr_prefix $tls_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -366,6 +389,13 @@ function restart
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.build_options"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
+
+    # Compare only two running servers: a server that failed to start keeps the callers' handling.
+    # exit, not return: confirm_changes only skips its rerun when the restart fails.
+    if [ -n "$no_aslr_prefix" ] && kill -0 $left_pid && kill -0 $right_pid
+    then
+        python3 "$script_dir/check_executable_base.py" left/db right/db || exit 1
+    fi
 
     # Check again that both servers we started are running -- this is important
     # for running locally, when there might be some other servers started and we
@@ -957,32 +987,10 @@ then
     return 0
 fi
 
-# 2. Restart both servers so that the reruns measure a fresh process state
-# (empty caches, unfragmented heap), reusing the main restart machinery.
-if ! restart
-then
-    echo "confirm_changes: server restart failed, skipping confirmation"
-    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
-    echo all killed
-    return 0
-fi
-
-# The caller runs us with errexit disabled (fail-open), which also masks
-# failures inside restart: its return value only reflects the last check.
-# Verify both servers explicitly before spending the rerun budget.
-if ! clickhouse-client --port "$LEFT_SERVER_PORT" --receive_timeout=5 \
-        --query "select 1 format Null" \
-    || ! clickhouse-client --port "$RIGHT_SERVER_PORT" --receive_timeout=5 \
-        --query "select 1 format Null"
-then
-    echo "confirm_changes: servers not healthy after restart, skipping confirmation"
-    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
-    echo all killed
-    return 0
-fi
-
-# 3. Rerun each affected test limited to its flagged query indexes, writing
-# raw results into the confirmation directory, keeping the main samples intact.
+# 2-3. Restart both servers so that the reruns measure a fresh process state
+# (empty caches, unfragmented heap), reusing the main restart machinery, and
+# rerun each affected test limited to its flagged query indexes, writing raw
+# results into the confirmation directory, keeping the main samples intact.
 # Mirror run_tests' test file resolution; fall back to the in-repo tests for
 # the CI flow where performance_tests.py runs the tests itself.
 local test_prefix
@@ -1006,46 +1014,79 @@ fi
 # original verdict (fail-open in the strict direction: no demotion).
 local confirm_deadline=$(( SECONDS + 1200 ))
 local confirm_test confirm_test_file confirm_indexes
-for confirm_test in $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq)
+# Every start of a binary puts its thread stacks at the same place, and a change
+# can come from where the hot frames land in their pages alone, so rerun at three
+# stack placements and confirm a change only if it reproduces at two (step 4).
+# glibc puts the static TLS block, with its surplus (default 512), at the top of
+# every thread stack: the other two move the stacks 1/3 and 2/3 of a page lower.
+local tls_surplus=("" $(( 512 + 21 * 64 )) $(( 512 + 43 * 64 )))
+local placement placements_done=0
+for placement in 0 1 2
 do
-    if [ "$SECONDS" -ge "$confirm_deadline" ]
-    then
-        echo "confirm_changes: WARNING: time budget exhausted, queries of the remaining tests keep their original verdict"
-        break
-    fi
-
-    confirm_test_file="$test_prefix/$confirm_test.xml"
-    if ! [ -e "$confirm_test_file" ]
-    then
-        echo "confirm_changes: cannot find $confirm_test_file, its queries keep their original verdict"
-        continue
-    fi
-
-    confirm_indexes=$(awk -F'\t' -v t="$confirm_test" '$1 == t { print $2 }' \
-        ${confirm_dir}/flagged-queries.tsv | sort -n | uniq | tr '\n' ' ')
-
-    # The test file goes first: argparse would swallow it into the greedy
-    # nargs='*' --queries-to-run otherwise. No profiling on reruns.
-    # The output goes through a temp file renamed only on success: a partial
-    # raw file from a failed rerun could otherwise demote the queries that
-    # did rerun, contradicting "the whole test keeps its original verdict".
+    echo "confirm_changes: rerunning at stack placement $placement (static TLS surplus ${tls_surplus[placement]:-default})"
+    # The caller runs us with errexit disabled (fail-open), which also masks
+    # failures inside restart: its return value only reflects the last check.
+    # Verify both servers explicitly before spending the rerun budget.
     # shellcheck disable=SC2086
-    if "$perf_py" "$confirm_test_file" \
-        --host localhost localhost \
-        --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
-        --binary left/clickhouse right/clickhouse \
-        --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
-        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
-        --max-queries 0 --profile-seconds 0 --stop-merges \
-        --queries-to-run $confirm_indexes \
-        > "${confirm_dir}/$confirm_test-raw.tsv.tmp" \
-        2> "${confirm_dir}/$confirm_test-err.log"
+    if ! restart ${tls_surplus[placement]} \
+        || ! clickhouse-client --port "$LEFT_SERVER_PORT" --receive_timeout=5 \
+            --query "select 1 format Null" \
+        || ! clickhouse-client --port "$RIGHT_SERVER_PORT" --receive_timeout=5 \
+            --query "select 1 format Null"
     then
-        mv "${confirm_dir}/$confirm_test-raw.tsv.tmp" "${confirm_dir}/$confirm_test-raw.tsv"
-    else
-        echo "confirm_changes: rerun of $confirm_test failed, its queries keep their original verdict"
-        rm -f "${confirm_dir}/$confirm_test-raw.tsv.tmp" ||:
+        if [ "$placements_done" -gt 0 ]
+        then
+            echo "confirm_changes: restart at stack placement $placement failed, using the placements measured so far"
+            break
+        fi
+        echo "confirm_changes: server restart failed, skipping confirmation"
+        while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+        echo all killed
+        return 0
     fi
+    placements_done=$(( placement + 1 ))
+
+    for confirm_test in $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq)
+    do
+        if [ "$SECONDS" -ge "$confirm_deadline" ]
+        then
+            echo "confirm_changes: WARNING: time budget exhausted at stack placement $placement, the remaining tests are not rerun"
+            break 2
+        fi
+
+        confirm_test_file="$test_prefix/$confirm_test.xml"
+        if ! [ -e "$confirm_test_file" ]
+        then
+            echo "confirm_changes: cannot find $confirm_test_file, its queries keep their original verdict"
+            continue
+        fi
+
+        confirm_indexes=$(awk -F'\t' -v t="$confirm_test" '$1 == t { print $2 }' \
+            ${confirm_dir}/flagged-queries.tsv | sort -n | uniq | tr '\n' ' ')
+
+        # The test file goes first: argparse would swallow it into the greedy
+        # nargs='*' --queries-to-run otherwise. No profiling on reruns.
+        # The output goes through a temp file renamed only on success: a partial
+        # raw file from a failed rerun could otherwise demote the queries that
+        # did rerun, contradicting "the whole test keeps its original verdict".
+        # shellcheck disable=SC2086
+        if "$perf_py" "$confirm_test_file" \
+            --host localhost localhost \
+            --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
+            --binary left/clickhouse right/clickhouse \
+            --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
+            ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
+            --max-queries 0 --profile-seconds 0 --stop-merges \
+            --queries-to-run $confirm_indexes \
+            > "${confirm_dir}/$confirm_test-raw-$placement.tsv.tmp" \
+            2> "${confirm_dir}/$confirm_test-err-$placement.log"
+        then
+            mv "${confirm_dir}/$confirm_test-raw-$placement.tsv.tmp" "${confirm_dir}/$confirm_test-raw-$placement.tsv"
+        else
+            echo "confirm_changes: rerun of $confirm_test at stack placement $placement failed"
+            rm -f "${confirm_dir}/$confirm_test-raw-$placement.tsv.tmp" ||:
+        fi
+    done
 done
 
 # Stop the servers again: the subsequent report stages run memory-heavy
@@ -1054,29 +1095,33 @@ while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
 echo all killed
 
 # 4. Recompute the eqmed.sql statistics on the rerun data, exactly like
-# analyze_queries does. The confirmation verdict is made on client_time (the
-# same metric as changed_fail), which comes from the perf.py-reported run
-# times, so the query logs are not needed and the metrics array has a single
-# element.
+# analyze_queries does, separately for each placement. The confirmation
+# verdict is made on client_time (the same metric as changed_fail), which
+# comes from the perf.py-reported run times, so the query logs are not needed
+# and the metrics array has a single element.
 touch ${confirm_dir}/query-runs.tsv
 local raw_file rerun_test_name
-for raw_file in ${confirm_dir}/*-raw.tsv
+for placement in $(seq 0 $(( placements_done - 1 )))
 do
-    [ -e "$raw_file" ] || continue
-    rerun_test_name=$(basename "$raw_file" "-raw.tsv")
-    sed -n "s/^query\t/$rerun_test_name\t/p" < "$raw_file" >> ${confirm_dir}/query-runs.tsv
+    touch ${confirm_dir}/query-metric-stats-$placement.tsv
+    for raw_file in ${confirm_dir}/*-raw-$placement.tsv
+    do
+        [ -e "$raw_file" ] || continue
+        rerun_test_name=$(basename "$raw_file" "-raw-$placement.tsv")
+        sed -n "s/^query\t/$placement\t$rerun_test_name\t/p" < "$raw_file" >> ${confirm_dir}/query-runs.tsv
+    done
 done
 
 if ! clickhouse-local --query "
 create view query_runs as select * from file('${confirm_dir}/query-runs.tsv', TSV,
-    'test text, query_index int, query_id text, version UInt8, time float');
+    'placement int, test text, query_index int, query_id text, version UInt8, time float');
 
 -- Require balanced, finite measurements from both servers. Missing a side
 -- must never turn a failed rerun into evidence against the original slowdown.
 create view broken_queries as
-    select test, query_index
+    select placement, test, query_index
     from query_runs
-    group by test, query_index
+    group by placement, test, query_index
     having countIf(version = 0) != countIf(version = 1)
         or countIf(version = 0) < 2
         or countIf(version NOT IN (0, 1) OR NOT isFinite(time) OR time <= 0) > 0
@@ -1084,10 +1129,10 @@ create view broken_queries as
 
 create table query_run_metrics_for_stats engine File(
         TSV, '${confirm_dir}/query-run-metrics-for-stats.tsv')
-    as select test, query_index, 0 run, version, [toFloat64(time)] metrics
+    as select placement, test, query_index, 0 run, version, [toFloat64(time)] metrics
     from query_runs
-    where (test, query_index) not in broken_queries
-    order by test, query_index, run, version
+    where (placement, test, query_index) not in broken_queries
+    order by placement, test, query_index, run, version
     ;
 " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> ${confirm_dir}/errors.log
 then
@@ -1096,15 +1141,14 @@ then
 fi
 
 # The same per-query eqmed.sql invocation path as in analyze_queries. A failed
-# invocation only loses that query's rerun stats, so it keeps its original
-# verdict.
-touch ${confirm_dir}/commands.txt ${confirm_dir}/query-metric-stats.tsv
+# invocation only loses that query's rerun stats at that placement.
+touch ${confirm_dir}/commands.txt
 ( set +x # do not bloat the log
 IFS=$'\n'
-for prefix in $(cut -f1,2 "${confirm_dir}/query-run-metrics-for-stats.tsv" | sort | uniq)
+for prefix in $(cut -f1-3 "${confirm_dir}/query-run-metrics-for-stats.tsv" | sort | uniq)
 do
     file="${confirm_dir}/tmp/${prefix//	/_}.tsv"
-    rg "^$prefix	" "${confirm_dir}/query-run-metrics-for-stats.tsv" > "$file" &
+    rg "^$prefix	" "${confirm_dir}/query-run-metrics-for-stats.tsv" | cut -f2- > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
             --file \"$file\" \
@@ -1112,7 +1156,7 @@ do
             --query \"$(cat "$script_dir/eqmed.sql")\" \
             $CHPC_REPORT_LOCAL_QUERY_SETTINGS \
             -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
-            >> \"${confirm_dir}/query-metric-stats.tsv\"" \
+            >> \"${confirm_dir}/query-metric-stats-${prefix%%	*}.tsv\"" \
             2>> ${confirm_dir}/errors.log \
         >> ${confirm_dir}/commands.txt
 done
@@ -1125,6 +1169,69 @@ unset IFS
 parallel -v -j "$(nproc --all)" --joblog ${confirm_dir}/parallel-log.txt --null \
     < ${confirm_dir}/commands.txt 2>> ${confirm_dir}/errors.log \
     || echo "confirm_changes: some rerun stats failed to compute, those queries keep their original verdict"
+
+# Give step 5 (and the dashboard check, which applies the same rule) one row per
+# query, copied from one placement: with all three measured, a row on the side
+# of the two-of-three majority of step 5's rule, the farthest from its
+# thresholds; otherwise placement 0's row. No row keeps the original verdict.
+for placement in $(seq 0 $(( placements_done - 1 )))
+do
+    sed "s/^/$placement\t/" ${confirm_dir}/query-metric-stats-$placement.tsv
+done > ${confirm_dir}/placement-metric-stats.tsv
+
+if ! clickhouse-local --query "
+create view flagged_queries as select * from file('${confirm_dir}/flagged-queries.tsv',
+    TSV, 'test text, query_index int, diff float, stat_threshold float,
+        changed_threshold float');
+
+create view placement_stats as
+    select *, CAST(diff_text, 'Array(float)')[1] diff_rerun,
+        CAST(stat_threshold_text, 'Array(float)')[1] stat_threshold_rerun
+    from file('${confirm_dir}/placement-metric-stats.tsv', TSV,
+        'placement int, left_text text, right_text text, diff_text text,
+            stat_threshold_text text, test text, query_index int')
+    ;
+
+create view placement_verdicts as
+    select test, query_index, placement, diff_rerun, stat_threshold_rerun,
+        sign(diff_rerun) = sign(diff)
+            and abs(diff_rerun) > changed_threshold
+            and abs(diff_rerun) >= stat_threshold_rerun reproduced,
+        if(sign(diff_rerun) = sign(diff),
+            least(abs(diff_rerun) - changed_threshold, abs(diff_rerun) - stat_threshold_rerun),
+            -inf) margin
+    from placement_stats
+    join flagged_queries using (test, query_index)
+    ;
+
+create view selected_placements as
+    select test, query_index,
+        arraySort(groupArray((placement, diff_rerun, stat_threshold_rerun, reproduced))) placements,
+        multiIf(count() < 3, 0,
+            countIf(reproduced) >= 2, argMaxIf(placement, margin, reproduced),
+            argMinIf(placement, margin, not reproduced)) selected_placement
+    from placement_verdicts
+    group by test, query_index
+    ;
+
+create table placement_verdicts_log engine File(TSVWithNames, '${confirm_dir}/placement-verdicts.tsv')
+    as select * from selected_placements order by test, query_index
+    ;
+
+create table selected_stats engine File(TSV, '${confirm_dir}/query-metric-stats.tsv')
+    as select left_text, right_text, diff_text, stat_threshold_text, test, query_index
+    from placement_stats
+    join selected_placements using (test, query_index)
+    where placement = selected_placement
+    order by test, query_index
+    ;
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> ${confirm_dir}/errors.log
+then
+    echo "confirm_changes: failed to combine the placements, skipping confirmation"
+    rm -f ${confirm_dir}/query-metric-stats.tsv ||:
+    return 0
+fi
+sed 's/^/confirm_changes: /' ${confirm_dir}/placement-verdicts.tsv ||:
 
 # 5. Demote the flagged queries whose rerun does not reproduce the change.
 # Confirmed = same-direction diff clearing the exact production rule again:
@@ -2058,7 +2165,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || { restart && get_profiles ; } ) ||:
+    ( get_profiles ) || { restart && ( get_profiles ) ; } ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/37729
-SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS nested_test;
 DROP TABLE IF EXISTS join_test;

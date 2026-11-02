@@ -4,6 +4,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Without `--path` or `--tmp`, `clickhouse local` locks a persistent data directory inside the home directory.
+# Point HOME (and XDG_DATA_HOME) at a private directory, so that concurrent tests do not fight over that lock.
+home_dir="${CLICKHOUSE_TMP}/home-${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "${home_dir}"
+mkdir -p "${home_dir}"
+export HOME="${home_dir}"
+export XDG_DATA_HOME=""
+
 # Run the binary through a path that contains `clickhouse` in a directory component,
 # so that deriving the `ch` name must replace only the trailing `clickhouse`
 # (a first-match replacement `${CLICKHOUSE_BINARY/clickhouse/ch}` would break the directory name).
@@ -33,3 +41,5 @@ ${CLICKHOUSE_BINARY} --host ${CLICKHOUSE_HOST} --port ${CLICKHOUSE_PORT_TCP} --q
 ${CLICKHOUSE_BINARY_CH} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()" -h${CLICKHOUSE_HOST} --port=${CLICKHOUSE_PORT_TCP}
 
 rm -rf "${CLICKHOUSE_BINARY_DIR}"
+
+rm -rf "${home_dir}"

@@ -31,6 +31,7 @@
 #include <Common/assert_cast.h>
 
 #include <algorithm>
+#include <limits>
 
 
 namespace DB
@@ -253,7 +254,9 @@ void PrettyBlockOutputFormat::calculateWidths(
             /// (e.g. non-printable characters, diacritics, combining characters)
             if (effective_value_width_limit)
             {
-                size_t max_byte_size = effective_value_width_limit * 4;
+                /// Clamp before multiplying: the limit comes from settings and can be large enough
+                /// for `* 4` to wrap.
+                size_t max_byte_size = std::min<UInt64>(effective_value_width_limit, std::numeric_limits<size_t>::max() / 4) * 4;
                 if (serialized_value.size() > max_byte_size)
                     serialized_value.resize(max_byte_size);
             }
@@ -1131,7 +1134,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         if (color)
         {
-            serialized_fragment += "\033[31;1m";
+            /// Reset first: the cut may have dropped the reset of an escape sequence opened in the kept part.
+            serialized_fragment += "\033[0;31;1m";
             serialized_fragment += ellipsis;
             serialized_fragment += "\033[0m";
         }

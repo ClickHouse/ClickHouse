@@ -103,8 +103,11 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We do allow `dlopen()` in case of OpenSSL FIPS build,
 /// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
 ///
+/// `USE_GPU` lifts it for the same reason `programs/main.cpp` does - the CUDA runtime reaches a
+/// device only by `dlopen`.
+///
 /// Not on WebAssembly: see the comment in `programs/main.cpp`.
-#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
 extern "C"
 {
     void * dlopen(const char *, int);

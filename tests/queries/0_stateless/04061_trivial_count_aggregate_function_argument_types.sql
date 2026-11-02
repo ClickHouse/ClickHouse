@@ -8,7 +8,6 @@ CREATE TABLE test_trivial_count_types (v0 UInt32, v1 UInt64) ENGINE = MergeTree 
 INSERT INTO test_trivial_count_types VALUES (1, 2);
 
 SET optimize_trivial_count_query = 1;
-SET allow_experimental_analyzer = 1;
 
 -- count(v0 + v1) should have argument type UInt64 (the result of plus(UInt32, UInt64)),
 -- not (UInt32, UInt64) (the types of the underlying columns).

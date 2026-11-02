@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -12,6 +13,7 @@ namespace DB
 
 class ActionsDAG;
 class JoinStepLogical;
+class ReadFromMergeTree;
 
 struct IDescriptionHolder
 {
@@ -111,6 +113,13 @@ enum class FilterResult
 /// Collect the input columns of `join` which cannot be NULL in a row the join keeps for the side that discards
 /// its unmatched rows, because a null-rejecting condition of the `ON` clause would not hold for a NULL there.
 void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, NameSet & left, NameSet & right);
+
+/// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
+/// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows
+[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
+
+/// the `ReadFromMergeTree` at the end of a chain of single-child steps, or nullptr
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
 
 struct NoOp
 {
