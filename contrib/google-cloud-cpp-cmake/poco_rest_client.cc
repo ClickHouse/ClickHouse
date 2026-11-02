@@ -1099,6 +1099,21 @@ class PocoRestClient : public RestClient {
           credentials_->AuthenticationHeader(std::chrono::system_clock::now());
       if (!header) return std::move(header).status();
       auth_header = *std::move(header);
+      // The header carries an access token that a token endpoint returned, and
+      // that endpoint may be one a query picked (`google_adc_token_uri`). Poco
+      // writes header values verbatim, so a CR or LF in it would add headers
+      // that never passed `http_forbid_headers`, or split the request. Refuse
+      // to send anything with such a header, as `checkGCPOAuthAccessToken`
+      // does on the S3-compatible path.
+      auto const has_line_break = [](std::string const& s) {
+        return s.find_first_of("\r\n") != std::string::npos;
+      };
+      if (has_line_break(auth_header.first) ||
+          has_line_break(auth_header.second)) {
+        return Status(StatusCode::kPermissionDenied,
+                      "The GCS authentication header contains a line break "
+                      "(CR or LF), refusing to send the request");
+      }
     }
 
     // The libcurl-based transport only followed redirects when
