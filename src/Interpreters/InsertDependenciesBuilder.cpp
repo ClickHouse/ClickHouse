@@ -1574,8 +1574,19 @@ bool InsertDependenciesBuilder::mayCreateSequentialQuorumPart(const StoragePtr &
         auto target = materialized_view->tryGetTargetTable();
         if (!target)
             return false;
-        const auto view_metadata = storage->getInMemoryMetadataPtr(context, false);
-        auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        ContextPtr view_context;
+        try
+        {
+            const auto view_metadata = storage->getInMemoryMetadataPtr(context, false);
+            view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        }
+        catch (...) // Ok: the error is left to the write into the view, which fails the same way.
+        {
+            /// The `SQL SECURITY` context of the view cannot be built (e.g. its definer cannot be resolved),
+            /// so the settings of its write are unknown: assume it may be a quorum write. The INSERT must not
+            /// fail here: a `Buffer` over the view may only keep the rows in memory and never write into it.
+            return true;
+        }
         /// The nested INSERT into the view expands the dependent views of the target table as well.
         return mayCreateSequentialQuorumPart(target, view_context, depth + 1)
             || dependentViewMayCreateSequentialQuorumPart(target, view_context, depth + 1);

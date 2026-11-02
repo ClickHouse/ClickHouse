@@ -4,7 +4,8 @@
 # the pipeline is being built, which resolves the `SQL SECURITY` definers of the materialized views behind it.
 # A definer that cannot be resolved must not fail the INSERT earlier than the nested INSERT would: a `Buffer`
 # that only keeps the rows in memory does not touch the view at all, and the nested INSERT behind an `Alias`
-# skips the broken view under `materialized_views_ignore_errors`.
+# skips the broken view under `materialized_views_ignore_errors`. The same holds for a `Buffer` over the
+# view itself, whose destination is probed for quorum writes while the pipeline is being built.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,6 +25,7 @@ $CLICKHOUSE_CLIENT -q "
 
     CREATE MATERIALIZED VIEW t_05473_mv TO t_05473_dst DEFINER = $user SQL SECURITY DEFINER
         AS SELECT n FROM t_05473_hidden;
+    CREATE TABLE t_05473_buffer_over_view (n UInt64) ENGINE = Buffer(currentDatabase(), t_05473_mv, 1, 1000, 1000, 1000000, 1000000, 1000000000, 1000000000);
 
     -- The stored definer of the view can no longer be resolved.
     ALTER USER $user RENAME TO ${user}_gone;
@@ -33,6 +35,9 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_05473_buffer VALUES (1)"
 $CLICKHOUSE_CLIENT -q "SELECT 'buffered', count() FROM t_05473_buffer"
 
+# The same for a buffer over the view itself. Reading from it would read the view, which needs the definer.
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_05473_buffer_over_view VALUES (1)" && echo 'buffered over the view'
+
 # The nested INSERT behind the alias skips the broken view.
 $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "INSERT INTO t_05473_alias SETTINGS materialized_views_ignore_errors = 1 VALUES (2)"
 $CLICKHOUSE_CLIENT -q "SELECT 'written by the view', count() FROM t_05473_dst"
@@ -40,7 +45,10 @@ $CLICKHOUSE_CLIENT -q "SELECT 'written by the view', count() FROM t_05473_dst"
 # Without `materialized_views_ignore_errors` the INSERT still fails.
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_05473_alias VALUES (3)" 2>&1 | grep -o -m1 'UNKNOWN_USER'
 
+# Restore the definer, so that dropping the buffer over the view flushes its row.
 $CLICKHOUSE_CLIENT -q "
+    ALTER USER ${user}_gone RENAME TO $user;
+    DROP TABLE t_05473_buffer_over_view;
     DROP TABLE t_05473_mv SYNC;
     DROP TABLE t_05473_buffer;
     DROP TABLE t_05473_alias;
