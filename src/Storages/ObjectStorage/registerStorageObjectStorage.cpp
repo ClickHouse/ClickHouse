@@ -2734,6 +2734,10 @@ Using named collections:
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
 
+## Limitations {#limitations}
+
+Merge-on-Read is not implemented: the log files of a Merge-on-Read table are not read. Reading a table whose latest file slices have log files, that is changes written after the last compaction, therefore throws `NOT_IMPLEMENTED` instead of returning the values from before those changes. Schema inference throws for such a table too. Copy-on-Write tables and Merge-on-Read tables without such log files, for example right after a compaction in Hudi, are read as usual.
+
 ## See also {#see-also}
 
 - [hudi table function](/reference/functions/table-functions/hudi)
