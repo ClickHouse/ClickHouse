@@ -912,15 +912,13 @@ def test_merge_on_read_log_files(started_cluster, table_version):
 
             # G1: only the files of the snapshot named by `_version_` are read.
             history_key = f"{prefix}{timeline}/history"
-
-            def put(key, data):
-                minio_client.put_object(bucket, key, io.BytesIO(data), len(data))
-
             uncommitted = f"{requested}_{requested}_0.parquet"
             assert uncommitted not in snapshot
             uncommitted_manifest = {"files": [{"fileName": uncommitted, "fileLen": 3}]}
-            put(f"{history_key}/{uncommitted}", b"bad")
-            put(
+            put_object(minio_client, bucket, f"{history_key}/{uncommitted}", b"bad")
+            put_object(
+                minio_client,
+                bucket,
                 f"{history_key}/manifest_{version + 1}",
                 json.dumps(uncommitted_manifest).encode(),
             )
@@ -930,6 +928,36 @@ def test_merge_on_read_log_files(started_cluster, table_version):
             # G2: without `_version_` the newest manifest is the snapshot.
             minio_client.remove_object(bucket, f"{history_key}/_version_")
             check()
+            upload_hudi_table(minio_client, bucket, path, prefix)
+
+            # G3: `_version_` removed after the listing, as while Hudi rewrites it.
+            failpoint = "hudi_pause_after_listing_timeline"
+            result = []
+            errors = []
+
+            def select():
+                try:
+                    result.append(
+                        instance.query(f"SELECT id, v FROM {source} ORDER BY id")
+                    )
+                except BaseException as e:  # noqa: BLE001
+                    errors.append(e)
+
+            instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            thread = threading.Thread(target=select)
+            thread.start()
+            try:
+                instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+                minio_client.remove_object(bucket, f"{history_key}/_version_")
+                instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+            finally:
+                instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                thread.join()
+            if errors:
+                raise errors[0]
+            assert result == [
+                "".join(f"{i}\t{v}\n" for i, v in sorted(expected.items()))
+            ]
             upload_hudi_table(minio_client, bucket, path, prefix)
             remove_directory(minio_client, bucket, f"{name}/{timeline}/history")
             assert_refused(source)

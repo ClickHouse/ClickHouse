@@ -138,8 +138,11 @@ std::optional<std::pair<std::string_view, std::string_view>> parseHistoryFileNam
 std::optional<UInt64> parseManifestVersion(std::string_view file_name)
 {
     constexpr std::string_view prefix = "manifest_";
+    if (!file_name.starts_with(prefix))
+        return std::nullopt;
+    std::string_view digits = file_name.substr(prefix.size());
     UInt64 version = 0;
-    if (!file_name.starts_with(prefix) || !isNumber(file_name.substr(prefix.size())) || !tryParse(version, file_name.substr(prefix.size())))
+    if (!isNumber(digits) || !tryParse(version, digits))
         return std::nullopt;
     return version;
 }
@@ -385,13 +388,22 @@ Strings readHistorySnapshot(
     std::optional<UInt64> version;
     if (has_version_file)
     {
-        /// Without the listed size, which is stale if Hudi has rewritten the file since.
+        /// Hudi deletes and recreates `_version_` on every archive, so its listed size can be stale and the file can be
+        /// gone. Hudi then reads the newest manifest.
         RelativePathWithMetadata version_file(history_path + "_version_");
-        auto buf = createReadBuffer(version_file, object_storage, context, log);
-        String content;
-        readStringUntilEOF(content, *buf);
-        if (UInt64 parsed = 0; isNumber(content) && tryParse(parsed, content))
-            version = parsed;
+        try
+        {
+            auto buf = createReadBuffer(version_file, object_storage, context, log);
+            String content;
+            readStringUntilEOF(content, *buf);
+            if (UInt64 parsed = 0; isNumber(content) && tryParse(parsed, content))
+                version = parsed;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                log, fmt::format("Cannot read {}, using the newest listed manifest", version_file.relative_path), LogsLevel::warning);
+        }
     }
     if (!version)
         version = newest_manifest;
