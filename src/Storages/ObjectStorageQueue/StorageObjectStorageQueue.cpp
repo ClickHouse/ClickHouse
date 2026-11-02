@@ -288,6 +288,12 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
     }
+
+    /// All files share one processed position, so they must be committed by one INSERT at a time.
+    bool isOrderedWithoutBuckets(const ObjectStorageQueueMetadata & metadata)
+    {
+        return metadata.getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED && !metadata.useBucketsForProcessing();
+    }
 }
 
 StorageObjectStorageQueue::StorageObjectStorageQueue(
@@ -483,6 +489,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
+    if (task_count > 1 && isOrderedWithoutBuckets(*temp_metadata))
+        LOG_WARNING(log, "Setting `parallel_inserts` has no effect in ordered mode without buckets: files are inserted by one INSERT");
+
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
@@ -906,6 +915,12 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
     }
+    else if (streaming_tasks_index > 0 && isOrderedWithoutBuckets(*metadata))
+    {
+        /// Not rescheduled: tasks are scheduled again when buckets are added (ALTER) or on startup.
+        LOG_TEST(log, "Streaming task {} is idle: ordered mode without buckets", streaming_tasks_index);
+        return;
+    }
     else
     {
         try
@@ -1034,8 +1049,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
-    const bool parallel_inserts = table_metadata.parallel_inserts;
+    const bool parallel_inserts = table_metadata.parallel_inserts && !isOrderedWithoutBuckets(*metadata);
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
+
+    /// Bucket ownership is keyed by processor, so processors must be unique across streaming tasks.
+    std::vector<size_t> processors(threads);
+    for (size_t i = 0; i < threads; ++i)
+        processors[i] = streaming_tasks_index * threads + i;
 
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
@@ -1080,9 +1100,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
-            size_t processor_id = i * (streaming_tasks_index + 1);
             auto source = createSource(
-                processor_id,
+                processors[i],
                 read_from_format_info,
                 parser_shared_resources,
                 processing_progress,
@@ -1149,7 +1168,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     message,
                     error_code);
 
-                file_iterator->releaseFinishedBuckets();
+                file_iterator->releaseFinishedBuckets(processors);
                 file_iterator->refreshExpiringBucketLocks();
 
                 if (interrupted)
@@ -1187,7 +1206,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         });
 
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
-        file_iterator->releaseFinishedBuckets();
+        file_iterator->releaseFinishedBuckets(processors);
         file_iterator->refreshExpiringBucketLocks();
         max_files_override = 0;
         total_rows += rows;

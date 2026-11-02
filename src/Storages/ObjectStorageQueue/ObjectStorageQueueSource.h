@@ -69,11 +69,11 @@ public:
         /// we might later want to return it back for retrying.
         void returnForRetry(ObjectInfoPtr object_info, FileMetadataPtr file_metadata);
 
-        /// Release hold buckets.
+        /// Release hold buckets of the given processors.
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        void releaseFinishedBuckets();
+        void releaseFinishedBuckets(const std::vector<size_t> & processors);
 
         /// Refresh bucket locks which were not refreshed for more than a quarter of
         /// the TTL, after which the cleanup removes them as abandoned (the TTL is
