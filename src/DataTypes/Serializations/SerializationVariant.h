@@ -175,6 +175,15 @@ private:
 
     void addVariantElementToPath(SubstreamPath & path, size_t i) const;
 
+    /// True if the discriminators of the Variant at `path` are in storage but no stream of the variant is:
+    /// the part was written before the variant was added to the type, so it holds no values of it.
+    static bool isVariantAbsentInStorage(
+        const std::function<bool(const SubstreamPath &)> & check_stream_exists,
+        const SubstreamPath & path,
+        const String & variant_element_name,
+        const SubstreamData & variant_data,
+        bool use_specialized_prefixes_and_suffixes_substreams);
+
     enum CompactDiscriminatorsGranuleFormat
     {
         PLAIN = 0,   /// Granule has different discriminators and they are serialized as is row by row.

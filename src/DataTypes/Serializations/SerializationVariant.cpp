@@ -71,6 +71,7 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
 {
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
+    std::vector<bool> variants_absent_in_storage;
 
     ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
@@ -79,6 +80,7 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
         new_state->variant_states.reserve(variant_states.size());
         for (const auto & variant_state : variant_states)
             new_state->variant_states.push_back(variant_state ? variant_state->clone(context) : nullptr);
+        new_state->variants_absent_in_storage = variants_absent_in_storage;
         return new_state;
     }
 };
@@ -141,12 +143,31 @@ void SerializationVariant::enumerateStreams(
     callback(settings.path);
     settings.path.pop_back();
 
+    std::vector<bool> variants_absent_in_storage;
+    if (settings.check_stream_exists_callback)
+    {
+        variants_absent_in_storage.resize(variant_serializations.size());
+        for (size_t i = 0; i != variant_serializations.size(); ++i)
+        {
+            auto variant_data = SubstreamData(variant_serializations[i])
+                                    .withType(type_variant ? type_variant->getVariant(i) : nullptr)
+                                    .withSerializationInfo(data.serialization_info);
+            variants_absent_in_storage[i] = isVariantAbsentInStorage(
+                settings.check_stream_exists_callback, settings.path, variant_names[i], variant_data,
+                settings.use_specialized_prefixes_and_suffixes_substreams);
+        }
+    }
+
     settings.path.push_back(Substream::VariantElements);
     settings.path.back().data = data;
 
     chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
     for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
+        if ((variant_deserialize_state && variant_deserialize_state->variants_absent_in_storage[i])
+            || (!variants_absent_in_storage.empty() && variants_absent_in_storage[i]))
+            continue;
+
         DataTypePtr type = type_variant ? type_variant->getVariant(i) : nullptr;
         const bool make_subcolumn_nullable = !type || canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type);
         settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(
@@ -258,10 +279,19 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     auto variant_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
     variant_state->discriminators_state = discriminators_state;
     variant_state->variant_states.resize(variant_serializations.size());
+    variant_state->variants_absent_in_storage.resize(variant_serializations.size());
+    for (size_t i = 0; i < variant_serializations.size(); ++i)
+        variant_state->variants_absent_in_storage[i] = isVariantAbsentInStorage(
+            settings.check_stream_exists_callback, settings.path, variant_names[i],
+            SubstreamData(variant_serializations[i]).withType(variant_types[i]),
+            settings.use_specialized_prefixes_and_suffixes_substreams);
 
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i < variant_serializations.size(); ++i)
     {
+        if (variant_state->variants_absent_in_storage[i])
+            continue;
+
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
@@ -633,9 +663,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
-        variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
-            col.getVariantByLocalDiscriminator(i), variant_limits[i],
-            settings, variant_state->variant_states[i], cache);
+        if (!variant_state->variants_absent_in_storage[i])
+            variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
+                col.getVariantByLocalDiscriminator(i), variant_limits[i],
+                settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
         /// Verify that we deserialized the expected number of rows for this variant.
@@ -772,6 +803,45 @@ void SerializationVariant::addVariantElementToPath(DB::ISerialization::Substream
 {
     path.push_back(Substream::VariantElement);
     path.back().variant_element_name = variant_names[i];
+}
+
+bool SerializationVariant::isVariantAbsentInStorage(
+    const std::function<bool(const SubstreamPath &)> & check_stream_exists,
+    const SubstreamPath & path,
+    const String & variant_element_name,
+    const SubstreamData & variant_data,
+    bool use_specialized_prefixes_and_suffixes_substreams)
+{
+    if (!check_stream_exists)
+        return false;
+
+    /// Compact parts without substream marks report every stream as missing, the discriminators included.
+    SubstreamPath discriminators_path = path;
+    discriminators_path.push_back(Substream::VariantDiscriminators);
+    if (!check_stream_exists(discriminators_path))
+        return false;
+
+    EnumerateStreamsSettings settings;
+    settings.path = path;
+    settings.path.push_back(Substream::VariantElements);
+    settings.path.push_back(Substream::VariantElement);
+    settings.path.back().variant_element_name = variant_element_name;
+    settings.path.back().data = variant_data;
+    settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes_and_suffixes_substreams;
+
+    bool has_streams = false;
+    bool has_stream_in_storage = false;
+    auto callback = [&](const SubstreamPath & substream_path)
+    {
+        if (has_stream_in_storage || isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
+        has_streams = true;
+        has_stream_in_storage = check_stream_exists(substream_path);
+    };
+    variant_data.serialization->enumerateStreams(settings, callback, variant_data);
+
+    return has_streams && !has_stream_in_storage;
 }
 
 void SerializationVariant::serializeBinary(const Field & /*field*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const

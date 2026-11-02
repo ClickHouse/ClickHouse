@@ -71,12 +71,14 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
 {
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
+    bool variant_absent_in_storage = false;
 
     ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<SerializationVariantElement::DeserializeBinaryBulkStateVariantElement>();
         new_state->discriminators_state = discriminators_state ? discriminators_state->clone(context) : nullptr;
         new_state->variant_element_state = variant_element_state ? variant_element_state->clone(context) : nullptr;
+        new_state->variant_absent_in_storage = variant_absent_in_storage;
         return new_state;
     }
 };
@@ -100,7 +102,6 @@ void SerializationVariantElement::enumerateStreams(
     settings.path.pop_back();
 
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariantElement>(data.deserialize_state) : nullptr;
-    addVariantToPath(settings.path);
     /// Remove the nullability only when the extraction added it. If the requested type is
     /// intrinsically nullable, nested_serialization is a Nullable serialization and requires it.
     auto nested_type = data.type;
@@ -110,6 +111,17 @@ void SerializationVariantElement::enumerateStreams(
         nested_type = nested_type ? removeNullableOrLowCardinalityNullable(nested_type) : nullptr;
         nested_column = nested_column ? removeNullableOrLowCardinalityNullable(nested_column) : nullptr;
     }
+
+    bool variant_absent_in_storage = deserialize_state && deserialize_state->variant_absent_in_storage;
+    if (!variant_absent_in_storage)
+        variant_absent_in_storage = SerializationVariant::isVariantAbsentInStorage(
+            settings.check_stream_exists_callback, settings.path, variant_element_name,
+            SubstreamData(nested_serialization).withType(nested_type).withSerializationInfo(data.serialization_info),
+            settings.use_specialized_prefixes_and_suffixes_substreams);
+    if (variant_absent_in_storage)
+        return;
+
+    addVariantToPath(settings.path);
     auto nested_data = SubstreamData(nested_serialization)
                        .withType(nested_type)
                        .withColumn(nested_column)
@@ -141,10 +153,16 @@ void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
 
     auto variant_element_state = std::make_shared<DeserializeBinaryBulkStateVariantElement>();
     variant_element_state->discriminators_state = discriminators_state;
+    variant_element_state->variant_absent_in_storage = SerializationVariant::isVariantAbsentInStorage(
+        settings.check_stream_exists_callback, settings.path, variant_element_name, SubstreamData(nested_serialization),
+        settings.use_specialized_prefixes_and_suffixes_substreams);
 
-    addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state, cache);
-    removeVariantFromPath(settings.path);
+    if (!variant_element_state->variant_absent_in_storage)
+    {
+        addVariantToPath(settings.path);
+        nested_serialization->deserializeBinaryBulkStatePrefix(settings, variant_element_state->variant_element_state, cache);
+        removeVariantFromPath(settings.path);
+    }
 
     state = std::move(variant_element_state);
 }
@@ -269,7 +287,8 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         assert_cast<ColumnLowCardinality &>(*variant).nestedRemoveNullable();
 
     addVariantToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(*variant, *variant_limit, settings, variant_element_state->variant_element_state, cache);
+    if (!variant_element_state->variant_absent_in_storage)
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(*variant, *variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
     /// We want to keep dynamic structure of the variant during deserialization.
