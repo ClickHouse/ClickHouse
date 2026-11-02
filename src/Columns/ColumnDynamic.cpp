@@ -1554,6 +1554,8 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
 
 bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
 {
+    checkStackSize();
+
     if (const auto * rhs_concrete = typeid_cast<const ColumnDynamic *>(&rhs))
         return max_dynamic_types == rhs_concrete->max_dynamic_types && global_max_dynamic_types == rhs_concrete->global_max_dynamic_types
             && variant_info.variant_name == rhs_concrete->variant_info.variant_name
@@ -1563,6 +1565,8 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
 
 void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
+    checkStackSize();
+
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Dynamic column");
 
@@ -1693,6 +1697,8 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
 void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
 {
+    checkStackSize();
+
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Dynamic column");
 
@@ -1715,6 +1721,8 @@ void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
 
 void ColumnDynamic::fixDynamicStructure()
 {
+    checkStackSize();
+
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
     /// to extend selected variants on inserts into this column.
     /// -1 because we don't count shared variant in the limit.
@@ -1749,6 +1757,8 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
 
 void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    checkStackSize();
+
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
     Statistics new_statistics;
     /// Collect total sizes for variants that are not in our structure (candidates for shared variant statistics).
