@@ -198,6 +198,7 @@ bool isQueryCancellation(std::exception_ptr exception_ptr)
     }
     catch (...)
     {
+        /// Ok: only a `DB::Exception` can carry a cancellation code.
         return false;
     }
 }
