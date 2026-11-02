@@ -19,6 +19,24 @@ cleanup()
 }
 trap cleanup EXIT
 
+# The failpoint is server-wide, so `SYSTEM WAIT FAILPOINT` may also return for an unrelated `MergeTree`
+# insert, such as a system log flush. Wait until the test's own `INSERT` is parked at the failpoint: it
+# then holds the table share lock that the guarded `ALTER` must wait for.
+wait_insert_paused()
+{
+    local query_id=$1
+    $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT ${FP} PAUSE"
+    for _ in {1..600}
+    do
+        [[ $($CLICKHOUSE_CLIENT --allow_introspection_functions 1 -q "
+            SELECT count() > 0 FROM system.stack_trace
+            WHERE query_id = '${query_id}'
+              AND arrayExists(x -> demangle(addressToSymbol(x)) LIKE '%FailPointInjection::%', trace)") == 1 ]] && return
+        sleep 0.1
+    done
+    echo "The INSERT ${query_id} did not reach the failpoint ${FP}"
+}
+
 # Even while empty, a matcher change is a non-metadata `ALTER` because a write using the old
 # metadata may still be in flight.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_empty_index_guard (a UInt64, y UInt64 ALIAS greatest(a, * EXCEPT y), INDEX idx y TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a"
@@ -36,9 +54,10 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_empty_materialized_guard"
 # of registering an earlier mutation version that the late part would skip.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_race_materialized (a UInt64, m UInt64 MATERIALIZED greatest(a, * EXCEPT m)) ENGINE = MergeTree ORDER BY a"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT ${FP}"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_race_materialized (a) VALUES (1)" > "${CLICKHOUSE_TMP}/05024_materialized_insert.log" 2>&1 &
+INSERT_QUERY_ID="05024_materialized_${CLICKHOUSE_DATABASE}_$RANDOM"
+$CLICKHOUSE_CLIENT --query_id "${INSERT_QUERY_ID}" -q "INSERT INTO t_race_materialized (a) SETTINGS async_insert = 0 VALUES (1)" > "${CLICKHOUSE_TMP}/05024_materialized_insert.log" 2>&1 &
 INSERT_PID=$!
-$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT ${FP} PAUSE"
+wait_insert_paused "${INSERT_QUERY_ID}"
 $CLICKHOUSE_CLIENT --lock_acquire_timeout 1 -q "ALTER TABLE t_race_materialized ADD COLUMN b UInt64 DEFAULT a + 1000" 2>&1 \
     | grep -o 'DEADLOCK_AVOIDED' | head -1
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT ${FP}"
@@ -52,9 +71,10 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_race_materialized"
 # `INSERT`, the queued mutation must rebuild that file before the forced-index query runs.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_race_index (a UInt64, y UInt64 ALIAS greatest(a, * EXCEPT y), INDEX idx y TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT ${FP}"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_race_index (a) VALUES (1)" > "${CLICKHOUSE_TMP}/05024_index_insert.log" 2>&1 &
+INSERT_QUERY_ID="05024_index_${CLICKHOUSE_DATABASE}_$RANDOM"
+$CLICKHOUSE_CLIENT --query_id "${INSERT_QUERY_ID}" -q "INSERT INTO t_race_index (a) SETTINGS async_insert = 0 VALUES (1)" > "${CLICKHOUSE_TMP}/05024_index_insert.log" 2>&1 &
 INSERT_PID=$!
-$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT ${FP} PAUSE"
+wait_insert_paused "${INSERT_QUERY_ID}"
 $CLICKHOUSE_CLIENT --lock_acquire_timeout 1 -q "ALTER TABLE t_race_index ADD COLUMN b UInt64 DEFAULT a + 1000" 2>&1 \
     | grep -o 'DEADLOCK_AVOIDED' | head -1
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT ${FP}"
@@ -68,9 +88,10 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_race_index"
 # It needs the same barrier so the clear mutation cannot miss an old-snapshot index file.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_race_index_drop (a UInt64, y UInt64 ALIAS greatest(a, * EXCEPT y), INDEX idx y TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, alter_column_secondary_index_mode = 'drop'"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT ${FP}"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_race_index_drop (a) VALUES (1)" > "${CLICKHOUSE_TMP}/05024_index_drop_insert.log" 2>&1 &
+INSERT_QUERY_ID="05024_index_drop_${CLICKHOUSE_DATABASE}_$RANDOM"
+$CLICKHOUSE_CLIENT --query_id "${INSERT_QUERY_ID}" -q "INSERT INTO t_race_index_drop (a) SETTINGS async_insert = 0 VALUES (1)" > "${CLICKHOUSE_TMP}/05024_index_drop_insert.log" 2>&1 &
 INSERT_PID=$!
-$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT ${FP} PAUSE"
+wait_insert_paused "${INSERT_QUERY_ID}"
 $CLICKHOUSE_CLIENT --lock_acquire_timeout 1 -q "ALTER TABLE t_race_index_drop ADD COLUMN b UInt64 DEFAULT a + 1000" 2>&1 \
     | grep -o 'DEADLOCK_AVOIDED' | head -1
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT ${FP}"
