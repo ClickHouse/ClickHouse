@@ -116,6 +116,14 @@ public:
 
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
 
+    /// Used by clickhouse-local to hide its inferred stdin table until query files finish.
+    ContextMutablePtr getSessionContext() { return session->sessionContext(); }
+
+    /// Runs after query-context creation but before each statement executes.
+    /// Local uses it to reconcile stdin aliases with per-query database settings
+    /// and explicit table DROP/replacement across statements.
+    void setBeforeQueryCallback(std::function<void(ContextMutablePtr)> callback) { before_query_callback = std::move(callback); }
+
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,
@@ -220,6 +228,7 @@ private:
     bool needSendProgressOrMetrics();
     bool needSendLogs();
 
+    std::function<void(ContextMutablePtr)> before_query_callback;
     ContextMutablePtr query_context;
     std::unique_ptr<Session> session;
 
