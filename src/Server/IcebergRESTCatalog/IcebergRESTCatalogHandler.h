@@ -41,11 +41,11 @@ private:
     void handleUpdateNamespaceProperties(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
 
     void handleListTables(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
-    void handleCreateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
-    void handleLoadTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
+    void handleCreateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context, bool vend_credentials) const;
+    void handleLoadTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context, bool vend_credentials) const;
     void handleTableExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
     void handleDropTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, const Poco::URI & uri, HTTPServerResponse & response, const Context & context) const;
-    void handleUpdateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
+    void handleUpdateTable(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context, bool vend_credentials) const;
 
     /// Writes the new metadata file and moves the table pointer to it with a version check. Sends the response.
     void commitTableMetadata(
@@ -55,7 +55,22 @@ private:
         const IcebergTablePointer & pointer,
         const Poco::JSON::Object::Ptr & metadata,
         CompressionMethod compression_method,
-        HTTPServerResponse & response) const;
+        HTTPServerResponse & response,
+        const Context & context,
+        bool vend_credentials) const;
+
+    /// The client asked with `X-Iceberg-Access-Delegation: vended-credentials`.
+    static bool wantsVendedCredentials(const HTTPServerRequest & request);
+
+    /// Table-scoped storage credentials for the response, when the client asked and the warehouse can vend.
+    std::optional<IcebergRESTCatalogVendedCredentials> vendCredentialsIfRequested(
+        const IcebergRESTCatalogWarehouse & warehouse,
+        const IcebergNamespaceName & ns,
+        const String & table,
+        const Poco::JSON::Object & metadata,
+        const Context & context,
+        IcebergRESTCatalogVendedAccess access,
+        bool requested) const;
 
     static void checkNotReadonly(const Context & context, const String & action);
     static void checkDDLAllowed(const Context & context, const String & action);
@@ -65,8 +80,18 @@ private:
 
     Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
-    static void sendLoadTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
-    static void sendCommitTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
+    static void sendLoadTableResult(
+        const String & metadata_location,
+        const Poco::JSON::Object::Ptr & metadata,
+        const std::optional<IcebergRESTCatalogVendedCredentials> & credentials,
+        HTTPServerResponse & response);
+    static void sendCommitTableResult(
+        const String & metadata_location,
+        const Poco::JSON::Object::Ptr & metadata,
+        const std::optional<IcebergRESTCatalogVendedCredentials> & credentials,
+        HTTPServerResponse & response);
+    /// Puts the vended credentials into `config` and `storage-credentials` of a `LoadTableResult`.
+    static void setVendedCredentials(Poco::JSON::Object & result, const IcebergRESTCatalogVendedCredentials & credentials);
     /// Maps `NOT_IMPLEMENTED` to `UnsupportedOperationException` and other codes to `BadRequestException`.
     static void sendCommitRequestError(HTTPServerResponse & response, int code, const String & message);
 

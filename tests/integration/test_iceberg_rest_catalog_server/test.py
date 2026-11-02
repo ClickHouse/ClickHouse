@@ -8,10 +8,12 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
+import boto3
 import pyarrow as pa
 import pytest
 import requests
 import urllib3
+from botocore.exceptions import ClientError
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import LongType, NestedField, StringType
@@ -184,10 +186,17 @@ def tables_url(ns, table=None):
     return url
 
 
-def create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, auth=None, **extra):
+def create_table(
+    ns, name, schema=DEFAULT_SCHEMA, expected_code=200, auth=None, headers=None, **extra
+):
     body = {"name": name, "schema": schema, **extra}
     return catalog_request(
-        "POST", tables_url(ns), json=body, expected_code=expected_code, auth=auth
+        "POST",
+        tables_url(ns),
+        json=body,
+        expected_code=expected_code,
+        auth=auth,
+        headers=headers,
     )
 
 
@@ -223,13 +232,16 @@ def list_metadata_files(location):
     ]
 
 
-def commit_table(ns, table, requirements, updates, expected_code=200, auth=None):
+def commit_table(
+    ns, table, requirements, updates, expected_code=200, auth=None, headers=None
+):
     return catalog_request(
         "POST",
         tables_url(ns, table),
         json={"requirements": requirements, "updates": updates},
         expected_code=expected_code,
         auth=auth,
+        headers=headers,
     )
 
 
@@ -1363,3 +1375,145 @@ def test_secure_port(started_cluster):
         requests.get(
             f"http://{node.ip_address}:{CATALOG_SECURE_PORT}{path}", auth=DEFAULT_AUTH
         )
+
+
+VENDING_HEADERS = {"X-Iceberg-Access-Delegation": "vended-credentials"}
+
+
+def vended_s3_client(config):
+    return boto3.client(
+        "s3",
+        endpoint_url=f"http://{cluster.minio_ip}:{cluster.minio_port}",
+        region_name="us-east-1",
+        aws_access_key_id=config["s3.access-key-id"],
+        aws_secret_access_key=config["s3.secret-access-key"],
+        aws_session_token=config["s3.session-token"],
+    )
+
+
+def assert_access_denied(call):
+    with pytest.raises(ClientError) as info:
+        call()
+    assert info.value.response["Error"]["Code"] == "AccessDenied", info.value
+
+
+def assert_vended(result):
+    config = result["config"]
+    assert {"s3.access-key-id", "s3.secret-access-key", "s3.session-token"} <= set(config), config
+    assert int(config["s3.session-token-expires-at-ms"]) > time.time() * 1000
+    # The server does not advertise its own endpoint. Clients keep theirs.
+    assert "s3.endpoint" not in config
+    assert result["storage-credentials"] == [
+        {"prefix": result["metadata"]["location"], "config": config}
+    ]
+    return config
+
+
+def test_vended_credentials(started_cluster):
+    ns = f"vend_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    # Without the header the response carries no credentials.
+    first = create_table(ns, "first").json()
+    assert first["config"] == {}
+    assert "storage-credentials" not in first
+    other = create_table(ns, "other").json()
+
+    loaded = catalog_request("GET", tables_url(ns, "first"), headers=VENDING_HEADERS).json()
+    config = assert_vended(loaded)
+    assert loaded["metadata"] == first["metadata"]
+
+    # The same table and access reuse the cached session.
+    again = catalog_request("GET", tables_url(ns, "first"), headers=VENDING_HEADERS).json()
+    assert again["config"] == config
+
+    # The session policy covers the table prefix only.
+    s3 = vended_s3_client(config)
+    prefix = metadata_key(loaded["metadata"]["location"])
+    s3.get_object(Bucket=BUCKET, Key=metadata_key(loaded["metadata-location"]))
+    s3.put_object(Bucket=BUCKET, Key=f"{prefix}/data/part-0.parquet", Body=b"x")
+    listed = s3.list_objects_v2(Bucket=BUCKET, Prefix=f"{prefix}/")
+    assert len(listed["Contents"]) == 2
+    s3.delete_object(Bucket=BUCKET, Key=f"{prefix}/data/part-0.parquet")
+
+    other_prefix = metadata_key(other["metadata"]["location"])
+    assert_access_denied(
+        lambda: s3.get_object(Bucket=BUCKET, Key=metadata_key(other["metadata-location"]))
+    )
+    assert_access_denied(
+        lambda: s3.list_objects_v2(Bucket=BUCKET, Prefix=f"{other_prefix}/")
+    )
+    assert_access_denied(
+        lambda: s3.put_object(Bucket=BUCKET, Key=f"{other_prefix}/data/x", Body=b"x")
+    )
+
+
+def test_vended_credentials_readonly_user(started_cluster):
+    ns = f"vend_ro_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    created = create_table(ns, "t").json()
+    prefix = metadata_key(created["metadata"]["location"])
+
+    loaded = catalog_request(
+        "GET", tables_url(ns, "t"), headers=VENDING_HEADERS, auth=("readonly_user", "")
+    ).json()
+    config = assert_vended(loaded)
+
+    s3 = vended_s3_client(config)
+    s3.get_object(Bucket=BUCKET, Key=metadata_key(created["metadata-location"]))
+    assert_access_denied(
+        lambda: s3.put_object(Bucket=BUCKET, Key=f"{prefix}/data/x", Body=b"x")
+    )
+
+    # A read-write session for the same table is a different session.
+    writer = catalog_request("GET", tables_url(ns, "t"), headers=VENDING_HEADERS).json()
+    assert writer["config"]["s3.access-key-id"] != config["s3.access-key-id"]
+
+
+def test_vended_credentials_on_create_and_commit(started_cluster):
+    ns = f"vend_commit_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    assert_vended(create_table(ns, "events", headers=VENDING_HEADERS).json())
+
+    committed = commit_table(
+        ns,
+        "events",
+        [{"type": "assert-ref-snapshot-id", "ref": "main"}],
+        append_updates(fake_snapshot(100, 1)),
+        headers=VENDING_HEADERS,
+    ).json()
+    assert_vended(committed)
+
+    plain = commit_table(ns, "events", assert_main_at(100), []).json()
+    assert "config" not in plain
+
+
+def test_pyiceberg_vended_credentials(started_cluster):
+    # The real user scenario: the client has the catalog URL and no S3 keys.
+    catalog = load_catalog(
+        "ch",
+        **{
+            "uri": catalog_url(""),
+            "type": "rest",
+            "warehouse": "my_warehouse",
+            "auth": {"type": "basic", "basic": {"username": "default", "password": ""}},
+            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
+        },
+    )
+    ns = f"vend_py_{uuid.uuid4().hex[:8]}"
+    catalog.create_namespace(ns)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+    table = catalog.create_table(f"{ns}.events", schema=schema)
+
+    rows = pa.Table.from_pylist(
+        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
+        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
+    )
+    table.append(rows)
+
+    loaded = catalog.load_table(f"{ns}.events")
+    assert loaded.scan().to_arrow().sort_by("id").to_pylist() == rows.to_pylist()

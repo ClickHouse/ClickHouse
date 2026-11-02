@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogStorage.h>
 
 #include <fmt/format.h>
 
@@ -35,8 +36,16 @@ S3Location parseS3Location(const String & location)
 }
 
 IcebergRESTCatalogWarehouse::IcebergRESTCatalogWarehouse(
-    String name_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_, ObjectStoragePtr object_storage_)
-    : name(std::move(name_)), base_location(std::move(base_location_)), object_storage(std::move(object_storage_)), store(std::move(store_))
+    String name_,
+    String base_location_,
+    KeeperIcebergRESTCatalogStorePtr store_,
+    ObjectStoragePtr object_storage_,
+    std::unique_ptr<const IcebergRESTCatalogCredentialVendor> credential_vendor_)
+    : name(std::move(name_))
+    , base_location(std::move(base_location_))
+    , object_storage(std::move(object_storage_))
+    , store(std::move(store_))
+    , credential_vendor(std::move(credential_vendor_))
 {
     /// The server has credentials for one bucket only, so the default table location must be in it.
     validateLocation(base_location);
@@ -67,6 +76,34 @@ String IcebergRESTCatalogWarehouse::objectKey(const String & location) const
     auto parsed = parseS3Location(location);
     validateLocation(parsed);
     return std::move(parsed.key);
+}
+
+String IcebergRESTCatalogWarehouse::readMetadataFile(const String & location, const ReadSettings & read_settings) const
+{
+    const auto key = objectKey(location);
+    return IcebergRESTCatalog::readObjectToString(*object_storage, key, read_settings, IcebergRESTCatalog::getMetadataFileCompressionMethod(key));
+}
+
+void IcebergRESTCatalogWarehouse::writeNewMetadataFile(
+    const String & location,
+    const String & content,
+    const WriteSettings & write_settings,
+    CompressionMethod compression_method,
+    int compression_level) const
+{
+    IcebergRESTCatalog::writeNewObject(*object_storage, objectKey(location), content, write_settings, compression_method, compression_level);
+}
+
+void IcebergRESTCatalogWarehouse::removeMetadataFileIfExists(const String & location) const
+{
+    object_storage->removeObjectIfExists(StoredObject(objectKey(location)));
+}
+
+IcebergRESTCatalogVendedCredentials IcebergRESTCatalogWarehouse::vendCredentials(const String & location, IcebergRESTCatalogVendedAccess access) const
+{
+    auto parsed = parseS3Location(location);
+    validateLocation(parsed);
+    return credential_vendor->vend(location, parsed.bucket, parsed.key, access);
 }
 
 bool IcebergRESTCatalogWarehouse::createNamespace(const IcebergNamespaceName & ns, const std::map<String, String> & properties) const

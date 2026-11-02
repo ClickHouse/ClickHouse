@@ -100,8 +100,24 @@ HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & se
 
     auto object_storage = createWarehouseObjectStorage(server, storage_named_collection);
 
+    /// The section enables vending. The server assumes `role_arn` as itself, with the storage identity.
+    std::unique_ptr<const IcebergRESTCatalogCredentialVendor> credential_vendor;
+    if (config.has("iceberg_rest_catalog.vended_credentials"))
+    {
+        IcebergRESTCatalogVendingConfig vending_config{
+            .role_arn = get_required("vended_credentials.role_arn"),
+            .role_session_name = config.getString("iceberg_rest_catalog.vended_credentials.role_session_name", "clickhouse-iceberg-catalog"),
+            .external_id = config.getString("iceberg_rest_catalog.vended_credentials.external_id", ""),
+            .sts_endpoint = config.getString("iceberg_rest_catalog.vended_credentials.sts_endpoint", ""),
+            .s3_endpoint = config.getString("iceberg_rest_catalog.vended_credentials.s3_endpoint", ""),
+        };
+#if USE_AWS_S3
+        credential_vendor = std::make_unique<const IcebergRESTCatalogCredentialVendor>(std::move(vending_config), object_storage->getS3StorageClient());
+#endif
+    }
+
     auto warehouse_ptr = std::make_shared<const IcebergRESTCatalogWarehouse>(
-        warehouse_name, base_location, std::move(keeper_store), std::move(object_storage));
+        warehouse_name, base_location, std::move(keeper_store), std::move(object_storage), std::move(credential_vendor));
 
     IcebergRESTCatalogWarehouses::Map warehouses;
     warehouses.emplace(warehouse_name, std::move(warehouse_ptr));

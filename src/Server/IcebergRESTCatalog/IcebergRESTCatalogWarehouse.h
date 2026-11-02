@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <IO/CompressionMethod.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCredentialVendor.h>
 #include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 
 #include <map>
@@ -9,6 +11,9 @@
 
 namespace DB
 {
+
+struct ReadSettings;
+struct WriteSettings;
 
 /// One warehouse of the Iceberg REST catalog (RFC: issue #114697).
 class IcebergRESTCatalogWarehouse
@@ -21,16 +26,32 @@ public:
     };
 
     IcebergRESTCatalogWarehouse(
-        String name_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_, ObjectStoragePtr object_storage_);
+        String name_,
+        String base_location_,
+        KeeperIcebergRESTCatalogStorePtr store_,
+        ObjectStoragePtr object_storage_,
+        std::unique_ptr<const IcebergRESTCatalogCredentialVendor> credential_vendor_);
 
     /// Also the REST `prefix`.
     const String name;
     /// Default storage prefix for tables.
     const String base_location;
-    const ObjectStoragePtr object_storage;
 
     void validateLocation(const String & location) const;
-    String objectKey(const String & location) const;
+
+    /// Metadata files. Every location is validated against the warehouse bucket first.
+    String readMetadataFile(const String & location, const ReadSettings & read_settings) const;
+    void writeNewMetadataFile(
+        const String & location,
+        const String & content,
+        const WriteSettings & write_settings,
+        CompressionMethod compression_method,
+        int compression_level) const;
+    void removeMetadataFileIfExists(const String & location) const;
+
+    /// Vending is enabled by the `vended_credentials` section of the config.
+    bool canVendCredentials() const { return credential_vendor != nullptr; }
+    IcebergRESTCatalogVendedCredentials vendCredentials(const String & location, IcebergRESTCatalogVendedAccess access) const;
 
     /// Catalog state. See `KeeperIcebergRESTCatalogStore` for the contracts.
     bool createNamespace(const IcebergNamespaceName & ns, const std::map<String, String> & properties) const;
@@ -52,8 +73,11 @@ public:
 
 private:
     void validateLocation(const S3Location & location) const;
+    String objectKey(const String & location) const;
 
+    const ObjectStoragePtr object_storage;
     const KeeperIcebergRESTCatalogStorePtr store;
+    const std::unique_ptr<const IcebergRESTCatalogCredentialVendor> credential_vendor;
 };
 
 using IcebergRESTCatalogWarehousePtr = std::shared_ptr<const IcebergRESTCatalogWarehouse>;

@@ -5,5 +5,10 @@
         <warehouse>my_warehouse</warehouse>
         <base_location>s3://warehouse/my_warehouse</base_location>
         <storage_named_collection>warehouse_storage</storage_named_collection>
+        <!-- MinIO serves STS on the S3 port with the root credentials and ignores the role ARN. -->
+        <vended_credentials>
+            <role_arn>arn:aws:iam::123456789012:role/warehouse</role_arn>
+            <sts_endpoint>http://minio1:9001</sts_endpoint>
+        </vended_credentials>
     </iceberg_rest_catalog>
 </clickhouse>

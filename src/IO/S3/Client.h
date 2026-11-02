@@ -154,6 +154,8 @@ public:
     const String & getRegion() const { return explicit_region; }
 
     Aws::Auth::AWSCredentials getCredentials() const;
+    /// For clients of other AWS services, such as STS, that must act as the same identity.
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & getCredentialsProvider() const { return credentials_provider; }
 
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
