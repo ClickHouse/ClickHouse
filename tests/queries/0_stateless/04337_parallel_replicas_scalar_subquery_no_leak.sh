@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-parallel-replicas
-# Tag no-parallel -- queries system.text_log
+# Tags: no-parallel-replicas
 # Tag no-parallel-replicas -- the test manages parallel replicas settings itself
 
 # Regression test for "Duplicate announcement received for replica number 1"
@@ -27,7 +26,7 @@ CREATE TABLE t_pr_scalar (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_scalar SELECT number % 100, number FROM numbers(1000);
 "
 
-pr_settings="SETTINGS enable_analyzer = 1, automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'"
+pr_settings="SETTINGS automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'"
 
 # Number of "Creating parallel replicas coordinator" messages logged while running $1.
 coordinators_for() {

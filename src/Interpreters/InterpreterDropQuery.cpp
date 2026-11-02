@@ -15,7 +15,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -61,6 +63,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int ASYNC_LOAD_CANCELED;
 }
 
 namespace ActionLocks
@@ -223,7 +227,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
             ast_drop_query.sync = false;
-            if (table->storesDataOnDisk())
+            /// A real DROP of an object storage, table function or non-truncatable table does not delete its data, so do not TRUNCATE it.
+            /// The proxy is checked first: its `supportsTruncate` resolves the table function.
+            auto keeps_data_on_drop = [](const IStorage & storage)
+            {
+                return storage.isObjectStorage() || typeid_cast<const StorageTableFunctionProxy *>(&storage) || !storage.supportsTruncate();
+            };
+            /// The TRUNCATE of a materialized view truncates its inner table.
+            StoragePtr inner_table;
+            if (materialized_view && materialized_view->hasInnerTable())
+                inner_table = materialized_view->tryGetTargetTable();
+
+            if (table->storesDataOnDisk() || keeps_data_on_drop(*table) || (inner_table && keeps_data_on_drop(*inner_table)))
             {
                 LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
                 return {};
@@ -298,6 +313,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             }
 
+            context_->onQueryExecutionStarted();
             table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
 
@@ -354,6 +370,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() != UUIDHelpers::Nil && table_shared_lock && table->supportsReplication())
                 ddl_guard.reset();
 
+            context_->onQueryExecutionStarted();
             /// Drop table data, don't touch metadata
             table->truncate(current_query_ptr, metadata_snapshot, context_, table_excl_lock);
         }
@@ -376,6 +393,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
+            context_->onQueryExecutionStarted();
             table->flushAndShutdown(true);
 
             TableExclusiveLockHolder table_lock;
@@ -512,6 +530,21 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (query.if_empty)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
+    /// The later waits for the database to start cannot be refused: the last of them runs in the
+    /// noexcept `~LoadTask`. A startup that failed for another reason must still leave it droppable.
+    try
+    {
+        database->waitDatabaseStarted();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
+            throw;
+        if (e.code() != ErrorCodes::ASYNC_LOAD_CANCELED)
+            tryLogCurrentException("InterpreterDropQuery", "Async loading failed", LogsLevel::warning);
+    }
+
+    getContext()->onQueryExecutionStarted();
     if (!truncate && database->hasReplicationThread())
         stop_replication = true;
 
@@ -706,6 +739,23 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                         if (table_names_in_drop.contains(dep.getFullTableName()))
                             relevant_deps.push_back(dep);
                     local_graph.addDependencies(id, relevant_deps);
+                }
+
+                /// A `TimeSeries` table drops its inner tables in `dropInnerTableIfAny`, so they go first.
+                for (const auto & [id, _] : tables_to_drop)
+                {
+                    auto time_series
+                        = castStorage<StorageTimeSeries>(database->tryGetTable(id.getTableName(), table_context), DeferredTable::Skip);
+                    if (!time_series || !time_series->hasInnerTables())
+                        continue;
+                    for (auto target_kind : StorageTimeSeries::getTargetKinds())
+                    {
+                        if (!time_series->isInnerTable(target_kind))
+                            continue;
+                        auto inner_id = time_series->tryGetTargetTableID(target_kind, table_context);
+                        if (inner_id && table_names_in_drop.contains(inner_id.getFullTableName()))
+                            local_graph.addDependency(inner_id, id);
+                    }
                 }
 
                 auto sorted = local_graph.getTablesSortedByDependency();

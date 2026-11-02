@@ -362,11 +362,15 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
     setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
+    setReadonlyRestrictsSetRole(config_.getBool("access_control_improvements.readonly_restricts_set_role", false));
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
 
     setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
+
+    /// Defaults to false for backwards compatibility — some deployments create SQL policies targeting `default`.
+    setForbidSQLAccessEntitiesTargetingUsersConfig(config_.getBool("access_control_improvements.forbid_sql_access_entities_targeting_users_config", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -1166,7 +1170,9 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
 {
     auto user_id = find<User>(user_name);
     UserPtr user;
-    if (user_id && (user = tryRead<User>(*user_id)))
+    if (user_id)
+        user = tryRead<User>(*user_id);
+    if (user)
     {
         const auto new_current_roles = user->granted_roles.findGranted(user->default_roles);
         const auto roles_info = getEnabledRolesInfo(new_current_roles, {});
@@ -1210,6 +1216,21 @@ std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInf
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)
 {
     return settings_profiles_cache->getSettingsProfileInfo(profile_id);
+}
+
+
+bool AccessControl::isEntityFromUsersConfig(const UUID & id) const
+{
+    auto storage = findStorage(id);
+    return storage && (strcmp(storage->getStorageType(), UsersConfigAccessStorage::STORAGE_TYPE) == 0);
+}
+
+
+bool AccessControl::shouldSkipSQLAccessEntityForUser(const UUID & policy_id, const UUID & user_id) const
+{
+    return doesForbidSQLAccessEntitiesTargetingUsersConfig()
+        && isEntityFromUsersConfig(user_id)
+        && !isEntityFromUsersConfig(policy_id);
 }
 
 

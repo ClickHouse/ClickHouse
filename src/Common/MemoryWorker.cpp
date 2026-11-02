@@ -76,11 +76,25 @@ std::map<std::string, uint64_t> readAllMetricsFromStatFile(ReadBufferFromFile & 
 
 using Metrics = std::map<std::string_view, uint64_t>;
 
+std::optional<uint64_t> findMetric(const Metrics & metrics, std::string_view key)
+{
+    auto it = metrics.find(key);
+    if (it == metrics.end())
+        return std::nullopt;
+    return it->second;
+}
+
+uint64_t getMetric(const Metrics & metrics, std::string_view key)
+{
+    return findMetric(metrics, key).value_or(0);
+}
+
 void readMetricsFromStatFile(
     ReadBufferFromFile & buf,
     Metrics & metrics,
     std::initializer_list<std::string_view> keys,
-    bool * warnings_printed)
+    bool * warnings_printed,
+    std::initializer_list<std::string_view> optional_keys = {})
 {
     /// Zero out existing values; keeps map nodes allocated for reuse.
     for (auto & [_, v] : metrics)
@@ -124,16 +138,26 @@ void readMetricsFromStatFile(
         metrics[*it] = value;
     }
 
-    if (print_warnings)
+    for (const auto * it = keys.begin(); it != keys.end(); ++it)
     {
-        for (const auto * it = keys.begin(); it != keys.end(); ++it)
+        uint64_t key_bit = 1ull << (it - keys.begin());
+        if (seen_mask & key_bit)
+            continue;
+
+        /// A requested key that is absent from the file must not be reported as a zero value:
+        /// callers distinguish "the kernel does not expose this statistic" from a real zero
+        /// (e.g. `CGroupMemoryInactiveFile` is omitted rather than published as 0).
+        metrics.erase(*it);
+
+        /// An optional key may legitimately be absent (e.g. an older kernel does not expose `inactive_file`),
+        /// so it must not be logged as an error nor consume the single warning slot.
+        if (std::find(optional_keys.begin(), optional_keys.end(), *it) != optional_keys.end())
+            continue;
+
+        if (print_warnings)
         {
-            uint64_t key_bit = 1ull << (it - keys.begin());
-            if (!(seen_mask & key_bit))
-            {
-                *warnings_printed = true;
-                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
-            }
+            *warnings_printed = true;
+            LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
         }
     }
 }
@@ -146,9 +170,25 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
+        /// Only the keys needed for the usage value are parsed here, so that the long-existing usage path
+        /// does not depend on the fields that are read only for the `CGroupMemoryInactiveFile` metric.
         readMetricsFromStatFile(buf, metrics, {"rss"}, &warnings_printed);
-        auto it = metrics.find("rss");
-        return it != metrics.end() ? it->second : 0;
+        return calculateUsage(metrics);
+    }
+
+    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
+    {
+        std::lock_guard lock(mutex);
+        buf.rewind();
+        /// Use total_inactive_file for cgroups v1 to get the hierarchical value
+        /// (includes child cgroups), matching Kubernetes cadvisor behavior.
+        readMetricsFromStatFile(buf, metrics, {"rss", "total_inactive_file"}, &warnings_printed, {"total_inactive_file"});
+
+        CgroupsMemoryUsageAndInactive result;
+        result.usage = calculateUsage(metrics);
+        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
+        result.inactive_file = findMetric(metrics, "total_inactive_file");
+        return result;
     }
 
     std::string dumpAllStats() override
@@ -159,6 +199,12 @@ struct CgroupsV1Reader : ICgroupsReader
     }
 
 private:
+    /// The single source of truth for the cgroups v1 usage value.
+    static uint64_t calculateUsage(const Metrics & metrics)
+    {
+        return getMetric(metrics, "rss");
+    }
+
     std::mutex mutex;
     ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
     Metrics metrics TSA_GUARDED_BY(mutex);
@@ -173,25 +219,24 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
+        /// Only the keys needed for the usage value are parsed here, so that the long-existing usage path
+        /// does not depend on the fields that are read only for the `CGroupMemoryInactiveFile` metric.
+        readMetricsFromStatFile(stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
+        return calculateUsage(metrics);
+    }
+
+    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
+    {
+        std::lock_guard lock(mutex);
+        stat_buf.rewind();
         readMetricsFromStatFile(
-            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
+            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable", "inactive_file"}, &warnings_printed, {"inactive_file"});
 
-        auto get = [](const Metrics & m, std::string_view key) -> uint64_t
-        {
-            auto it = m.find(key);
-            return it != m.end() ? it->second : 0;
-        };
-
-        /// anon + sock: actual process memory.
-        /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
-        /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
-        /// before invoking the OOM killer, so it should not count against the application's memory budget.
-        uint64_t usage = get(metrics, "anon") + get(metrics, "sock");
-        uint64_t kernel = get(metrics, "kernel");
-        uint64_t slab_reclaimable = get(metrics, "slab_reclaimable");
-        if (kernel > slab_reclaimable)
-            usage += kernel - slab_reclaimable;
-        return usage;
+        CgroupsMemoryUsageAndInactive result;
+        result.usage = calculateUsage(metrics);
+        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
+        result.inactive_file = findMetric(metrics, "inactive_file");
+        return result;
     }
 
     std::string dumpAllStats() override
@@ -202,6 +247,21 @@ struct CgroupsV2Reader : ICgroupsReader
     }
 
 private:
+    /// The single source of truth for the cgroups v2 usage value.
+    /// anon + sock: actual process memory.
+    /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
+    /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
+    /// before invoking the OOM killer, so it should not count against the application's memory budget.
+    static uint64_t calculateUsage(const Metrics & metrics)
+    {
+        uint64_t usage = getMetric(metrics, "anon") + getMetric(metrics, "sock");
+        uint64_t kernel = getMetric(metrics, "kernel");
+        uint64_t slab_reclaimable = getMetric(metrics, "slab_reclaimable");
+        if (kernel > slab_reclaimable)
+            usage += kernel - slab_reclaimable;
+        return usage;
+    }
+
     std::mutex mutex;
     ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
     Metrics metrics TSA_GUARDED_BY(mutex);
@@ -248,6 +308,25 @@ std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsRead
 
     chassert(version == CgroupsVersion::V1);
     return std::make_shared<CgroupsV1Reader>(cgroup_path);
+}
+
+CgroupsMemoryUsageAndOptionalInactive ICgroupsReader::readMemoryUsageAndOptionalInactiveFile()
+{
+    CgroupsMemoryUsageAndOptionalInactive result;
+    try
+    {
+        auto stats = readMemoryUsageAndInactiveFile();
+        result.usage = stats.usage;
+        result.inactive_file = stats.inactive_file;
+    }
+    catch (...)
+    {
+        /// A malformed inactive-file line must not take down the pre-existing usage-based
+        /// metrics; `readMemoryUsage` parses only the fields the usage value is made of.
+        tryLogCurrentException("CgroupsReader");
+        result.usage = readMemoryUsage();
+    }
+    return result;
 }
 
 namespace MemoryWorkerHelpers
@@ -495,6 +574,18 @@ MemoryWorker::MemoryWorker(
 #endif
 }
 
+void MemoryWorker::setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache)
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    releasable_cache = std::move(cache);
+}
+
+std::shared_ptr<IMemoryReleasableCache> MemoryWorker::getReleasableCache()
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    return releasable_cache;
+}
+
 MemoryWorker::MemoryUsageSource MemoryWorker::getSource()
 {
     return source;
@@ -549,6 +640,7 @@ MemoryWorker::~MemoryWorker()
 MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 {
     MemoryUsage usage;
+    [[maybe_unused]] bool jemalloc_stats_refreshed = false;
 
     switch (source)
     {
@@ -564,6 +656,7 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
             epoch_mib.setValue(0);
+            jemalloc_stats_refreshed = true;
             usage.resident = resident_mib.getValue();
             break;
 #else
@@ -582,6 +675,17 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     /// sanitizer overhead (redzones, quarantine), but RSS does, so use sanitizer allocator bytes.
     /// RSS is still checked against the hard limit via `MemoryTracker::updateRSS`.
     usage.allocated = __sanitizer_get_current_allocated_bytes();
+#elif USE_JEMALLOC
+    /// Every allocation of `Allocator` goes through jemalloc, and `stats.allocated` counts the bytes
+    /// handed out to the application even if their pages are not touched yet, while the resident
+    /// memory does not include such pages. Correcting the tracker down to the resident memory alone
+    /// would forget memory that is allocated but not yet used and admit allocations past
+    /// `max_server_memory_usage` until the process is killed by the OOM killer. Correcting it down to
+    /// `stats.allocated` still removes the drift: bytes counted in the tracker without any allocation
+    /// behind them.
+    if (!jemalloc_stats_refreshed)
+        epoch_mib.setValue(0);
+    usage.allocated = std::max<Int64>(usage.resident, allocated_mib.getValue());
 #else
     usage.allocated = usage.resident;
 #endif
@@ -939,6 +1043,9 @@ void MemoryWorker::updateResidentMemoryThread()
             if (page_cache)
                 page_cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
+            if (auto cache = getReleasableCache())
+                cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
+
 #if USE_JEMALLOC
             const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
             const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
@@ -1002,8 +1109,8 @@ void MemoryWorker::updateResidentMemoryThread()
             }
 #endif
 
-            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise resident,
-            /// which may be much larger than what was actually allocated) when:
+            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise the maximum of
+            /// resident and jemalloc `stats.allocated`, see `getMemoryUsage`) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true

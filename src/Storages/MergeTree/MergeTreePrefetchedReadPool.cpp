@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
@@ -110,7 +111,10 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
             task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
 
-        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
+        const auto map = read_prefetch.getActualReadRequestMap(*task.read_info, nullptr);
+        readers = MergeTreeReadTask::createReaders(
+            task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges,
+            map, read_prefetch.getActualPatchReadRequestMaps(*task.read_info, map));
 
         /// This is already a prefetch thread, so initiate the prefetches inline.
         read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
@@ -298,7 +302,11 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         /// readers are potentially long, and refinement of a non-prefetched task may block.
         if (thread_task->isValidReadersFuture())
         {
-            thread_task->readers_future->wait();
+            {
+                /// Park the CPU lease while waiting for the prefetch (outside the pool mutex)
+                CPULeaseParkGuard cpu_park;
+                thread_task->readers_future->wait();
+            }
             if (thread_task->pruned_by_refiner)
                 continue;
         }

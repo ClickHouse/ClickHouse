@@ -7,7 +7,6 @@ keywords: ['prometheus', 'grafana', 'monitoring', 'metrics', 'exporter']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 The feature supports integrating [Prometheus](https://prometheus.io/) to monitor ClickHouse Cloud services. Access to Prometheus metrics is exposed via the [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview) endpoint that allows you to securely connect and export metrics into your Prometheus metrics collector. These metrics can be integrated with dashboards e.g., Grafana, Datadog for visualization.
@@ -180,18 +179,16 @@ scrape_configs:
     scheme: https
     params:
       filtered_metrics: ["true"]
-    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    metrics_path: "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus"
     basic_auth:
       username: <KEY_ID>
       password: <KEY_SECRET>
     honor_labels: true
 ```
 
-Note the `honor_labels` configuration parameter needs to be set to `true` for the instance label to be properly populated.  Additionally, `filtered_metrics` is set to `true` in the above example, but should be configured based on user preference.
+Note the `honor_labels` configuration parameter needs to be set to `true` for the instance label to be properly populated.  Additionally, `filtered_metrics` is set to `true` in the above example, but should be configured based on user preference. To scrape all services in an organization, use [automatic service discovery](#automatic-service-discovery).
 
 ### Automatic service discovery {#automatic-service-discovery}
-
-<BetaBadge />
 
 The discovery endpoint returns one scrape target per service in your organization, in the Prometheus [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Prometheus refreshes the target list on every discovery poll and scrapes each discovered target, so newly created services are picked up automatically and deleted services are dropped from the target list. Only services your API key is authorized to view are included; services that are being deleted or have been deleted are omitted.
 
@@ -229,10 +226,25 @@ A sample discovery response:
       "__param_filtered_metrics": "true",
       "clickhouse_org_id": "<ORG_ID>",
       "clickhouse_service_id": "<SERVICE_ID>",
-      "clickhouse_discovery_service_name": "my service"
+      "clickhouse_discovery_service_name": "my service",
+      "__meta_clickhouse_region": "us-east-1",
+      "__meta_clickhouse_provider": "aws",
+      "__meta_clickhouse_tag_env": "production",
+      "__meta_clickhouse_tagpresent_env": "true"
     }
   }
 ]
+```
+
+Each target also carries the service's region, cloud provider, and tags as `__meta_clickhouse_region`, `__meta_clickhouse_provider`, and `__meta_clickhouse_tag_<key>` labels. `__meta_clickhouse_tagpresent_<key>` is `true` for every tag, including tags without a value. Characters other than letters, digits, and underscores in tag keys become `_`. Prometheus drops `__meta_` labels after relabeling, so use `relabel_configs` to filter targets or keep these labels:
+
+```yaml
+    relabel_configs:
+      - source_labels: [__meta_clickhouse_tag_env]
+        regex: production
+        action: keep
+      - source_labels: [__meta_clickhouse_region]
+        target_label: region
 ```
 
 Discovered targets scrape with `filtered_metrics=true`. To discover targets that scrape the full metric set, add `?filtered_metrics=false` to the discovery URL. The full endpoint specification is available in the [Cloud API reference](/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
@@ -284,7 +296,7 @@ prometheus.scrape "clickhouse_cloud" {
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/services/<clickhouse_service_id>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -329,7 +341,7 @@ Self-managed users of Grafana can find the instructions for installing the Alloy
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+  metrics_path = "/v1/organizations/<organizationId>/services/<serviceId>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -362,7 +374,7 @@ You can use the Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) and
 init_config:
 
 instances:
-   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/services/12f4a114-9746-4a75-9ce5-161ec3a73c4c/prometheus?filtered_metrics=true'
      namespace: 'clickhouse'
      metrics:
          - '^ClickHouse.*'

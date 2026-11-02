@@ -101,6 +101,10 @@ public:
 
     virtual bool isLossyCompression() const { return false; }
 
+    /// If the codec needs the column data type to compress (e.g. `PCO`). An instance created without a type
+    /// can still decompress.
+    virtual bool requiresColumnTypeToCompress() const { return false; }
+
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
