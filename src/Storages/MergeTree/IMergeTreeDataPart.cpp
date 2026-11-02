@@ -161,6 +161,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 namespace FailPoints
@@ -1810,8 +1811,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable or an I/O error.
-        if (!isRetryableException(std::current_exception()) && !isIOErrorException(std::current_exception()))
+        /// Don't scare people with broken part error if it's retryable, an I/O error, or a part in a newer format version.
+        if (!isRetryableException(std::current_exception()) && !isIOErrorException(std::current_exception())
+            && getCurrentExceptionCode() != ErrorCodes::UNKNOWN_FORMAT_VERSION)
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {

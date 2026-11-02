@@ -3204,17 +3204,24 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
         res.is_broken = true;
         if (getCurrentExceptionCode() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
-            res.unknown_format_version_error = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+            res.unknown_format_version_error = getCurrentExceptionMessage(
+                /*with_stacktrace=*/ false, /*check_embedded_stacktrace=*/ false, /*with_extra_info=*/ true, /*with_version=*/ false);
         tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part_name, part_path));
 
         res.size_of_part = calculatePartSizeSafe(res.part, log.load());
         auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
 
-        LOG_ERROR(log,
-            "Detaching broken part {} (size: {}). "
-            "If it happened after update, it is likely because of backward incompatibility. "
-            "You need to resolve this manually",
-            fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
+        if (res.unknown_format_version_error)
+            LOG_ERROR(log,
+                "Part {} (size: {}) has a format version that this server does not support, "
+                "most likely it was written by a newer server version",
+                fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
+        else
+            LOG_ERROR(log,
+                "Detaching broken part {} (size: {}). "
+                "If it happened after update, it is likely because of backward incompatibility. "
+                "You need to resolve this manually",
+                fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
     };
 
     /// A persistent I/O error cannot be told from a damaged disk, so only the last attempt marks the part broken on it.

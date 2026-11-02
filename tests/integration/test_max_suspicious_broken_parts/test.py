@@ -213,6 +213,12 @@ def test_patch_part_in_unsupported_format_version_is_kept():
     error = node.query_and_get_error(f"ATTACH TABLE {table}")
     assert "UNKNOWN_FORMAT_VERSION" in error, error
     assert patch_name in error, error
+    patch_dir = patch_path.rstrip("/")
+    assert node.contains_in_log(
+        f"{patch_dir} (size: .*) has a format version that this server does not support"
+    )
+    assert not node.contains_in_log(f"Detaching broken part {patch_dir}")
+    assert not node.contains_in_log(f"Part {patch_path} is broken")
 
     table_path = patch_path.rstrip("/").rsplit("/", 1)[0]
     assert bash(f"test -d {patch_path} && echo yes || echo no").strip() == "yes"

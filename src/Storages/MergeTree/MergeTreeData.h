@@ -2267,7 +2267,7 @@ protected:
     struct LoadPartResult
     {
         bool is_broken = false;
-        /// Set if the part failed to load with `UNKNOWN_FORMAT_VERSION`: it was written by a newer server, it is not damaged.
+        /// Set if the part failed to load with `UNKNOWN_FORMAT_VERSION`, i.e. most likely it was written by a newer server version.
         std::optional<String> unknown_format_version_error;
         std::optional<size_t> size_of_part;
         MutableDataPartPtr part;
