@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --allow_experimental_parquet_parts=1 -q "
     DROP TABLE IF EXISTS t_parquet_external;
     CREATE TABLE t_parquet_external
     (

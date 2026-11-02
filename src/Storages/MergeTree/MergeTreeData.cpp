@@ -102,6 +102,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -278,6 +279,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_parquet_parts;
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
@@ -607,6 +609,41 @@ static bool isLossyStream(const ISerialization::SubstreamPath & substream_path, 
         return false;
     auto codec = getSubstreamCodecDescription(substream_path, column);
     return codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
+}
+
+void MergeTreeData::checkParquetPartsAllowed(const SettingsChanges & changes, const ContextPtr & query_context)
+{
+    if (query_context->getSettingsRef()[Setting::allow_experimental_parquet_parts])
+        return;
+
+    for (const auto & change : changes)
+    {
+        if (change.name != "min_bytes_for_parquet_part" && change.name != "min_rows_for_parquet_part"
+            && change.name != "min_level_for_parquet_part")
+            continue;
+
+        /// Zero does not enable the format: it can be set (or reset) without the setting.
+        if (change.value.getType() == Field::Types::UInt64 && change.value.safeGet<UInt64>() == 0)
+            continue;
+
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Data parts in `Parquet` format are experimental (setting `{}`). Set `allow_experimental_parquet_parts = 1` to enable them",
+            change.name);
+    }
+}
+
+void MergeTreeData::checkParquetPartsAllowedInProjections(const IAST * projections, const ContextPtr & query_context)
+{
+    if (!projections)
+        return;
+
+    for (const auto & child : projections->children)
+    {
+        const auto * projection = child->as<ASTProjectionDeclaration>();
+        if (projection && projection->with_settings)
+            checkParquetPartsAllowed(projection->with_settings->changes, query_context);
+    }
 }
 
 /// The dictionary stream of `LowCardinality` also stores its version and sizes, which a lossy codec would corrupt.
@@ -7135,8 +7172,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
     /// an override simply gone from the new list.
     if (!is_replay_on_another_replica)
-        local_context->checkMergeTreeSettingsConstraints(
-            *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+    {
+        const auto settings_changes = alter_effective_settings->changesFrom(*settings_from_storage);
+        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, settings_changes);
+        checkParquetPartsAllowed(settings_changes, local_context);
+
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_PROJECTION || !command.projection_decl)
+                continue;
+            const auto * projection = command.projection_decl->as<ASTProjectionDeclaration>();
+            if (projection && projection->with_settings)
+                checkParquetPartsAllowed(projection->with_settings->changes, local_context);
+        }
+    }
 
     const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 

@@ -4,6 +4,8 @@
 -- The uncompressed size of a part in `Parquet` format includes the uncompressed sizes of its columns,
 -- so the limits on the uncompressed size of the table and of the patch parts apply to such parts.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_parquet_size_limit;
 DROP TABLE IF EXISTS t_parquet_patches_limit;
 

@@ -11476,6 +11476,12 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 Enable experimental table function `eval`.
 )", EXPERIMENTAL, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
+    DECLARE(Bool, allow_experimental_parquet_parts, false, R"(
+Allow to create, alter, and add projections to `MergeTree` tables with data parts in `Parquet` format, i.e. to set
+the table settings `min_bytes_for_parquet_part`, `min_rows_for_parquet_part`, or `min_level_for_parquet_part`
+(also in the settings of a projection) to a non-zero value. Existing tables keep working without this setting.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `Parquet` format of data parts in `MergeTree` tables."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

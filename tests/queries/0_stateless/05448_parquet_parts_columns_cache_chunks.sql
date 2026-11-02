@@ -5,6 +5,7 @@
 -- The columns cache keeps a column of a row group in chunks of 65536 rows. A row group of a Parquet part larger
 -- than a chunk is decoded a chunk at a time while it uses the cache, even when the blocks are smaller or not aligned.
 
+SET allow_experimental_parquet_parts = 1;
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
 

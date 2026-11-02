@@ -26,7 +26,7 @@ QUERY="SELECT sum(id), sum(length(value)) FROM t_parquet_cache_drop
     SETTINGS enable_parallel_replicas = 0, use_columns_cache = 1, max_threads = 2, max_block_size = 1000,
         merge_tree_min_read_task_size = 1, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 0"
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT --allow_experimental_parquet_parts=1 --query "
     DROP TABLE IF EXISTS t_parquet_cache_drop;
     CREATE TABLE t_parquet_cache_drop (id UInt64, value String) ENGINE = MergeTree ORDER BY id
     SETTINGS min_rows_for_parquet_part = 1, parquet_row_group_granularity_rows = 1000;

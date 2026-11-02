@@ -4,6 +4,7 @@
 
 -- The columns cache serves the columns of data parts in Parquet format: the columns of row groups are cached (in chunks of up to 65536 rows).
 
+SET allow_experimental_parquet_parts = 1;
 SET max_threads = 1;
 -- `enable_parallel_replicas = 0`: with parallel replicas another replica may do some of the reads,
 -- so the entries written by this query would depend on how the reads are split.

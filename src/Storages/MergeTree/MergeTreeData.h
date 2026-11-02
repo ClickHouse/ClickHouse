@@ -1210,6 +1210,13 @@ public:
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
+    /// Throws if `changes` (of the settings of a table or of a projection) enable data parts in `Parquet` format, which is
+    /// experimental, and the query does not allow it with `allow_experimental_parquet_parts`. Only for a definition or
+    /// an `ALTER` written now: an existing table with such settings must still load and replicate.
+    static void checkParquetPartsAllowed(const SettingsChanges & changes, const ContextPtr & query_context);
+    /// The same for the `WITH SETTINGS` clauses of the projection declarations in `projections` (a list of them, or null).
+    static void checkParquetPartsAllowedInProjections(const IAST * projections, const ContextPtr & query_context);
+
     /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
     /// Only for a definition written now: an existing table with such a column must still load and replicate.
     static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);

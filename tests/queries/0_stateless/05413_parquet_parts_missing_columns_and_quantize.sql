@@ -4,6 +4,8 @@
 -- Markers of missing columns are kept in data parts in Parquet format,
 -- and the columns with the `Quantized` codec are not stored in Parquet format.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_parquet_missing;
 
 CREATE TABLE t_parquet_missing (k UInt64, b UInt64, payload String)

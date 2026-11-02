@@ -5,6 +5,7 @@
 -- The reader of `Parquet` parts reads and caches the whole column for a subcolumn,
 -- so the columns cache write estimate must charge the whole column, not only the subcolumn.
 
+SET allow_experimental_parquet_parts = 1;
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
 SET use_indexes_refiner_in_read_pools = 0;

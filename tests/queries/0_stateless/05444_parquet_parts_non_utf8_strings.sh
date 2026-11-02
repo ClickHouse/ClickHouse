@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --allow_experimental_parquet_parts=1 -q "
     DROP TABLE IF EXISTS t_parquet_non_utf8;
     CREATE TABLE t_parquet_non_utf8 (k UInt64, valid String, invalid String, split String, nested Array(String), lc LowCardinality(String))
     ENGINE = MergeTree ORDER BY k

@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'")
 ESTIMATE=$(( MEMORY_LIMIT / 16 / 16 / 2 ))
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT --allow_experimental_parquet_parts=1 --query "
 DROP TABLE IF EXISTS t_merge_width_parquet;
 
 CREATE TABLE t_merge_width_parquet (k UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64,

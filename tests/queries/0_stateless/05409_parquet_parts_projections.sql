@@ -3,6 +3,8 @@
 
 -- A projection in Parquet format inside data parts in another format, and vice versa.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_projection_parquet;
 DROP TABLE IF EXISTS t_parquet_projection;
 

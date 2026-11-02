@@ -5,6 +5,7 @@
 -- The columns cache serves all row groups of a data part in Parquet format, when the part is read
 -- in multiple tasks by the same reader.
 
+SET allow_experimental_parquet_parts = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_parquet_cache_tasks;

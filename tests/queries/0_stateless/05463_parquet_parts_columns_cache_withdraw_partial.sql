@@ -6,6 +6,7 @@
 -- with all its chunks. A read that stops before the end of a row group (`LIMIT`, or a mark range ending inside it)
 -- must take its chunks written so far back out of the cache: they cannot serve any read.
 
+SET allow_experimental_parquet_parts = 1;
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
 SET use_indexes_refiner_in_read_pools = 0;

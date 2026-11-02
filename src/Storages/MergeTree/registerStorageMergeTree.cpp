@@ -972,8 +972,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
         /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
         if (is_fresh_definition)
-            args.getLocalContext()->checkMergeTreeSettingsConstraints(
-                initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+        {
+            const auto settings_changes = storage_settings->changesFrom(initial_storage_settings);
+            args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, settings_changes);
+            MergeTreeData::checkParquetPartsAllowed(settings_changes, args.getLocalContext());
+            if (args.query.columns_list)
+                MergeTreeData::checkParquetPartsAllowedInProjections(args.query.columns_list->projections, args.getLocalContext());
+        }
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
@@ -1475,7 +1480,7 @@ Data parts can be stored in `Wide` or `Compact` format. In `Wide` format each co
 
 Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the table engine. If the number of bytes or rows in a data part is less then the corresponding setting's value, the part is stored in `Compact` format. Otherwise it is stored in `Wide` format. If none of these settings is set, data parts are stored in `Wide` format.
 
-Data parts can also be stored in `Parquet` format. In `Parquet` format all columns of a data part are stored in a single `data.parquet` file in the [Parquet](/reference/formats/Parquet/Parquet) format, so it can be read by external applications. The other files of the data part, such as the primary index, data skipping indexes, marks, statistics, and metadata files, are the same as in other formats. The usage of the `Parquet` format is controlled by the `min_bytes_for_parquet_part`, `min_rows_for_parquet_part`, and `min_level_for_parquet_part` settings: a data part is stored in `Parquet` format if at least one of them is not zero, and the part satisfies all of them. For example, set `min_rows_for_parquet_part = 1` to store all data parts in `Parquet` format, or `min_level_for_parquet_part = 1` to store only merged data parts in `Parquet` format.
+Data parts can also be stored in `Parquet` format. In `Parquet` format all columns of a data part are stored in a single `data.parquet` file in the [Parquet](/reference/formats/Parquet/Parquet) format, so it can be read by external applications. The other files of the data part, such as the primary index, data skipping indexes, marks, statistics, and metadata files, are the same as in other formats. The usage of the `Parquet` format is controlled by the `min_bytes_for_parquet_part`, `min_rows_for_parquet_part`, and `min_level_for_parquet_part` settings: a data part is stored in `Parquet` format if at least one of them is not zero, and the part satisfies all of them. For example, set `min_rows_for_parquet_part = 1` to store all data parts in `Parquet` format, or `min_level_for_parquet_part = 1` to store only merged data parts in `Parquet` format. The `Parquet` format of data parts is experimental: to enable it in `CREATE TABLE`, `ALTER TABLE`, or the settings of a projection, set `allow_experimental_parquet_parts = 1`.
 
 In a data part in `Parquet` format, the granules are the row groups of the Parquet file, and there is one mark and one value of the primary key for each row group. The size of row groups is restricted by the `parquet_row_group_granularity_rows` and `parquet_row_group_granularity_bytes` settings, which act like `index_granularity` and `index_granularity_bytes`. Row groups are usually much larger than granules. The data types of the columns are stored as similar Parquet types; values of the types that cannot be represented in Parquet without loss (such as `Variant`, `Dynamic`, `JSON`, `AggregateFunction`) are stored as binary strings in the ClickHouse binary format. The codecs of the columns are mapped to similar Parquet compression methods and encodings, for example, `ZSTD(3)` to the `ZSTD` compression with level 3, and `Delta` to the `DELTA_BINARY_PACKED` encoding. A table with columns with encryption codecs or the `Quantized` codec does not create data parts in `Parquet` format. The Parquet file contains column statistics, page indexes, and bloom filters for external applications, while ClickHouse uses the usual index files of the data part.
 

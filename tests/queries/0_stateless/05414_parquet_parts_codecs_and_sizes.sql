@@ -6,6 +6,8 @@
 -- The sizes of the columns of Parquet parts are known.
 -- The codecs of compound types apply to their values.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_parquet_encrypted;
 DROP TABLE IF EXISTS t_parquet_encrypted_default;
 DROP TABLE IF EXISTS t_parquet_datetime64;

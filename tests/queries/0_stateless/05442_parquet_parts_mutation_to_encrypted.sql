@@ -4,6 +4,8 @@
 -- A mutation of a data part in Parquet format writes a part in another format if an encryption codec
 -- applies to the table since the part was written.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_parquet_mutation_default_codec;
 DROP TABLE IF EXISTS t_parquet_mutation_new_column;
 

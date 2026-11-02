@@ -5,6 +5,7 @@
 -- A member of `Nested` missing in a `Parquet` part takes its offsets from an existing sibling, which the reader
 -- reads and caches as a whole, so the columns cache write estimate must charge that sibling.
 
+SET allow_experimental_parquet_parts = 1;
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
 SET use_indexes_refiner_in_read_pools = 0;

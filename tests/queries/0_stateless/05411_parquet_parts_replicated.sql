@@ -3,6 +3,8 @@
 
 -- Replication of data parts in Parquet format.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_parquet_r1 SYNC;
 DROP TABLE IF EXISTS t_parquet_r2 SYNC;
 

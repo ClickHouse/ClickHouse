@@ -4,6 +4,8 @@
 -- A column of a data part in Parquet format is not confused with a nested field of another column
 -- that has the same name, e.g. the column `m.value` with the values of the map `m`.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_parquet_dotted;
 
 CREATE TABLE t_parquet_dotted (id UInt64, m Map(String, UInt64), `m.value` UInt64)

@@ -3,6 +3,8 @@
 
 -- Data parts in Parquet format: inserts, reads, merges, and the primary key.
 
+SET allow_experimental_parquet_parts = 1;
+
 DROP TABLE IF EXISTS t_parquet;
 DROP TABLE IF EXISTS t_reference;
 

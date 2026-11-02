@@ -4,6 +4,7 @@
 -- Values of all data types are read back from data parts in Parquet format without changes.
 -- The types without a lossless representation in Parquet are stored in the ClickHouse binary format.
 
+SET allow_experimental_parquet_parts = 1;
 SET allow_experimental_time_time64_type = 1, allow_suspicious_low_cardinality_types = 1;
 SET enable_json_type = 1, allow_experimental_variant_type = 1, allow_experimental_dynamic_type = 1;
 
