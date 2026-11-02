@@ -47,8 +47,10 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initi
     AND log_comment = '05410_empty_data'
 SETTINGS enable_parallel_replicas = 0;
 
-INSERT INTO FUNCTION timeSeriesSamples(ts) SELECT id, toDateTime64(100, 3), 5 FROM timeSeriesTags(ts)
-SETTINGS enable_parallel_replicas = 0;
+INSERT INTO ts (metric_name, tags, samples) VALUES
+    ('req', map('job', 'api', 'instance', 'i1'), [(toDateTime64(100, 3), 5.)]),
+    ('req', map('job', 'db', 'instance', 'i2'), [(toDateTime64(100, 3), 5.)]),
+    ('lim', map('job', 'api', 'instance', 'i1'), [(toDateTime64(100, 3), 5.)]);
 
 SELECT 'with data';
 SELECT tags, samples FROM prometheusQueryRange('ts', 'req', 100, 120, 10) ORDER BY toString(tags);
