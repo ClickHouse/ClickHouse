@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- The query shapes a `Merge` table can be read with, under plan-based parallel replicas: the `merge` table
 -- function, a filter on the `_table` virtual column, a query without aggregation, a query reading in order
 -- with a limit, and the shapes which are not expanded and stay on a single replica (`FINAL`, a child which
@@ -26,7 +27,6 @@ CREATE TABLE m_pbm ENGINE = Merge(currentDatabase(), '^t_pbm_[12]$');
 SELECT '-- non-parallel';
 SELECT count(), sum(k), sum(v) FROM m_pbm;
 
-SET enable_analyzer = 1;
 SET max_threads = 4;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;

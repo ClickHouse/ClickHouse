@@ -11,20 +11,16 @@ doc_type: 'guide'
 
 有关摄取路径和使用路径，请参阅 [构建集成](/zh/resources/develop-contribute/integrations/building-integrations)；有关如何发布结果，请参阅 [为你的集成编写文档](/zh/resources/develop-contribute/integrations/documenting-your-integration)。
 
-<div id="test-matrix">
-  ## 测试矩阵
-</div>
+## 测试矩阵 {#test-matrix}
 
 覆盖两种部署模式。大多数客户通常只运行其中一种，而且在某些方面 (身份验证、网络、可用功能) 会存在差异。
 
-* **ClickHouse Cloud：**注册[免费试用](https://clickhouse.com/cloud)。Development 层级无需提供信用卡
+* **ClickHouse Cloud：**注册[免费试用](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-testing-your-integration)。Development 层级无需提供信用卡
 * **自托管 (开源) ：**使用 [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases) 中最新的稳定版本。[安装指南](/zh/get-started/setup/install) 是借助 Docker 获取本地实例的最快方式
 
 针对这两种模式都进行测试，并在集成页面中记录任何功能缺口。
 
-<div id="what-to-test">
-  ## 测试内容
-</div>
+## 测试内容 {#what-to-test}
 
 **功能正确性。** 覆盖你的集成暴露出的每一条代码路径：摄取、查询、schema 发现、错误处理以及重新连接。如果你的产品会向终端用户暴露 SQL，请确认 UI 生成的查询能够完整往返且不出问题。
 
@@ -36,9 +32,7 @@ doc_type: 'guide'
 
 **连接生命周期。** 确认在连接中断、服务器重启和慢查询情况下，系统行为仍然合理。许多问题处理最终都可追溯到连接处理，而不是查询语义本身。
 
-<div id="recommended-example-datasets">
-  ## 推荐的示例数据集
-</div>
+## 推荐的示例数据集 {#recommended-example-datasets}
 
 完整集合见 [**示例数据集**](/zh/get-started/sample-datasets/index) 部分。以下四个数据集涵盖了大多数集成测试需求：
 
@@ -49,9 +43,7 @@ doc_type: 'guide'
 
 如需验证极大规模场景，请使用 **[WikiStat](/zh/get-started/sample-datasets/wikistat)** (约 0.5 万亿条记录) 。
 
-<div id="what-to-capture-from-your-testing">
-  ## 测试中需提供的内容
-</div>
+## 测试中需提供的内容 {#what-to-capture-from-your-testing}
 
 提交集成以供审核时，请提供：
 

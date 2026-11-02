@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 
 SELECT DISTINCT
     firstNonDefault(__table3.dummy, __table4.dummy) AS dummy,

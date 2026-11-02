@@ -239,6 +239,9 @@ public:
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
+    /// Propagated like the tracing context: a job scheduled under `QueryCancellationBlocker` runs under one.
+    bool query_cancellation_blocked = false;
+
     /// Call stacks of all jobs' schedulings leading to this one
     std::vector<FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
@@ -254,11 +257,12 @@ public:
 
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
-        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
+        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
         : job(job_), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
-        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
+        thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
+        enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
             return;
@@ -548,6 +552,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                    /// Not for pool worker threads (created without propagation), which outlive the scheduling scope
+                    propagate_opentelemetry_tracing_context && DB::ThreadStatus::QueryCancellationBlocker::isActive(),
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
@@ -1113,6 +1119,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
+
+        /// The job may attach to the thread group of the scheduling thread and inherit its cancellation predicates.
+        std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+        if (job_data->query_cancellation_blocked)
+            cancellation_blocker.emplace();
 
         DB::Exception::enable_job_stack_trace = job_data->enable_job_stack_trace;
         if (DB::Exception::enable_job_stack_trace)

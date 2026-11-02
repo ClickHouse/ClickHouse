@@ -412,21 +412,24 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
             local_tables_cache.erase(iterator);
         }
 
-        local_tables_cache[table_name] = std::make_pair(
-            table_modification_time,
-            std::make_shared<StorageMySQL>(
-                StorageID(database_name, table_name),
-                std::move(mysql_pool),
-                database_name_in_mysql,
-                TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
-                /* replace_query_ */ false,
-                /* on_duplicate_clause = */ "",
-                ColumnsDescription{columns_name_and_type},
-                ConstraintsDescription{},
-                String{},
-                getContext(),
-                MySQLSettings{}));
+        local_tables_cache[table_name] = std::make_pair(table_modification_time, createStorage(table_name, columns_name_and_type));
     }
+}
+
+StoragePtr DatabaseMySQL::createStorage(const String & table_name, const ColumnsDescription & columns) const
+{
+    return std::make_shared<StorageMySQL>(
+        StorageID(database_name, table_name),
+        std::move(mysql_pool),
+        database_name_in_mysql,
+        TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+        /* replace_query_ */ false,
+        /* on_duplicate_clause = */ "",
+        columns,
+        ConstraintsDescription{},
+        String{},
+        getContext(),
+        *mysql_settings);
 }
 
 std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextPtr local_context) const
@@ -622,6 +625,10 @@ void DatabaseMySQL::attachTable(ContextPtr local_context, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{} because it already exists.",
             backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
+    /// Not `storage`: it is built from the table definition, which has no `SETTINGS`.
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
+    auto database_storage = createStorage(table_name, metadata_snapshot->getColumns());
+
     /// The disk work runs first, so a failed `ATTACH TABLE` stays retryable. The two statements
     /// below cannot throw: the cache key is known to exist and erasing a present name allocates
     /// nothing.
@@ -640,9 +647,7 @@ void DatabaseMySQL::attachTable(ContextPtr local_context, const String & table_n
         db_disk->removeFileIfExists(remove_flag);
     }
 
-    /// We use the new storage to replace the original storage, because the original storage may have been dropped
-    /// Although we still keep its
-    local_tables_cache[table_name].second = storage;
+    local_tables_cache[table_name].second = std::move(database_storage);
 
     remove_or_detach_tables.erase(table_name);
 }
@@ -806,7 +811,13 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         ASTs & arguments = engine->arguments->children;
         auto mysql_settings = std::make_unique<MySQLSettings>();
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+                arguments,
+                args.context,
+                /*throw_unknown_collection=*/ true,
+                /*complex_args=*/ nullptr,
+                /*dependent_table_id=*/ nullptr,
+                engine_define->settings))
         {
             configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
         }
@@ -821,7 +832,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments "
-                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...').");
+                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...', ssl_key_passphrase = '...').");
 
 
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
@@ -868,7 +879,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn, {
+    factory.registerDatabase("MySQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,
@@ -923,6 +934,12 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
+### `connection_auto_close` {#connection-auto-close}
+
+Allows to automatically close the connection after query execution, i.e. disable connection reuse. When set to `0`, each table of the database keeps its connections in its own pool for the next query.
+
+Default value: `1`.
+
 ## TLS/SSL {#tls-ssl}
 
 The credentials of an encrypted connection to MySQL are passed as [named collection](/concepts/features/configuration/server-config/named-collections) keys (or as key-value arguments):
@@ -932,8 +949,9 @@ The credentials of an encrypted connection to MySQL are passed as [named collect
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
+| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 
-The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+The values are the contents of the corresponding PEM files (and the key passphrase), which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
 
 The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
 

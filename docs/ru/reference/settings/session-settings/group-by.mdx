@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="group_by_overflow_mode">
-  ## group_by_overflow_mode
-</div>
+## group_by_overflow_mode {#group_by_overflow_mode}
 
 <SettingsInfoBlock type="OverflowModeGroupBy" default_value="throw" />
 
@@ -29,9 +27,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Использование значения `any` позволяет выполнить приблизительный вариант GROUP BY. Качество
 этого приближения зависит от статистической природы данных.
 
-<div id="group_by_top_k_optimization_observation_rows">
-  ## group_by_top_k_optimization_observation_rows
-</div>
+## group_by_top_k_optimization_observation_rows {#group_by_top_k_optimization_observation_rows}
 
 <ExperimentalBadge />
 
@@ -45,25 +41,32 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Это не влияет на запросы `GROUP BY keys LIMIT K` без `ORDER BY`, для которых заморозка всегда отключена: план такого запроса содержит синтезированную сортировку, которая оправдана лишь пока куча ограничивает хеш-таблицу, поэтому заморозка кучи сделала бы план медленнее, чем без оптимизации.
 
-<div id="group_by_two_level_threshold">
-  ## group_by_two_level_threshold
-</div>
+## group_by_top_k_optimization_shared_boundary {#group_by_top_k_optimization_shared_boundary}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка: самая жёсткая граница пропуска top-K становится общей для всех потоков агрегации, поэтому потоки, локальные ключи которых имеют низкий ранг, могут пропускать строки по границе, опубликованной другим потоком. previous_value=false, поэтому при использовании `compatibility` с версиями до 26.10 восстанавливаются отдельные границы для каждого потока."}]}]} />
+
+Для `enable_group_by_top_k_optimization`: делает самую жёсткую границу пропуска общей для всех потоков агрегации. Каждый поток публикует границу своего Set top-K раз в обработанный блок, если эта граница стала жёстче, а все потоки пропускают строки по лучшей из опубликованных границ, а не только по собственной. Если существует Set из `K` ключей, строго лучших, чем строка, это доказывает, что строка не может попасть в итоговый результат, независимо от того, в каком потоке находятся эти ключи. Поэтому общий доступ к границе не влияет на результат: он лишь позволяет потокам с низкоранговыми локальными ключами (например, когда значения ключей сгруппированы в отдельных частях таблицы) пропускать строки, которые иначе были бы агрегированы впустую.
+
+Возможные значения:
+
+* 0 — отключено.
+* 1 — включено.
+
+## group_by_two_level_threshold {#group_by_two_level_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 При каком количестве ключей начинается двухуровневая агрегация. 0 — порог не задан.
 
-<div id="group_by_two_level_threshold_bytes">
-  ## group_by_two_level_threshold_bytes
-</div>
+## group_by_two_level_threshold_bytes {#group_by_two_level_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="50000000" />
 
 Минимальный размер состояния агрегации в байтах, при котором начинает использоваться двухуровневая агрегация. 0 — порог не задан. Двухуровневая агрегация используется, когда срабатывает хотя бы один из порогов.
 
-<div id="group_by_use_nulls">
-  ## group_by_use_nulls
-</div>
+## group_by_use_nulls {#group_by_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

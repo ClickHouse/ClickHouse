@@ -9,25 +9,11 @@ DATA_MANIFEST_COUNT = 8
 ROWS_PER_INSERT = 4
 ROW_COUNT = DATA_MANIFEST_COUNT * ROWS_PER_INSERT
 
-# Must match the delay the `iceberg_slow_manifest_read` failpoint injects.
-SLEEP_PER_MANIFEST_SECONDS = 0.40
-
 STORAGE_TYPE = "local"
 
 
 def get_array(query_result: str):
     return sorted([int(x) for x in query_result.strip().split("\n")])
-
-
-def elapsed(node, query, **kwargs):
-    query_id = get_uuid_str()
-    node.query(query, query_id=query_id, **kwargs)
-    node.query("SYSTEM FLUSH LOGS query_log")
-    duration_result = node.query(
-        f"""SELECT query_duration_ms / 1000.0 as duration FROM system.query_log
-        WHERE type = 'QueryFinish' AND query_id = '{query_id}' LIMIT 1"""
-    )
-    return float(duration_result.strip())
 
 
 def write_table(
@@ -92,7 +78,8 @@ def check_data_manifests(instance, table_expression: str) -> None:
 
 
 def test_data_manifest_decode_concurrency(started_cluster_iceberg_with_spark):
-    """The result must not depend on `iceberg_manifest_decode_concurrency`."""
+    """The result must not depend on how many threads read the table: one thread parses
+    the manifests in order, several threads parse different manifests concurrently."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_data_manifest_decode_concurrency_" + get_uuid_str()
 
@@ -103,20 +90,18 @@ def test_data_manifest_decode_concurrency(started_cluster_iceberg_with_spark):
     check_data_manifests(instance, TABLE_NAME)
 
     expected = list(range(ROW_COUNT))
-    for concurrency in [1, 2, 4, 16]:
+    for max_threads in [1, 16]:
         assert (
             get_array(
                 instance.query(
                     f"SELECT id FROM {TABLE_NAME} ORDER BY id",
-                    settings={
-                        "iceberg_manifest_decode_concurrency": concurrency
-                    },
+                    settings={"max_threads": max_threads},
                 )
             )
             == expected
-        ), f"wrong result with iceberg_manifest_decode_concurrency={concurrency}"
+        ), f"wrong result with max_threads={max_threads}"
 
-    # A filter on the partition column makes every concurrent decode task evaluate the same
+    # A filter on the partition column makes every thread parsing a manifest evaluate the same
     # shared filter DAG (with its lazily materialized IN set) while pruning manifest entries.
     filtered_parts = [1, 3, 6]
     expected_filtered = sorted(
@@ -124,18 +109,16 @@ def test_data_manifest_decode_concurrency(started_cluster_iceberg_with_spark):
         for row_id in range(ROW_COUNT)
         if row_id // ROWS_PER_INSERT in filtered_parts
     )
-    for concurrency in [1, 2, 4, 16]:
+    for max_threads in [1, 16]:
         result = get_array(
             instance.query(
                 f"SELECT id FROM {TABLE_NAME} WHERE part IN (1, 3, 6) ORDER BY id",
-                settings={
-                    "iceberg_manifest_decode_concurrency": concurrency
-                },
+                settings={"max_threads": max_threads},
             )
         )
         assert (
             result == expected_filtered
-        ), f"wrong filtered result with iceberg_manifest_decode_concurrency={concurrency}"
+        ), f"wrong filtered result with max_threads={max_threads}"
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
@@ -143,8 +126,8 @@ def test_data_manifest_decode_concurrency(started_cluster_iceberg_with_spark):
 def test_data_and_delete_manifest_decode_concurrency(
     started_cluster_iceberg_with_spark,
 ):
-    """Data- and delete-manifest decode run concurrently and share one filter DAG;
-    the result must not depend on the concurrency setting."""
+    """Data and delete manifests are parsed concurrently and share one filter DAG;
+    the result must not depend on how many threads read the table."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_data_and_delete_manifest_decode_concurrency_" + get_uuid_str()
 
@@ -171,18 +154,14 @@ def test_data_and_delete_manifest_decode_concurrency(
         for row_id in range(ROW_COUNT)
         if row_id // ROWS_PER_INSERT in filtered_parts and row_id not in deleted_ids
     )
-    for concurrency in [1, 4, 16]:
+    for max_threads in [1, 16]:
         result = get_array(
             instance.query(
                 f"SELECT id FROM {TABLE_NAME} WHERE part IN (1, 3, 6) ORDER BY id",
-                settings={
-                    "iceberg_manifest_decode_concurrency": concurrency,
-                },
+                settings={"max_threads": max_threads},
             )
         )
-        assert result == expected, (
-            f"wrong result with iceberg_manifest_decode_concurrency={concurrency}"
-        )
+        assert result == expected, f"wrong result with max_threads={max_threads}"
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
@@ -190,7 +169,7 @@ def test_data_and_delete_manifest_decode_concurrency(
 def test_data_manifest_decode_concurrency_row_lineage(started_cluster_iceberg_with_spark):
     """Format-version 3 manifests carry an inherited `first_row_id`, which the manifest
     iterator materializes per entry before yielding anything; the row ids and the result
-    must not depend on the concurrency."""
+    must not depend on how many threads read the table."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_data_manifest_decode_concurrency_row_lineage_" + get_uuid_str()
 
@@ -202,30 +181,26 @@ def test_data_manifest_decode_concurrency_row_lineage(started_cluster_iceberg_wi
     serial = instance.query(
         f"SELECT id, _row_id FROM {TABLE_NAME} ORDER BY id",
         settings={
-            "iceberg_manifest_decode_concurrency": 1,
+            "max_threads": 1,
             "use_iceberg_metadata_files_cache": 0,
         },
     )
     assert serial.strip(), "the serial read returned no rows; fixture broken"
-    for concurrency in [4, 16]:
-        result = instance.query(
-            f"SELECT id, _row_id FROM {TABLE_NAME} ORDER BY id",
-            settings={
-                "iceberg_manifest_decode_concurrency": concurrency,
-                "use_iceberg_metadata_files_cache": 0,
-            },
-        )
-        assert result == serial, (
-            f"row lineage changed with iceberg_manifest_decode_concurrency={concurrency}"
-        )
+    result = instance.query(
+        f"SELECT id, _row_id FROM {TABLE_NAME} ORDER BY id",
+        settings={
+            "max_threads": 16,
+            "use_iceberg_metadata_files_cache": 0,
+        },
+    )
+    assert result == serial, "row lineage changed with max_threads=16"
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 def test_data_manifest_decode_large_manifest(started_cluster_iceberg_with_spark):
-    """A single manifest holding three times more entries than the producer queue's
-    capacity (100), so pushes block in the middle of the manifest at every concurrency;
-    the result must not depend on the concurrency."""
+    """A single manifest with 300 entries, read by one thread or by several threads
+    taking turns on it; the result must not depend on how many threads read the table."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_data_manifest_decode_large_manifest_" + get_uuid_str()
@@ -252,33 +227,31 @@ def test_data_manifest_decode_large_manifest(started_cluster_iceberg_with_spark)
     )
 
     expected = list(range(entry_count))
-    for concurrency in [1, 4]:
+    for max_threads in [1, 16]:
         result = get_array(
             instance.query(
                 f"SELECT id FROM {TABLE_NAME} ORDER BY id",
                 settings={
-                    "iceberg_manifest_decode_concurrency": concurrency,
+                    "max_threads": max_threads,
                     "use_iceberg_metadata_files_cache": 0,
                 },
             )
         )
-        assert (
-            result == expected
-        ), f"wrong result with iceberg_manifest_decode_concurrency={concurrency}"
+        assert result == expected, f"wrong result with max_threads={max_threads}"
 
     # A filter pruning every entry keeps the row loop inside `ManifestFileIterator::next`
     # busy for the whole manifest without yielding.
-    for concurrency in [1, 16]:
+    for max_threads in [1, 16]:
         count = instance.query(
             f"SELECT count() FROM {TABLE_NAME} WHERE id < 0",
             settings={
-                "iceberg_manifest_decode_concurrency": concurrency,
+                "max_threads": max_threads,
                 "use_iceberg_metadata_files_cache": 0,
             },
         )
         assert (
             int(count.strip()) == 0
-        ), f"fully pruned read returned rows with iceberg_manifest_decode_concurrency={concurrency}"
+        ), f"fully pruned read returned rows with max_threads={max_threads}"
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
@@ -286,10 +259,10 @@ def test_data_manifest_decode_large_manifest(started_cluster_iceberg_with_spark)
 def test_data_manifest_decode_concurrency_subquery_filter(
     started_cluster_iceberg_with_spark,
 ):
-    """`part IN (SELECT ...)` is backed by `FutureSetFromSubquery`, which the concurrent
-    decode tasks build lazily through the shared filter DAG; the result must not depend
-    on the concurrency. (Literal tuple `IN` goes through `FutureSetFromTuple` instead
-    and is covered above.)"""
+    """`part IN (SELECT ...)` is backed by `FutureSetFromSubquery`, which the threads
+    parsing manifests concurrently use through the shared filter DAG; the result must not
+    depend on how many threads read the table. (Literal tuple `IN` goes through
+    `FutureSetFromTuple` instead and is covered above.)"""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_data_manifest_decode_concurrency_subquery_" + get_uuid_str()
 
@@ -305,7 +278,7 @@ def test_data_manifest_decode_concurrency_subquery_filter(
         for row_id in range(ROW_COUNT)
         if row_id // ROWS_PER_INSERT in filtered_parts
     )
-    for concurrency in [1, 4, 16]:
+    for max_threads in [1, 16]:
         for _ in range(2):
             result = get_array(
                 instance.query(
@@ -313,72 +286,14 @@ def test_data_manifest_decode_concurrency_subquery_filter(
                     "WHERE part IN (SELECT toInt32(number * 2 + 1) FROM numbers(3)) "
                     "ORDER BY id",
                     settings={
-                        "iceberg_manifest_decode_concurrency": concurrency,
+                        "max_threads": max_threads,
                         "use_iceberg_metadata_files_cache": 0,
                     },
                 )
             )
             assert result == expected, (
-                f"wrong subquery-filtered result with "
-                f"iceberg_manifest_decode_concurrency={concurrency}"
+                f"wrong subquery-filtered result with max_threads={max_threads}"
             )
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
-
-def test_data_manifest_decode_concurrency_bounds_reads(
-    started_cluster_iceberg_with_spark,
-):
-    """`iceberg_manifest_decode_concurrency = 1` reads the manifests one at a
-    time, so with the failpoint delaying every manifest read the query cannot run
-    faster than one delay per manifest; a higher value overlaps the reads."""
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-
-    # Skip timing asserts on slow builds.
-    slow_build = (
-        instance.is_built_with_sanitizer() or instance.is_built_with_llvm_coverage()
-    )
-
-    TABLE_NAME = "test_data_manifest_decode_concurrency_bounds_" + get_uuid_str()
-
-    write_table(started_cluster_iceberg_with_spark, TABLE_NAME)
-    create_iceberg_table(
-        STORAGE_TYPE, instance, TABLE_NAME, started_cluster_iceberg_with_spark
-    )
-
-    instance.query("SYSTEM ENABLE FAILPOINT iceberg_slow_manifest_read")
-    try:
-        serial_duration = elapsed(
-            instance,
-            f"SELECT * FROM {TABLE_NAME} FORMAT Null",
-            settings={
-                "iceberg_manifest_decode_concurrency": 1,
-                "use_iceberg_metadata_files_cache": 0,
-            },
-        )
-        parallel_duration = elapsed(
-            instance,
-            f"SELECT * FROM {TABLE_NAME} FORMAT Null",
-            settings={
-                "iceberg_manifest_decode_concurrency": 16,
-                "use_iceberg_metadata_files_cache": 0,
-            },
-        )
-    finally:
-        instance.query("SYSTEM DISABLE FAILPOINT iceberg_slow_manifest_read")
-        instance.query(f"DROP TABLE {TABLE_NAME}")
-
-    if slow_build:
-        return
-
-    serial_floor = 0.9 * DATA_MANIFEST_COUNT * SLEEP_PER_MANIFEST_SECONDS
-    assert serial_duration >= serial_floor, (
-        f"the serial read of {DATA_MANIFEST_COUNT} manifests took {serial_duration:.3f}s, "
-        f"below the {serial_floor:.3f}s floor of one failpoint delay per manifest, so "
-        f"iceberg_manifest_decode_concurrency = 1 did not decode them one at a time"
-    )
-    assert parallel_duration < 0.6 * serial_duration, (
-        f"the read with iceberg_manifest_decode_concurrency = 16 took "
-        f"{parallel_duration:.3f}s against {serial_duration:.3f}s serially, so the "
-        f"manifest reads were likely not overlapped"
-    )
