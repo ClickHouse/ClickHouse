@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BASE="${USER_FILES_PATH}/04549_sqlite_db_missing_${CLICKHOUSE_DATABASE}"
 DB_PATH="${BASE}/data.sqlite"
 CREATED_DB_PATH="${BASE}/created.sqlite"
+NEW_DB_PATH="${BASE}/new.sqlite"
 ATTACHED_DB="db_04549_attached_${CLICKHOUSE_DATABASE}"
 CREATED_DB="db_04549_created_${CLICKHOUSE_DATABASE}"
 
@@ -45,7 +46,10 @@ else
 fi
 
 # Once the file appears, the already-attached database starts working without a re-attach.
-sqlite3 "${DB_PATH}" 'CREATE TABLE t1(x INTEGER); INSERT INTO t1 VALUES (42);'
+# The file is built aside and renamed into place: a concurrent query that enumerates all databases
+# may read it, and its shared lock would make the `sqlite3` write fail with `database is locked`.
+sqlite3 "${NEW_DB_PATH}" 'CREATE TABLE t1(x INTEGER); INSERT INTO t1 VALUES (42);'
+mv "${NEW_DB_PATH}" "${DB_PATH}"
 echo 'Tables after the file appeared:'
 ${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${ATTACHED_DB}"
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${ATTACHED_DB}.t1"

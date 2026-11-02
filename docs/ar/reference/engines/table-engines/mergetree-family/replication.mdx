@@ -136,9 +136,7 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 
 يراقب النظام مدى تزامن البيانات على النسخ المتماثلة، وهو قادر على التعافي بعد الفشل. ويكون Failover تلقائيًا (عند وجود فروق صغيرة في البيانات) أو شبه تلقائي (عندما تختلف البيانات كثيرًا، ما قد يشير إلى خطأ في configuration).
 
-<div id="creating-replicated-tables">
-  ## إنشاء الجداول المكرَّرة
-</div>
+## إنشاء الجداول المكرَّرة {#creating-replicated-tables}
 
 <Note>
   في ClickHouse Cloud، يُدار النسخ المتماثل تلقائيًا.
@@ -148,9 +146,7 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
   تجنّب استخدام `ReplicatedMergeTree` أو تحديد معلمات النسخ المتماثل، لأن المنصة تتولى إدارة النسخ المتماثل.
 </Note>
 
-<div id="replicatedmergetree-parameters">
-  ### معلمات Replicated*MergeTree
-</div>
+### معلمات Replicated*MergeTree {#replicatedmergetree-parameters}
 
 | المعلمة            | الوصف                                                                                               |
 | ------------------ | --------------------------------------------------------------------------------------------------- |
@@ -248,9 +244,7 @@ ORDER BY x;
 
 لحذف نسخة متماثلة، شغّل `DROP TABLE`. ومع ذلك، لن تُحذف إلا نسخة متماثلة واحدة فقط، وهي الموجودة على الخادم الذي تُشغّل عليه الاستعلام.
 
-<div id="recovery-after-failures">
-  ## الاسترداد بعد الأعطال
-</div>
+## الاسترداد بعد الأعطال {#recovery-after-failures}
 
 إذا لم يكن ClickHouse Keeper متاحًا عند بدء تشغيل الخادم، فإن الجداول المتماثلة تنتقل إلى وضع القراءة فقط. ويحاول النظام دوريًا الاتصال بـ ClickHouse Keeper.
 
@@ -274,9 +268,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 ثم أعد تشغيل الخادم. وعند بدء التشغيل، يحذف الخادم هذه المؤشرات ويبدأ عملية الاستعادة.
 
-<div id="recovery-after-complete-data-loss">
-  ## الاستعادة بعد الفقدان الكامل للبيانات
-</div>
+## الاستعادة بعد الفقدان الكامل للبيانات {#recovery-after-complete-data-loss}
 
 إذا فُقدت جميع البيانات والبيانات الوصفية من أحد الخوادم، فاتبع الخطوات التالية للاستعادة:
 
@@ -291,18 +283,16 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 لا توجد أي قيود على عرض النطاق الترددي للشبكة أثناء الاستعادة. ضع ذلك في اعتبارك إذا كنت تستعيد عددًا كبيرًا من النسخ المتماثلة في الوقت نفسه.
 
-<div id="converting-from-mergetree-to-replicatedmergetree">
-  ## التحويل من MergeTree إلى ReplicatedMergeTree
-</div>
+## التحويل من MergeTree إلى ReplicatedMergeTree {#converting-from-mergetree-to-replicatedmergetree}
 
 نستخدم المصطلح `MergeTree` للإشارة إلى جميع محركات الجداول ضمن `عائلة MergeTree`، تمامًا كما هو الحال مع `ReplicatedMergeTree`.
 
-إذا كان لديك جدول `MergeTree` جرى نسخ بياناته متماثلًا يدويًا، فيمكنك تحويله إلى جدول مكرّر. قد تحتاج إلى ذلك إذا كنت قد جمعت بالفعل كمية كبيرة من البيانات في جدول `MergeTree` وتريد الآن تمكين النسخ المتماثل.
+إذا كان لديك جدول `MergeTree` جرى نسخ بياناته متماثلًا يدويًا، فيمكنك تحويله إلى جدول متماثل. قد تحتاج إلى ذلك إذا كنت قد جمعت بالفعل كمية كبيرة من البيانات في جدول `MergeTree` وتريد الآن تمكين النسخ المتماثل.
 
-تتيح تعليمة [ATTACH TABLE ... AS REPLICATED](/ar/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) إرفاق جدول `MergeTree` مفصول كـ `ReplicatedMergeTree`.
+تتيح تعليمة [ATTACH TABLE ... AS REPLICATED](/ar/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) إرفاق جدول `MergeTree` منفصل كـ `ReplicatedMergeTree`.
 
-يمكن تحويل جدول `MergeTree` تلقائيًا عند إعادة تشغيل الخادم إذا تم تعيين العلامة `convert_to_replicated` في دليل بيانات الجدول (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` لقاعدة البيانات `Atomic`).
-أنشئ ملفًا فارغًا باسم `convert_to_replicated` وسيتم تحميل الجدول كجدول مكرّر عند إعادة تشغيل الخادم التالية.
+يمكن تحويل جدول `MergeTree` تلقائيًا عند إعادة تشغيل الخادم إذا تم تعيين العلامة `convert_to_replicated` في دليل بيانات الجدول (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` لقاعدة البيانات `Atomic` أو `/data/database_name/table_name/` لقاعدة البيانات `Ordinary`).
+أنشئ ملفًا فارغًا باسم `convert_to_replicated` وسيتم تحميل الجدول كجدول متماثل عند إعادة تشغيل الخادم التالية.
 
 يمكن استخدام هذا الاستعلام للحصول على مسار بيانات الجدول. وإذا كان للجدول عدة مسارات بيانات، فيجب استخدام الأول منها.
 
@@ -311,7 +301,11 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 لاحظ أن جدول ReplicatedMergeTree سيُنشأ باستخدام قيم الإعدادين `default_replica_path` و`default_replica_name`.
-ولإنشاء الجدول المُحوَّل على النُسخ المتماثلة الأخرى، ستحتاج إلى تحديد مساره صراحةً في الوسيط الأول لمحرك `ReplicatedMergeTree`. ويمكن استخدام الاستعلام التالي للحصول على هذا المسار.
+بالنسبة إلى قاعدة بيانات من نوع `Ordinary`، يُولِّد التحويل معرّف UUID ويوسّع به `default_replica_path` مرة واحدة.
+يُخزَّن المسار الموسَّع كما هو حرفيًا، وعند كل تحميل تجري مطابقته مع القيمة الحالية لـ `default_replica_path` للعثور على znode المسمّى بمعرّف UUID الذي يحذفه `DROP TABLE` مع الجدول. وإذا تغيّر `default_replica_path` لاحقًا، فسيظل تحميل الجدول ممكنًا، لكن `DROP TABLE` سيحذف znode الخاص بالجدول فقط ويُبقي على znode الأب المسمّى بمعرّف UUID في ZooKeeper، وعندها يجب حذفه يدويًا.
+تُستبدَل `{database}` و`{table}` في `default_replica_name` بقيمهما الفعلية داخل اسم النسخة المتماثلة المُخزَّن، بالطريقة نفسها التي يستبدلهما بها `CREATE TABLE`، وبذلك تظل إعادة تسمية الجدول ممكنة.
+لا يُدعَم استخدام `{uuid}` في `default_replica_name` في أي عملية تحويل.
+ولإنشاء الجدول المُحوَّل على النُسخ المتماثلة الأخرى، ستحتاج إلى تحديد مساره صراحةً في الوسيط الأول لمحرك `ReplicatedMergeTree`. ويمكن استخدام الاستعلام التالي للحصول على هذا المسار.
 
 ```sql
 SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
@@ -325,9 +319,7 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 انقل البيانات من الجدول القديم إلى الدليل الفرعي `detached` داخل الدليل الذي يحتوي على بيانات الجدول الجديد (`/var/lib/clickhouse/data/db_name/table_name/`).
 ثم نفّذ `ALTER TABLE ATTACH PARTITION` على إحدى النسخ المتماثلة لإضافة أجزاء البيانات هذه إلى المجموعة النشطة.
 
-<div id="converting-from-replicatedmergetree-to-mergetree">
-  ## التحويل من ReplicatedMergeTree إلى MergeTree
-</div>
+## التحويل من ReplicatedMergeTree إلى MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
 استخدم تعليمة [ATTACH TABLE ... AS NOT REPLICATED](/ar/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) لإلحاق جدول `ReplicatedMergeTree` المنفصل كجدول `MergeTree` على خادم واحد.
 
@@ -340,9 +332,7 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 
 بعد ذلك، يمكنك تشغيل الخادم، وإنشاء جدول `MergeTree`، ونقل البيانات إلى دليله، ثم إعادة تشغيل الخادم.
 
-<div id="recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged">
-  ## التعافي عند فقدان البيانات الوصفية في عنقود ClickHouse Keeper أو تلفها
-</div>
+## التعافي عند فقدان البيانات الوصفية في عنقود ClickHouse Keeper أو تلفها {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 إذا فُقدت البيانات المخزنة في ClickHouse Keeper أو تعرضت للتلف، يمكنك إنقاذها بنقلها إلى جدول غير مكرّر كما هو موضح أعلاه.
 

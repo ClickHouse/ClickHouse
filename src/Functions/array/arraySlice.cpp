@@ -486,6 +486,7 @@ The first argument may also be a [QBit](/sql-reference/data-types/qbit): the res
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArraySlice>(documentation);
+    factory.registerAlias("slice", "arraySlice", FunctionFactory::Case::Insensitive);
 }
 
 

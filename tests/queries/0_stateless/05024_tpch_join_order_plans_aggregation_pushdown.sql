@@ -98,7 +98,6 @@ INSERT INTO orders    VALUES (1, 1, 'O', 1.0, '1994-01-01', '1-URGENT', 'C1', 0,
 INSERT INTO lineitem  VALUES (1, 1, 1, 1, 1.0, 1.0, 0.0, 0.0, 'N', 'O', '1994-02-01', '1994-01-15', '1994-02-05', 'DELIVER IN PERSON', 'SHIP', '');
 
 SET explain_query_plan_default = 'legacy';
-SET allow_experimental_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 SET use_join_disjunctions_push_down = 1;
 SET query_plan_optimize_join_order_limit = 10;
@@ -138,7 +137,6 @@ SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_remove_unused_columns = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_extract_common_expressions = 1;
 SET optimize_syntax_fuse_functions = 1;

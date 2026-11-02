@@ -63,6 +63,7 @@ public:
     }
 
     std::string_view getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
+    bool supportsGetDataAt() const override { return getDictionary().supportsGetDataAt(); }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
@@ -102,6 +103,7 @@ public:
 #endif
     void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length);
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & indexes);
+    static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit);
 
     void insertData(const char * pos, size_t length) override;
 
@@ -109,6 +111,7 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
 
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 

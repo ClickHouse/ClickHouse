@@ -11,7 +11,7 @@ CREATE TABLE t_short_circuit_set (b UInt64) ENGINE = MergeTree ORDER BY b;
 INSERT INTO t_short_circuit SELECT number, number FROM numbers(100000);
 INSERT INTO t_short_circuit_final SELECT number, number FROM numbers(100000);
 
-SET optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SET optimize_move_to_prewhere = 0;
 
 SELECT count() /* assert_no_read */ FROM t_short_circuit WHERE b IN (SELECT b FROM t_short_circuit_set);
 SELECT count() /* assert_no_read */ FROM t_short_circuit_final FINAL WHERE b IN (SELECT b FROM t_short_circuit_set);

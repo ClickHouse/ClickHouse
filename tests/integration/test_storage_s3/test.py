@@ -2444,6 +2444,18 @@ def test_dynamic_s3_disk_user_marker_is_not_honored(started_cluster):
         "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
     )
     assert "_server_credentials_allowed" not in create_query, create_query
+    instance.query("DROP TABLE t_user_marker SYNC")
+
+    # The disk configuration parser accepts and ignores extra values, so a marker with one is stripped too.
+    instance.query(
+        f"CREATE TABLE t_user_marker (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS "
+        f"disk = disk(type = s3, endpoint = '{disk_endpoint}', access_key_id = 'minio', "
+        f"secret_access_key = 'ClickHouse_Minio_P@ssw0rd', equals(_server_credentials_allowed, 1, 'extra'))"
+    )
+    create_query = instance.query(
+        "SELECT create_table_query FROM system.tables WHERE database = 'default' AND name = 't_user_marker'"
+    )
+    assert "_server_credentials_allowed" not in create_query, create_query
 
     instance.query("DROP TABLE t_user_marker SYNC")
 
@@ -3667,7 +3679,6 @@ def test_query_condition_cache(started_cluster):
     select_query = f"SELECT * FROM {table_name} WHERE id < 100 ORDER BY id"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     query_id_first = f"qcc_s3_first_{generate_random_string()}"
@@ -3771,7 +3782,6 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     select_query = f"SELECT DISTINCT val FROM {table_name} WHERE id < 100"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     def profile_event(query_id, event):

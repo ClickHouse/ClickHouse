@@ -20,23 +20,19 @@ Plage de valeurs prise en charge : [1970-01-01 00:00:00, 2106-02-07 06:28:15].
 
 Résolution : 1 seconde.
 
-<div id="speed">
-  ## Vitesse
-</div>
+## Vitesse {#speed}
 
 Le type de données `Date` est plus rapide que `DateTime` dans *la plupart* des cas.
 
 Le type `Date` nécessite 2 octets de stockage, tandis que `DateTime` en nécessite 4. Cependant, lors de la compression, la différence de taille entre `Date` et `DateTime` devient plus marquée. Cela s’explique par le fait que les minutes et les secondes de `DateTime` se compressent moins bien. Le filtrage et l’agrégation sur `Date` plutôt que sur `DateTime` sont également plus rapides.
 
-<div id="usage-remarks">
-  ## Remarques d’utilisation
-</div>
+## Remarques d’utilisation {#usage-remarks}
 
 L’instant est enregistré sous forme de [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), indépendamment du fuseau horaire ou de l’heure d’été. Le fuseau horaire influence la façon dont les valeurs de type `DateTime` sont affichées au format texte et la façon dont les valeurs spécifiées sous forme de chaînes sont interprétées (`'2020-01-01 05:00:01'`).
 
 Un Unix timestamp indépendant du fuseau horaire est stocké dans les tables, et le fuseau horaire sert à le convertir au format texte, ou inversement, lors de l’import/export des données, ou à effectuer des calculs calendaires sur les valeurs (par exemple : fonctions `toDate`, `toHour`, etc.). Le fuseau horaire n’est pas stocké dans les lignes de la table (ni dans le jeu de résultats), mais dans les métadonnées de la colonne.
 
-La liste des fuseaux horaires pris en charge est disponible dans la [base de données des fuseaux horaires IANA](https://www.iana.org/time-zones) et peut également être obtenue avec `SELECT * FROM system.time_zones`. [La liste](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) est aussi disponible sur Wikipedia.
+Les noms de fuseaux horaires pris en charge sont exactement ceux répertoriés par `SELECT * FROM system.time_zones` : ils proviennent de la [base de données des fuseaux horaires IANA](https://www.iana.org/time-zones) fournie avec le serveur, de sorte que les résultats ne dépendent pas de la base de données propre à l’hôte. [La liste](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) est aussi disponible sur Wikipedia. Un décalage fixe par rapport à UTC, écrit `Fixed/UTC±HH:MM:SS`, par exemple `Fixed/UTC+05:30:00`, est également accepté ; c’est le type de nom produit lors de la lecture d’une colonne d’horodatage Arrow ou ORC dont le fuseau horaire a un décalage fixe. Tout autre nom est rejeté.
 
 Vous pouvez définir explicitement un fuseau horaire pour les colonnes de type `DateTime` lors de la création d’une table. Exemple : `DateTime('UTC')`. Si aucun fuseau horaire n’est défini, ClickHouse utilise la valeur du paramètre [timezone](/fr/reference/settings/server-settings/settings/other#timezone) dans les paramètres du serveur ou dans les paramètres du système d’exploitation au moment du démarrage du serveur ClickHouse.
 
@@ -46,9 +42,7 @@ ClickHouse affiche les valeurs en fonction de la valeur du paramètre [date&#95;
 
 Lors de l’insertion de données dans ClickHouse, vous pouvez utiliser différents formats de chaînes de date et d’heure, selon la valeur du paramètre [date&#95;time&#95;input&#95;format](/fr/reference/settings/formats/date-time#date_time_input_format).
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 **1.** Création d&#39;une table avec une colonne de type `DateTime` et insertion de données dans cette table :
 
@@ -134,9 +128,7 @@ FROM dt
 
 Comme la conversion de fuseau horaire ne modifie que les métadonnées, l’opération n’entraîne aucun coût de calcul.
 
-<div id="limitations-on-time-zones-support">
-  ## Limites de la prise en charge des fuseaux horaires
-</div>
+## Limites de la prise en charge des fuseaux horaires {#limitations-on-time-zones-support}
 
 Certains fuseaux horaires peuvent ne pas être entièrement pris en charge. Voici quelques cas :
 
@@ -150,9 +142,7 @@ Un problème similaire existe pour la station antarctique Casey en 2010. L’heu
 
 Décalages horaires sur plusieurs jours. Certaines îles du Pacifique ont modifié le décalage de leur fuseau horaire, passant de UTC+14 à UTC-12. Ce n’est pas un problème en soi, mais des imprécisions peuvent survenir si vous effectuez des calculs avec leur fuseau horaire pour des dates historiques correspondant aux jours de transition.
 
-<div id="handling-daylight-saving-time-dst">
-  ## Gestion de l’heure d’été (DST)
-</div>
+## Gestion de l’heure d’été (DST) {#handling-daylight-saving-time-dst}
 
 Le type DateTime de ClickHouse avec fuseaux horaires peut présenter un comportement inattendu lors des transitions liées à l’heure d’été (DST), en particulier lorsque :
 
@@ -193,9 +183,7 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 
 Dans ce cas, ClickHouse ramène l’heure inexistante `2023-03-26 01:30:00` à `2023-03-26 00:30:00`.
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 * [Fonctions de conversion de type](/fr/reference/functions/regular-functions/type-conversion-functions)
 * [Fonctions de manipulation des dates et heures](/fr/reference/functions/regular-functions/date-time-functions)

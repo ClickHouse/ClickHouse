@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 -- Test: Array/Map IS DISTINCT FROM NULL returns wrong result (0 instead of 1)
 -- Covers: FunctionsNullSafeCmp.h:150 hardcodes UInt8(0) for Array/Map vs NULL

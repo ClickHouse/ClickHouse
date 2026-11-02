@@ -378,6 +378,11 @@ bool MutationCommands::hasOnlyUpdateCommands() const
     return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
 }
 
+bool MutationCommands::hasRewritePartsCommand() const
+{
+    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::REWRITE_PARTS; });
+}
+
 bool MutationCommands::containBarrierCommand() const
 {
     for (const auto & command : *this)

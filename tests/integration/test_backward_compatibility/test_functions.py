@@ -114,7 +114,41 @@ def test_aggregate_states(start_cluster):
 
         upstream_state = get_aggregate_state_hex(upstream, aggregate_function)
         if upstream_state != backward_state:
-            allowed_changes_if_result_is_the_same = ["anyHeavy"]
+            # A fresh `uniq` state on the new server uses state version 1 (a flags byte plus
+            # a small sample of 64-bit hashes, which fixes the overflow of the estimate at
+            # cardinalities above ten billion), and the version is spelled out in the state
+            # type, so the state bytes legitimately differ from the old server's. What must
+            # hold is that the new server still reads a state written by the old server
+            # through the unversioned type and finalizes it to the same value.
+            allowed_changes_if_old_state_is_readable = ["uniq"]
+
+            if aggregate_function in allowed_changes_if_old_state_is_readable:
+                backward_final = get_final_value_unhex(
+                    backward, aggregate_function, backward_state
+                )
+                upstream_final_from_backward = get_final_value_unhex(
+                    upstream, aggregate_function, backward_state
+                )
+
+                if backward_final == upstream_final_from_backward:
+                    logging.info(
+                        "OK %s (the state format changed, but the old state is still readable)",
+                        aggregate_function,
+                    )
+                    return "passed"
+                logging.error(
+                    "Failed %s, the old state %s finalizes to %s (backward) != %s (upstream)",
+                    aggregate_function,
+                    backward_state,
+                    backward_final,
+                    upstream_final_from_backward,
+                )
+                return "failed"
+
+            # `uniqTheta`: since datasketches-cpp 5.3.0 a single-item compact theta sketch has the
+            # IS_SINGLE_ITEM flag set in its header (flags byte 0x1a -> 0x3a). Old and new servers
+            # read both encodings, so compare the finalized values across versions instead.
+            allowed_changes_if_result_is_the_same = ["anyHeavy", "uniqTheta"]
 
             if aggregate_function in allowed_changes_if_result_is_the_same:
                 backward_final_from_upstream = get_final_value_unhex(
