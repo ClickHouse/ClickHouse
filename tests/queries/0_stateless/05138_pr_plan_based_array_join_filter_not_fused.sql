@@ -14,7 +14,7 @@ INSERT INTO t_pr_fuse SELECT number, ['a', 'b', 'c'] FROM numbers(100);
 
 -- Without parallel replicas the filter is fused into the ARRAY JOIN.
 SELECT countIf(explain LIKE '%Element filter%') = 1 AS fused_without_parallel_replicas
-FROM (EXPLAIN actions = 1 SELECT id FROM t_pr_fuse ARRAY JOIN arr AS elem WHERE elem = 'b');
+FROM (EXPLAIN actions = 1 SELECT id FROM t_pr_fuse ARRAY JOIN arr AS elem WHERE elem = 'b' SETTINGS enable_parallel_replicas = 0);
 
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
