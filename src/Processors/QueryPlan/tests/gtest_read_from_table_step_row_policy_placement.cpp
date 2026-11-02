@@ -30,10 +30,16 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "x")}));
 }
 
-String serializeStep(Placement placement, UInt64 step_version, std::optional<Names> selected_columns = {})
+String serializeStep(
+    Placement placement,
+    UInt64 step_version,
+    std::optional<Names> selected_columns = {},
+    std::optional<size_t> columns_to_read = {},
+    std::optional<String> additional_filter = {})
 {
     ReadFromTableStep step(
-        makeHeader(), "db.t", TableExpressionModifiers{}, /*use_parallel_replicas_=*/ false, placement, std::move(selected_columns));
+        makeHeader(), "db.t", TableExpressionModifiers{}, /*use_parallel_replicas_=*/ false, placement, std::move(selected_columns),
+        columns_to_read, std::move(additional_filter));
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry, /*for_cache_key=*/ false, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, step_version};
@@ -41,9 +47,14 @@ String serializeStep(Placement placement, UInt64 step_version, std::optional<Nam
     return out.str();
 }
 
-QueryPlanStepPtr roundTrip(Placement placement, UInt64 step_version, std::optional<Names> selected_columns = {})
+QueryPlanStepPtr roundTrip(
+    Placement placement,
+    UInt64 step_version,
+    std::optional<Names> selected_columns = {},
+    std::optional<size_t> columns_to_read = {},
+    std::optional<String> additional_filter = {})
 {
-    const String bytes = serializeStep(placement, step_version, std::move(selected_columns));
+    const String bytes = serializeStep(placement, step_version, std::move(selected_columns), columns_to_read, std::move(additional_filter));
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
     QueryPlanSerializationSettings settings;
@@ -94,6 +105,27 @@ TEST(ReadFromTableStepRowPolicyPlacement, SelectedColumnsRoundTripAtStepVersionO
 
     EXPECT_EQ(serializeStep(Placement::NotInPlan, 0, Names{"x"}), serializeStep(Placement::Unknown, 0));
     EXPECT_EQ(selectedColumnsAfterRoundTrip(Names{"x"}, 0), std::nullopt);
+}
+
+/// The receiver checks its `max_columns_to_read` on this count and applies an `additional_table_filters` entry of its own
+/// unless it is this one, so both arrive exactly, and an absent filter stays absent.
+TEST(ReadFromTableStepRowPolicyPlacement, ColumnsToReadAndAdditionalFilterRoundTripAtStepVersionOne)
+{
+    for (const auto & additional_filter : {std::optional<String>{"y < 5"}, std::optional<String>{""}, std::optional<String>{}})
+    {
+        auto step = roundTrip(Placement::FilterStep, 1, Names{"x"}, 2, additional_filter);
+        const auto & read = static_cast<const ReadFromTableStep &>(*step);
+        EXPECT_EQ(read.getRowPolicyPlacement(), Placement::FilterStep);
+        EXPECT_EQ(read.getSelectedColumns(), Names{"x"});
+        EXPECT_EQ(read.getColumnsToRead(), 2);
+        EXPECT_EQ(read.getAdditionalFilter(), additional_filter);
+    }
+
+    EXPECT_EQ(serializeStep(Placement::NotInPlan, 0, Names{"x"}, 2, "y < 5"), serializeStep(Placement::Unknown, 0));
+    auto old_step = roundTrip(Placement::NotInPlan, 0, Names{"x"}, 2, "y < 5");
+    const auto & old_read = static_cast<const ReadFromTableStep &>(*old_step);
+    EXPECT_EQ(old_read.getColumnsToRead(), std::nullopt);
+    EXPECT_EQ(old_read.getAdditionalFilter(), std::nullopt);
 }
 
 TEST(ReadFromTableStepRowPolicyPlacement, StepVersionOneOnlyTowardsAPeerThatKnowsIt)

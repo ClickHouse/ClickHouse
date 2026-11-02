@@ -932,6 +932,9 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             columns_names.size(),
             settings[Setting::max_columns_to_read].value);
+
+    if (table_node && select_query_options.build_logical_plan)
+        table_expression_data.setColumnsToReadCount(columns_names.size());
 }
 
 void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info,
@@ -1069,7 +1072,8 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
 /// part of `buildAdditionalFiltersIfNeeded` — no planner-context mutation, no prewhere
 /// touch — so it can be called early (before prewhere / row-policy / trivial-count /
 /// trivial-limit decisions) and later consumers can simply read the parsed AST.
-void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
+/// Returns the text of the entry that matches, if any.
+std::optional<String> parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     const String & table_expression_alias,
     SelectQueryInfo & table_expression_query_info,
     const ContextPtr & query_context)
@@ -1077,13 +1081,13 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     /// A synthetic data source is not a table of the catalog, and it may borrow the name of one,
     /// so the filters keyed by that name must not be applied to it.
     if (storage->isSyntheticDataSource())
-        return;
+        return {};
 
     const auto & settings = query_context->getSettingsRef();
 
     auto const & additional_filters = settings[Setting::additional_table_filters].value;
     if (additional_filters.empty())
-        return;
+        return {};
 
     auto const & storage_id = storage->getStorageID();
 
@@ -1106,9 +1110,10 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
-            return;
+            return filter;
         }
     }
+    return {};
 }
 
 /// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the
@@ -1986,11 +1991,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// before the actual filter DAG is built further down
         ///
         /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
+        std::optional<String> additional_filter;
         if (!select_query_options.only_analyze)
         {
-            if (!select_query_options.shipped_read)
-                parseAdditionalFilterAstIfNeeded(
-                    storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
+            additional_filter = parseAdditionalFilterAstIfNeeded(
+                storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
+            /// A step of the shipped plan applies the sender's entry, and an entry of this node that differs is applied too.
+            if (const auto & shipped_read = select_query_options.shipped_read;
+                shipped_read && (!shipped_read->additional_filter_recorded || additional_filter == shipped_read->additional_filter_in_plan))
+                table_expression_query_info.additional_filter_ast = nullptr;
 
             /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
             /// above, so it must run inside the same `!only_analyze` branch — otherwise
@@ -2832,7 +2841,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             /*use_parallel_replicas_=*/ false,
                             row_policy_in_plan ? ReadFromTableStep::RowPolicyPlacement::FilterStep
                                                : ReadFromTableStep::RowPolicyPlacement::NotInPlan,
-                            table_expression_data.getAuthorizedColumnsNames());
+                            table_expression_data.getAuthorizedColumnsNames(),
+                            table_expression_data.getColumnsToReadCount(),
+                            table_expression_query_info.additional_filter_ast ? additional_filter : std::nullopt);
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

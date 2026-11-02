@@ -24,7 +24,9 @@ public:
         TableExpressionModifiers table_expression_modifiers_,
         bool use_parallel_replicas_ = false,
         RowPolicyPlacement row_policy_placement_ = RowPolicyPlacement::Unknown,
-        std::optional<Names> selected_columns_ = {});
+        std::optional<Names> selected_columns_ = {},
+        std::optional<size_t> columns_to_read_ = {},
+        std::optional<String> additional_filter_ = {});
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -42,6 +44,10 @@ public:
     /// The columns of the table that the query uses and the sender authorized; the header also has the columns that
     /// only the filters above this read need. Not set when the sender did not record them.
     const std::optional<Names> & getSelectedColumns() const { return selected_columns; }
+    /// The number of columns the sender checked against `max_columns_to_read`, without those only the filters need.
+    std::optional<size_t> getColumnsToRead() const { return columns_to_read; }
+    /// The `additional_table_filters` entry that a filter step above this read applies.
+    const std::optional<String> & getAdditionalFilter() const { return additional_filter; }
 
     QueryPlanStepPtr clone() const override;
 private:
@@ -50,6 +56,8 @@ private:
     bool use_parallel_replicas = false;
     RowPolicyPlacement row_policy_placement = RowPolicyPlacement::Unknown;
     std::optional<Names> selected_columns;
+    std::optional<size_t> columns_to_read;
+    std::optional<String> additional_filter;
 };
 
 }

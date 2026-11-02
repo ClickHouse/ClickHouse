@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_columns_to_read;
 }
 
 namespace ErrorCodes
@@ -55,6 +56,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int TOO_MANY_COLUMNS;
 }
 
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
@@ -137,14 +139,15 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     StorageSnapshotPtr snapshot;
     SelectQueryInfo select_query_info;
     ASTPtr table_function_ast;
+    std::shared_ptr<TableNode> read_table_node;
 
     if (reading_from_table)
     {
         Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
-        auto table_node = resolveTable(identifier, context);
+        read_table_node = resolveTable(identifier, context);
 
-        storage = table_node->getStorage();
-        snapshot = table_node->getStorageSnapshot();
+        storage = read_table_node->getStorage();
+        snapshot = read_table_node->getStorageSnapshot();
         select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
     }
     else
@@ -284,13 +287,39 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         const auto placement = reading_from_table ? reading_from_table->getRowPolicyPlacement() : ReadFromTableStep::RowPolicyPlacement::Unknown;
         if (needs_row_policy || placement != ReadFromTableStep::RowPolicyPlacement::Unknown)
         {
-            /// `column_names` also has the columns of the filters above the read, so the grants are checked on the
-            /// columns the query selects. A plain table is not checked, as with `storage->read()` below.
+            /// `column_names` also has the columns of the filters above the read, so the grants and the limit are checked
+            /// on the columns the query selects. A plain table is not checked, as with `storage->read()` below.
             if (read_via_interpreter)
+            {
                 checkAccessRights(
                     storage, storage->getStorageID(), snapshot, reading_from_table->getSelectedColumns().value_or(column_names), context);
+
+                const auto & settings = context->getSettingsRef();
+                /// The filter step above the read uses the columns of this filter, so they need the grants here as well.
+                if (const auto & additional_filter = reading_from_table->getAdditionalFilter())
+                {
+                    ParserExpression parser;
+                    auto filter_ast = parseQuery(
+                        parser,
+                        *additional_filter,
+                        settings[Setting::max_query_size],
+                        settings[Setting::max_parser_depth],
+                        settings[Setting::max_parser_backtracks]);
+                    buildFilterQueryTree(std::move(filter_ast), read_table_node, context, /*check_access_rights=*/ true);
+                }
+
+                const size_t columns_to_read = reading_from_table->getColumnsToRead().value_or(column_names.size());
+                if (settings[Setting::max_columns_to_read] && columns_to_read > settings[Setting::max_columns_to_read])
+                    throw Exception(
+                        ErrorCodes::TOO_MANY_COLUMNS,
+                        "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
+                        columns_to_read,
+                        settings[Setting::max_columns_to_read].value);
+            }
             options.shipped_read = SelectQueryOptions::ShippedRead{
-                .row_policy_in_plan = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep};
+                .row_policy_in_plan = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep,
+                .additional_filter_recorded = placement != ReadFromTableStep::RowPolicyPlacement::Unknown,
+                .additional_filter_in_plan = reading_from_table->getAdditionalFilter()};
         }
 
         auto interpreter_context = context;
