@@ -49,6 +49,8 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/server.xml"],
+    # `test_shutdown_cancels_queued_queries` stops and restarts the server.
+    stay_alive=True,
     # Bug in TSAN reproduces with gRPC https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
@@ -2760,6 +2762,9 @@ def test_shutdown_cancels_queued_queries(started_cluster):
     """
     prefix = uuid.uuid4().hex[:8]
     waiter_id = f"shutdown_waiter_{prefix}"
+    # `stop_clickhouse` checks the build options with a query (and caches the result), which would
+    # otherwise wait for admission behind the blockers and delay the shutdown until they finish.
+    node._built_with_llvm_coverage = node.is_built_with_llvm_coverage()
     pool = Pool(4)
     occupy_both_slots(pool, prefix)
 
