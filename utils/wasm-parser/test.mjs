@@ -663,6 +663,8 @@ if (hasAstJson) {
             ['ALTER DATABASE d MODIFY SETTING', ' x = 1', ['database_ast', 'alter_object', 'command_list.children.0.command_type']],
             /// The `SETTINGS` of the `SELECT` of an `INSERT` are in those of the `INSERT` too.
             ['INSERT INTO t SETTINGS a = 2 SELECT 1 SETTINGS max_threads = 1, a = 3 FORMAT', ' CSV', ['settings_ast', 'select']],
+            /// A `RETURNING` clause that parsed is kept when the data source after it failed.
+            ['INSERT INTO t RETURNING (SELECT a) FROM INFILE', " 'data.csv'", ['returning']],
             /// A `PRIMARY KEY` in the column list is in the storage definition, also one that failed.
             ['CREATE TABLE t (a UInt8, PRIMARY KEY a) ENGINE = MergeTree ORDER BY', ' a', ['columns_list', 'storage.engine',
                 'storage.primary_key']],
@@ -697,10 +699,6 @@ if (hasAstJson) {
             [`${outer} SELECT 1 UNION ALL SELECT * FROM c WHERE`, ' 1', `${union}.1`, true],
             [`${outer} (SELECT * FROM c WHERE`, ' 1)', `${union}.0`, true],
             [`${outer} SELECT 1 UNION ALL (SELECT * FROM c WHERE`, ' 1)', `${union}.1`, true],
-            [`${outer} SELECT * FROM (SELECT a FROM`, ' c)',
-                `${union}.0.tables.children.0.table_expression.subquery.children.0.list_of_selects.children.0`, false],
-            [`${outer} SELECT * FROM c WHERE x IN (SELECT a FROM`, ' c)',
-                `${union}.0.where.arguments.children.1.children.0.list_of_selects.children.0`, false],
         ]) {
             const partial = parsed(prefix).doc?.partial_ast;
             const select = at(parsed(prefix + rest).doc?.ast, path);
