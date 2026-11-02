@@ -599,7 +599,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 auto nested_deserialize = createDeserializeFn(root_node->leafAt(0), target_type);
                 return [nested_deserialize](IColumn & column, avro::Decoder & decoder)
                 {
-                    decoder.decodeUnionIndex();
+                    readUnionIndex(decoder, 1);
                     nested_deserialize(column, decoder);
                     return true;
                 };
@@ -615,8 +615,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
-                        if (union_index == non_null_union_index)
+                        if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
                         {
                             nested_deserialize(col.getNestedColumn(), decoder);
                             col.getNullMapData().push_back(false);
@@ -633,8 +632,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
-                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
-                        if (union_index == non_null_union_index)
+                        if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
                         {
                             nested_deserialize(column, decoder);
                             return true;
@@ -707,7 +705,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 {
                     auto & column_variant = assert_cast<ColumnVariant &>(column);
 
-                    const AvroUnionIndex union_index = decoder.decodeUnionIndex();
+                    const AvroUnionIndex union_index = readUnionIndex(decoder, deserializers.size());
                     const auto global_discriminator = discriminators_map.at(union_index);
                     if (union_has_null && global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
                     {
@@ -953,6 +951,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         target_type->getName(), avro::toString(root_node->type()), nodeToJSON(root_node));
 }
 
+size_t AvroDeserializer::readUnionIndex(avro::Decoder & decoder, size_t num_branches)
+{
+    size_t index = decoder.decodeUnionIndex();
+    if (index >= num_branches)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary: got {}, the union has {} branches", index, num_branches);
+    return index;
+}
+
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
 {
     checkStackSize();
@@ -997,12 +1003,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [union_skip_fns](avro::Decoder & decoder)
             {
-                auto index = decoder.decodeUnionIndex();
-                if (index >= union_skip_fns.size())
-                {
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
-                }
-                union_skip_fns[index](decoder);
+                union_skip_fns[readUnionIndex(decoder, union_skip_fns.size())](decoder);
             };
         }
         case avro::AVRO_NULL:
