@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t_materialize_column;
 
 CREATE TABLE t_materialize_column (i Int32)
 ENGINE = MergeTree ORDER BY i PARTITION BY i
-SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
+SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO t_materialize_column VALUES (1);
 

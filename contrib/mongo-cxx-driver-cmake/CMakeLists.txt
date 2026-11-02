@@ -8,7 +8,7 @@ endif()
 set(BSONCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
 set(BSONCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
 
-include(${ClickHouse_SOURCE_DIR}/cmake/generate_export_header.cmake)
+include(GenerateExportHeader)
 
 set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/itoa.cpp
@@ -138,7 +138,7 @@ string(APPEND bsoncxx_export_header_custom_content [[
 
 ]]
 )
-clickhouse_generate_export_header(_bsoncxx
+generate_export_header(_bsoncxx
         BASE_NAME BSONCXX_ABI
         EXPORT_MACRO_NAME BSONCXX_ABI_EXPORT
         DEPRECATED_MACRO_NAME BSONCXX_DEPRECATED
@@ -431,7 +431,7 @@ string(APPEND mongocxx_export_header_custom_content [[
 
 ]]
 )
-clickhouse_generate_export_header(_mongocxx
+generate_export_header(_mongocxx
         BASE_NAME MONGOCXX_ABI
         EXPORT_MACRO_NAME MONGOCXX_ABI_EXPORT
         DEPRECATED_MACRO_NAME MONGOCXX_DEPRECATED

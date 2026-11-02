@@ -3,9 +3,6 @@
 #include <base/types.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <Common/VectorWithMemoryTracking.h>
-
-#include <libdivide-config.h>
 #include <libdivide.h>
 
 #include <vector>
@@ -13,16 +10,6 @@
 
 namespace DB
 {
-
-/// The maximum size in bytes of a single bloom filter.
-static constexpr size_t MAX_BLOOM_FILTER_SIZE = 1 << 30;
-
-struct BloomFilterHashPair
-{
-    UInt64 hash1;
-    UInt64 hash2;
-};
-
 struct BloomFilterParameters
 {
     BloomFilterParameters(size_t filter_size_, size_t filter_hashes_, size_t seed_);
@@ -40,7 +27,7 @@ class BloomFilter
 
 public:
     using UnderType = UInt64;
-    using Container = VectorWithMemoryTracking<UnderType>;
+    using Container = std::vector<UnderType>;
 
     explicit BloomFilter(const BloomFilterParameters & params);
     /// size -- size of filter in bytes.
@@ -51,17 +38,6 @@ public:
     void resize(size_t size_);
     bool find(const char * data, size_t len) const;
     void add(const char * data, size_t len);
-
-    void addHashPair(const BloomFilterHashPair & pair);
-    bool findHashPair(const BloomFilterHashPair & pair) const;
-    void addHashPairs(const BloomFilterHashPair * pairs, size_t count);
-    size_t findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const;
-
-    /// Compute the pair of hashes for a value, the way `add`/`find` do. Use it to pre-hash values in
-    /// bulk (e.g. column-wise) and feed the result to `addHashPairs`/`findHashPairs`, without
-    /// duplicating the hash function and seed derivation outside of `BloomFilter`.
-    static BloomFilterHashPair computeHashPair(const char * data, size_t len, UInt64 seed_);
-
     void clear();
 
     void addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
@@ -74,8 +50,6 @@ public:
     const Container & getFilter() const { return filter; }
     Container & getFilter() { return filter; }
     size_t getFilterSizeBytes() const { return size; }
-    size_t getHashes() const { return hashes; }
-    size_t getSeed() const { return seed; }
 
     /// For debug.
     UInt64 isEmpty() const;

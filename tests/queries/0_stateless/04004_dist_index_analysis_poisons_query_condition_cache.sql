@@ -12,10 +12,7 @@
 -- mismatched and incorrectly treated as "erased entirely", writing all their marks as
 -- non-matching into the condition cache. Subsequent queries then skip those parts.
 
--- Disable statistics-based part pruning so that randomized auto_statistics_types
--- (which may include 'minmax') does not interfere with the query condition cache
--- population that this test relies on.
-SET use_statistics_for_part_pruning = 0;
+SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS t_dia_qcc;
 

@@ -92,12 +92,7 @@ def test_reconfig_replace_leader(started_cluster):
     ):
         time.sleep(1)
 
-    # additional 20s wait before removing leader;
-    # create new client because leader migration may spuriously close client sessions
-    # (see comment next to dropInFlightRequests call in KeeperRequestDispatcher,
-    #  if it's still there)
-    zk2.stop()
-    zk2 = create_client(node2)
+    # additional 20s wait before removing leader
     ku.wait_configs_equal(config, zk2, timeout=50)
 
     node4.start_clickhouse()

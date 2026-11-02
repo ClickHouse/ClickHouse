@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine
+# Tags: atomic-database, memory-engine, no-parallel
+# The test uses `SYSTEM PAUSE VIEWS` and `SYSTEM START VIEWS` which affect all
+# refreshable views on the server, so it must not run concurrently with other
+# tests that create refreshable materialized views.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,55 +25,22 @@ wait_status() {
     done
 }
 
-# Helper: create refreshable view `$1` over `src` (10 rows, 1 second each), refresh it, and send the
-# statements `$2` while the refresh is still running. The check and `$2` go in one client call, so no
-# client start-up separates them; if a slow server let the refresh get too far before the check, the
-# view is re-created and the attempt repeated. Prints 1 if `$2` was sent while the refresh was running.
-interrupt_running_refresh() {
-    local view_name=$1
-    local statements=$2
-    local running=0
-    for _ in {1..10}
-    do
-        $CLICKHOUSE_CLIENT -q "
-            drop table if exists $view_name;
-            create materialized view $view_name refresh every 1 year (x Int64) engine Memory empty as
-                select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-            system refresh view $view_name;"
-        # At most 8 of the 10 rows read: at least 2 seconds of the refresh are left.
-        running=`$CLICKHOUSE_CLIENT -q "
-            select status = 'Running' and read_rows between 1 and 8 from refreshes where view = '$view_name';
-            $statements"`
-        [ "$running" = 1 ] && break
-    done
-    echo "$running"
-}
-
 # ---------------------------------------------------------------------------
 # Test 1: SYSTEM PAUSE VIEW does NOT interrupt the current refresh.
 # ---------------------------------------------------------------------------
 
+# A slow refresh: 5 rows * 1 second each, long enough to observe `Running` and pause.
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(2) settings max_block_size=1;"
+    insert into src select * from numbers(5) settings max_block_size=1;
+    create materialized view p refresh every 1 year (x Int64) engine Memory empty as
+        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+    system refresh view p;"
 
-# Pause while a slow refresh (2 rows * 1 second) is running; PAUSE must not cancel it. On a slow server
-# the pause can land before the refresh starts or after it ends, so retry with a new view until the
-# refresh is still running right after the pause.
-for _ in {1..10}
-do
-    $CLICKHOUSE_CLIENT -q "
-        drop table if exists p;
-        create materialized view p refresh every 1 year (x Int64) engine Memory empty as
-            select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-        system refresh view p;"
-    # 1 = the refresh started before the pause (`Running`) and had not swapped in its result yet (`p` empty).
-    running=`$CLICKHOUSE_CLIENT -q "
-        system pause view p;
-        select status = 'Running' and (select count() from p) = 0 from refreshes where view = 'p' -- $LINENO"`
-    [ "$running" = 1 ] && break
-done
-echo "<1: refresh running after pause: $running>"
+wait_status p Running
+
+# Pause while the refresh is running. This should NOT cancel the ongoing refresh.
+$CLICKHOUSE_CLIENT -q "system pause view p;"
 
 # The currently running refresh must complete successfully.
 $CLICKHOUSE_CLIENT -q "system wait view p;"
@@ -102,10 +72,14 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;"
+    insert into src select * from numbers(5) settings max_block_size=1;
+    create materialized view s refresh every 1 year (x Int64) engine Memory empty as
+        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+    system refresh view s;"
 
-running=`interrupt_running_refresh s "system stop view s;"`
-echo "<3: refresh running before stop: $running>"
+wait_status s Running
+
+$CLICKHOUSE_CLIENT -q "system stop view s;"
 
 # STOP should interrupt the refresh; status quickly becomes Disabled with a cancellation error.
 wait_status s Disabled
@@ -126,12 +100,18 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;"
+    insert into src select * from numbers(10) settings max_block_size=1;
+    create materialized view ps refresh every 1 year (x Int64) engine Memory empty as
+        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+    system refresh view ps;"
 
-# Pause first; the refresh keeps running because PAUSE does not interrupt. Then STOP must still
-# interrupt the in-flight refresh.
-running=`interrupt_running_refresh ps "system pause view ps; system stop view ps;"`
-echo "<3a: refresh running before stop: $running>"
+wait_status ps Running
+
+# Pause first; refresh keeps running because PAUSE does not interrupt.
+$CLICKHOUSE_CLIENT -q "system pause view ps;"
+
+# Now STOP must still interrupt the in-flight refresh.
+$CLICKHOUSE_CLIENT -q "system stop view ps;"
 
 wait_status ps Disabled
 
@@ -144,14 +124,7 @@ $CLICKHOUSE_CLIENT -q "
 
 # ---------------------------------------------------------------------------
 # Test 4: SYSTEM PAUSE VIEWS pauses all refreshable views on this replica.
-# It skips views the caller may not control, so it runs as a user granted only on this database,
-# to leave the views of concurrent tests alone.
 # ---------------------------------------------------------------------------
-
-db_user="user_04105_db_$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT -q "
-    create user $db_user;
-    grant system views on $CLICKHOUSE_DATABASE.* to $db_user;"
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
@@ -163,7 +136,7 @@ $CLICKHOUSE_CLIENT -q "
     system wait view va;
     system wait view vb;"
 
-$CLICKHOUSE_CLIENT --user $db_user -q "system pause views;"
+$CLICKHOUSE_CLIENT -q "system pause views;"
 
 wait_status va Disabled
 wait_status vb Disabled
@@ -173,7 +146,7 @@ $CLICKHOUSE_CLIENT -q "
         countIf(status = 'Disabled'), count()
     from refreshes where view in ('va', 'vb');"
 
-$CLICKHOUSE_CLIENT --user $db_user -q "system start views;"
+$CLICKHOUSE_CLIENT -q "system start views;"
 
 # After start views, each view should leave the Disabled state.
 while [ "`$CLICKHOUSE_CLIENT -q "select countIf(status = 'Disabled') from refreshes where view in ('va', 'vb') -- $LINENO" | xargs`" != '0' ]
@@ -189,8 +162,7 @@ $CLICKHOUSE_CLIENT -q "
     system stop view vb;
     drop table va;
     drop table vb;
-    drop table src;
-    drop user $db_user;"
+    drop table src;"
 
 # ---------------------------------------------------------------------------
 # Test 4: Access control for SYSTEM PAUSE VIEW.

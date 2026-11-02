@@ -1,4 +1,4 @@
--- Tags: replica, no-parallel, no-flaky-check
+-- Tags: replica, no-parallel
 
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
