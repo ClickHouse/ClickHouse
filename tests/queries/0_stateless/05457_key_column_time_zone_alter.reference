@@ -4,6 +4,8 @@
 1
 1
 0
+lambda parameter	DateTime(\'Asia/Tokyo\')
+lambda parameter attached	1
 11	1
 Tuple(a UInt8, dt DateTime(\'Asia/Tokyo\'))
 11	1

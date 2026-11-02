@@ -81,7 +81,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -5960,6 +5959,38 @@ bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
     return false;
 }
 
+/// Adds the identifiers of `ast` that refer to columns, not to the parameters of an enclosing lambda, such as `dt` of
+/// `arrayMap(dt -> toHour(dt), arr)`, nor to their elements, such as `dt.a`.
+void collectFreeIdentifiers(const ASTPtr & ast, const NameSet & lambda_parameters, NameSet & result)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        const bool is_parameter = std::ranges::any_of(lambda_parameters, [&](const String & parameter)
+        {
+            return name == parameter || name.starts_with(parameter + ".");
+        });
+        if (!is_parameter)
+            result.insert(name);
+        return;
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
+        && function->arguments->children.size() == 2)
+    {
+        NameSet parameters = lambda_parameters;
+        if (const auto * parameter_list = function->arguments->children[0]->as<ASTFunction>(); parameter_list && parameter_list->arguments)
+            for (const auto & parameter : parameter_list->arguments->children)
+                if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                    parameters.insert(parameter_identifier->name());
+        collectFreeIdentifiers(function->arguments->children[1], parameters, result);
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        collectFreeIdentifiers(child, lambda_parameters, result);
+}
+
 /// The columns and subcolumns used inside the expressions of the partition and sorting keys, as written: constant folding drops
 /// the inputs of a function that depends only on the type of a column, such as `timezoneOf(dt)`, from the key DAG. A column used
 /// as a whole element of a key, such as `ORDER BY dt`, is not included: its order and partition ID do not depend on the time zone.
@@ -5974,8 +6005,7 @@ NameSet getColumnsUsedInKeyExpressions(const StorageInMemoryMetadata & metadata)
         {
             if (element->as<ASTIdentifier>())
                 continue;
-            for (const auto * identifier : IdentifiersCollector::collect(element))
-                result.insert(identifier->name());
+            collectFreeIdentifiers(element, {}, result);
         }
     }
     return result;

@@ -16,6 +16,10 @@ DROP TABLE IF EXISTS t_json_key;
 DROP TABLE IF EXISTS t_folded_key;
 DROP TABLE IF EXISTS t_folded_src;
 DROP TABLE IF EXISTS t_folded_dst;
+DROP TABLE IF EXISTS t_lambda_key;
+DROP TABLE IF EXISTS t_lambda_capture;
+DROP TABLE IF EXISTS t_lambda_src;
+DROP TABLE IF EXISTS t_lambda_dst;
 DROP TABLE IF EXISTS t_transfer_src;
 DROP TABLE IF EXISTS t_transfer_dst;
 DROP TABLE IF EXISTS t_transfer_plain_src;
@@ -81,6 +85,19 @@ CREATE TABLE t_folded_dst (id UInt64, dt DateTime('Asia/Tokyo')) ENGINE = MergeT
 INSERT INTO t_folded_src VALUES (0, '2026-01-01 00:00:00');
 ALTER TABLE t_folded_dst ATTACH PARTITION 3 FROM t_folded_src; -- { serverError INCOMPATIBLE_COLUMNS }
 
+-- A parameter of a lambda is not the column with the same name: the key below reads only `arr`.
+CREATE TABLE t_lambda_key (dt DateTime('UTC'), arr Array(DateTime('UTC'))) ENGINE = MergeTree ORDER BY arrayMap(dt -> toHour(dt), arr);
+ALTER TABLE t_lambda_key MODIFY COLUMN dt DateTime('Asia/Tokyo');
+ALTER TABLE t_lambda_key MODIFY COLUMN arr Array(DateTime('Asia/Tokyo')); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'lambda parameter', type FROM system.columns WHERE database = currentDatabase() AND table = 't_lambda_key' AND name = 'dt';
+CREATE TABLE t_lambda_capture (dt DateTime('UTC'), arr Array(UInt8)) ENGINE = MergeTree ORDER BY arrayMap(x -> x + toHour(dt), arr);
+ALTER TABLE t_lambda_capture MODIFY COLUMN dt DateTime('Asia/Tokyo'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE t_lambda_src (dt DateTime('UTC'), arr Array(DateTime('UTC'))) ENGINE = MergeTree ORDER BY arrayMap(dt -> toHour(dt), arr);
+CREATE TABLE t_lambda_dst (dt DateTime('Asia/Tokyo'), arr Array(DateTime('UTC'))) ENGINE = MergeTree ORDER BY arrayMap(dt -> toHour(dt), arr);
+INSERT INTO t_lambda_src VALUES ('2026-01-01 00:00:00', ['2026-01-01 02:00:00']);
+ALTER TABLE t_lambda_dst ATTACH PARTITION tuple() FROM t_lambda_src;
+SELECT 'lambda parameter attached', count() FROM t_lambda_dst;
+
 -- A column used in the key as is, and a column outside the keys, can still change their time zone.
 CREATE TABLE t_plain_key (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY dt;
 INSERT INTO t_plain_key VALUES (1, '2026-01-01 02:00:00');
@@ -120,3 +137,7 @@ DROP TABLE t_transfer_plain_dst;
 DROP TABLE t_folded_key;
 DROP TABLE t_folded_src;
 DROP TABLE t_folded_dst;
+DROP TABLE t_lambda_key;
+DROP TABLE t_lambda_capture;
+DROP TABLE t_lambda_src;
+DROP TABLE t_lambda_dst;
