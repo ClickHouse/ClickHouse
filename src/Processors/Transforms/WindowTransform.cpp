@@ -115,6 +115,7 @@ WindowTransform::WindowTransform(
             const WindowFunctionDescription & function = functions[result_column];
             if (auto general = asGeneralWindowFunction(function.aggregate_function))
             {
+                required = unionOf(required, general->getRequirements(params.window_description));
                 general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
             }
             else
@@ -262,19 +263,25 @@ void WindowTransform::computeReadyRows()
 void WindowTransform::recordCurrentRowBounds()
 {
     const RowPoint & current = peers.current();
-    const FrameBounds & current_frame = frame.bounds();
-    const PeersBounds & current_peers = peers.bounds();
     if (bounds.rows == 0)
         batch_start = current.location;
 
     bounds.row.push_back(current.row_index_in_partition);
-    bounds.frame_start.push_back(current_frame.start.row_index_in_partition);
-    bounds.frame_end.push_back(current_frame.end.row_index_in_partition);
-    bounds.peers_start.push_back(current_peers.start.row_index_in_partition);
-    bounds.peers_end.push_back(current_peers.end.row_index_in_partition);
-    bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
-    if (partition.bounds().fully_visible)
+    if (required.frame)
+    {
+        bounds.frame_start.push_back(frame.bounds().start.row_index_in_partition);
+        bounds.frame_end.push_back(frame.bounds().end.row_index_in_partition);
+    }
+    if (required.peers)
+    {
+        bounds.peers_start.push_back(peers.bounds().start.row_index_in_partition);
+        bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
+        bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
+    }
+    if (required.partition && partition.bounds().fully_visible)
+    {
         bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
+    }
     ++bounds.rows;
 }
 

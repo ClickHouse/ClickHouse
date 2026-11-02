@@ -4,6 +4,7 @@
 #include <Interpreters/WindowDescription.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Processors/Transforms/Window/Frame.h>
@@ -96,6 +97,7 @@ private:
     std::vector<GeneralWindowFunctionSlot> general_functions;
     std::vector<WindowFunctionWorkspace> workspaces;
     Arena states_arena;
+    WindowFunctionRequirements required;
 
     /// The batch being collected, starting at `batch_start`.
     WindowBounds bounds;
