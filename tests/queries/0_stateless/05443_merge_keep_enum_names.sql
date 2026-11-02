@@ -21,13 +21,13 @@ SELECT _table, extended FROM merge(currentDatabase(), '^consistent_') ORDER BY A
 SELECT count() FROM merge(currentDatabase(), '^consistent_') WHERE extended = 2;
 
 SELECT '-- conflicting numbering';
-CREATE TABLE conflict_1 (renumbered Enum8('a' = 1, 'b' = 2), renamed Enum8('a' = 1), widened Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE conflict_2 (renumbered Enum8('a' = 2, 'b' = 1), renamed Enum8('b' = 1), widened Enum16('b' = 1, 'a' = 300)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE conflict_1 (renumbered Enum8('a' = 1, 'b' = 2), renamed Enum8('a' = 1), widened Enum8('a' = 1, 'b' = 2), aliased Enum8('a' = 1) ALIAS 1) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE conflict_2 (renumbered Enum8('a' = 2, 'b' = 1), renamed Enum8('b' = 1), widened Enum16('b' = 1, 'a' = 300), aliased Enum8('b' = 1) ALIAS 1) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO conflict_1 VALUES ('a', 'a', 'a'), ('b', 'a', 'b');
 INSERT INTO conflict_2 VALUES ('a', 'b', 'a');
 DESCRIBE merge(currentDatabase(), '^conflict_');
-SELECT _table, renumbered, renamed, widened FROM merge(currentDatabase(), '^conflict_') ORDER BY ALL;
-SELECT count() FROM merge(currentDatabase(), '^conflict_') WHERE renamed = 'b';
+SELECT _table, renumbered, renamed, widened, aliased FROM merge(currentDatabase(), '^conflict_') ORDER BY ALL;
+SELECT count() FROM merge(currentDatabase(), '^conflict_') WHERE renamed = 'b' AND aliased = 'b';
 
 SELECT '-- containers, Nullable and a NULL source';
 CREATE TABLE nested_1 (arr Array(Enum8('a' = 1, 'b' = 2)), tup Tuple(e Enum16('a' = 1, 'b' = 2), i UInt8), m Map(UInt8, Enum8('a' = 1, 'b' = 2)), n Nullable(Enum8('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY tuple();

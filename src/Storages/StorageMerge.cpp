@@ -495,6 +495,9 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
             res.modify(name, [&type](ColumnDescription & what)
             {
                 what.type = type;
+                /// The `Merge` would compute an inherited `ALIAS` under the new type, so the tables compute it under their enums.
+                if (what.default_desc.kind == ColumnDefaultKind::Alias)
+                    what.default_desc = {};
                 /// A codec of an enum, such as `T64`, may not support `String`.
                 what.codec = {};
             });

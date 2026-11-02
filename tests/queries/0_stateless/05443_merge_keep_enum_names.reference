@@ -16,9 +16,10 @@ consistent_2	c
 renumbered	LowCardinality(String)					
 renamed	LowCardinality(String)					
 widened	LowCardinality(String)					
-conflict_1	a	a	a
-conflict_1	b	a	b
-conflict_2	a	b	a
+aliased	LowCardinality(String)					
+conflict_1	a	a	a	a
+conflict_1	b	a	b	a
+conflict_2	a	b	a	b
 1
 -- containers, Nullable and a NULL source
 arr	Array(LowCardinality(String))					
@@ -43,6 +44,7 @@ other_3	c
 renumbered	LowCardinality(String)					
 renamed	LowCardinality(String)					
 widened	LowCardinality(String)					
+aliased	LowCardinality(String)					
 -- merge_table_keep_enum_names
 extended	Int8					
 disjoint	Int8					
@@ -51,3 +53,4 @@ with_string	String
 renumbered	Int8					
 renamed	Int8					
 widened	Int16					
+aliased	Int8	ALIAS	1			
