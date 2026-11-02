@@ -226,24 +226,29 @@ public:
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
         bool pk_condition_useful = false;
-        /// Marks excluded by the primary key and by skip indexes, and the skip indexes applied to at least one part.
-        UInt64 granules_dropped_by_primary_key = 0;
-        UInt64 granules_dropped_by_skip_indexes = 0;
-        NameSet used_skip_indexes;
-        /// The marks that the analysis of a projection excluded in a part by the primary key and by skip indexes, and the skip indexes applied to it.
-        struct ProjectionPartAnalysis
+        /// The index usage of one contribution to the read: the marks that the primary key and skip indexes (top-K included)
+        /// excluded, and the skip indexes applied.
+        struct IndexUsage
         {
             UInt64 granules_dropped_by_primary_key = 0;
             UInt64 granules_dropped_by_skip_indexes = 0;
-            NameSet used_skip_indexes;
+            /// a flag per id in `skip_index_names`
+            std::vector<bool> used_skip_indexes;
+
+            void addSkipIndex(size_t id)
+            {
+                if (used_skip_indexes.size() <= id)
+                    used_skip_indexes.resize(id + 1);
+                used_skip_indexes[id] = true;
+            }
         };
-        /// The analysis of each projection part, by parent part. Filled only in the analysis of a projection.
-        std::unordered_map<const IMergeTreeDataPart *, ProjectionPartAnalysis> projection_parts_analysis;
-        /// Parent parts that the analysis of a projection excluded entirely. Filled by `filterPartsByProjection` in the read whose parts it removes.
-        std::unordered_map<const IMergeTreeDataPart *, ProjectionPartAnalysis> parts_excluded_by_projection;
-        /// Parent parts whose read uses the rows of projections as an index, with the analysis of each such projection by its name.
-        /// Not in the counters above.
-        std::unordered_map<const IMergeTreeDataPart *, std::unordered_map<String, ProjectionPartAnalysis>> parts_read_with_projection_index;
+        /// The names of the skip indexes in `IndexUsage::used_skip_indexes`, by id.
+        Names skip_index_names;
+        /// The index usage records by parent part and source. The empty source is the analysis of this read. A projection name is
+        /// a projection that excluded the part entirely, or that the read uses as a row offset index: such a record counts
+        /// the granules of the projection part, not of the parent part. Parts excluded entirely keep their records.
+        /// `recordIndexUsage` reports the sum of all records.
+        std::unordered_map<const IMergeTreeDataPart *, std::unordered_map<String, IndexUsage>> index_usage;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -268,12 +273,8 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
-            , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
-            , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
-            , used_skip_indexes(other.used_skip_indexes)
-            , projection_parts_analysis(other.projection_parts_analysis)
-            , parts_excluded_by_projection(other.parts_excluded_by_projection)
-            , parts_read_with_projection_index(other.parts_read_with_projection_index)
+            , skip_index_names(other.skip_index_names)
+            , index_usage(other.index_usage)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -297,12 +298,8 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
-            , granules_dropped_by_primary_key(other.granules_dropped_by_primary_key)
-            , granules_dropped_by_skip_indexes(other.granules_dropped_by_skip_indexes)
-            , used_skip_indexes(std::move(other.used_skip_indexes))
-            , projection_parts_analysis(std::move(other.projection_parts_analysis))
-            , parts_excluded_by_projection(std::move(other.parts_excluded_by_projection))
-            , parts_read_with_projection_index(std::move(other.parts_read_with_projection_index))
+            , skip_index_names(std::move(other.skip_index_names))
+            , index_usage(std::move(other.index_usage))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -314,6 +311,12 @@ public:
         checkLimits(const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const;
 
         bool isUsable() const { return !exceeded_row_limits; }
+
+        /// Returns the id of the skip index `index_name`, adds the name if it is new.
+        size_t getSkipIndexId(const String & index_name);
+
+        /// Replaces the record of `part` from `projection_name` with the record of the analysis of `part` in `projection_result`.
+        void setProjectionIndexUsage(const IMergeTreeDataPart * part, const String & projection_name, const AnalysisResult & projection_result);
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;

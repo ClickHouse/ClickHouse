@@ -78,20 +78,22 @@ struct ProjectionCandidate
     /// Parent parts that need to be read due to missing this projection
     std::unordered_set<const IMergeTreeDataPart *> parent_parts;
 
-    /// The parts that this projection analyzed, with the marks that the parent analysis excluded in them by the primary key and by skip indexes
-    std::unordered_map<const IMergeTreeDataPart *, std::pair<UInt64, UInt64>> parent_drops_in_analyzed_parts;
+    /// Parent parts whose projection part this candidate analyzed
+    std::unordered_set<const IMergeTreeDataPart *> analyzed_parts;
 };
 
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
-/// If set, `projection_result` is the projection analysis that excluded the removed parts: its drops in them replace the drops of `reading_select_result`.
+/// Removes the index usage records of the removed parts. If set, `projection_result` is the analysis of the projection
+/// `projection_name` that excluded the removed parts: its records of them are added.
 /// Returns the number of parts removed.
 size_t filterPartsByProjection(
     ReadFromMergeTree::AnalysisResult & reading_select_result,
     const std::unordered_set<const IMergeTreeDataPart *> & valid_parts,
-    const ReadFromMergeTree::AnalysisResult * projection_result = nullptr);
+    const ReadFromMergeTree::AnalysisResult * projection_result = nullptr,
+    const String & projection_name = {});
 
-/// Removes the parts that the chosen `candidate` analyzed from `parent_reading_select_result`, and the marks that
-/// the parent analysis or another projection excluded in them: the projection reports its own analysis of these parts.
+/// Removes the parts that the chosen `candidate` analyzed from `parent_reading_select_result`, and their index usage records:
+/// the projection reports its own analysis of these parts.
 void filterPartsByChosenProjection(ReadFromMergeTree::AnalysisResult & parent_reading_select_result, const ProjectionCandidate & candidate);
 
 /// This function fills ProjectionCandidate structure for specified projection.
