@@ -13,11 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## 互換性設定
+## 互換性設定 {#compatibility}
 
 `compatibility` 設定を指定すると、ClickHouse は、設定変更履歴に記録された例外を除き、以前の ClickHouse バージョンのデフォルト設定を使用します。
 
 設定がデフォルト以外の値に変更されている場合は、その設定値が優先されます (`compatibility` 設定の影響を受けるのは、変更されていない設定のみです) 。
+
+`compatibility` 設定によって、ユーザーが設定できない値が適用されることはありません。以前のバージョンのデフォルト値がユーザーの SETTINGS PROFILE の[制約](/ja/concepts/features/configuration/settings/constraints-on-settings)に違反する場合や、その設定が [`allow_feature_tier`](/ja/reference/settings/server-settings/settings/allow#allow_feature_tier) によって無効化されているティアに属する場合、その設定は現在のデフォルト値のまま維持されます。
 
 [`system.settings_changes`](/ja/reference/system-tables/settings_changes) で `Ignore` とマークされた変更は、その変更および同じ設定に対するそれ以前のすべての変更のロールバックをブロックします。
 
@@ -30,7 +32,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
   ただし、互換性設定は、セッションで `SET compatibility = '22.3'` を使用したり、クエリで `SETTINGS compatibility = '22.3'` を使用したりするなど、標準の ClickHouse 設定機構を使って、ユーザー、ロール、profile、クエリ、またはセッションのレベルで上書きできます。
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path
+## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

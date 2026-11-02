@@ -7,7 +7,6 @@
 -- Nullable wrapper as a payload column.
 
 SET join_use_nulls = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;

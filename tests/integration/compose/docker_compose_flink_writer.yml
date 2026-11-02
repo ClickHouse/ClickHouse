@@ -1,0 +1,20 @@
+services:
+    flink-writer:
+        image: flink:1.19-scala_2.12-java11
+        hostname: flink-writer
+        restart: always
+        entrypoint: bash
+        # The Paimon Flink jars are fetched at container start (nothing bakes
+        # them today). /tmp/flink_ready signals a usable SQL client;
+        # /tmp/flink_failed signals a startup failure. Tests skip only when the
+        # failure marker is present AND Maven is unreachable (a genuine outage);
+        # any other startup failure fails loudly.
+        command: >
+            -c "((cd /opt/flink/lib
+            && curl -sfLO https://repo1.maven.org/maven2/org/apache/paimon/paimon-flink-1.19/1.1.1/paimon-flink-1.19-1.1.1.jar
+            && curl -sfLO https://repo1.maven.org/maven2/org/apache/flink/flink-shaded-hadoop-2-uber/2.8.3-10.0/flink-shaded-hadoop-2-uber-2.8.3-10.0.jar
+            && /opt/flink/bin/start-cluster.sh
+            && touch /tmp/flink_ready)
+            || touch /tmp/flink_failed);
+            sleep infinity"
+        stop_grace_period: 5s

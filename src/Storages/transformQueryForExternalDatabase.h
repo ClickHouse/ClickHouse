@@ -59,7 +59,8 @@ String transformQueryForExternalDatabase(
     std::optional<size_t> limit = {},
     const NameSet & unsupported_functions = {},
     const NameSet & local_only_columns = {},
-    bool require_dialect_neutral_literals = false);
+    bool require_dialect_neutral_literals = false,
+    bool allow_limit_push_down = true);
 
 /** When the data source of an external database integration is a user-provided query (passed to the external
   * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can

@@ -8,7 +8,9 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 
+#include <limits>
 #include <memory>
+#include <string_view>
 
 namespace DB
 {
@@ -56,6 +58,15 @@ class SegmentedPostingListCodec
             writeVarUInt(first_row_id, out);
         }
 
+        static uint32_t readUInt32(ReadBuffer & in, std::string_view field_name)
+        {
+            UInt64 v = 0;
+            readVarUInt(v, in);
+            if (v > std::numeric_limits<uint32_t>::max())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: posting list segment {} {} exceeds UInt32 max", field_name, v);
+            return static_cast<uint32_t>(v);
+        }
+
         void read(ReadBuffer & in)
         {
             UInt64 v = 0;
@@ -67,11 +78,8 @@ class SegmentedPostingListCodec
             readVarUInt(v, in);
             payload_bytes = static_cast<uint64_t>(v);
 
-            readVarUInt(v, in);
-            cardinality = static_cast<uint32_t>(v);
-
-            readVarUInt(v, in);
-            first_row_id = static_cast<uint32_t>(v);
+            cardinality = readUInt32(in, "cardinality");
+            first_row_id = readUInt32(in, "first row id");
         }
 
         /// Block codec used for this segment's payload. Filled by read.

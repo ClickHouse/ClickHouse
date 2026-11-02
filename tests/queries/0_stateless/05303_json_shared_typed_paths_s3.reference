@@ -1,0 +1,150 @@
+-- S3 without the filesystem cache: both remote read methods, the prefetched read pool, a packed part
+s3	Full	Wide	16
+s3p	Packed	Wide	16
+s3 read json	1
+s3 read json WHERE x >= 13	1
+s3 read json.a	1
+s3 read json.a WHERE x >= 13	1
+s3 read json.c.size0	1
+s3 read json.c.size0 WHERE x >= 13	1
+s3 read (json, json.a)	1
+s3 read (json, json.a) WHERE x >= 13	1
+s3 read (json.^d, json.d.x)	1
+s3 read (json.^d, json.d.x) WHERE x >= 13	1
+s3 read ORDER BY x DESC LIMIT 7	1
+s3 threadpool json	1
+s3 threadpool json WHERE x >= 13	1
+s3 threadpool json.a	1
+s3 threadpool json.a WHERE x >= 13	1
+s3 threadpool json.c.size0	1
+s3 threadpool json.c.size0 WHERE x >= 13	1
+s3 threadpool (json, json.a)	1
+s3 threadpool (json, json.a) WHERE x >= 13	1
+s3 threadpool (json.^d, json.d.x)	1
+s3 threadpool (json.^d, json.d.x) WHERE x >= 13	1
+s3 threadpool ORDER BY x DESC LIMIT 7	1
+s3p read json	1
+s3p read json WHERE x >= 13	1
+s3p read json.a	1
+s3p read json.a WHERE x >= 13	1
+s3p read json.c.size0	1
+s3p read json.c.size0 WHERE x >= 13	1
+s3p read (json, json.a)	1
+s3p read (json, json.a) WHERE x >= 13	1
+s3p read (json.^d, json.d.x)	1
+s3p read (json.^d, json.d.x) WHERE x >= 13	1
+s3p read ORDER BY x DESC LIMIT 7	1
+s3p threadpool json	1
+s3p threadpool json WHERE x >= 13	1
+s3p threadpool json.a	1
+s3p threadpool json.a WHERE x >= 13	1
+s3p threadpool json.c.size0	1
+s3p threadpool json.c.size0 WHERE x >= 13	1
+s3p threadpool (json, json.a)	1
+s3p threadpool (json, json.a) WHERE x >= 13	1
+s3p threadpool (json.^d, json.d.x)	1
+s3p threadpool (json.^d, json.d.x) WHERE x >= 13	1
+s3p threadpool ORDER BY x DESC LIMIT 7	1
+s3 prefetched pool, prefixes pool 0 json	1
+s3 prefetched pool, prefixes pool 0 json WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 0 json.a	1
+s3 prefetched pool, prefixes pool 0 json.a WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 0 json.c.size0	1
+s3 prefetched pool, prefixes pool 0 json.c.size0 WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 0 (json, json.a)	1
+s3 prefetched pool, prefixes pool 0 (json, json.a) WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 0 (json.^d, json.d.x)	1
+s3 prefetched pool, prefixes pool 0 (json.^d, json.d.x) WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 0 ORDER BY x DESC LIMIT 7	1
+s3 prefetched pool, prefixes pool 1 json	1
+s3 prefetched pool, prefixes pool 1 json WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 1 json.a	1
+s3 prefetched pool, prefixes pool 1 json.a WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 1 json.c.size0	1
+s3 prefetched pool, prefixes pool 1 json.c.size0 WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 1 (json, json.a)	1
+s3 prefetched pool, prefixes pool 1 (json, json.a) WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 1 (json.^d, json.d.x)	1
+s3 prefetched pool, prefixes pool 1 (json.^d, json.d.x) WHERE x >= 13	1
+s3 prefetched pool, prefixes pool 1 ORDER BY x DESC LIMIT 7	1
+-- the filesystem cache: a cold read fills it, warm reads come from it
+s3c cold read json	1
+s3c cold read json WHERE x >= 13	1
+s3c cold read json.a	1
+s3c cold read json.a WHERE x >= 13	1
+s3c cold read json.c.size0	1
+s3c cold read json.c.size0 WHERE x >= 13	1
+s3c cold read (json, json.a)	1
+s3c cold read (json, json.a) WHERE x >= 13	1
+s3c cold read (json.^d, json.d.x)	1
+s3c cold read (json.^d, json.d.x) WHERE x >= 13	1
+s3c cold read ORDER BY x DESC LIMIT 7	1
+s3c warm threadpool json	1
+s3c warm threadpool json WHERE x >= 13	1
+s3c warm threadpool json.a	1
+s3c warm threadpool json.a WHERE x >= 13	1
+s3c warm threadpool json.c.size0	1
+s3c warm threadpool json.c.size0 WHERE x >= 13	1
+s3c warm threadpool (json, json.a)	1
+s3c warm threadpool (json, json.a) WHERE x >= 13	1
+s3c warm threadpool (json.^d, json.d.x)	1
+s3c warm threadpool (json.^d, json.d.x) WHERE x >= 13	1
+s3c warm threadpool ORDER BY x DESC LIMIT 7	1
+s3c warm read json	1
+s3c warm read json WHERE x >= 13	1
+s3c warm read json.a	1
+s3c warm read json.a WHERE x >= 13	1
+s3c warm read json.c.size0	1
+s3c warm read json.c.size0 WHERE x >= 13	1
+s3c warm read (json, json.a)	1
+s3c warm read (json, json.a) WHERE x >= 13	1
+s3c warm read (json.^d, json.d.x)	1
+s3c warm read (json.^d, json.d.x) WHERE x >= 13	1
+s3c warm read ORDER BY x DESC LIMIT 7	1
+05303_cold	1
+05303_warm_read	1
+05303_warm_threadpool	1
+-- requests: rows of eight kilobytes, a remote buffer of 4 KiB, one request per seek
+a path read, 30 granules, one request per granule: 1
+the same in calls of 4 rows: 1
+two granules, two requests: 1
+two ranges of three granules, three requests: 1
+two granules of a path with small neighbours, one request: 1
+a subcolumn issues the requests of its path: 1
+whole column in calls of 5 rows	1
+the whole column reads the data in one request: 1
+the whole column reads the data about once: 1
+-- a merge of two parts in small blocks, and a one-row patch part of a lightweight update
+merged	1	240
+merged rows	1
+patch	1	upd	1
+patched rows	1	1
+-- two parts read by many tasks: the prefetched read pool, tasks starting after mark 0, the cache cold and warm
+s3_tasks	2	8000	66
+s3c_tasks	2	8000	66
+s3_tasks, prefixes pool 0 (json, json.a)	0	0
+s3_tasks, prefixes pool 0 paths	1
+s3_tasks, prefixes pool 0 sub-object	0
+s3_tasks, prefixes pool 0 scattered rows	1
+s3_tasks, prefixes pool 1 (json, json.a)	0	0
+s3_tasks, prefixes pool 1 paths	1
+s3_tasks, prefixes pool 1 sub-object	0
+s3_tasks, prefixes pool 1 scattered rows	1
+s3_tasks, page cache (json, json.a)	0	0
+s3_tasks, page cache paths	1
+s3_tasks, page cache sub-object	0
+s3_tasks, page cache scattered rows	1
+s3_tasks, page cache warm (json, json.a)	0	0
+s3_tasks, page cache warm paths	1
+s3_tasks, page cache warm sub-object	0
+s3_tasks, page cache warm scattered rows	1
+s3c_tasks cold (json, json.a)	0	0
+s3c_tasks cold paths	1
+s3c_tasks cold sub-object	0
+s3c_tasks cold scattered rows	1
+s3c_tasks warm (json, json.a)	0	0
+s3c_tasks warm paths	1
+s3c_tasks warm sub-object	0
+s3c_tasks warm scattered rows	1
+05303_tasks_cold	1
+05303_tasks_warm	1

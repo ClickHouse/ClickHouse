@@ -45,11 +45,12 @@ TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyG
 {
     if (this != &src)
     {
-        nodes = src.nodes;
-        nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
-        nodes_by_uuid = src.nodes_by_uuid;
-        levels_calculated = src.levels_calculated;
-        nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
+        /// Copying the `nodes` set would share the `Node` objects with the source graph - they are held
+        /// by `shared_ptr` and point at each other - so every modification of the copy would also modify
+        /// the graph it was copied from. Rebuild the nodes instead, which is what makes a copy usable as
+        /// a scratch graph, e.g. to test what a rename would do to the dependencies.
+        clear();
+        mergeWith(src);
     }
     return *this;
 }
@@ -93,7 +94,12 @@ size_t TablesDependencyGraph::getNumberOfTables() const
 void TablesDependencyGraph::addDependency(const StorageID & table_id, const StorageID & dependency)
 {
     auto * table_node = addOrUpdateNode(table_id);
+
+    /// Adding `dependency` removes `table_node` from the graph if it gives the name of `table_node` to another node.
+    NodeSharedPtr table_node_holder = *nodes.find(table_node);
     auto * dependency_node = addOrUpdateNode(dependency);
+    if (!nodes.contains(table_node))
+        table_node = dependency_node; /// It has the name `table_node` had, so it's the node of `table_id` now.
 
     bool inserted = table_node->dependencies.insert(dependency_node).second;
     if (!inserted)

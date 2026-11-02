@@ -14,8 +14,7 @@ set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 #   `reqwest` via `rustls-tls-native-roots`. Because Cargo unifies features, `reqwest` ends
 #   up built with both the `native-tls` and `rustls` backends, so this is only a partial
 #   `native-tls` enablement. Tracking upstream: https://github.com/apache/arrow-rs-object-store/pull/585
-# NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
-if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
+if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory"))
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
@@ -40,7 +39,9 @@ set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/include)
 corrosion_set_env_vars(delta_kernel_ffi
         "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/"
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
-        "OPENSSL_LIBS=ssl:crypto"
+        # Empty, so that `openssl-sys` does not bundle a copy of OpenSSL into the archive:
+        # the binary links `OpenSSL::SSL` and `OpenSSL::Crypto` below.
+        "OPENSSL_LIBS="
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/"

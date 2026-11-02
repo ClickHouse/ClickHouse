@@ -1,0 +1,15 @@
+Training parameters
+num_iterations	1
+eta	1
+lambda	1
+objective	1
+min_child_weight	1
+1
+Prediction parameters: iteration_begin and iteration_end
+1
+1
+1
+1
+Prediction parameters: type
+10	1	1	1
+80	1	1	1

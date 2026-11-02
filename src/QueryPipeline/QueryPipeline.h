@@ -91,7 +91,7 @@ public:
         OutputPort * totals_ = nullptr,
         OutputPort * extremes_ = nullptr);
 
-    bool initialized() const { return !processors->empty(); }
+    bool initialized() const { return processors && !processors->empty(); }
     /// When initialized, exactly one of the following is true.
     /// Use PullingPipelineExecutor or PullingAsyncPipelineExecutor.
     bool pulling() const { return output != nullptr; }
@@ -154,6 +154,11 @@ public:
     /// EXPLAIN ANALYZE: the executor of this pipeline records step timings into it.
     void setStepProfiler(StepProfilerPtr step_profiler_);
     StepProfilerPtr getStepProfiler() const { return step_profiler; }
+
+    /// Only for completed. Make a pipe from all processors of the pipeline and `output_processor`,
+    /// whose inputs are connected to the processors of the pipeline, and whose not connected outputs become the outputs of the pipe.
+    /// The resources of the pipeline are moved to `resources_`.
+    static Pipe toPipeWithOutputProcessor(QueryPipeline pipeline, ProcessorPtr output_processor, QueryPlanResourceHolder & resources_);
 
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
     void addCompletedPipeline(QueryPipeline && other);
