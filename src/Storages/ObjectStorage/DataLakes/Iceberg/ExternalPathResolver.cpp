@@ -151,7 +151,7 @@ bool isBelowDirectoryWithoutSymlinks(const std::string & dir, const std::string 
         /// Canonicalization appends the missing rest of the path as spelled.
         if (status.type() == std::filesystem::file_type::not_found)
             return true;
-        if (ec || std::filesystem::is_symlink(status))
+        if (ec || status.type() == std::filesystem::file_type::symlink)
             return false;
 
         segment_begin = segment_end + 1;
