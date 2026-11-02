@@ -1,0 +1,30 @@
+-- expected counts without skip indexes
+1	1	1	0	1
+-- tokenbf_v1 on lower(v)
+1
+Granules: 1/10
+1
+Granules: 1/10
+1
+Granules: 1/10
+0
+1
+-- tokenbf_v1 on lowerUTF8(v)
+1
+Granules: 1/10
+1
+Granules: 1/10
+1
+idx not used
+0
+1
+idx not used
+-- ngrambf_v1 on lower(v)
+1
+Granules: 1/10
+1
+-- ngrambf_v1 on lowerUTF8(v)
+1
+idx not used
+1
+idx not used
