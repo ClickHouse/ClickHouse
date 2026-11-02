@@ -28,10 +28,20 @@ SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (4e-300, 0.), (3e-300,
 
 -- A small coordinate next to a huge one is kept as it is.
 SELECT polygonConvexHullCartesian([(1e300, 0.), (0., 1e300), (-1e-20, 0.)]::MultiPoint);
+SELECT polygonConvexHullCartesian([(0., 0.), (1e200, 0.), (0., 1e-200)]::MultiPoint), polygonConvexHullCartesian([(0., 0.), (1e300, 0.), (0., 1e-300)]::MultiPoint);
+-- The three rectangles of a right triangle have the same area, so only the area and the height are checked.
+SELECT round(polygonAreaCartesian(r), 6), arrayMin(arrayMap(p -> p.2, r[1])) <= 0 AND arrayMax(arrayMap(p -> p.2, r[1])) >= 1e-200
+FROM (SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1e200, 0.), (0., 1e-200)]::MultiPoint) AS r);
+-- Tiny points next to a far one, where the products of their differences would underflow: (3e-201, 5e-201) is inside.
+SELECT polygonConvexHullCartesian([(1., 1.), (-9e-201, 2e-201), (-3e-201, -4e-201), (3e-201, 5e-201)]::MultiPoint);
 
 -- Edges so short that their products underflow still have a direction.
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1., 0.), (1e-170, 1e-170)]::MultiPoint);
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 1.), (0., 0.), (1e-170, 0.), (1., 1.)]::MultiPoint);
+SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1., 0.), (1., 1e-170), (0., 1e-170)]::MultiPoint);
+
+-- A nearly flat triangle: the rectangle goes from (-0.077, -0.493) to (0.129, 0.834).
+SELECT polygonMinimumRotatedRectangleCartesian([(0.06571220733223056, 0.42349718420849747), (-0.07657354672902189, -0.4934955427785932), (0.12942912117569202, 0.8341352481946127)]::MultiPoint);
 
 -- A short edge next to long ones does not stop the calipers, even if it changes nothing in the rounded distances.
 SELECT polygonAreaCartesian(polygonMinimumRotatedRectangleCartesian([(-7.679e18, 100559.99), (4.17e-16, 3.109e16), (3.8165e21, -0.45212), (-8.11e-10, 2.685e-19), (-0.006049, 4.88e-19)]::MultiPoint)) > 1e35;
