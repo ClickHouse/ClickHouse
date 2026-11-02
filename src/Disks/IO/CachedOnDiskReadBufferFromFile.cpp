@@ -133,7 +133,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , cache_log(cache_settings_.enable_log ? cache_log_ : nullptr)
-    , query_context_holder(cache_->getQueryContextHolder(query_id, cache_settings_))
     , skip_cache_on_disk_failure(cache_->skipCacheOnDiskFailure())
     , info(
         cache_key_,
