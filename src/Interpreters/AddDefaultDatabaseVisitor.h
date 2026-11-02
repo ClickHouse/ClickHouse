@@ -113,7 +113,7 @@ public:
     }
 
     /// Prepare a standalone expression, e.g. a filter, to be interpreted with another current database:
-    /// qualify the table names in it and replace `currentDatabase()` with the database.
+    /// qualify the table names in it and replace `currentDatabase()`, also written without parentheses, with the database.
     void visitStandaloneExpression(ASTPtr & ast, const NameSet & column_names) const
     {
         /// In a select list the aliases defined in the expression are collected, so they are not taken for tables.
@@ -131,7 +131,13 @@ public:
         standalone_expression_select = select.get();
         visitTableExpressions(*select);
         standalone_expression_select = nullptr;
-        substituteCurrentDatabase(expression_list.children.at(0), expression_list);
+        /// A call of a lambda with the alias of the same name is kept.
+        NameSet lambda_aliases;
+        collectLambdaAliases(*expression_list.children.at(0), lambda_aliases);
+        substituteCurrentDatabase(expression_list.children.at(0), expression_list, lambda_aliases);
+        NameSet names_in_scope = column_names;
+        collectAliasesInScope(*expression_list.children.at(0), names_in_scope);
+        substituteCurrentDatabaseIdentifiers(expression_list.children.at(0), expression_list, names_in_scope);
         ast = expression_list.children.at(0);
     }
 
@@ -671,18 +677,24 @@ private:
         if (function.arguments && !function.arguments->children.empty())
             return false;
 
-        if (function.name == "currentDatabase")
+        return isCurrentDatabaseFunctionName(function.name);
+    }
+
+    static bool isCurrentDatabaseFunctionName(const String & name)
+    {
+        if (name == "currentDatabase")
             return true;
 
-        const String lowered_name = Poco::toLower(function.name);
+        const String lowered_name = Poco::toLower(name);
         return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database"
             || lowered_name == "current_schema";
     }
 
-    /// Replace `currentDatabase()` with a literal everywhere in the subtree.
-    void substituteCurrentDatabase(ASTPtr & ast, IAST & parent) const
+    /// Replace `currentDatabase()` with a literal everywhere in the subtree, except a call of one of `aliases`.
+    void substituteCurrentDatabase(ASTPtr & ast, IAST & parent, const NameSet & aliases = {}) const
     {
-        if (const auto * function = ast->as<ASTFunction>(); function && isCurrentDatabaseFunction(*function))
+        if (const auto * function = ast->as<ASTFunction>();
+            function && isCurrentDatabaseFunction(*function) && !aliases.contains(function->name))
         {
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
@@ -695,7 +707,89 @@ private:
         }
 
         for (auto & child : ast->children)
-            substituteCurrentDatabase(child, *ast);
+            substituteCurrentDatabase(child, *ast, aliases);
+    }
+
+    static bool isSubquery(const IAST & ast)
+    {
+        return ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>();
+    }
+
+    static const ASTFunction * tryGetLambda(const IAST & ast)
+    {
+        const auto * function = ast.as<ASTFunction>();
+        if (function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+            return function;
+        return nullptr;
+    }
+
+    /// Collect the aliases of the scope of `ast`: a subquery and a lambda have their own.
+    /// `x AS x` is not collected: the analyzer resolves `x` there as if it had no alias.
+    static void collectAliasesInScope(const IAST & ast, NameSet & aliases)
+    {
+        if (String alias = ast.tryGetAlias(); !alias.empty())
+        {
+            const auto * identifier = ast.as<ASTIdentifier>();
+            if (!identifier || identifier->name() != alias)
+                aliases.insert(std::move(alias));
+        }
+
+        if (isSubquery(ast) || tryGetLambda(ast))
+            return;
+
+        for (const auto & child : ast.children)
+            collectAliasesInScope(*child, aliases);
+    }
+
+    static void collectLambdaAliases(const IAST & ast, NameSet & aliases)
+    {
+        if (String alias = ast.tryGetAlias(); !alias.empty() && tryGetLambda(ast))
+            aliases.insert(std::move(alias));
+
+        for (const auto & child : ast.children)
+            collectLambdaAliases(*child, aliases);
+    }
+
+    /// Replace `currentDatabase` written without parentheses, e.g. `CURRENT_DATABASE`, with a literal. The analyzer resolves
+    /// such an identifier as the function only when it is not a column, an alias or a lambda parameter (`names_in_scope`).
+    /// The columns of a subquery are not known, so in a subquery it stays as written.
+    void substituteCurrentDatabaseIdentifiers(ASTPtr & ast, IAST & parent, const NameSet & names_in_scope) const
+    {
+        if (isSubquery(*ast))
+            return;
+
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            if (!identifier->compound() && isCurrentDatabaseFunctionName(identifier->name())
+                && !names_in_scope.contains(identifier->name()))
+            {
+                ASTPtr old_ast = ast;
+                auto literal = make_intrusive<ASTLiteral>(database_name);
+                literal->setAlias(identifier->alias);
+                ast = std::move(literal);
+                parent.updatePointerToChild(old_ast.get(), ast);
+            }
+            return;
+        }
+
+        if (const auto * function = tryGetLambda(*ast))
+        {
+            NameSet lambda_names_in_scope = names_in_scope;
+            if (const auto * parameters = function->arguments->children[0]->as<ASTFunction>(); parameters && parameters->arguments)
+            {
+                for (const auto & parameter : parameters->arguments->children)
+                    if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                        lambda_names_in_scope.insert(parameter_identifier->name());
+            }
+            collectAliasesInScope(*function->arguments->children[1], lambda_names_in_scope);
+
+            for (auto & child : ast->children)
+                substituteCurrentDatabaseIdentifiers(child, *ast, lambda_names_in_scope);
+            return;
+        }
+
+        for (auto & child : ast->children)
+            substituteCurrentDatabaseIdentifiers(child, *ast, names_in_scope);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const

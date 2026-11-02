@@ -13,6 +13,8 @@ URL="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+AS+n+FROM+num
 SOURCE="urlCluster('test_cluster_one_shard_three_replicas_localhost', '$URL', TSV, 'n UInt64')"
 URL_ARR="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+AS+n%2C+%5B2%2C3%5D+AS+arr+FROM+numbers(4)"
 SOURCE_ARR="urlCluster('test_cluster_one_shard_three_replicas_localhost', '$URL_ARR', TSV, 'n UInt64, arr Array(UInt64)')"
+URL_DB="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+AS+n%2C+%27x%27+AS+database+FROM+numbers(4)"
+SOURCE_DB="urlCluster('test_cluster_one_shard_three_replicas_localhost', '$URL_DB', TSV, 'n UInt64, database String')"
 
 # Keyed by the alias.
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1'}"
@@ -50,6 +52,21 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table
 
 # A filter sees the current database of the query.
 $CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND currentDatabase() = \'$CLICKHOUSE_DATABASE\' AND current_schema() = \'$CLICKHOUSE_DATABASE\''}"
+NILADIC="CURRENT_DATABASE = \'$CLICKHOUSE_DATABASE\' AND DATABASE = \'$CLICKHOUSE_DATABASE\' AND SCHEMA = \'$CLICKHOUSE_DATABASE\' AND CURRENT_SCHEMA = \'$CLICKHOUSE_DATABASE\'"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND $NILADIC'}"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'_table_function.urlCluster': 'n > 1 AND $NILADIC'}"
+# Unless the name is a column, an alias or a lambda parameter, in its scope.
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE_DB AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND database = \'x\' AND (\'y\' AS schema) = schema AND arrayExists(current_schema -> current_schema = \'z\', [\'z\'])'}"
+LAMBDA_ALIAS="arrayExists(x -> (x AS current_database) = current_database, [\'a\']) AND current_database = \'$CLICKHOUSE_DATABASE\'"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND $LAMBDA_ALIAS'}"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'_table_function.urlCluster': 'n > 1 AND $LAMBDA_ALIAS'}"
+# A call of a lambda with the alias of the same name stays a call; `x AS x` and the alias of a call are not such a lambda.
+SHADOW="(WITH (() -> \'shadow\') AS currentDatabase SELECT currentDatabase()) = \'shadow\'"
+NOT_SHADOW="(current_database AS current_database) = \'$CLICKHOUSE_DATABASE\' AND (currentDatabase() AS currentDatabase) = \'$CLICKHOUSE_DATABASE\'"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND $SHADOW'}"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'_table_function.urlCluster': 'n > 1 AND $SHADOW'}"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'t': 'n > 1 AND $NOT_SHADOW'}"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n) FROM $SOURCE AS t SETTINGS additional_table_filters = {'_table_function.urlCluster': 'n > 1 AND $NOT_SHADOW'}"
 
 # The argument of a SQL function in a filter is not captured by a lambda parameter of the same name, with either key.
 $CLICKHOUSE_CLIENT -q "CREATE FUNCTION ${CLICKHOUSE_DATABASE}_any_greater AS threshold -> arrayExists(n -> n > threshold, [3])"
