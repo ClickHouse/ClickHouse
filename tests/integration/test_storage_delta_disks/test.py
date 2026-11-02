@@ -349,12 +349,22 @@ def test_single_log_file(started_cluster, storage_type, with_cache):
     )
     write_delta_from_file(spark, parquet_data_path, delta_path)
 
-    files = default_upload_directory(
-        started_cluster,
-        storage_type,
-        delta_path,
-        TABLE_NAME,
-    )
+    if storage_type == "azure":
+        # Azure keeps a leading slash as a part of the blob name, while the table
+        # location of `delta-kernel-rs` (`az://container/var/lib/...`) has none.
+        # Upload with relative blob names, so that they match the table path.
+        files = AzureUploader(
+            started_cluster.blob_service_client,
+            started_cluster.azure_container_name,
+            use_relpath=True,
+        ).upload_directory(delta_path, delta_path.lstrip("/"))
+    else:
+        files = default_upload_directory(
+            started_cluster,
+            storage_type,
+            delta_path,
+            TABLE_NAME,
+        )
 
     assert len(files) == 2  # 1 metadata files + 1 data file
 
