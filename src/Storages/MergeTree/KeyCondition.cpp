@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -869,8 +870,8 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
         /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
         /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
-        /// position layout; the mismatch causes an out-of-bounds write into `partial_disjunction_result`
-        /// when the index RPN exceeds `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT`.
+        /// position layout; the mismatch puts partial results at the wrong positions of `partial_disjunction_result`,
+        /// which can skip granules that match the filter.
         if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
@@ -5343,6 +5344,27 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         return;
     }
 
+    /// `empty(s)` and `notEmpty(s)` of a string are the same as `s = ''` and `s != ''`
+    /// (`ConvertEmptyStringComparisonToFunctionPass` rewrites the latter to the former).
+    /// Analyze them as these comparisons, so that keys computed from the string, like `cityHash64(s)`, are used as well.
+    if (num_args == 1 && (func_name == "empty" || func_name == "notEmpty"))
+    {
+        const auto * arg_dag_node = func.getArgumentAt(0).getDAGNode();
+        if (arg_dag_node && isString(removeNullable(removeLowCardinality(arg_dag_node->result_type))))
+        {
+            const auto string_type = std::make_shared<DataTypeString>();
+            const ColumnWithTypeAndName empty_string{string_type->createColumnConst(1, Field(String())), string_type, {}};
+            extractComparisonAtomsForKeyArgument(
+                func.getArgumentAt(0),
+                info,
+                func_name == "empty" ? "equals" : "notEquals",
+                empty_string,
+                allow_relaxed_pruning,
+                group);
+            return;
+        }
+    }
+
     /// Unary functions over a key expression, like isNull(key), empty(key), etc.
     if (num_args == 1)
     {
@@ -5364,8 +5386,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
         /// empty/notEmpty produce a meaningful range only for String key columns.
-        /// For Nullable(String) they are the same as the comparisons with an empty string,
-        /// which are analyzed with the same ranges.
+        /// Usually, they are analyzed as the comparisons with an empty string above.
         if ((func_name == "empty" || func_name == "notEmpty") && !isString(removeNullable(key_expr_type)))
             return;
 
@@ -7308,7 +7329,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
     size_t first_function_number,
-    DataTypePtr current_type,
+    const DataTypePtr & key_type,
     bool single_point)
 {
     if (functions.empty())
@@ -7321,7 +7342,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
-    current_type = recursiveRemoveLowCardinality(current_type);
+    DataTypePtr current_type = recursiveRemoveLowCardinality(key_type);
 
     /// The functions are evaluated on the endpoints of a key range, which are values the analysis
     /// substitutes rather than values the query asked about, so they can fail for an endpoint the
