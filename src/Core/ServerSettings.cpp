@@ -47,6 +47,7 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 
 #include <Common/DNSResolver.h>
@@ -643,7 +644,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Cache eviction policy for the mark cache (index of MergeTree family tables). Possible values: `LRU`, `SLRU`, `SIEVE`. See [`mark_cache_size`](#mark_cache_size) for cache capacity and [`mark_cache_size_ratio`](#mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
 Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
 
@@ -698,7 +699,7 @@ This setting can be modified at runtime and will take effect immediately.
 )", 0) \
     DECLARE(UInt64, text_index_tokens_cache_max_entries, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES, "Size of cache for text index tokens in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_tokens_cache_size_ratio, DEFAULT_TEXT_INDEX_TOKENS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index tokens cache relative to the cache's total size.", 0) \
-    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Cache eviction policy for the text index header cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`text_index_header_cache_size`](#text_index_header_cache_size) and [`text_index_header_cache_max_entries`](#text_index_header_cache_max_entries) for cache capacity and [`text_index_header_cache_size_ratio`](#text_index_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
 
 <Note>
@@ -779,7 +780,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Cache eviction policy for the secondary index mark cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`index_mark_cache_size`](#index_mark_cache_size) for cache capacity and [`index_mark_cache_size_ratio`](#index_mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, R"(
 Maximum size of cache for index marks.
 
@@ -793,7 +794,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, index_mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of index mark cache to fill during prewarm.)", 0) \
     DECLARE(UInt64, page_cache_history_window_ms, 1000, "Delay before freed memory can be used by userspace page cache.", 0) \
-    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Cache eviction policy for the userspace page cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`page_cache_max_size`](#page_cache_max_size) for cache capacity and [`page_cache_size_ratio`](#page_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(Double, page_cache_size_ratio, DEFAULT_PAGE_CACHE_SIZE_RATIO, "The size of the protected queue in the userspace page cache relative to the cache's total size.", 0) \
     DECLARE(UInt64, page_cache_min_size, DEFAULT_PAGE_CACHE_MIN_SIZE, "Minimum size of the userspace page cache.", 0) \
     DECLARE(UInt64, page_cache_max_size, DEFAULT_PAGE_CACHE_MAX_SIZE, "Maximum size of the userspace page cache. Set to 0 to disable the cache. If greater than page_cache_min_size, the cache size will be continuously adjusted within this range, to use most of the available memory while keeping the total memory usage below the limit (max_server_memory_usage[_to_ram_ratio]).", 0) \
@@ -825,7 +826,7 @@ The cache can also be cleared manually, without changing this limit, with the [`
 This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
-    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Cache eviction policy for the query condition cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`query_condition_cache_size`](#query_condition_cache_size) for cache capacity and [`query_condition_cache_size_ratio`](#query_condition_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
 Maximum size of the query condition cache.
 <Note>
@@ -833,7 +834,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
-    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Cache eviction policy for the encryption header cache used by the ReaderExecutor read path. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`encryption_header_cache_size`](#encryption_header_cache_size) for cache capacity and [`encryption_header_cache_size_ratio`](#encryption_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
 Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
 <Note>
@@ -1330,10 +1331,12 @@ The replica name in ZooKeeper.
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, streaming_exchange_sndbuf, 0, R"(The size of the SO_SNDBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket send buffer (clamped by net.core.wmem_max), at the cost of capping the stream at sndbuf/RTT on high-RTT links. Read per connection, so a config reload applies to new connections only.)", 0) \
+    DECLARE(UInt64, streaming_exchange_rcvbuf, 0, R"(The size of the SO_RCVBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket receive buffer (clamped by net.core.rmem_max). Read per connection, so a config reload applies to new connections only.)", 0) \
     DECLARE(UInt64, global_profiler_real_time_period_ns, default_global_profiler_period_ns, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
     DECLARE(UInt64, global_profiler_cpu_time_period_ns, default_global_profiler_period_ns, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
-    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
+    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materialized views", 0) \
     DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \
     DECLARE(String, merge_workload, "default", R"(
@@ -1616,7 +1619,7 @@ Disabled by default to avoid possible security issues which can be caused by bug
 ```
 )", 0) \
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
-    DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
+    DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materialized view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
     DECLARE(Bool, os_collect_psi_metrics, true, "Enable accounting PSI metrics from /proc/pressure/ files.", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
@@ -2087,7 +2090,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, logger_use_syslog, false, R"(Also forward log output to syslog.)", 0, "logger.use_syslog") \
     DECLARE(String, logger_syslog_level, "trace", R"(Log level for logging to syslog.)", 0, "logger.syslog_level") \
     DECLARE(Bool, logger_async, true, R"(When `<true>` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG.)", 0, "logger.async") \
-    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queue_max_size") \
+    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queue_max_size") \
     DECLARE(String, logger_startup_level, "", R"(Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `<level>` setting.)", 0, "logger.startup_level") \
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
@@ -3961,6 +3964,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_sndbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_rcvbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().rcvbuf), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
@@ -3981,9 +3988,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
 #if USE_AVRO
     if (context->getIcebergMetadataFilesCache())
+    {
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"iceberg_metadata_files_cache_max_entries",
+             {std::to_string(context->getIcebergMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
     if (context->getPaimonMetadataFilesCache())
     {
         changeable_settings.insert(

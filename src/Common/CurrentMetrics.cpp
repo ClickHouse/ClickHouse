@@ -108,6 +108,9 @@
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
+    M(MergeTreeStatisticsLoaderThreads, "Number of threads in the thread pool for loading the statistics of data parts.") \
+    M(MergeTreeStatisticsLoaderThreadsActive, "Number of threads in the thread pool for loading the statistics of data parts running a task.") \
+    M(MergeTreeStatisticsLoaderThreadsScheduled, "Number of queued or active jobs in the thread pool for loading the statistics of data parts.") \
     M(BackgroundQueryThreads, "Number of threads in the background query thread pool.") \
     M(BackgroundQueryThreadsActive, "Number of threads in the background query thread pool running a task.") \
     M(BackgroundQueryThreadsScheduled, "Number of queued or active jobs in the background query thread pool.") \
@@ -603,7 +606,7 @@
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
     M(StreamingExchangeSinksWithFullSendQueue, "Number of streaming exchange sinks that take no chunks because their queue of packets waiting for the socket is full.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
-    M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
+    M(BrokenDisks, "Number of disks that were marked as broken during disk check.") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
     M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
     M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \
