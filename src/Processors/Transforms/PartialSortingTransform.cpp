@@ -1,4 +1,3 @@
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
 #include <Interpreters/sortBlock.h>
@@ -13,22 +12,13 @@ namespace DB
 namespace
 {
 
-/// Sort key columns can be constant only at runtime (e.g. after `optimize_constant_columns_after_filter`),
-/// and a column can be constant in one chunk and full in another. Materialize them for the comparison with the threshold:
-/// `ColumnConst::compareColumn` ignores `row_indexes`, which breaks the multi-column comparison, and `ColumnConst::compareAt`
-/// expects the other column to be `ColumnConst` as well, which a threshold saved from a full column is not.
-/// `holder` keeps the materialized columns alive while the raw pointers are used.
-ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPositions & description, Columns & holder)
+ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPositions & description)
 {
     size_t size = description.size();
     ColumnRawPtrs result(size);
-    holder.resize(size);
 
     for (size_t i = 0; i < size; ++i)
-    {
-        holder[i] = block.safeGetByPosition(description[i].column_number).column->convertToFullColumnIfConst();
-        result[i] = holder[i].get();
-    }
+        result[i] = block.safeGetByPosition(description[i].column_number).column.get();
 
     return result;
 }
@@ -76,8 +66,8 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
 
 bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_block_index, const Columns & threshold_columns, const SortDescription & sort_description)
 {
-    chassert(raw_block_columns.size() == threshold_columns.size());
-    chassert(raw_block_columns.size() == sort_description.size());
+    assert(raw_block_columns.size() == threshold_columns.size());
+    assert(raw_block_columns.size() == sort_description.size());
 
     size_t raw_block_columns_size = raw_block_columns.size();
     for (size_t i = 0; i < raw_block_columns_size; ++i)
@@ -104,7 +94,7 @@ PartialSortingTransform::PartialSortingTransform(
     , threshold_tracker(threshold_tracker_)
 {
     // Sorting by no columns doesn't make sense.
-    chassert(!description_.empty());
+    assert(!description_.empty());
 
     for (const auto & column_sort_desc : description)
         description_with_positions.emplace_back(column_sort_desc, header_->getPositionByName(column_sort_desc.column_name));
@@ -117,7 +107,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
         // The following code works with Blocks and will lose the number of
         // rows when there are no columns. We shouldn't get such block, because
         // we have to sort by at least one column.
-        chassert(chunk.getNumColumns());
+        assert(chunk.getNumColumns());
     }
 
     if (read_rows)
@@ -125,21 +115,13 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    /// Materialize sort key columns that are ColumnReplicated to avoid index indirection during comparison and sorting.
-    for (const auto & col_desc : description)
-    {
-        auto & column_entry = block.getByName(col_desc.column_name);
-        column_entry.column = convertToFullColumnIfReplicationNotUseful(column_entry.column);
-    }
-
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
       */
     if (!sort_description_threshold_columns.empty() && !threshold_tracker)
     {
         UInt64 rows_num = block.rows();
-        Columns block_columns_holder;
-        auto block_columns = extractRawColumns(block, description_with_positions, block_columns_holder);
+        auto block_columns = extractRawColumns(block, description_with_positions);
 
         size_t result_size_hint = getFilterMask(
                 block_columns, sort_description_threshold_columns,
@@ -168,8 +150,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
           * If min block value is less than current threshold value, update current threshold value.
           */
         size_t min_row_to_compare = limit - 1;
-        Columns raw_block_columns_holder;
-        auto raw_block_columns = extractRawColumns(block, description_with_positions, raw_block_columns_holder);
+        auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
             compareWithThreshold(raw_block_columns, min_row_to_compare, sort_description_threshold_columns, description))
@@ -190,7 +171,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
             if (threshold_tracker)
             {
                 Field value;
-                sort_description_threshold_columns[0]->get(0, value);
+                sort_description_threshold_columns[0]->get(0, value); /// only single number equivalent column
                 threshold_tracker->testAndSet(value);
             }
         }

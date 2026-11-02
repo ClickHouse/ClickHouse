@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemNamedCollections.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <base/EnumReflection.h>
 #include <Columns/ColumnArray.h>
@@ -13,7 +12,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
-#include <Common/HiddenSecret.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -66,7 +64,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
             if (access_secrets)
                 value_column.insert(collection->get<String>(key));
             else
-                value_column.insert(String(HIDDEN_SECRET));
+                value_column.insert("[HIDDEN]");
             size++;
         }
 
@@ -78,6 +76,3 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemNamedCollections) }

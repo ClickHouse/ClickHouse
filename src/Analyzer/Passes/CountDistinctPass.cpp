@@ -3,20 +3,15 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <DataTypes/IDataType.h>
-
 #include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
-#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -44,26 +39,13 @@ public:
         /// Check that query has only SELECT clause
         if (!query_node || (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
             query_node->hasHaving() || query_node->hasWindow() || query_node->hasQualify() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
-            query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasLimitAfter() || query_node->hasLimitUntil() || query_node->hasOffset()))
+            query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasOffset()))
             return;
 
         /// Check that query has only single table expression
-        auto join_tree_node_type = query_node->getJoinTreeNode()->getNodeType();
+        auto join_tree_node_type = query_node->getJoinTree()->getNodeType();
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
-
-        /// The rewritten subquery must be merged on the initiator. Otherwise, the outer `count()` counts
-        /// duplicate groups returned independently by each shard instead of global distinct keys. Skip a
-        /// remote carrier at any depth, including a `Distributed` table hidden behind a subquery. A purely
-        /// local query remains eligible even when distributed-query settings are enabled in its session.
-        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), false, true))
-        {
-            if (const auto * table_node = table_expression->as<TableNode>(); table_node && table_node->getStorage()->isRemote())
-                return;
-
-            if (const auto * table_function_node = table_expression->as<TableFunctionNode>(); table_function_node && table_function_node->getStorage()->isRemote())
-                return;
-        }
 
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();
@@ -90,20 +72,15 @@ public:
             return;
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
 
-        /// `countDistinct`/`uniqExact` skip NULLs, but `GROUP BY` on a Nullable column produces a NULL group
-        /// that `count` would include. Skip the rewrite for nullable arguments to preserve semantics.
-        if (isNullableOrLowCardinalityNullable(count_distinct_argument_column_typed.getColumnType()))
-            return;
-
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
         auto subquery = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));
-        subquery->getJoinTreeNode() = query_node->getJoinTreeNode();
+        subquery->getJoinTree() = query_node->getJoinTree();
         subquery->getProjection().getNodes().push_back(count_distinct_argument_column);
         subquery->getGroupBy().getNodes().push_back(count_distinct_argument_column);
         subquery->resolveProjectionColumns({count_distinct_argument_column_typed.getColumn()});
 
         /// Put subquery into JOIN TREE of initial query
-        query_node->getJoinTreeNode() = std::move(subquery);
+        query_node->getJoinTree() = std::move(subquery);
 
         /// Replace `countDistinct` of initial query into `count`
         auto result_type = function_node->getResultType();

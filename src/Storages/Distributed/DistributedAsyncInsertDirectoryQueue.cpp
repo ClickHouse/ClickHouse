@@ -26,7 +26,6 @@
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
 #include <filesystem>
@@ -123,7 +122,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     const std::string & relative_path_,
     ConnectionPoolWithFailoverPtr pool_,
     ActionBlocker & monitor_blocker_,
-    const BackgroundSchedulePoolPtr & bg_pool)
+    BackgroundSchedulePool & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
     , disk(disk_)
@@ -152,7 +151,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
 
     initializeFilesFromDisk();
 
-    task_handle = bg_pool->createTask(storage.getStorageID(), getLoggerName() + "/Bg", [this]{ run(); });
+    task_handle = bg_pool.createTask(storage.getStorageID(), getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();
 }
 
@@ -198,32 +197,6 @@ void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
     task_handle->deactivate();
 }
 
-std::chrono::milliseconds DistributedAsyncInsertDirectoryQueue::calculateSleepTime(
-    std::chrono::milliseconds default_sleep_time,
-    std::chrono::milliseconds max_sleep_time,
-    size_t error_count)
-{
-    if (default_sleep_time.count() <= 0)
-        return std::min(default_sleep_time, max_sleep_time);
-
-    const UInt64 q = doubleToUInt64(std::exp2(error_count));
-    /// Clamp before multiplying: default_sleep_time * q can overflow for large error_count.
-    if (q > static_cast<UInt64>(max_sleep_time.count() / default_sleep_time.count()))
-        return max_sleep_time;
-
-    return std::min(std::chrono::milliseconds(default_sleep_time.count() * static_cast<Int64>(q)), max_sleep_time);
-}
-
-void DistributedAsyncInsertDirectoryQueue::updateSleepTime()
-{
-    size_t error_count = 0;
-    {
-        std::lock_guard status_lock(status_mutex);
-        error_count = status.error_count;
-    }
-    sleep_time = calculateSleepTime(default_sleep_time, max_sleep_time, error_count);
-}
-
 
 void DistributedAsyncInsertDirectoryQueue::run()
 {
@@ -232,7 +205,6 @@ void DistributedAsyncInsertDirectoryQueue::run()
     std::lock_guard lock{mutex};
 
     bool do_sleep = false;
-    bool had_error = false;
     while (!pending_files.isFinished())
     {
         do_sleep = true;
@@ -248,11 +220,27 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
+
+                const auto now = std::chrono::system_clock::now();
+                if (now - last_decrease_time > decrease_error_count_period)
+                {
+                    std::lock_guard status_lock(status_mutex);
+
+                    status.error_count /= 2;
+                    last_decrease_time = now;
+                }
             }
             catch (...)
             {
                 tryLogCurrentException(getLoggerName().data());
-                had_error = true;
+
+                UInt64 q = doubleToUInt64(std::exp2(status.error_count));
+                std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
+                if (new_sleep_time.count() < 0)
+                    sleep_time = max_sleep_time;
+                else
+                    sleep_time = std::min(new_sleep_time, max_sleep_time);
+
                 do_sleep = true;
             }
         }
@@ -263,25 +251,8 @@ void DistributedAsyncInsertDirectoryQueue::run()
             break;
     }
 
-    /// Decay error_count on a non-failing, unblocked run so the backoff relaxes after recovery.
-    /// Skip on error (keep growing during an outage) and while sends are stopped (preserve backoff).
-    if (!had_error && !monitor_blocker.isCancelled())
-    {
-        const auto now = std::chrono::system_clock::now();
-        std::lock_guard status_lock(status_mutex);
-        if (now - last_decrease_time > decrease_error_count_period)
-        {
-            status.error_count /= 2;
-            last_decrease_time = now;
-        }
-    }
-
-    /// Recompute the backoff here, the only place sleep_time is used, so it tracks error_count up and down.
     if (!pending_files.isFinished() && do_sleep)
-    {
-        updateSleepTime();
         task_handle->scheduleAfter(sleep_time.count());
-    }
 }
 
 
@@ -395,10 +366,7 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         {
             const auto & file_path = it->path();
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(file_path.stem()))
-            {
                 broken_bytes_count += fs::file_size(file_path);
-                broken_files++;
-            }
             else
                 LOG_WARNING(log, "Unexpected file {} in {}", file_path.string(), broken_path);
         }
@@ -526,11 +494,8 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
-        /// The whole batch is sent with the `ClientInfo` of its first file, so files that the shard would
-        /// authenticate differently must never be merged into one batch.
-        return std::tie(settings, query, client_info.query_kind, client_info.client_agent, client_info.is_internal) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent, other.client_info.is_internal) &&
-               getRemoteAuthenticationIdentity(client_info) == getRemoteAuthenticationIdentity(other.client_info) &&
+        return std::tie(settings, query, client_info.query_kind) ==
+               std::tie(other.settings, other.query, other.client_info.query_kind) &&
                blocksHaveEqualStructure(header, other.header);
     }
 
@@ -540,11 +505,6 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
-            const auto [initial_user, initial_host] = getRemoteAuthenticationIdentity(batch_header.client_info);
-            hash_state.update(initial_user.data(), initial_user.size());
-            hash_state.update(initial_host.data(), initial_host.size());
-            hash_state.update(batch_header.client_info.client_agent.data(), batch_header.client_info.client_agent.size());
-            hash_state.update(batch_header.client_info.is_internal);
             batch_header.header.updateHash(hash_state);
             return hash_state.get64();
         }
@@ -553,10 +513,12 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
 bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
-    std::string absolute_file_path = fs::absolute(file_path).string();
+    if (!pending_files.push(fs::absolute(file_path).string()))
+    {
+        LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
+        return false;
+    }
 
-    /// Count the file before it is pushed: the background task can send it and uncount it in `markAsSend`
-    /// as soon as it is in the queue, which would take the counters below zero for a while.
     {
         std::lock_guard lock(status_mutex);
         metric_pending_files.add();
@@ -564,23 +526,6 @@ bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string 
         status.bytes_count += file_size;
         ++status.files_count;
     }
-
-    /// Uncount the file if it does not get into the queue: either the queue is finished, or `push` throws.
-    scope_guard uncount_file([&]
-    {
-        std::lock_guard lock(status_mutex);
-        metric_pending_files.sub();
-        metric_pending_bytes.sub(file_size);
-        status.bytes_count -= file_size;
-        --status.files_count;
-    });
-
-    if (!pending_files.push(std::move(absolute_file_path)))
-    {
-        LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
-        return false;
-    }
-    uncount_file.release();
 
     return task_handle->scheduleAfter(ms, false);
 }

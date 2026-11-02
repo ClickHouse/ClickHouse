@@ -64,18 +64,17 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    if (check_source_access)
-        checkSourceAccess(context, is_insert_query);
+    checkSourceAccess(context, is_insert_query);
 
     /// Deliberately not under `check_source_access`: no caller takes over the engine check.
     checkEngineAccess(context);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
-    if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
+    if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
@@ -94,8 +93,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     /// It will request actual table structure and create underlying storage lazily
     return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
-                                                       std::move(cached_columns), needStructureConversion(),
-                                                       hasUnreplicatedTableDataOnDisk());
+                                                       std::move(cached_columns), needStructureConversion());
 }
 
 String ITableFunction::getFunctionURINormalized() const

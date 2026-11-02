@@ -49,7 +49,7 @@ bool isDistributedSendBroken(int code, bool remote_error)
         || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
-static void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader & distributed_header, ReadBufferFromFile & in)
+void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader & distributed_header, ReadBufferFromFile & in)
 {
     CompressedReadBuffer decompressing_in(in);
     NativeReader block_in(decompressing_in, distributed_header.revision);
@@ -66,14 +66,6 @@ static void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInser
         converting_actions->execute(block);
         remote.write(block);
     }
-}
-
-std::pair<String, String> getRemoteAuthenticationIdentity(const ClientInfo & client_info)
-{
-    String initial_host;
-    if (client_info.initial_address)
-        initial_host = client_info.initial_address->host().toString();
-    return {client_info.initial_user, initial_host};
 }
 
 void writeRemoteConvert(
