@@ -1932,8 +1932,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             ],
         ),
-        # TEMPORARY: 4h instead of 2h while the whole suite runs in this PR, revert before merge
-        timeout=4 * 3600,
+        timeout=2 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
         *[
