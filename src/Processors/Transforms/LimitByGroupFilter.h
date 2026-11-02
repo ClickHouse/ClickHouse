@@ -132,6 +132,10 @@ private:
     NO_INLINE void
     processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run);
 
+    /// Appends the fingerprint of the key at `row` to `group_fingerprints`. Only a spilling filter with
+    /// generic keys keeps fingerprints, so the call stays out of the row loop.
+    NO_INLINE void addGroupFingerprint(size_t row, const ColumnRawPtrs & key_columns);
+
     /// Splits the rows into runs and counts them; returns false when cancellation stopped the loop. With
     /// `checked_insertion`, looks keys up first and stops before the first new group that `can_insert`
     /// rejects. Stores the number of processed rows in `processed_rows`.

@@ -387,6 +387,13 @@ void LimitByGroupFilter::processRunInsideWindow(
     group_counts[group_idx] = group_rows_seen_before_run + run_row_count;
 }
 
+void LimitByGroupFilter::addGroupFingerprint(size_t row, const ColumnRawPtrs & key_columns)
+{
+    /// The fingerprint is computed from the original row, like the fingerprints of later input rows;
+    /// rebuilding the row from the serialized key could change the bytes of aggregate states.
+    group_fingerprints.push_back(ColumnsHashing::hash128(row, key_columns.size(), key_columns));
+}
+
 size_t LimitByGroupFilter::getTotalByteCount() const
 {
     return data->allocatedBytes() + group_counts.capacity() * sizeof(UInt64)
@@ -506,19 +513,21 @@ bool LimitByGroupFilter::consumeImpl(
     else
     {
         typename Method::State state(grouping_key_columns, data->key_sizes, hash_method_context);
+        /// The loop reads these through locals: its stores into the table may alias the members, so the
+        /// members would be reloaded for every row.
+        Arena & pool = *data->aggregates_pool;
+        const IProcessor & processor = owner;
 
         UInt64 current_run_start_row = 0;
         size_t current_run_group_idx = 0;
 
-        auto insert_group = [&](auto & emplace_result, size_t row)
+        auto insert_group = [&](auto & emplace_result, size_t row) ALWAYS_INLINE
         {
             /// Assign a stable index into `group_counts` to the grouping key just inserted.
             const size_t group_idx = group_counts.size();
             group_counts.push_back(0);
-            /// The fingerprint is computed from the original row, like the fingerprints of later input rows;
-            /// rebuilding the row from the serialized key could change the bytes of aggregate states.
             if (retains_fingerprints)
-                group_fingerprints.push_back(ColumnsHashing::hash128(row, grouping_key_columns.size(), grouping_key_columns));
+                addGroupFingerprint(row, grouping_key_columns);
             emplace_result.setMapped(mappedFromGroupIndex(group_idx));
             return group_idx;
         };
@@ -527,7 +536,7 @@ bool LimitByGroupFilter::consumeImpl(
 
         for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
         {
-            if (owner.isCancelled())
+            if (processor.isCancelled())
                 return false;
 
             if (row_idx == 5)
@@ -536,12 +545,12 @@ bool LimitByGroupFilter::consumeImpl(
             size_t row_group_idx = 0;
             if constexpr (checked_insertion)
             {
-                auto find_result = state.findKey(hash_method.data, row_idx, *data->aggregates_pool);
+                auto find_result = state.findKey(hash_method.data, row_idx, pool);
                 if (find_result.isFound())
                     row_group_idx = groupIndexFromMapped(find_result.getMapped());
                 else if ((*can_insert)(estimateGrowthMemoryImpl(hash_method, grouping_key_columns, row_idx, 1)))
                 {
-                    auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data->aggregates_pool);
+                    auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, pool);
                     chassert(key_emplace_result.isInserted());
                     row_group_idx = insert_group(key_emplace_result, row_idx);
                 }
@@ -556,7 +565,7 @@ bool LimitByGroupFilter::consumeImpl(
             }
             else
             {
-                auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data->aggregates_pool);
+                auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, pool);
                 if (key_emplace_result.isInserted()) /// New grouping key
                     row_group_idx = insert_group(key_emplace_result, row_idx);
                 else /// Existing grouping key
