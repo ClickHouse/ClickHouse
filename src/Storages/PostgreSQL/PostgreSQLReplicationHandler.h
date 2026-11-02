@@ -249,10 +249,13 @@ private:
     void ensureNestedTablesExist();
 
     /// For every nested table whose shut-down copy `ensureNestedTablesExist` drops, the generation (the creation
-    /// zxid of the root node, 0 if it was missing) of the shared replicated tree that copy belonged to. Kept until
-    /// the replacement is created, including across failed and retried attempts, and compared with the tree the
-    /// replacement joined. Only accessed from `ensureNestedTablesExist`.
-    std::unordered_map<String, int64_t> recreated_nested_tree_generations;
+    /// zxid of the root node, 0 if it was missing) of the shared replicated tree that copy belonged to is recorded
+    /// in Keeper at `getNestedRecreationPath` before the drop. The record survives failed attempts, retried
+    /// database startups (which reconstruct the handler) and restarts. Once the replacement exists, it is compared
+    /// with the tree the replacement joined, and the `snapshot_completed` marker is removed if they differ.
+    String getNestedRecreationPath(const String & table_name) const;
+    void recordNestedTreeGeneration(const String & table_name, const NestedTableEngineSpec & engine_spec);
+    void checkRecordedNestedTreeGeneration(const String & table_name);
 
     /// Coordinated mode: mark the nested tables available on this replica once it holds the complete initial
     /// snapshot (the marker exists and the local replica has caught up). Returns whether all of them are.

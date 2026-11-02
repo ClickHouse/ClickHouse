@@ -239,7 +239,32 @@ private:
         if (leader_name != entry.replica_name || stat.ephemeralOwner != entry.session_id || stat.czxid != entry.czxid)
             return true;
 
-        const auto code = zookeeper->tryRemove(entry.path, stat.version);
+        /// The checks above are not atomic with the removal, and the version of a recreated node starts from zero
+        /// again. `lockElections` serializes this with the elections and removals of this process only: a peer
+        /// server can remove the checked node (the teardown of the last replica) and another one can then win a
+        /// new election, all between the read above and the removal. So when Keeper supports it, the removal is
+        /// fenced atomically on the creation zxid and the owner session of the node, which identify the election
+        /// term. Without `CHECK_STAT` (plain ZooKeeper) only the version check remains.
+        Coordination::Error code;
+        if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
+        {
+            Coordination::Stat stat_to_check{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+            stat_to_check.czxid = entry.czxid;
+            stat_to_check.ephemeralOwner = entry.session_id;
+
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(entry.path, stat.version, /* not_exists */ false, stat_to_check));
+            ops.emplace_back(zkutil::makeRemoveRequest(entry.path, stat.version));
+            Coordination::Responses responses;
+            /// A failed check (`ZBADVERSION`) leaves the entry pending: the next attempt reads the node again and
+            /// sees that it belongs to another election.
+            code = zookeeper->tryMulti(ops, responses);
+        }
+        else
+        {
+            code = zookeeper->tryRemove(entry.path, stat.version);
+        }
+
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
         {
             LOG_INFO(log, "Released the replication leader node {} that a shutdown could not release", entry.path);
@@ -1994,13 +2019,11 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
             /// it (`startSynchronization` reloads every table when the slot exists without the marker). A peer can
             /// drop its own copy at any moment between this check and the creation of the replacement, so the
             /// generation of the shared tree is recorded here as well, and checked again once the replacement
-            /// exists (see `recreated_nested_tree_generations`).
+            /// exists (see `getNestedRecreationPath`).
             const auto shut_down_engine_spec = makeNestedEngineSpec(table_name);
             if (coordination_enabled && shut_down_engine_spec.replicated)
             {
-                Coordination::Stat tree_stat;
-                const bool tree_exists = getContext()->getZooKeeper()->exists(shut_down_engine_spec.zookeeper_path, &tree_stat);
-                recreated_nested_tree_generations.emplace(table_name, tree_exists ? tree_stat.czxid : 0);
+                recordNestedTreeGeneration(table_name, shut_down_engine_spec);
                 invalidateInitialSnapshotIfNoOtherNestedReplica(shut_down_engine_spec);
             }
 
@@ -2090,17 +2113,10 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
         /// removed together with its last replica), so the replacement joined an empty tree: the completed
         /// snapshot no longer exists in any copy and must be redone. Checked after the creation, because only
         /// then the replacement is registered in the tree and keeps it from being removed.
-        if (auto it = recreated_nested_tree_generations.find(table_name); it != recreated_nested_tree_generations.end())
-        {
-            const auto engine_spec = makeNestedEngineSpec(table_name);
-            Coordination::Stat tree_stat;
-            const bool tree_exists = getContext()->getZooKeeper()->exists(engine_spec.zookeeper_path, &tree_stat);
-            if (!tree_exists || it->second == 0 || tree_stat.czxid != it->second)
-                invalidateInitialSnapshot(fmt::format(
-                    "The shared nested table at {} was recreated since this replica dropped its shut-down copy, so no "
-                    "copy of the completed snapshot is left", engine_spec.zookeeper_path));
-            recreated_nested_tree_generations.erase(it);
-        }
+        /// The record is kept in Keeper, so it survives a failure of this check, the reconstruction of the
+        /// handler by a retried database startup, and a server restart.
+        if (coordination_enabled)
+            checkRecordedNestedTreeGeneration(table_name);
 
         /// The nested table is deliberately not marked as available here: it is still empty (or only partially
         /// replicated) until the active worker has loaded the whole snapshot and this replica has fetched it.
@@ -3501,6 +3517,8 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
     }
     remove_checked(coordination_keeper_path + "/replicas", /* recursive */ true);
     remove_checked(coordination_keeper_path + "/snapshot_completed");
+    /// The records of `recordNestedTreeGeneration` are meaningless once the setup is torn down.
+    remove_checked(coordination_keeper_path + "/nested_recreations", /* recursive */ true);
     /// The naming fingerprint and table set remain until the local nested tables are actually gone. A refused
     /// DROP then restarts against their authoritative coordinated identity instead of treating the still-live
     /// publication as a leak and deriving a different set from the current PostgreSQL schema.
@@ -3557,6 +3575,59 @@ bool PostgreSQLReplicationHandler::isInitialSnapshotCompleted()
 
     auto zookeeper = getContext()->getZooKeeper();
     return zookeeper->exists(coordination_keeper_path + "/snapshot_completed");
+}
+
+
+String PostgreSQLReplicationHandler::getNestedRecreationPath(const String & table_name) const
+{
+    return coordination_keeper_path + "/nested_recreations/" + coordination_replica_name + "/" + escapeForFileName(table_name);
+}
+
+
+void PostgreSQLReplicationHandler::recordNestedTreeGeneration(const String & table_name, const NestedTableEngineSpec & engine_spec)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::recordNestedTreeGeneration");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    Coordination::Stat tree_stat;
+    const bool tree_exists = zookeeper->exists(engine_spec.zookeeper_path, &tree_stat);
+    const Int64 generation = tree_exists ? tree_stat.czxid : 0;
+
+    /// A record left by an earlier attempt that failed before the replacement was created is kept: it holds the
+    /// generation of the tree that the data of the dropped copy belonged to (or an older one, which is checked
+    /// conservatively the same way).
+    const String path = getNestedRecreationPath(table_name);
+    zookeeper->createAncestors(path);
+    const auto code = zookeeper->tryCreate(path, toString(generation), zkutil::CreateMode::Persistent);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException::fromPath(code, path);
+}
+
+
+void PostgreSQLReplicationHandler::checkRecordedNestedTreeGeneration(const String & table_name)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::checkRecordedNestedTreeGeneration");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String path = getNestedRecreationPath(table_name);
+    String recorded;
+    if (!zookeeper->tryGet(path, recorded))
+        return;
+
+    const auto engine_spec = makeNestedEngineSpec(table_name);
+    const Int64 generation = parse<Int64>(recorded);
+    Coordination::Stat tree_stat;
+    const bool tree_exists = zookeeper->exists(engine_spec.zookeeper_path, &tree_stat);
+    if (!tree_exists || generation == 0 || tree_stat.czxid != generation)
+        invalidateInitialSnapshot(fmt::format(
+            "The shared nested table at {} was recreated since this replica dropped its shut-down copy, so no "
+            "copy of the completed snapshot is left", engine_spec.zookeeper_path));
+
+    /// Removed only after the check (and the invalidation) succeeded: if anything above fails, the next attempt
+    /// checks again.
+    const auto code = zookeeper->tryRemove(path);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException::fromPath(code, path);
 }
 
 
