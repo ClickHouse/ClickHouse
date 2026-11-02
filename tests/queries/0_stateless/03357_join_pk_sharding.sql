@@ -1,4 +1,6 @@
--- Tags: long, no-asan, no-msan, no-tsan
+-- Tags: long, no-asan, no-msan, no-tsan, no-random-settings
+-- no-random-settings: the test asserts on the join plan, order and sharding clauses, which the
+-- randomized join settings move around.
 
 SET explain_query_plan_default = 'legacy';
 
@@ -20,7 +22,6 @@ insert into tab_r select number, number, number, number from numbers(1e6);
 --select explain e from (explain actions = 1 )
 --where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 
-set enable_analyzer=1;
 set query_plan_join_swap_table=0;
 set query_plan_join_shard_by_pk_ranges=1;
 set allow_experimental_parallel_reading_from_replicas=0;

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <set>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -42,6 +43,11 @@
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
 
+namespace ProfileEvents
+{
+    extern const Event TextIndexDictionaryDFABuilds;
+}
+
 namespace DB
 {
 
@@ -49,7 +55,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace Setting
@@ -74,7 +79,8 @@ TextSearchQuery::TextSearchQuery(
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
     std::vector<OptimizedRegularExpression> patterns_,
-    VectorWithMemoryTracking<String> phrase_tokens_)
+    VectorWithMemoryTracking<String> phrase_tokens_,
+    TextIndexAutomatonBudget * automaton_budget)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
@@ -84,6 +90,74 @@ TextSearchQuery::TextSearchQuery(
 {
     std::sort(tokens.begin(), tokens.end());
     initializeHash();
+
+    for (const auto & pattern : patterns)
+    {
+        std::shared_ptr<const TextIndexDictionaryDFA> automaton;
+
+        const bool is_literal = pattern.getMatchKind() == RegexpMatchKind::Prefix || pattern.getMatchKind() == RegexpMatchKind::Exact;
+        if (!is_literal && !pattern.getRE2())
+        {
+            pattern_automata.push_back(nullptr);
+            continue;
+        }
+
+        /// Other conditions of the same index (e.g. one per partition) compile the same patterns: reuse their automata,
+        /// including the failures. The key contains everything the automaton depends on.
+        String key;
+        if (is_literal)
+            key = fmt::format("{}{}", pattern.getMatchKind() == RegexpMatchKind::Prefix ? 'P' : 'E', pattern.getRequiredSubstring());
+        else
+            key = fmt::format("R{}{}{}", pattern.getRE2()->options().case_sensitive(), static_cast<int>(pattern.getRE2()->options().encoding()), pattern.getRE2()->pattern());
+        if (automaton_budget && automaton_budget->lookup(key, automaton))
+        {
+            pattern_automata.push_back(std::move(automaton));
+            continue;
+        }
+
+        /// Without a budget (no shared condition), only the per-automaton limit applies.
+        const size_t max_memory = automaton_budget ? automaton_budget->available() : TextIndexAutomatonBudget::pattern_limit;
+        /// A failed attempt is charged the full limit: RE2 spends time proportional to its memory budget before it gives up.
+        size_t charge = max_memory;
+        /// If the budget is spent, use the regular dictionary scan.
+        if (max_memory > 0)
+        {
+            if (is_literal)
+            {
+                ProfileEvents::increment(ProfileEvents::TextIndexDictionaryDFABuilds);
+                automaton = TextIndexDictionaryDFA::literal(pattern.getRequiredSubstring(), pattern.getMatchKind() == RegexpMatchKind::Prefix, max_memory);
+            }
+            else
+            {
+                /// The existing SQL surface supplies `LIKE` patterns. Leading wildcards
+                /// cannot prune ASCII prefixes, so avoid determinizing them altogether.
+                std::string prefix;
+                bool fold_case = false;
+                re2::Regexp * suffix = nullptr;
+                const bool has_prefix = pattern.getRE2()->Regexp()->RequiredPrefix(&prefix, &fold_case, &suffix);
+                if (suffix)
+                    suffix->Decref();
+                if (has_prefix && !prefix.empty())
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexDictionaryDFABuilds);
+                    automaton = TextIndexDictionaryDFA::fromRegexp(*pattern.getRE2(), max_memory);
+                    if (automaton && !automaton->canSkipPrefixes())
+                        automaton.reset();
+                }
+                else
+                    charge = 0;
+            }
+        }
+        if (automaton)
+            charge = automaton->memoryUsage();
+        if (automaton_budget)
+        {
+            automaton_budget->charge(charge);
+            /// The budget only shrinks, so a failure stays a failure.
+            automaton_budget->store(key, automaton);
+        }
+        pattern_automata.push_back(std::move(automaton));
+    }
 }
 
 void TextSearchQuery::initializeHash()
@@ -190,21 +264,23 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
-    NameSet columns_shadowing_map_subcolumns_,
-    JSONIndexArgumentTypes json_argument_types_)
+    IsShadowingColumn is_column_shadowing_map_subcolumn_,
+    JSONIndexArgumentTypes json_argument_types_,
+    TextIndexAutomatonBudgetPtr automaton_budget_)
     : WithContext(context_)
     , header(index_sample_block)
     , json_argument_types(std::move(json_argument_types_))
     , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
+    , automaton_budget(automaton_budget_ ? std::move(automaton_budget_) : std::make_shared<TextIndexAutomatonBudget>())
     , has_positions(has_positions_)
 {
     if (!predicate)
@@ -452,31 +528,17 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
 }
 
-std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
+std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
 {
     if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash);
-
-    if (it == all_search_queries.end())
+    if (!all_search_queries.contains(query_hash))
         return std::nullopt;
 
     auto hash_str = getSipHash128AsHexString(query_hash);
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
-
-    virtual_column_to_search_query[virtual_column_name] = it->second;
-    return virtual_column_name;
-}
-
-TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(const String & column_name) const
-{
-    auto it = virtual_column_to_search_query.find(column_name);
-    if (it == virtual_column_to_search_query.end())
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Virtual column {} not found in MergeTreeIndexConditionText", column_name);
-
-    return it->second;
+    return fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
 }
 
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
@@ -998,10 +1060,8 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
-    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
-    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
-    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
-    /// branch below, because every shape is matched the same way.
+    /// The scan compares token bytes ASCII case-insensitively, so it must not answer a needle that ILIKE could
+    /// match through a non-ASCII code point. Checked before the shape-specific branches below.
     if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
         return {};
 
@@ -1267,7 +1327,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
     {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name, columns_shadowing_map_subcolumns))
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name, is_column_shadowing_map_subcolumn))
         {
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
@@ -1341,7 +1401,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(
             std::make_shared<TextSearchQuery>(
                 function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
-                VectorWithMemoryTracking<String>(), std::move(patterns)));
+                VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
         return true;
     };
 
@@ -1675,7 +1735,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
                         function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
                 return true;
             }
         }
@@ -1718,7 +1778,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
                         function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
                 return true;
             }
         }
@@ -1754,7 +1814,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
                     function_name, TextSearchMode::Any, pattern_read_mode,
-                    VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
             return true;
         }
         return false;
@@ -2040,7 +2100,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     else
     {
         /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name, columns_shadowing_map_subcolumns);
+        auto parsed = tryParseMapSubcolumnName(required_column.name, is_column_shadowing_map_subcolumn);
         if (!parsed)
             return false;
 
@@ -2090,7 +2150,7 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexCo
     }
 
     /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
     if (!parsed)
         return std::nullopt;
 
@@ -2257,7 +2317,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;

@@ -388,8 +388,15 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
     )
 
     assert "Code: 1000" in error, error
+    # The mock aborts the connection in the middle of the upload with `SO_LINGER` set to zero, so
+    # the client is interrupted by an `RST`. Which errno that surfaces as depends on whether the
+    # client was blocked in `send` when the `RST` arrived (`ECONNRESET`) or wrote once more
+    # afterwards (`EPIPE`), so accept both: the point of the test is that the interrupted upload is
+    # retried, which the counters above assert.
     assert (
         "DB::Exception: Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe"
+        in error
+        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
         in error
     ), error
 
@@ -614,6 +621,7 @@ def test_when_s3_timeout_at_listing(
     insert_query_id = randomize_query_id(
         "TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
     )
+    # A parallel formatter per partition keeps several MiB, and 2000 of them approach the node's memory limit.
     node.query(
         f"""
         INSERT INTO
@@ -629,7 +637,8 @@ def test_when_s3_timeout_at_listing(
         LIMIT 2000
         SETTINGS
             s3_check_objects_after_upload=0,
-            s3_truncate_on_insert=1
+            s3_truncate_on_insert=1,
+            output_format_parallel_formatting=0
         """,
         query_id=insert_query_id,
     )

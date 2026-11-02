@@ -13,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <fmt/format.h>
 
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -24,6 +25,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/DiskSet.h>
 #include <Interpreters/DiskSetBuilder.h>
+#include <Interpreters/DiskSetKeys.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -66,57 +68,17 @@ Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transfor
 
 Set::~Set() = default;
 
-namespace
-{
-
-/// On disk, a set keeps the same keys as its method of `SetVariants` keeps in memory, except for strings:
-/// - Numbers (`key8` to `key64`) and packed keys (`keys32` to `keys256`, `nullable_keys128`,
-///   `nullable_keys256`) stay as they are.
-/// - `hashed` keys are already a 128-bit hash of the key columns and stay as they are.
-/// - `key_string` and `key_fixed_string` keep the whole string in memory, but on disk only its 128-bit hash,
-///   computed as the `hashed` method computes it.
-/// `DiskSetMethod<Method>` is the method whose keys go to disk: `Method` itself, or `hashed` for strings.
-template <typename Method>
-using DiskSetMethod = std::conditional_t<
-    std::is_same_v<typename Method::Key, std::string_view>,
-    decltype(SetVariants::hashed)::element_type,
-    Method>;
-
-/// A set on disk stores the keys of its `DiskSetMethod` at the same width as in memory.
-template <typename Method>
-using DiskSetKey = typename DiskSetMethod<Method>::Key;
-
-/// Converts key columns to fixed-width disk keys, skipping the rows marked in `null_map`.
-/// Without a null map, the keys retain their input row positions for batched lookups.
-template <typename Method>
-ColumnPtr computeDiskSetKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map)
-{
-    typename Method::State state(key_columns, key_sizes, nullptr);
-    Arena pool;
-    auto keys = ColumnVector<typename Method::Key>::create();
-    keys->reserve(rows);
-    for (size_t row = 0; row < rows; ++row)
-    {
-        if (null_map && (*null_map)[row])
-            continue;
-        auto key_holder = state.getKeyHolder(row, pool);
-        keys->getData().push_back(keyHolderGetKey(key_holder));
-    }
-    return keys;
-}
-
-}
-
 void Set::setSpillSettings(SetSpillSettings spill_settings_)
 {
+    std::lock_guard lock(rwlock);
     chassert(!isCreated());
     spill_settings = std::move(spill_settings_);
 }
 
 void Set::finishInsert()
 {
-    /// Only a set that `CreatingSetsTransform` fills can spill, and such a set is read only after
-    /// `is_created` publishes it, so publishing the disk set here takes no lock.
+    /// Consumers may already expose this set to the scheduler while its builder is still running.
+    std::lock_guard lock(rwlock);
     if (disk_set_builder)
     {
         disk_set = disk_set_builder->finish();
@@ -124,6 +86,47 @@ void Set::finishInsert()
         disk_set_builder.reset();
     }
     is_created = true;
+}
+
+ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
+{
+    if (!spill_settings.tmp_data || !data || data->empty() || !data->getTotalRowCount()
+        || spill_after_build_started.load())
+        return {};
+
+    ProcessorMemoryStats stats;
+    stats.spillable_memory_bytes = data->getTotalByteCount();
+    stats.need_reserved_memory_bytes = estimateMemoryToSpill(/*requested=*/ true);
+
+    /// A built set writes its disk set while lookups keep reading the table, so the directory and the Bloom
+    /// filters of the disk set take memory besides the table until the disk set replaces it. A set that
+    /// spills while it is built frees the table first and creates them only when it finishes.
+    if (isCreated())
+        stats.need_reserved_memory_bytes += estimateMemoryOfDiskSet();
+    return stats;
+}
+
+ProcessorMemoryStats Set::getMemoryStats() const
+{
+    std::shared_lock lock(rwlock);
+    return getMemoryStatsUnlocked();
+}
+
+size_t Set::spill(size_t /*at_least_bytes*/)
+{
+    std::unique_lock lock(rwlock);
+    const size_t bytes = getMemoryStatsUnlocked().spillable_memory_bytes;
+    if (!bytes)
+        return 0;
+
+    if (isCreated())
+    {
+        lock.unlock();
+        return spillAfterBuild("memory scheduler request", /*requested=*/ true);
+    }
+
+    spillWhileBuilding("memory scheduler request", /*requested=*/ true);
+    return bytes;
 }
 
 bool Set::isLargeEnoughToSpill() const
@@ -143,8 +146,7 @@ bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t ro
     const UInt64 available_memory = threshold - std::min<UInt64>(threshold, query_memory_usage);
 
     /// Spilling needs memory while the table still exists.
-    const size_t spill_memory = DiskSetBuilder::estimateMemoryToWriteRun(
-        threshold, spill_settings.max_block_size, getDiskSetKeyBytes(), spill_settings.tmp_data->getSettings().buffer_size);
+    const size_t spill_memory = estimateMemoryToSpill();
     if (spill_memory > available_memory)
         return true;
 
@@ -167,7 +169,7 @@ bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t ro
     return insert_memory > available_memory - spill_memory;
 }
 
-void Set::spill(std::string_view reason)
+void Set::spillWhileBuilding(std::string_view reason, bool requested)
 {
     logSpill("while it is built", reason);
 
@@ -179,8 +181,8 @@ void Set::spill(std::string_view reason)
 
     data->callOnMethod([&]<typename Method>(const Method & method)
     {
-        compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
-        disk_set_builder = createDiskSetBuilderWithKeys(method, limits);
+        compute_disk_set_keys = computeDiskSetKeys<Method>;
+        disk_set_builder = createDiskSetBuilderWithKeys(method, limits, requested);
     });
 
     data.reset();
@@ -194,11 +196,26 @@ bool Set::isSpillNeeded() const
         && isLargeEnoughToSpill();
 }
 
-void Set::spillAfterBuild() const
+bool Set::isSpillNeededAfterBuild() const
+{
+    return spill_settings.max_bytes_before_external_set && isLargeEnoughToSpill()
+        && getCurrentQueryMemoryUsage() + static_cast<Int64>(estimateMemoryOfDiskSet())
+        > static_cast<Int64>(spill_settings.max_bytes_before_external_set);
+}
+
+size_t Set::estimateMemoryOfDiskSet() const
+{
+    return data->callOnMethod(
+        [&]<typename Method>(const Method &)
+        { return estimateDiskSetMemory<DiskSetKey<Method>>(data->getTotalRowCount(), spill_settings.max_bytes_for_bloom_filter); });
+}
+
+size_t Set::spillAfterBuild(std::string_view reason, bool requested) const
 {
     if (spill_after_build_started.exchange(true))
-        return;
+        return 0;
 
+    size_t bytes = 0;
     std::unique_ptr<DiskSet> new_disk_set;
     ComputeDiskSetKeys new_compute_disk_set_keys = nullptr;
     {
@@ -208,13 +225,14 @@ void Set::spillAfterBuild() const
 
         /// Only the lookup that started the spill replaces the table, so the table is still in memory here.
         chassert(data && !disk_set);
-        logSpill("while it is used", "query memory exceeds the spill threshold");
+        bytes = data->getTotalByteCount();
+        logSpill("while it is used", reason);
 
         data->callOnMethod([&]<typename Method>(const Method & method)
         {
             /// The keys are final, so the builder applies no size limits and keeps all of them.
-            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{})->finish();
-            new_compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
+            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{}, requested)->finish();
+            new_compute_disk_set_keys = computeDiskSetKeys<Method>;
         });
     }
 
@@ -230,6 +248,7 @@ void Set::spillAfterBuild() const
         table = std::move(data);
     }
     ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
+    return bytes;
 }
 
 void Set::logSpill(std::string_view stage, std::string_view reason) const
@@ -244,42 +263,55 @@ void Set::logSpill(std::string_view stage, std::string_view reason) const
         formatReadableSizeWithBinarySuffix(spill_settings.max_bytes_before_external_set));
 }
 
-size_t Set::getDiskSetKeyBytes() const
+size_t Set::getBuilderSpillThreshold(bool requested) const
 {
-    return data->callOnMethod([]<typename Method>(const Method &) { return sizeof(DiskSetKey<Method>); });
+    return requested ? 0 : spill_settings.max_bytes_before_external_set;
+}
+
+size_t Set::estimateMemoryToSpill(bool requested) const
+{
+    const size_t buffer_size = spill_settings.tmp_data->getSettings().buffer_size;
+    return data->callOnMethod(
+        [&]<typename Method>(const Method &)
+        {
+            return estimateMemoryToComputeDiskSetKeysOfTable<Method>(spill_settings.max_block_size)
+                + DiskSetBuilder::estimateMemoryToWriteRun(
+                    getBuilderSpillThreshold(requested), spill_settings.max_block_size, sizeof(DiskSetKey<Method>),
+                    buffer_size);
+        });
 }
 
 template <typename Method>
-std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const
+std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(
+    const Method & method, const SizeLimits & builder_limits, bool requested) const
 {
-    using Key = DiskSetKey<Method>;
+    /// The runs of the external sort of a set use `temporary_files_codec`, as other external sorts do, while
+    /// the file of the set is never compressed (see `DiskSetImpl::createFileScope`). For sets of numbers,
+    /// `LZ4` makes the runs 2 to 4 times smaller, and the builds 8-22% slower while the runs stay in the page
+    /// cache. The disk keys of the methods without fixed-size keys are mostly hash bits, which compress too
+    /// little to pay for compressing the runs. `LZ4` makes 128-bit hashes slightly larger, and `ZSTD` saves
+    /// only about 2%. The disk keys of strings share their first bytes with their neighbors, but `LZ4` saves
+    /// only about 6% of their runs and makes the queries that build such sets about 12% slower. So the runs
+    /// of such a set are written uncompressed, whatever `temporary_files_codec` is.
+    TemporaryDataOnDiskScopePtr tmp_data = spill_settings.tmp_data;
+    if constexpr (!set_method_has_fixed_size_keys<Method>)
+        tmp_data = tmp_data->childScope(tmp_data->getSettings().metrics, /*buffer_size_=*/0, "NONE");
 
-    auto builder = createDiskSetBuilder<Key>(
-        spill_settings.tmp_data,
+    auto builder = createDiskSetBuilder<DiskSetKey<Method>>(
+        std::move(tmp_data),
         builder_limits,
-        spill_settings.max_bytes_before_external_set,
+        getBuilderSpillThreshold(requested),
         spill_settings.max_block_size,
         spill_settings.min_free_disk_space,
+        spill_settings.max_bytes_for_bloom_filter,
+        spill_settings.max_bytes_for_cache,
         spill_settings.process_list_element);
 
-    const size_t max_rows_in_column = spill_settings.max_block_size;
-    auto keys = ColumnVector<Key>::create();
-    for (auto it = method.data.begin(); it != method.data.end(); ++it)
+    computeDiskSetKeysOfTable(method, data_types, key_sizes, spill_settings.max_block_size, [&](ColumnPtr keys)
     {
-        /// Every method except `key_string` and `key_fixed_string` keeps the disk keys themselves in its
-        /// table: numbers, packed keys and the hashes of `hashed`. The string methods keep strings, and their
-        /// disk keys are the keys that the `hashed` method computes for them.
-        if constexpr (std::is_same_v<DiskSetMethod<Method>, Method>)
-            keys->getData().push_back(it->getValue());
-        else
-            keys->getData().push_back(Method::getHashedKey(it->getValue()));
-
-        if (keys->size() == max_rows_in_column)
-            builder->add(std::exchange(keys, ColumnVector<Key>::create()));
-    }
-
-    if (!keys->empty())
         builder->add(std::move(keys));
+    });
+
     return builder;
 }
 
@@ -447,6 +479,8 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 
 bool Set::insertFromColumns(const Columns & columns)
 {
+    /// Include explicit-element updates in the critical section: another owner may request a spill.
+    std::lock_guard lock(rwlock);
     size_t rows = columns.at(0)->size();
 
     SetKeyColumns holder;
@@ -454,7 +488,7 @@ bool Set::insertFromColumns(const Columns & columns)
     if (fill_set_elements)
         holder.filter = ColumnUInt8::create(rows);
 
-    bool inserted = insertFromColumns(columns, holder);
+    bool inserted = insertFromColumnsImpl(columns, holder);
     if (inserted && fill_set_elements)
     {
         if (max_elements_to_fill && max_elements_to_fill < data->getTotalRowCount())
@@ -473,7 +507,11 @@ bool Set::insertFromColumns(const Columns & columns)
 bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 {
     std::lock_guard lock(rwlock);
+    return insertFromColumnsImpl(columns, holder);
+}
 
+bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
+{
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
@@ -496,7 +534,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
         null_map_holder = extractNestedColumnsAndNullMap(holder.key_columns, null_map);
 
     if (!disk_set_builder && isSpillNeededBeforeInsert(holder.key_columns, rows))
-        spill("the projected growth of the set exceeds the memory left under the spill threshold");
+        spillWhileBuilding("the projected growth of the set exceeds the memory left under the spill threshold");
 
     if (disk_set_builder)
     {
@@ -516,7 +554,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
         is_truncated = true;
     /// Actual allocations and concurrent operators can consume more memory than projected before insertion.
     else if (isSpillNeeded())
-        spill("query memory exceeds the spill threshold after insertion");
+        spillWhileBuilding("query memory exceeds the spill threshold after insertion");
     return within_limits;
 }
 
@@ -543,6 +581,14 @@ void Set::checkIsCreated() const
 {
     if (!is_created.load())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
+}
+
+size_t Set::getSetElementsBytes() const
+{
+    size_t bytes = 0;
+    for (const auto & column : set_elements)
+        bytes += column->byteSize();
+    return bytes;
 }
 
 std::shared_ptr<const PlainRanges> Set::getPlainRanges() const
@@ -704,10 +750,14 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
     /// The set is usually built before the rest of the query takes its memory, so it also spills while it is
     /// used. Spilling takes the lock exclusively, so this lookup releases its shared lock first.
-    if (isSpillNeeded())
+    if (isSpillNeededAfterBuild())
     {
+        /// The reason reads the table, which a concurrent spill can replace once the lock is released.
+        const auto reason = fmt::format(
+            "query memory with the {} of the set on disk exceeds the spill threshold",
+            formatReadableSizeWithBinarySuffix(estimateMemoryOfDiskSet()));
         lock.unlock();
-        spillAfterBuild();
+        spillAfterBuild(reason);
     }
     return res;
 }
@@ -843,6 +893,60 @@ static UInt64 getNextMergeTreeSetIndexId()
     return counter.fetch_add(1, std::memory_order_relaxed);
 }
 
+template <typename T, typename FieldValueRange>
+static std::optional<BoolMask> checkInRangeSingleIntegerColumn(
+    const IColumn & column, const FieldValueRange & range, bool all_keys)
+{
+    if (!range.left.isNormal() || !range.right.isNormal())
+        return std::nullopt;
+
+    const auto * typed_column = typeid_cast<const ColumnVector<T> *>(&column);
+    if (!typed_column)
+        return std::nullopt;
+
+    const auto & values = typed_column->getData();
+    const T left = static_cast<const ColumnVector<T> &>(*range.left.column).getData()[0];
+    const T right = static_cast<const ColumnVector<T> &>(*range.right.column).getData()[0];
+    /// Let the general path validate ranges that can produce inverted search positions.
+    if (left > right || (left == right && !range.left_included && !range.right_included))
+        return std::nullopt;
+
+    size_t begin = 0;
+    size_t length = values.size();
+    while (length > 1)
+    {
+        const size_t half = length / 2;
+        const T value = values[begin + half - 1];
+        const bool below = value < left || (value == left && !range.left_included);
+        begin = below ? begin + half : begin;
+        length -= half;
+    }
+    if (length)
+        begin += values[begin] < left || (values[begin] == left && !range.left_included);
+
+    const bool can_be_true = begin < values.size()
+        && (values[begin] < right || (values[begin] == right && range.right_included));
+    return BoolMask{can_be_true, all_keys && left == right ? !can_be_true : true};
+}
+
+template <typename FieldValueRange>
+static std::optional<BoolMask> checkInRangeSingleColumn(
+    const IColumn & column, const FieldValueRange & range, bool all_keys)
+{
+    switch (column.getDataType())
+    {
+        case TypeIndex::UInt8: return checkInRangeSingleIntegerColumn<UInt8>(column, range, all_keys);
+        case TypeIndex::UInt16: return checkInRangeSingleIntegerColumn<UInt16>(column, range, all_keys);
+        case TypeIndex::UInt32: return checkInRangeSingleIntegerColumn<UInt32>(column, range, all_keys);
+        case TypeIndex::UInt64: return checkInRangeSingleIntegerColumn<UInt64>(column, range, all_keys);
+        case TypeIndex::Int8: return checkInRangeSingleIntegerColumn<Int8>(column, range, all_keys);
+        case TypeIndex::Int16: return checkInRangeSingleIntegerColumn<Int16>(column, range, all_keys);
+        case TypeIndex::Int32: return checkInRangeSingleIntegerColumn<Int32>(column, range, all_keys);
+        case TypeIndex::Int64: return checkInRangeSingleIntegerColumn<Int64>(column, range, all_keys);
+        default: return std::nullopt;
+    }
+}
+
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
@@ -940,7 +1044,12 @@ MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuff
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(
+    const std::vector<int> & key_col_to_sparse_pos,
+    const Ranges & sparse_key_ranges,
+    const DataTypes & sparse_data_types,
+    size_t first_function_number,
+    bool single_point) const
 {
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -953,8 +1062,12 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     FieldValueRanges scratch;
     FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    size_t function_number = first_function_number;
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        const size_t mapping_first_function_number = function_number;
+        function_number += indexes_mapping[i].functions.size();
+
         size_t key_column = indexes_mapping[i].key_index;
         auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
@@ -978,6 +1091,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             sparse_key_ranges[sparse_pos],
             indexes_mapping[i].functions,
+            mapping_first_function_number,
             sparse_data_types[sparse_pos],
             single_point);
 
@@ -989,6 +1103,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         range.left_included = new_range->left_included;
         range.right_included = new_range->right_included;
     }
+
+    if (tuple_size == 1)
+        if (auto result = checkInRangeSingleColumn(*ordered_set[0], ranges[0], has_all_keys))
+            return *result;
 
     /// lhs < rhs return -1
     /// lhs == rhs return 0
@@ -1052,6 +1170,14 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     if (begin > end)
     {
+        /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
+        for (const auto & mapping : indexes_mapping)
+        {
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(mapping.key_index);
+            if (is_key_col_present && sparse_key_ranges[sparse_pos].empty())
+                return {false, true};
+        }
+
         /// TODO: Remove the #ifndef and always throw after
         ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
         ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
@@ -1099,20 +1225,25 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
     return {can_be_true, true};
 }
 
-BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
     FieldValueRanges scratch;
     FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    size_t function_number = first_function_number;
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        const size_t mapping_first_function_number = function_number;
+        function_number += indexes_mapping[i].functions.size();
+
         if (indexes_mapping[i].key_index >= key_ranges.size())
             return {true, true};
 
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
+            mapping_first_function_number,
             data_types[indexes_mapping[i].key_index],
             single_point);
 
@@ -1125,6 +1256,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         range.left_included = new_range->left_included;
         range.right_included = new_range->right_included;
     }
+
+    if (tuple_size == 1)
+        if (auto result = checkInRangeSingleColumn(*ordered_set[0], ranges[0], has_all_keys))
+            return *result;
 
     /// lhs < rhs return -1
     /// lhs == rhs return 0
@@ -1188,6 +1323,13 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
 
     if (begin > end)
     {
+        /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
+        for (const auto & mapping : indexes_mapping)
+        {
+            if (key_ranges[mapping.key_index].empty())
+                return {false, true};
+        }
+
         /// TODO: Remove the #ifndef and always throw after
         ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
         ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies

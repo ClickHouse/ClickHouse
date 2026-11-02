@@ -17,6 +17,7 @@ namespace DB
 {
 
 class IMergeTreeDataPart;
+class MergeTreeData;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 class IDataPartStorage;
@@ -26,18 +27,16 @@ using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
 /// is the only thing that can construct one, and it hands the same one to `stage` and `publish`.
 class PartitionWriteGuard;
 
-/// One unique-key write -- an INSERT, a DELETE, a MERGE -- as the commit protocol sees it:
-///
-///     Work outside the critical section, write the temp part
-///     Enter the critical section for the partition
-///       1. stage:   check conflicts, write the bitmaps, register them in the store. Durable,
-///                   not yet visible.
-///       2. publish: register the part on the transaction. Active, not yet visible.
-///       3. commit:  csn = TransactionLog::commitTransaction(). The bitmaps become visible.
-///     Exit the critical section for the partition
-///
-/// A write may stage several bitmaps and publishes one part. `UniqueKeyTxnManager` drives the
-/// steps; the implementation supplies `stage` and `publish`.
+/// One unique-key write (INSERT, DELETE, MERGE): its part and the bitmaps that kill the rows it replaces
+/// become visible at one csn. Inside the partition's critical section, so `stage` sees every committed write:
+///   0. refuse the write while a part's creation csn is not stamped yet (`UniqueKeyTxnManager::throwIfUnresolvedPart`);
+///   1. stage: write the bitmaps. Durable, not visible;
+///   2. publish: register the part on the transaction. Active, not visible; `addNewPart` refuses a
+///      committing transaction, so this precedes the commit;
+///   3. commit. A lost Keeper reply is waited out here, so the next writer never stages beside a part that
+///      may be live.
+/// Then wait for `latest_snapshot` to reach the csn, so the writer reads its own write.
+/// `UniqueKeyTxnManager` drives the steps; the implementation supplies `stage` and `publish`.
 class IUniqueKeyCommit
 {
 public:
@@ -45,11 +44,10 @@ public:
     {
         /// The parts a staged bitmap was written for
         std::vector<MergeTreePartInfo> targets;
-        /// The links to the bitmaps this write copied in rather than originated -- see
-        /// `DeleteBitmapStore::selectCarriedBitmaps`. The bytes are already on disk by then.
+        /// The bitmaps this write copied in rather than wrote (`DeleteBitmapStore::selectCarriedBitmaps`)
         std::vector<DeleteBitmapStore::BitmapLink> carried;
 
-        /// Every target this write is now on the hook for, in either role.
+        /// `targets` plus the targets of `carried`
         std::vector<MergeTreePartInfo> allTargets() const
         {
             std::vector<MergeTreePartInfo> all = targets;
@@ -64,15 +62,13 @@ public:
     /// The partition this write publishes into
     virtual String partitionId() const = 0;
 
-    /// Names this write in the log. Every line the commit protocol emits is keyed by it and the
-    /// partition, so one grep replays a whole commit.
+    /// Names this write in the commit protocol's log lines
     virtual std::string_view writeKind() const = 0;
 
     /// Put everything on disk inside the part this write will publish
     virtual std::optional<StagedWrite> stage(const PartitionWriteGuard & guard) = 0;
 
-    /// Register the part `stage` filled on `txn`, making it Active but not yet visible.
-    /// Takes the same guard `stage` was given -- one hold has to span both.
+    /// Register the part `stage` filled on `txn`, under the same guard hold as `stage`
     virtual const IMergeTreeDataPart & publish(
         const PartitionWriteGuard & guard, const MergeTreeTransactionPtr & txn, const StagedWrite & staged) = 0;
 };
@@ -88,14 +84,26 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionP
 class UniqueKeyTxnManager
 {
 public:
-    explicit UniqueKeyTxnManager(DeleteBitmapStorePtr delete_bitmap_store_);
+    UniqueKeyTxnManager(const MergeTreeData & data_, DeleteBitmapStorePtr delete_bitmap_store_);
 
     DeleteBitmapStore & deleteBitmapStore() { return *delete_bitmap_store; }
 
-    /// Commit a write under a transaction, returning the commit sequence number of the commit point.
-    CSN commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write);
+    /// Commits one unique-key write (INSERT, DELETE, MERGE) under @transaction, returning the csn of the commit point.
+    /// Throws ABORTED if a lost commit reply resolves to a rollback, or if the partition has an unresolved part:
+    /// Active, with no creation csn stamped yet. Throws UNKNOWN_STATUS_OF_TRANSACTION if a lost reply is still
+    /// unresolved at shutdown.
+    ///
+    /// Commit wait involve:
+    /// - commits in flight: writers holding the partition guard;
+    /// - a lost commit reply: the outcome of the writer's own transaction is unknown;
+    /// - csn loaded: `latest_snapshot` has reached a csn.
+    CSN commitTransaction(
+        MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & commit);
 
 private:
+    /// Throws ABORTED if an Active part in @partition_id is unresolved
+    void throwIfUnresolvedPart(const String & partition_id, std::string_view kind) const;
+
     /// The pessimistic write lock for a partition
     std::mutex & partitionLock(const String & partition_id);
 
@@ -103,6 +111,7 @@ private:
     std::mutex partition_locks_mutex;
     std::unordered_map<String, std::mutex> partition_locks;
 
+    const MergeTreeData & data;
     DeleteBitmapStorePtr delete_bitmap_store;
 
     LoggerPtr log;

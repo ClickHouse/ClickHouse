@@ -281,6 +281,8 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
+An alternative that cannot be converted to the destination type causes an error only if the column contains values of this alternative.
+
 ### Converting a Variant to another Variant {#converting-a-variant-to-another-variant}
 
 It is possible to convert a `Variant` column to another `Variant` column, but only if the destination `Variant` column contains all nested types from the original `Variant`:

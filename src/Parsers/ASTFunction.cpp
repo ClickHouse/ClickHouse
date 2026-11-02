@@ -73,7 +73,8 @@ void ASTFunction::setNoEmptyArgs(bool value)
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
-    if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3")
+    if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3"
+        || name == "obfuscate")
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function '{}' cannot be used as an expression", name);
 
     /// If function can be converted to literal it will be parsed as literal after formatting.
@@ -293,31 +294,40 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
-    /// A bare select query argument is parser-producible only as `view(SELECT ...)` or
-    /// `viewIfPermitted(SELECT ... ELSE f(...))`, neither of which carries parameters, a window, a
-    /// NULLS action or query output options.
+    /// A bare select query argument is parser-producible only as `view(SELECT ...)`,
+    /// `obfuscate(SELECT ...)` (`ObfuscateLayer`) or `viewIfPermitted(SELECT ... ELSE f(...))`, none of
+    /// which carries parameters, a window, a NULLS action or query output options.
     bool is_view = equalsCaseInsensitive(name, "view");
     bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
+    bool is_obfuscate = equalsCaseInsensitive(name, "obfuscate");
     if (containsBareSelectQuery(arguments.get()) || containsBareSelectQuery(parameters.get()))
     {
         const auto * view_select
             = arguments && !arguments->children.empty() ? arguments->children[0]->as<ASTSelectWithUnionQuery>() : nullptr;
-        bool is_view_shape = is_view && arguments && arguments->children.size() == 1 && view_select;
+        bool is_view_shape = (is_view || is_obfuscate) && arguments && arguments->children.size() == 1 && view_select;
         bool is_view_if_permitted_shape = is_view_if_permitted && arguments && arguments->children.size() == 2 && view_select
             && arguments->children[1]->as<ASTFunction>();
         bool is_table_function_shape = (is_view_shape || is_view_if_permitted_shape) && !parameters && !isWindowFunction()
             && getNullsAction() == NullsAction::EMPTY && !view_select->hasOutputOptions();
         if (!is_table_function_shape)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "A select query argument is only allowed in 'view(SELECT ...)' or "
+                "A select query argument is only allowed in 'view(SELECT ...)', 'obfuscate(SELECT ...)' or "
                 "'viewIfPermitted(SELECT ... ELSE f(...))' during AST JSON deserialization");
+        if (is_view_if_permitted_shape)
+            arguments->children[1]->as<ASTFunction &>().setKind(Kind::TABLE_FUNCTION);
 
-        /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
-        /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and
-        /// execution matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery` and
-        /// the table function factory), so a non-canonical spelling that reaches the interpreter
-        /// through `clickhouse_json` would fail. Canonicalize it the way the parser does.
-        name = is_view ? "view" : "viewIfPermitted";
+        /// For the table function form the parser emits only the canonical spelling (`ViewLayer` and
+        /// `ObfuscateLayer` dispatch on the lowercased name but always produce `view`,
+        /// `viewIfPermitted` or `obfuscate`), and execution matches the name case-sensitively (e.g.
+        /// `StorageView::replaceWithSubquery` and the table function factory, where none of these
+        /// three is registered case-insensitively), so a non-canonical spelling that reaches the
+        /// interpreter through `clickhouse_json` would fail. Canonicalize it the way the parser does.
+        if (is_view)
+            name = "view";
+        else if (is_view_if_permitted)
+            name = "viewIfPermitted";
+        else
+            name = "obfuscate";
     }
 
     /// A child of `arguments` or `parameters` is an expression, and an expression list is not one.
@@ -1058,10 +1068,20 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     if (!name.empty())
         ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
+    SecretArgumentsResult secret_arguments;
+    if (arguments && !settings.show_secrets)
+        secret_arguments = findSecretArguments(*this);
+
     if (parameters)
     {
         ostr << '(';
-        parameters->format(ostr, settings, state, nested_dont_need_parens);
+        if (secret_arguments.hide_parameters)
+        {
+            for (size_t i = 0; i < parameters->children.size(); ++i)
+                ostr << (i == 0 ? "" : ", ") << HIDDEN_SECRET_LITERAL;
+        }
+        else
+            parameters->format(ostr, settings, state, nested_dont_need_parens);
         ostr << ')';
     }
 
@@ -1079,10 +1099,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     if (arguments)
     {
-        SecretArgumentsResult secret_arguments;
-        if (!settings.show_secrets)
-            secret_arguments = findSecretArguments(*this);
-
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
             if (i != 0)
@@ -1207,7 +1223,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
 bool ASTFunction::hasSecretParts() const
 {
-    return findSecretArguments(*this).hasSecrets() || childrenHaveSecretParts();
+    const auto secret_arguments = findSecretArguments(*this);
+    return secret_arguments.hasSecrets() || (secret_arguments.hide_parameters && parameters && !parameters->children.empty())
+        || childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)
