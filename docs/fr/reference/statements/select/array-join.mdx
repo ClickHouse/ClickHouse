@@ -13,10 +13,10 @@ Pour les tables qui contiennent une colonne de type Array, il est courant de pro
 Son nom vient du fait qu&#39;on peut la considérer comme l&#39;exécution d&#39;un `JOIN` avec un tableau ou une structure de données imbriquée. L&#39;objectif est similaire à celui de la fonction [arrayJoin](/fr/reference/functions/regular-functions/array-join), mais la fonctionnalité de la clause est plus large.
 
 <Note>
-  PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` et `LATERAL` ne sont pas pris en charge. Utilisez plutôt `ARRAY JOIN`. Le nom `unnest` (depuis la version 26.5) est un alias d’appel de fonction de `arrayJoin` (`SELECT unnest(arr)`), et non une fonction de table.
+  Les formes de source de table PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` et `LATERAL unnest(...)` ne sont pas prises en charge. Utilisez plutôt `ARRAY JOIN`. Le nom `unnest` (depuis la version 26.5) est un alias d’appel de fonction de `arrayJoin` (`SELECT unnest(arr)`), et non une fonction de table. `JOIN LATERAL <subquery>` sur une sous-requête corrélée est pris en charge séparément, en tant que fonctionnalité expérimentale ; voir [`JOIN`](/fr/reference/statements/select/join#lateral-join).
 </Note>
 
-Syntaxe :
+Syntaxe :
 
 ```sql
 SELECT <expr_list>
@@ -26,18 +26,14 @@ FROM <left_subquery>
 ...
 ```
 
-Les types de `ARRAY JOIN` pris en charge sont listés ci-dessous :
+Les types de `ARRAY JOIN` pris en charge sont listés ci-dessous :
 
 * `ARRAY JOIN` - Dans le cas de base, les tableaux vides ne sont pas inclus dans le résultat du `JOIN`.
 * `LEFT ARRAY JOIN` - Le résultat du `JOIN` contient des lignes avec des tableaux vides. La valeur d’un tableau vide est définie sur la valeur par défaut du type d’élément du tableau (généralement 0, une chaîne vide ou NULL).
 
-<div id="basic-array-join-examples">
-  ## Exemples de base d’ARRAY JOIN
-</div>
+## Exemples de base d’ARRAY JOIN {#basic-array-join-examples}
 
-<div id="array-join-left-array-join-examples">
-  ### ARRAY JOIN et LEFT ARRAY JOIN
-</div>
+### ARRAY JOIN et LEFT ARRAY JOIN {#array-join-left-array-join-examples}
 
 Les exemples ci-dessous illustrent l’utilisation des clauses `ARRAY JOIN` et `LEFT ARRAY JOIN`. Créons une table avec une colonne de type [Array](/fr/reference/data-types/array) et insérons-y des valeurs :
 
@@ -97,9 +93,7 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ```
 
-<div id="array-join-arrayEnumerate">
-  ### ARRAY JOIN et la fonction arrayEnumerate
-</div>
+### ARRAY JOIN et la fonction arrayEnumerate {#array-join-arrayEnumerate}
 
 Cette fonction est généralement utilisée avec `ARRAY JOIN`. Elle permet de ne compter quelque chose qu&#39;une seule fois par tableau après l’application de `ARRAY JOIN`. Exemple :
 
@@ -137,9 +131,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 └─────────┴───────┘
 ```
 
-<div id="array_join_arrayEnumerateUniq">
-  ### ARRAY JOIN et arrayEnumerateUniq
-</div>
+### ARRAY JOIN et arrayEnumerateUniq {#array_join_arrayEnumerateUniq}
 
 Cette fonction est utile lorsque l&#39;on utilise `ARRAY JOIN` et que l&#39;on agrège des éléments de tableau.
 
@@ -175,9 +167,7 @@ LIMIT 10
 └─────────┴─────────┴────────┘
 ```
 
-<div id="using-aliases">
-  ## Utilisation des alias
-</div>
+## Utilisation des alias {#using-aliases}
 
 Un alias peut être défini pour un tableau dans la clause `ARRAY JOIN`. Dans ce cas, on peut accéder à un élément du tableau via cet alias, tandis que le tableau lui-même reste accessible par son nom d&#39;origine. Exemple :
 
@@ -275,9 +265,7 @@ SETTINGS enable_unaligned_array_join = 1;
 └─────────┴─────────┴───┴───────────┘
 ```
 
-<div id="array-join-with-nested-data-structure">
-  ## ARRAY JOIN avec une structure de données imbriquée
-</div>
+## ARRAY JOIN avec une structure de données imbriquée {#array-join-with-nested-data-structure}
 
 `ARRAY JOIN` fonctionne également avec les [structures de données imbriquées](/fr/reference/data-types/nested-data-structures/index) :
 
@@ -390,23 +378,17 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-<div id="implementation-details">
-  ## Détails d’implémentation
-</div>
+## Détails d’implémentation {#implementation-details}
 
 L’ordre d’exécution des requêtes est optimisé lors de l’utilisation de `ARRAY JOIN`. Bien que `ARRAY JOIN` doive toujours être spécifié avant la clause [WHERE](/fr/reference/statements/select/where)/[PREWHERE](/fr/reference/statements/select/prewhere) dans une requête, leur exécution peut techniquement se faire dans n’importe quel ordre, sauf si le résultat de `ARRAY JOIN` est utilisé pour le filtrage. L’ordre de traitement est contrôlé par l’optimiseur de requêtes.
 
-<div id="incompatibility-with-short-circuit-function-evaluation">
-  ### Incompatibilité avec l’évaluation court-circuitée des fonctions
-</div>
+### Incompatibilité avec l’évaluation court-circuitée des fonctions {#incompatibility-with-short-circuit-function-evaluation}
 
 [L’évaluation court-circuitée des fonctions](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) est une fonctionnalité qui optimise l’exécution d’expressions complexes dans certaines fonctions telles que `if`, `multiIf`, `and` et `or`. Elle évite que des exceptions potentielles, comme une division par zéro, ne surviennent lors de l’exécution de ces fonctions.
 
 `arrayJoin` est toujours exécutée et n’est pas compatible avec l’évaluation court-circuitée des fonctions. Cela s’explique par le fait qu’il s’agit d’une fonction particulière, traitée séparément de toutes les autres fonctions lors de l’analyse et de l’exécution de la requête, et qu’elle nécessite une logique supplémentaire incompatible avec l’exécution court-circuitée des fonctions. En effet, le nombre de lignes dans le résultat dépend du résultat de `arrayJoin`, et il est trop complexe et coûteux d’implémenter une exécution paresseuse de `arrayJoin`.
 
-<div id="related-content">
-  ## Articles connexes
-</div>
+## Articles connexes {#related-content}
 
 * Blog : [Travailler avec des séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

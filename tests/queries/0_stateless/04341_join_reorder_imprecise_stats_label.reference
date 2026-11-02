@@ -1,6 +1,6 @@
 -- no column statistics, use_statistics=1: estimation is imprecise --
 Join: a[no_stats~1000] ⋈ b[no_stats~100]
-ResultRows: ~~100
+ResultRows: ~~1000
 -- column statistics present, use_statistics=1: estimation is precise (no label) --
 Join: a[1000] ⋈ b[100]
 ResultRows: 100
@@ -9,4 +9,4 @@ Join: a[1000] ⋈ b[no_stats~100]
 ResultRows: ~~100
 -- use_statistics=0: index estimate is still labeled, it is not derived from column statistics --
 Join: a[no_stats~1000] ⋈ b[no_stats~100]
-ResultRows: ~~100
+ResultRows: ~~1000

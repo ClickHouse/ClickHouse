@@ -19,6 +19,12 @@ public:
     explicit StdStreamBufFromReadBuffer(ReadBuffer & read_buffer_, size_t size_);
     ~StdStreamBufFromReadBuffer() override;
 
+    /// The buffer this stream reads from. Lets code that has an `std::istream` at hand only
+    /// because an interface demands one - the AWS SDK, for example - read from the buffer
+    /// directly instead of copying the data through the stream.
+    ReadBuffer & getReadBuffer() const { return *read_buffer; }
+    std::unique_ptr<ReadBuffer> extractReadBuffer() { return std::move(read_buffer); }
+
 private:
     int underflow() override;
     std::streamsize showmanyc() override;

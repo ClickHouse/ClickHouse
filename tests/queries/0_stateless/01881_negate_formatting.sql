@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 -- { echo }
 EXPLAIN SYNTAX SELECT -1;
 EXPLAIN SYNTAX SELECT -(1);

@@ -9,6 +9,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -249,6 +250,41 @@ struct ColumnToMultiPolygonsConverter
 
         return answer;
     }
+};
+
+/// The geometries of one argument of a function of two geometries, corrected with `boost::geometry::correct` (oriented
+/// and closed) before they are used. A constant argument is converted and corrected once instead of once per row:
+/// a large constant polygon compared with many rows would otherwise be copied, converted and corrected for every row.
+template <typename Converter>
+class CorrectedGeometries
+{
+public:
+    explicit CorrectedGeometries(const ColumnPtr & column)
+    {
+        const auto * column_const = typeid_cast<const ColumnConst *>(column.get());
+        /// Without rows, the constant is not converted, as before, so an invalid value (such as a NaN coordinate) does not throw.
+        is_const = column_const && !column_const->empty();
+        if (is_const)
+        {
+            geometries = Converter::convert(column_const->getDataColumnPtr());
+            boost::geometry::correct(geometries[0]);
+        }
+        else
+            geometries = Converter::convert(column->convertToFullColumnIfConst());
+    }
+
+    /// The corrected geometry of `row`.
+    auto & get(size_t row)
+    {
+        if (is_const)
+            return geometries[0];
+        boost::geometry::correct(geometries[row]);
+        return geometries[row];
+    }
+
+private:
+    decltype(Converter::convert(std::declval<ColumnPtr>())) geometries;
+    bool is_const = false;
 };
 
 

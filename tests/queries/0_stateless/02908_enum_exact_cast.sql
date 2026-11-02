@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas, no-async-insert
+-- Tags: no-parallel-replicas, no-async-insert
 -- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
 -- The test distinguishes the sync `INSERT VALUES (NULL)` path (which raises
 -- `clientError TYPE_MISMATCH` because the client parses VALUES locally and rejects
