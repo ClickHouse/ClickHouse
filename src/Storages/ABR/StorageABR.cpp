@@ -129,7 +129,7 @@ StorageABR::StorageABR(
 {
     const DatabasePtr & db = DatabaseCatalog::instance().getDatabase(table_id.database_name);
 
-    const String first_table_name = fmt::format("{}_{}", table_prefix, sample_intervals.front());
+    const String first_table_name = getSourceTableName(table_prefix, sample_intervals.front());
     copyTableMetadata(db->getTable(first_table_name, context));
     const auto metadata = getInMemoryMetadataPtr(context, false);
     const ColumnsDescription columns = metadata->getColumns();
@@ -163,7 +163,7 @@ StorageABR::StorageABR(
     /// Iterate from sorted sample intervals to get tables sorted by sample interval
     for (const UInt64 & interval : sample_intervals)
     {
-        const String name = fmt::format("{}_{}", table_prefix, interval);
+        const String name = getSourceTableName(table_prefix, interval);
         const StoragePtr table = db->tryGetTable(name, context);
         if (!table)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find table '{}' when creating '{}'", name, table_id.getTableName());
@@ -367,6 +367,36 @@ bool StorageABR::isFallbackError(int error)
     return error == ErrorCodes::TOO_MANY_ROWS || error == ErrorCodes::TIMEOUT_EXCEEDED;
 }
 
+String StorageABR::getSourceTableName(const String & table_prefix, UInt64 interval)
+{
+    return fmt::format("{}_{}", table_prefix, interval);
+}
+
+TableNamesSet StorageABR::getSourceTableNames(const ASTFunction & engine, const String & database)
+{
+    TableNamesSet names;
+    if (!engine.arguments || engine.arguments->children.size() != 3)
+        return names;
+
+    const auto & args = engine.arguments->children;
+    String table_prefix;
+    if (const auto * literal = args[0]->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        table_prefix = literal->value.safeGet<String>();
+    else if (const auto * identifier = args[0]->as<ASTIdentifier>())
+        table_prefix = identifier->name();
+
+    const auto * intervals = args[1]->as<ASTLiteral>();
+    if (table_prefix.empty() || !intervals || intervals->value.getType() != Field::Types::Array)
+        return names;
+
+    for (const Field & interval : intervals->value.safeGet<Array>())
+    {
+        if (interval.getType() == Field::Types::UInt64)
+            names.emplace(QualifiedTableName{.database = database, .table = getSourceTableName(table_prefix, interval.safeGet<UInt64>())});
+    }
+    return names;
+}
+
 StorageABR::ColumnSizeByName StorageABR::getColumnSizes() const
 {
     return tables.front()->getColumnSizes();
@@ -456,7 +486,7 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
     {
         for (const auto & interval : sample_intervals)
             args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, args.table_id.database_name,
-                fmt::format("{}_{}", table_prefix, interval));
+                getSourceTableName(table_prefix, interval));
     }
 
     /// retention_expression -- tuple of columns which we use to calculate retention
@@ -904,6 +934,9 @@ the query's time range, and on `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED` it transpar
 The underlying tables are expected to follow a naming convention of `{table_prefix}_{sample_interval}`, where `sample_interval`
 distinguishes the granularity. The engine never writes; data must be ingested directly into the underlying tables. Creating
 an `ABR` table requires `SHOW COLUMNS` on all its underlying tables, and reading from it requires `SELECT` on them.
+
+The source tables are registered as dependencies of the `ABR` table: they are loaded and restored from a backup before it, and
+dropping or renaming one of them while the `ABR` table exists is refused, unless `check_table_dependencies` is disabled.
 
 **Engine parameters**
 
