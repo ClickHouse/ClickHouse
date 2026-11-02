@@ -149,6 +149,11 @@ SET collect_hash_table_stats_during_aggregation = 1;
 SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'top_k_16_first';
 SELECT toString(toUInt64(sqrt(id % 49))) AS few, count() AS c FROM t_top_k GROUP BY few ORDER BY c DESC LIMIT 5 FORMAT Null SETTINGS log_comment = 'top_k_17_again';
 
+-- `EXPLAIN ANALYZE` reads the steps of the processors when the query has finished, also those of the passes.
+SELECT 'explain analyze of the passes';
+SELECT count() > 0 FROM (EXPLAIN ANALYZE SELECT g_u64, t, count() AS c FROM t_top_k GROUP BY g_u64, t ORDER BY c DESC LIMIT 5)
+SETTINGS collect_hash_table_stats_during_aggregation = 0, log_comment = 'top_k_18_explain_analyze';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,

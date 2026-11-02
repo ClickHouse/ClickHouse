@@ -158,6 +158,8 @@ bounded, hot pass
 17293822569102704836	x	393
 17293822569102704835	x	391
 declines of earlier runs
+explain analyze of the passes
+1
 top_k_01_count	1	1	0	0	0	0
 top_k_02_two_keys_offset	1	1	0	0	0	0
 top_k_03_numeric_key_filter	1	1	0	0	0	0
@@ -175,3 +177,4 @@ top_k_14_hot_int32	1	0	0	1	2	0
 top_k_15_hot_uint64	1	0	0	1	2	0
 top_k_16_first	1	0	0	0	0	1
 top_k_17_again	0	0	0	0	0	1
+top_k_18_explain_analyze	1	0	0	1	2	0

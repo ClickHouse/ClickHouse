@@ -34,13 +34,23 @@ namespace MultiPassTopKImpl
 namespace
 {
 
-/// The pipeline of a pass, with one output.
+/// Keeps the plan of a pass for as long as its pipeline: the processors point to its steps (see
+/// `IProcessor::getQueryPlanStep`), which `EXPLAIN ANALYZE` reads after the query has finished.
+struct PassPlanHolder final : ICustomResourceHolder
+{
+    explicit PassPlanHolder(QueryPlan plan_) : plan(std::move(plan_)) {}
+
+    QueryPlan plan;
+};
+
+/// The pipeline of a pass, with one output. `resources` takes the plan as well (see `PassPlanHolder`).
 Pipe buildPass(const MultiPassTopKTemplate & templ, QueryPlan plan, QueryPlanResourceHolder & resources)
 {
     auto builder = plan.buildQueryPipeline(
         QueryPlanOptimizationSettings(templ.input->context), BuildQueryPipelineSettings(templ.input->context), /*do_optimize=*/false);
     auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     pipe.resize(1);
+    resources.custom_resources.push_back(std::make_shared<PassPlanHolder>(std::move(plan)));
     return pipe;
 }
 
