@@ -63,7 +63,7 @@ CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>
 GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
 ```
 
-Generate the password with a tool such as `openssl rand -base64 24` and store it in a secret manager rather than in a manifest or shell history. See our guide on [Creating an ingestion user](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) for further details.
+Generate the password with a tool such as `openssl rand -base64 24` and store it in a secret manager rather than in a manifest or shell history. See our guide on [Creating an ingestion user](/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured) for further details.
 
 If this service is already part of a warehouse, note that database-level DDL can hang when another service in it is idled - see [Administration and DDL](#administration).
 </Step>

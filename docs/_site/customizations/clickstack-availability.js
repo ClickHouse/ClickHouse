@@ -483,6 +483,12 @@
       "/clickstack/observability/features/alerts"
     ]
   ],
+  "/clickstack/features/anomaly-detection": [
+    [
+      "Open Source",
+      "/clickstack/features/anomaly-detection"
+    ]
+  ],
   "/clickstack/features/dashboards/dashboard-templates": [
     [
       "Open Source",
@@ -590,7 +596,7 @@
     ],
     [
       "ClickHouse Observability",
-      "/clickstack/observability/ingesting-data/collector"
+      "/clickstack/self-configured/ingesting-data/collector"
     ]
   ],
   "/clickstack/ingesting-data/opentelemetry": [
@@ -617,12 +623,20 @@
     [
       "Open Source",
       "/clickstack/ingesting-data/schema/map-vs-json"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/ingesting-data/schema/map-vs-json"
     ]
   ],
   "/clickstack/ingesting-data/schemas": [
     [
       "Open Source",
       "/clickstack/ingesting-data/schemas"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/ingesting-data/schemas"
     ]
   ],
   "/clickstack/ingesting-data/sdks": [
@@ -759,6 +773,10 @@
     [
       "Open Source",
       "/clickstack/ingesting-data/trace-sampling"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/ingesting-data/trace-sampling"
     ]
   ],
   "/clickstack/ingesting-data/vector": [
@@ -1031,6 +1049,90 @@
       "/clickstack/observability/integration-partners/telflo"
     ]
   ],
+  "/clickstack/managed-onboarding/instrument-application": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/instrument-application"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/instrument-application"
+    ]
+  ],
+  "/clickstack/managed-onboarding/instrument-application-serverless": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/instrument-application-serverless"
+    ]
+  ],
+  "/clickstack/managed-onboarding/managed-getting-started": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/managed-getting-started"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/managed-getting-started"
+    ]
+  ],
+  "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs"
+    ]
+  ],
+  "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless"
+    ]
+  ],
+  "/clickstack/managed-onboarding/monitoring-kubernetes": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-kubernetes"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/monitoring-kubernetes"
+    ]
+  ],
+  "/clickstack/managed-onboarding/monitoring-kubernetes-serverless": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-kubernetes-serverless"
+    ]
+  ],
+  "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector"
+    ]
+  ],
+  "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless"
+    ]
+  ],
+  "/clickstack/managed-onboarding/tuning-clickstack-schema": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/tuning-clickstack-schema"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/tuning-clickstack-schema"
+    ]
+  ],
   "/clickstack/managing/config": [
     [
       "Open Source",
@@ -1045,12 +1147,20 @@
     [
       "Open Source",
       "/clickstack/managing/estimating-resources"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/estimating-resources"
     ]
   ],
   "/clickstack/managing/materialized-views": [
     [
       "Open Source",
       "/clickstack/managing/materialized-views"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/materialized-views"
     ]
   ],
   "/clickstack/managing/overview": [
@@ -1067,18 +1177,30 @@
     [
       "Open Source",
       "/clickstack/managing/performance-tuning"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/performance-tuning"
     ]
   ],
   "/clickstack/managing/production": [
     [
       "Open Source",
       "/clickstack/managing/production"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/production"
     ]
   ],
   "/clickstack/managing/ttl": [
     [
       "Open Source",
       "/clickstack/managing/ttl"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/ttl"
     ]
   ],
   "/clickstack/mcp": [
@@ -1125,6 +1247,10 @@
     [
       "Open Source",
       "/clickstack/migration/elastic/concepts"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/migration/elastic/concepts"
     ]
   ],
   "/clickstack/migration/elastic/intro": [
@@ -1181,6 +1307,10 @@
     [
       "Open Source",
       "/clickstack/migration/elastic/types"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/migration/elastic/types"
     ]
   ],
   "/clickstack/observability": [
@@ -1655,16 +1785,6 @@
       "/clickstack/observability/getting-started"
     ]
   ],
-  "/clickstack/observability/ingesting-data/collector": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/collector"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/ingesting-data/collector"
-    ]
-  ],
   "/clickstack/observability/ingesting-data/opentelemetry": [
     [
       "Open Source",
@@ -2085,6 +2205,46 @@
       "/clickstack/observability/integration-partners/telflo"
     ]
   ],
+  "/clickstack/observability/managed-onboarding/instrument-application": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/instrument-application"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/instrument-application"
+    ]
+  ],
+  "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs"
+    ]
+  ],
+  "/clickstack/observability/managed-onboarding/monitoring-kubernetes": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-kubernetes"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/monitoring-kubernetes"
+    ]
+  ],
+  "/clickstack/observability/managed-onboarding/tuning-clickstack-schema": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/tuning-clickstack-schema"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/managed-onboarding/tuning-clickstack-schema"
+    ]
+  ],
   "/clickstack/observability/managing/config": [
     [
       "Open Source",
@@ -2264,27 +2424,119 @@
     ],
     [
       "ClickHouse Observability",
-      "/clickstack/observability/architecture"
+      "/clickstack/self-configured/architecture"
     ]
   ],
-  "/clickstack/self-configured/deployment/managed": [],
-  "/clickstack/self-configured/getting-started/managed": [],
+  "/clickstack/self-configured/deployment/managed": [
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/deployment/managed"
+    ]
+  ],
+  "/clickstack/self-configured/getting-started/managed": [
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/getting-started/managed"
+    ]
+  ],
+  "/clickstack/self-configured/ingesting-data/collector": [
+    [
+      "Open Source",
+      "/clickstack/ingesting-data/collector"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/ingesting-data/collector"
+    ]
+  ],
   "/clickstack/self-configured/ingesting-data/schema/map-vs-json": [
     [
       "Open Source",
       "/clickstack/ingesting-data/schema/map-vs-json"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/ingesting-data/schema/map-vs-json"
     ]
   ],
   "/clickstack/self-configured/ingesting-data/schemas": [
     [
       "Open Source",
       "/clickstack/ingesting-data/schemas"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/ingesting-data/schemas"
     ]
   ],
   "/clickstack/self-configured/ingesting-data/trace-sampling": [
     [
       "Open Source",
       "/clickstack/ingesting-data/trace-sampling"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/ingesting-data/trace-sampling"
+    ]
+  ],
+  "/clickstack/self-configured/managed-onboarding/instrument-application": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/instrument-application"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/instrument-application"
+    ]
+  ],
+  "/clickstack/self-configured/managed-onboarding/managed-getting-started": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/managed-getting-started"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/managed-getting-started"
+    ]
+  ],
+  "/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs"
+    ]
+  ],
+  "/clickstack/self-configured/managed-onboarding/monitoring-kubernetes": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/monitoring-kubernetes"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/monitoring-kubernetes"
+    ]
+  ],
+  "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector"
+    ]
+  ],
+  "/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema": [
+    [
+      "Open Source",
+      "/clickstack/managed-onboarding/tuning-clickstack-schema"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema"
     ]
   ],
   "/clickstack/self-configured/managing/config": [
@@ -2294,20 +2546,33 @@
     ],
     [
       "ClickHouse Observability",
-      "/clickstack/observability/managing/config"
+      "/clickstack/self-configured/managing/config"
     ]
   ],
   "/clickstack/self-configured/managing/estimating-resources": [
     [
       "Open Source",
       "/clickstack/managing/estimating-resources"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/estimating-resources"
     ]
   ],
-  "/clickstack/self-configured/managing/isolating-read-write": [],
+  "/clickstack/self-configured/managing/isolating-read-write": [
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/isolating-read-write"
+    ]
+  ],
   "/clickstack/self-configured/managing/materialized-views": [
     [
       "Open Source",
       "/clickstack/managing/materialized-views"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/materialized-views"
     ]
   ],
   "/clickstack/self-configured/managing/overview": [
@@ -2317,37 +2582,57 @@
     ],
     [
       "ClickHouse Observability",
-      "/clickstack/observability/managing/overview"
+      "/clickstack/self-configured/managing/overview"
     ]
   ],
   "/clickstack/self-configured/managing/performance-tuning": [
     [
       "Open Source",
       "/clickstack/managing/performance-tuning"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/performance-tuning"
     ]
   ],
   "/clickstack/self-configured/managing/production": [
     [
       "Open Source",
       "/clickstack/managing/production"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/production"
     ]
   ],
   "/clickstack/self-configured/managing/ttl": [
     [
       "Open Source",
       "/clickstack/managing/ttl"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/managing/ttl"
     ]
   ],
   "/clickstack/self-configured/migration/elastic/concepts": [
     [
       "Open Source",
       "/clickstack/migration/elastic/concepts"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/migration/elastic/concepts"
     ]
   ],
   "/clickstack/self-configured/migration/elastic/types": [
     [
       "Open Source",
       "/clickstack/migration/elastic/types"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/self-configured/migration/elastic/types"
     ]
   ],
   "/clickstack/self-configured/overview": [
@@ -2357,7 +2642,7 @@
     ],
     [
       "ClickHouse Observability",
-      "/clickstack/observability/overview"
+      "/clickstack/self-configured/overview"
     ]
   ],
   "/clickstack/service-maps": [

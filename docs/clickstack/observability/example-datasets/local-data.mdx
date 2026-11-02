@@ -282,7 +282,7 @@ This configuration collects system logs and metrics for OSX and Linux systems, s
 <Info>
 **Ingestion timestamps**
 
-This configuration adjusts timestamps at ingest, assigning an updated time value to each event. You should ideally [preprocess or parse timestamps](/clickstack/observability/ingesting-data/collector#processing-filtering-transforming-enriching) using OTel processors or operators in their log files to ensure accurate event time is retained.
+This configuration adjusts timestamps at ingest, assigning an updated time value to each event. You should ideally [preprocess or parse timestamps](/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured) using OTel processors or operators in their log files to ensure accurate event time is retained.
 
 With this example setup, if the receiver or file processor is configured to start at the beginning of the file, all existing log entries will be assigned the same adjusted timestamp - the time of processing rather than the original event time. Any new events appended to the file will receive timestamps approximating their actual generation time.
 

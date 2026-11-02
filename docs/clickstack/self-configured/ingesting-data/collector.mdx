@@ -1,6 +1,6 @@
 ---
-slug: /clickstack/observability/ingesting-data/collector
-description: 'OpenTelemetry collector setup and configuration for ClickHouse Observability and self-configured deployments.'
+slug: /clickstack/self-configured/ingesting-data/collector
+description: 'Configure the ClickStack OpenTelemetry collector for self-configured deployments.'
 sidebarTitle: 'OpenTelemetry collector'
 title: 'OpenTelemetry collector'
 doc_type: 'guide'
@@ -10,16 +10,6 @@ keywords: ['ClickHouse Observability', 'OpenTelemetry collector', 'OTLP']
 
 import { Image } from "/snippets/components/Image.jsx";
 import ExtendingConfig from '/snippets/_extending_config.mdx';
-
-<Tabs>
-<Tab title="ClickHouse Observability">
-
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
-
-</Tab>
-<Tab title="Self configured">
 
 <Tip>
 **Try OTel FYI - OTel collector documentation made simple**
@@ -118,7 +108,7 @@ For details on retrieving your Self Configured ClickHouse Observability credenti
 <Info>
 **Production user**
 
-You should use a user with the [appropriate credentials](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) in production.
+You should use a user with the [appropriate credentials](/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured) in production.
 </Info>
 
 ### Modifying configuration {#modifying-otel-collector-configuration-managed-self-configured}
@@ -437,6 +427,3 @@ For agent instances responsible for shipping events to a gateway, and only setti
 The ClickStack collector creates tables that store attributes as `Map(LowCardinality(String), String)` columns by default. This is the recommended schema for observability workloads. A `JSON`-typed schema is available in beta for evaluation on workloads with a small, stable attribute key-set.
 
 For the full comparison, when each is appropriate, the env vars required to enable the JSON-typed schema, and the migration walkthrough, see [Map vs JSON type](/clickstack/self-configured/ingesting-data/schema/map-vs-json).
-
-</Tab>
-</Tabs>

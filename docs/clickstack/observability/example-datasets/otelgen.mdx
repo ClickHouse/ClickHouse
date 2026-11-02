@@ -108,7 +108,7 @@ This guide assumes the collector is already running with OTLP endpoints on `4317
 <Steps>
 <Step title="Prerequisites" id="prerequisites-managed-self-configured">
 
-This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/getting-started/managed) and have an OpenTelemetry collector running with the OTLP gRPC (`4317`) and HTTP (`4318`) endpoints reachable from the machine you run `otelgen` on. If you [secured the collector](/clickstack/observability/ingesting-data/collector#securing-the-collector) with an `OTLP_AUTH_TOKEN`, keep that value handy.
+This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/getting-started/managed) and have an OpenTelemetry collector running with the OTLP gRPC (`4317`) and HTTP (`4318`) endpoints reachable from the machine you run `otelgen` on. If you [secured the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) with an `OTLP_AUTH_TOKEN`, keep that value handy.
 </Step>
 <Step title="Install otelgen" id="install-otelgen-managed-self-configured">
 
@@ -138,7 +138,7 @@ Use the host and port of your collector. For a collector running on the same mac
 <Info>
 **Unsecured collector**
 
-The ClickStack OpenTelemetry collector is unauthenticated by default. If you haven't followed [Securing the collector](/clickstack/observability/ingesting-data/collector#securing-the-collector) to set an `OTLP_AUTH_TOKEN`, skip `OTLP_AUTH_TOKEN` here and drop the `--header` flag from the commands below.
+The ClickStack OpenTelemetry collector is unauthenticated by default. If you haven't followed [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) to set an `OTLP_AUTH_TOKEN`, skip `OTLP_AUTH_TOKEN` here and drop the `--header` flag from the commands below.
 </Info>
 </Step>
 <Step title="Generate traces" id="generate-traces-managed-self-configured">

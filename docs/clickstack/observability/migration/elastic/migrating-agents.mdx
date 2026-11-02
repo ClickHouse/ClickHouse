@@ -22,7 +22,7 @@ The best migration path depends on the agents currently in use. In the sections 
 
 ## Preferred migration path {#prefered-migration-path-self-configured}
 
-Where possible we recommend migrating to the [OpenTelemetry (OTel) Collector](https://opentelemetry.io/docs/collector/) for all log, metric, and trace collection, deploying the collector at the [edge in an agent role](/clickstack/observability/ingesting-data/collector#collector-roles-self-configured). This represents the most efficient means of sending data and avoids architectural complexity and data transformation.
+Where possible we recommend migrating to the [OpenTelemetry (OTel) Collector](https://opentelemetry.io/docs/collector/) for all log, metric, and trace collection, deploying the collector at the [edge in an agent role](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured). This represents the most efficient means of sending data and avoids architectural complexity and data transformation.
 
 <Info>
 **Why OpenTelemetry Collector?**
@@ -56,7 +56,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
 export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_COLLECTOR_TOKEN'
 ```
 
-If you secured the receiving collector with `OTLP_AUTH_TOKEN`, use that token as the authorization value. If authentication is disabled, omit the `authorization` header from the examples. See [Securing the collector](/clickstack/observability/ingesting-data/collector#securing-the-collector-self-configured).
+If you secured the receiving collector with `OTLP_AUTH_TOKEN`, use that token as the authorization value. If authentication is disabled, omit the `authorization` header from the examples. See [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
 
 Use `localhost` only when the sender and receiver share the same network namespace. For a TLS-enabled receiver, use its HTTPS endpoint and configure trust for its certificate.
 

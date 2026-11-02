@@ -55869,7 +55869,7 @@
   },
   {
     "source": "/clickstack/self-configured/ingesting-data/collector",
-    "destination": "/clickstack/observability/ingesting-data/collector"
+    "destination": "/clickstack/self-configured/ingesting-data/collector"
   },
   {
     "source": "/clickstack/self-configured/ingesting-data/opentelemetry",
@@ -56894,5 +56894,9 @@
   {
     "source": "/ja/products/cloud/api-reference/udf/udf-delete",
     "destination": "/ja/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/clickstack/observability/ingesting-data/collector",
+    "destination": "/clickstack/self-configured/ingesting-data/collector"
   }
 ]

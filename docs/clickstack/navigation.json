@@ -153,7 +153,6 @@
                 "clickstack/observability/ingesting-data/overview",
                 "clickstack/observability/ingesting-data/opentelemetry",
                 "clickstack/observability/ingesting-data/vector",
-                "clickstack/observability/ingesting-data/collector",
                 {
                   "group": "Integrations",
                   "pages": [
@@ -246,6 +245,7 @@
             {
               "group": "Configuration and schemas",
               "pages": [
+                "clickstack/self-configured/ingesting-data/collector",
                 "clickstack/self-configured/managing/config",
                 "clickstack/self-configured/ingesting-data/schemas",
                 "clickstack/self-configured/ingesting-data/schema/map-vs-json",

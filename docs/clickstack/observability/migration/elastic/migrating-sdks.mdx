@@ -59,7 +59,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
 export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_COLLECTOR_TOKEN'
 ```
 
-If you secured the receiving collector with `OTLP_AUTH_TOKEN`, use that token as the authorization value. Use `localhost` only when the application and collector share the same network namespace. For a TLS-enabled collector, use its HTTPS endpoint and configure the SDK to trust its certificate. See [Securing the collector](/clickstack/observability/ingesting-data/collector#securing-the-collector-self-configured).
+If you secured the receiving collector with `OTLP_AUTH_TOKEN`, use that token as the authorization value. Use `localhost` only when the application and collector share the same network namespace. For a TLS-enabled collector, use its HTTPS endpoint and configure the SDK to trust its certificate. See [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
 
 If collector authentication is disabled, clear the previous Elastic header:
 

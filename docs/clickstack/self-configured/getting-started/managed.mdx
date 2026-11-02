@@ -39,8 +39,8 @@ This page is showing the **OpenTelemetry** path. Use the guide selector near the
 
 ### Prepare your ingestion environment {#prepare-your-ingestion-environment}
 
-- To start a new [OpenTelemetry Collector](/clickstack/observability/ingesting-data/collector), install [Docker](https://docs.docker.com/get-docker/). For Kubernetes, deploy the collector with [Helm](/clickstack/observability/ingesting-data/collector#configuring-the-collector).
-- To use an existing collector, run it in the [gateway role](/clickstack/observability/ingesting-data/collector#collector-roles) and ensure that its distribution includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). You will add the required configuration in this guide.
+- To start a new [OpenTelemetry Collector](/clickstack/self-configured/ingesting-data/collector), install [Docker](https://docs.docker.com/get-docker/). For Kubernetes, deploy the collector with [Helm](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured).
+- To use an existing collector, run it in the [gateway role](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) and ensure that its distribution includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). You will add the required configuration in this guide.
 
 ## Set up ClickHouse Observability - Self Configured {#set-up-managed-clickstack}
 
@@ -95,7 +95,7 @@ Replace `<host>` and `<your_password_here>` with the values for your ClickHouse 
 The collector runs in the foreground. Leave this terminal open and use a second terminal for the remaining commands in this guide.
 
 <Note>
-This command exposes the OTLP ports without authentication and is intended for local evaluation. Before sending production traffic, [secure the collector](/clickstack/observability/ingesting-data/collector#securing-the-collector).
+This command exposes the OTLP ports without authentication and is intended for local evaluation. Before sending production traffic, [secure the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
 </Note>
 
 </Tab>

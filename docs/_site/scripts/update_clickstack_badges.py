@@ -35,10 +35,18 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
     groups.setdefault(key, {})[product] = slug
 
 mapping = {}
-order = ['Open Source', 'ClickHouse Observability']
 for variants in groups.values():
-    badges = [[label, variants[label]] for label in order if label in variants]
     for slug in variants.values():
+        badges = []
+        if 'Open Source' in variants:
+            badges.append(['Open Source', variants['Open Source']])
+        observability = variants.get('ClickHouse Observability') or variants.get('Self configured')
+        # Self-configured deployments belong to ClickHouse Observability.
+        # Keep its pill active on the current self-configured guide.
+        if slug == variants.get('Self configured'):
+            observability = slug
+        if observability:
+            badges.append(['ClickHouse Observability', observability])
         mapping[slug] = badges
 
 path = root / '_site/customizations/clickstack-availability.js'

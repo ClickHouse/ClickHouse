@@ -42,7 +42,7 @@ The Datadog endpoint uses the same hostname with port `8126`. No additional coll
 </Tab>
 <Tab title="Self configured">
 
-The [ClickHouse Observability Collector](/clickstack/observability/ingesting-data/collector) includes the [Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver). Configure the receiver and connect it to your logs, traces, and metrics pipelines.
+The [ClickHouse Observability Collector](/clickstack/self-configured/ingesting-data/collector) includes the [Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver). Configure the receiver and connect it to your logs, traces, and metrics pipelines.
 
 Save the following configuration overlay as `datadog-collector.yaml`. It adds the Datadog receiver to the collector's existing logs, traces, and metrics pipelines while preserving the OTLP receiver:
 

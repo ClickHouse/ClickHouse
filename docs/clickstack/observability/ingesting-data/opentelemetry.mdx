@@ -80,13 +80,13 @@ You can use **Send a Test Log** in Managed Telemetry to submit a sample log to t
 
 All data is ingested into Self Configured ClickHouse Observability via an **OpenTelemetry (OTel) collector** instance, which acts as the primary entry point for logs, metrics, traces, and session data. We recommend using the official [ClickStack distribution](#installing-otel-collector-managed-self-configured) of the collector for this instance.
 
-Users send data to this collector from [language SDKs](/clickstack/observability/ingesting-data/sdks) or through data collection agents collecting infrastructure metrics and logs (such OTel collectors in an [agent](/clickstack/observability/ingesting-data/collector#collector-roles) role or other technologies e.g. [Fluentd](https://www.fluentd.org/) or [Vector](https://vector.dev/)). For teams that want a managed OpenTelemetry pipeline, [Bindplane](/clickstack/observability/integration-partners/bindplane) offers an OpenTelemetry-native solution with a native ClickStack destination, simplifying telemetry collection, processing, and routing.
+Users send data to this collector from [language SDKs](/clickstack/observability/ingesting-data/sdks) or through data collection agents collecting infrastructure metrics and logs (such OTel collectors in an [agent](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) role or other technologies e.g. [Fluentd](https://www.fluentd.org/) or [Vector](https://vector.dev/)). For teams that want a managed OpenTelemetry pipeline, [Bindplane](/clickstack/observability/integration-partners/bindplane) offers an OpenTelemetry-native solution with a native ClickStack destination, simplifying telemetry collection, processing, and routing.
 
 ## Sending OpenTelemetry data {#sending-otel-data-self-configured}
 
 ### Installing ClickStack OpenTelemetry collector {#installing-otel-collector-managed-self-configured}
 
-To send data to Self Configured ClickHouse Observability, an OTel collector should be deployed in a [gateway role](/clickstack/observability/ingesting-data/collector#collector-roles). OTel compatible instrumentation will send events to this collector via OTLP over HTTP or gRPC.
+To send data to Self Configured ClickHouse Observability, an OTel collector should be deployed in a [gateway role](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured). OTel compatible instrumentation will send events to this collector via OTLP over HTTP or gRPC.
 
 <Info>
 **We recommend using the ClickStack OpenTelemetry collector**
@@ -94,7 +94,7 @@ To send data to Self Configured ClickHouse Observability, an OTel collector shou
 This allows you to benefit from standardized ingestion, enforced schemas, and out-of-the-box compatibility with the observability UI. Using the default schema enables automatic source detection and preconfigured column mappings.
 </Info>
 
-For further details see ["Deploying the collector"](/clickstack/observability/ingesting-data/collector).
+For further details see ["Deploying the collector"](/clickstack/self-configured/ingesting-data/collector).
 
 ### Sending data to the collector {#sending-data-to-collector-managed-self-configured}
 
