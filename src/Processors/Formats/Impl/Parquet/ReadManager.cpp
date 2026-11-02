@@ -178,7 +178,10 @@ void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
         if (!row_group.need_to_process || skipped_by_threshold)
         {
             if (skipped_by_threshold)
+            {
+                row_group.skipped_by_top_k.store(true);
                 ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+            }
             {
                 std::lock_guard lock(top_k_admission.mutex);
                 --top_k_admission.outstanding;
@@ -352,6 +355,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 /// filtered out (empty subgroups below).
                 if (reader.topKShouldSkipRowGroup(row_group))
                 {
+                    row_group.skipped_by_top_k.store(true);
                     if (row_group.need_to_process)
                         ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
                     stage = ReadStage::Deliver;
@@ -1591,17 +1595,20 @@ ReadManager::ReadResult ReadManager::read()
         reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);
     BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
-    auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(
-        row_subgroup.start_row_idx + row_group.start_global_row_idx);
-    if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
+    if (reader.format_filter_info && reader.format_filter_info->need_row_numbers)
     {
-        chassert(row_subgroup.filter.rows_pass > 0);
-        chassert(!row_subgroup.filter.filter.empty());
-        chassert(countBytesInFilter(row_subgroup.filter.filter) == chunk.getNumRows());
+        auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(
+            row_subgroup.start_row_idx + row_group.start_global_row_idx);
+        if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
+        {
+            chassert(row_subgroup.filter.rows_pass > 0);
+            chassert(!row_subgroup.filter.filter.empty());
+            chassert(countBytesInFilter(row_subgroup.filter.filter) == chunk.getNumRows());
 
-        row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
+            row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
+        }
+        chunk.getChunkInfos().add(std::move(row_numbers_info));
     }
-    chunk.getChunkInfos().add(std::move(row_numbers_info));
 
     /// This is a terrible hack to make progress indication kind of work.
     ///

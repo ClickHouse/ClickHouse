@@ -527,7 +527,9 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
 
             /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition);
+            return std::make_shared<FilterTransform>(
+                header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition,
+                /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
         });
     }
 
@@ -537,7 +539,9 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        return std::make_shared<FilterTransform>(
+            header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition,
+            /*update_row_numbers_info_=*/ false, optimize_constant_columns_after_filter);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -679,6 +683,14 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
+    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in:
+    /// bit 2 is set if the value is known, bit 3 holds the value.
+    if (optimize_constant_columns_after_filter)
+    {
+        flags |= 2;
+        if (*optimize_constant_columns_after_filter)
+            flags |= 4;
+    }
     writeIntBinary(flags, ctx.out);
 
     /// A cache key must not depend on the name this plan build composed for the filter column
@@ -708,7 +720,10 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
-    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    auto step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    if (flags & 2)
+        step->setOptimizeConstantColumnsAfterFilter(bool(flags & 4));
+    return step;
 }
 
 bool FilterStep::canRemoveUnusedColumns() const
@@ -755,6 +770,15 @@ FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_posi
     return result;
 }
 
+
+std::optional<bool> FilterStep::combineOptimizeConstantColumnsAfterFilter(std::optional<bool> lhs, std::optional<bool> rhs)
+{
+    if (!lhs)
+        return rhs;
+    if (!rhs)
+        return lhs;
+    return *lhs && *rhs;
+}
 
 QueryPlanStepPtr FilterStep::clone() const
 {
