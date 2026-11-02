@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- The container of the fast test is not privileged, so it does not allow the namespaces of the isolation.
+
 -- The configuration of the tests sets `filesystem_isolation` to `enforce`: see `tests/config/config.d/filesystem_isolation.xml`.
 -- The server reports the mode in force, which cannot be changed without a restart.
 SELECT value, changeable_without_restart FROM system.server_settings WHERE name = 'filesystem_isolation';

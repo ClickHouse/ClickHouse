@@ -259,7 +259,11 @@ if check_clickhouse_version 25.10; then
     ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
-if check_clickhouse_version 26.11; then
+# The server isolates its filesystem in a new mount namespace (and a user namespace, if it lacks `CAP_SYS_ADMIN`).
+# A container that is not privileged, such as the one of the fast test, does not allow that, and the setting
+# stays at its default, `disabled`, there.
+if check_clickhouse_version 26.11 && command -v unshare >/dev/null \
+    && { unshare --mount true 2>/dev/null || unshare --user --map-root-user --mount true 2>/dev/null; }; then
     ln -sf $SRC_PATH/config.d/filesystem_isolation.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
