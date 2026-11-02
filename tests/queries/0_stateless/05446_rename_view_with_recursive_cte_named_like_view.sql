@@ -1,6 +1,7 @@
 -- Regression test: a reference of a recursive common table expression to itself is not a table, even when it is named
 -- like the view or like an existing table. A view reading such a common table expression is moved to another database
--- by `RENAME TABLE` and by `RENAME DATABASE`, and it is not a dependent of the table with the same name.
+-- by `RENAME TABLE` and by `RENAME DATABASE`. It is a dependent of the table with the same name, because a session with
+-- `enable_global_with_statement` disabled reads that table in the recursive member.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};

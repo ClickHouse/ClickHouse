@@ -7,5 +7,5 @@
 2
 3
 -- a table named like the common table expression
-r	[]
+r	['reads_cte']
 -- a view reading a table of the destination database named like it

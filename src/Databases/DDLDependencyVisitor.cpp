@@ -39,7 +39,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_global_with_statement;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -48,7 +47,9 @@ namespace Setting
 namespace
 {
     /// The value of `enable_global_with_statement` in the scope of the `SETTINGS` clause `settings_ast`, given its value outside.
-    bool applyEnableGlobalWithStatement(const ASTPtr & settings_ast, bool enabled)
+    /// `std::nullopt` means that the stored definition does not fix the value: the query runs with the settings of the session
+    /// which reads it, so either value is possible.
+    std::optional<bool> applyEnableGlobalWithStatement(const ASTPtr & settings_ast, std::optional<bool> enabled)
     {
         if (!settings_ast)
             return enabled;
@@ -56,14 +57,15 @@ namespace
         const auto & set_query = settings_ast->as<const ASTSetQuery &>();
         if (const auto * value = set_query.changes.tryGet("enable_global_with_statement"))
             enabled = Settings::castValueUtil("enable_global_with_statement", *value).safeGet<bool>();
+        /// `DEFAULT` is the value of the profile of the session, which is not known here.
         if (std::ranges::contains(set_query.default_settings, "enable_global_with_statement"))
-            enabled = Settings{}[Setting::enable_global_with_statement];
+            enabled = std::nullopt;
         return enabled;
     }
 
     /// Like in `ApplyWithSubqueryVisitor`, a trailing `SETTINGS` clause of a set operation with several operands
     /// applies to every operand, not only to the last one, where `ParserSelectQuery` leaves it.
-    bool applySetOperationEnableGlobalWithStatement(const ASTs & operands, const ASTPtr & settings_ast, bool enabled)
+    std::optional<bool> applySetOperationEnableGlobalWithStatement(const ASTs & operands, const ASTPtr & settings_ast, std::optional<bool> enabled)
     {
         enabled = applyEnableGlobalWithStatement(settings_ast, enabled);
         if (operands.size() > 1)
@@ -80,8 +82,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_, const String & engine_arguments_database_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), engine_arguments_database(engine_arguments_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_), enable_global_with_statement(global_context_->getSettingsRef()[Setting::enable_global_with_statement])
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_, const String & engine_arguments_database_, std::optional<bool> enable_global_with_statement_ = {})
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), engine_arguments_database(engine_arguments_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_), enable_global_with_statement(enable_global_with_statement_)
         {
         }
 
@@ -161,8 +163,10 @@ namespace
 
         /// The declarations of the common table expressions of the enclosing select queries by name, the nearest last.
         std::unordered_map<String, std::vector<WithDeclaration>> with_declarations;
-        /// The value of `enable_global_with_statement` in the current select query.
-        bool enable_global_with_statement;
+        /// The value of `enable_global_with_statement` in the current select query, `std::nullopt` if the stored definition
+        /// does not fix it. Then a name is not a table only if it refers to a common table expression with either value,
+        /// because a session with the setting disabled reads a table there.
+        std::optional<bool> enable_global_with_statement;
         /// The aliases of the expressions of the `WITH` clauses of the enclosing select queries, visible in the nested select queries.
         std::unordered_set<String> with_expression_aliases;
         /// The aliases of the expressions of the current select query.
@@ -375,9 +379,9 @@ namespace
                 auto enclosing_expression_aliases = std::move(expression_aliases);
                 auto outer_enclosing_aliases = std::move(enclosing_aliases);
                 enclosing_aliases.clear();
-                const bool enclosing_enable_global_with_statement = enable_global_with_statement;
+                const std::optional<bool> enclosing_enable_global_with_statement = enable_global_with_statement;
                 enable_global_with_statement = applyEnableGlobalWithStatement(select->settings(), enable_global_with_statement);
-                if (!enable_global_with_statement)
+                if (!enable_global_with_statement.value_or(false))
                     with_declarations.clear();
 
                 expression_aliases.clear();
@@ -489,7 +493,7 @@ namespace
             const ASTs * branches = declaration.is_recursive ? AddDefaultDatabaseVisitor::getRecursiveBodyBranches(subquery) : nullptr;
 
             /// The branches are the operands of the set operation of the body.
-            const bool enclosing_enable_global_with_statement = enable_global_with_statement;
+            const std::optional<bool> enclosing_enable_global_with_statement = enable_global_with_statement;
             if (branches)
                 enable_global_with_statement = applySetOperationEnableGlobalWithStatement(*branches, nullptr, enable_global_with_statement);
 
@@ -508,7 +512,7 @@ namespace
 
         void collectNonTableReferencesInOperands(const ASTs & operands, const ASTPtr & settings_ast)
         {
-            const bool enclosing_enable_global_with_statement = enable_global_with_statement;
+            const std::optional<bool> enclosing_enable_global_with_statement = enable_global_with_statement;
             enable_global_with_statement = applySetOperationEnableGlobalWithStatement(operands, settings_ast, enable_global_with_statement);
 
             for (const auto & operand : operands)
@@ -891,9 +895,9 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements, const std::optional<String> & engine_arguments_database)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements, const std::optional<String> & engine_arguments_database, std::optional<bool> enable_global_with_statement)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements, engine_arguments_database.value_or(current_database)};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements, engine_arguments_database.value_or(current_database), enable_global_with_statement};
     data.collectNonTableReferences(ast);
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);

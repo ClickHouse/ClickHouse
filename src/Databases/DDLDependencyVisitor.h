@@ -26,7 +26,10 @@ struct CreateQueryDependencies
 /// @param validate_current_database - if false, skips validation that database exists when setting current database (for bootstrap/restore scenarios)
 /// @param max_expanded_ast_elements - bounds the expansion of `WITH` elements in the query of a materialized view, zero means no limit
 /// @param engine_arguments_database - the database the arguments of the table engine are resolved against, `current_database` if not set
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw = false, bool validate_current_database = true, size_t max_expanded_ast_elements = 0, const std::optional<String> & engine_arguments_database = {});
+/// @param enable_global_with_statement - the value of `enable_global_with_statement` the query runs with where its `SETTINGS`
+///     clauses do not set it. If not set, the value is the one of the session which reads the query, so a name is a table
+///     if it is a table with either value. Set it to check what the query reads in a given session.
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw = false, bool validate_current_database = true, size_t max_expanded_ast_elements = 0, const std::optional<String> & engine_arguments_database = {}, std::optional<bool> enable_global_with_statement = {});
 
 /// Returns a list of all tables explicitly referenced in the select query specified as a dictionary source.
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw = false);

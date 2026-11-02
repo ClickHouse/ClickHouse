@@ -983,13 +983,26 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
     auto dependencies = getDependenciesFromCreateQuery(
         global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false);
 
-    if (is_ordinary_view && dependencies.dependencies.contains(new_name))
+    /// The dependencies count a name which is a table only in a session with `enable_global_with_statement` disabled,
+    /// e.g. the reference of a recursive common table expression to itself, which is named like the view. The view
+    /// refers to itself there before the move as well, so only a reference which is a table with the setting enabled is rejected.
+    auto self_reference_dependencies = is_ordinary_view
+        ? getDependenciesFromCreateQuery(
+              global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false,
+              /*max_expanded_ast_elements*/ 0, /*engine_arguments_database*/ {}, /*enable_global_with_statement*/ true).dependencies
+        : TableNamesSet{};
+
+    if (is_ordinary_view && self_reference_dependencies.contains(new_name))
         throw Exception(
             ErrorCodes::INFINITE_LOOP,
             "Cannot move {}.{} to {}, because the view would refer to itself",
             backQuoteIfNeed(database.getDatabaseName()),
             backQuoteIfNeed(table_name),
             new_name.getFullName());
+
+    /// A reference to the new name which is not rejected above is a table only where the view refers to itself anyway.
+    dependencies.dependencies.erase(new_name);
+    dependencies.plain_view_dependencies.erase(new_name);
 
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, new_name, ast, new_name.database);
 
