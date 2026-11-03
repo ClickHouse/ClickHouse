@@ -620,7 +620,7 @@ std::string ObjectStorageQueueSource::FileIterator::getPartitionKey(const std::s
 {
     if (explicit_partitions_snapshot)
         return explicit_partitions_snapshot->getPartitionKey(path);
-    return metadata->getPartitionKey(path);
+    return metadata->extractPartitionKey(path);
 }
 
 void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos & objects)
@@ -1092,7 +1092,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
             chassert(!file_metadata);
 
-            const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(
+            const auto bucket = ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
                 object_info->getPath(),
                 getPartitionKey(object_info->getPath()),
                 buckets_num,

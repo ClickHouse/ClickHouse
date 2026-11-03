@@ -12,6 +12,13 @@
 namespace DB
 {
 
+/// Only for HIVE and REGEX modes.
+/// In EXPLICIT mode the partition key is not derived from the path.
+std::string extractPartitionKey(
+    const std::string & file_path,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser);
+
 class ObjectStorageQueueOrderedFileMetadata : public ObjectStorageQueueIFileMetadata
 {
 public:
@@ -59,11 +66,6 @@ public:
         const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
         const std::string & zookeeper_name_,
         LoggerPtr log_);
-
-    static std::string getPartitionKey(
-        const std::string & path,
-        ObjectStorageQueuePartitioningMode partitioning_mode,
-        const ObjectStorageQueueFilenameParser * parser);
 
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
         const std::string & path,

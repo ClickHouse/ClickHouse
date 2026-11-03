@@ -554,6 +554,12 @@ Unlike `Processed` and `Failed`, this state is not final: the other processor ca
 
 Default value: `300` (5 minutes).
 
+### `explicit_partitions_max_idle_seconds` {#explicit_partitions_max_idle_seconds}
+
+For `partitioning_mode = 'explicit'`. A partition in which no file was processed for the specified number of seconds is forgotten, as with `FORGET OBJECT STORAGE QUEUE PARTITION`. The time is counted from the last processed file, or from `ADD OBJECT STORAGE QUEUE PARTITION` if no file was processed in the partition yet. Objects that appear under a forgotten partition later are not processed unless the partition is added again. Zero means to never forget partitions automatically.
+
+Default value: `0`.
+
 ## S3-related settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](/reference/engines/table-engines/integrations/s3).
@@ -603,7 +609,7 @@ ALTER TABLE queue FORGET OBJECT STORAGE QUEUE PARTITION '2025-01';
 
 The argument is a key prefix relative to the table path with the wildcards cut off: for the path `data/*.csv`, `'2025-01'` covers the objects whose keys start with `data/2025-01`. Registered prefixes are stored in Keeper under `keeper_path` and shared by all replicas. They must not overlap: no registered prefix can be a prefix of another. Both commands are idempotent.
 
-Each partition keeps its last processed file. On every poll each partition is listed separately, and on S3 its listing starts after that file. So the cost of listing does not grow with the number of processed files kept in the S3 bucket, for example with `after_processing = 'keep'`. Objects outside registered partitions are ignored. `FORGET OBJECT STORAGE QUEUE PARTITION` removes the partition and its progress. It is meant for prefixes that no longer receive or hold objects, because objects still under the prefix may be processed again if it is added back.
+Each partition keeps its last processed file. On every poll each partition is listed separately, and on S3 its listing starts after that file. So the cost of listing does not grow with the number of processed files kept in the S3 bucket, for example with `after_processing = 'keep'`. Objects outside registered partitions are ignored. `FORGET OBJECT STORAGE QUEUE PARTITION` removes the partition and its progress. It is meant for prefixes that no longer receive or hold objects, because objects still under the prefix may be processed again if it is added back. With [`explicit_partitions_max_idle_seconds`](#explicit_partitions_max_idle_seconds), partitions are forgotten automatically after a period without processed files.
 
 Explicit partitions require `bucketing_mode = 'partition'`.
 

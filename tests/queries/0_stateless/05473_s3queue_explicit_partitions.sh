@@ -28,7 +28,9 @@ $CLICKHOUSE_CLIENT -q "
         bucketing_mode = 'partition',
         buckets = 2,
         after_processing = 'keep',
-        commit_on_select = 1;
+        commit_on_select = 1,
+        cleanup_interval_min_ms = 100,
+        cleanup_interval_max_ms = 100;
     ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'a_';
     ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'b_';
     ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'a_';
@@ -61,6 +63,18 @@ $CLICKHOUSE_CLIENT -q "
     ENGINE = S3Queue('${S3_URL}/*.csv', 'CSV')
     SETTINGS keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05473_queue_plain', mode = 'ordered';
     ALTER TABLE queue_plain ADD OBJECT STORAGE QUEUE PARTITION 'a_'; -- { serverError BAD_ARGUMENTS }
-    DROP TABLE queue;
     DROP TABLE queue_plain;
+    ALTER TABLE queue ADD OBJECT STORAGE QUEUE PARTITION 'e_';
+    ALTER TABLE queue MODIFY SETTING explicit_partitions_max_idle_seconds = 1;
+"
+
+for _ in {1..600}
+do
+    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '${KEEPER_PATH}/partitions'") == 0 ]] && break
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'idle', count() FROM system.zookeeper WHERE path IN ('${KEEPER_PATH}/partitions', '${KEEPER_PATH}/buckets/0/processed', '${KEEPER_PATH}/buckets/1/processed');
+    DROP TABLE queue;
 "

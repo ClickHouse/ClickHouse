@@ -59,32 +59,35 @@ namespace
         normalizeHivePart(hive_part);
         return hive_part;
     }
+}
 
-    /// Utility function to extract partition key from file path
-    std::string getPartitionKey(
-        const std::string & file_path,
-        ObjectStorageQueuePartitioningMode partitioning_mode,
-        const ObjectStorageQueueFilenameParser * parser)
+/// Utility function to extract partition key from file path
+std::string extractPartitionKey(
+    const std::string & file_path,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser)
+{
+    switch (partitioning_mode)
     {
-        switch (partitioning_mode)
-        {
-            case ObjectStorageQueuePartitioningMode::HIVE:
-                return getHivePart(file_path);
-            case ObjectStorageQueuePartitioningMode::REGEX: {
-                if (parser && parser->isValid())
-                {
-                    if (auto partition_key = parser->parse(file_path))
-                        return *partition_key;
-                }
-                return "";
+        case ObjectStorageQueuePartitioningMode::HIVE:
+            return getHivePart(file_path);
+        case ObjectStorageQueuePartitioningMode::REGEX: {
+            if (parser && parser->isValid())
+            {
+                if (auto partition_key = parser->parse(file_path))
+                    return *partition_key;
             }
-            case ObjectStorageQueuePartitioningMode::EXPLICIT:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition key of file {} cannot be derived from its path", file_path);
-            case ObjectStorageQueuePartitioningMode::NONE:
-                return "";
+            return "";
         }
+        case ObjectStorageQueuePartitioningMode::EXPLICIT:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition key of file {} cannot be derived from its path", file_path);
+        case ObjectStorageQueuePartitioningMode::NONE:
+            return "";
     }
+}
 
+namespace
+{
     bool hasPartitioningMode(const ObjectStorageQueuePartitioningMode partitioning_mode)
     {
         return partitioning_mode != ObjectStorageQueuePartitioningMode::NONE;
@@ -658,14 +661,6 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByPartition(
             throw zkutil::KeeperException::fromPath(responses[i].error, partition_processed_paths[i]);
     }
     return true;
-}
-
-std::string ObjectStorageQueueOrderedFileMetadata::getPartitionKey(
-    const std::string & path_,
-    ObjectStorageQueuePartitioningMode partitioning_mode,
-    const ObjectStorageQueueFilenameParser * parser)
-{
-    return DB::getPartitionKey(path_, partitioning_mode, parser);
 }
 
 ObjectStorageQueueOrderedFileMetadata::Bucket

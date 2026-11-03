@@ -84,6 +84,7 @@ public:
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
         size_t processing_state_cache_ttl_seconds_,
+        size_t explicit_partitions_max_idle_sec_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -172,13 +173,6 @@ public:
     /// Get number of buckets in case of bucket-based processing.
     size_t getBucketsNum() const { return buckets_num; }
     ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
-    /// Get bucket by file path in case of bucket-based processing.
-    Bucket getBucketForPath(const std::string & path) const;
-    static Bucket getBucketForPath(
-        const std::string & path,
-        const std::string & partition_key,
-        size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode);
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
@@ -191,7 +185,7 @@ public:
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
     ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
-    std::string getPartitionKey(const std::string & path) const;
+    std::string extractPartitionKey(const std::string & path) const;
 
     /// Compute StartAfter for ordered S3 listing when it is safe.
     std::optional<std::string> getStartAfterForListing() const;
@@ -221,12 +215,16 @@ public:
 
         void add(const std::string & partition) const;
         void forget(const std::string & partition) const;
+        void forgetIdle(size_t max_idle_seconds) const;
         Snapshot read(const std::string & table_prefix) const;
 
     private:
         friend class ObjectStorageQueueMetadata;
 
         explicit ExplicitPartitions(const ObjectStorageQueueMetadata & metadata_) : metadata(metadata_) {}
+
+        fs::path getPartitionsPath() const { return metadata.zookeeper_path / "partitions"; }
+        fs::path getPartitionPath(const std::string & partition_key) const { return getPartitionsPath() / partition_key; }
 
         const ObjectStorageQueueMetadata & metadata;
     };
@@ -240,6 +238,7 @@ public:
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
     size_t getProcessingStateCacheTTLSeconds() const { return processing_state_cache_ttl_seconds; }
+    size_t getExplicitPartitionsMaxIdleSeconds() const { return explicit_partitions_max_idle_seconds; }
 
     size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
 
@@ -287,6 +286,7 @@ private:
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
     std::atomic<size_t> processing_state_cache_ttl_seconds;
+    std::atomic<size_t> explicit_partitions_max_idle_seconds;
 
     /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().
     /// Keyed by `StorageID::getFullTableName()`, because this metadata object can be

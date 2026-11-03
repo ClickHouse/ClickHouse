@@ -145,6 +145,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 processing_state_cache_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt64 explicit_partitions_max_idle_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
@@ -491,6 +492,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
         (*queue_settings_)[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::explicit_partitions_max_idle_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
@@ -1491,6 +1493,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "max_processed_bytes_before_commit",
     "max_processing_time_sec_before_commit",
     "buckets",
+    "explicit_partitions_max_idle_seconds",
     "list_objects_batch_size",
     "min_insert_block_size_rows_for_materialized_views",
     "min_insert_block_size_bytes_for_materialized_views",
@@ -2052,6 +2055,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds] = static_cast<UInt32>(metadata->getProcessingStateCacheTTLSeconds());
+    settings[ObjectStorageQueueSetting::explicit_partitions_max_idle_seconds] = metadata->getExplicitPartitionsMaxIdleSeconds();
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
     const auto & file_statuses_cache = metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
@@ -2210,7 +2214,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const auto & explicit_partitions = metadata->getExplicitPartitions();
     const auto partition_key = explicit_partitions
         ? explicit_partitions->read(configuration->getPathForRead().cutGlobs(configuration->supportsPartialPathPrefix())).getPartitionKey(path)
-        : metadata->getPartitionKey(path);
+        : metadata->extractPartitionKey(path);
     auto file_metadata = metadata->getFileMetadata(path, /* bucket_info */ {}, partition_key);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
