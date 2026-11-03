@@ -103,9 +103,9 @@
 
     The test checks EXPLAIN output, which parallel replicas wrap differently; the optimization itself still applies
 02725_agg_projection_respect_PK
-03275_subcolumns_in_primary_key
-03277_json_subcolumns_in_primary_key
-03278_json_subcolumns_in_skipping_indexes
+03275_subcolumns_in_primary_key.gen
+03277_json_subcolumns_in_primary_key.gen
+03278_json_subcolumns_in_skipping_indexes.gen
 03460_basic_projection_index
 03460_normal_projection_index
 03464_projections_with_subcolumns
