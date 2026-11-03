@@ -561,6 +561,8 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     std::vector<Int64> replacement_sizes;
     std::vector<FileContentType> replacement_content_types;
     std::vector<ManifestListEntryCounts> replacement_counts;
+    const auto snapshot_id = new_snapshot->getValue<Int64>(f_metadata_snapshot_id);
+    const auto sequence_number = new_snapshot->getValue<Int64>(f_metadata_sequence_number);
     for (const auto & tm : plan.target_manifests)
     {
         const auto & key = tm.manifest_key;
@@ -575,20 +577,22 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getWriteSettings());
         RelativePathWithMetadata source_object(components.path_resolver.resolve(key.manifest_file_path));
+        /// Read to the end without a size, as for any other manifest read: this also skips a HEAD request.
+        source_object.metadata = ObjectMetadata::fromTableRecords(std::nullopt);
         auto input = createReadBuffer(source_object, object_storage, context, log);
         auto counts = rewriteManifestForDelete(
             *input,
             *output,
             key,
             tm.rows_to_remove,
-            new_snapshot->getValue<Int64>(f_metadata_snapshot_id),
-            new_snapshot->getValue<Int64>(f_metadata_sequence_number));
+            snapshot_id,
+            sequence_number);
         output->finalize();
         replacement_paths.push_back(std::move(replacement_path));
         replacement_sizes.push_back(output->count());
         replacement_content_types.push_back(
             key.content_type == ManifestFileContentType::DATA ? FileContentType::DATA : FileContentType::POSITION_DELETE);
-        replacement_counts.push_back(counts);
+        replacement_counts.push_back(std::move(counts));
     }
 
     std::unordered_set<String> carry_forward_manifest_paths;

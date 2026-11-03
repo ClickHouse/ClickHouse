@@ -832,8 +832,10 @@ def test_drop_partition_preserves_manifest_metadata(iceberg_db):
     ).strip() == "6"
 
 
-def _create_drop_conflict_table(cluster):
-    """Two partitions in one manifest, so dropping one needs a manifest rewrite."""
+def test_trino_update_conflicts_with_clickhouse_drop(iceberg_db, pause_trino_commit):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+    # Two partitions in one manifest, so dropping one needs a manifest rewrite.
     name, table, full = _create_trino_partitioned_table(
         cluster, "id INTEGER, p INTEGER, v INTEGER", "p"
     )
@@ -841,13 +843,6 @@ def _create_drop_conflict_table(cluster):
     assert _trino_exec(
         cluster, f'SELECT count(*) FROM "{NAMESPACE}"."{name}$manifests"'
     ).strip() == "1"
-    return name, table, full
-
-
-def test_trino_update_conflicts_with_clickhouse_drop(iceberg_db, pause_trino_commit):
-    cluster = iceberg_db
-    node = cluster.instances["node1"]
-    name, table, full = _create_drop_conflict_table(cluster)
     expected = "2\t2\t20\n"
 
     with ThreadPoolExecutor(max_workers=1) as pool:

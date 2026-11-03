@@ -949,22 +949,18 @@ ManifestListEntryCounts rewriteManifestForDelete(
         const auto sequence = inheritManifestField(entry.field(f_sequence_number), source.added_sequence_number);
         inheritManifestField(entry.field(f_file_sequence_number), source.added_sequence_number);
 
+        const auto rows = entry.field(f_data_file).value<avro::GenericRecord>().field(f_record_count).value<Int64>();
         if (rows_to_delete.contains(row_number))
         {
             status = static_cast<Int32>(ManifestEntryStatus::DELETED);
             entry.field(f_snapshot_id).value<Int64>() = snapshot_id;
-        }
-        else if (status == static_cast<Int32>(ManifestEntryStatus::ADDED))
-            status = static_cast<Int32>(ManifestEntryStatus::EXISTING);
-
-        const auto rows = entry.field(f_data_file).value<avro::GenericRecord>().field(f_record_count).value<Int64>();
-        if (status == static_cast<Int32>(ManifestEntryStatus::DELETED))
-        {
             ++counts.deleted_files_count;
             counts.deleted_rows_count += rows;
         }
         else
         {
+            if (status == static_cast<Int32>(ManifestEntryStatus::ADDED))
+                status = static_cast<Int32>(ManifestEntryStatus::EXISTING);
             ++counts.files_count;
             counts.rows_count += rows;
             counts.min_sequence_number = std::min(counts.min_sequence_number, sequence);

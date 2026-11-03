@@ -148,6 +148,7 @@ struct ManifestListEntryCounts
     /// forward into this manifest list.
     std::optional<Int64> added_snapshot_id;
     std::optional<Int64> added_sequence_number;
+    /// Entries recorded as `DELETED` by the snapshot that writes this manifest.
     Int64 deleted_files_count = 0;
     Int64 deleted_rows_count = 0;
     /// Source bounds remain valid when a manifest rewrite only removes live files.
