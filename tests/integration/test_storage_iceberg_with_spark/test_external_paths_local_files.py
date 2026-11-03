@@ -20,14 +20,14 @@ from .external_paths_utils import (
 )
 
 
-def _spell_local_table_paths_as_file_uris(host_path, data_file_uri):
+def _spell_local_table_paths_as_file_uris(host_path, data_file_uri, authority=""):
     """Spells `location` and the metadata paths as `file://` URIs inside `host_path`, data files as `data_file_uri` returns."""
     metadata_dir = os.path.join(host_path, "metadata")
-    to_metadata_uri = lambda p: f"file://{host_path}/metadata/{os.path.basename(p)}"
+    to_metadata_uri = lambda p: f"file://{authority}{host_path}/metadata/{os.path.basename(p)}"
     for metadata_json in find_files(metadata_dir, ".metadata.json"):
         with open(metadata_json) as f:
             metadata = json.load(f)
-        metadata["location"] = f"file://{host_path}"
+        metadata["location"] = f"file://{authority}{host_path}"
         for snapshot in metadata.get("snapshots", []):
             snapshot["manifest-list"] = to_metadata_uri(snapshot["manifest-list"])
         with open(metadata_json, "w") as f:
@@ -217,7 +217,8 @@ def test_trivial_count_rejects_path_outside_user_files(started_cluster_iceberg_w
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
 
-def test_copied_local_table_reads_files_from_its_own_directory(started_cluster_iceberg_with_spark):
+@pytest.mark.parametrize("authority", ["", "localhost"])
+def test_copied_local_table_reads_files_from_its_own_directory(started_cluster_iceberg_with_spark, authority):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
 
@@ -229,7 +230,8 @@ def test_copied_local_table_reads_files_from_its_own_directory(started_cluster_i
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
 
     # Spell every path as a `file://` URI inside the source `location`.
-    _spell_local_table_paths_as_file_uris(host_path, lambda name: f"file://{host_path}/data/{name}")
+    _spell_local_table_paths_as_file_uris(
+        host_path, lambda name: f"file://{authority}{host_path}/data/{name}", authority=authority)
 
     default_upload_directory(started_cluster_iceberg_with_spark, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
 

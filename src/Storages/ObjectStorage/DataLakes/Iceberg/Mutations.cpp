@@ -662,12 +662,22 @@ void validateSnapshotForMutation(
         {
             const String & file_format = file_entry->parsed_entry->file_format;
             if (Poco::toLower(file_format) != "parquet")
+            {
+                /// The diagnostic names the data file, which the user may not be allowed to read.
+                checkPathReadable(
+                    persistent_table_components.table_location,
+                    file_entry->parsed_entry->file_path_key.serialize(),
+                    object_storage,
+                    external_storages,
+                    context,
+                    persistent_table_components.path_resolver);
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Iceberg DELETE and UPDATE require all data files in the current snapshot to be Parquet, "
                     "but data file `{}` has format `{}`",
                     file_entry->parsed_entry->file_path_key,
                     file_format);
+            }
         }
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))

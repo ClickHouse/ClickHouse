@@ -14,7 +14,9 @@ from .external_paths_utils import (
     _rewrite_paths_to_local_uri,
     create_and_upload_table,
     external_bucket,
+    find_files,
     get_query_args,
+    modify_avro_file,
     relocate_data_files_to_bucket,
 )
 
@@ -103,6 +105,48 @@ def test_same_bucket_external_path_requires_source_grant(started_cluster_iceberg
     assert instance.query(f"SELECT count() FROM {table_function}", user=user) == "3\n"
     assert "[3]" in instance.query(explain_query, user=user)
     assert instance.query(iceberg_files_query, user=user) == expected_paths
+
+    instance.query(f"DROP USER {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_mutation_format_check_requires_external_data_grant(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_mutation_format_grant_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    external_prefix = f"external_data/{TABLE_NAME}"
+    user = f"user_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    base_path = relocate_data_files_to_bucket(started_cluster_iceberg_with_spark, TABLE_NAME, base_bucket, prefix=external_prefix)
+
+    # Mark the external data file as `ORC`, so the mutation rejects the snapshot by its format.
+    temp_dir, host_path, _ = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    for manifest in find_files(os.path.join(host_path, "metadata"), ".avro"):
+        if os.path.basename(manifest).startswith("snap-"):
+            continue
+        modify_avro_file(manifest, ["data_file", "file_format"], lambda _: "ORC")
+        started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(
+            manifest, f"{base_path}/{os.path.relpath(manifest, host_path)}")
+    shutil.rmtree(temp_dir)
+
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT SELECT, ALTER DELETE ON {TABLE_NAME} TO {user}")
+
+    mutation = f"ALTER TABLE {TABLE_NAME} DELETE WHERE 1"
+    settings = {"allow_insert_into_iceberg": 1}
+
+    error = instance.query_and_get_error(mutation, user=user, settings=settings)
+    assert "ACCESS_DENIED" in error, error
+    assert external_prefix not in error, error
+
+    instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{external_prefix}/.*') TO {user}")
+    error = instance.query_and_get_error(mutation, user=user, settings=settings)
+    assert "has format `ORC`" in error, error
 
     instance.query(f"DROP USER {user}")
     instance.query(f"DROP TABLE {TABLE_NAME}")

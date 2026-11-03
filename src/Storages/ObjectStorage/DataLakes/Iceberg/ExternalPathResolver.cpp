@@ -562,6 +562,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     const std::string base_scheme_normalized = normalizeScheme(table_location_decomposed.scheme);
     const std::string target_scheme_normalized = normalizeScheme(target_decomposed.scheme);
 
+    /// RFC 8089 treats `localhost` as an empty authority.
+    if (base_scheme_normalized == "file" && Poco::toLower(table_location_decomposed.authority) == "localhost")
+        table_location_decomposed.authority.clear();
+
     /// Runs before any diagnostic that names the external path, host or object version.
     auto check_access = [&]
     {
@@ -585,7 +589,6 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
     if (target_scheme_normalized == "file")
     {
-        /// RFC 8089 treats `localhost` as an empty authority.
         std::string remote_authority;
         if (!target_decomposed.authority.empty() && Poco::toLower(target_decomposed.authority) != "localhost")
             remote_authority = target_decomposed.authority;
