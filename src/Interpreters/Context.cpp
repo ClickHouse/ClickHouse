@@ -2987,6 +2987,12 @@ void Context::setParentSchedulingGroup(QuerySchedulingGroupPtr group)
     parent_scheduling_group = std::move(group);
 }
 
+QuerySchedulingGroupPtr Context::getParentSchedulingGroup() const
+{
+    std::lock_guard lock(mutex);
+    return parent_scheduling_group;
+}
+
 void Context::checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes, const std::vector<String> & reset_settings) const
 {
     /// A settings profile can set any of them too.

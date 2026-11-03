@@ -1071,6 +1071,8 @@ public:
     /// whose own values of them differ is rejected, see `checkSchedulingSettingsOfQueryPart`.
     /// Call after `makeQueryContext` and before the group is created.
     void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
+    /// The group set by `setParentSchedulingGroup`, or `nullptr` if this query context is not a part of another query.
+    QuerySchedulingGroupPtr getParentSchedulingGroup() const;
     /// Throws if this context is a part of a query (a copy of a query context, or a query context with a
     /// parent scheduling group), `changes` or `reset_settings` (`SETTINGS name = DEFAULT`) touch its
     /// `workload` or scheduling settings, and their effective values differ from the query's. Called after
