@@ -1210,7 +1210,7 @@ public:
     void removeQueryAccessInfoTable(const String & full_quoted_table_name);
 
     void addQueryAccessInfo(const Names & partition_names);
-    void addUsedDataSkippingIndices(const Names & qualified_index_names);
+    void addUsedDataSkippingIndex(const StorageID & storage_id, const String & index_name);
     void addViewAccessInfo(const String & view_name);
     void addUsedRowPolicy(const String & policy_name);
 

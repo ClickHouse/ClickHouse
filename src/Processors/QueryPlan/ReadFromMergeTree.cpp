@@ -86,11 +86,9 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
-#include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 
 #include <algorithm>
@@ -290,9 +288,6 @@ namespace ProfileEvents
     extern const Event SelectedRanges;
     extern const Event SelectedMarks;
     extern const Event SelectedMarksTotal;
-    extern const Event GranulesDroppedByPartitionKey;
-    extern const Event GranulesDroppedByPrimaryKey;
-    extern const Event GranulesDroppedBySkipIndexes;
     extern const Event SelectQueriesWithPrimaryKeyUsage;
     extern const Event DistributedPlanWorkerPartsReceived;
     extern const Event DistributedPlanWorkerPartsScanned;
@@ -3006,8 +3001,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
-    /// `getParts` gives the ranges of the earlier analysis, the drops in it are not seen again
-    auto earlier_result = analyzed_result_ptr;
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -3029,9 +3022,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
-
-    if (earlier_result)
-        analyzed_result_ptr->addEarlierIndexUsage(*earlier_result);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
@@ -4028,7 +4018,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & part_ranges : res_parts)
                 parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
 
-            /// The local analysis adds its index usage records to `result`, a remote replica reports its own share.
             LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
             {
                 return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
@@ -5321,144 +5310,6 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
 
-/// per-part entries from `per_part_index_stats` and the initial total are not layers
-template <typename Callback>
-static void forEachIndexLayer(const ReadFromMergeTree::IndexStats & index_stats, Callback && callback)
-{
-    UInt64 granules_before = 0;
-    for (const auto & stat : index_stats)
-    {
-        if (stat.type == ReadFromMergeTree::IndexType::None)
-        {
-            granules_before = stat.num_granules_after;
-            continue;
-        }
-
-        if (!stat.part_name.empty())
-            continue;
-
-        callback(stat, granules_before > 0 ? granules_before : stat.num_granules_after);
-        granules_before = stat.num_granules_after;
-    }
-}
-
-static UInt64 granulesDroppedByPartitionKey(const ReadFromMergeTree::AnalysisResult & result)
-{
-    UInt64 granules_dropped = result.earlier_granules_dropped_by_partition_key;
-    forEachIndexLayer(result.index_stats, [&](const ReadFromMergeTree::IndexStat & stat, UInt64 granules_before)
-    {
-        if (stat.type == ReadFromMergeTree::IndexType::MinMax || stat.type == ReadFromMergeTree::IndexType::Partition)
-            granules_dropped += granules_before - std::min<UInt64>(granules_before, stat.num_granules_after);
-    });
-    return granules_dropped;
-}
-
-void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const StorageID & storage_id, const ContextMutablePtr & query_context)
-{
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granulesDroppedByPartitionKey(result));
-    UInt64 granules_dropped_by_primary_key = 0;
-    UInt64 granules_dropped_by_skip_indexes = 0;
-    std::vector<bool> is_used(result.skip_index_names.size());
-    for (const auto & [_, part_records] : result.index_usage)
-    {
-        for (const auto & [_, usage] : part_records)
-        {
-            granules_dropped_by_primary_key += usage.granules_dropped_by_primary_key;
-            granules_dropped_by_skip_indexes += usage.granules_dropped_by_skip_indexes;
-            for (size_t id = 0; id < usage.used_skip_indexes.size(); ++id)
-                if (usage.used_skip_indexes[id])
-                    is_used[id] = true;
-        }
-    }
-    NameSet used_skip_indexes;
-    for (size_t id = 0; id < is_used.size(); ++id)
-        if (is_used[id])
-            used_skip_indexes.insert(result.skip_index_names[id]);
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, granules_dropped_by_primary_key);
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, granules_dropped_by_skip_indexes);
-    addUsedSkipIndexes(used_skip_indexes, storage_id, query_context);
-}
-
-size_t ReadFromMergeTree::AnalysisResult::getSkipIndexId(const String & index_name)
-{
-    auto it = std::find(skip_index_names.begin(), skip_index_names.end(), index_name);
-    if (it != skip_index_names.end())
-        return it - skip_index_names.begin();
-    skip_index_names.push_back(index_name);
-    return skip_index_names.size() - 1;
-}
-
-void ReadFromMergeTree::AnalysisResult::setProjectionIndexUsage(
-    const IMergeTreeDataPart * part, const String & projection_name, const AnalysisResult & projection_result)
-{
-    /// the projection analysis keys its records by the parent part
-    const IndexUsage * projection_usage = nullptr;
-    if (auto records = projection_result.index_usage.find(part); records != projection_result.index_usage.end())
-        if (auto own = records->second.find(""); own != records->second.end())
-            projection_usage = &own->second;
-
-    if (!projection_usage)
-    {
-        if (auto records = index_usage.find(part); records != index_usage.end())
-            records->second.erase(projection_name);
-        return;
-    }
-
-    IndexUsage usage{projection_usage->granules_dropped_by_primary_key, projection_usage->granules_dropped_by_skip_indexes, {}};
-    for (size_t id = 0; id < projection_usage->used_skip_indexes.size(); ++id)
-        if (projection_usage->used_skip_indexes[id])
-            usage.addSkipIndex(getSkipIndexId(projection_result.skip_index_names[id]));
-    index_usage[part][projection_name] = std::move(usage);
-}
-
-void ReadFromMergeTree::AnalysisResult::addEarlierIndexUsage(const AnalysisResult & earlier)
-{
-    earlier_granules_dropped_by_partition_key += granulesDroppedByPartitionKey(earlier);
-    for (const auto & [part, part_records] : earlier.index_usage)
-    {
-        for (const auto & [source, earlier_usage] : part_records)
-        {
-            auto & usage = index_usage[part][source];
-            usage.granules_dropped_by_primary_key += earlier_usage.granules_dropped_by_primary_key;
-            usage.granules_dropped_by_skip_indexes += earlier_usage.granules_dropped_by_skip_indexes;
-            for (size_t id = 0; id < earlier_usage.used_skip_indexes.size(); ++id)
-                if (earlier_usage.used_skip_indexes[id])
-                    usage.addSkipIndex(getSkipIndexId(earlier.skip_index_names[id]));
-        }
-    }
-}
-
-void ReadFromMergeTree::addUsedSkipIndexes(const NameSet & index_names, const StorageID & storage_id, const ContextMutablePtr & query_context)
-{
-    if (!query_context || index_names.empty())
-        return;
-
-    Names qualified_names;
-    for (const auto & index_name : index_names)
-        qualified_names.emplace_back(fmt::format("{}.{}", storage_id.getFullTableName(), backQuoteIfNeed(index_name)));
-    query_context->addUsedDataSkippingIndices(qualified_names);
-}
-
-ContextMutablePtr ReadFromMergeTree::getAccessInfoContext() const
-{
-    return context->hasQueryContext() && !query_info.is_internal ? context->getQueryContext() : nullptr;
-}
-
-void ReadFromMergeTree::reportIndexUsageWith(
-    IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key, NameSet read_indexes) const
-{
-    /// `assert_cast` checks the exact type, `step` is a subclass
-    dynamic_cast<ISourceStep &>(step).addOnInitializePipeline(
-        [replaced_analysis = std::move(analysis), storage_id = data.getStorageID(), access_info_context = getAccessInfoContext(),
-         granules_dropped_by_partition_key, step_read_indexes = std::move(read_indexes)]
-        {
-            if (replaced_analysis)
-                recordIndexUsage(*replaced_analysis, storage_id, access_info_context);
-            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_dropped_by_partition_key);
-            addUsedSkipIndexes(step_read_indexes, storage_id, access_info_context);
-        });
-}
-
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
 {
     UInt64 sample_rate = context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
@@ -5504,8 +5355,19 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
         element.table = storage_id.table_name;
         element.query_id = String(CurrentThread::getQueryId());
 
-        forEachIndexLayer(result.index_stats, [&](const IndexStat & stat, UInt64 total)
+        UInt64 prev_granules = 0;
+        for (const auto & stat : result.index_stats)
         {
+            if (stat.type == IndexType::None)
+            {
+                prev_granules = stat.num_granules_after;
+                continue;
+            }
+
+            if (!stat.part_name.empty())
+                continue;
+
+            UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
             UInt64 after = stat.num_granules_after;
 
             element.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
@@ -5513,7 +5375,9 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
             element.total_granules.push_back(total);
             element.granules_after.push_back(after);
             element.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
-        });
+
+            prev_granules = after;
+        }
     });
 }
 
@@ -5792,10 +5656,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         result.selected_marks,
         result.selected_ranges);
 
-    const auto access_info_context = getAccessInfoContext();
-
     // Adding partition info to QueryAccessInfo.
-    if (access_info_context)
+    if (context->hasQueryContext() && !query_info.is_internal)
     {
         Names partition_names;
         for (const auto & part : result.parts_with_ranges)
@@ -5803,10 +5665,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             partition_names.emplace_back(
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.getPartitionId()));
         }
-        access_info_context->addQueryAccessInfo(partition_names);
+        context->getQueryContext()->addQueryAccessInfo(partition_names);
     }
-
-    recordIndexUsage(result, data.getStorageID(), access_info_context);
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);
@@ -6185,12 +6045,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
-
-    /// Index analysis does not list the skip indexes that it leaves to the read: a projection can replace this read after it.
-    if (skip_index_reader)
-        skip_index_reader->setOnIndexApplied(
-            [storage_id = data.getStorageID(), access_info_context](const String & index_name)
-            { addUsedSkipIndexes({index_name}, storage_id, access_info_context); });
 
     /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
     /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read

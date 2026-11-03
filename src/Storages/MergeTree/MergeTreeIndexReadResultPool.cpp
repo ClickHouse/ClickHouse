@@ -95,6 +95,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     auto ranges = input.ranges;
     [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
 
+    /// index analysis lists only the indexes that it applies itself
+    auto add_used_index = [&](const String & index_name)
+    {
+        if (context->hasQueryContext())
+            context->getQueryContext()->addUsedDataSkippingIndex(part_info->getDataPart()->storage.getStorageID(), index_name);
+    };
+
     IndexGranulesMap index_granules;
 
     /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
@@ -138,7 +145,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             &index_applied);
 
         if (index_applied)
-            indexApplied(*index_and_condition.index);
+            add_used_index(index_and_condition.index->index.name);
         ranges = std::move(filtered_ranges);
 
         for (auto & [name, granule] : filtered_hints.index_granules)
@@ -227,7 +234,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     log,
                     &index_applied);
                 if (index_applied)
-                    indexApplied(*index_helper);
+                    add_used_index(index_helper->index.name);
                 ranges = std::move(filtered_ranges);
             }
 
@@ -279,7 +286,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         res->threshold_tracker = skip_indexes.threshold_tracker;
         if (res->min_max_index_for_top_k && !ranges.empty())
-            indexApplied(*skip_indexes.skip_index_for_top_k_filtering);
+            add_used_index(skip_indexes.skip_index_for_top_k_filtering->index.name);
     }
 
     res->may_skip_granules_besides_top_k_primary_key
@@ -302,19 +309,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     }
 
     return res;
-}
-
-void MergeTreeSkipIndexReader::indexApplied(const IMergeTreeIndex & index)
-{
-    if (!on_index_applied)
-        return;
-
-    {
-        std::lock_guard lock(applied_indexes_mutex);
-        if (!applied_indexes.insert(index.index.name).second)
-            return;
-    }
-    on_index_applied(index.index.name);
 }
 
 bool SkipIndexReadResult::isGranuleBeyondTopKThreshold(size_t mark) const

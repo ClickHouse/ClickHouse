@@ -228,6 +228,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event GranulesDroppedByPartitionKey;
     extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
@@ -13206,8 +13207,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     const ActionsDAG * filter_dag,
     const RangesInDataParts & parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    ContextPtr query_context,
-    size_t * granules_dropped_by_partition_key) const
+    ContextPtr query_context) const
 {
     if (!metadata_snapshot->minmax_count_projection)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -13345,8 +13345,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if ((minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             || (partition_pruner && partition_pruner->canBePruned(*part)))
         {
-            if (granules_dropped_by_partition_key)
-                *granules_dropped_by_partition_key += parts[part_idx].getMarksCount();
+            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, part->index_granularity->getMarksCountWithoutFinal());
             continue;
         }
 

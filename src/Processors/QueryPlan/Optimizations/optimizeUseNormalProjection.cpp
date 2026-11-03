@@ -868,10 +868,6 @@ UseProjectionsResult optimizeUseNormalProjections(
         }
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         projection_replaced_with_prepared_source = true;
-
-        /// the projection selected no ranges, so no projection read reports its analysis
-        if (!should_skip_projection_reading_on_remote_replicas)
-            reading->reportIndexUsageWith(*projection_reading, best_candidate->merge_tree_projection_select_result_ptr);
     }
 
     if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
@@ -881,10 +877,6 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518).
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
-
-    /// For the same reason the projection step reports the index usage of `reading`.
-    if (!has_parent_parts)
-        reading->reportIndexUsageWith(*projection_reading, parent_reading_select_result);
 
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
@@ -936,7 +928,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     }
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByChosenProjection(*parent_reading_select_result, *best_candidate);
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {

@@ -226,31 +226,6 @@ public:
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
         bool pk_condition_useful = false;
-        /// The index usage of one contribution to the read: the marks that the primary key and skip indexes (top-K included)
-        /// excluded, and the skip indexes applied.
-        struct IndexUsage
-        {
-            UInt64 granules_dropped_by_primary_key = 0;
-            UInt64 granules_dropped_by_skip_indexes = 0;
-            /// a flag per id in `skip_index_names`
-            std::vector<bool> used_skip_indexes;
-
-            void addSkipIndex(size_t id)
-            {
-                if (used_skip_indexes.size() <= id)
-                    used_skip_indexes.resize(id + 1);
-                used_skip_indexes[id] = true;
-            }
-        };
-        /// The names of the skip indexes in `IndexUsage::used_skip_indexes`, by id.
-        Names skip_index_names;
-        /// The index usage records by parent part and source. The empty source is the analysis of this read. A projection name is
-        /// a projection that excluded the part entirely, or that the read uses as a row offset index: such a record counts
-        /// the granules of the projection part, not of the parent part. Parts excluded entirely keep their records.
-        /// `recordIndexUsage` reports the sum of all records.
-        std::unordered_map<const IMergeTreeDataPart *, std::unordered_map<String, IndexUsage>> index_usage;
-        /// The granules that the partition key dropped in the analyses whose ranges this one analyzed again.
-        UInt64 earlier_granules_dropped_by_partition_key = 0;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -275,9 +250,6 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
-            , skip_index_names(other.skip_index_names)
-            , index_usage(other.index_usage)
-            , earlier_granules_dropped_by_partition_key(other.earlier_granules_dropped_by_partition_key)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -301,9 +273,6 @@ public:
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
-            , skip_index_names(std::move(other.skip_index_names))
-            , index_usage(std::move(other.index_usage))
-            , earlier_granules_dropped_by_partition_key(other.earlier_granules_dropped_by_partition_key)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -315,15 +284,6 @@ public:
         checkLimits(const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const;
 
         bool isUsable() const { return !exceeded_row_limits; }
-
-        /// Returns the id of the skip index `index_name`, adds the name if it is new.
-        size_t getSkipIndexId(const String & index_name);
-
-        /// Replaces the record of `part` from `projection_name` with the record of the analysis of `part` in `projection_result`.
-        void setProjectionIndexUsage(const IMergeTreeDataPart * part, const String & projection_name, const AnalysisResult & projection_result);
-
-        /// Adds the index usage of `earlier`, the analysis whose ranges this one analyzed again.
-        void addEarlierIndexUsage(const AnalysisResult & earlier);
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
@@ -461,21 +421,6 @@ public:
     std::optional<size_t> estimateCompressedBytesToRead() const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
-
-    /// Adds the marks that `result` excluded by the partition key, the primary key and skip indexes to ProfileEvents,
-    /// and its used skip indexes to the access info of `query_context` if it is set.
-    static void recordIndexUsage(const AnalysisResult & result, const StorageID & storage_id, const ContextMutablePtr & query_context);
-
-    /// The query context that collects the access info of this read, nullptr for an internal read.
-    ContextMutablePtr getAccessInfoContext() const;
-
-    /// Adds `index_names` of this table to the access info of `query_context` if it is set.
-    static void addUsedSkipIndexes(const NameSet & index_names, const StorageID & storage_id, const ContextMutablePtr & query_context);
-
-    /// `step` replaces this read entirely or in part: when its pipeline is built, it reports the index usage of `analysis` (if set),
-    /// the marks that `step` excluded itself by the partition key and the skip indexes that `step` reads.
-    void reportIndexUsageWith(
-        IQueryPlanStep & step, AnalysisResultPtr analysis, UInt64 granules_dropped_by_partition_key = 0, NameSet read_indexes = {}) const;
 
     /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
     /// see filters whose value can change while that key stays the same: non-deterministic virtual

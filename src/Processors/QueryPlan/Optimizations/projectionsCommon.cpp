@@ -297,10 +297,7 @@ bool QueryDAG::build(QueryPlan::Node & node)
 }
 
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result,
-    const std::unordered_set<const IMergeTreeDataPart *> & valid_parts,
-    const ReadFromMergeTree::AnalysisResult * projection_result,
-    const String & projection_name)
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
 {
     size_t filtered_parts = 0;
     auto & parts_with_ranges = reading_select_result.parts_with_ranges;
@@ -322,25 +319,11 @@ size_t filterPartsByProjection(
             reading_select_result.selected_rows -= part.getRowsCount();
             reading_select_result.selected_ranges -= part.ranges.size();
             ++filtered_parts;
-
-            /// the part is not read, so its records go: a projection that excluded it adds its own
-            reading_select_result.index_usage.erase(part.data_part.get());
-            if (projection_result)
-                reading_select_result.setProjectionIndexUsage(part.data_part.get(), projection_name, *projection_result);
         }
     }
 
     parts_with_ranges.erase(out, parts_with_ranges.end());
     return filtered_parts;
-}
-
-void filterPartsByChosenProjection(ReadFromMergeTree::AnalysisResult & parent_reading_select_result, const ProjectionCandidate & candidate)
-{
-    filterPartsByProjection(parent_reading_select_result, candidate.parent_parts);
-
-    /// The projection read reports its own analysis of these parts, also of those that a projection excluded after this one was analyzed.
-    for (const auto * part : candidate.analyzed_parts)
-        parent_reading_select_result.index_usage.erase(part);
 }
 
 /// The projection's column set is re-derived from its query at every table load, so it can drift
@@ -484,7 +467,6 @@ bool analyzeProjectionCandidate(
                 part_with_ranges.data_part,
                 part_with_ranges.part_index_in_query,
                 part_with_ranges.part_starting_offset_in_query));
-            candidate.analyzed_parts.emplace(part_with_ranges.data_part.get());
         }
         else
         {
@@ -520,7 +502,7 @@ bool analyzeProjectionCandidate(
         valid_parts.emplace(part.data_part->getParentPart());
 
     /// Remove ranges whose data parts are fully filtered by projection.
-    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts, projection_result_ptr.get(), candidate.projection->name);
+    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
 
     /// Under `force_primary_key` a scan must be restricted by the primary key of whatever is read.
     /// Only check after filterPartsByProjection to still utilize parts pruning
@@ -645,15 +627,13 @@ void filterPartsAndCollectProjectionCandidates(
             && part.getRowsCount() <= max_projection_rows_to_use_projection_index
             && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
         {
-            /// keyed by the projection name: the optimization can analyze the projection again for the parts that remain
-            parent_reading_select_result.setProjectionIndexUsage(part.data_part->getParentPart(), projection.name, *projection_result_ptr);
             desc.read_ranges[part.part_index_in_query].push_back(std::move(part));
             in_use = true;
         }
     }
 
     /// Remove ranges whose data parts are fully filtered by projection.
-    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts, projection_result_ptr.get(), projection.name);
+    size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
 
     if (in_use)
     {

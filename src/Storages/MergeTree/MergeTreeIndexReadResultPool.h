@@ -10,7 +10,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <functional>
-#include <mutex>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -84,10 +83,6 @@ public:
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
 
-    /// Called once for each skip index that `read` evaluates on a part.
-    using OnIndexApplied = std::function<void(const String & index_name)>;
-    void setOnIndexApplied(OnIndexApplied callback) { on_index_applied = std::move(callback); }
-
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -108,11 +103,6 @@ private:
     TopKThresholdTrackerPtr top_k_threshold_tracker;
     ContextPtr context;
     LoggerPtr log;
-
-    void indexApplied(const IMergeTreeIndex & index);
-    OnIndexApplied on_index_applied;
-    std::mutex applied_indexes_mutex;
-    NameSet applied_indexes TSA_GUARDED_BY(applied_indexes_mutex);
 
     std::atomic_bool is_cancelled = false;
 };
