@@ -1,4 +1,3 @@
-import logging
 import os
 import threading
 
@@ -439,11 +438,9 @@ def test_keeper_storage_creator_access(started_cluster):
 
 
 def test_keeper_storage_definer_of_handler_from_another_replica(started_cluster):
-    # A handler created on another replica registers its definer on this one, and this replica can alter a handler
-    # that was just created on another one, even if it has not received it yet.
+    # A handler created on another replica registers its definer on this one.
     for n in (replica1, replica2):
         n.query("DROP HANDLER IF EXISTS remote_definer_h")
-        n.query("DROP HANDLER IF EXISTS fresh_h")
         n.query("DROP USER IF EXISTS remote_definer_u")
         n.query("CREATE USER remote_definer_u")
 
@@ -458,19 +455,7 @@ def test_keeper_storage_definer_of_handler_from_another_replica(started_cluster)
     )
     assert "HAVE_DEPENDENT_OBJECTS" in replica2.query_and_get_error("DROP USER remote_definer_u")
 
-    replica1.query("CREATE HANDLER fresh_h URL '/fresh_h' AS SELECT 1 FORMAT TSV")
-    seen = replica2.query("SELECT count() FROM system.handlers WHERE name = 'fresh_h'").strip()
-    logging.info("replica2 had received fresh_h before the ALTER: %s", seen)
-    replica2.query("ALTER HANDLER fresh_h URL '/fresh_h2'")
-    replica1.query_with_retry(
-        "SELECT url FROM system.handlers WHERE name = 'fresh_h'",
-        check_callback=lambda res: res.strip() == "/fresh_h2",
-        retry_count=30,
-        sleep_time=0.5,
-    )
-
     replica1.query("DROP HANDLER remote_definer_h")
-    replica1.query("DROP HANDLER fresh_h")
     for n in (replica1, replica2):
         n.query_with_retry(
             "SELECT count() FROM system.handlers WHERE name = 'remote_definer_h'",

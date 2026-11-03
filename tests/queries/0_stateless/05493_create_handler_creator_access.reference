@@ -89,3 +89,7 @@ OK
 OK
 without ACCESS MANAGEMENT:
 with query parameters
+--- 19. joinGet
+OK
+SELECT joinGet(\'DB.j\', \'v\', toUInt32(1))
+mine

@@ -132,6 +132,7 @@ void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visi
         /// The full traversal of the visitor expects the common table expressions to be expanded.
         ApplyWithSubqueryVisitor::visit(select, max_expanded_ast_elements);
         visitor.visit(select);
+        visitor.visitTableExpressions(*select);
     };
 
     if (auto * insert = statement->as<ASTInsertQuery>())

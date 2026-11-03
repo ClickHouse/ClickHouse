@@ -179,3 +179,14 @@ for n in 1 2; do
 done
 echo "without ACCESS MANAGEMENT:"
 reason "$U_SA3" "CREATE HANDLER h18a3_${DB} URL '/${DB}/h18a3' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
+
+echo "--- 19. joinGet"
+$CLICKHOUSE_CLIENT -q "
+CREATE TABLE ${DB}.j (k UInt32, v String) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO ${DB}.j VALUES (1, 'mine');
+CREATE TABLE ${DB_B}.j (k UInt32, v String) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO ${DB_B}.j VALUES (1, 'other');
+GRANT SELECT ON ${DB}.j TO ${U}"
+as_user "$U" "CREATE HANDLER h19_${DB} URL '/${DB}/h19' AS SELECT joinGet('j', 'v', toUInt32(1))"
+handler_query "h19_${DB}" query
+${CLICKHOUSE_CURL} -sS "${BASE}/${DB}/h19?database=${DB_B}"

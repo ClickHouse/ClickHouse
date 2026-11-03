@@ -1593,9 +1593,10 @@ ContextMutablePtr HTTPHandler::makeSQLSecurityQueryContext(const ContextPtr & ca
         query_context->setInitialUserName({});
     }
 
-    /// A read-only user cannot write through a handler that runs as someone else.
-    const UInt64 readonly = std::max(
-        caller_context->getSettingsRef()[Setting::readonly].value, query_context->getSettingsRef()[Setting::readonly].value);
+    /// The stricter of the caller's and the definer's readonly modes (1 is stricter than 2).
+    const UInt64 caller_readonly = caller_context->getSettingsRef()[Setting::readonly].value;
+    const UInt64 definer_readonly = query_context->getSettingsRef()[Setting::readonly].value;
+    const UInt64 readonly = (caller_readonly == 1 || definer_readonly == 1) ? 1 : std::max(caller_readonly, definer_readonly);
     query_context->setSetting("readonly", Field(readonly));
     return query_context;
 }
