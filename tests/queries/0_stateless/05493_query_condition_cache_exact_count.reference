@@ -12,6 +12,8 @@
 80396
 70346
 70346
+-- count(expr) evaluates its argument, so only a bare count() is answered from the counts
+70346
 -- non-deterministic filters are neither counted nor answered from counts
 1
 1
@@ -86,3 +88,4 @@ qcc_count_33	counted
 qcc_count_34	read
 qcc_count_35	counted
 qcc_count_36	counted
+qcc_count_37	counted

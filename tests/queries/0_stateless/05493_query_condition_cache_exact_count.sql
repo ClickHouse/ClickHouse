@@ -49,6 +49,10 @@ SELECT count() FROM t_qcc_count PREWHERE v > 20000 SETTINGS log_comment = 'qcc_c
 SELECT count() FROM t_qcc_count PREWHERE v > 30000 SETTINGS log_comment = 'qcc_count_10';
 SELECT count() FROM t_qcc_count PREWHERE v > 30000 SETTINGS use_query_condition_cache = 0;
 
+SELECT '-- count(expr) evaluates its argument, so only a bare count() is answered from the counts';
+SELECT count(throwIf(k >= 0)) FROM t_qcc_count PREWHERE v > 30000; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT count(*) FROM t_qcc_count PREWHERE v > 30000 SETTINGS log_comment = 'qcc_count_37';
+
 SELECT '-- non-deterministic filters are neither counted nor answered from counts';
 SELECT count() BETWEEN 1 AND 7142 FROM t_qcc_count WHERE s LIKE '%match%' AND rand() % 2 = 0 SETTINGS log_comment = 'qcc_count_11';
 SELECT count() BETWEEN 1 AND 7142 FROM t_qcc_count WHERE s LIKE '%match%' AND rand() % 2 = 0 SETTINGS log_comment = 'qcc_count_12';

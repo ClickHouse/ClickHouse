@@ -1488,7 +1488,10 @@ UseProjectionsResult optimizeUseAggregateProjections(
             size_t query_condition_cache_count = 0;
             size_t query_condition_cache_parts = 0;
             size_t query_condition_cache_marks = 0;
-            if (!hasFilterStepAboveReading(*node.children.front()))
+            /// Only a bare `count()`: `count(expr)` must still evaluate the argument (it can throw).
+            const bool is_bare_count = aggregating && aggregating->getParams().aggregates.size() == 1
+                && aggregating->getParams().aggregates.front().argument_names.empty();
+            if (is_bare_count && !hasFilterStepAboveReading(*node.children.front()))
             {
                 if (auto match_counts_key = reading->getQueryConditionCacheKeyForMatchCounts())
                 {
