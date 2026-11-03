@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
-# UNIQUE KEY is refused on a disk without transaction support: at CREATE, and at INSERT for an attached table.
+# UNIQUE KEY is refused on a disk that does not support writing with append: at CREATE, and at INSERT for an attached table.
 # no-fasttest: needs the object storage disks and RocksDB.
 # no-ordinary-database: ATTACH ... UUID needs an Atomic database.
 # no-replicated-database: a plain_rewritable disk must not be shared between replicas.

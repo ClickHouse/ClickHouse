@@ -7111,7 +7111,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 getStorageID().getNameForLogs());
     }
 
-    /// A UNIQUE KEY insert commits its part under a transaction, so every disk of the table must support transactions.
+    /// UNIQUE KEY inserts need transactions, which a table supports only if all its disks support writing with append.
     if (old_metadata.hasUniqueKey())
     {
         const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
@@ -7126,7 +7126,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     disk_names.push_back(disk->getName());
             if (!disk_names.empty())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "UNIQUE KEY is not supported for table {}: disk {} does not support transactions",
+                    "UNIQUE KEY is not supported for table {}: disk {} does not support writing with append",
                     getStorageID().getNameForLogs(), fmt::join(disk_names, ", "));
         }
     }

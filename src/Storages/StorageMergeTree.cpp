@@ -230,8 +230,8 @@ static bool supportTransaction(const Disks & disks, LoggerPtr log)
 namespace
 {
 
-/// A UNIQUE KEY insert commits its part under a transaction, so every disk of the table must support transactions.
-void checkUniqueKeyDisksSupportTransactions(const StorageID & table_id, const Disks & disks)
+/// UNIQUE KEY inserts need transactions, which a table supports only if all its disks support writing with append.
+void checkDisksSupportWritingWithAppend(const StorageID & table_id, const Disks & disks)
 {
     Strings disk_names;
     for (const auto & disk : disks)
@@ -240,7 +240,7 @@ void checkUniqueKeyDisksSupportTransactions(const StorageID & table_id, const Di
 
     if (!disk_names.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "UNIQUE KEY is not supported for table {}: disk {} does not support transactions",
+            "UNIQUE KEY is not supported for table {}: disk {} does not support writing with append",
             table_id.getNameForLogs(), fmt::join(disk_names, ", "));
 }
 
@@ -270,7 +270,7 @@ StorageMergeTree::StorageMergeTree(
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey())
-        checkUniqueKeyDisksSupportTransactions(getStorageID(), getDisks());
+        checkDisksSupportWritingWithAppend(getStorageID(), getDisks());
 
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
@@ -542,7 +542,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
     assertNotReadonly();
 
     if (metadata_snapshot->hasUniqueKey())
-        checkUniqueKeyDisksSupportTransactions(getStorageID(), getDisks());
+        checkDisksSupportWritingWithAppend(getStorageID(), getDisks());
 
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);

@@ -184,7 +184,7 @@ def test_unique_key_switch_policy_to_s3(started_cluster):
 
 
 def test_unique_key_switch_policy_to_plain_rewritable_is_rejected(started_cluster):
-    # A `plain_rewritable` disk does not support transactions, which a UNIQUE KEY insert
+    # A `plain_rewritable` disk does not support writing with append, which a UNIQUE KEY table
     # needs, so a policy that adds one is rejected like a CREATE on that disk.
     node.query("DROP TABLE IF EXISTS uk_local_pr SYNC")
     node.query(
