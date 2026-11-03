@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <IO/NullWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -42,6 +43,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <ranges>
 
 namespace DB
@@ -58,6 +60,8 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool force_optimize_projection;
@@ -92,9 +96,11 @@ struct ProjectionPartData
     size_t format_bytes = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
+    /// for a level-zero aggregate part: per-row bytes of the new states that `MATERIALIZE PROJECTION` merges the states into, if they differ
+    PaddedPODArray<UInt32> rebuilt_row_bytes;
     /// some stored column has values of different sizes
     bool variable_width = false;
-    /// a merge sized the granules by what the part does not record: the memory it built some states in, or the bytes of the parts it merged
+    /// a merge sizes the granules by what the part does not record: the memory it builds some states in, or the bytes of the parts it merges
     bool merge_history_unknown = false;
     /// for a merged wide part under a constant granularity: the fewest and the most bytes that its merged parts can store for a row
     size_t stored_row_bytes_least = 0;
@@ -414,6 +420,8 @@ String buildProjectionPart(
     Blocks batch;
     size_t batch_rows = 0;
     MutableColumns key_columns;
+    /// an aggregate projection part has one row for each group of the part, so the groups of all batches merge first
+    const bool aggregate = projection.type == ProjectionDescription::Type::Aggregate;
     /// the stored columns, as the writer gets them
     auto add = [&](Block projected)
     {
@@ -427,6 +435,14 @@ String buildProjectionPart(
         out.bytes += getBlockSizeForGranularity(projected);
         if (need_row_bytes)
             appendRowSizes(out, projected, merged_part);
+        /// `MATERIALIZE PROJECTION` merges each state of a part into a new state, see `writeTempProjectionPart`
+        if (need_row_bytes && aggregate && !merged_part)
+        {
+            ProjectionPartData rebuilt;
+            appendRowSizes(rebuilt, projected, /* merged */ true);
+            if (rebuilt.row_bytes != out.row_bytes)
+                out.rebuilt_row_bytes = std::move(rebuilt.row_bytes);
+        }
 
         if (key_columns.empty())
             for (const auto & name : proj_key.column_names)
@@ -438,8 +454,6 @@ String buildProjectionPart(
             key_columns[i]->insertRangeFrom(*source, 0, source->size());
         }
     };
-    /// an aggregate projection part has one row for each group of the part, so the groups of all batches merge first
-    const bool aggregate = projection.type == ProjectionDescription::Type::Aggregate;
     Blocks groups;
     /// past the group limit of the query the estimate is unsupported instead of failing the query, so a batch stops at the limit
     const UInt64 max_groups = context->getSettingsRef()[Setting::max_rows_to_group_by];
@@ -465,6 +479,7 @@ String buildProjectionPart(
             add(std::move(projected));
     };
 
+    size_t read_bytes = 0;
     Block block;
     while (executor.pull(block))
     {
@@ -479,6 +494,7 @@ String buildProjectionPart(
 
         total_rows_read += block.rows();
         total_bytes_read += block.bytes();
+        read_bytes += block.bytes();
         /// past a limit the estimate is unsupported instead of failing the query, reaching it is fine as for the query
         if ((read_limits.max_rows && total_rows_read > read_limits.max_rows)
             || (read_limits.max_bytes && total_bytes_read > read_limits.max_bytes))
@@ -510,6 +526,17 @@ String buildProjectionPart(
             if (constant_granularity)
                 setStoredBytes(out, merged);
         }
+        else
+        {
+            /// a mutation calculates the projection in batches of the parent rows and merges the parts of more batches, see `PartMergerWriter`
+            /// it can also rebuild every projection of the table at once, then each batch is smaller
+            const auto & background = read_step->getMergeTreeData().getContext()->getBackgroundContext()->getSettingsRef();
+            const size_t mutation_rows = background[Setting::min_insert_block_size_rows];
+            const size_t mutation_bytes = capInsertBlockSizeBytesToMemoryLimit(
+                background[Setting::min_insert_block_size_bytes], read_step->getStorageSnapshot()->metadata->getProjections().size() + 2);
+            out.merge_history_unknown |= (mutation_rows == 0 && mutation_bytes == 0) || (mutation_rows != 0 && out.read_rows > mutation_rows)
+                || (mutation_bytes != 0 && read_bytes > mutation_bytes);
+        }
         add(std::move(merged));
     }
 
@@ -527,12 +554,16 @@ String buildProjectionPart(
 struct PartFromSample
 {
     const ProjectionPartData & sample;
+    /// the sizes of the sample rows, in read order
+    const PaddedPODArray<UInt32> & row_bytes;
     size_t rows;
     /// bytes of the part rows before the first one each sample row stands for
     std::vector<UInt64> bytes_before_sample_row;
 
-    PartFromSample(const ProjectionPartData & sample_, size_t rows_)
-        : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
+    PartFromSample(const ProjectionPartData & sample_, size_t rows_) : PartFromSample(sample_, rows_, sample_.row_bytes) { }
+
+    PartFromSample(const ProjectionPartData & sample_, size_t rows_, const PaddedPODArray<UInt32> & row_bytes_)
+        : sample(sample_), row_bytes(row_bytes_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
     {
         for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
         {
@@ -551,8 +582,8 @@ struct PartFromSample
 
     size_t sampleRowBytes(size_t sample_row) const
     {
-        const bool per_row = sample.row_bytes.size() == sample.rows;
-        return per_row ? sample.row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
+        const bool per_row = row_bytes.size() == sample.rows;
+        return per_row ? row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
     }
 
     UInt64 bytesBefore(size_t part_row) const
@@ -651,6 +682,9 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
     const PartFromSample whole_part(data, part_rows);
+    std::optional<PartFromSample> rebuilt_part;
+    if (!data.rebuilt_row_bytes.empty())
+        rebuilt_part.emplace(data, part_rows, data.rebuilt_row_bytes);
     /// the layouts the writer can leave for a part format, and the index of the likeliest one
     auto layouts_of = [&](MergeTreeDataPartType part_type)
     {
@@ -682,6 +716,9 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         std::vector<std::vector<size_t>> layouts;
         for (const auto & [rows_limit, bytes_limit] : chunkings)
             layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+        /// `MATERIALIZE PROJECTION` writes a part that it calculates in one batch as one block of states that it merges anew
+        if (rebuilt_part)
+            layouts.push_back(simulateWriterMarks(*rebuilt_part, part_type, mt_settings, adaptive_marks, rebuilt_part->rows, 0));
         /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes)
         /// rows, at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that
         /// for fewer
@@ -701,7 +738,9 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
                     rows_per_marks.push_back(whole_part.rows % rows_per_mark);
                 return rows_per_marks;
             };
-            layouts = {constant(bytes / widest), constant(bytes / narrowest * (granules >= 1 ? (granules + 1) / granules : 2))};
+            /// the layout of one block stays, `MATERIALIZE PROJECTION` writes it
+            layouts.insert(
+                layouts.begin(), {constant(bytes / widest), constant(bytes / narrowest * (granules >= 1 ? (granules + 1) / granules : 2))});
             if (layouts[1].front() > layouts[0].front() + 1)
                 data.marks_between_layouts = layouts[0].size();
         }
@@ -1073,8 +1112,8 @@ void setVerdict(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, but on {} of the {} parts read a merge sized the granules from data that a part does "
-            "not record (the memory that the merge built aggregate states in, or the bytes of the merged parts), so the mark count "
+            "{} against {} from the base table, but on {} of the {} parts read a merge sizes the granules from data that a part does "
+            "not record (the memory that the merge builds aggregate states in, or the bytes of the merged parts), so the mark count "
             "is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,
@@ -1085,8 +1124,8 @@ void setVerdict(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, and the layout a merge would leave is not recorded in a part, so the "
-            "comparison comes out both ways over `marks_span`",
+            "{} against {} from the base table, and a part does not record the layout that a merge or `MATERIALIZE PROJECTION` "
+            "would leave, so the comparison comes out both ways over `marks_span`",
             marks_text(projection_marks),
             baseline_marks);
     }
