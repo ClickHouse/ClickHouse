@@ -57,7 +57,7 @@ wait
 
 # The server is alive and the database still accepts DDL.
 for _ in $(seq 1 60); do
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE ${DB}.t_final (x UInt64) ENGINE = MergeTree ORDER BY x" 2>/dev/null && break
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE ${DB}.t_final (x UInt64) ENGINE = MergeTree ORDER BY x" >/dev/null 2>&1 && break
     sleep 1
 done
 $CLICKHOUSE_CLIENT --query "EXISTS TABLE ${DB}.t_final"
