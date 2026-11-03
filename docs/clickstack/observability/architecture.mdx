@@ -10,7 +10,7 @@ sidebarTitle: 'Architecture'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickHouse Observability runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience.
+ClickHouse Observability runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience. For self-managed deployments, see the [self-managed architecture](/clickstack/self-configured/architecture).
 
 In this model, **ClickHouse, the ClickStack UI, and the OpenTelemetry (OTel) ingestion collector** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible for instrumenting their applications and sending telemetry from their environment to the managed service.
 
@@ -78,5 +78,3 @@ The managed collector first attempts to write telemetry to ClickHouse. If ClickH
 During recovery, recent telemetry may appear late or out of order as the backlog is processed. This buffering supports recovery from temporary write interruptions; it does not provide cross-region failover or guarantee delivery in every failure scenario.
 
 Some data can still be lost, including data held only in a collector's memory when it stops, or batches that cannot be written to either ClickHouse or S3. Configure your sending agents and collectors to retry failed exports and, where supported, use persistent queues to retain telemetry during interruptions.
-
-For self-managed architecture, see [Self-managed architecture](/clickstack/self-configured/architecture).
