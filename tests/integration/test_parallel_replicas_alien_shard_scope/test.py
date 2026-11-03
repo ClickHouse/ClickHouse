@@ -90,17 +90,25 @@ def test_shard_scope_of_another_cluster_is_ignored(start_cluster, pr_cluster):
     )
 
     # The result alone would also match a plain `Distributed` read, so check that parallel replicas actually
-    # engaged: a plain read sends shard 1's query to a single replica, while parallel replicas send it to
-    # several of them (the coordinator receives the shard query, the others the parallel-replicas query).
-    # Not all three are required: a replica that is slow to connect may be skipped or cancelled once the
-    # others have read everything, which happens with only a thousand rows under sanitizers.
-    participating_replicas = 0
+    # engaged for shard 1: the replica that receives the shard query creates a parallel replicas coordinator
+    # for that query, while a plain read never does. The check is scoped to the secondary queries of this
+    # query and does not depend on which replicas end up reading: the coordinator may hand all the ranges to
+    # the first replica that asks for them and cancel the others before they start.
+    coordinator_replicas_counts = []
     for node in SHARD1_NODES:
         node.query("SYSTEM FLUSH LOGS query_log")
-        participating_replicas += int(
-            node.query(
-                f"SELECT count() > 0 FROM system.query_log "
-                f"WHERE initial_query_id = '{query_id}' AND NOT is_initial_query"
-            )
-        )
-    assert participating_replicas >= 2
+        secondary_query_ids = node.query(
+            f"SELECT DISTINCT query_id FROM system.query_log "
+            f"WHERE initial_query_id = '{query_id}' AND NOT is_initial_query"
+        ).split()
+        if not secondary_query_ids:
+            continue
+        for line in node.grep_in_log(
+            "Creating parallel replicas coordinator with replicas_count="
+        ).splitlines():
+            if any(f"{{{qid}}}" in line for qid in secondary_query_ids):
+                coordinator_replicas_counts.append(
+                    int(line.rsplit("replicas_count=", 1)[1].split()[0])
+                )
+    assert coordinator_replicas_counts, "no parallel replicas coordinator was created for shard 1"
+    assert all(count >= 2 for count in coordinator_replicas_counts), coordinator_replicas_counts

@@ -42,35 +42,48 @@ def test_plan_based_workers_use_the_initiator_replica_count(start_cluster):
     for i, node in enumerate(data_nodes, start=1):
         node.query(
             f"CREATE TABLE {TABLE} (key Int64, value String) "
-            f"ENGINE = ReplicatedMergeTree('/test/plan_based_replica_count/{TABLE}', 'r{i}') ORDER BY key"
+            f"ENGINE = ReplicatedMergeTree('/test/plan_based_replica_count/{TABLE}', 'r{i}') ORDER BY key "
+            # Many small granules, so the read splits into many mark segments spread over all replicas.
+            f"SETTINGS index_granularity = 64"
         )
 
     initiator.query(f"INSERT INTO {TABLE} SELECT number, toString(number) FROM numbers(100000)")
     for node in data_nodes[1:]:
         node.query(f"SYSTEM SYNC REPLICA {TABLE}")
 
-    assert (
-        initiator.query(
-            f"SELECT sum(key) FROM {TABLE}",
-            settings={
-                "enable_analyzer": 1,
-                # 2 = force parallel replicas, so the read cannot silently fall back to a plain read and
-                # leave the assertions below with nothing to match.
-                "enable_parallel_replicas": 2,
-                "parallel_replicas_plan_based": 1,
-                # No local plan: every replica that reads is a worker, so the assertions below observe the
-                # count the workers were given, not the initiator's own local read.
-                "parallel_replicas_local_plan": 0,
-                # Keep the cost decision out of the picture: the plan-based split must engage.
-                "automatic_parallel_replicas_mode": 0,
-                # Above the initiator's replica count, so its cap (3) and a worker's local recomputation (4)
-                # really differ; a cap of 3 would collapse both to 3 and the test would prove nothing.
-                "max_parallel_replicas": 4,
-                "cluster_for_parallel_replicas": CLUSTER,
-            },
+    # `n1` is a worker too (there is no local plan), and nothing guarantees that `n2` or `n3` read anything:
+    # the coordinator may hand all the ranges to the first worker that asks and cancel the others. `n1` cannot
+    # prove the propagation (its own view also has 3 replicas), so repeat the query until `n2` or `n3` has
+    # sized its segments, which is the observation the assertions below need.
+    def a_checked_worker_read():
+        return any(node.contains_in_log("number_of_replicas=") for node in workers[:2])
+
+    for _ in range(20):
+        assert (
+            initiator.query(
+                f"SELECT sum(key) FROM {TABLE}",
+                settings={
+                    "enable_analyzer": 1,
+                    # 2 = force parallel replicas, so the read cannot silently fall back to a plain read and
+                    # leave the assertions below with nothing to match.
+                    "enable_parallel_replicas": 2,
+                    "parallel_replicas_plan_based": 1,
+                    # No local plan: every replica that reads is a worker, so the assertions below observe the
+                    # count the workers were given, not the initiator's own local read.
+                    "parallel_replicas_local_plan": 0,
+                    # Keep the cost decision out of the picture: the plan-based split must engage.
+                    "automatic_parallel_replicas_mode": 0,
+                    # Above the initiator's replica count, so its cap (3) and a worker's local recomputation (4)
+                    # really differ; a cap of 3 would collapse both to 3 and the test would prove nothing.
+                    "max_parallel_replicas": 4,
+                    "cluster_for_parallel_replicas": CLUSTER,
+                },
+            )
+            == "4999950000\n"
         )
-        == "4999950000\n"
-    )
+
+        if a_checked_worker_read():
+            break
 
     # The coordinator is sized by the initiator's own view of the cluster.
     assert initiator.contains_in_log(
