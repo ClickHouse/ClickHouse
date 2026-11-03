@@ -1,4 +1,5 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
@@ -317,9 +318,18 @@ size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
     return memory;
 }
 
+size_t QueryConditionCache::CountsEntryWeight::forMarks(size_t marks_count)
+{
+    size_t bytes = 0;
+    if (common::mulOverflow(marks_count, sizeof(MatchCounts::value_type), bytes)
+        || common::addOverflow(bytes, sizeof(Key) + sizeof(CountsEntry), bytes))
+        return std::numeric_limits<size_t>::max();
+    return bytes;
+}
+
 size_t QueryConditionCache::CountsEntryWeight::operator()(const CountsEntry & entry) const
 {
-    return sizeof(Key) + sizeof(CountsEntry) + entry.match_counts.capacity() * sizeof(MatchCounts::value_type);
+    return forMarks(entry.match_counts.capacity());
 }
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
@@ -465,11 +475,11 @@ void QueryConditionCache::writeMatchCounts(
     if (!entry)
     {
         /// The match counts only use the space the `MatchingMarks` leave free (see `counts_cache`). Counts that do not fit
-        /// into it are not cached: they would only evict the other match counts and then themselves.
-        auto new_entry = std::make_shared<CountsEntry>(marks_count);
+        /// into it are neither allocated nor cached: they would only evict the other match counts and then themselves.
         std::lock_guard counts_size_lock(counts_size_mutex);
-        if (CountsEntryWeight()(*new_entry) > fitMatchCountsIntoFreeSpace())
+        if (CountsEntryWeight::forMarks(marks_count) > fitMatchCountsIntoFreeSpace())
             return;
+        auto new_entry = std::make_shared<CountsEntry>(marks_count);
         FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_pause_before_caching_match_counts);
         std::tie(entry, inserted) = counts_cache.getOrSet(key, [&] { return new_entry; });
         /// A `MatchingMarks` entry inserted since the free space was computed may have found no match counts and then not

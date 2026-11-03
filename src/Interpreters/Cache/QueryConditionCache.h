@@ -109,6 +109,8 @@ private:
 
     struct CountsEntryWeight
     {
+        /// The weight of the match counts of `marks_count` marks, or the maximum `size_t` if it overflows.
+        static size_t forMarks(size_t marks_count);
         size_t operator()(const CountsEntry & entry) const;
     };
 

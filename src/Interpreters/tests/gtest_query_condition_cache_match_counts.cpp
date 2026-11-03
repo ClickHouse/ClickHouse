@@ -5,6 +5,7 @@
 #include <Common/FailPoint.h>
 
 #include <algorithm>
+#include <limits>
 #include <thread>
 
 using namespace DB;
@@ -214,4 +215,21 @@ TEST(QueryConditionCacheMatchCounts, CountsAtOrAboveTheLimitAreNotCached)
     EXPECT_EQ((*cached)[1], QueryConditionCache::UNKNOWN_MATCH_COUNT);
     EXPECT_EQ((*cached)[2], QueryConditionCache::UNKNOWN_MATCH_COUNT);
     EXPECT_EQ((*cached)[3], QueryConditionCache::UNKNOWN_MATCH_COUNT);
+}
+
+/// Match counts that cannot fit into the cache are not allocated: here the allocation itself would throw.
+TEST(QueryConditionCacheMatchCounts, CountsThatCannotFitAreNotAllocated)
+{
+    QueryConditionCache cache("LRU", CACHE_SIZE, 0.5);
+    const UUID table_id = UUIDHelpers::generateV4();
+    const QueryConditionCache::MarkMatchCounts counts{{0, 1}};
+
+    const size_t marks_count_above_vector_max_size = std::numeric_limits<size_t>::max() / 2 + 1;
+    EXPECT_NO_THROW(cache.writeMatchCounts(
+        table_id, partName(0), /*condition_hash=*/ 1, "", counts, marks_count_above_vector_max_size, /*has_final_mark=*/ false));
+    EXPECT_FALSE(cache.readMatchCounts(table_id, partName(0), 1).has_value());
+
+    /// Twice the size of the cache.
+    cache.writeMatchCounts(table_id, partName(0), /*condition_hash=*/ 2, "", counts, CACHE_SIZE, /*has_final_mark=*/ false);
+    EXPECT_FALSE(cache.readMatchCounts(table_id, partName(0), 2).has_value());
 }
