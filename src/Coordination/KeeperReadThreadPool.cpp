@@ -67,10 +67,14 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
         ++running_threads;
         try
         {
-            pool->scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup()]
+            /// A worker may be started after some batches have already run (when it could not be started
+            /// before, or when `parallel_read_threads` was increased), and the next call may take the inline
+            /// path below. The worker must not take the last batch for a new one: that batch has no requests
+            /// left, and `busy_threads` does not count this worker.
+            pool->scheduleOrThrowOnError([this, start_batch_idx = batch_idx, thread_group = CurrentThread::getGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::KEEPER_READ);
-                    threadFunction();
+                    threadFunction(start_batch_idx);
                 });
         }
         catch (...)
@@ -129,13 +133,12 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
         std::rethrow_exception(std::exchange(first_exception, {}));
 }
 
-void KeeperReadThreadPool::threadFunction()
+void KeeperReadThreadPool::threadFunction(size_t seen_batch_idx)
 {
     try
     {
         std::unique_lock lock(mutex);
 
-        size_t seen_batch_idx = 0;
         while (true)
         {
             if (running_threads > target_num_threads)

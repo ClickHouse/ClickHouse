@@ -51,7 +51,8 @@ private:
     std::exception_ptr first_exception;
     ExecuteRequestsFunction execute_requests;
 
-    void threadFunction();
+    /// `seen_batch_idx` is the value of `batch_idx` when the worker was scheduled: the batches up to it are not for this worker.
+    void threadFunction(size_t seen_batch_idx);
 };
 
 }
