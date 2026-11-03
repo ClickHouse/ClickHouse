@@ -122,5 +122,20 @@
                 <secret>6P3SDQCE</secret>
             </time_based_one_time_password>
         </totuser_single_use>
+
+        <totuser_keeper>
+            <password>pw</password>
+            <time_based_one_time_password>
+                <secret>KRUGKIDROVUWG2ZAMJZG653OEBTG66BA</secret>
+                <period>60</period>
+            </time_based_one_time_password>
+        </totuser_keeper>
+
+        <totuser_rotation>
+            <password>pw</password>
+            <time_based_one_time_password>
+                <secret>MFRGGZDFMZTWQ2LK</secret>
+            </time_based_one_time_password>
+        </totuser_rotation>
     </users>
 </clickhouse>
