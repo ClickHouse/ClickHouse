@@ -612,9 +612,9 @@ Multiply s3_min_upload_part_size by this factor each time s3_multiply_parts_coun
 Each time this number of parts was uploaded to S3, s3_min_upload_part_size is multiplied by s3_upload_part_size_multiply_factor.
 )", 0) \
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
-Maximum part number number for s3 upload part.
+Maximum part number for s3 upload part.
 )", 0, \
-        {"24.6", 10000, 10000, "Maximum part number number for s3 upload part"}) \
+        {"24.6", 10000, 10000, "Maximum part number for s3 upload part"}) \
     DECLARE(Bool, s3_allow_multipart_copy, true, R"(
 Allow multipart copy in S3.
 )", 0, \
@@ -1600,6 +1600,17 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(Bool, to_start_of_interval_preserves_argument_type, true, R"(
+Makes the function `toStartOfInterval` (and its aliases `time_bucket` and `date_bin`) return a value of the same type as its first argument:
+`Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime` and `DateTime64` with the same scale for `DateTime64`, regardless of the interval unit.
+The only exception is a subsecond unit finer than the scale of a `DateTime64` argument, for example `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`: the result has the scale of the unit, because the scale of the argument cannot represent the bucket boundaries.
+
+Possible values:
+
+- `1` — The result has the type of the first argument. The setting `enable_extended_results_for_datetime_functions` does not affect the function.
+- `0` — Legacy behavior: the result type depends on the interval unit. The units `WEEK` and longer produce a `Date`, `DAY` down to `SECOND` produce a `DateTime`, and the subsecond units produce a `DateTime64` with the scale of the unit (for `Date32` and `DateTime64` arguments, `Date32` and `DateTime64` instead of `Date` and `DateTime` with `enable_extended_results_for_datetime_functions = 1`). A value that does not fit the range of the narrower result type is wrapped: for example, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` returns `2036-02-07 06:28:16`. This describes the overload without `origin`. The overload with `origin` keeps the type of the argument even in the legacy behavior, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
+)", 0, \
+        {"26.11", false, true, "The function `toStartOfInterval` returns a value of the same type as its argument instead of a type determined by the interval unit, which wrapped values outside the range of the narrower type"}) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
@@ -2257,6 +2268,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"25.12", false, true, "New setting"}) \
+    DECLARE(UInt64, use_skip_indexes_for_disjunctions_max_rpn_elements, 128, R"(
+Maximum number of elements in the internal representation (RPN) of a WHERE filter for which `use_skip_indexes_for_disjunctions` is applied.
+Roughly, every condition and every `AND`, `OR` and `NOT` counts as one element: for example, `A = 5 OR B = 5 OR C = 5` has 5 elements.
+The elements are counted after the filter is rewritten for index analysis: for example, `A = 1 OR A = 2 OR A = 3` becomes `A IN (1, 2, 3)`, which is one element (see `optimize_min_equality_disjunction_chain_length`), and `coalesce(A, B) = 5` is expanded into several conditions (see `allow_key_condition_coalesce_rewrite`).
+For filters with more elements, each skip index is evaluated on its own and cannot skip granules for conditions on different columns connected by `OR`.
+During index analysis, the partial results take one bit per element per granule of each data part, and combining them takes time proportional to the number of elements for every granule. Keep this in mind when setting 0 (no limit).
+
+Possible values:
+
+- 0 — No limit.
+- Positive integer — Maximum number of elements.
+)", 0, \
+        {"26.11", 32, 128, "New setting, previously the limit was hard-coded to 32"}) \
     DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 
@@ -2343,6 +2367,8 @@ Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable
 For such types, the per-row threshold comparison performed by the dynamic filter can outweigh its savings when the column's lexicographic minimum dominates (e.g. mostly empty strings) and few granules can be skipped. In that case the dynamic filter degrades query latency rather than improving it.
 
 When this setting is `0`, dynamic filtering is restricted to columns whose values have a fixed maximum size in memory (numbers, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` of such types, `Tuple` of such types). When set to `1`, dynamic filtering applies to variable-length types as well.
+
+Reads of Parquet files still skip whole row groups by the statistics of a `String` sort column when this setting is `0`; the setting only controls the per-row filter.
 
 Possible values:
 
@@ -5059,7 +5085,7 @@ Allow push predicate to final subquery.
 Allows push predicate when subquery contains WITH clause
 )", 0) \
     DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
-Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+Allows push predicate on AST level for distributed subqueries with enabled analyzer
 )", 0, \
         {"25.1", false, true, "A new setting"}) \
     \
@@ -5347,6 +5373,13 @@ This setting applies to JSON passed as a string. Extraction from a column of the
 Disabled by default.
 )", 0, \
         {"26.10", false, false, "New setting to make the `JSONExtract` family fill named tuples from JSON objects only, instead of the historical positional fill from arrays. Unnamed tuples always fill positionally, and extraction from a column of the `JSON` data type is unaffected."}) \
+    DECLARE(Bool, json_extract_use_cast_string_to_date_time_mode, true, R"(
+Controls which setting the `JSONExtract` family of functions follows when parsing a JSON string value into `DateTime` or `DateTime64`. When enabled, the parsing mode is taken from [cast_string_to_date_time_mode](#cast_string_to_date_time_mode), consistently with `CAST`. When disabled, it is taken from [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format), as before version 26.8.
+
+When the chosen parser cannot read the value, the function returns the default value of the type (`1970-01-01 00:00:00`) without an error, so a mismatch between the two settings silently changes the extracted values.
+)", 0, \
+        {"26.11", true, true, "New setting to choose whether the `JSONExtract` family parses `DateTime` values according to `cast_string_to_date_time_mode` (since 26.8) or `date_time_input_format` (before 26.8)."}, \
+        {"26.8", false, true, "`JSONExtract` parses `DateTime` values according to `cast_string_to_date_time_mode` instead of `date_time_input_format`. `compatibility` with versions before 26.8 restores the previous behavior."}) \
     DECLARE(Bool, allow_introspection_functions, false, R"(
 Enables or disables [introspection functions](/reference/functions/regular-functions/introspection) for query profiling.
 
@@ -6001,7 +6034,7 @@ Possible values:
 )", 0, \
         {"23.8", false, false, "New setting to rewrite countDistinctIf with count_distinct_implementation configuration. It is disabled by default"}) \
     DECLARE(Bool, convert_query_to_cnf, false, R"(
-When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+When set to `true`, a `SELECT` query will be converted to conjunctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
 
 For example, notice how the following `SELECT` query is not modified (the default behavior):
 
@@ -6566,7 +6599,7 @@ When enabled, the analyzer substitutes ordinary (non-materialized, non-parameter
 )", EXPERIMENTAL, \
         {"26.4", false, false, "New setting"}) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
-If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+If disabled, declarations in parent WITH clauses will behave the same scope as they declared in the current scope.
 
 Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0, \
@@ -7227,7 +7260,7 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, query_cache_squash_partial_results, true, R"(
-Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](/concepts/features/performance/caches/query-cache) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](/concepts/features/performance/caches/query-cache) but improves the compressibility of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -7274,7 +7307,7 @@ Possible values:
         {"25.4", false, true, "A new optimization"}, \
         {"25.3", false, false, "New setting."}) \
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
-Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
+Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
 Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
@@ -7743,9 +7776,10 @@ Allow to execute correlated subqueries.
         {"25.8", false, true, "Mark correlated subqueries support as Beta. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}, \
         {"25.4", false, false, "Added new setting to allow correlated subqueries execution. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}) \
     \
-    DECLARE(Bool, allow_experimental_lateral_join, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_lateral_join, false, R"(
 Allow LATERAL JOIN syntax. When enabled, subqueries in the right side of a JOIN can reference columns from the left side, enabling correlated subqueries in the FROM clause (SQL standard LATERAL JOIN).
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_lateral_join, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_lateral_join`."}, \
         {"26.10", false, false, "New setting to allow `LATERAL JOIN` syntax."}) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
@@ -7799,6 +7833,10 @@ Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
 Optimize GROUP BY when all keys in block are constant
 )", 0, \
         {"23.9", false, true, "Optimize group by constant keys by default"}) \
+    DECLARE(Bool, optimize_constant_columns_after_filter, true, R"(
+Replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant.
+)", 0, \
+        {"26.11", false, true, "New setting to replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant."}) \
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0, \
@@ -8401,20 +8439,20 @@ Overrides the output format of the query. Wins over the format specified in the 
 )", 0, \
         {"26.8", "", "", "New setting to override the output format of the query."}) \
     DECLARE(String, compression, "", R"(
-Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). Specifying a compressed file extension in the URL path is equivalent.
+Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). For response-producing path requests, specifying a compressed file extension in the URL path is equivalent. For a path-based HTTP `PUT` upload, the compression suffix describes the request body instead, which is decompressed before insertion.
 
 This is an HTTP-interface response-shaping setting: it is consumed before the query is executed (the response buffers are set up up-front), so it must be supplied via the HTTP URL parameter, the URL path file extension, or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0, \
         {"26.8", "", "", "New setting to apply generic compression to the response body."}) \
     DECLARE(Bool, http_allow_database_as_path, true, R"(
-If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.
+If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database. It also enables database-prefixed path-based `PUT` uploads such as `/database/table.CSV`.
 
 This is a per-user setting that controls whether a routed path-style request is interpreted. Routing itself is gated globally by the server-level `http_allow_path_requests` configuration setting (on by default), which must be enabled for the HTTP interface to route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all — that routing decision is made before the request is authenticated, so it cannot depend on a per-user setting. When `http_allow_path_requests` is off, unknown paths return a plain `404`. After routing, this setting is re-checked against the authenticated user's effective settings, so it can be disabled selectively per user, role, or profile.
 )", 0, \
         {"26.10", false, true, "Enabled by default: the HTTP interface interprets a `/database/` component of the URL path as the current database."}, \
         {"26.8", false, false, "New setting to recognize a database name in the URL path of HTTP requests."}) \
     DECLARE(Bool, http_allow_table_as_file, true, R"(
-If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. The path is interpreted as `SELECT * FROM table`.
+If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. For `GET` and `HEAD`, the path is interpreted as `SELECT * FROM table`; for a path-based `PUT`, it identifies the existing destination table and input format for the upload.
 
 Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 )", 0, \
@@ -9135,7 +9173,7 @@ Only has an effect in ClickHouse Cloud. Timeout for receiving data from distribu
 )", 0, \
         {"25.10", 3000, 3000, "New setting"}) \
     DECLARE(UInt64, distributed_cache_send_timeout_ms, default_distributed_cache_send_timeout_ms, R"(
-Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
+Only has an effect in ClickHouse Cloud. Timeout for sending data to distributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
 )", 0, \
         {"25.10", 3000, 3000, "New setting"}) \
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
@@ -9697,9 +9735,9 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
     DECLARE(Bool, use_iceberg_manifest_statistics, false, R"(
-Estimate the rows of an Iceberg read for join reordering from the `record_count` of the data files in its manifest files, after partition and min-max pruning by the query filter, without reading data. The estimate is exact without a filter and without delete files. As for MergeTree tables without column statistics, a filter that prunes no file gives no estimate. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
-        {"26.11", false, false, "New setting to estimate the rows of Iceberg reads for join reordering from manifest files."}) \
+        {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
@@ -10244,6 +10282,10 @@ Choosing finer granularity (like `bucket`) can improve parallelism when working 
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
 )", 0, \
         {"25.11", "file", "file", "New setting."}) \
+    DECLARE(String, cluster_table_function_pushed_down_filter, "", R"(
+This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
+)", 0, \
+        {"26.11", "", "", "New internal setting."}) \
     DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0, \
@@ -10558,11 +10600,11 @@ Max retries for parts update when using `select_sequential_consistency` with `Sh
 )", 0, \
         {"26.5", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."}) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. It prevents read in order through join optimization. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to a spilling join when the right-side data exceeds this many bytes: the collected data moves to disk and the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (read in order through join), so the threshold does not prevent that optimization. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
 )", 0, \
         {"26.4", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."}) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
-The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
+The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to a spilling join that moves the right-side data to disk (a grace hash join, or a partial merge join when the query plan needs the left stream's row order).
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
@@ -10627,7 +10669,7 @@ If true (default), an AI function call that fails permanently after exhausting a
 )", BETA, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+Maximum total input (prompt) tokens across all AI function API calls in a single query including cache reads and writes. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA, \
@@ -11345,6 +11387,10 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
+Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 0, 11000, "New setting to limit the resolution of a range query in the Prometheus HTTP API, as in Prometheus."}) \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
 A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.
