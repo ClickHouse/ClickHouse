@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -449,8 +450,8 @@ class LoopNest
 public:
     /// The loops are from the outermost to the innermost. If the innermost loop is a summation,
     /// the sum is accumulated in a register.
-    LoopNest(VectorWithMemoryTracking<Loop> loops_, VectorWithMemoryTracking<const T *> operands_, T * output_)
-        : loops(std::move(loops_)), operands(std::move(operands_)), output(output_), offsets(operands.size())
+    LoopNest(VectorWithMemoryTracking<Loop> loops_, VectorWithMemoryTracking<const T *> operands_, T * output_, CancellationBudget & budget_)
+        : loops(std::move(loops_)), operands(std::move(operands_)), output(output_), offsets(operands.size()), budget(budget_)
     {
     }
 
@@ -469,6 +470,7 @@ private:
     VectorWithMemoryTracking<const T *> operands;
     T * output;
     VectorWithMemoryTracking<size_t> offsets;
+    CancellationBudget & budget;
 
     void runLevel(size_t level, size_t output_offset)
     {
@@ -503,6 +505,9 @@ private:
         T * out = output + output_offset;
         size_t size = loop.size;
         size_t out_stride = loop.output_stride;
+
+        /// The number of terms can be huge even for small inputs, so the query can be cancelled in the middle of the contraction.
+        budget.chargeUnits(size * operands.size());
 
         if (operands.size() == 1)
         {
@@ -555,7 +560,7 @@ private:
 
 /// c[m][n] += a[m][k] * b[k][n], all matrices are contiguous in the row-major order.
 template <typename T>
-void multiplyMatrices(size_t m, size_t n, size_t k, const T * __restrict a, const T * __restrict b, T * __restrict c)
+void multiplyMatrices(size_t m, size_t n, size_t k, const T * __restrict a, const T * __restrict b, T * __restrict c, CancellationBudget & budget)
 {
     /// The blocks of `b` are reused for all rows of `a` while they are in the cache.
     constexpr size_t block_n = 256;
@@ -569,6 +574,7 @@ void multiplyMatrices(size_t m, size_t n, size_t k, const T * __restrict a, cons
             size_t p_end = std::min(k, pp + block_k);
             for (size_t i = 0; i < m; ++i)
             {
+                budget.chargeUnits((p_end - pp) * (j_end - jj));
                 T * __restrict c_row = c + i * n;
                 for (size_t p = pp; p < p_end; ++p)
                 {
@@ -584,11 +590,12 @@ void multiplyMatrices(size_t m, size_t n, size_t k, const T * __restrict a, cons
 
 /// c[m][n] += sum over k of a[m][k] * b_transposed[n][k], for a small `n`, when the dot products are more efficient.
 template <typename T>
-void multiplyMatricesTransposed(size_t m, size_t n, size_t k, const T * __restrict a, const T * __restrict b_transposed, T * __restrict c)
+void multiplyMatricesTransposed(size_t m, size_t n, size_t k, const T * __restrict a, const T * __restrict b_transposed, T * __restrict c, CancellationBudget & budget)
 {
     constexpr size_t lanes = 8;
     for (size_t i = 0; i < m; ++i)
     {
+        budget.chargeUnits(n * k);
         const T * __restrict a_row = a + i * k;
         for (size_t j = 0; j < n; ++j)
         {
@@ -622,7 +629,7 @@ template <typename T>
 class NumericContraction
 {
 public:
-    explicit NumericContraction(const VectorWithMemoryTracking<size_t> & sizes_) : sizes(sizes_) {}
+    NumericContraction(const VectorWithMemoryTracking<size_t> & sizes_, CancellationBudget & budget_) : sizes(sizes_), budget(budget_) {}
 
     /** output[...] = the contraction of `operands` with the indices `output_indices`.
       * The output is contiguous in the row-major order of `output_indices` and is filled with zeros before the call.
@@ -667,6 +674,7 @@ public:
 
 private:
     const VectorWithMemoryTracking<size_t> & sizes;
+    CancellationBudget & budget;
 
     /// All sizes are positive here (otherwise there is nothing to calculate), so the stride of an index is zero
     /// if and only if the tensor does not have it.
@@ -730,7 +738,7 @@ private:
         /// The output indices go first, in their order, so that the output is written sequentially.
         std::stable_sort(loops.begin(), loops.end(), [](const Loop & lhs, const Loop & rhs) { return lhs.output_stride > rhs.output_stride; });
 
-        LoopNest<T>(std::move(loops), std::move(pointers), output).run();
+        LoopNest<T>(std::move(loops), std::move(pointers), output, budget).run();
     }
 
     /// Copies (and sums over the indices that are not in `indices`) the tensor into a contiguous tensor with `indices`.
@@ -815,9 +823,9 @@ private:
             const T * b_matrix = b_matrices + i * summation_size * columns_size;
             T * c_matrix = result + i * rows_size * columns_size;
             if (use_dot_products)
-                multiplyMatricesTransposed(rows_size, columns_size, summation_size, a_matrix, b_matrix, c_matrix);
+                multiplyMatricesTransposed(rows_size, columns_size, summation_size, a_matrix, b_matrix, c_matrix, budget);
             else
-                multiplyMatrices(rows_size, columns_size, summation_size, a_matrix, b_matrix, c_matrix);
+                multiplyMatrices(rows_size, columns_size, summation_size, a_matrix, b_matrix, c_matrix, budget);
         }
 
         if (result != output)
@@ -1075,6 +1083,9 @@ private:
         auto result_column = ColumnVector<T>::create(total_output, T{});
         auto * result_data = reinterpret_cast<ComputeT *>(result_column->getData().data());
 
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         size_t output_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -1087,7 +1098,7 @@ private:
             }
 
             if (layout.num_output_elements && layout.num_contracted_terms)
-                NumericContraction<ComputeT>(layout.sizes).contract(operands, spec.output, result_data + output_offset);
+                NumericContraction<ComputeT>(layout.sizes, budget).contract(operands, spec.output, result_data + output_offset);
             output_offset += layout.num_output_elements;
         }
 
@@ -1158,9 +1169,14 @@ private:
             }
         };
 
+        /// A single row can have a huge number of terms, and the combiner does not check for cancellation itself.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         skip_empty_rows();
         while (row < input_rows_count)
         {
+            budget.chargeUnits(einsum_block_size);
             size_t first_row = row;
             for (auto & column : positions)
                 column = ColumnUInt64::create();
