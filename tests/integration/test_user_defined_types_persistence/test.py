@@ -38,9 +38,19 @@ def test_persistence():
         == "CREATE TYPE MyPair(K, V) AS Tuple(K, V)\n"
     )
 
+    # A table expression can refer to a type by name, so the types are loaded before the tables.
+    instance.query(
+        "CREATE TABLE key_table (x UInt8) ENGINE = MergeTree ORDER BY CAST(x, 'MyId')"
+    )
+    instance.query("INSERT INTO key_table VALUES (2), (10)")
+
     instance.restart_clickhouse()
 
     assert instance.query("SHOW TYPES") == "MyId\nMyPair\nMyRecord\n"
+    assert (
+        instance.query("SELECT x FROM key_table WHERE CAST(x, 'MyId') = 10") == "10\n"
+    )
+    instance.query("DROP TABLE key_table SYNC")
     assert (
         instance.query("SELECT toTypeName(CAST((1, ('a', 1.5)), 'MyRecord'))")
         == expected_type
