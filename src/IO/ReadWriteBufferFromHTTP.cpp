@@ -729,7 +729,11 @@ bool ReadWriteBufferFromHTTP::nextImpl()
                 }
                 else
                 {
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                    BufferBase::set(
+                        impl->buffer().begin(),
+                        impl->buffer().size(),
+                        impl->offset(),
+                        impl->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
                 }
             }
 
@@ -744,7 +748,11 @@ bool ReadWriteBufferFromHTTP::nextImpl()
 
             next_result = impl->next();
 
-            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+            BufferBase::set(
+                impl->buffer().begin(),
+                impl->buffer().size(),
+                impl->offset(),
+                impl->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
 
             offset_from_begin_pos += working_buffer.size();
 

@@ -125,8 +125,8 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
             if (w->bytes_produced > diff)
             {
-                working_buffer = internal_buffer = Buffer(
-                    w->segment.data(), w->segment.data() + w->bytes_produced);
+                internal_buffer = Buffer(w->segment.data(), w->segment.data() + w->bytes_produced);
+                working_buffer = WorkingBuffer(w->segment.data(), w->segment.data() + w->bytes_produced, BufferPadding::Padded);
                 pos = working_buffer.begin() + diff;
                 w->bytes_consumed = w->bytes_produced;
                 current_position = w->start_offset + w->bytes_consumed;
@@ -192,8 +192,9 @@ bool ParallelReadBuffer::nextImpl()
         {
             chassert(w->start_offset + w->bytes_consumed == static_cast<size_t>(current_position));
 
-            working_buffer = internal_buffer = Buffer(
-                w->segment.data() + w->bytes_consumed, w->segment.data() + w->bytes_produced);
+            internal_buffer = Buffer(w->segment.data() + w->bytes_consumed, w->segment.data() + w->bytes_produced);
+            working_buffer
+                = WorkingBuffer(w->segment.data() + w->bytes_consumed, w->segment.data() + w->bytes_produced, BufferPadding::Padded);
             current_position += working_buffer.size();
             w->bytes_consumed = w->bytes_produced;
 

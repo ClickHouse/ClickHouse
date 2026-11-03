@@ -285,7 +285,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         return false;
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_read);
-    BufferBase::set(data_ptr, bytes_read, 0);
+    BufferBase::set(data_ptr, bytes_read, 0, use_external_buffer ? BufferPadding::Unpadded : BufferPadding::Padded);
 
     offset += bytes_read;
 

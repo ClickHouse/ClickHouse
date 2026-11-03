@@ -108,6 +108,7 @@ private:
 
     char * getMemoryData() { return use_stack_memory ? stack_memory : memory.data(); }
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
+    BufferPadding getOwnMemoryPadding() const { return use_stack_memory ? BufferPadding::Unpadded : BufferPadding::Padded; }
 
     size_t offsetFromCheckpointInOwnMemory() const;
 

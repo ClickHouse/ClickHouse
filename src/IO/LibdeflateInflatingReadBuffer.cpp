@@ -378,7 +378,8 @@ bool LibdeflateInflatingReadBuffer::decompressImpl()
 
                 if (produced)
                 {
-                    working_buffer = Buffer(memory.data() + window_nbytes, memory.data() + window_nbytes + produced);
+                    working_buffer
+                        = WorkingBuffer(memory.data() + window_nbytes, memory.data() + window_nbytes + produced, BufferPadding::Padded);
                     return true;
                 }
                 /* No output this call (e.g. SUCCESS of an empty member): advance to the next state. */

@@ -87,7 +87,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     {
         use_page_cache = true;
         buffer_size = page_cache_block_size;
-        padded = false;
+        setBufferPadding(BufferPadding::Unpadded);
     }
     LOG_TEST(log, "Using buffer size {} while reading {}", buffer_size, file_name);
 
@@ -318,7 +318,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (bytes_read)
     {
         page_cache_cell = result.page_cache_cell;
-        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
+        working_buffer = WorkingBuffer(
+            result.buf + result.offset, result.buf + result.size, use_page_cache ? BufferPadding::Unpadded : BufferPadding::Padded);
         pos = working_buffer.begin();
     }
 

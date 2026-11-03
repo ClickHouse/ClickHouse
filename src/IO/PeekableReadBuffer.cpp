@@ -12,10 +12,10 @@ namespace ErrorCodes
 PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `stack_memory` is scratch space, written before read
         : BufferWithOwnMemory(start_size_), sub_buf(&sub_buf_)
 {
-    padded &= sub_buf->isPadded();
     /// Read from sub-buffer
     Buffer & sub_working = sub_buf->buffer();
-    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf->offset());
+    BufferBase::set(
+        sub_working.begin(), sub_working.size(), sub_buf->offset(), sub_buf->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
 
     checkStateCorrect();
 }
@@ -38,7 +38,11 @@ bool PeekableReadBuffer::peekNext()
 
             /// Both checkpoint and pos are at the end of sub-buffer. Just load next part of data.
             bool res = sub_buf->next();
-            BufferBase::set(sub_buf->buffer().begin(), sub_buf->buffer().size(), sub_buf->offset());
+            BufferBase::set(
+                sub_buf->buffer().begin(),
+                sub_buf->buffer().size(),
+                sub_buf->offset(),
+                sub_buf->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
             if (checkpoint)
                 checkpoint.emplace(pos);
 
@@ -71,7 +75,7 @@ bool PeekableReadBuffer::peekNext()
     if (currentlyReadFromOwnMemory())
     {
         /// Update buffer size
-        BufferBase::set(memory_data, peeked_size + bytes_to_copy, offset());
+        BufferBase::set(memory_data, peeked_size + bytes_to_copy, offset(), getOwnMemoryPadding());
     }
     else
     {
@@ -84,7 +88,7 @@ bool PeekableReadBuffer::peekNext()
             else
                 pos_offset = 0;
         }
-        BufferBase::set(memory_data, peeked_size + bytes_to_copy, pos_offset);
+        BufferBase::set(memory_data, peeked_size + bytes_to_copy, pos_offset, getOwnMemoryPadding());
     }
 
     peeked_size += bytes_to_copy;
@@ -118,7 +122,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 
             char * memory_data = getMemoryData();
             /// Switch to reading from own memory.
-            BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data);
+            BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data, getOwnMemoryPadding());
         }
     }
     else
@@ -146,7 +150,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
                 /// Recursive checkpoint is in own memory and position is not.
                 /// Switch to reading from own memory.
                 char * memory_data = getMemoryData();
-                BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data + offset_from_checkpoint);
+                BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data + offset_from_checkpoint, getOwnMemoryPadding());
             }
         }
     }
@@ -192,7 +196,8 @@ bool PeekableReadBuffer::nextImpl()
 
     /// Switch to reading from sub_buf (or just update it if already switched)
     Buffer & sub_working = sub_buf->buffer();
-    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf->offset());
+    BufferBase::set(
+        sub_working.begin(), sub_working.size(), sub_buf->offset(), sub_buf->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
     nextimpl_working_buffer_offset = sub_buf->offset();
 
     if (checkpoint_at_end)
@@ -268,7 +273,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
         if (need_update_checkpoint)
             checkpoint.emplace(memory.data() + offset);
         if (need_update_pos)
-            BufferBase::set(memory.data(), peeked_size, pos - stack_memory);
+            BufferBase::set(memory.data(), peeked_size, pos - stack_memory, BufferPadding::Padded);
     }
     else if (memory.size() < new_size)
     {
@@ -294,7 +299,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
                 checkpoint.emplace(memory.data() + offset);
             if (need_update_pos)
             {
-                BufferBase::set(memory.data(), peeked_size, pos_offset);
+                BufferBase::set(memory.data(), peeked_size, pos_offset, BufferPadding::Padded);
             }
         }
     }
@@ -316,7 +321,7 @@ void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
     memcpy(memory_data + peeked_size, sub_buf->position(), bytes_to_append);
     sub_buf->position() = pos;
     peeked_size += bytes_to_append;
-    BufferBase::set(memory_data, peeked_size, peeked_size);
+    BufferBase::set(memory_data, peeked_size, peeked_size, getOwnMemoryPadding());
 }
 
 PeekableReadBuffer::~PeekableReadBuffer()

@@ -166,7 +166,9 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     if (bytes_read)
     {
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
+        const bool uses_padded_memory = result.buf == memory.data() || result.buf == prefetch_buffer.data();
+        working_buffer = WorkingBuffer(
+            result.buf + result.offset, result.buf + result.size, uses_padded_memory ? BufferPadding::Padded : BufferPadding::Unpadded);
         pos = working_buffer.begin();
     }
 

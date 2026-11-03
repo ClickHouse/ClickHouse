@@ -71,7 +71,10 @@ protected:
         {
             if ((*current)->hasPendingData())
             {
-                working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
+                working_buffer = WorkingBuffer(
+                    (*current)->position(),
+                    (*current)->buffer().end(),
+                    (*current)->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
                 return true;
             }
         }
@@ -93,7 +96,8 @@ protected:
             }
         }
 
-        working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
+        working_buffer = WorkingBuffer(
+            (*current)->position(), (*current)->buffer().end(), (*current)->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
         return true;
     }
 };

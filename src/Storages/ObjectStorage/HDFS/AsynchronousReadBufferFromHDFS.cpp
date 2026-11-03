@@ -142,8 +142,8 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     if (bytes_read)
     {
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(result.buf, result.buf + result.size);
-        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
+        setInternalBuffer(Buffer(result.buf, result.buf + result.size), BufferPadding::Padded);
+        working_buffer = WorkingBuffer(result.buf + result.offset, result.buf + result.size, BufferPadding::Padded);
         pos = working_buffer.begin();
     }
 

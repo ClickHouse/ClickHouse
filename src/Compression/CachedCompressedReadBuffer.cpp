@@ -76,7 +76,8 @@ bool CachedCompressedReadBuffer::nextImpl()
     if (owned_cell->data.size() == 0)
         return false;
 
-    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - owned_cell->additional_bytes);
+    working_buffer = WorkingBuffer(
+        owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - owned_cell->additional_bytes, BufferPadding::Padded);
 
     /// nextimpl_working_buffer_offset is set in the seek function (lazy seek). So we have to
     /// check that we are not seeking beyond working buffer.

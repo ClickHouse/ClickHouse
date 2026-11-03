@@ -16,7 +16,7 @@ bool CheckingCompressedReadBuffer::nextImpl()
     /// which should not be accounted here, so size_compressed is used.
     ///
     /// And BufferBase is used over ReadBuffer, since former reset the working_buffer.
-    BufferBase::set(own_compressed_buffer.data(), size_compressed, 0);
+    BufferBase::set(own_compressed_buffer.data(), size_compressed, 0, BufferPadding::Padded);
 
     return true;
 }

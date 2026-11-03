@@ -22,6 +22,7 @@ namespace
             , in(in_)
             , custom_data(std::move(custom_data_))
         {
+            setBufferPadding(in.isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
         }
 
     private:
@@ -36,7 +37,8 @@ namespace
                 set(in.position(), 0);
                 return false;
             }
-            BufferBase::set(in.buffer().begin(), in.buffer().size(), in.offset());
+            BufferBase::set(
+                in.buffer().begin(), in.buffer().size(), in.offset(), in.isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
             return true;
         }
 
@@ -44,7 +46,8 @@ namespace
         {
             in.position() = position();
             off_t new_pos = in.seek(off, whence);
-            BufferBase::set(in.buffer().begin(), in.buffer().size(), in.offset());
+            BufferBase::set(
+                in.buffer().begin(), in.buffer().size(), in.offset(), in.isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
             return new_pos;
         }
 

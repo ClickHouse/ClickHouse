@@ -34,7 +34,7 @@ public:
     bool isMemoryBuffer() const override { return true; }
 
     /// The caller guarantees 15 readable bytes after the range, e.g. it is inside a `PaddedPODArray`.
-    void setPadded() { padded = true; }
+    void setPadded() { setBufferPadding(BufferPadding::Padded); }
 
     off_t seek(off_t off, int whence) override
     {

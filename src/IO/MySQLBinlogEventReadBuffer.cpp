@@ -33,7 +33,10 @@ bool MySQLBinlogEventReadBuffer::nextImpl()
     {
         if (likely(in.available() > checksum_signature_length))
         {
-            working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end() - checksum_signature_length);
+            working_buffer = ReadBuffer::WorkingBuffer(
+                in.position(),
+                in.buffer().end() - checksum_signature_length,
+                in.isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
             in.ignore(working_buffer.size());
             return true;
         }

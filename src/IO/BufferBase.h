@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Core/Defines.h>
 #include <algorithm>
+#include <cstdint>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -53,19 +54,72 @@ public:
         Position end_pos;        /// 1 byte after the end of the buffer
     };
 
+    enum class BufferPadding : uint8_t
+    {
+        Unpadded,
+        Padded,
+    };
+
+    /** A working range together with the promise that SIMD readers may access the padding after it.
+      * Constructing or assigning from a raw `Buffer` clears the promise. Copying another
+      * `WorkingBuffer` preserves it.
+      */
+    struct WorkingBuffer : Buffer
+    {
+        WorkingBuffer(Position begin_pos_, Position end_pos_, BufferPadding padding_ = BufferPadding::Unpadded)
+            : Buffer(begin_pos_, end_pos_)
+            , padding(padding_)
+        {
+        }
+
+        WorkingBuffer(const Buffer & buffer_, BufferPadding padding_ = BufferPadding::Unpadded)
+            : Buffer(buffer_)
+            , padding(padding_)
+        {
+        }
+
+        WorkingBuffer(const WorkingBuffer &) = default;
+        WorkingBuffer & operator=(const WorkingBuffer &) = default;
+
+        WorkingBuffer & operator=(const Buffer & other)
+        {
+            Buffer::operator=(other);
+            padding = BufferPadding::Unpadded;
+            return *this;
+        }
+
+        void swap(WorkingBuffer & other) noexcept
+        {
+            Buffer::swap(other);
+            std::swap(padding, other.padding);
+        }
+
+        bool isPadded() const { return padding == BufferPadding::Padded; }
+        void setPadding(BufferPadding padding_) { padding = padding_; }
+
+    private:
+        BufferPadding padding;
+    };
+
     /** The constructor takes a range of memory to use for the buffer.
       * offset - the starting point of the cursor. ReadBuffer must set it to the end of the range, and WriteBuffer - to the beginning.
       */
-    BufferBase(Position ptr, size_t size, size_t offset)
-        : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
+    BufferBase(Position ptr, size_t size, size_t offset, BufferPadding padding = BufferPadding::Unpadded)
+        : pos(ptr + offset)
+        , working_buffer(ptr, ptr + size, padding)
+        , internal_buffer(ptr, ptr + size)
+        , internal_buffer_padding(padding)
+    {
+    }
 
     /// Assign the buffers and pos.
     /// Be careful when calling this from ReadBuffer::nextImpl() implementations: `offset` is
     /// effectively ignored because ReadBuffer::next() reassigns `pos`.
-    void set(Position ptr, size_t size, size_t offset)
+    void set(Position ptr, size_t size, size_t offset, BufferPadding padding = BufferPadding::Unpadded)
     {
         internal_buffer = Buffer(ptr, ptr + size);
-        working_buffer = Buffer(ptr, ptr + size);
+        internal_buffer_padding = padding;
+        working_buffer = WorkingBuffer(ptr, ptr + size, padding);
         pos = ptr + offset;
     }
 
@@ -73,7 +127,7 @@ public:
     Buffer & internalBuffer() { return internal_buffer; }
 
     /// get the part of the buffer from which you can read / write data
-    Buffer & buffer() { return working_buffer; }
+    WorkingBuffer & buffer() { return working_buffer; }
 
     /// get (for reading and modifying) the position in the buffer
     Position & position() { return pos; }
@@ -87,6 +141,7 @@ public:
     void swap(BufferBase & other) noexcept
     {
         internal_buffer.swap(other.internal_buffer);
+        std::swap(internal_buffer_padding, other.internal_buffer_padding);
         working_buffer.swap(other.working_buffer);
         std::swap(pos, other.pos);
     }
@@ -97,9 +152,23 @@ public:
     /** Check that there is more bytes in buffer after cursor. */
     bool ALWAYS_INLINE hasPendingData() const { return available() > 0; }
 
-    bool isPadded() const { return padded; }
+    bool isPadded() const { return working_buffer.isPadded(); }
 
 protected:
+    void setInternalBuffer(Buffer buffer, BufferPadding padding = BufferPadding::Unpadded)
+    {
+        internal_buffer = buffer;
+        internal_buffer_padding = padding;
+    }
+
+    void setWorkingBufferFromInternal() { working_buffer = WorkingBuffer(internal_buffer, internal_buffer_padding); }
+
+    void setBufferPadding(BufferPadding padding)
+    {
+        internal_buffer_padding = padding;
+        working_buffer.setPadding(padding);
+    }
+
     void resetWorkingBuffer()
     {
         /// Move position to the end of buffer to trigger call of 'next' on next reading.
@@ -122,13 +191,13 @@ protected:
       *  only 10 bytes, then working_buffer will be 10 bytes in size
       *  (working_buffer.end() will point to the position immediately after the 10 bytes that can be read).
       */
-    Buffer working_buffer;
+    WorkingBuffer working_buffer;
 
     /// A reference to a piece of memory for the buffer.
     Buffer internal_buffer;
 
-    /// Indicator of 15 bytes pad_right
-    bool padded{false};
+    /// Whether `internal_buffer` has 15 readable bytes after its end.
+    BufferPadding internal_buffer_padding{BufferPadding::Unpadded};
     bool canceled{false};
 };
 

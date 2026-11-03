@@ -28,6 +28,7 @@ namespace
         ReadBufferWrapper(ReadBuffer & in_, CustomData && custom_data_)
             : ReadBuffer(in_.buffer().begin(), in_.buffer().size(), in_.offset()), in(in_), custom_data(std::move(custom_data_))
         {
+            setBufferPadding(in.isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
         }
 
         const ReadBuffer & getWrappedReadBuffer() const override { return in; }
@@ -53,7 +54,8 @@ namespace
                 set(in.position(), 0);
                 return false;
             }
-            BufferBase::set(in.buffer().begin(), in.buffer().size(), in.offset());
+            BufferBase::set(
+                in.buffer().begin(), in.buffer().size(), in.offset(), in.isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
             return true;
         }
     };
