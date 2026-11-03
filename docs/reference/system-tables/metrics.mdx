@@ -394,18 +394,6 @@ Total number of CPU slot requests are being scheduled currently
 
 Value of soft limit on number of CPU slots
 
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-Number of threads in the thread pool for concurrent hash join.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-Number of threads in the thread pool for concurrent hash join running a task.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-Number of queued or active jobs in the thread pool for concurrent hash join.
-
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
 Total number of acquired query slots
@@ -886,6 +874,18 @@ Number of threads in the HashedDictionary thread pool running a task.
 
 Number of queued or active jobs in the HashedDictionary thread pool.
 
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+Number of threads in the thread pool for destroying the right table of a hash join.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+Number of threads in the thread pool for destroying the right table of a hash join running a task.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+Number of queued or active jobs in the thread pool for destroying the right table of a hash join.
+
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
 Size of the hive cache in bytes
@@ -1325,6 +1325,18 @@ Number of active threads used to commit snapshot
 ### MergeTreeSnapshotCommitThreadsScheduled {#mergetreesnapshotcommitthreadsscheduled}
 
 Number of scheduled threads used to commit snapshot
+
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+Number of threads in the thread pool for loading the statistics of data parts.
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+Number of threads in the thread pool for loading the statistics of data parts running a task.
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+Number of queued or active jobs in the thread pool for loading the statistics of data parts.
 
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 

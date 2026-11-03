@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: `system.parts_columns.filenames` of a wide part is empty on macOS ARM, https://github.com/ClickHouse/ClickHouse/issues/127841
 
 # What a part of a JSON column with SHARED paths is made of, and the wire: the three typed shared data substreams and
 # their files, no per-path stream, the object serialization versions, Native and RowBinary with and without the binary
