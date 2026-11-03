@@ -100,15 +100,6 @@ bool isFirstApplicableElement(const ASTPtr & element)
     return false;
 }
 
-bool hasFirstApplicableInChain(const ASTPtr & ast)
-{
-    const auto * func = ast->as<ASTFunction>();
-    if (!func || !func->arguments)
-        return false;
-
-    return std::ranges::any_of(func->arguments->children, isFirstApplicableElement);
-}
-
 }
 
 void CompressionCodecFactory::checkCodecChainIsNotColumnLevelOnly(const ASTPtr & ast) const
@@ -198,6 +189,15 @@ bool typeContainsMap(const DataTypePtr & type)
 
 }
 
+bool CompressionCodecFactory::hasFirstApplicable(const ASTPtr & codec)
+{
+    const auto * func = codec ? codec->as<ASTFunction>() : nullptr;
+    if (!func || !func->arguments)
+        return false;
+
+    return std::ranges::any_of(func->arguments->children, isFirstApplicableElement);
+}
+
 void CompressionCodecFactory::checkCodecIsEnabled(const String & family_name, const Settings * settings)
 {
     if (!settings)
@@ -271,8 +271,14 @@ void CompressionCodecFactory::validateCodecWithFirstApplicable(
 {
     /// The combinator itself is validated as an alternative, so that all of its alternatives are.
     for (const auto & element : ast->as<const ASTFunction &>().arguments->children)
+    {
         if (isFirstApplicableElement(element))
+        {
             validateFirstApplicableAlternative(element, settings);
+            if (!column_type)
+                checkFirstApplicableHasNoLossyAlternative(element);
+        }
+    }
 
     if (!column_type)
     {
@@ -317,7 +323,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
 {
     /// `FirstApplicable` is kept as written, to be resolved for the data type of every substream when compressing,
     /// so that it follows a change of the type of the column.
-    if (hasFirstApplicableInChain(ast))
+    if (hasFirstApplicable(ast))
     {
         validateCodecWithFirstApplicable(ast, column_type, settings, sanity_check);
         return ast;

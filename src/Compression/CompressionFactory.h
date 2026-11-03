@@ -89,6 +89,10 @@ public:
     /// A compound such as CODEC(Delta, Default) would return false.
     static bool isDefaultCodec(const ASTPtr & codec);
 
+    /// True if the codec chain `codec` (a `CODEC(...)` function) has the combinator `FirstApplicable`, so that the
+    /// codec depends on the data type of every substream.
+    static bool hasFirstApplicable(const ASTPtr & codec);
+
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(
         const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const;
@@ -207,6 +211,11 @@ private:
     /// `FirstApplicable` without a data type: a codec that compresses with the selection for no type, but keeps the
     /// description of the whole combinator (with `Default` replaced by `current_default`) to be resolved again later.
     CompressionCodecPtr getFirstApplicableWithoutType(const ASTPtr & element, const CompressionCodecPtr & current_default) const;
+
+    /// Throws if `FirstApplicable` (or a nested `Multiple`) `element` has a lossy codec among its alternatives.
+    /// Used without a data type: the combinator is then selected again for the type of every column, so a lossy
+    /// alternative would bypass the checks that keep lossy codecs away from a sorting key, a Map or a LowCardinality.
+    void checkFirstApplicableHasNoLossyAlternative(const ASTPtr & element) const;
 
     /// Validates `FirstApplicable` in the codec chain `ast`: every alternative must be a valid codec by itself, and
     /// the chain resolved for every substream of `column_type` (or for no type) must pass the usual validation.

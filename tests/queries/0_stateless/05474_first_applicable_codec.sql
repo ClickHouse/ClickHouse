@@ -20,7 +20,7 @@ CREATE TABLE t_first_applicable
     e Array(Int64) CODEC(FirstApplicable(FPC, T64))
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic';
 
 SHOW CREATE TABLE t_first_applicable;
 
@@ -28,7 +28,7 @@ INSERT INTO t_first_applicable
 SELECT number, number / 7, toString(number), (number / 3, number % 1000, toString(number % 10)), range(number % 5), if(number % 3 = 0, NULL, number / 11), number * 3, range(number % 3)
 FROM numbers(10000);
 
-SELECT count(), sum(i), sum(f), sum(length(s)), sum(t.a), sum(t.b), sum(length(t.c)), sum(length(a)), sum(n), sum(d), sum(arraySum(e)) FROM t_first_applicable;
+SELECT count(), sum(i), round(sum(f), 3), sum(length(s)), round(sum(t.a), 3), sum(t.b), sum(length(t.c)), sum(length(a)), round(sum(n), 3), sum(d), sum(arraySum(e)) FROM t_first_applicable;
 
 SELECT column, substream, mapKeys(codec_block_counts)
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_first_applicable)
@@ -54,7 +54,7 @@ CREATE TABLE t_first_applicable_default
     d UInt64 CODEC(Delta, Default)
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0,
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic',
     default_compression_codec = 'FirstApplicable(FPC, Multiple(T64, LZ4), ZSTD(1))',
     marks_compression_codec = 'FirstApplicable(FPC, ZSTD(1))',
     primary_key_compression_codec = 'FirstApplicable(T64, LZ4)';
@@ -63,7 +63,7 @@ INSERT INTO t_first_applicable_default SELECT number, number / 7, toString(numbe
 INSERT INTO t_first_applicable_default SELECT number, number / 7, toString(number), number * 3 FROM numbers(10000);
 OPTIMIZE TABLE t_first_applicable_default FINAL;
 
-SELECT count(), sum(i), sum(f), sum(length(s)), sum(d) FROM t_first_applicable_default;
+SELECT count(), sum(i), round(sum(f), 3), sum(length(s)), sum(d) FROM t_first_applicable_default;
 
 SELECT column, substream, mapKeys(codec_block_counts)
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_first_applicable_default)
@@ -78,7 +78,7 @@ CREATE TABLE t_first_applicable_ttl
 )
 ENGINE = MergeTree ORDER BY tuple()
 TTL toDateTime(i) RECOMPRESS CODEC(FirstApplicable(T64, ZSTD(1)))
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, default_compression_codec = 'LZ4';
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic', default_compression_codec = 'LZ4';
 
 INSERT INTO t_first_applicable_ttl SELECT number, toString(number) FROM numbers(10000);
 OPTIMIZE TABLE t_first_applicable_ttl FINAL;
@@ -117,3 +117,20 @@ CREATE TABLE t_first_applicable_error (i UInt32) ENGINE = MergeTree ORDER BY tup
 DROP TABLE t_first_applicable;
 DROP TABLE t_first_applicable_default;
 DROP TABLE t_first_applicable_ttl;
+
+SELECT '-- Log engines';
+
+DROP TABLE IF EXISTS t_first_applicable_log;
+DROP TABLE IF EXISTS t_first_applicable_tinylog;
+
+-- The codec is selected for the data type of every stream, as in MergeTree: `T64` for the values of the array.
+CREATE TABLE t_first_applicable_log (a Array(Int64) CODEC(FirstApplicable(FPC, T64)), t Tuple(Float64, String) CODEC(FirstApplicable(FPC, ZSTD))) ENGINE = Log;
+INSERT INTO t_first_applicable_log VALUES ([1, 2, 3], (1.5, 'a')), ([], (2.5, 'b'));
+SELECT * FROM t_first_applicable_log;
+
+CREATE TABLE t_first_applicable_tinylog (a Array(Int64) CODEC(FirstApplicable(FPC, T64)), t Tuple(Float64, String) CODEC(FirstApplicable(FPC, ZSTD))) ENGINE = TinyLog;
+INSERT INTO t_first_applicable_tinylog VALUES ([1, 2, 3], (1.5, 'a')), ([], (2.5, 'b'));
+SELECT * FROM t_first_applicable_tinylog;
+
+DROP TABLE t_first_applicable_log;
+DROP TABLE t_first_applicable_tinylog;

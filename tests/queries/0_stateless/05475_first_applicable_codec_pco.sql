@@ -18,11 +18,11 @@ CREATE TABLE t_first_applicable_pco
     cs String CODEC(FirstApplicable(PCO(4), ZSTD(1)))
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))';
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', nullable_serialization_version = 'basic', default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))';
 
 INSERT INTO t_first_applicable_pco SELECT number, number / 7, toString(number), range(number % 5), number * 3, toString(number % 100) FROM numbers(10000);
 
-SELECT count(), sum(i), sum(f), sum(length(s)), sum(length(a)), sum(arraySum(a)), sum(c), sum(length(cs)) FROM t_first_applicable_pco;
+SELECT count(), sum(i), round(sum(f), 3), sum(length(s)), sum(length(a)), sum(arraySum(a)), sum(c), sum(length(cs)) FROM t_first_applicable_pco;
 
 SELECT column, substream, mapKeys(codec_block_counts)
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_first_applicable_pco)

@@ -66,12 +66,12 @@ const ASTs & getCombinatorArguments(const String & name, const ASTPtr & argument
 }
 
 /// A codec chain that has a `FirstApplicable` resolved without a data type depends on the data type.
-bool hasFirstApplicable(const CompressionCodecPtr & codec)
+bool codecHasFirstApplicable(const CompressionCodecPtr & codec)
 {
     if (typeid_cast<const CompressionCodecFirstApplicable *>(codec.get()))
         return true;
     if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
-        return std::ranges::any_of(multiple->getCodecs(), [](const auto & inner) { return hasFirstApplicable(inner); });
+        return std::ranges::any_of(multiple->getCodecs(), [](const auto & inner) { return codecHasFirstApplicable(inner); });
     return false;
 }
 
@@ -185,6 +185,29 @@ ASTPtr CompressionCodecFactory::resolveFirstApplicable(const ASTPtr & ast, const
     return makeASTFunction("CODEC", std::move(resolved));
 }
 
+void CompressionCodecFactory::checkFirstApplicableHasNoLossyAlternative(const ASTPtr & element) const
+{
+    const auto [name, arguments] = getCodecNameAndArguments(element);
+
+    if (isFirstApplicable(name) || isMultiple(name))
+    {
+        for (const auto & codec : getCombinatorArguments(name, arguments))
+            checkFirstApplicableHasNoLossyAlternative(codec);
+        return;
+    }
+
+    /// `Default` is not allowed without a data type, and the default codec itself is validated where it is set.
+    if (equalsCaseInsensitive(name, DEFAULT_CODEC_NAME))
+        return;
+
+    if (getImpl(name, arguments, nullptr)->isLossyCompression())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Codec {} is lossy and cannot be an alternative of {} where the data type is unknown, e.g. as a default or "
+            "TTL recompression codec: it would be selected for the type of every column, including the ones where lossy "
+            "compression is not allowed (a sorting key, the keys of a Map or a LowCardinality dictionary)",
+            name, FIRST_APPLICABLE_CODEC_NAME);
+}
+
 CompressionCodecPtr CompressionCodecFactory::getFirstApplicableWithoutType(const ASTPtr & element, const CompressionCodecPtr & current_default) const
 {
     ASTs selected_codecs;
@@ -231,6 +254,12 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & compression_code
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     checkCodecChainIsNotColumnLevelOnly(ast);
+    /// A codec given as a string (e.g. `default_compression_codec`) has no data type, and `FirstApplicable` in it is
+    /// selected again for the type of every column, where the restrictions of lossy codecs are not checked.
+    if (hasFirstApplicable(ast))
+        for (const auto & element : ast->as<const ASTFunction &>().arguments->children)
+            if (isFirstApplicable(getCodecNameAndArguments(element).first))
+                checkFirstApplicableHasNoLossyAlternative(element);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
@@ -270,7 +299,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
             {
                 codec = current_default;
                 /// E.g. `default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))'`: select for the data type.
-                if (column_type && hasFirstApplicable(codec))
+                if (column_type && codecHasFirstApplicable(codec))
                     codec = get(codec->getFullCodecDescription(), column_type);
             }
             else if (isFirstApplicable(codec_family_name))
