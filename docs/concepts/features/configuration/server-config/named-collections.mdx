@@ -98,6 +98,28 @@ To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keepe
 
 An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
 
+#### Key rotation {#named-collections-key-rotation}
+
+Several keys can be configured, each with an `id` attribute, and `current_key_id` selects the key
+that encrypts new entries (`current_key_hex` selects it by value instead). Every configured key is
+used for decryption, so to rotate the key, add the new key, make it the current one and restart the
+server (the keys are read at startup). The existing collections stay readable through their old key
+and are re-encrypted with the current key when they are next written: by `ALTER NAMED COLLECTION`,
+`CREATE OR REPLACE NAMED COLLECTION`, or a restore from a backup. A server which lacks the key a
+collection is encrypted with reports an error naming the fingerprint of that key, so remove an old
+key from the configuration only after every collection encrypted with it has been rewritten.
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
 You can inspect the active storage type through `system.server_settings` and `getServerSetting`:
 
 ```sql
