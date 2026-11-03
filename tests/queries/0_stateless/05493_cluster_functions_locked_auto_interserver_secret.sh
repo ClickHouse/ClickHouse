@@ -110,6 +110,13 @@ check "s3 with parallel replicas, locked structure" \
     "s3(${NC}_s3_structure) SETTINGS parallel_distributed_insert_select = 0, $(parallel_replicas "${SECRET}" 2)"
 echo "--- s3Cluster, locked format ---"
 query -q "SELECT id FROM s3Cluster('${SECRET}', ${NC}_s3_format) ORDER BY id"
+echo "--- s3 with parallel replicas, locked format ---"
+query -q "SELECT id FROM s3(${NC}_s3_format) ORDER BY id SETTINGS $(parallel_replicas "${SECRET}" 2)"
+echo "--- parallel replicas read from the cluster ---"
+# The rows above are the same if the cluster path is not taken.
+for args in "url(${NC}_url_structure)" "s3(${NC}_s3_structure)" "s3(${NC}_s3_format)"; do
+    $CLICKHOUSE_CLIENT -q "EXPLAIN SELECT id FROM ${args} SETTINGS $(parallel_replicas "${SECRET}" 2)" | grep -c ReadFromCluster
+done
 
 echo "=== cluster without a secret ==="
 for key in format structure; do
@@ -121,6 +128,8 @@ check "s3Cluster, locked structure, JSONEachRow" \
     "s3Cluster('${PLAIN}', ${NC}_s3_structure_json) SETTINGS parallel_distributed_insert_select = 0"
 check "s3 with parallel replicas, locked structure, JSONEachRow" \
     "s3(${NC}_s3_structure_json) SETTINGS parallel_distributed_insert_select = 0, $(parallel_replicas "${PLAIN}" 3)"
+echo "--- parallel replicas read from the cluster, without a secret ---"
+$CLICKHOUSE_CLIENT -q "EXPLAIN SELECT id FROM s3(${NC}_s3_structure_json) SETTINGS $(parallel_replicas "${PLAIN}" 3)" | grep -c ReadFromCluster
 echo "--- INSERT INTO FUNCTION s3Cluster, locked structure ---"
 query -q "INSERT INTO FUNCTION s3Cluster('${PLAIN}', ${NC}_s3_write) SELECT number AS id, number * 2 AS v FROM numbers(3)
     SETTINGS s3_truncate_on_insert = 1"
