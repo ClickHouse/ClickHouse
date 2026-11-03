@@ -56,8 +56,10 @@ table engine (`Array(Tuple(timestamp, flags, counter_reset_hint, schema, zero_th
 zero_count_float, positive_int, negative_int, positive_float, negative_float, custom_values))`, see the documentation of the engine).
 If several samples have the same timestamp, only one of them is kept: the one with the greatest total count (`count_int` for an integer
 histogram, `count_float` for a float one; a NaN count loses to any other count), on ties the one with the greatest `sum`, then the other
-elements decide, so the result does not depend on the order of merging. The result type is the type of the argument, so the function
-can be used in the `SimpleAggregateFunction` data type.
+elements decide. Counter reset hints only break ties between otherwise identical payloads, with unknown preferred over known hints.
+The winning histogram payload does not depend on the order of merging. Where merging changes a sample's predecessor or joins separate
+input arrays, its counter reset hint becomes unknown; gauge markers are preserved. The result type is the type of the argument, so
+the function can be used in the `SimpleAggregateFunction` data type.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesGroupArrayHistograms(histograms)";
     FunctionDocumentation::Arguments arguments = {

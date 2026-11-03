@@ -16,8 +16,9 @@ class IColumn;
 /// histogram tuples sorted by timestamp and deduplicated by timestamp, see TimeSeriesHistogramsColumns), `row` is the time series.
 /// Its float samples must already be in `time_series`, sorted by timestamp.
 ///
-/// A histogram is returned as it was sent: an integer histogram with `count_int`, `zero_count_int` and the bucket deltas, a float one
-/// with the float fields; the pairs of a side become the spans and the buckets, adjacent indexes making one span. Prometheus keeps the
+/// A histogram keeps its original representation: an integer histogram with `count_int`, `zero_count_int` and the bucket deltas,
+/// a float one with the float fields. Counter reset hints can be cleared by merging. The pairs of a side become the spans and the
+/// buckets, adjacent indexes making one span. Prometheus keeps the
 /// first of conflicting samples at one timestamp, which isn't known here, so a float sample beats a histogram sample at the same
 /// timestamp (as in Prometheus within one request); histogram duplicates were resolved by the aggregate (the greatest count wins).
 void addPrometheusHistogramsToTimeSeries(

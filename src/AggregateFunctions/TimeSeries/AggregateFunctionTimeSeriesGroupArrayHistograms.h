@@ -106,9 +106,9 @@ struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
 /// Aggregate function merging arrays of histogram samples of the shape of the `histograms` column of a TimeSeries table (see
 /// TimeSeriesHistogramsColumns), each sorted by timestamp: the result is sorted and deduplicated by timestamp. Of the samples with
 /// the same timestamp the greatest one under the order of `TimeSeriesDuplicateTimestampRule` wins (the greatest total count,
-/// then the greatest `sum`, then the other elements), so the result does not depend on the order of merging. The elements are stored
-/// as they are, so arrays in timestamp order (ingestion and the merges of its parts) are appended as they are, and overlapping
-/// arrays are sorted and deduplicated. The result type is the argument type, so the function fits `SimpleAggregateFunction`.
+/// then the greatest `sum`, then the other elements). Arrays in timestamp order are appended, and overlapping arrays are sorted
+/// and deduplicated. Counter reset hints are cleared where the preceding sample is no longer known to be the original predecessor;
+/// the gauge marker is preserved. The result type is the argument type, so the function fits `SimpleAggregateFunction`.
 template <typename TimestampType>
 class AggregateFunctionTimeSeriesGroupArrayHistograms final
     : public IAggregateFunctionDataHelper<AggregateFunctionTimeSeriesGroupArrayHistogramsData<TimestampType>, AggregateFunctionTimeSeriesGroupArrayHistograms<TimestampType>>
@@ -281,7 +281,18 @@ private:
     {
         ProfileEvents::increment(ProfileEvents::TimeSeriesGroupArrayHistogramsAppendOnlyMerges);
         for (const auto & range : data.ranges)
+        {
+            const size_t begin = tuple_to.size();
             tuple_to.insertRangeFrom(*range.source, range.offset, range.size);
+            if (&range != &data.ranges.front())
+                TimeSeriesHistogramCounterResetHint::clear(getCounterResetHints(tuple_to)[begin]);
+        }
+    }
+
+    static ColumnUInt8::Container & getCounterResetHints(ColumnTuple & tuple)
+    {
+        return assert_cast<ColumnUInt8 &>(tuple.getColumn(
+            TimeSeriesHistogramsColumns::getTuplePosition(TimeSeriesHistogramsColumn::CounterResetHint))).getData();
     }
 
     /// The arrays overlap in time: they are concatenated into a column of their own, sorted by timestamp, deduplicated
@@ -294,7 +305,7 @@ private:
         elements->reserve(num_elements);
         for (const auto & range : data.ranges)
             elements->insertRangeFrom(*range.source, range.offset, range.size);
-        const auto & source = assert_cast<const ColumnTuple &>(*elements);
+        auto & source = assert_cast<ColumnTuple &>(*elements);
 
         const auto & timestamps = assert_cast<const TimestampColumnType &>(source.getColumn(TimeSeriesHistogramsColumns::getTimestampPosition())).getData();
         IColumn::Permutation permutation(num_elements);
@@ -316,6 +327,22 @@ private:
             {
                 permutation[num_unique++] = permutation[i];
             }
+        }
+
+        /// Decide the winners before clearing hints. Each range has its own predecessor history, including adjacent ranges
+        /// in the concatenated column. Only consecutive samples within the same input array retain their counter reset hints.
+        auto & hints = getCounterResetHints(source);
+        size_t range_begin = 0;
+        for (const auto & range : data.ranges)
+        {
+            if (range_begin != permutation[0])
+                TimeSeriesHistogramCounterResetHint::clear(hints[range_begin]);
+            range_begin += range.size;
+        }
+        for (size_t i = 1; i < num_unique; ++i)
+        {
+            if (permutation[i] != permutation[i - 1] + 1)
+                TimeSeriesHistogramCounterResetHint::clear(hints[permutation[i]]);
         }
 
         const ColumnPtr merged = source.permute(permutation, num_unique);

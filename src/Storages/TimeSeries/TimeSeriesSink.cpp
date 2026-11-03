@@ -33,6 +33,7 @@
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/detectTimeSeriesHistogramResets.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -775,8 +776,32 @@ namespace
             kinds[1].sort(filter, *histograms->outer_offsets, makeHistogramSampleWins(*histograms), "histogram samples");
         const std::span<const SortedSamples<TimestampColumn>> used_kinds = std::span(kinds.data(), histograms_array_type ? 2 : 1);
 
+        ColumnPtr normalized_histogram_hints;
+        const auto make_block = [&](Decimal64 bucket_step)
+        {
+            auto block = makeSamplesBlock(filter, id_column, id_type, ts_timestamps, timestamp_type, used_kinds, bucket_step);
+            if (histograms)
+            {
+                /// The writer creates fresh columns, so mutation does not copy their data. Both tables have the same flattened
+                /// sample order: detect resets once, then share the corrected hint column even when their bucket sizes differ.
+                auto & column = block.getByName(TimeSeriesColumnNames::Histograms).column;
+                auto mutable_column = IColumn::mutate(std::move(column));
+                auto & tuple = assert_cast<ColumnTuple &>(assert_cast<ColumnArray &>(*mutable_column).getData());
+                auto & hints = tuple.getColumnPtr(TimeSeriesHistogramsColumns::getTuplePosition(TimeSeriesHistogramsColumn::CounterResetHint));
+                if (normalized_histogram_hints)
+                    hints = normalized_histogram_hints;
+                else
+                {
+                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_indices, kinds[1].sorted_offsets);
+                    normalized_histogram_hints = hints;
+                }
+                column = std::move(mutable_column);
+            }
+            return block;
+        };
+
         SamplesBlocks res;
-        res.samples_block = makeSamplesBlock(filter, id_column, id_type, ts_timestamps, timestamp_type, used_kinds, samples_bucket_step);
+        res.samples_block = make_block(samples_bucket_step);
 
         if (recent_samples_bucket_step)
         {
@@ -785,7 +810,7 @@ namespace
             if (*recent_samples_bucket_step == samples_bucket_step)
                 res.recent_samples_block = res.samples_block;
             else
-                res.recent_samples_block = makeSamplesBlock(filter, id_column, id_type, ts_timestamps, timestamp_type, used_kinds, *recent_samples_bucket_step);
+                res.recent_samples_block = make_block(*recent_samples_bucket_step);
         }
 
         return res;

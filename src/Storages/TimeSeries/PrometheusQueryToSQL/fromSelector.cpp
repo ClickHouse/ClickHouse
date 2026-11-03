@@ -49,15 +49,14 @@ namespace
         /// SELECT timeSeriesIdToGroup(id) AS group, samples
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'samples')
         /// or, for a table storing native histogram samples (version MIN_WITH_NATIVE_HISTOGRAMS or later),
-        /// SELECT timeSeriesIdToGroup(id) AS group, timeSeriesThrowIfNotEmpty(samples, histograms, '<message>') AS samples
+        /// SELECT timeSeriesIdToGroup(id) AS group, timeSeriesThrowIfNotEmpty(samples, histograms.timestamp, '<message>') AS samples
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'samples')
         /// or
         /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
         ///
-        /// The table function returns the histogram samples of the selected series in the column `histograms` (cut to the same range),
-        /// which the PromQL functions don't support yet: `timeSeriesThrowIfNotEmpty` returns `samples` as is and throws NOT_IMPLEMENTED
-        /// when a block has a histogram sample, once per block. Requesting the column makes the selector read it for every such table.
+        /// The histogram timestamps are cut to the same range. `timeSeriesThrowIfNotEmpty` rejects histogram samples once per block
+        /// until the PromQL functions support them; requesting only the timestamps avoids reading the histogram payload.
         const bool table_has_histograms = (context.time_series_version >= TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS);
         SelectQueryBuilder builder;
 
@@ -70,13 +69,13 @@ namespace
         {
             ASTPtr samples = make_intrusive<ASTIdentifier>(ColumnNames::Samples);
 
-            /// timeSeriesThrowIfNotEmpty(samples, histograms, '<message>')
+            /// `timeSeriesThrowIfNotEmpty(samples, histograms.timestamp, '<message>')`
             if (table_has_histograms)
             {
                 samples = makeASTFunction(
                     "timeSeriesThrowIfNotEmpty",
                     std::move(samples),
-                    make_intrusive<ASTIdentifier>(ColumnNames::Histograms),
+                    make_intrusive<ASTIdentifier>("histograms.timestamp"),
                     make_intrusive<ASTLiteral>(String{HISTOGRAMS_NOT_SUPPORTED_MESSAGE}));
             }
 

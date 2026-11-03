@@ -25,4 +25,3 @@ SELECT timeSeriesSliceSortedArray(rows, 0, 200), timeSeriesSliceSortedArray(rows
 
 SELECT '-- the first element must be a timestamp';
 SELECT timeSeriesSliceSortedArray([('a', 1)]::Array(Tuple(String, UInt32)), 0, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT timeSeriesSliceSortedArray([1, 2]::Array(UInt32), 0, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

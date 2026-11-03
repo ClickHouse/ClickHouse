@@ -734,14 +734,12 @@ namespace
         DataTypePtr type;
     };
 
-    /// The columns of the samples table to read (see SamplesColumnToRead) for a query requesting `column_names` from this storage:
-    /// `timestamp` and `value` of a table storing one sample per row; `samples` of a table with buckets of samples, and `histograms`
-    /// when the table stores histogram samples and `return_columns = 'samples'`. The outer filter is `notEmpty` over the read arrays,
-    /// so the read arrays decide which rows exist: a consumer gets exactly the arrays it names, and a query naming none (e.g. `count()`
-    /// or `id` only) asks whether a row has samples of any kind, so every array is read.
+    /// Both sample kinds participate in the row-presence filter, independently of projection. An explicit request for only
+    /// `histograms.timestamp` (the PromQL guard) reads that subcolumn instead of the histogram payload, with the same time slicing.
     std::vector<SamplesColumnToRead> getSamplesColumnsToRead(
         const StorageTimeSeriesSelector::Configuration & config,
-        bool has_bucketed_samples)
+        bool has_bucketed_samples,
+        const Names & column_names)
     {
         if (!has_bucketed_samples)
             return {{TimeSeriesColumnNames::Timestamp, config.table_timestamp_type}, {TimeSeriesColumnNames::Value, config.table_value_type}};
@@ -751,6 +749,14 @@ namespace
             = config.table_histograms_type && (config.return_columns == StorageTimeSeriesSelector::Configuration::ReturnColumns::Samples);
         if (!histograms_returned)
             return {samples};
+
+        const bool timestamps_only = std::ranges::find(column_names, "histograms.timestamp") != column_names.end()
+            && std::ranges::none_of(column_names, [](const String & name)
+            {
+                return name == "histograms" || (name.starts_with("histograms.") && name != "histograms.timestamp");
+            });
+        if (timestamps_only)
+            return {samples, {"histograms.timestamp", std::make_shared<DataTypeArray>(config.table_timestamp_type)}};
 
         return {samples, {TimeSeriesColumnNames::Histograms, config.table_histograms_type}};
     }
@@ -1299,7 +1305,7 @@ void StorageTimeSeriesSelector::readImpl(
     auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
-    const auto columns_to_read = getSamplesColumnsToRead(config, bucket_step_seconds != 0);
+    const auto columns_to_read = getSamplesColumnsToRead(config, bucket_step_seconds != 0, column_names);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 

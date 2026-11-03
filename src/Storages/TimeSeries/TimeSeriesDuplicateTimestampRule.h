@@ -12,8 +12,8 @@ class TimeSeriesHistogramsColumnsView;
 /// duplicates within one INSERT, the aggregate functions `timeSeriesGroupArray` (through `timeseriesMaxValueForDuplicateTimestamp`)
 /// and `timeSeriesGroupArrayHistograms` to the duplicates across the rows of the samples tables, when parts are merged or read.
 /// Both must apply the same rule, or the stored result would depend on whether the duplicates arrived in one block or in two.
-/// The histogram rule orders the whole stored payload, so its result is also independent of the order of the parts in a merge
-/// (up to payloads the comparison of ClickHouse considers equal, see `compareHistograms`).
+/// The histogram rule compares counter reset hints only after the other payload elements, so clearing a hint during merging
+/// cannot change the winning payload (up to payloads the comparison of ClickHouse considers equal, see `compareHistograms`).
 class TimeSeriesDuplicateTimestampRule
 {
 public:
@@ -35,7 +35,8 @@ public:
     /// 1. the total count: `count_int` for integer histograms, `count_float` for float histograms, compared exactly across flavours;
     /// 2. `sum`;
     /// 3. the other elements in the stored order, each by the comparison of its column (`IColumn::compareAt`: arrays and tuples
-    ///    lexicographically, a proper prefix is less).
+    ///    lexicographically, a proper prefix is less); counter reset hints compare only the gauge marker here;
+    /// 4. for otherwise identical payloads, the counter reset hint, preferring unknown over known hints.
     /// Floats follow the comparison rules of ClickHouse (`CompareHelper`): a NaN is less than any number, two NaNs are equal, as are
     /// `0.0` and `-0.0`. So 0 means equal payloads up to those, and only then the kept sample depends on the order of the samples
     /// (the same limit as `floatSampleWins` has).

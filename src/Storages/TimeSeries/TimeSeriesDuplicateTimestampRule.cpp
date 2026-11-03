@@ -49,10 +49,29 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
     /// The timestamps are equal within a run of duplicates, and the counts and the sum are equal or were decided above.
     for (const IColumn * column : view.getColumnsInStoredOrder())
     {
+        if (column == &view.counter_reset_hint)
+        {
+            /// Clearing a counter hint during merging must not change which histogram payload wins a later merge.
+            const bool lhs_gauge = view.counter_reset_hint.getData()[lhs] == TimeSeriesHistogramCounterResetHint::Gauge;
+            const bool rhs_gauge = view.counter_reset_hint.getData()[rhs] == TimeSeriesHistogramCounterResetHint::Gauge;
+            if (lhs_gauge != rhs_gauge)
+                return lhs_gauge ? 1 : -1;
+            continue;
+        }
         if (const int result = column->compareAt(lhs, rhs, *column, nan_is_less))
             return result;
     }
-    return 0;
+
+    /// Only identical payloads are ordered by their hints. Prefer an unknown hint so a duplicate cannot restore a cleared hint.
+    const UInt8 lhs_hint = view.counter_reset_hint.getData()[lhs];
+    const UInt8 rhs_hint = view.counter_reset_hint.getData()[rhs];
+    if (lhs_hint == rhs_hint)
+        return 0;
+    if (lhs_hint == TimeSeriesHistogramCounterResetHint::Unknown)
+        return 1;
+    if (rhs_hint == TimeSeriesHistogramCounterResetHint::Unknown)
+        return -1;
+    return lhs_hint > rhs_hint ? 1 : -1;
 }
 
 }

@@ -1118,10 +1118,19 @@ Because of that, reading the table before a merge can return several rows for th
 From [version](#schema-versioning) 12 a row also holds the native histogram samples of the time series within the bucket in the column
 `histograms`, an array of tuples sorted by timestamp and merged by the aggregate function `timeSeriesGroupArrayHistograms` (for histograms
 with the same timestamp the one with the greatest total count is kept, on ties the greatest sum, then the other elements decide).
-A histogram is stored as it was sent: an integer histogram keeps
-its counts as `Int64` in the `*_int` elements, a float histogram as `Float64` in the `*_float` elements, the other flavour's elements are 0
-and empty, and bit 0 of `flags` tells the flavour. The buckets of a side are pairs of the bucket index and the count sorted by index.
+An integer histogram keeps its counts as `Int64` in the `*_int` elements, a float histogram as `Float64` in the `*_float` elements;
+the other flavour's elements are 0 and empty, and bit 0 of `flags` tells the flavour.
+The buckets of a side are pairs of the bucket index and the count sorted by index.
 A row of a float-only series has an empty `histograms` array, a row of a histogram-only series has an empty `samples` array.
+
+Counter reset hints are updated after sorting and deduplication within each input series. For consecutive non-stale counter histograms
+of the same representation, a decrease in the total count marks a reset.
+For matching schemas and zero thresholds, a decrease in any bucket count, the disappearance of a populated bucket, or a change in
+custom bucket boundaries also marks a reset. Otherwise, schema or zero-threshold changes leave the hint unknown unless a valid explicit
+reset hint already establishes a reset. Hints whose predecessor changed are recalculated against the new predecessor.
+The first sample keeps its supplied hint because its predecessor is unavailable; samples from earlier inserts are not consulted.
+Gauge markers are preserved, except that stale samples always have an unknown hint. Background merges clear counter hints where a
+sample's predecessor changes or separate input arrays are joined, preserving gauge markers (see `timeSeriesGroupArrayHistograms`).
 
 The _samples_ table must have columns:
 
@@ -1649,7 +1658,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
 | 11 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store buckets of samples: a row keeps the samples of one time series within one time bucket (the columns `samples`, `bucket`, `min_time`, `max_time`) in an `AggregatingMergeTree` ordered by `(id, bucket)`. The settings [`samples_bucket_step_seconds`](#settings), [`samples_partition_by`](#settings), [`samples_index_granularity_bytes`](#settings), [`recent_samples_bucket_step_seconds`](#settings) and [`recent_samples_index_granularity_bytes`](#settings) were introduced, and the defaults of [`samples_index_granularity`](#settings) and [`recent_samples_index_granularity`](#settings) changed. Tables of earlier versions store one sample per row in the columns `timestamp` and `value`: they can still be read, written into and queried with PromQL, and the [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) table function reads them without a conversion when its argument `return_columns` is `'timestamp_and_value'` |
-| 12 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples, as they were sent (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count) and merged by `timeSeriesGroupArrayHistograms`; the outer columns `histograms.*` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
+| 12 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArrayHistograms`; the outer columns `histograms.*` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
 
 # Functions {#functions}
 
