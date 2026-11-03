@@ -1,5 +1,5 @@
--- A TimeSeries table must register its external target tables as referential dependencies,
--- the same way a materialized view registers its external "TO" table. With
+-- A TimeSeries table of version 9 or earlier could have external target tables, and it must register them as referential
+-- dependencies, the same way a materialized view registers its external "TO" table. With
 -- check_referential_table_dependencies = 1 an external target table cannot be dropped
 -- while the TimeSeries table referencing it still exists.
 
@@ -40,7 +40,7 @@ CREATE TABLE metrics_table
     help String
 ) ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
-CREATE TABLE ts ENGINE = TimeSeries
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 8
 DATA samples_table TAGS tags_table TIME RANGES time_ranges_table METRICS metrics_table;
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
@@ -78,7 +78,7 @@ CREATE TABLE recent_table
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
 CREATE TABLE ts_recent ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_table;
+SETTINGS version = 8, recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_table;
 
 DROP TABLE recent_table; -- { serverError HAVE_DEPENDENT_OBJECTS }
 RENAME TABLE recent_table TO recent_table_renamed; -- { serverError HAVE_DEPENDENT_OBJECTS }

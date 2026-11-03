@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <unordered_map>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -43,7 +44,8 @@ public:
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const String & source_table_regexp_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool keep_inferred_source_metadata = false);
 
     std::string getName() const override { return "Merge"; }
 
@@ -140,6 +142,20 @@ private:
 
     DatabaseNameOrRegexp database_name_or_regexp;
 
+    /// The metadata of each data lake source table as the schema inference of the `merge` table function read it, so
+    /// that its read uses the same snapshot instead of refreshing the table again. Keyed by the table, not the storage
+    /// object, because a database may build a new object on each lookup (`DataLakeCatalog` does). A table without a UUID
+    /// is identified only by its storage object, since its name can be given to another table in the meantime. So a Glue or
+    /// Hive catalog table (no UUID, a new object per lookup) is refreshed again by the read, which can see a newer schema.
+    struct InferredSourceMetadata
+    {
+        std::weak_ptr<IStorage> storage;
+        StorageMetadataPtr metadata;
+    };
+    using SourceMetadata = std::unordered_map<
+        StorageID, InferredSourceMetadata, StorageID::DatabaseAndTableNameAndUUIDHash, StorageID::DatabaseAndTableNameAndUUIDEqual>;
+    SourceMetadata inferred_source_metadata;
+
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;
 
@@ -154,14 +170,15 @@ private:
         const ContextPtr & context,
         const DatabaseNameOrRegexp & database_name_or_regexp,
         size_t max_tables_to_look,
-        const IStorage * ignore_self);
+        const IStorage * ignore_self,
+        SourceMetadata * source_metadata);
 
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context, SourceMetadata * source_metadata) const;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -282,7 +299,7 @@ private:
     class RowPolicyData
     {
     public:
-        RowPolicyData(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
+        RowPolicyData(RowPolicyFilterPtr, StorageMetadataPtr, ContextPtr);
 
         /// Add to data stream columns that are needed only for row policies
         ///  SELECT x from T  if  T has row policy  y=42

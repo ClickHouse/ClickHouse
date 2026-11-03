@@ -106,6 +106,10 @@ struct TopKFilterInfo
 
     /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
     bool dynamic_filter_pending = false;
+
+    /// Set once `__topKFilter` drops the rows equal to the threshold. Only for `ORDER BY` of a single `String` column:
+    /// for `GROUP BY key LIMIT n`, the later rows of the group on the boundary still count in its aggregates.
+    std::shared_ptr<std::atomic<bool>> rows_equal_to_threshold_dropped = nullptr;
 };
 
 namespace QueryPlanOptimizations
@@ -215,9 +219,13 @@ public:
         bool has_exact_ranges = false;
         /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
         bool exact_ranges_excluded = false;
-        /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
-        /// not narrowed by this condition.
-        ConditionTemplate<KeyCondition>::Ptr key_condition_not_applied;
+        /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
+        /// from the analysis done on the initiator.
+        bool index_analysis_was_already_done_on_initiator = false;
+        /// The filter constrains the primary key of the analyzed parts (the same criterion the
+        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
+        /// the read.
+        bool pk_condition_useful = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -240,7 +248,8 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
-            , key_condition_not_applied(other.key_condition_not_applied)
+            , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
+            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -262,7 +271,8 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
-            , key_condition_not_applied(std::move(other.key_condition_not_applied))
+            , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
+            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -424,6 +434,10 @@ public:
     bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
+
+    /// Whether every part surviving pruning has the value of its virtual row in the index.
+    /// Loads only those parts' primary indexes; returns false if part filters are unavailable.
+    bool everyPartHasVirtualRowBound(bool read_in_reverse) const;
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -513,6 +527,7 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -536,7 +551,13 @@ public:
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
-    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
+    /// A deserialized read knows only its storage, so the initiator's own copy is coordinated under the
+    /// storage name too, also when it reads through a table function.
+    void enableParallelReadingFromReplicasForSerialization()
+    {
+        is_parallel_reading_from_replicas = true;
+        query_info.parallel_replicas_coordinated_under_storage_name = true;
+    }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
@@ -721,6 +742,9 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    /// The name this read is coordinated under, which every replica must announce identically.
+    String getParallelReplicasStreamId() const;
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
@@ -836,6 +860,12 @@ private:
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
 
+    /// Whether the `FINAL` merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
+    bool canUseVirtualRowWithFinal() const;
+
+    /// The columns of a virtual row: the leading primary key columns the conversions read.
+    Block makeVirtualRowHeader() const;
+
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -920,6 +950,7 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
+    bool allow_spreading_small_read = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool has_lazily_read_columns = false;

@@ -1,0 +1,26 @@
+-- The left read must be in order
+['ReadType: InOrder','ReadType: Default']
+['ReadType: InOrder','ReadType: Default']
+-- INNER ALL: fanout 2, in the left order
+1664	832	1
+-- LEFT ALL: matched rows have fanout 2, unmatched rows get defaults, in the left order
+1832	168	1
+-- LEFT ANY: exactly one output row per left row, in the left order
+1000	168	1
+-- INNER ANY: one output row per matched key (hash join parity), in the left order
+125	125	1
+-- The results match the hash join
+1
+1
+-- A one-sided ON condition (mask column) with the order-preserving probe
+1419	581	1
+-- The right side flushed to disk (forced by max_rows_in_join)
+1664	832	1
+-- Repeated-key left rows share one match list: the match index stays linear
+0	0	0
+-- Wide rows: the output chunks are capped by bytes, not only by rows
+0	2086654387325780537
+-- DISTINCT in order over the join (issue #109216)
+832
+-- Aggregation in order over the join (issue #110662)
+1	1	100
