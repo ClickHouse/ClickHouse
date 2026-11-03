@@ -612,6 +612,9 @@ struct AggregateProjectionCandidates
     /// This flag means that DAG for projection candidate should be used in FilterStep.
     bool has_filter = false;
 
+    /// The value of `optimize_constant_columns_after_filter` of the original filters, for the replacement FilterStep.
+    std::optional<bool> optimize_constant_columns_after_filter;
+
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
 
@@ -796,6 +799,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     auto query_index = buildDAGIndex(*dag.dag);
 
     candidates.has_filter = dag.filter_node;
+    candidates.optimize_constant_columns_after_filter = dag.optimize_constant_columns_after_filter;
     /// We can't use minmax projection if filter has non-deterministic functions.
     if (dag.filter_node && !VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
         can_use_minmax_projection = false;
@@ -923,6 +927,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     auto query_index = buildDAGIndex(*dag.dag);
     candidates.has_filter = dag.filter_node;
+    candidates.optimize_constant_columns_after_filter = dag.optimize_constant_columns_after_filter;
 
     /// The header is passed through, so a replacement must reproduce all of it, positions included.
     const Names keys = distinct.getOutputHeader()->getNames();
@@ -1714,11 +1719,13 @@ UseProjectionsResult optimizeUseAggregateProjections(
         {
             /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
             const String result_name = best_candidate->dag.getOutputs().front()->result_name;
-            aggregate_projection_node->step = std::make_unique<FilterStep>(
+            auto filter_step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
                 result_name,
                 true);
+            filter_step->setOptimizeConstantColumnsAfterFilter(candidates.optimize_constant_columns_after_filter);
+            aggregate_projection_node->step = std::move(filter_step);
         }
         else
             aggregate_projection_node->step

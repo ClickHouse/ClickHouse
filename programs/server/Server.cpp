@@ -70,6 +70,7 @@
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/ConnectionRegistry.h>
@@ -263,14 +264,19 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
+    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
+    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_rcvbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_sndbuf;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -2689,6 +2695,15 @@ try
             validatePrometheusConstantLabels(
                 *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
 
+            /// `setsockopt` takes `int`. Reject before `config().replace`: `ConfigReloader` does not roll back.
+            {
+                ServerSettings reload_server_settings;
+                reload_server_settings.loadSettingsFromConfig(*reload_config);
+                StreamingExchangeProtocol::validateSocketBufferSizes(
+                    reload_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                    reload_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
@@ -2845,8 +2860,13 @@ try
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setKafkaLocksRefreshPolls(new_server_settings[ServerSetting::stream_kafka_locks_refresh_polls]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
             global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
+            global_context->setDistributedCacheTemporaryDataPoolBehaviourOnLimit(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit]);
+            global_context->setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -3114,6 +3134,10 @@ try
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
                 });
+
+            StreamingExchangeProtocol::setSocketBufferSizes(
+                new_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                new_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
