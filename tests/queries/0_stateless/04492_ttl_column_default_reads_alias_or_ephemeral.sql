@@ -1,0 +1,63 @@
+-- A column TTL resets an expired value to its DEFAULT / MATERIALIZED expression even when that expression reads an ALIAS or an EPHEMERAL column.
+
+DROP TABLE IF EXISTS t_wide;
+CREATE TABLE t_wide (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), w String DEFAULT a TTL d + INTERVAL 1 DAY,
+    PROJECTION p (SELECT k, w ORDER BY k)) ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_wide (d, k, q, w) SELECT '2000-01-01', number, toString(number), 'stored' FROM numbers(100);
+OPTIMIZE TABLE t_wide FINAL;
+SELECT 'wide base', countIf(w = concat(q, 'x')), count() FROM t_wide SETTINGS optimize_use_projections = 0;
+SELECT 'wide proj', countIf(w = concat(toString(k), 'x')), count() FROM t_wide SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_wide;
+
+DROP TABLE IF EXISTS t_compact;
+CREATE TABLE t_compact (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), w String DEFAULT a TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_compact (d, k, q, w) SELECT '2000-01-01', number, toString(number), 'stored' FROM numbers(100);
+OPTIMIZE TABLE t_compact FINAL;
+SELECT 'compact', countIf(w = concat(q, 'x')), count() FROM t_compact;
+DROP TABLE t_compact;
+
+DROP TABLE IF EXISTS t_partial;
+CREATE TABLE t_partial (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), b String ALIAS upper(a),
+    e String EPHEMERAL 'eph',
+    w String DEFAULT a TTL d + INTERVAL 1 DAY,
+    w2 String DEFAULT b TTL d + INTERVAL 1 DAY,
+    w3 String DEFAULT concat(e, '-xx') TTL d + INTERVAL 1 DAY,
+    w4 String DEFAULT arrayMap(z -> concat(z, a), ['1'])[1] TTL d + INTERVAL 1 DAY,
+    m String MATERIALIZED concat(a, '!') TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_partial (d, k, q, e, w, w2, w3, w4) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number),
+    'given', 'stored', 'stored', 'stored', 'stored' FROM numbers(100);
+OPTIMIZE TABLE t_partial FINAL;
+SELECT 'partial', d < '2050-01-01' AS expired, countIf(w = concat(q, 'x')), countIf(w2 = upper(concat(q, 'x'))),
+    countIf(w3 = 'eph-xx'), countIf(w4 = concat('1', q, 'x')), countIf(m = concat(q, 'x!')),
+    countIf(w = 'stored' AND w2 = 'stored' AND w3 = 'stored' AND w4 = 'stored'), count()
+    FROM t_partial GROUP BY expired ORDER BY expired;
+DROP TABLE t_partial;
+
+DROP TABLE IF EXISTS t_recompute;
+CREATE TABLE t_recompute (d Date, k UInt32, q String, w String DEFAULT concat(q, '-') TTL d + INTERVAL 1 DAY,
+    c String ALIAS concat(w, '!'), r String MATERIALIZED c)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_recompute (d, k, q, w) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number), 'stored' FROM numbers(100);
+OPTIMIZE TABLE t_recompute FINAL;
+SELECT 'recompute', d < '2050-01-01' AS expired, countIf(w = concat(q, '-') AND r = concat(q, '-!')), countIf(w = 'stored' AND r = 'stored!'), count()
+    FROM t_recompute GROUP BY expired ORDER BY expired;
+DROP TABLE t_recompute;
+
+DROP TABLE IF EXISTS t_update;
+CREATE TABLE t_update (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), w String DEFAULT a TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_update (d, k, q, w) SELECT '2100-01-01', number, toString(number), 'stored' FROM numbers(100);
+ALTER TABLE t_update UPDATE d = '2000-01-01' WHERE k % 2 = 0 SETTINGS mutations_sync = 2;
+SELECT 'update', countIf(w = concat(q, 'x')), countIf(w = 'stored') FROM t_update;
+DROP TABLE t_update;
+
+DROP TABLE IF EXISTS t_materialize;
+CREATE TABLE t_materialize (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), w String DEFAULT a TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000, materialize_ttl_recalculate_only = 0;
+INSERT INTO t_materialize (d, k, q, w) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number), 'stored' FROM numbers(100);
+ALTER TABLE t_materialize MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'materialize ttl', countIf(w = concat(q, 'x')), countIf(w = 'stored') FROM t_materialize;
+DROP TABLE t_materialize;

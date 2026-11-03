@@ -8,6 +8,9 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Processors/Port.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
@@ -37,6 +40,20 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
     }
 
     return {expr.expression, where_expr.expression};
+}
+
+static bool hasLambdaParameterNamedLikeColumn(const IAST & ast, const ColumnsDescription & columns)
+{
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            if (columns.has(name) || columns.hasNested(name))
+                return true;
+
+    for (const auto & child : ast.children)
+        if (hasLambdaParameterNamedLikeColumn(*child, columns))
+            return true;
+
+    return false;
 }
 
 /// A column TTL resets its column to the default, but the `MATERIALIZED` columns computed from it keep
@@ -112,8 +129,9 @@ std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform
         if (expression->getActionsDAG().hasNonDeterministic())
             continue;
 
+        /// An expanded bare ALIAS reference keeps the alias's name, and `getActions(true)` names the result by it.
         levels[level_of[column.name]].push_back(
-            {column.name, expression, expression_ast->getColumnName(), expression->getRequiredColumns()});
+            {column.name, expression, expression_ast->getAliasOrColumnName(), expression->getRequiredColumns()});
     }
 
     return levels;
@@ -184,6 +202,18 @@ TTLTransform::TTLTransform(
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
 
+    /// A part stores no ALIAS and no EPHEMERAL column, so a default reads them through their expressions, as a read
+    /// of a part without the column does. Outside INSERT an EPHEMERAL column is its default, so expand it as an ALIAS.
+    std::optional<ColumnsDescription> columns_with_ephemeral_as_alias;
+    if (auto ephemeral_columns = storage_columns.getEphemeral(); !ephemeral_columns.empty())
+    {
+        columns_with_ephemeral_as_alias.emplace(storage_columns);
+        for (const auto & ephemeral_column : ephemeral_columns)
+            columns_with_ephemeral_as_alias->modify(
+                ephemeral_column.name, [](ColumnDescription & column) { column.default_desc.kind = ColumnDefaultKind::Alias; });
+    }
+    const auto & columns_to_expand = columns_with_ephemeral_as_alias ? *columns_with_ephemeral_as_alias : storage_columns;
+
     auto build_default_expr = [&](const String & name)
     {
         using Result = std::pair<ExpressionActionsPtr, String>;
@@ -192,10 +222,14 @@ TTLTransform::TTLTransform(
             return Result{};
         const auto & column = storage_columns.get(name);
         auto default_ast = it->second.expression->clone();
+        /// A lambda parameter named like a column would capture the free names of an expanded definition.
+        if (replaceAliasColumnsInQuery(default_ast, columns_to_expand, {}, storage_.getContext())
+            && hasLambdaParameterNamedLikeColumn(*default_ast, storage_columns))
+            default_ast = it->second.expression->clone();
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
         auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
         auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
-        return Result{actions, default_ast->getColumnName()};
+        return Result{actions, default_ast->getAliasOrColumnName()};
     };
 
     for (const auto & expired_column : expired_columns)
