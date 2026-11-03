@@ -110,6 +110,22 @@ OPTIMIZE TABLE t_capture_dotted FINAL; -- { serverError NOT_FOUND_COLUMN_IN_BLOC
 SELECT 'capture dotted', countIf(w = 'stored'), count() FROM t_capture_dotted;
 DROP TABLE t_capture_dotted;
 
+DROP TABLE IF EXISTS t_local_alias;
+CREATE TABLE t_local_alias (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), e String EPHEMERAL 'eph',
+    w String DEFAULT arrayMap(z -> concat((z AS a), a), ['D'])[1] TTL d + INTERVAL 1 DAY,
+    w2 String DEFAULT arrayMap(z -> concat((z AS a), (a AS r)), ['D'])[1] TTL d + INTERVAL 1 DAY,
+    w3 String DEFAULT arrayMap(z -> concat((z AS e), e), ['D'])[1] TTL d + INTERVAL 1 DAY,
+    w4 String DEFAULT concat((a AS r), r) TTL d + INTERVAL 1 DAY,
+    m String MATERIALIZED arrayMap(z -> concat((z AS a), (a AS r), w4), ['Z'])[1])
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_local_alias (d, k, q, e, w, w2, w3, w4) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number),
+    'given', 'stored', 'stored', 'stored', 'stored' FROM numbers(100);
+OPTIMIZE TABLE t_local_alias FINAL;
+SELECT 'local alias', d < '2050-01-01' AS expired, countIf(w = 'DD' AND w2 = 'DD' AND w3 = 'DD'), countIf(w4 = concat(q, 'x', q, 'x')),
+    countIf(m = 'ZZstored'), countIf(w = 'stored' AND w2 = 'stored' AND w3 = 'stored' AND w4 = 'stored'), count()
+    FROM t_local_alias GROUP BY expired ORDER BY expired;
+DROP TABLE t_local_alias;
+
 DROP TABLE IF EXISTS t_update;
 CREATE TABLE t_update (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), w String DEFAULT a TTL d + INTERVAL 1 DAY)
     ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;

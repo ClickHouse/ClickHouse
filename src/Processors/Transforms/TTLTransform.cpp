@@ -68,8 +68,20 @@ static bool hasFreeIdentifierIn(const IAST & ast, NameSet bound)
     return false;
 }
 
-/// Whether expanding an ALIAS column referenced in `ast` would bring in a name bound by an enclosing lambda parameter.
-static bool isAliasExpansionCapturedByLambda(const IAST & ast, const ColumnsDescription & columns, const NameSet & bound)
+static void collectAliases(const IAST & ast, NameSet & aliases)
+{
+    checkStackSize();
+
+    if (auto alias = ast.tryGetAlias(); !alias.empty())
+        aliases.insert(std::move(alias));
+
+    for (const auto & child : ast.children)
+        collectAliases(*child, aliases);
+}
+
+/// Whether expanding an ALIAS column referenced in `ast` would bring in a name bound by an enclosing lambda parameter,
+/// or replace a reference to one of the expression's `aliases`, which the analyzer resolves to the alias, not to the column.
+static bool isAliasExpansionCaptured(const IAST & ast, const ColumnsDescription & columns, const NameSet & aliases, const NameSet & bound)
 {
     checkStackSize();
 
@@ -78,7 +90,7 @@ static bool isAliasExpansionCapturedByLambda(const IAST & ast, const ColumnsDesc
         NameSet inner = bound;
         for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
             inner.insert(name);
-        return isAliasExpansionCapturedByLambda(*function->arguments->children[1], columns, inner);
+        return isAliasExpansionCaptured(*function->arguments->children[1], columns, aliases, inner);
     }
 
     if (const auto * identifier = ast.as<ASTIdentifier>())
@@ -87,18 +99,25 @@ static bool isAliasExpansionCapturedByLambda(const IAST & ast, const ColumnsDesc
         if (!column || column->default_desc.kind != ColumnDefaultKind::Alias || bound.contains(identifier->name()))
             return false;
 
-        if (bound.contains(identifier->name_parts.front()))
+        if (aliases.contains(identifier->name()) || bound.contains(identifier->name_parts.front()))
             return true;
 
         return hasFreeIdentifierIn(*column->default_desc.expression, bound)
-            || isAliasExpansionCapturedByLambda(*column->default_desc.expression, columns, bound);
+            || isAliasExpansionCaptured(*column->default_desc.expression, columns, aliases, bound);
     }
 
     for (const auto & child : ast.children)
-        if (isAliasExpansionCapturedByLambda(*child, columns, bound))
+        if (isAliasExpansionCaptured(*child, columns, aliases, bound))
             return true;
 
     return false;
+}
+
+static bool isAliasExpansionCaptured(const IAST & ast, const ColumnsDescription & columns)
+{
+    NameSet aliases;
+    collectAliases(ast, aliases);
+    return isAliasExpansionCaptured(ast, columns, aliases, {});
 }
 
 /// A column TTL resets its column to the default, but the `MATERIALIZED` columns computed from it keep
@@ -164,7 +183,7 @@ std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform
         if (!dependents.contains(column.name) || unrecomputable_columns.contains(column.name))
             continue;
 
-        if (isAliasExpansionCapturedByLambda(*column.default_desc.expression, storage_columns, {}))
+        if (isAliasExpansionCaptured(*column.default_desc.expression, storage_columns))
             continue;
 
         /// The graph keeps its expression pristine for every caller, and `analyze` rewrites in place.
@@ -271,7 +290,7 @@ TTLTransform::TTLTransform(
             return Result{};
         const auto & column = storage_columns.get(name);
         auto default_ast = it->second.expression->clone();
-        if (!isAliasExpansionCapturedByLambda(*default_ast, columns_to_expand, {}))
+        if (!isAliasExpansionCaptured(*default_ast, columns_to_expand))
             replaceAliasColumnsInQuery(default_ast, columns_to_expand, {}, storage_.getContext());
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
         /// The result is looked up by name in a block of the table's columns, which an alias could name.
