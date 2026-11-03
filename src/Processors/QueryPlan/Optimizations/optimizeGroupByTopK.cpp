@@ -333,17 +333,86 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     return threshold_tracker;
 }
 
-/// Puts the heap over all grouping keys ascending, the order of the sort synthesized for `GROUP BY ... LIMIT` without
-/// `ORDER BY`. That sort only pays off while the heap bounds the hash table, so the heap never freezes.
-static void applyTopKByAllKeys(
+/// The hash table statistics expect few enough groups that the heap would not pay off.
+static bool fewGroupsExpected(const AggregatingStep & aggregating_step, size_t limit, const Optimization::ExtraSettings & settings)
+{
+    const auto & params = aggregating_step.getParams();
+    if (settings.is_explain || !params.stats_collecting_params.isCollectionAndUseEnabled())
+        return false;
+
+    const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
+    return hint && static_cast<Float64>(hint->sum_of_sizes) <= static_cast<Float64>(limit) * 1.5;
+}
+
+/// The heap of `ORDER BY` over a prefix of the grouping keys, or nothing if the sort is not one.
+static std::optional<Aggregator::Params::TopKParams> topKOfSort(
+    const SortDescription & sort_description,
+    const Names & keys,
+    const ExpressionStep * expression_step,
+    size_t limit,
+    const Optimization::ExtraSettings & settings)
+{
+    if (sort_description.empty())
+        return {};
+
+    const size_t num_key_columns = std::min(sort_description.size(), keys.size());
+
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
+    directions.reserve(num_key_columns);
+    nulls_directions.reserve(num_key_columns);
+
+    for (size_t i = 0; i < num_key_columns; ++i)
+    {
+        if (sort_description[i].column_name != keys[i])
+            return {};
+
+        if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), keys[i]))
+            return {};
+
+        if (sort_description[i].collator)
+            return {};
+
+        directions.push_back(sort_description[i].direction);
+        nulls_directions.push_back(sort_description[i].nulls_direction);
+    }
+
+    return Aggregator::Params::TopKParams{
+        .k = limit,
+        .directions = std::move(directions),
+        .nulls_directions = std::move(nulls_directions),
+        .key_columns = num_key_columns,
+        .observation_rows = settings.top_k_optimization_observation_rows,
+        .shared_boundary = settings.top_k_optimization_shared_boundary,
+        .threshold_tracker = nullptr,
+    };
+}
+
+static void applyTopK(
     QueryPlan::Node * aggregating_node,
     AggregatingStep & aggregating_step,
-    size_t limit,
+    Aggregator::Params::TopKParams top_k_params,
     const Optimization::ExtraSettings & settings,
     QueryPlan::Nodes & nodes)
 {
-    const size_t num_key_columns = aggregating_step.getParams().keys.size();
-    Aggregator::Params::TopKParams top_k_params{
+    top_k_params.threshold_tracker = tryAttachDynamicFilter(
+        aggregating_node,
+        aggregating_step,
+        top_k_params.k,
+        top_k_params.key_columns,
+        top_k_params.directions,
+        top_k_params.nulls_directions,
+        settings,
+        nodes);
+
+    aggregating_step.applyTopKOptimization(std::move(top_k_params));
+}
+
+/// The heap over all grouping keys ascending, the order of the sort synthesized for `GROUP BY ... LIMIT` without
+/// `ORDER BY`. That sort only pays off while the heap bounds the hash table, so the heap never freezes.
+static Aggregator::Params::TopKParams topKByAllKeys(size_t num_key_columns, size_t limit, const Optimization::ExtraSettings & settings)
+{
+    return Aggregator::Params::TopKParams{
         .k = limit,
         .directions = std::vector<int>(num_key_columns, 1),
         .nulls_directions = std::vector<int>(num_key_columns, 1),
@@ -352,18 +421,6 @@ static void applyTopKByAllKeys(
         .shared_boundary = settings.top_k_optimization_shared_boundary,
         .threshold_tracker = nullptr,
     };
-
-    top_k_params.threshold_tracker = tryAttachDynamicFilter(
-        aggregating_node,
-        aggregating_step,
-        limit,
-        num_key_columns,
-        top_k_params.directions,
-        top_k_params.nulls_directions,
-        settings,
-        nodes);
-
-    aggregating_step.applyTopKOptimization(std::move(top_k_params));
 }
 
 /// `GROUP BY ... LIMIT n` without `ORDER BY` that merges the partial states of parallel replicas:
@@ -450,7 +507,60 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
         plan_fragment_read->enableGroupByTopK(limit);
 
     for (auto * aggregating_node : local_aggregating_nodes)
-        applyTopKByAllKeys(aggregating_node, typeid_cast<AggregatingStep &>(*aggregating_node->step), limit, settings, nodes);
+    {
+        auto & aggregating_step = typeid_cast<AggregatingStep &>(*aggregating_node->step);
+        auto top_k_params = topKByAllKeys(aggregating_step.getParams().keys.size(), limit, settings);
+        applyTopK(aggregating_node, aggregating_step, std::move(top_k_params), settings, nodes);
+    }
+}
+
+/// `GROUP BY ... ORDER BY ... LIMIT n` over a prefix of the keys that merges the partial states of plan-based parallel replicas:
+///
+///   Limit - Sorting - [Expression] - MergingAggregated - Union - Aggregating (the local replica, partial)
+///                                                              - ReadFromParallelReplicas
+///
+/// A replica that plans its own query puts the heap on its partial aggregation (`applyTopKPushdownToPartialAggregation`),
+/// but a plan-based one is split into the partial aggregation and the merge after planning. The local one gets the heap
+/// of the single-node aggregation here, so that automatic parallel replicas can match the two. The fragment of the other
+/// replicas is already serialized, and they keep all their groups, which the sort handles.
+static void tryOptimizeOrderedGroupByTopKOverPlanFragments(
+    QueryPlan::Node * merging_node,
+    const SortingStep & sorting_step,
+    const ExpressionStep * expression_step,
+    size_t limit,
+    const Optimization::ExtraSettings & settings,
+    QueryPlan::Nodes & nodes)
+{
+    const auto & merging_step = typeid_cast<const MergingAggregatedStep &>(*merging_node->step);
+    const auto & params = merging_step.getParams();
+    if (!merging_step.isFinal() || merging_step.isGroupingSets() || params.overflow_row || settings.max_rows_to_group_by > 0
+        || params.keys.empty() || merging_node->children.size() != 1)
+        return;
+
+    if (merging_step.memoryBoundMergingWillBeUsed())
+        return;
+
+    QueryPlan::Node * input_node = merging_node->children.front();
+    if (!typeid_cast<const UnionStep *>(input_node->step.get()))
+        return;
+
+    const auto & sources = input_node->children;
+    const auto is_plan_fragment_read = [](const QueryPlan::Node * source)
+    { return typeid_cast<const ReadFromParallelReplicasStep *>(source->step.get()) != nullptr; };
+    if (!std::ranges::any_of(sources, is_plan_fragment_read))
+        return;
+
+    for (auto * source : sources)
+    {
+        auto * aggregating_step = validateAggregatingStep(source, /*final=*/ false);
+        if (!aggregating_step || fewGroupsExpected(*aggregating_step, limit, settings))
+            continue;
+
+        const auto & keys = aggregating_step->getParams().keys;
+        auto top_k_params = topKOfSort(sorting_step.getSortDescription(), keys, expression_step, limit, settings);
+        if (top_k_params)
+            applyTopK(source, *aggregating_step, std::move(*top_k_params), settings, nodes);
+    }
 }
 
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -547,9 +657,12 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         next_node = next_node->children.front();
     }
 
-    if (!sorting_step && typeid_cast<const MergingAggregatedStep *>(next_node->step.get()))
+    if (typeid_cast<const MergingAggregatedStep *>(next_node->step.get()))
     {
-        tryOptimizeGroupByTopKOverRemoteMerge(node_above_aggregation, next_node, limit, settings, nodes);
+        if (sorting_step)
+            tryOptimizeOrderedGroupByTopKOverPlanFragments(next_node, *sorting_step, expression_step, limit, settings, nodes);
+        else
+            tryOptimizeGroupByTopKOverRemoteMerge(node_above_aggregation, next_node, limit, settings, nodes);
         return 0;
     }
 
@@ -560,51 +673,23 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
     QueryPlan::Node * aggregating_node = next_node;
     const auto & params = aggregating_step->getParams();
 
-    if (!settings.is_explain && params.stats_collecting_params.isCollectionAndUseEnabled())
-    {
-        const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-        if (hint && static_cast<Float64>(hint->sum_of_sizes) <= static_cast<Float64>(limit) * 1.5)
-            return 0;
-    }
+    if (fewGroupsExpected(*aggregating_step, limit, settings))
+        return 0;
 
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
-    size_t num_key_columns = 0;
+    std::optional<Aggregator::Params::TopKParams> top_k_params;
 
     if (sorting_step)
     {
-        const auto & sort_description = sorting_step->getSortDescription();
-        if (sort_description.empty())
+        top_k_params = topKOfSort(sorting_step->getSortDescription(), params.keys, expression_step, limit, settings);
+        if (!top_k_params)
             return 0;
-
-        num_key_columns = std::min(sort_description.size(), params.keys.size());
-
-        directions.reserve(num_key_columns);
-        nulls_directions.reserve(num_key_columns);
-
-        for (size_t i = 0; i < num_key_columns; ++i)
-        {
-            if (sort_description[i].column_name != params.keys[i])
-                return 0;
-
-            if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
-                return 0;
-
-            if (sort_description[i].collator)
-                return 0;
-
-            directions.push_back(sort_description[i].direction);
-            nulls_directions.push_back(sort_description[i].nulls_direction);
-        }
     }
     else
     {
-        num_key_columns = params.keys.size();
-        directions.assign(num_key_columns, 1);
-        nulls_directions.assign(num_key_columns, 1);
+        top_k_params = topKByAllKeys(params.keys.size(), limit, settings);
 
         SortDescription sort_description;
-        sort_description.reserve(num_key_columns);
+        sort_description.reserve(params.keys.size());
 
         for (const auto & key : params.keys)
             sort_description.emplace_back(key, /*direction=*/ 1, /*nulls_direction=*/ 1);
@@ -628,29 +713,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             *sort_node.step->getOutputHeader(), *aggregating_node->step->getOutputHeader()));
     }
 
-    const bool synthetic_sort = sorting_step == nullptr;
-
-    Aggregator::Params::TopKParams top_k_params{
-        .k = limit,
-        .directions = std::move(directions),
-        .nulls_directions = std::move(nulls_directions),
-        .key_columns = num_key_columns,
-        .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
-        .shared_boundary = settings.top_k_optimization_shared_boundary,
-        .threshold_tracker = nullptr,
-    };
-
-    top_k_params.threshold_tracker = tryAttachDynamicFilter(
-        aggregating_node,
-        *aggregating_step,
-        limit,
-        num_key_columns,
-        top_k_params.directions,
-        top_k_params.nulls_directions,
-        settings,
-        nodes);
-
-    aggregating_step->applyTopKOptimization(std::move(top_k_params));
+    applyTopK(aggregating_node, *aggregating_step, std::move(*top_k_params), settings, nodes);
 
     return 0;
 }
@@ -669,7 +732,7 @@ void applyGroupByTopKOfInitiator(
         node = node->children.front();
 
     if (auto * aggregating_step = validateAggregatingStep(node, /*final=*/ false))
-        applyTopKByAllKeys(node, *aggregating_step, limit, settings, nodes);
+        applyTopK(node, *aggregating_step, topKByAllKeys(aggregating_step->getParams().keys.size(), limit, settings), settings, nodes);
 }
 
 }
