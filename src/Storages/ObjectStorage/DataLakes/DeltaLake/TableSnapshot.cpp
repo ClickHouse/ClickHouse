@@ -86,7 +86,7 @@ struct DataObjectInfo : public DB::ObjectInfo
     {
     }
 
-    std::optional<size_t> getFileSizeHint() const override
+    [[nodiscard]] std::optional<size_t> getFileSizeHint() const override
     {
         if (size > 0)
             return static_cast<size_t>(size);

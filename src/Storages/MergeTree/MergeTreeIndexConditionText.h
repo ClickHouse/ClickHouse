@@ -106,14 +106,14 @@ struct TextSearchQuery
         VectorWithMemoryTracking<String> phrase_tokens_ = {},
         TextIndexAutomatonBudget * automaton_budget = nullptr);
 
-    const String & getFunctionName() const { return function_name; }
-    TextSearchMode getSearchMode() const { return search_mode; }
-    TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
-    const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
-    const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
-    const auto & getPatternAutomata() const { return pattern_automata; }
-    const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
-    UInt128 getHash() const { return hash; }
+    [[nodiscard]] const String & getFunctionName() const { return function_name; }
+    [[nodiscard]] TextSearchMode getSearchMode() const { return search_mode; }
+    [[nodiscard]] TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
+    [[nodiscard]] const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
+    [[nodiscard]] const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
+    [[nodiscard]] const auto & getPatternAutomata() const { return pattern_automata; }
+    [[nodiscard]] const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    [[nodiscard]] UInt128 getHash() const { return hash; }
 
 private:
     void initializeHash();

@@ -105,7 +105,7 @@ public:
     /// on the join itself. Does not downgrade an already required order.
     void keepLeftPipelineLayout();
 
-    bool isOptimized() const { return optimized; }
+    [[nodiscard]] bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
     [[nodiscard]] std::vector<size_t> getStepGroups() const override;

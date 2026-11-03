@@ -61,7 +61,7 @@ public:
     /// (`EXCEPT DATA FROM TABLE`) asks only for the table's definition and does not count. Can be
     /// called by implementations of IStorage::backupData() whose behaviour depends on the data
     /// being backed up explicitly.
-    bool isTableDataExplicitlySelectedForBackup(const QualifiedTableName & table_name) const;
+    [[nodiscard]] bool isTableDataExplicitlySelectedForBackup(const QualifiedTableName & table_name) const;
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.

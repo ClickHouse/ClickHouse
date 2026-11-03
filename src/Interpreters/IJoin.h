@@ -254,7 +254,7 @@ public:
     /// called. Joins that preserve the order only on request override this. The default also
     /// excludes delayed blocks: they interleave with the main output and break the order
     /// unconditionally.
-    virtual bool canPreserveLeftBlockOrder() const { return preservesLeftBlockOrder() && !hasDelayedBlocks(); }
+    [[nodiscard]] virtual bool canPreserveLeftBlockOrder() const { return preservesLeftBlockOrder() && !hasDelayedBlocks(); }
 
     /// Notify the join that the query plan requires the left stream's row order. Must be called
     /// only when `canPreserveLeftBlockOrder` is true.

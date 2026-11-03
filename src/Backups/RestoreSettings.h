@@ -221,7 +221,7 @@ struct RestoreSettings
     [[nodiscard]] bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
 
     /// Named collections are restored even under `structure_only`, see `restore_named_collections`.
-    bool shouldRestoreNamedCollections() const { return restore_named_collections.value_or(true); }
+    [[nodiscard]] bool shouldRestoreNamedCollections() const { return restore_named_collections.value_or(true); }
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

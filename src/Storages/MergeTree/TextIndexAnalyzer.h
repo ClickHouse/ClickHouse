@@ -101,9 +101,9 @@ public:
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
-    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
-    bool canFilterTokensByLiterals() const;
-    bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
+    [[nodiscard]] std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
+    [[nodiscard]] bool canFilterTokensByLiterals() const;
+    [[nodiscard]] bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
     /// Like `TextIndexDictionaryDFA::Cursor::next`, but for the union of all pattern DFAs: `token` matches if any
     /// DFA accepts it, and `lower_bound` is the smallest lower bound of all DFAs.
     TextIndexDictionaryDFA::Cursor::Result nextPatternToken(std::string_view token, String & lower_bound);

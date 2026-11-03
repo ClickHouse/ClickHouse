@@ -37,33 +37,33 @@ public:
     [[nodiscard]] bool isReplicated() const;
 
     /// Names of the SQL-created collections present in the storage.
-    std::vector<std::string> listCollections() const;
+    [[nodiscard]] std::vector<std::string> listCollections() const;
 
     /// Stored bytes of one collection, exactly as the storage holds them.
-    std::string readRaw(const std::string & collection_name) const;
+    [[nodiscard]] std::string readRaw(const std::string & collection_name) const;
 
     /// Stored bytes of every collection, exactly as the storage holds them, keyed by the
     /// collection name. Never decrypts anything. A collection dropped concurrently (by another
     /// replica of a replicated storage) between listing and reading is skipped.
-    std::map<std::string, std::string> getAllRaw() const;
+    [[nodiscard]] std::map<std::string, std::string> getAllRaw() const;
 
     /// Identifies the shared storage for backup coordination: the Keeper path holding the
     /// collections. Only meaningful when isReplicated() is true.
-    std::string getReplicationId() const;
+    [[nodiscard]] std::string getReplicationId() const;
 
     /// Whether the entries are encrypted at rest.
-    bool isEncrypted() const;
+    [[nodiscard]] bool isEncrypted() const;
 
     /// Appends a message authentication code to stored bytes exported into a backup, because the
     /// stored ciphertext alone is malleable (see `decryptStoredFromBackup`). Only supported with
     /// an encrypted storage.
-    std::string authenticateStoredForBackup(const std::string & stored) const;
+    [[nodiscard]] std::string authenticateStoredForBackup(const std::string & stored) const;
 
     /// Turns the bytes of a backup entry written by `authenticateStoredForBackup` back into the
     /// `CREATE NAMED COLLECTION` statement: verifies the key fingerprint of the entry's header
     /// against this storage's key, verifies the authentication code, and decrypts. Only supported
     /// with an encrypted storage.
-    std::string decryptStoredFromBackup(const std::string & data) const;
+    [[nodiscard]] std::string decryptStoredFromBackup(const std::string & data) const;
 
 private:
     class INamedCollectionsStorage;
@@ -76,7 +76,7 @@ private:
 
     NamedCollectionsMetadataStorage(std::shared_ptr<INamedCollectionsStorage> storage_, ContextPtr context_);
 
-    ASTCreateNamedCollectionQuery readCreateQuery(const std::string & collection_name) const;
+    [[nodiscard]] ASTCreateNamedCollectionQuery readCreateQuery(const std::string & collection_name) const;
 
     void writeCreateQuery(const String & collection_name, const String & create_statement, bool replace = false);
 };

@@ -235,7 +235,7 @@ TEST(Logger, StdExceptionFromChannelIsWrittenToStderr)
 class BadAllocWithMessage : public std::bad_alloc
 {
 public:
-    const char * what() const noexcept override { return "BadAllocWithMessage thrown while evaluating a log argument"; }
+    [[nodiscard]] const char * what() const noexcept override { return "BadAllocWithMessage thrown while evaluating a log argument"; }
 };
 
 static int throwBadAllocIf(bool condition)

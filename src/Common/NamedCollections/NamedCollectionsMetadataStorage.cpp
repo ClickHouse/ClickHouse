@@ -75,7 +75,7 @@ public:
     [[nodiscard]] virtual std::string read(const std::string & path) const = 0;
 
     /// The stored bytes as they are, without decryption (see `NamedCollectionsMetadataStorageEncrypted`).
-    virtual std::string readRaw(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::string readRaw(const std::string & path) const = 0;
 
     virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
 
@@ -85,22 +85,22 @@ public:
 
     [[nodiscard]] virtual bool isReplicated() const = 0;
 
-    virtual std::string getReplicationId() const
+    [[nodiscard]] virtual std::string getReplicationId() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not replicated");
     }
 
-    virtual bool isEncrypted() const { return false; }
+    [[nodiscard]] virtual bool isEncrypted() const { return false; }
 
     /// Only the encrypted storage types authenticate backup entries (see
     /// `NamedCollectionsMetadataStorageEncrypted`): the entries of the other types are backed up
     /// as plaintext SQL and these methods are never reached for them.
-    virtual std::string authenticateStoredForBackup(const std::string & /* stored */) const
+    [[nodiscard]] virtual std::string authenticateStoredForBackup(const std::string & /* stored */) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
     }
 
-    virtual std::string decryptStoredFromBackup(const std::string & /* data */) const
+    [[nodiscard]] virtual std::string decryptStoredFromBackup(const std::string & /* data */) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
     }
@@ -161,7 +161,7 @@ public:
         return readHook(readRaw(file_name));
     }
 
-    std::string readRaw(const std::string & file_name) const override
+    [[nodiscard]] std::string readRaw(const std::string & file_name) const override
     {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
@@ -447,7 +447,7 @@ public:
         algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
     }
 
-    bool isEncrypted() const override { return true; }
+    [[nodiscard]] bool isEncrypted() const override { return true; }
 
     /// The CTR ciphertext is malleable: with known plaintext positions (the statement framing
     /// around a value) it can be reshaped without the key, for example to move an unknown secret
@@ -455,13 +455,13 @@ public:
     /// entries are covered by the trust in the metadata storage, but a backup is written to a
     /// less trusted medium, so an exported entry carries an HMAC-SHA256 tag computed with a key
     /// derived from the storage key, and the restore rejects an entry whose tag does not verify.
-    std::string authenticateStoredForBackup(const std::string & stored) const override
+    [[nodiscard]] std::string authenticateStoredForBackup(const std::string & stored) const override
     {
         const auto mac = calculateBackupMAC(stored);
         return stored + std::string(reinterpret_cast<const char *>(mac.data()), mac.size());
     }
 
-    std::string decryptStoredFromBackup(const std::string & data) const override
+    [[nodiscard]] std::string decryptStoredFromBackup(const std::string & data) const override
     {
         if (data.size() <= backup_mac_size)
             throw Exception(
@@ -486,7 +486,7 @@ public:
         return readHook(stored);
     }
 
-    std::string readHook(const std::string & data) const override
+    [[nodiscard]] std::string readHook(const std::string & data) const override
     {
         ReadBufferFromString in(data);
 
@@ -559,7 +559,7 @@ private:
                 getHexUIntLowercase(key_fingerprint));
     }
 
-    std::vector<uint8_t> calculateBackupMAC(const std::string & stored) const
+    [[nodiscard]] std::vector<uint8_t> calculateBackupMAC(const std::string & stored) const
     {
         /// Domain separation from the encryption use of the key.
         const auto auth_key = hmacSHA256(
