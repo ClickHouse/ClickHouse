@@ -30,7 +30,8 @@
               "group": "التحليلات في الوقت الفعلي",
               "pages": [
                 "ar/get-started/quickstarts/create-your-first-materialized-view",
-                "ar/get-started/quickstarts/create-your-first-projection"
+                "ar/get-started/quickstarts/create-your-first-projection",
+                "ar/get-started/quickstarts/tutorial"
               ]
             },
             {

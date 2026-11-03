@@ -1,0 +1,4 @@
+Tuple(\n    x UInt32,\n    y String)	(1,'aa')	Nullable(UInt32)	1	Nullable(String)	aa
+Tuple(\n    x UInt32,\n    y String)	(0,'')	Nullable(UInt32)	\N	Nullable(String)	\N
+Tuple(\n    x UInt32,\n    y String)	(1,'aa')	UInt32	1	String	aa
+Tuple(\n    x UInt32,\n    y String)	(0,'')	UInt32	0	String	

@@ -38,7 +38,6 @@ SELECT toDayOfYear(toDateTime('2023-04-21 10:20:30'))
 
     /// MySQL compatibility alias.
     factory.registerAlias("DAYOFYEAR", "toDayOfYear", FunctionFactory::Case::Insensitive);
-    factory.registerAlias("DAY_OF_YEAR", "toDayOfYear", FunctionFactory::Case::Insensitive);
 }
 
 }

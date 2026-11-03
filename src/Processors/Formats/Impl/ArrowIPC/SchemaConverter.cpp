@@ -22,12 +22,9 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/DateLUTImpl.h>
-#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-int-conversion"
@@ -247,16 +244,9 @@ ArrowType parseType(const flatbuf::Field & field)
             requireSingleChild(type, "FixedSizeList");
             break;
         case flatbuf::Type_Struct_:
-        {
             type.kind = TypeKind::Struct;
             type.children = parseChildren(field.children());
-            Strings names;
-            names.reserve(type.children.size());
-            for (const ArrowField & child : type.children)
-                names.push_back(child.name);
-            type.positional_fields = !DataTypeTuple::hasValidElementNames(names);
             break;
-        }
         case flatbuf::Type_Map:
             type.kind = TypeKind::Map;
             type.children = parseChildren(field.children());
@@ -316,32 +306,36 @@ ArrowType parseType(const flatbuf::Field & field)
             }
             break;
         }
+        /// View-list and run-end-encoded types the reader cannot decode, but whose physical buffer layout
+        /// is known. Keep them as `Unsupported` placeholders (so schema inference can drop them and a
+        /// `SELECT` of such a column errors clearly), but parse their children and record the layout so
+        /// `advanceField` can advance the node/buffer cursors past an *unrequested* column of this type and
+        /// keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
-            type.kind = TypeKind::ListView;
+            type.kind = TypeKind::Unsupported;
+            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
+            type.skip_layout = ArrowType::SkipLayout::ListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "ListView");
             break;
         case flatbuf::Type_LargeListView:
-            type.kind = TypeKind::LargeListView;
+            type.kind = TypeKind::Unsupported;
+            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
+            type.skip_layout = ArrowType::SkipLayout::ListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "LargeListView");
             break;
         case flatbuf::Type_RunEndEncoded:
-        {
-            type.kind = TypeKind::RunEndEncoded;
+            type.kind = TypeKind::Unsupported;
+            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
+            type.skip_layout = ArrowType::SkipLayout::RunEndEncoded;
             type.children = parseChildren(field.children());
             if (type.children.size() != 2)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC RunEndEncoded type must have exactly two children (run_ends, values), got {}",
                     type.children.size());
-            const ArrowField & run_ends = type.children[0];
-            if (run_ends.type.kind != TypeKind::Int || !run_ends.type.is_signed || run_ends.type.bit_width < 16
-                || run_ends.dictionary)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Arrow IPC RunEndEncoded run ends must be an Int16, Int32 or Int64 field");
             break;
-        }
         default:
             /// Keep an unsupported Arrow type as a placeholder rather than failing here, so schema
             /// inference can drop the column with
@@ -354,68 +348,14 @@ ArrowType parseType(const flatbuf::Field & field)
     return type;
 }
 
-/// Arrow allows several top-level fields with the same name, but the columns of a table must have unique names.
-/// A repeated name gets the first free numeric suffix (`ints`, `ints_1`, `ints_2`), skipping the names of other
-/// fields, so that every field can be inferred, requested and matched by its own name.
-void makeFieldNamesUnique(ArrowFields & fields)
-{
-    UnorderedSetWithMemoryTracking<std::string> original_names;
-    for (const ArrowField & field : fields)
-        original_names.insert(field.name);
-    if (original_names.size() == fields.size())
-        return;
-
-    UnorderedSetWithMemoryTracking<std::string> used_names;
-    /// The next suffix to try for each repeated name, so that every candidate is tried at most once (a schema with many
-    /// equal names would otherwise take quadratic time).
-    UnorderedMapWithMemoryTracking<std::string, size_t> next_suffix;
-    for (ArrowField & field : fields)
-    {
-        if (used_names.insert(field.name).second)
-            continue;
-        size_t & suffix = next_suffix.try_emplace(field.name, 1).first->second;
-        while (true)
-        {
-            std::string candidate = fmt::format("{}_{}", field.name, suffix++);
-            if (!original_names.contains(candidate) && used_names.insert(candidate).second)
-            {
-                field.name = std::move(candidate);
-                break;
-            }
-        }
-    }
 }
 
-}
-
-namespace
-{
-
-/// `RecordBatchDecoder` decodes a union with the V5 layout, which has no validity buffer. V4 keeps that
-/// buffer, so reading a V4 union would take every following buffer from the wrong offset. Reject the field
-/// instead of decoding it wrongly. Unions nested inside other types have the same problem, so the whole
-/// field tree is checked.
-void rejectUnionFields(const ArrowFields & fields)
-{
-    for (const auto & field : fields)
-    {
-        if (field.type.kind == TypeKind::Union)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Arrow IPC field '{}' is a union written with metadata version V4, whose layout keeps the "
-                "validity buffer that V5 removed; this reader implements the V5 union layout only",
-                field.name);
-        rejectUnionFields(field.type.children);
-    }
-}
-
-}
-
-ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion version)
+ArrowSchema parseSchema(const flatbuf::Schema & schema)
 {
     ArrowSchema result;
-    /// Big-endian buffers are converted by `RecordBatchDecoder::convertBuffersFromBigEndian`.
     result.little_endian = schema.endianness() == flatbuf::Endianness_Little;
+    if (!result.little_endian)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Big-endian Arrow IPC streams are not supported by the native reader");
 
     const auto * fields = schema.fields();
     if (fields)
@@ -444,12 +384,8 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion
             result.fields.push_back(std::move(f));
         }
     }
-    makeFieldNamesUnique(result.fields);
 
     result.custom_metadata = parseMetadata(schema.custom_metadata());
-    if (version != flatbuf::MetadataVersion_V5)
-        rejectUnionFields(result.fields);
-
     return result;
 }
 
@@ -457,23 +393,11 @@ bool isUUIDField(const ArrowField & field)
 {
     if (field.type.kind != TypeKind::FixedSizeBinary || field.type.byte_width != 16)
         return false;
-    auto uuid_it = field.custom_metadata.find("ARROW:extension:name");
-    if (uuid_it != field.custom_metadata.end() && uuid_it->second == "arrow.uuid")
+    auto it = field.custom_metadata.find("ARROW:extension:name");
+    if (it != field.custom_metadata.end() && it->second == "arrow.uuid")
         return true;
     auto logical = field.custom_metadata.find("PARQUET:logical_type");
     return logical != field.custom_metadata.end() && logical->second == "UUID";
-}
-
-std::string_view opaqueFieldTypeName(const ArrowField & field)
-{
-    auto name_it = field.custom_metadata.find("ARROW:extension:name");
-    if (name_it == field.custom_metadata.end() || name_it->second != FormatSettings::ARROW_OPAQUE_EXTENSION_NAME)
-        return {};
-
-    auto type_it = field.custom_metadata.find("ARROW:extension:metadata");
-    if (type_it == field.custom_metadata.end())
-        return {};
-    return type_it->second;
 }
 
 namespace
@@ -613,8 +537,6 @@ buildField(
     flatbuf::Type type_type = flatbuf::Type_NONE;
     flatbuffers::Offset<void> type_offset;
     VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> children;
-    /// Set for a type with no first-class Arrow mapping, to tag the field with its ClickHouse type name.
-    String opaque_type_name;
 
     auto make_int = [&](int bits, bool is_signed)
     {
@@ -773,7 +695,7 @@ buildField(
                 break;
             case TypeIndex::Interval:
             {
-                const IntervalKind::Kind kind = assert_cast<const DataTypeInterval &>(*t).getKind();
+                const auto kind = assert_cast<const DataTypeInterval &>(*t).getKind().kind;
                 int unit = -1;
                 if (kind == IntervalKind::Kind::Second) unit = flatbuf::TimeUnit_SECOND;
                 else if (kind == IntervalKind::Kind::Millisecond) unit = flatbuf::TimeUnit_MILLISECOND;
@@ -822,37 +744,20 @@ buildField(
                 break;
             }
             default:
-                /// A type with no first-class Arrow mapping, handled per `output_format_arrow_unsupported_types`:
-                /// rejected, or written as an opaque variable-width column holding one serialized value per row,
-                /// typed by `arrowOpaqueValueIsText` and filled by `RecordBatchEncoder::encodeAsOpaque`.
-                /// The decision is made here, before the schema message is written, so a rejected type cannot
-                /// abort a stream whose schema the reader has already accepted.
-                switch (settings.arrow.output_unsupported_types)
+                /// A type with no first-class Arrow mapping: written as an Arrow `Binary` column when
+                /// `output_format_arrow_unsupported_types_as_binary` is set (matching the encoder and the
+                /// Apache Arrow library writer); otherwise rejected.
+                if (settings.arrow.output_unsupported_types_as_binary)
                 {
-                    case FormatSettings::ArrowUnsupportedTypes::THROW:
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "Native Arrow IPC writer does not support type {}. Set "
-                            "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
-                            type->getName());
-                    case FormatSettings::ArrowUnsupportedTypes::TEXT:
-                    case FormatSettings::ArrowUnsupportedTypes::BINARY:
-                    {
-                        if (arrowOpaqueValueIsText(settings.arrow.output_unsupported_types, t))
-                        {
-                            type_type = flatbuf::Type_Utf8;
-                            type_offset = flatbuf::CreateUtf8(b).Union();
-                        }
-                        else
-                        {
-                            type_type = flatbuf::Type_Binary;
-                            type_offset = flatbuf::CreateBinary(b).Union();
-                        }
-                        break;
-                    }
+                    type_type = flatbuf::Type_Binary;
+                    type_offset = flatbuf::CreateBinary(b).Union();
+                    break;
                 }
-                opaque_type_name = t->getName();
-                break;
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Native Arrow IPC writer does not support type {}. Set "
+                    "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
+                    type->getName());
         }
     }
 
@@ -863,21 +768,6 @@ buildField(
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString("")));
-        custom_metadata_off = b.CreateVector(kvs);
-    }
-    else if (!opaque_type_name.empty())
-    {
-        /// A type written as an opaque `Utf8`/`Binary` column is otherwise indistinguishable from a genuine
-        /// string or binary column. Declare it as an Arrow extension type carrying the original ClickHouse
-        /// type name, so a consumer can tell the two apart. Per the Arrow extension-type convention a reader
-        /// that does not know the extension name ignores the metadata and sees the plain storage type.
-        VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
-        kvs.push_back(flatbuf::CreateKeyValue(
-            b,
-            b.CreateString("ARROW:extension:name"),
-            b.CreateString(
-                FormatSettings::ARROW_OPAQUE_EXTENSION_NAME.data(), FormatSettings::ARROW_OPAQUE_EXTENSION_NAME.size())));
-        kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString(opaque_type_name)));
         custom_metadata_off = b.CreateVector(kvs);
     }
 
@@ -1042,21 +932,11 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
     const auto * footer = flatbuf::GetFooter(footer_storage.data());
 
-    /// The footer carries the metadata version too, and its block list is read under that edition's
-    /// assumptions, so an edition this reader does not know is rejected here rather than at the first
-    /// message. Each message is checked again in `MessageReader::readNextMessage`.
-    const auto version = footer->version();
-    if (version != flatbuf::MetadataVersion_V4 && version != flatbuf::MetadataVersion_V5)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Unsupported Arrow IPC metadata version V{} in the Arrow file footer: this reader implements V4 and V5",
-            static_cast<Int16>(version) + 1);
-
     if (!footer->schema())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file footer has no schema");
 
     ArrowFileFooter result;
-    result.schema = parseSchema(*footer->schema(), version);
+    result.schema = parseSchema(*footer->schema());
     /// Footer blocks are untrusted: a negative offset/metadata/body length would, after being passed on as
     /// a seek target, a metadata bound, or a body size, become a huge unsigned value or seek out of range.
     /// And the block's metadata+body must lie within the data region (before the footer): otherwise a
@@ -1142,13 +1022,6 @@ IntervalKind::Kind timeUnitToIntervalKind(int unit)
 
 }
 
-bool isNullableField(const ArrowField & field)
-{
-    if (!field.dictionary && field.type.kind == TypeKind::RunEndEncoded)
-        return isNullableField(field.type.children.at(1));
-    return field.nullable;
-}
-
 DataTypePtr fieldToCHType(
     const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type)
 {
@@ -1214,11 +1087,9 @@ DataTypePtr fieldToCHType(
         case TypeKind::List:
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
-        case TypeKind::ListView:
-        case TypeKind::LargeListView:
         {
             const ArrowField & element = type.children.at(0);
-            result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, isNullableField(element), allow_null_type));
+            result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, element.nullable, allow_null_type));
             break;
         }
         case TypeKind::Struct:
@@ -1229,13 +1100,10 @@ DataTypePtr fieldToCHType(
             names.reserve(type.children.size());
             for (const ArrowField & child : type.children)
             {
-                elems.push_back(fieldToCHType(child, settings, isNullableField(child), allow_null_type));
+                elems.push_back(fieldToCHType(child, settings, child.nullable, allow_null_type));
                 names.push_back(child.name);
             }
-            if (type.positional_fields)
-                result = std::make_shared<DataTypeTuple>(elems);
-            else
-                result = std::make_shared<DataTypeTuple>(elems, names);
+            result = std::make_shared<DataTypeTuple>(elems, names);
             break;
         }
         case TypeKind::Map:
@@ -1247,7 +1115,7 @@ DataTypePtr fieldToCHType(
             /// ClickHouse map keys are never nullable.
             result = std::make_shared<DataTypeMap>(
                 fieldToCHType(key, settings, /*make_nullable=*/false),
-                fieldToCHType(value, settings, isNullableField(value), allow_null_type));
+                fieldToCHType(value, settings, value.nullable, allow_null_type));
             break;
         }
         case TypeKind::Union:
@@ -1270,44 +1138,19 @@ DataTypePtr fieldToCHType(
             /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
             /// field's null count is non-zero); the all-null `Nullable` then casts to the requested target
             /// as NULLs (or column DEFAULTs with `null_as_default`). Return directly — it is already
-            /// nullable. Schema inference infers the same type.
+            /// nullable. Schema inference keeps the flag off and, matching the library reader, treats it as
+            /// an unsupported type (`UNKNOWN_TYPE`, so `*_skip_columns_*_in_schema_inference` can drop it).
             if (allow_null_type)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             throw Exception(
                 ErrorCodes::UNKNOWN_TYPE,
                 "Native Arrow IPC reader does not support the `null` type in schema inference (field '{}')",
                 field.name);
-        case TypeKind::RunEndEncoded:
-        {
-            /// Read as the values type: each run is expanded into its rows. The nulls are those of the values, so the
-            /// callers derive `make_nullable` from them (see `isNullableField`).
-            return fieldToCHType(type.children.at(1), settings, make_nullable, allow_null_type);
-        }
         case TypeKind::Interval:
-            /// YEAR_MONTH is a number of months. DAY_TIME and MONTH_DAY_NANO pack several counts into one value,
-            /// which are kept apart in a `Tuple` of intervals, as they cannot be converted into each other.
-            switch (type.unit)
-            {
-                case flatbuf::IntervalUnit_YEAR_MONTH:
-                    result = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month);
-                    break;
-                case flatbuf::IntervalUnit_DAY_TIME:
-                    result = std::make_shared<DataTypeTuple>(
-                        DataTypes{
-                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
-                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Millisecond)},
-                        Names{"days", "milliseconds"});
-                    break;
-                default:
-                    result = std::make_shared<DataTypeTuple>(
-                        DataTypes{
-                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month),
-                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
-                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond)},
-                        Names{"months", "days", "nanoseconds"});
-                    break;
-            }
-            break;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Native Arrow IPC reader does not support this type yet (field '{}')",
+                field.name);
         case TypeKind::Unsupported:
             /// `UNKNOWN_TYPE` so schema inference can drop the column with
             /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`.

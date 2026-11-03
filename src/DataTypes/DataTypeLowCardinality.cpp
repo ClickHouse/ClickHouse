@@ -160,9 +160,10 @@ SerializationPtr DataTypeLowCardinality::doGetSerialization(const SerializationI
     return SerializationLowCardinality::create(dictionary_type);
 }
 
-DataTypePtr DataTypeLowCardinality::doCloneWithChildren(const DataTypes & new_children) const
+void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
 {
-    return std::make_shared<DataTypeLowCardinality>(new_children[0]);
+    callback(*dictionary_type);
+    dictionary_type->forEachChild(callback);
 }
 
 
@@ -231,7 +232,7 @@ Functions:
 
 - Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-- [String Optimization (video presentation in Russian)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [Slides in English](https://github.com/ClickHouse/clickhouse-presentations/raw/master/2018-meetup19/string_optimization.pdf)
+- [String Optimization (video presentation in Russian)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [Slides in English](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf)
 )DOCS_MD",
             .syntax = "LowCardinality(T)",
             .examples = {},
