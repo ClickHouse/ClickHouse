@@ -100,5 +100,8 @@ do
     $CLICKHOUSE_CLIENT -q "
         SELECT count() > 0, countIf(query NOT LIKE '%''JSONEachRow'', ''%')
         FROM system.query_log
-        WHERE event_date >= yesterday() AND initial_query_id = '${query_id}' AND NOT is_initial_query AND type = 'QueryFinish'"
+        WHERE event_date >= yesterday() AND NOT is_initial_query AND type = 'QueryFinish'
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}')"
 done
