@@ -1133,6 +1133,44 @@ def test_encrypted_disk_path_virtual_column_and_show_create_database():
     assert "Filesystem('enc_path')" in show_create, show_create
     node_encrypted.query("DROP DATABASE test_fs_db_enc")
 
+
+def test_encrypted_disk_path_prefix_is_not_an_alias():
+    """The `encrypted` disk takes a path starting with its own `path` (`encrypted/`) as an already
+    wrapped one. A user path with that prefix must still name a distinct logical file inside the
+    user files directory, and an insert through it must not land outside that directory."""
+    node_encrypted.query(
+        "INSERT INTO FUNCTION file('alias_check.csv', 'CSV', 'x UInt64') "
+        "SELECT 1 SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node_encrypted.query(
+        "INSERT INTO FUNCTION file('encrypted/alias_check.csv', 'CSV', 'x UInt64') "
+        "SELECT 2 SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    assert (
+        node_encrypted.query(
+            "SELECT x FROM file('alias_check.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "1"
+    )
+    assert (
+        node_encrypted.query(
+            "SELECT x FROM file('encrypted/alias_check.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "2"
+    )
+    # Both files are stored inside the user files directory of the backing disk.
+    listing = node_encrypted.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "cd /test_user_files_disk_encrypted_backing && find . -name alias_check.csv | sort",
+        ]
+    )
+    assert listing.split() == [
+        "./encrypted/user_files/alias_check.csv",
+        "./encrypted/user_files/encrypted/alias_check.csv",
+    ], listing
+
 def test_local_literal_partition_id_filename():
     """A literal file name that merely contains the `{_partition_id}` substring, read without
     `INSERT ... PARTITION BY`, must resolve to a real disk-qualified path.
@@ -1694,6 +1732,13 @@ def test_local_filelog_rechecks_retargeted_symlink_before_opening():
             "SELECT line FROM filelog_retarget SETTINGS stream_like_engine_allow_direct_select = 1"
         )
         assert "secret" not in result, result
+        # `SYSTEM RESET FILELOG` probes the size of the file: it must not reveal the size of the outside target.
+        for reset in ["OFFSET 18446744073709551615", "TO END"]:
+            err = node_local.query_and_get_error(
+                f"SYSTEM RESET FILELOG filelog_retarget FILE 'filelog_live.log' {reset}"
+            )
+            assert "DATABASE_ACCESS_DENIED" in err, err
+            assert "bytes" not in err, err
     finally:
         node_local.query("DROP TABLE IF EXISTS filelog_retarget SYNC")
         node_local.exec_in_container(
@@ -1888,5 +1933,42 @@ def test_local_embedded_rocksdb_pins_resolved_directory():
                 "bash",
                 "-c",
                 "rm -rf /test_user_files_disk1/rocksdb_safe /test_user_files_disk1/rocksdb_live /tmp/rocksdb_outside",
+            ]
+        )
+
+
+def test_local_errors_logger_checks_every_candidate_name():
+    """`input_format_record_errors_file_path` appends `_new` while the name exists. Every candidate
+    is checked before probing its existence, so whether an outside symlink target exists is not
+    revealed: the query fails the same way for a present and a missing target."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /tmp/errors_logger_target && mkdir -p /tmp/errors_logger_target && "
+            "touch /test_user_files_disk1/errors_logger && "
+            "ln -snf /tmp/errors_logger_target/victim /test_user_files_disk1/errors_logger_new",
+        ]
+    )
+    query = (
+        "SELECT * FROM format('CSV', 'x UInt8', '1') "
+        "SETTINGS input_format_record_errors_file_path = 'errors_logger'"
+    )
+    try:
+        for create_target in [False, True]:
+            if create_target:
+                node_local.exec_in_container(
+                    ["bash", "-c", "touch /tmp/errors_logger_target/victim"]
+                )
+            err = node_local.query_and_get_error(query)
+            assert "DATABASE_ACCESS_DENIED" in err, err
+            assert "errors_logger_new`" in err, err
+    finally:
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /tmp/errors_logger_target /test_user_files_disk1/errors_logger "
+                "/test_user_files_disk1/errors_logger_new",
             ]
         )

@@ -2388,13 +2388,14 @@ void Context::setUserFilesPolicy(const String & policy_name, const String & path
             "(a `plain_rewritable` disk, or a plain disk with `object_metadata_cache_size`), "
             "which is not supported for user files", disk->getName(), policy_name);
 
-    if (!sub_path.empty())
     {
         /// An `encrypted` disk takes a path that already starts with its own path inside the
         /// wrapped disk as an already wrapped one (`DiskEncryptedTransaction::wrappedPath`).
-        /// If the path of an `encrypted` layer and the paths that the subdirectory sends to it
-        /// can share a prefix, a file would be read and written outside of the subdirectory,
-        /// while the containment checks use the advertised root. Reject such a combination.
+        /// If the path of an `encrypted` layer and the paths that are sent to it can share a prefix,
+        /// a file would be read and written at another location than the one the containment checks
+        /// use: outside of the subdirectory, or through a symlink outside of the user files directory.
+        /// Reject such a combination. Without a subdirectory, the paths sent to the outermost layer
+        /// are arbitrary user paths, so its path inside the wrapped disk must be empty.
         String received_prefix;
         for (DiskPtr layer = disk; layer && layer->getDataSourceDescription().is_encrypted; layer = layer->getDelegateDiskIfExists())
         {
@@ -2405,20 +2406,23 @@ void Context::setUserFilesPolicy(const String & policy_name, const String & path
             const String & wrapped_path = wrapped->getPath();
             if (!layer_path.starts_with(wrapped_path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot use a subdirectory of disk `{}` for the user files policy `{}`: "
+                    "Cannot use disk `{}` for the user files policy `{}`: "
                     "its path `{}` is not inside the path `{}` of the wrapped disk",
                     disk->getName(), policy_name, layer_path, wrapped_path);
             const String layer_relative_path = layer_path.substr(wrapped_path.size());
-            const String sent_prefix = received_prefix + sub_path + '/';
+            const String sent_prefix = sub_path.empty() ? received_prefix : received_prefix + sub_path + '/';
             if (!layer_relative_path.empty()
                 && (sent_prefix.starts_with(layer_relative_path) || layer_relative_path.starts_with(sent_prefix)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot use the subdirectory `{}` of the encrypted disk `{}` for the user files policy `{}`: "
+                    "Cannot use the path `/{}` of the encrypted disk `{}` for the user files policy `{}`: "
                     "it shares a prefix with the path `{}` of the encrypted disk inside its wrapped disk",
                     sub_path, disk->getName(), policy_name, layer_relative_path);
             received_prefix = layer_relative_path + received_prefix;
         }
+    }
 
+    if (!sub_path.empty())
+    {
         disk = std::make_shared<SubdirectoryDiskWrapper>(disk, sub_path);
         volume = std::make_shared<SingleDiskVolume>(volume->getName(), disk);
     }

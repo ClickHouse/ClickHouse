@@ -31,6 +31,7 @@
     <user_files_policy>user_files_encrypted_policy</user_files_policy>
 
     <!-- With `user_files_policy`, `user_files_path` is a path inside the disk of the policy.
-         The base config sets it to `/var/lib/clickhouse/user_files/`, so point it at the disk root. -->
-    <user_files_path>/</user_files_path>
+         The disk root cannot be used: the `encrypted` disk takes a path starting with its own
+         `path` (`encrypted/`) as an already wrapped one, so user paths would alias each other. -->
+    <user_files_path>/user_files/</user_files_path>
 </clickhouse>
