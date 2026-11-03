@@ -414,18 +414,16 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
         max_parallel_tasks_per_type = new_max_parallel_tasks_per_type;
 
         /// A group paused at the old limit would otherwise resume only when one of its own tasks finishes.
-        bool resumed = false;
         for (auto & [task_type, group] : task_groups)
         {
             if (!group.runnable_list_pos && !group.tasks.empty())
             {
                 group.runnable_list_pos = runnable_task_types.size();
                 runnable_task_types.push_back(task_type);
-                resumed = true;
             }
         }
-        if (resumed)
-            tasks_cond_var.notify_all();
+        /// Parked workers are counted as available below, so wake them for the new headroom of every runnable group.
+        tasks_cond_var.notify_all();
     }
 
     /// Consume already-queued demand with the freshly-raised cap. A saturated pool has no parked

@@ -541,31 +541,34 @@ TEST(BackgroundSchedulePool, IncreaseThreadsCountKeepsPerTypeRatio)
 }
 
 /// The recomputed limit can be lower than the current one (0.4 * 2 truncates to 0, which means the
-/// pool size 2, while 0.4 * 3 gives 1). It must be ignored, because two tasks of the type already run.
+/// pool size 2, while 0.4 * 3 gives 1). It must be ignored: a second wave of tasks of the type,
+/// scheduled after the resize, must still run two at once.
 TEST(BackgroundSchedulePool, IncreaseThreadsCountNeverLowersPerTypeLimit)
 {
     constexpr size_t initial_threads = 2;
     constexpr size_t increased_threads = 3;
     constexpr double ratio = 0.4;
     constexpr size_t limit = 2;
-    constexpr size_t num_tasks = 3;
+    constexpr size_t num_tasks = 2 * limit;
 
     auto pool = BackgroundSchedulePool::create(initial_threads, initial_threads, ratio, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
     std::mutex mutex;
     std::condition_variable state_changed;
-    std::condition_variable release_tasks;
+    size_t started = 0;
     size_t running = 0;
+    size_t released = 0;
     size_t finished = 0;
-    bool release = false;
 
     /// A single lambda expression ⇒ one closure type ⇒ all tasks share one task group.
     auto task_body = [&]
     {
         std::unique_lock lock(mutex);
+        const size_t ordinal = started++;
         ++running;
         state_changed.notify_all();
-        release_tasks.wait(lock, [&] { return release; });
+        state_changed.wait(lock, [&] { return ordinal < released; });
+        --running;
         ++finished;
         state_changed.notify_all();
     };
@@ -575,34 +578,46 @@ TEST(BackgroundSchedulePool, IncreaseThreadsCountNeverLowersPerTypeLimit)
     for (size_t i = 0; i < num_tasks; ++i)
         tasks.emplace_back(pool->createTask(StorageID::createEmpty(), "increase_never_lowers", task_body));
 
-    for (auto & task : tasks)
-        EXPECT_TRUE(task->activateAndSchedule());
+    for (size_t i = 0; i < limit; ++i)
+        EXPECT_TRUE(tasks[i]->activateAndSchedule());
 
-    bool initial_ran = false;
-    bool all_finished = false;
+    bool first_wave_ran = false;
+    bool first_wave_finished = false;
+    bool second_wave_ran = false;
     size_t running_before_increase = 0;
-    size_t finished_at_end = 0;
+    size_t running_in_second_wave = 0;
     {
         std::unique_lock lock(mutex);
-        initial_ran = state_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= limit; });
+        first_wave_ran = state_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= limit; });
         running_before_increase = running;
-        if (initial_ran)
+        if (first_wave_ran)
         {
             lock.unlock();
             pool->increaseThreadsCount(increased_threads);
             lock.lock();
+            released = limit;
+            state_changed.notify_all();
+            first_wave_finished = state_changed.wait_for(lock, std::chrono::seconds(60), [&] { return finished >= limit; });
         }
-        release = true;
-        release_tasks.notify_all();
-        all_finished = state_changed.wait_for(lock, std::chrono::seconds(60), [&] { return finished >= num_tasks; });
-        finished_at_end = finished;
+        if (first_wave_finished)
+        {
+            lock.unlock();
+            for (size_t i = limit; i < num_tasks; ++i)
+                EXPECT_TRUE(tasks[i]->activateAndSchedule());
+            lock.lock();
+            second_wave_ran = state_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= limit; });
+            running_in_second_wave = running;
+        }
+        released = num_tasks;
+        state_changed.notify_all();
     }
 
     /// The pool's destructor requires join(), so a fatal assertion must not precede it.
     pool->join();
 
-    EXPECT_TRUE(initial_ran);
+    EXPECT_TRUE(first_wave_ran);
     EXPECT_EQ(running_before_increase, limit);
-    EXPECT_TRUE(all_finished) << "only " << finished_at_end << " of " << num_tasks << " tasks finished";
-    EXPECT_EQ(finished_at_end, num_tasks);
+    EXPECT_TRUE(first_wave_finished);
+    EXPECT_TRUE(second_wave_ran) << "only " << running_in_second_wave << " of " << limit << " tasks of one type run after raising the pool size";
+    EXPECT_EQ(running_in_second_wave, limit);
 }
