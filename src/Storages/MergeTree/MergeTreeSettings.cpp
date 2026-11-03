@@ -2135,7 +2135,8 @@ in the merge has a lightweight delete. Any other TTL merge stays horizontal.
     DECLARE(Bool, merge_build_skip_indexes_in_separate_thread, false, R"(
 If true, a merge builds skip indexes in a separate thread, while the thread of the merge writes the columns of
 the same block. This makes merges of tables with expensive skip indexes faster, but a merge uses two threads
-instead of one. It applies to Wide parts.
+instead of one. It applies to Wide parts with full part storage: for packed part storage the skip indexes
+are built in the thread of the merge.
 
 The threads are limited by the server setting [max_merge_helper_threads](/reference/settings/server-settings/settings/max#max_merge_helper_threads).
 If all of them are used, the merge builds the skip indexes of the block in its own thread.
