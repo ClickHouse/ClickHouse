@@ -61,7 +61,7 @@
 #ifdef SCHEDULER_DEBUG
 #include <iostream>
 #include <base/getThreadId.h>
-#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
+#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {:#x} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<uintptr_t>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
 #else
 #include <base/defines.h>
 #define DBG_PRINT(...) UNUSED(__VA_ARGS__)
@@ -81,6 +81,7 @@ namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
     extern const Event ConcurrencyControlDownscales;
+    extern const Event ConcurrencyControlWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -1530,6 +1531,41 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
     q.reset();
 
     t.wait();
+}
+
+/// The wait for a CPU slot is accounted to the query even when the allocation outlives the thread that created it
+/// (here: destroyed on another thread while its request is still queued, like a `KILL QUERY` of a waiting query).
+TEST(SchedulerWorkloadResourceManager, CPUSlotsWaitTimerOutlivesCreatingThread)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 1");
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("cpu");
+
+    /// Takes the only slot, so the next allocation keeps its request queued.
+    auto blocker = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+    auto blocker_slot = blocker->acquire();
+
+    std::weak_ptr<ThreadGroup> weak_group;
+    SlotAllocationPtr allocation;
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto group = std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0);
+        weak_group = group;
+        CurrentThread::attachToGroupIfDetached(group);
+        allocation = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+        CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+
+    ASSERT_TRUE(allocation->isRequesting());
+    /// The creating thread is gone, so only the allocation can still own the group.
+    ThreadGroupPtr group = weak_group.lock();
+    ASSERT_NE(group, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    allocation.reset();
+    EXPECT_GE(group->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds], 10'000);
 }
 
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
