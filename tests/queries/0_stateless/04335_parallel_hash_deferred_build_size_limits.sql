@@ -1,6 +1,7 @@
--- With `join_overflow_mode = 'throw'`, the deferred build checks `max_rows_in_join` and `max_bytes_in_join` once, after
--- the keys are in the maps, against what the maps hold. So it accepts what the streaming build accepts, and rejects
--- what it rejects. With `break` and a limit, the build does not defer.
+-- With `join_overflow_mode = 'throw'`, the deferred build checks `max_rows_in_join` and `max_bytes_in_join` after the
+-- keys are in the maps, against what the maps hold. While the blocks arrive, it checks `max_bytes_in_join` against the
+-- stored blocks too, see 05486. So it accepts what the streaming build accepts, and rejects what it rejects. With
+-- `break` and a limit, the build does not defer.
 
 SET join_algorithm = 'parallel_hash';
 SET collect_hash_table_stats_during_joins = 0;

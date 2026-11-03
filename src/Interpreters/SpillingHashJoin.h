@@ -181,7 +181,8 @@ private:
     int switch_error_code = 0;
     String switch_error_message;
     /// Set by `onBuildPhaseFinish` for a deferred build, which `runPostBuildPhase` then finishes: it switches to
-    /// the external join when the projected size reaches the spill threshold, and promotes `HashJoin` otherwise.
+    /// the external join when the projected size, or the size of the maps after the inserts, reaches the spill
+    /// threshold, and promotes `HashJoin` otherwise.
     bool finish_deferred_build = false;
 
     std::shared_ptr<HashJoin> hash_join;

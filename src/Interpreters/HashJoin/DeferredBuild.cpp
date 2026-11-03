@@ -22,7 +22,8 @@ namespace
 {
 
 /// The bytes that an `Arena` with the default chunk sizes allocates for `demand` bytes in allocations of at most
-/// `max_allocation` bytes each. A chunk wastes up to one allocation at its end.
+/// `max_allocation` bytes each. A chunk holds at least the allocation it was added for (`Arena::addMemoryChunk` sizes it
+/// for that allocation), and wastes up to one allocation at its end.
 size_t arenaBytes(size_t demand, size_t max_allocation)
 {
     /// The defaults of `Arena`, which `BuildSlots` uses.
@@ -46,7 +47,7 @@ size_t arenaBytes(size_t demand, size_t max_allocation)
             chunk = (min_chunk + linear_growth_threshold - 1) / linear_growth_threshold * linear_growth_threshold;
         chunk = (chunk + page_size - 1) / page_size * page_size;
         allocated += chunk;
-        usable += chunk - min_chunk;
+        usable += std::max(max_allocation, chunk - min_chunk);
     }
     return allocated;
 }

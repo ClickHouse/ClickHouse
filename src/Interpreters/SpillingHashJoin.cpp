@@ -208,12 +208,12 @@ ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
     res.spillable_memory_bytes = hash_join->getTotalByteCount();
     /// The released blocks stay alive while the grace join re-inserts them.
     res.need_reserved_memory_bytes = res.spillable_memory_bytes;
-    /// A deferred build allocates its maps only when it inserts the stored blocks. So it needs the bytes of the maps,
-    /// and spilling it pays off only when they do not fit.
+    /// A deferred build allocates its maps only when it inserts the stored blocks. Either the stored blocks are converted
+    /// or they are inserted, so reserve for the larger of the two.
     if (hash_join->defersBuild())
     {
         const auto projected_bytes = static_cast<Int64>(hash_join->getProjectedBuildBytes(/*all_blocks_stored=*/false));
-        res.need_reserved_memory_bytes = std::max<Int64>(projected_bytes - res.spillable_memory_bytes, 0);
+        res.need_reserved_memory_bytes = std::max<Int64>(res.need_reserved_memory_bytes, projected_bytes - res.spillable_memory_bytes);
     }
     return res;
 }
@@ -475,20 +475,40 @@ void SpillingHashJoin::runPostBuildPhase()
         if (state.load(std::memory_order_acquire) == State::COLLECTING)
         {
             const size_t projected_bytes = hash_join->getProjectedBuildBytes(/*all_blocks_stored=*/true);
+            bool fits = false;
             if (projected_bytes >= max_bytes_before_external_join)
             {
                 LOG_DEBUG(
                     log,
                     "The projected size of the deferred build, {} bytes, reached the spill threshold at the end of the build",
                     projected_bytes);
-                switchToExternalJoin(JoinBuildContext::serial());
             }
             else
             {
-                LOG_DEBUG(log, "The deferred build fits in memory ({} bytes projected), promoting HashJoin", projected_bytes);
-                chosen_join = hash_join;
-                state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
+                /// The projection is an estimate. So, as the streaming build does after its last block, compare what the
+                /// maps hold after the inserts with the threshold. No spill runs in the post-build phase, but the inserts
+                /// take the lock shared, as in `addBlockToJoin`.
+                std::shared_lock lock(switch_mutex);
+                if (state.load(std::memory_order_acquire) == State::COLLECTING)
+                {
+                    hash_join->insertDeferredBlocks();
+                    const size_t total_bytes = hash_join->getTotalByteCount();
+                    fits = total_bytes < max_bytes_before_external_join;
+                    if (fits)
+                    {
+                        LOG_DEBUG(log, "The deferred build fits in memory ({} bytes), promoting HashJoin", total_bytes);
+                        chosen_join = hash_join;
+                        state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
+                    }
+                    else
+                    {
+                        LOG_DEBUG(log, "The deferred build holds {} bytes after its inserts, at the spill threshold", total_bytes);
+                    }
+                }
             }
+            throwIfSwitchFailed();
+            if (!fits && state.load(std::memory_order_acquire) == State::COLLECTING)
+                switchToExternalJoin(JoinBuildContext::serial());
         }
 
         chosen_join->onBuildPhaseFinish();

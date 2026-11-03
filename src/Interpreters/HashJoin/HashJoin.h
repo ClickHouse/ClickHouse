@@ -314,9 +314,12 @@ public:
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
     /// Whether the build stores the right blocks first and inserts their keys in the post-build phase, once the number
-    /// of distinct keys is known, instead of inserting each block as it arrives (a streaming build).
-    /// See `enable_hash_join_deferred_build`.
-    bool defersBuild() const { return deferred_build != nullptr; }
+    /// of distinct keys is known, instead of inserting each block as it arrives (a streaming build). False once the keys
+    /// are in the maps. See `enable_hash_join_deferred_build`.
+    bool defersBuild() const { return deferred_build && !deferred_blocks_inserted.load(std::memory_order_acquire); }
+    /// For a deferred build: inserts the stored blocks into maps reserved from the counts. `SpillingHashJoin` calls it in
+    /// its post-build phase, so it can still switch the join on what the maps hold then.
+    void insertDeferredBlocks();
     /// For a deferred build: the bytes it will hold once the stored blocks are inserted. With `all_blocks_stored = false`,
     /// a cheaper estimate from the counts published so far, which concurrent callers may share.
     size_t getProjectedBuildBytes(bool all_blocks_stored) const;
@@ -864,6 +867,8 @@ private:
 
     /// Set in the constructor when the build defers, see `replayDeferredBuild`.
     std::unique_ptr<DeferredBuildState> deferred_build;
+    /// Set by `insertDeferredBlocks`. Atomic, because `defersBuild` is read on other pipeline threads.
+    std::atomic<bool> deferred_blocks_inserted = false;
     /// From `onBuildPhaseFinish` of a deferred build until its keys are in the maps.
     bool replay_pending = false;
     /// Whether a build stream asked this join to check the size limits, which a deferred build does once, in `replayDeferredBuild`.

@@ -1362,12 +1362,15 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         addPendingInsert(build_stream, stored, block, context.getStream());
         if (!context.joinChecksLimits())
             return true;
-        /// The limits are checked once, in `replayDeferredBuild`, against what the maps hold then.
+        /// The exact check is made once, in `replayDeferredBuild`, against what the maps hold then.
         deferred_build_checks_limits.store(true, std::memory_order_relaxed);
         size_t total_bytes = getTotalByteCount();
         updatePeakBuildBytes(total_bytes);
         shrinkStoredBlocksToFit(total_bytes, /*force_optimize=*/false, context.getStream());
-        return true;
+        /// The streaming build holds the same stored blocks with its maps on top, so it fails on these bytes too. The ON
+        /// condition columns go with the inserts, and only the inserts count the keys, so the row limit waits for them.
+        const size_t stored_bytes = data->allocated_size.load(std::memory_order_relaxed) + data->bucket_bytes.load(std::memory_order_relaxed);
+        return table_join->sizeLimits().check(/*rows=*/0, stored_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
 
     size_t total_rows = 0;
@@ -3485,12 +3488,18 @@ bool HashJoin::recordsRowRefsForStats() const
 void HashJoin::onBuildPhaseFinish()
 {
     /// `FillingRightJoinSideTransform` calls this from `prepare`, so the keys go into the maps in the post-build phase.
-    if (deferred_build)
+    if (defersBuild())
     {
         replay_pending = true;
         return;
     }
     finishBuildPhase();
+}
+
+void HashJoin::insertDeferredBlocks()
+{
+    replayDeferredBuild();
+    deferred_blocks_inserted.store(true, std::memory_order_release);
 }
 
 size_t HashJoin::getProjectedBuildBytes(bool all_blocks_stored) const
@@ -3686,7 +3695,7 @@ void HashJoin::runPostBuildPhase()
 {
     if (replay_pending)
     {
-        replayDeferredBuild();
+        insertDeferredBlocks();
         replay_pending = false;
         finishBuildPhase();
     }
