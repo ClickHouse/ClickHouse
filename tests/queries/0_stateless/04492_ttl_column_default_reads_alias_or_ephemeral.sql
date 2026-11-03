@@ -49,6 +49,31 @@ SELECT 'recompute', d < '2050-01-01' AS expired, countIf(w = concat(q, '-') AND 
     FROM t_recompute GROUP BY expired ORDER BY expired;
 DROP TABLE t_recompute;
 
+DROP TABLE IF EXISTS t_result_alias;
+CREATE TABLE t_result_alias (d Date, k UInt32, q String, z Int64,
+    w String DEFAULT (concat(q, 'D') AS w) TTL d + INTERVAL 1 DAY,
+    x Int64 DEFAULT 5 TTL d + INTERVAL 1 DAY,
+    m Int64 MATERIALIZED (x + z AS z))
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_result_alias (d, k, q, z, w, x) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number),
+    100, 'stored', 10 FROM numbers(100);
+OPTIMIZE TABLE t_result_alias FINAL;
+SELECT 'result alias', d < '2050-01-01' AS expired, countIf(w = concat(q, 'D')), countIf(x = 5 AND m = 105),
+    countIf(w = 'stored' AND x = 10 AND m = 110), count()
+    FROM t_result_alias GROUP BY expired ORDER BY expired;
+DROP TABLE t_result_alias;
+
+DROP TABLE IF EXISTS t_recompute_capture;
+CREATE TABLE t_recompute_capture (d Date, k UInt32, q String, w String DEFAULT 'D' TTL d + INTERVAL 1 DAY,
+    b String ALIAS concat(q, w), a String ALIAS arrayMap(q -> concat(q, b), ['1'])[1], m String MATERIALIZED a)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_recompute_capture (d, k, q, w) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number),
+    'stored' FROM numbers(100);
+OPTIMIZE TABLE t_recompute_capture FINAL;
+SELECT 'recompute capture', d < '2050-01-01' AS expired, countIf(w = 'D'), countIf(m = concat('1', q, 'stored')), count()
+    FROM t_recompute_capture GROUP BY expired ORDER BY expired;
+DROP TABLE t_recompute_capture;
+
 DROP TABLE IF EXISTS t_capture;
 CREATE TABLE t_capture (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'),
     w String DEFAULT arrayMap(q -> concat(q, a), ['1'])[1] TTL d + INTERVAL 1 DAY)

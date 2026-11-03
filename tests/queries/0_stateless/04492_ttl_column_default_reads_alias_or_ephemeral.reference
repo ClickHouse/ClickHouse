@@ -5,6 +5,10 @@ partial	0	0	0	0	0	0	0	50	50	50
 partial	1	50	50	50	50	50	50	50	0	50
 recompute	0	0	50	50
 recompute	1	50	0	50
+result alias	0	0	0	50	50
+result alias	1	50	50	0	50
+recompute capture	0	0	50	50
+recompute capture	1	50	50	50
 capture	10	10
 capture chain	10	10
 capture field	10	10

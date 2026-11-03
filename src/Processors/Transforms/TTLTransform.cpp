@@ -55,7 +55,7 @@ static bool hasFreeIdentifierRootIn(const IAST & ast, NameSet bound)
     }
     else if (const auto * identifier = ast.as<ASTIdentifier>())
     {
-        return bound.contains(identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front());
+        return bound.contains(identifier->name_parts.front());
     }
 
     if (bound.empty())
@@ -86,7 +86,7 @@ static bool isAliasExpansionCapturedByLambda(const IAST & ast, const ColumnsDesc
         if (!column || column->default_desc.kind != ColumnDefaultKind::Alias || bound.contains(identifier->name()))
             return false;
 
-        if (!identifier->name_parts.empty() && bound.contains(identifier->name_parts.front()))
+        if (bound.contains(identifier->name_parts.front()))
             return true;
 
         return hasFreeIdentifierRootIn(*column->default_desc.expression, bound)
@@ -163,9 +163,15 @@ std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform
         if (!dependents.contains(column.name) || unrecomputable_columns.contains(column.name))
             continue;
 
+        /// An enclosing lambda parameter would bind a name the alias expansion brings in; such a column keeps its value.
+        if (isAliasExpansionCapturedByLambda(*column.default_desc.expression, storage_columns, {}))
+            continue;
+
         /// The graph keeps its expression pristine for every caller, and `analyze` rewrites in place.
         auto expression_ast
             = addTypeConversionToAST(materialized_dependencies.findNode(column.name)->expression->clone(), column.type->getName());
+        /// The result is looked up by name in a block of the table's columns, which an alias could name.
+        expression_ast->setAlias({});
         auto syntax_result = TreeRewriter(context).analyze(expression_ast, storage_columns.getAllPhysical());
         auto expression = ExpressionAnalyzer{expression_ast, syntax_result, context}.getActions(true);
 
@@ -173,9 +179,8 @@ std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform
         if (expression->getActionsDAG().hasNonDeterministic())
             continue;
 
-        /// An expanded bare ALIAS reference keeps the alias's name, and `getActions(true)` names the result by it.
         levels[level_of[column.name]].push_back(
-            {column.name, expression, expression_ast->getAliasOrColumnName(), expression->getRequiredColumns()});
+            {column.name, expression, expression_ast->getColumnName(), expression->getRequiredColumns()});
     }
 
     return levels;
@@ -270,9 +275,11 @@ TTLTransform::TTLTransform(
         if (!isAliasExpansionCapturedByLambda(*default_ast, columns_to_expand, {}))
             replaceAliasColumnsInQuery(default_ast, columns_to_expand, {}, storage_.getContext());
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
+        /// The result is looked up by name in a block of the table's columns, which an alias could name.
+        default_ast->setAlias({});
         auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
         auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
-        return Result{actions, default_ast->getAliasOrColumnName()};
+        return Result{actions, default_ast->getColumnName()};
     };
 
     for (const auto & expired_column : expired_columns)
