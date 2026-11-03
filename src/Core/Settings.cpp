@@ -6355,7 +6355,7 @@ Result:
 - [NULL Processing in IN Operators](/reference/statements/in#null-processing)
 )", 0) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
-User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
+User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`, and of the virtual columns whose values may differ between replicas, such as `_table`, `_database` and `_disk_name`.
 
 Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
 
@@ -9824,6 +9824,8 @@ Possible values:
 
 This options will produce different results depending on the settings used.
 
+With `parallel_replicas_mode` `sampling_key`, or a custom key mode on a cluster with more than one shard, each replica returns its own part of the result of the shard. The replicas of a shard are used together only when the initiator aggregates or fully sorts these parts itself (for example an aggregation without `GROUP BY` keys). Otherwise, for example for `GROUP BY` with `distributed_aggregation_memory_efficient` or for `ORDER BY`, the shard is read from one replica.
+
 ### Parallel processing using `SAMPLE` key
 
 A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
@@ -10325,7 +10327,7 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
 If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
 At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
-The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
+`0` always splits the hash table.
 With `hash_join_layout` set to `serial` or `parallel`, this threshold is not used: the join builds one part or splits the hash table, whatever the estimate.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 The query plan estimates 0 rows for a right table known to be empty, such as a `MergeTree` table without data parts.
@@ -10336,7 +10338,7 @@ The query plan estimates 0 rows for a right table known to be empty, such as a `
         {"25.3", 0, 0, "New setting"}) \
     DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, R"(
 How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
-The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+`auto`, the default, lets the planner choose the layout with `parallel_hash_join_threshold`; set `serial` or `parallel` to force one.
 
 Possible values:
 
@@ -10352,7 +10354,7 @@ Some joins always build one part, whatever the value:
 - the hash join that `join_algorithm = 'auto'` starts with when the join cannot spill to disk (for example with `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` both `0`) and can switch to a partial merge join instead;
 - each per-shard join of `query_plan_join_shard_by_pk_ranges`.
 )", 0, \
-        {"26.11", "auto", "auto", "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
+        {"26.11", "auto", "auto", "New setting to force the layout of a hash join. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
