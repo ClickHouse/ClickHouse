@@ -1,0 +1,57 @@
+<test>
+    <!-- The virtual columns of a text index are read right before the first PREWHERE step that uses them,
+         so the index is read only for the granules that passed the cheaper steps before it. Both queries
+         read the index for a small fraction of the granules: after a manual PREWHERE, and after the dynamic
+         top-K filter. The query condition cache is off, so every run reads the same granules. -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <!-- A log table: `host` belongs to one `service`, so a filter by host passes the granules of one service
+         out of 20, while the primary key prunes nothing. `ts` is in the key only through an expression, as in
+         the OpenTelemetry logs schema, so the primary key does not prune granules by the top-K threshold either.
+         Every word of `message` is in about a fifth of the rows, so the index is expensive to read. -->
+    <create_query>
+        CREATE TABLE text_index_prewhere_order
+        (
+            service LowCardinality(String),
+            host LowCardinality(String),
+            ts DateTime,
+            message String,
+            INDEX idx_message message TYPE text(tokenizer = splitByNonAlpha)
+        )
+        ENGINE = MergeTree ORDER BY (service, toUnixTimestamp(ts))
+    </create_query>
+
+    <fill_query>
+        INSERT INTO text_index_prewhere_order
+        SELECT
+            concat('service_', toString(number % 20)),
+            concat('host_', toString(number % 20), '_', toString(intHash32(number) % 10)),
+            toDateTime('2026-01-01 00:00:00') + intDiv(number, 20),
+            concat(
+                ['INFO', 'INFO', 'INFO', 'WARN', 'ERROR'][1 + intHash64(number) % 5],
+                ' ',
+                arrayStringConcat(arrayMap(i -> ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel',
+                    'india', 'juliett', 'kilo', 'lima', 'mike', 'november', 'oscar', 'papa'][1 + cityHash64(number, i) % 16], range(4)), ' '))
+        FROM numbers_mt(20000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_prewhere_order FINAL</fill_query>
+
+    <!-- The manual PREWHERE reads only `host`, which is much cheaper than the union of the posting lists. -->
+    <query>
+        SELECT count() FROM text_index_prewhere_order
+        PREWHERE host = 'host_7_3'
+        WHERE hasAnyTokens(message, ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot'])
+    </query>
+
+    <!-- The top-K filter on `ts` runs before the index is read and rejects most granules once its threshold
+         reaches the newest rows. -->
+    <query>
+        SELECT ts, host, message FROM text_index_prewhere_order
+        WHERE hasAnyTokens(message, ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot'])
+        ORDER BY ts DESC LIMIT 100
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_prewhere_order</drop_query>
+</test>

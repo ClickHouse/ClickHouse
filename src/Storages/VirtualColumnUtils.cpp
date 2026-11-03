@@ -318,7 +318,6 @@ static void addPathAndFileToVirtualColumns(
     const String & path,
     size_t idx,
     const FormatSettings & format_settings,
-    bool parse_hive_columns,
     const String * file_name = nullptr)
 {
     if (block.has("_path"))
@@ -343,18 +342,19 @@ static void addPathAndFileToVirtualColumns(
         columns[block.getPositionByName("_file")]->insert(file);
     }
 
-    if (parse_hive_columns)
+    /// Any other column of the block, except `_idx`, is a Hive partition column.
+    std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> keys_and_values;
+    for (size_t pos = 0; pos < block.columns(); ++pos)
     {
-        const auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-        for (const auto & [key, value] : keys_and_values)
-        {
-            if (const auto * column = block.findByName(key))
-            {
-                ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(
-                    *columns[block.getPositionByName(column->name)], buf, format_settings);
-            }
-        }
+        const auto & column = block.getByPosition(pos);
+        if (column.name == "_path" || column.name == "_file" || column.name == "_idx")
+            continue;
+
+        if (!keys_and_values)
+            keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+
+        ReadBufferFromString buf(HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.name, path));
+        column.type->getDefaultSerialization()->deserializeWholeText(*columns[pos], buf, format_settings);
     }
 
     columns[block.getPositionByName("_idx")]->insert(idx);
@@ -380,7 +380,8 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 
     for (const auto & column : hive_columns)
     {
-        if (!block.has(column.name))
+        /// In the filter block `_path` and `_file` are the path and the file name, never a Hive column with that name.
+        if (column.name != "_path" && column.name != "_file" && !block.has(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -400,25 +401,27 @@ ColumnPtr getFilterByPathAndFileIndexes(
     if (file_names && file_names->size() != paths.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of paths and file names do not match: {} != {}", paths.size(), file_names->size());
 
+    /// Only the columns the filter reads: a path may lack a Hive column the filter does not use.
+    const NameSet required = actions->getRequiredColumnsWithTypes().getNameSet();
+
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path"
-            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
+        if (required.contains(column.name) && (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name))))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     for (const auto & column : hive_columns)
     {
-        if (!block.has(column.name))
+        if (required.contains(column.name) && !block.has(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
-    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
 
     /// Detach all block columns into mutable holders once, append all rows through them, and
     /// assign them back once. This keeps `IColumn::mutate` (and its recursive subcolumn re-wrapping
@@ -432,7 +435,6 @@ ColumnPtr getFilterByPathAndFileIndexes(
             paths[i],
             /* idx */i,
             hive_format_settings,
-            parse_hive_columns,
             file_names ? &(*file_names)[i] : nullptr);
     }
     block.setColumns(std::move(columns));
@@ -474,15 +476,8 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     ContextPtr context,
     const std::optional<FormatSettings> & format_settings)
 {
-    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
-
-    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
-    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
-    const auto hive_format_settings = hive_map.empty()
-        ? FormatSettings{}
-        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+    std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> hive_map;
+    FormatSettings hive_format_settings;
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -548,7 +543,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (virtual_column.name == "_row_number")
         {
-#if USE_PARQUET
+#if USE_PARQUET || USE_VORTEX
             auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
             if (chunk_info)
             {
@@ -569,7 +564,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
             }
 #else
-            // If Parquet format is not used, we don't have row numbers info, so _row_number = NULL.
+            // If Parquet or Vortex are not used, we don't have row numbers info, so _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
 #endif
         }
@@ -597,7 +592,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         else if (virtual_column.name == "_row_id")
         {
             std::vector<UInt64> row_positions;
-#if USE_PARQUET
+#if USE_PARQUET || USE_VORTEX
             if (auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>(); chunk_info && virtual_values.first_row_id)
             {
                 const auto & applied_filter = chunk_info->applied_filter;
@@ -631,12 +626,20 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
+        else if (!isReaderOnlyVirtualColumn(virtual_column.name))
         {
+            /// Any other virtual column, except the reader-only ones the caller adds later, is a Hive partition column.
+            if (!hive_map)
+            {
+                hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+                hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+            }
+
+            const auto value = HivePartitioningUtils::getPartitionValueFromPath(*hive_map, virtual_column.getNameInStorage(), virtual_values.path);
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(String(it->second)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
+                    convertFieldToType(Field(String(value)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
         }
     }
 }
@@ -771,6 +774,21 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 const ActionsDAG::Node * res = node_copy.children.front();
                 /// Expression like (not_allowed AND 256) can't be reduced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
+                if (!res->result_type->equals(*node->result_type))
+                    res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
+
+                return res;
+            }
+
+            if (node_copy.children.size() < node->children.size())
+            {
+                /// The copy still has the function built for all the arguments of `node`.
+                ActionsDAG tmp_dag;
+                FunctionOverloadResolverPtr func_builder_and
+                    = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                const ActionsDAG::Node * res = &tmp_dag.addFunction(func_builder_and, node_copy.children, {});
+                additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+
                 if (!res->result_type->equals(*node->result_type))
                     res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
 

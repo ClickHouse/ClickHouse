@@ -13,7 +13,7 @@ Para los casos de uso que no requieren transformar los datos de ClickHouse entre
 
 ### Método `raw_query` de Client {#client-rawquery-method}
 
-El método `Client.raw_query` permite usar directamente la interfaz HTTP de consultas de ClickHouse a través de la conexión del cliente. El valor devuelto es un objeto `bytes` sin procesar. Proporciona un práctico envoltorio con enlace de parámetros, manejo de errores, reintentos y gestión de configuración mediante una interfaz mínima:
+El método `Client.raw_query` permite usar directamente la interfaz HTTP de consultas de ClickHouse a través de la conexión del Client. El valor devuelto es un objeto `bytes` sin procesar. Proporciona un práctico envoltorio con enlace de parámetros, manejo de errores, reintentos para lecturas elegibles y gestión de configuración mediante una interfaz mínima. Consulte [Reintentos HTTP](/es/integrations/language-clients/python/driver-api#http-retries).
 
 | Parámetro            | Tipo             | Predeterminado | Descripción                                                                                                                         |
 | -------------------- | ---------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,13 +39,15 @@ El método `Client.raw_insert` permite realizar inserciones directas de objetos 
 | -------------------- | ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `table`              | str                                  | Required | El nombre simple de la tabla o el nombre de tabla calificado con la base de datos.                                           |
 | `column_names`       | Sequence[str]                        | `None`   | Nombres de columna para el bloque de inserción. Obligatorio cuando `fmt` no incluye nombres.                                 |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | Datos que se van a insertar. Las cadenas se codifican con la codificación del Client.                                       |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | Datos que se van a insertar. Las cadenas se codifican con la codificación del Client.                                        |
 | `settings`           | dict                                 | `None`   | Consulte [Settings argument](/es/integrations/language-clients/python/driver-api#settings-argument-1).                          |
 | `fmt`                | str                                  | `None`   | Formato de entrada de ClickHouse de la carga útil de `insert_block`. Se usa `Native` cuando no se especifica ningún formato. |
 | `compression`        | str                                  | `None`   | Compresión ya aplicada a `insert_block`, como `"gzip"`, `"lz4"` o `"zstd"`.                                                  |
-| `transport_settings` | dict                                 | `None`   | encabezados HTTP añadidos a esta solicitud.                                                                                      |
+| `transport_settings` | dict                                 | `None`   | encabezados HTTP añadidos a esta solicitud.                                                                                  |
 
-Es responsabilidad de quien realiza la llamada garantizar que `insert_block` esté en el formato especificado y use el método de compresión indicado. ClickHouse Connect usa estas inserciones sin procesar para cargas de archivos y tablas de PyArrow, delegando el análisis en el servidor de ClickHouse.
+Es responsabilidad de quien realiza la llamada garantizar que `insert_block` esté en el formato especificado y use el método de compresión indicado. ClickHouse Connect usa estas inserciones sin procesar para cargas de archivos y tablas de PyArrow, delegando la tarea de analizar en el servidor de ClickHouse.
+
+Las cargas útiles de tipo cadena y bytes se pueden reintentar si se cierra la conexión remota. Los generadores y los archivos abiertos no se pueden volver a enviar. Consulte [Reintentos de inserción y deduplicación](/es/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 ## Guardar los resultados de consultas como archivos {#saving-query-results-as-files}
 
@@ -85,11 +87,11 @@ Del mismo modo, puede guardar datos en [TabSeparated](/es/reference/formats/TabS
 
 ## Casos de uso multihilo, multiproceso y asíncronos/controlados por eventos {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
-ClickHouse Connect funciona bien en aplicaciones multihilo, multiproceso y asíncronas/controladas por bucles de eventos. Todo el procesamiento de consultas e inserciones se realiza dentro de un único hilo, por lo que, en general, las operaciones son seguras en entornos multihilo. (El procesamiento en paralelo de algunas operaciones a bajo nivel es una posible mejora futura para superar la penalización de rendimiento de usar un único hilo, pero incluso en ese caso se mantendrá la seguridad en entornos multihilo).
+ClickHouse Connect admite aplicaciones multihilo, multiproceso y basadas en asyncio. Un Client HTTP síncrono puede compartirse entre hilos siempre que las llamadas concurrentes no utilicen la misma sesión de ClickHouse. Consulte la explicación sobre sesiones más abajo. El Client asíncrono ejecuta parte del proceso de analizar y de la preparación de inserciones en hilos de trabajo.
 
 Como cada consulta o inserción ejecutada mantiene su estado en su propio objeto `QueryContext` o `InsertContext`, respectivamente, estos objetos auxiliares no son seguros en entornos multihilo y no deben compartirse entre varios flujos de procesamiento. Consulte información adicional sobre los objetos de contexto en las secciones [QueryContexts](/es/integrations/language-clients/python/advanced-querying#querycontexts) e [InsertContexts](/es/integrations/language-clients/python/advanced-inserting#insertcontexts).
 
-Además, en una aplicación que tiene dos o más consultas y/o inserciones &quot;en curso&quot; al mismo tiempo, hay otras dos consideraciones que deben tenerse en cuenta. La primera es la &quot;sesión&quot; de ClickHouse asociada con la consulta o inserción, y la segunda es el pool de conexiones HTTP utilizado por las instancias de Client de ClickHouse Connect.
+Además, en una aplicación que tiene dos o más consultas y/o inserciones &quot;en curso&quot; al mismo tiempo, hay otras dos consideraciones que deben tenerse en cuenta. La primera es la &quot;sesión&quot; de ClickHouse asociada con la consulta o inserción, y la segunda es el grupo de conexiones HTTP utilizado por las instancias de Client de ClickHouse Connect.
 
 ## AsyncClient {#asyncclient}
 
@@ -118,7 +120,9 @@ async def main():
 asyncio.run(main())
 ```
 
-El Client asíncrono sigue el mismo contrato de consulta, insert, raw, Arrow y streaming que el Client síncrono. Usa aiohttp para el I/O de red. El parsing del formato Native, limitado por la CPU, puede ejecutarse en un executor para que no bloquee el bucle de eventos.
+El Client asíncrono sigue el mismo contrato de consulta, inserción, raw, Arrow y streaming que el Client síncrono. Usa aiohttp para el I/O de red. El proceso de analizar el formato Native, limitado por la CPU, puede ejecutarse en un executor para que no bloquee el bucle de eventos.
+
+`insert_arrow` e `insert_df_arrow` ejecutan la conversión de DataFrame y la codificación Arrow en un worker dedicado por cada Client, independiente de los readers de las consultas en streaming. Cada Client ejecuta una única operación de preparación a la vez para limitar el uso de memoria temporal. Cuando termines, cierra el Client con `async with` o `await client.close()`. Las operaciones de PyArrow que retienen el bloqueo global del intérprete de Python pueden seguir pausando otras corrutinas.
 
 Un Client asíncrono posee una sesión de aiohttp creada en un bucle de eventos concreto. Antes de mover el Client a otro bucle de eventos, ciérralo en su bucle propietario y, a continuación, llama a `await client._initialize()` en el nuevo bucle antes de realizar solicitudes. Si el bucle propietario ya se ha cerrado, llama a `await client.close()` seguido de `await client._initialize()` en el bucle actual. Es posible que aiohttp siga notificando un transporte sin cerrar si la limpieza no empieza hasta después de que se haya cerrado el bucle propietario, así que, siempre que sea posible, cierra el Client antes de transferirlo.
 

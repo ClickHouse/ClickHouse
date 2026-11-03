@@ -1090,10 +1090,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Beta) {#lazy-type-hints}
+## Lazy Type Hints {#lazy-type-hints}
 
 <Note>
-  Este recurso está em beta e exige que a configuração `enable_json_lazy_type_hints` esteja habilitada.
+  Este recurso exige que a configuração `enable_json_lazy_type_hints` esteja habilitada.
 </Note>
 
 Quando você adiciona ou modifica type hints em uma coluna JSON usando `ALTER TABLE ... MODIFY COLUMN`, o ClickHouse normalmente reescreve todas as partes de dados para materializar os novos type hints. Em tabelas com grandes volumes de dados históricos (centenas de terabytes), isso pode ser extremamente custoso.
