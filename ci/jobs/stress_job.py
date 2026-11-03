@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
@@ -285,6 +285,7 @@ def process_results(
 
 def select_replica_failures(
     replica_log_pairs: List[Tuple[str, Path, Path]],
+    omitted: Optional[List[Tuple[str, str, List[str]]]] = None,
 ) -> List[Tuple[str, str, List[str]]]:
     """Pick the failures to report from every replica's (server, stderr) log pair.
 
@@ -298,10 +299,15 @@ def select_replica_failures(
     Returns a list of `(name, description, files)` tuples: all distinct specific
     findings; otherwise a single generic-fatal finding; otherwise a single
     "Unknown error" finding; otherwise an empty list (nothing parsed at all).
+
+    `omitted`, when given, receives every distinct generic `<Fatal>` finding that is
+    not returned, so a caller that may pass the run on the returned ones (the AI
+    triage) still accounts for them.
     """
     specific_results: List[Tuple[str, str, List[str]]] = []
     seen_specific_names = set()
-    generic_fatal_result = None
+    generic_fatal_results: List[Tuple[str, str, List[str]]] = []
+    seen_generic_names = set()
     fallback_result = None
 
     for replica_name, server_log_file, stderr_log in replica_log_pairs:
@@ -320,8 +326,9 @@ def select_replica_failures(
                 if fallback_result is None:
                     fallback_result = (name, description, files)
             elif log_parser.is_generic_fatal:
-                if generic_fatal_result is None:
-                    generic_fatal_result = (name, description, files)
+                if name not in seen_generic_names:
+                    seen_generic_names.add(name)
+                    generic_fatal_results.append((name, description, files))
             elif name not in seen_specific_names:
                 # The same failure often surfaces on several replicas (shared
                 # storage / replication); report each distinct classification once.
@@ -334,13 +341,14 @@ def select_replica_failures(
                 f"Server logs should still be collected."
             )
 
-    if specific_results:
-        return specific_results
-    if generic_fatal_result:
-        return [generic_fatal_result]
-    if fallback_result:
-        return [fallback_result]
-    return []
+    selected = (
+        specific_results
+        or generic_fatal_results[:1]
+        or ([fallback_result] if fallback_result else [])
+    )
+    if omitted is not None:
+        omitted.extend(r for r in generic_fatal_results if r not in selected)
+    return selected
 
 
 def run_stress_test(upgrade_check: bool = False) -> None:
@@ -432,6 +440,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     server_died = False
     crash_named = False
     failed_results = []
+    # Generic `<Fatal>` reports of other replicas that the report leaves out
+    omitted_fatals = []
     for test_result in test_results:
         if test_result.name == "Server died":
             server_died = True
@@ -473,7 +483,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            results = select_replica_failures(replica_log_pairs)
+            results = select_replica_failures(replica_log_pairs, omitted_fatals)
             if results:
                 # The crash named in the server logs is the cause, so drop the rows
                 # about its consequences to report it once.
@@ -592,7 +602,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         triage_and_apply(
             r,
             job_kind=job_kind,
-            failures=[(fr.name, fr.info or "") for fr in failed_results],
+            # The issue of a reported failure must not pass the run over a fatal report
+            # the report leaves out, so the triage sees those too.
+            failures=[(fr.name, fr.info or "") for fr in failed_results]
+            + [(name, description) for name, description, _ in omitted_fatals],
             evidence_paths=evidence,
             repro_hint=repro_hint,
             # The Upgrade check job has a 2h timeout and its run phases are
