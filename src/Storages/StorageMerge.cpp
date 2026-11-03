@@ -485,6 +485,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
 
     /// Enums that differ between tables are read by name. Without a common type the column keeps the type
     /// inferred above, because an enum cannot be cast to a `Variant` that does not contain it.
+    NameSet retyped_columns;
     for (auto & [name, types] : column_types)
     {
         if (types.size() < 2 || !keepEnumNames(types, keep_enum_names == MergeTableKeepEnumNames::ALWAYS))
@@ -495,14 +496,34 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
             res.modify(name, [&type](ColumnDescription & what)
             {
                 what.type = type;
-                /// The `Merge` would compute an inherited `ALIAS` under the new type, so the tables compute it under their enums.
-                if (what.default_desc.kind == ColumnDefaultKind::Alias)
-                    what.default_desc = {};
                 /// A codec of an enum, such as `T64`, may not support `String`.
                 what.codec = {};
             });
+            retyped_columns.insert(name);
         }
     }
+
+    auto is_retyped = [&](const String & name)
+    {
+        return retyped_columns.contains(name) || std::ranges::any_of(Nested::getAllColumnAndSubcolumnPairs(name),
+            [&](const auto & column_and_subcolumn) { return retyped_columns.contains(String(column_and_subcolumn.first)); });
+    };
+
+    /// The `Merge` would compute an inherited `ALIAS` of a retyped column, or one that refers to it, under the new type.
+    /// As `MATERIALIZED` it is read from the tables, which compute it under their own types, and `*` still skips it.
+    Names computed_by_tables;
+    for (const auto & column : res)
+    {
+        if (column.default_desc.kind != ColumnDefaultKind::Alias)
+            continue;
+        IdentifierNameSet identifiers;
+        column.default_desc.expression->collectIdentifierNames(identifiers);
+        if (is_retyped(column.name) || std::ranges::any_of(identifiers, is_retyped))
+            computed_by_tables.push_back(column.name);
+    }
+
+    for (const auto & name : computed_by_tables)
+        res.modify(name, [](ColumnDescription & what) { what.default_desc.kind = ColumnDefaultKind::Materialized; });
 
     return res;
 }
