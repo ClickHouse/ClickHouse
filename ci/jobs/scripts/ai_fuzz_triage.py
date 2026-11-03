@@ -1256,6 +1256,32 @@ def _write_known_issues(occurrences):
         )
 
 
+def _trust_checkout():
+    """Make git, here and in the agent, accept the checkout.
+
+    A job running as root in a container over the runner's checkout (La Casa del Dolor) does not
+    own it, so git refuses it as a dubious-ownership repository. The global config it is trusted
+    in is the container's own, which goes away with it. Raises if git still refuses it.
+    """
+
+    def accepted():
+        command = ["git", "rev-parse", "--git-dir"]
+        return subprocess.run(command, capture_output=True, timeout=60).returncode == 0
+
+    if accepted():
+        return
+    checkout = str(Path.cwd().resolve())
+    print(f"AI fuzz triage: trusting the checkout {checkout} for git")
+    subprocess.run(
+        ["git", "config", "--global", "--add", "safe.directory", checkout],
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+    if not accepted():
+        raise RuntimeError(f"git still refuses the checkout {checkout}")
+
+
 def _fetch_recent_history(sha, deadline):
     """Deepen the checkout to the recent merges for post-merge attribution; False if that failed."""
     if not COMMIT_SHA_RE.match(sha or ""):
@@ -2174,6 +2200,7 @@ def triage_and_apply(
         if verdict:
             print(f"AI fuzz triage: known issue {verdict['issue_url']}, no agent run")
         else:
+            _trust_checkout()
             if pr_mode:
                 _write_pr_diff(info, repo_name, work_deadline)
             history_available = not pr_mode and _fetch_recent_history(
