@@ -819,9 +819,26 @@ char * itoa(UInt8 i, char * p)
     return jeaiii::to_text_from_integer(p, uint8_t(i));
 }
 
+/// The sign without a branch, which mispredicts on mixed-sign data: '-' is always written, and the magnitude
+/// `(i ^ sign) - sign`, in unsigned arithmetic so that the minimum value fits, is written over it when `i` is
+/// not negative.
+template <typename T>
+ALWAYS_INLINE inline char * writeSignedText(T i, char * p)
+{
+    using U = std::make_unsigned_t<T>;
+    U sign = static_cast<U>(i >> (sizeof(T) * 8 - 1));
+    U magnitude = static_cast<U>((static_cast<U>(i) ^ sign) - sign);
+    *p = '-';
+    p += sign & 1;
+    if constexpr (sizeof(T) == 8)
+        return writeUInt64Text(magnitude, p);
+    else
+        return jeaiii::to_text_from_integer(p, magnitude);
+}
+
 char * itoa(Int8 i, char * p)
 {
-    return jeaiii::to_text_from_integer(p, int8_t(i));
+    return writeSignedText(int8_t(i), p);
 }
 
 char * itoa(UInt128 i, char * p)
@@ -850,23 +867,30 @@ char * itoa(const Int256 & i, char * p)
         return jeaiii::to_text_from_integer(p, i); \
     }
 
+#define SIGNED_ITOA(T) \
+    char * itoa(T i, char * p) \
+    { \
+        return writeSignedText(i, p); \
+    }
+
 #define FOR_MISSING_INTEGER_TYPES(M) \
     M(uint8_t) \
     M(UInt16) \
-    M(UInt32) \
-    M(int8_t) \
-    M(Int16) \
-    M(Int32)
+    M(UInt32)
 
 FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
+SIGNED_ITOA(int8_t)
+SIGNED_ITOA(Int16)
+SIGNED_ITOA(Int32)
 
 /// `long` is not covered by the list above where it is a distinct type.
 #if defined(LONG_IS_A_DISTINCT_TYPE)
 DEFAULT_ITOA(unsigned long)
-DEFAULT_ITOA(long)
+SIGNED_ITOA(long)
 #endif
 
 #undef FOR_MISSING_INTEGER_TYPES
+#undef SIGNED_ITOA
 #undef DEFAULT_ITOA
 
 char * itoa(UInt64 i, char * p)
@@ -876,9 +900,7 @@ char * itoa(UInt64 i, char * p)
 
 char * itoa(Int64 i, char * p)
 {
-    if (i < 0)
-        return writeUInt64Text(0 - static_cast<UInt64>(i), writeLeadingMinus(p));
-    return writeUInt64Text(static_cast<UInt64>(i), p);
+    return writeSignedText(i, p);
 }
 
 char * writeFixedDigits(UInt64 value, UInt32 width, char * p)
