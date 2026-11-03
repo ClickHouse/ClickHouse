@@ -945,6 +945,21 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
+    # The merge queue reruns the targeted selection (the changed tests and the tests
+    # covering the changed lines) against the merge group state, on the only build
+    # the queue makes. See `ci/workflows/merge_queue.py`.
+    stateless_tests_targeted_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
+    # The selection depends on the merge-queue entry (the tests `master` changed
+    # after the PR's last CI run) and on the attempt (`Targeting.selection_cutoff`),
+    # neither of which is in the digest, so a cached result must not stand in.
+    for job in stateless_tests_targeted_mq_jobs:
+        job.digest_config = None
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -1682,6 +1697,18 @@ class JobConfigs:
         integration_test_jobs_required + integration_test_jobs_non_required,
         allow_failure=False,
     )
+    # The merge-queue counterpart of `integration_test_targeted_pr_jobs`, on the only
+    # build the queue makes. See `ci/workflows/merge_queue.py`.
+    integration_test_targeted_mq_jobs = common_integration_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        )
+    )
+    # Not cached, for the same reason as `stateless_tests_targeted_mq_jobs`.
+    for job in integration_test_targeted_mq_jobs:
+        job.digest_config = None
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
     # script via Info().pr_number and Info().workflow_name.
@@ -1846,17 +1873,21 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-
     )
-    buzz_fuzzer_jobs = Job.Config(
-        name=JobNames.BUZZHOUSE,
+    lacasadeldolor_jobs = Job.Config(
+        name=JobNames.LACASADELDOLOR,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/buzzhouse_job.py",
+        command="python3 ./ci/jobs/lacasadeldolor_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/docker/fuzzer",
-                "./ci/jobs/buzzhouse_job.py",
+                "./ci/docker/integration",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/lacasadeldolor_job.py",
+                "./ci/jobs/scripts/cidb_cluster.py",
+                "./ci/jobs/scripts/clickhouse_service.py",
+                "./ci/jobs/scripts/docker_in_docker.sh",
+                "./ci/jobs/scripts/integration_tests_configs.py",
                 "./ci/jobs/scripts/log_parser.py",
                 # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
                 "./ci/jobs/scripts/clickhouse_proc.py",
@@ -1864,28 +1895,30 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/config.d/clusters.xml",
-                "./tests/config/config.d/core_dump.yaml",
-                "./tests/config/config.d/named_collection.xml",
-                "./tests/config/config.d/disable_s3_env_credentials.xml",
-                "./tests/config/config.d/keeper_port.xml",
-                "./tests/config/config.d/zookeeper.xml",
-                "./tests/config/config.d/macros.xml",
-                # `run-fuzzer.sh` starts the S3 emulator with it
-                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
-                "./tests/config/config.d/jemalloc_flush_profile.yaml",
-                "./tests/config/config.d/listen.xml",
-                "./tests/config/config.d/secure_ports.xml",
-                "./tests/config/config.d/ssl_certs.xml",
-                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
-                "./tests/config/server.crt",
-                "./tests/config/server.key",
-                "./tests/config/users.d/ci_logs_sender.yaml",
+                "./ci/jobs/scripts/server_fuzzer/",
+                "./tests/casa_del_dolor/",
+                # The whole tree, as Keeper Stress does: listing only the imported modules
+                # misses the configs `cluster.py` reads through `write_embedded_config`.
+                "./tests/integration/helpers/",
+                # The service definitions `cluster.py` starts (Keeper, MinIO and whatever else `dolor.py` enables)
+                "./tests/integration/compose/",
+                # `dolor.py` mounts the TLS material out of `tests/config` as `main_configs`, and
+                # `cluster.py` copies these two out of `CLICKHOUSE_TESTS_BASE_CONFIG_DIR`.
+                "./tests/config/",
+                "./programs/server/config.xml",
+                "./programs/server/users.xml",
                 "./ci/docker/fuzzer",
             ],
         ),
+        # Same DinD containment contract as `common_integration_test_job_config`: Dolor's servers
+        # are nested containers too, so without `--cgroupns=private` and the `CI_DIND_*` budgets
+        # `docker_in_docker.sh` starts an uncontained daemon, `--memory` bounds only the harness,
+        # and a nested OOM spills onto the runner instead of being classified here.
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
+        # Dolor shares `clickhouse_integration_tests_volume` with the other DinD jobs, so without
+        # this its containers, images and volumes outlive the run and the next job on the runner
+        # inherits them. Same hook the other integration-tests-runner jobs register.
+        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
@@ -1951,6 +1984,46 @@ class JobConfigs:
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
             for total_batches in (6,)
+            for batch in range(1, total_batches + 1)
+        ],
+    )
+    # The Iceberg configuration: the MergeTree tables of the tests are created as
+    # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
+    # Iceberg code changes, see `filter_job.py`.
+    performance_comparison_iceberg_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
+        # Default seccomp blocks `io_uring` (`io_uring.xml`)
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/performance/",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
+                "./ci/docker/performance-comparison",
+                "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./tests/config/users.d/ci_logs_sender.yaml",
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+            ],
+        ),
+        timeout=2 * 3600,
+        result_name_for_cidb="Tests",
+        # Not a gate until the noise of this configuration is known.
+        allow_failure=True,
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"arm_release, master_head, {table_engine}, {batch}/{total_batches}",
+                requires=[ArtifactNames.CH_ARM_RELEASE],
+            )
+            for table_engine in ("iceberg_local", "iceberg_s3")
+            # 270 tests: 2 batches of 135 took 103-121 min of the 2 h timeout.
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
     )
@@ -2038,6 +2111,22 @@ class JobConfigs:
         *[
             Job.ParamSet(parameter=f"arm_release, master_head, nightly, {job}")
             for job in NIGHTLY_PERF_BATCH_JOBS + sorted(set(NIGHTLY_PERF_PLACEMENT.values()) - {*NIGHTLY_PERF_BATCH_JOBS, "skip"})
+        ]
+    )
+    # The Iceberg configuration of `performance_comparison_iceberg_jobs` in `NightlyExtendedPerformance`, every query of every test.
+    nightly_iceberg_performance_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
+        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        timeout=16 * 3600,
+        result_name_for_cidb="Tests",
+    ).parametrize(
+        *[
+            Job.ParamSet(parameter=f"arm_release, master_head, nightly, {table_engine}, {batch}/{total_batches}")
+            for table_engine in ("iceberg_local", "iceberg_s3")
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
         ]
     )
     docs_job_mintlify = Job.Config(
@@ -2163,6 +2252,31 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
+    )
+    # The data lake foreign-writer fuzzer (`tests/datalake_fuzzer`) on the integration test
+    # harness: Spark, PyIceberg, delta-rs and ClickHouse write Iceberg, Delta, Hudi and Paimon
+    # tables, and ClickHouse must read them back exactly as the writer does. Same runner image
+    # and docker-in-docker setup as the integration tests; random seeds every run.
+    datalake_fuzzer_jobs = (
+        common_integration_test_job_config.set_name(JobNames.DATALAKE_FUZZER)
+        .set_command("python3 ./ci/jobs/datalake_fuzzer_job.py")
+        # Not cacheable: every run draws new seeds, so a green run says nothing about the next.
+        .set_digest_config(None)
+        .set_post_hooks(["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"])
+        # 8 writers x 20 min (see NIGHTLY_BUDGET in the job script), shrinking and cluster start.
+        .set_timeout(3600 * 4)
+        .parametrize(
+            Job.ParamSet(
+                parameter="arm_release",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_RELEASE],
+            ),
+            Job.ParamSet(
+                parameter="arm_asan_ubsan",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            ),
+        )
     )
     sqltest_master_job = Job.Config(
         name=JobNames.SQL_TEST,

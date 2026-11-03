@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-detach
+# Tags: no-fasttest, no-random-detach
+# no-fasttest: Too slow for fast test (~15s), covered by regular stateless runs.
 # no-random-detach: concurrent `ALTER` and `INSERT ... SELECT`; the internal `DETACH` of one makes the table briefly unknown to the other.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
