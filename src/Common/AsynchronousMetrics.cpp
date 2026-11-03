@@ -178,7 +178,10 @@ AsynchronousMetrics::AsynchronousMetrics(
             "Will use cgroup reader from '{}' (cgroups version: {})",
             cgroup_path,
             (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
-        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+        if (version == ICgroupsReader::CgroupsVersion::V2)
+            openCgroupv2MemoryFiles(cgroup_path);
+        else
+            cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
     }
     catch (...)
     {
@@ -212,6 +215,34 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
+void AsynchronousMetrics::openCgroupv2MemoryFiles(const std::optional<std::string> & dir) TSA_REQUIRES(data_mutex)
+{
+    cgroupmem_limit_in_bytes.reset();
+    cgroupmem_reader.reset();
+    cgroupmem_dir.reset();
+    if (!dir)
+        return;
+
+    openFileIfExists((*dir + "/memory.max").c_str(), cgroupmem_limit_in_bytes);
+    try
+    {
+        cgroupmem_reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
+    }
+    catch (...)
+    {
+        if (cgroupmem_failed_dir != dir)
+            tryLogCurrentException(log, "cgroups are not available");
+        cgroupmem_failed_dir = dir;
+    }
+
+    /// A failed open is retried on the next update.
+    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
+    {
+        cgroupmem_dir = dir;
+        cgroupmem_failed_dir.reset();
+    }
+}
+
 void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
@@ -1943,6 +1974,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// `memory.max` and `memory.stat` exist only while the `memory` controller is enabled in the parent cgroup, so the
+    /// nearest ones can move at runtime, and descriptors to removed ones fail with ENODEV.
+    if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
+        openCgroupv2MemoryFiles(dir);
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
@@ -1994,6 +2029,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (cgroupmem_dir)
+                openCgroupv2MemoryFiles(getCgroupsV2PathContainingFile("memory.current"));
         }
     }
     if (meminfo)
