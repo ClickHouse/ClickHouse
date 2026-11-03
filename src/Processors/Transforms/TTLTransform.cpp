@@ -147,7 +147,8 @@ TTLTransform::TTLTransform(
     time_t current_time_,
     bool force_,
     bool ttl_delete_applied_by_merge_,
-    std::optional<NameSet> rewritten_columns_)
+    std::optional<NameSet> rewritten_columns_,
+    NameSet cleared_columns_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
@@ -264,12 +265,13 @@ TTLTransform::TTLTransform(
                 recomputed_columns.insert(dependent.name);
     }
 
-    auto reads_rewritten_column = [&](const TTLDescription & description)
+    auto reads_changed_column = [&](const TTLDescription & description)
     {
         return std::ranges::any_of(description.expression_columns, [&](const auto & column)
         {
             auto column_in_storage = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name);
-            return rewritten_columns_->contains(column_in_storage ? column_in_storage->getNameInStorage() : column.name);
+            const String name = column_in_storage ? column_in_storage->getNameInStorage() : column.name;
+            return rewritten_columns_->contains(name) || cleared_columns_.contains(name);
         });
     };
 
@@ -286,7 +288,7 @@ TTLTransform::TTLTransform(
         }
 
         MergeTreeDataPartTTLInfo old_ttl_info;
-        if (!rewritten_columns_ || !reads_rewritten_column(description))
+        if (!rewritten_columns_ || !reads_changed_column(description))
             old_ttl_info = old_ttl_infos.columns_ttl[name];
 
         auto [default_expression, default_column_name] = build_default_expr(name);

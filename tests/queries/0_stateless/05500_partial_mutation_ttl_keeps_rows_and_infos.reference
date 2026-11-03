@@ -41,6 +41,9 @@ T12	100	100
 T12 w	1
 T13 mutation	1	
 T13	100	100	0
+T14 mutation	1	
+T14	100	100	100
+T14 x	1	1
 partial	t1	1	1
 partial	t2	1	1
 partial	t3	1	1
@@ -54,3 +57,4 @@ partial	t10	1	1
 partial	t11	1	1
 partial	t12	1	1
 partial	t13	1	1
+partial	t14	1	1

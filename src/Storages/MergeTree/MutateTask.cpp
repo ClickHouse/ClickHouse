@@ -4295,6 +4295,10 @@ private:
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
             {
                 const auto rewritten_columns = columns_for_writer.getNames();
+                NameSet cleared_columns;
+                for (const auto & command : ctx->for_interpreter)
+                    if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+                        cleared_columns.insert(command.column_name);
                 auto transform = std::make_shared<TTLTransform>(
                     ctx->context,
                     builder->getSharedHeader(),
@@ -4305,7 +4309,8 @@ private:
                     ctx->time_of_mutation,
                     true,
                     false /*ttl_delete_applied_by_merge*/,
-                    NameSet(rewritten_columns.begin(), rewritten_columns.end()));
+                    NameSet(rewritten_columns.begin(), rewritten_columns.end()),
+                    std::move(cleared_columns));
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }

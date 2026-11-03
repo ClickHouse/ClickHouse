@@ -189,6 +189,19 @@ ALTER TABLE t13 CLEAR COLUMN c SETTINGS mutations_sync = 2;
 SELECT 'T13 mutation', is_done, latest_fail_reason FROM system.mutations WHERE database = currentDatabase() AND table = 't13';
 SELECT 'T13', count(), countIf(m = toDateTime(0, 'UTC')), countIf(x = toString(k)) FROM t13;
 
+-- T14: CLEAR COLUMN moves the input of an expired column TTL into the future through its DEFAULT.
+CREATE TABLE t14 (k UInt64, c DateTime('UTC') DEFAULT toDateTime('2090-01-01 00:00:00', 'UTC'), x String TTL c + INTERVAL 1 SECOND, v String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SYSTEM STOP TTL MERGES t14;
+INSERT INTO t14 SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC'), toString(number), toString(number) FROM numbers(100)
+SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000, max_insert_block_size = 1000;
+ALTER TABLE t14 CLEAR COLUMN c SETTINGS mutations_sync = 2;
+SELECT 'T14 mutation', is_done, latest_fail_reason FROM system.mutations WHERE database = currentDatabase() AND table = 't14';
+SELECT 'T14', count(), countIf(c = toDateTime('2090-01-01 00:00:00', 'UTC')), countIf(x = toString(k)) FROM t14;
+SELECT 'T14 x', column_ttl_min = toDateTime('2090-01-01 00:00:01', 'UTC'), column_ttl_max = toDateTime('2090-01-01 00:00:01', 'UTC')
+FROM system.parts_columns WHERE database = currentDatabase() AND table = 't14' AND active AND column = 'x';
+
 -- Every mutation above rewrote only some columns of its part.
 SYSTEM FLUSH LOGS part_log;
 SELECT 'partial', table, ProfileEvents['MutationSomePartColumns'] > 0, ProfileEvents['MutationAllPartColumns'] = 0
