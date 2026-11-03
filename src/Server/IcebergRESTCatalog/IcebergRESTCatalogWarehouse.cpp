@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -20,6 +21,11 @@ namespace DB
 {
 
 #if USE_AWS_S3
+namespace Setting
+{
+    extern const SettingsBool s3_validate_request_settings;
+}
+
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString external_id;
@@ -61,8 +67,16 @@ ObjectStoragePtr createObjectStorage([[maybe_unused]] ContextPtr context, [[mayb
     const auto & credential = definition.credential;
     S3::URI url(definition.base_location);
 
+    /// Same initialization as `StorageS3Configuration`: the `<s3>` server config, the proxy resolver,
+    /// the request throttlers, then the per-endpoint `<s3><endpoint>` overrides.
     auto s3_settings = std::make_unique<S3Settings>();
-    s3_settings->request_settings.updateFromSettings(context->getSettingsRef(), /*if_changed*/ false);
+    s3_settings->loadFromConfigForObjectStorage(
+        context->getConfigRef(), "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    {
+        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
     /// The server signs the STS `AssumeRole` call with its own identity, then uses the assumed role for S3.
     s3_settings->auth_settings[S3AuthSetting::role_arn] = credential.role_arn;
     s3_settings->auth_settings[S3AuthSetting::external_id] = credential.external_id;
