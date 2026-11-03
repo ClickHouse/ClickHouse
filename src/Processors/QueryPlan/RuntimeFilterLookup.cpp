@@ -1153,15 +1153,14 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         }
     }
 
-    /// The previous representation is moved out first: emplacing the Bloom filter destroys it.
-    Filter previous = std::move(filter_);
-    auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions);
-    if (const auto * exact_filter = std::get_if<ExactFilter>(&previous))
+    /// The keys are read before emplacing the Bloom filter, which destroys their representation.
+    ApproximateSetRuntimeFilter approximate_filter(grown_bloom_filter_bytes, bloom_filter_hash_functions);
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_))
         approximate_filter.insert(exact_filter->getValuesColumn());
     else
-        std::get<DenseBitsetRuntimeFilter>(previous).forEachValuesBatch(
+        std::get<DenseBitsetRuntimeFilter>(filter_).forEachValuesBatch(
             DEFAULT_BLOCK_SIZE, [&](ColumnPtr batch) { approximate_filter.insert(std::move(batch)); });
-    return &approximate_filter;
+    return &filter_.emplace<ApproximateSetRuntimeFilter>(std::move(approximate_filter));
 }
 
 void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_)
