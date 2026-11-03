@@ -1,0 +1,15 @@
+<clickhouse>
+    <http_forbid_headers>
+        <header>Authorization</header>
+    </http_forbid_headers>
+    <remote_servers>
+        <localhost_cluster>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </localhost_cluster>
+    </remote_servers>
+</clickhouse>

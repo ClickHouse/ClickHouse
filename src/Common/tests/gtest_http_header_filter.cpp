@@ -1,6 +1,8 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Common/Exception.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/URI.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <gtest/gtest.h>
 #include <sstream>
@@ -288,4 +290,55 @@ TEST(HTTPHeaderFilter, RejectsCarriageReturnAndNewline)
     EXPECT_TRUE(rejects("Bad\rName", "value"));
     EXPECT_TRUE(rejects("Bad\nName", "value"));
     EXPECT_FALSE(rejects("Authorization", "Bearer good-token"));
+}
+
+/// Basic credentials and the userinfo of a URL are sent in the `Authorization` header, so they are
+/// rejected when that header is forbidden, and the error does not include the password.
+TEST(HTTPHeaderFilter, BasicCredentialsAndURIUserInfo)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>authorization</header>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    EXPECT_THROW(filter.checkBasicCredentials(Poco::Net::HTTPBasicCredentials("user", "password")), Exception);
+    EXPECT_THROW(filter.checkBasicCredentials(Poco::Net::HTTPBasicCredentials("user", "")), Exception);
+    /// No header is sent without a username.
+    EXPECT_NO_THROW(filter.checkBasicCredentials(Poco::Net::HTTPBasicCredentials()));
+    EXPECT_NO_THROW(filter.checkBasicCredentials(Poco::Net::HTTPBasicCredentials("", "password")));
+
+    EXPECT_THROW(filter.checkURIUserInfo(Poco::URI("http://user:password@example.com/data")), Exception);
+    EXPECT_THROW(filter.checkURIUserInfo(Poco::URI("http://user@example.com/data")), Exception);
+    EXPECT_NO_THROW(filter.checkURIUserInfo(Poco::URI("http://example.com/data")));
+
+    try
+    {
+        filter.checkURIUserInfo(Poco::URI("http://user:secret_value@example.com/data"));
+        FAIL() << "The userinfo must be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_NE(e.message().find("Authorization"), std::string::npos);
+        EXPECT_EQ(e.message().find("secret_value"), std::string::npos);
+    }
+
+    /// A regexp rule applies as well.
+    HTTPHeaderFilter regexp_filter;
+    configure(regexp_filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header_regexp>auth.*</header_regexp>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+    EXPECT_THROW(regexp_filter.checkBasicCredentials(Poco::Net::HTTPBasicCredentials("user", "password")), Exception);
+
+    /// Nothing is rejected when the header is not forbidden.
+    HTTPHeaderFilter empty_filter;
+    EXPECT_NO_THROW(empty_filter.checkBasicCredentials(Poco::Net::HTTPBasicCredentials("user", "password")));
+    EXPECT_NO_THROW(empty_filter.checkURIUserInfo(Poco::URI("http://user:password@example.com/data")));
 }
