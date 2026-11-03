@@ -327,6 +327,32 @@ static std::optional<String> resolveMetadataFilenameFromVersionHint(
     return std::nullopt;
 }
 
+/// Reads `metadata/version-hint.text` and resolves the metadata file it names. Returns nullopt when
+/// the content cannot be resolved to an existing file, in which case the caller falls back to listing.
+static std::optional<MetadataFileWithInfo> resolveLatestMetadataFileFromVersionHint(
+    const ObjectStoragePtr & object_storage,
+    const String & table_path,
+    CompressionMethod known_compression_method,
+    const ContextPtr & local_context)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
+    auto log = getLogger("IcebergMetadataFileResolver");
+    auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
+    std::string metadata_file;
+    StoredObject version_hint(version_hint_path);
+    auto buf = object_storage->readObject(version_hint, ReadSettings{});
+    readString(metadata_file, *buf);
+    auto resolved
+        = resolveMetadataFilenameFromVersionHint(metadata_file, table_path, object_storage, known_compression_method, local_context);
+    if (resolved.has_value())
+    {
+        LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", *resolved);
+        ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
+        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(*resolved).filename());
+    }
+    LOG_WARNING(log, "Version hint content '{}' could not be resolved to a metadata file, falling back to listing", metadata_file);
+    return std::nullopt;
+}
 
 void writeMessageToFile(
     const String & data,
@@ -1435,6 +1461,10 @@ On S3 and Azure, with `iceberg_list_only_v_prefixed_metadata_files`, a read with
 
 We use table_uuid both for metadata cache queries and selection of the latest metadata file.
 For legacy reasons, we keep the option to not use table_uuid for metadata file selection.
+
+With `resolve_from_version_hint`, `metadata/version-hint.text` names the current metadata file and
+listing is only the fallback for a hint that cannot be resolved. The result is cached under the same
+key as a listed one, so with `iceberg_metadata_staleness_ms` a hot read skips the hint read as well.
  */
 static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
@@ -1445,9 +1475,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     std::optional<String> table_uuid,
     bool use_table_uuid_for_metadata_file_selection,
     bool force_fetch_latest_metadata,
-    bool ignore_metadata_pointer_overrides)
+    bool ignore_metadata_pointer_overrides,
+    bool resolve_from_version_hint = false,
+    CompressionMethod known_compression_method = CompressionMethod::None)
 {
-    auto load_fn = [&]()
+    auto list_latest_metadata_file = [&]()
     {
         auto log = getLogger("IcebergMetadataFileResolver");
         MostRecentMetadataFileSelectionWay selection_way
@@ -1727,6 +1759,16 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
+    auto load_fn = [&]() -> MetadataFileWithInfo
+    {
+        if (resolve_from_version_hint)
+        {
+            if (auto from_hint = resolveLatestMetadataFileFromVersionHint(object_storage, table_path, known_compression_method, local_context))
+                return *from_hint;
+        }
+        return list_latest_metadata_file();
+    };
+
     /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
     size_t tolerated_staleness_ms = static_cast<size_t>(local_context->getSettingsRef()[Setting::iceberg_metadata_staleness_ms]);
     /// If the force is been requested (normally it's required by certain types of operations), the tolerance will be 0 and we'll go to the remote catalog
@@ -1805,21 +1847,20 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
-        auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
-        std::string metadata_file;
-        StoredObject version_hint(version_hint_path);
-        auto buf = object_storage->readObject(version_hint, ReadSettings{});
-        readString(metadata_file, *buf);
-        auto resolved
-            = resolveMetadataFilenameFromVersionHint(metadata_file, table_path, object_storage, known_compression_method, local_context);
-        if (resolved.has_value())
-        {
-            LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", *resolved);
-            ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-            return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(*resolved).filename());
-        }
-        LOG_WARNING(log, "Version hint content '{}' could not be resolved to a metadata file, falling back to listing", metadata_file);
+        /// The hint is read through the latest-metadata-version cache like a listing or a catalog
+        /// pointer, so `iceberg_metadata_staleness_ms` applies to it as well.
+        return getLatestMetadataFileAndVersion(
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            table_uuid,
+            false,
+            force_fetch_latest_metadata,
+            ignore_metadata_pointer_overrides,
+            /* resolve_from_version_hint */ true,
+            known_compression_method);
     }
 
     {
