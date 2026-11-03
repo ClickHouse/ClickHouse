@@ -9,7 +9,7 @@
 #include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
