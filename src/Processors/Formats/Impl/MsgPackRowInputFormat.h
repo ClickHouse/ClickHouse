@@ -52,7 +52,8 @@ public:
 
     /// Update info_stack
     void set_info(IColumn & column, DataTypePtr type, UInt8 & read);
-    void reset();
+    /// Called by msgpack's parse_helper::init.
+    void init();
 
 private:
     /// Stack is needed to process arrays and maps
