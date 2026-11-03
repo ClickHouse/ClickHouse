@@ -11,17 +11,21 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user_filtered="user05494_filtered_${CLICKHOUSE_DATABASE}_$RANDOM"
 user_full="user05494_full_${CLICKHOUSE_DATABASE}_$RANDOM"
+user_engine="user05494_engine_${CLICKHOUSE_DATABASE}_$RANDOM"
 redirector="http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka"
 
 ${CLICKHOUSE_CLIENT} <<EOF
-DROP USER IF EXISTS $user_filtered, $user_full;
+DROP USER IF EXISTS $user_filtered, $user_full, $user_engine;
 CREATE USER $user_filtered;
 CREATE USER $user_full;
+CREATE USER $user_engine;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user_filtered, $user_full;
 GRANT READ ON URL('http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka') TO $user_filtered;
 GRANT READ ON URL TO $user_full;
 CREATE TABLE t_redirect (s String) ENGINE = URL('$redirector', 'RawBLOB');
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_redirect TO $user_filtered;
+GRANT CREATE TABLE, DROP TABLE, SELECT ON ${CLICKHOUSE_DATABASE}.* TO $user_engine;
+GRANT TABLE ENGINE ON URL TO $user_engine;
 EOF
 
 function check_denied()
@@ -40,5 +44,10 @@ ${CLICKHOUSE_CLIENT} --user "$user_full" --max_http_get_redirects 1 --query "SEL
 echo "--- a URL table reads with the grant on the table"
 ${CLICKHOUSE_CLIENT} --user "$user_filtered" --max_http_get_redirects 1 --query "SELECT * FROM t_redirect"
 
+echo "--- a URL table infers its structure with the grant on the engine"
+${CLICKHOUSE_CLIENT} --user "$user_engine" --max_http_get_redirects 1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.t_redirect_inferred ENGINE = URL('$redirector', 'TSV')"
+${CLICKHOUSE_CLIENT} --user "$user_engine" --max_http_get_redirects 1 --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.t_redirect_inferred"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect"
-${CLICKHOUSE_CLIENT} --query "DROP USER $user_filtered, $user_full"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_redirect_inferred"
+${CLICKHOUSE_CLIENT} --query "DROP USER $user_filtered, $user_full, $user_engine"

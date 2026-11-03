@@ -67,14 +67,16 @@ public:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access = false);
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access = false);
 
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -83,7 +85,8 @@ public:
         const String & url,
         const HTTPHeaderEntries & headers,
         const Poco::Net::HTTPBasicCredentials & credentials,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access);
 
 protected:
     friend class ReadFromURL;
@@ -101,7 +104,8 @@ protected:
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by = nullptr,
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        bool check_redirect_access_ = false);
 
     String uri;
     CompressionMethod compression_method;
@@ -160,7 +164,8 @@ private:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool check_redirect_access = false);
 
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };

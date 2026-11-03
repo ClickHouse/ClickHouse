@@ -236,7 +236,8 @@ IStorageURLBase::IStorageURLBase(
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    bool check_redirect_access_)
     : IStorage(table_id_)
     , uri(uri_)
     , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
@@ -246,6 +247,7 @@ IStorageURLBase::IStorageURLBase(
     , http_method(http_method_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
+    , check_redirect_access(check_redirect_access_)
 {
     if (format_name != "auto")
         FormatFactory::instance().checkFormatName(format_name);
@@ -256,16 +258,16 @@ IStorageURLBase::IStorageURLBase(
     {
         ColumnsDescription columns;
         if (format_name == "auto")
-            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_);
+            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_, check_redirect_access);
         else
-            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_, check_redirect_access);
 
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (format_name == "auto")
-            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_).second;
+            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_, check_redirect_access).second;
 
         /// We don't allow special columns in URL storage.
         if (!columns_.hasOnlyOrdinary())
@@ -1604,8 +1606,9 @@ namespace
             const CompressionMethod & compression_method_,
             const HTTPHeaderEntries & headers_,
             const std::optional<FormatSettings> & format_settings_,
-            const ContextPtr & context_)
-            : WithContext(context_), url_producer(std::move(url_producer_)), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
+            const ContextPtr & context_,
+            bool check_redirect_access_)
+            : WithContext(context_), url_producer(std::move(url_producer_)), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_), check_redirect_access(check_redirect_access_)
         {
             produceMoreURLs();
         }
@@ -1672,7 +1675,7 @@ namespace
                     headers,
                     false,
                     false,
-                    makeRedirectAccessCheck(getContext()));
+                    check_redirect_access ? makeRedirectAccessCheck(getContext()) : nullptr);
 
                 ++current_index;
             } while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
@@ -1735,7 +1738,7 @@ namespace
                 headers,
                 false,
                 false,
-                makeRedirectAccessCheck(getContext()));
+                check_redirect_access ? makeRedirectAccessCheck(getContext()) : nullptr);
 
             return wrapReadBufferWithCompressionMethod(
                 std::move(uri_and_buf.second), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]),
@@ -1807,7 +1810,7 @@ namespace
             {
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
-                    auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, context);
+                    auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, context, check_redirect_access);
                     /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
                     /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
                     /// special setting for this case is enabled.
@@ -1852,6 +1855,7 @@ namespace
         const HTTPHeaderEntries & headers;
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
+        const bool check_redirect_access;
     };
 }
 
@@ -1861,7 +1865,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool check_redirect_access)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
@@ -1892,7 +1897,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
         };
     }
 
-    URLReadBufferIterator read_buffer_iterator(url_producer, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(url_producer, format, compression_method, headers, format_settings, context, check_redirect_access);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1904,9 +1909,10 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool check_redirect_access)
 {
-    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context).first;
+    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context, check_redirect_access).first;
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromData(
@@ -1914,9 +1920,10 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool check_redirect_access)
 {
-    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context);
+    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context, check_redirect_access);
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -2374,7 +2381,8 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const String & url,
     const HTTPHeaderEntries & headers,
     const Poco::Net::HTTPBasicCredentials & credentials,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool check_redirect_access)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -2387,7 +2395,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
                    .withHostFilter(&context->getRemoteHostFilter())
                    .withBufSize(settings[Setting::max_read_buffer_size])
                    .withRedirects(settings[Setting::max_http_get_redirects])
-                   .withRedirectCallback(makeRedirectAccessCheck(context))
+                   .withRedirectCallback(check_redirect_access ? makeRedirectAccessCheck(context) : nullptr)
                    .withHeaders(headers)
                    .create(credentials);
 
@@ -2423,10 +2431,10 @@ StorageURL::StorageURL(
         headers_,
         http_method_,
         partition_by_,
-        distributed_processing_)
+        distributed_processing_,
+        check_redirect_access_)
     , is_replayed_definition(is_replayed_definition_)
 {
-    check_redirect_access = check_redirect_access_;
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
