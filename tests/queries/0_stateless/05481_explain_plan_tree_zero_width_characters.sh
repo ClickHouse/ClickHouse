@@ -25,6 +25,8 @@ INSERT INTO $DB.\`$TABLE\` SELECT number FROM numbers(100000);
 
 SET max_rows_to_group_by = 0;
 SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0;
+-- In ClickHouse Cloud a scan on shared storage is replaced by \`ReadFromMergeTreeAtWorker\`, which prints no table name.
+SET distributed_plan_prefer_replicas_over_workers = 1;
 SET
     make_distributed_plan = 1,
     enable_parallel_replicas = 0,
@@ -45,6 +47,7 @@ EOF
 OUTPUT=$($CLICKHOUSE_CLIENT --multiquery <<EOF
 SET max_rows_to_group_by = 0;
 SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0;
+SET distributed_plan_prefer_replicas_over_workers = 1;
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, use_statistics = 0, distributed_plan_optimize_exchanges = 1,
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_force_exchange_kind = 'Streaming';
