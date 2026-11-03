@@ -32,6 +32,16 @@ SELECT polygonConvexHullCartesian([(0., 0.), (1e200, 0.), (0., 1e-200)]::MultiPo
 -- The three rectangles of a right triangle have the same area, so only the area and the height are checked.
 SELECT round(polygonAreaCartesian(r), 6), arrayMin(arrayMap(p -> p.2, r[1])) <= 0 AND arrayMax(arrayMap(p -> p.2, r[1])) >= 1e-200
 FROM (SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1e200, 0.), (0., 1e-200)]::MultiPoint) AS r);
+-- A rectangle with sides of 1e300 and 1e-300 (in both orientations) keeps its sides.
+-- The coordinates are divided by the scales of the axes and rounded, because a corner can be off by one ulp of 1e300.
+SELECT arrayMap(p -> (round(p.1 / scale.1, 9), round(p.2 / scale.2, 9)), polygonMinimumRotatedRectangleCartesian(points::MultiPoint)[1])
+FROM (SELECT arrayJoin([
+    ([(0., 0.), (1e300, 0.), (1e300, 1e-300), (0., 1e-300)], (1e300, 1e-300)),
+    ([(0., 0.), (1e-300, 0.), (1e-300, 1e300), (0., 1e300)], (1e-300, 1e300)),
+    ([(0., 0.), (1e250, 0.), (1e250, 1e-250), (0., 1e-250)], (1e250, 1e-250)),
+    ([(0., 0.), (1e300, 1e300), (1e300, 1e-300)], (1e300, 1e300)),
+    -- Huge coordinates, where the area is beyond the range of `Float64`.
+    ([(0., 0.), (4e300, 3e300), (1e300, 2e300)], (1e300, 1e300))]) AS t, t.1 AS points, t.2 AS scale);
 -- Tiny points next to a far one, where the products of their differences would underflow: (3e-201, 5e-201) is inside.
 SELECT polygonConvexHullCartesian([(1., 1.), (-9e-201, 2e-201), (-3e-201, -4e-201), (3e-201, 5e-201)]::MultiPoint);
 
