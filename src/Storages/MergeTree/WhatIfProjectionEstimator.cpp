@@ -103,6 +103,8 @@ struct ProjectionPartData
     size_t stored_bytes_floor = 0;
     /// for a merged part: the merge can choose the other part format too, because the part does not record the parts it merged
     bool both_formats = false;
+    /// for a merged wide part under a constant granularity: the most marks of its layouts, if a granule size between them has no layout
+    size_t marks_between_layouts = 0;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
     std::vector<UInt32> granule_rows;
 };
@@ -216,6 +218,29 @@ void widen(UInt64 & low, UInt64 & high, double spread)
     const auto by = static_cast<UInt64>(std::ceil(spread));
     low = low > by ? low - by : 0;
     high += by;
+}
+
+/// the fewest and most marks that a granule size between two layouts of a part can select, from the marks that one layout selects
+/// a run of marks of the finer layout gains at most one mark, a run of the coarser one keeps at least every other mark
+std::pair<UInt64, UInt64> marksBetweenLayouts(const MarkRanges & ranges)
+{
+    UInt64 fewest = 0;
+    UInt64 runs = 0;
+    size_t run = 0;
+    size_t run_end = 0;
+    for (const auto & range : ranges)
+    {
+        if (run == 0 || range.begin != run_end)
+        {
+            fewest += (run + 1) / 2;
+            ++runs;
+            run = 0;
+        }
+        run += range.end - range.begin;
+        run_end = range.end;
+    }
+    fewest += (run + 1) / 2;
+    return {fewest, ranges.getNumberOfMarks() + runs};
 }
 
 /// read the given granules of a part
@@ -661,6 +686,8 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
                 return rows_per_marks;
             };
             layouts = {constant(bytes / widest), constant(bytes / narrowest * (granules >= 1 ? (granules + 1) / granules : 2))};
+            if (layouts[1].front() > layouts[0].front() + 1)
+                data.marks_between_layouts = layouts[0].size();
         }
         return std::pair{std::move(layouts), primary};
     };
@@ -802,6 +829,8 @@ struct Scenarios
     UInt64 scanned_marks = 0;
     UInt64 uneven_width_parts = 0;
     UInt64 merge_history_parts = 0;
+    /// the parts with a granule size between their layouts, and the most marks of their layouts
+    std::unordered_map<String, size_t> marks_between_layouts;
     std::vector<SampledPart> samples;
 };
 
@@ -896,6 +925,9 @@ bool buildScenarios(
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
         out.scenarios[0]->parts[part->name] = parts[primary];
+        /// without a filter every layout reads all its marks, so the layouts bound the marks of a granule size between them
+        if (part_data.marks_between_layouts != 0 && read_step->getFilterActionsDAG())
+            out.marks_between_layouts[part->name] = part_data.marks_between_layouts;
         chassert(parts.size() < out.scenarios.size());
         out.layouts = std::max(out.layouts, parts.size());
         /// a part with one layout uses it in every scenario
@@ -1118,15 +1150,25 @@ bool tryEstimateProjection(
     {
         UInt64 part_low = std::numeric_limits<UInt64>::max();
         UInt64 part_high = 0;
+        const auto between = built.marks_between_layouts.find(part_name);
         for (size_t i = 0; i < weighed; ++i)
         {
             const auto & scenario_outcome = built.scenarios[i]->outcome;
             if (!scenario_outcome.marks)
                 continue;
             const auto it = scenario_outcome.ranges.find(part_name);
-            const UInt64 marks = it == scenario_outcome.ranges.end() ? 0 : it->second.getNumberOfMarks();
+            static const MarkRanges no_ranges;
+            const MarkRanges & ranges = it == scenario_outcome.ranges.end() ? no_ranges : it->second;
+            const UInt64 marks = ranges.getNumberOfMarks();
             part_low = std::min(part_low, marks);
             part_high = std::max(part_high, marks);
+            /// a granule boundary of a size between the layouts can fall on the filtered keys
+            if (between != built.marks_between_layouts.end())
+            {
+                const auto [fewest, most] = marksBetweenLayouts(ranges);
+                part_low = std::min(part_low, fewest);
+                part_high = std::max(part_high, std::min<UInt64>(most, between->second));
+            }
         }
         marks_low += part_low == std::numeric_limits<UInt64>::max() ? 0 : part_low;
         marks_high += part_high;
