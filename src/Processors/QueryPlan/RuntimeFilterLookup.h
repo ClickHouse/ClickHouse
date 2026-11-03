@@ -252,7 +252,7 @@ public:
 
     /// Returns false, without recording `values`, if they are not native integers in the supported range
     /// or if the bits for the range of all keys would take more than `max_bytes`. The caller then takes
-    /// the recorded keys from `getValuesColumn` and inserts them and `values` into another filter.
+    /// the recorded keys from `forEachValuesBatch` and inserts them and `values` into another filter.
     bool insert(const ColumnPtr & values, UInt64 max_bytes);
     /// Adds the keys of `source`, with the same contract as `insert`.
     bool mergeFrom(const DenseBitsetRuntimeFilter & source, UInt64 max_bytes);
@@ -262,11 +262,13 @@ public:
     /// Sets `rows_passed`: the probe counts the matches while filling the mask.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
 
-    /// All recorded keys, possibly with duplicates.
-    ColumnPtr getValuesColumn() const;
+    /// Calls `callback` with columns of at most `max_rows` recorded keys each, possibly with duplicates.
+    void forEachValuesBatch(size_t max_rows, const std::function<void(ColumnPtr)> & callback) const;
+
+    /// Sets the bits of the pending keys and returns the number of distinct recorded keys.
+    UInt64 countDistinctKeys();
 
     bool empty() const { return !has_keys; }
-    UInt64 getInsertedKeyRows() const { return inserted_key_rows; }
     UInt64 getBytes() const { return words.size() * sizeof(UInt64) + pending_keys->byteSize(); }
 
 private:
@@ -280,7 +282,6 @@ private:
     /// Range of all recorded keys.
     Int64 min_key = 0;
     Int64 max_key = 0;
-    UInt64 inserted_key_rows = 0;
 
     /// Keys whose bits are not set yet.
     ColumnPtr pending_keys;
@@ -349,8 +350,8 @@ private:
     /// approximate set otherwise.
     void switchFromExactFilter(Filter & filter);
     bool trySwitchToDenseBitsetFilter(Filter & filter);
-    /// Byte allowance of the dense bitset, given the key rows observed so far.
-    UInt64 denseBitsetMaxBytes(UInt64 observed_key_rows) const;
+    /// Byte allowance of the dense bitset.
+    UInt64 denseBitsetMaxBytes() const;
 
     /// Disables approximate filter if it is likely to have bad selectivity.
     void checkApproximateFilterWorthiness(

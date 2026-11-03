@@ -9,6 +9,7 @@
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
@@ -21,6 +22,11 @@
 #include <memory>
 #include <optional>
 #include <thread>
+
+namespace ProfileEvents
+{
+extern const Event RuntimeFilterBloomFilterBuildsSkipped;
+}
 
 namespace DB
 {
@@ -44,6 +50,25 @@ ColumnPtr makeUInt64Column(std::initializer_list<UInt64> values)
 ColumnWithTypeAndName makeUInt64ColumnWithType(std::initializer_list<UInt64> values, const DataTypePtr & type)
 {
     return ColumnWithTypeAndName(makeUInt64Column(values), type, "k");
+}
+
+/// Values [0, count), followed by `extra`.
+MutableColumnPtr makeUInt64SequenceColumn(UInt64 count, std::initializer_list<UInt64> extra = {})
+{
+    auto column = ColumnUInt64::create();
+    for (UInt64 value = 0; value < count; ++value)
+        column->insertValue(value);
+    for (const auto value : extra)
+        column->insertValue(value);
+    return column;
+}
+
+size_t countRejectedRows(const ColumnPtr & mask)
+{
+    size_t rejected = 0;
+    for (size_t row = 0; row < mask->size(); ++row)
+        rejected += !mask->getBool(row);
+    return rejected;
 }
 
 void expectMask(ColumnPtr mask, std::initializer_list<UInt8> expected_values)
@@ -287,6 +312,66 @@ TEST(RuntimeFilterLookup, DenseBitsetMovesKeysToBloomFilterWhenTheRangeOutgrowsT
     filter.finishInsert();
     /// No key is lost; other values may pass the Bloom filter.
     expectMask(filter.find(makeUInt64ColumnWithType({10, 20, 30, 131000, 200000}, type)), {1, 1, 1, 1, 1});
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetMovesManyKeysToBloomFilterInBatches)
+{
+    /// 16 x 64 KiB of bits cover 8M values. The bitset holds more keys than one batch of the move to the Bloom filter.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(64_KiB, 2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64SequenceColumn(200000));
+    filter.insert(makeUInt64Column({10'000'000'000}));
+    filter.finishInsert();
+
+    EXPECT_EQ(countRejectedRows(filter.find(ColumnWithTypeAndName(makeUInt64SequenceColumn(200000, {10'000'000'000}), type, "k"))), 0);
+    EXPECT_EQ(filter.getStats().rows_passed.load(), 200001);
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetMergedIntoBloomFilterInBatches)
+{
+    const auto type = makeUInt64Type();
+    const auto make_filter = [&](size_t filters_to_merge)
+    {
+        return RuntimeFilter(
+            filters_to_merge, makeRuntimeFilterConfig(), RuntimeFilter::Adaptive(type, makeGeometry(64_KiB, 2, 3, 1.0), std::nullopt, false));
+    };
+    /// The key range is too wide for a dense bitset, so the destination has a Bloom filter.
+    RuntimeFilter destination = make_filter(1);
+    destination.insert(makeUInt64Column({0, 5, 10'000'000'000}));
+
+    RuntimeFilter source = make_filter(0);
+    source.insert(makeUInt64SequenceColumn(200000));
+    source.finishInsert();
+
+    destination.merge(source);
+    destination.finishInsert();
+
+    EXPECT_EQ(
+        countRejectedRows(destination.find(ColumnWithTypeAndName(makeUInt64SequenceColumn(200000, {10'000'000'000}), type, "k"))), 0);
+    EXPECT_EQ(destination.getStats().rows_passed.load(), 200001);
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetDropsKeysThatWouldSaturateTheBloomFilter)
+{
+    /// 8192 Bloom bits, and 16 x 1 KiB of bits for the dense bitset cover 131072 values.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_KiB, 2, 3, 0.7), std::nullopt, false));
+    filter.insert(makeUInt64SequenceColumn(100000));
+
+    const ProfileEvents::Count skipped_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped];
+    filter.insert(makeUInt64Column({10'000'000'000}));
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped] - skipped_before, 1);
+    filter.finishInsert();
+
+    expectMask(filter.find(makeUInt64ColumnWithType({1, 2}, type)), {1, 1});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 0);
+    EXPECT_EQ(filter.getStats().rows_skipped.load(), 2);
 }
 
 TEST(RuntimeFilterLookup, DenseBitsetHandlesSignedKeys)

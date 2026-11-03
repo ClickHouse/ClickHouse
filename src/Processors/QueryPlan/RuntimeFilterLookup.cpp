@@ -12,6 +12,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
+#include <Core/Defines.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -724,7 +725,6 @@ bool DenseBitsetRuntimeFilter::insert(const ColumnPtr & values, UInt64 max_bytes
     has_keys = true;
     min_key = new_min;
     max_key = new_max;
-    inserted_key_rows += block->size();
 
     const Int64 words_end = words_begin + static_cast<Int64>(words.size() * BITSET_WORD_BITS);
     if (!words.empty() && block_min >= words_begin && block_max < words_end)
@@ -755,7 +755,6 @@ bool DenseBitsetRuntimeFilter::mergeFrom(const DenseBitsetRuntimeFilter & source
     has_keys = true;
     min_key = new_min;
     max_key = new_max;
-    inserted_key_rows += source.inserted_key_rows;
 
     if (!source.pending_keys->empty())
     {
@@ -788,8 +787,7 @@ void DenseBitsetRuntimeFilter::finishInsert()
     setPendingBits();
     LOG_TRACE(
         getLogger("RuntimeFilter"),
-        "Dense bitset runtime filter: {} key rows over [{}, {}], {} bytes",
-        inserted_key_rows,
+        "Dense bitset runtime filter over [{}, {}], {} bytes",
         min_key,
         max_key,
         getBytes());
@@ -842,12 +840,8 @@ ColumnPtr DenseBitsetRuntimeFilter::find(const ColumnWithTypeAndName & values, s
     const ColumnPtr probe = values.column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
     const size_t rows = probe->size();
 
-    /// Not expected: `finishInsert` sets the bits of all keys before the first probe. Passing all rows is correct.
     if (!pending_keys->empty())
-    {
-        rows_passed = rows;
-        return DataTypeUInt8().createColumnConst(rows, true);
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Dense bitset runtime filter is not ready for lookups");
     if (words.empty())
     {
         rows_passed = 0;
@@ -876,45 +870,59 @@ ColumnPtr DenseBitsetRuntimeFilter::find(const ColumnWithTypeAndName & values, s
         }
     });
 
-    /// The probe side is cast to the filter type, so this is not expected either.
     if (!is_native_int)
-    {
-        rows_passed = rows;
-        return DataTypeUInt8().createColumnConst(rows, true);
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in a dense bitset runtime filter lookup", probe->getName());
 
     rows_passed = passed;
     return result;
 }
 
-ColumnPtr DenseBitsetRuntimeFilter::getValuesColumn() const
+void DenseBitsetRuntimeFilter::forEachValuesBatch(size_t max_rows, const std::function<void(ColumnPtr)> & callback) const
 {
-    auto result = filter_column_target_type->createColumn();
+    chassert(max_rows > 0);
     const bool supported = castTypeToEither(NativeIntDataTypes{}, filter_column_target_type.get(), [&](const auto & data_type)
     {
         using DataType = std::decay_t<decltype(data_type)>;
         using T = typename DataType::FieldType;
+        using ColumnType = typename DataType::ColumnType;
 
-        size_t keys = pending_keys->size();
-        for (const UInt64 word : words)
-            keys += std::popcount(word);
-
-        auto & data = assert_cast<typename DataType::ColumnType &>(*result).getData();
-        data.reserve(keys);
+        auto batch = ColumnType::create();
+        batch->getData().reserve(max_rows);
         const UInt64 begin = static_cast<UInt64>(words_begin);
         for (size_t word_index = 0; word_index < words.size(); ++word_index)
         {
             for (UInt64 word = words[word_index]; word != 0; word &= word - 1)
-                data.push_back(static_cast<T>(begin + word_index * BITSET_WORD_BITS + std::countr_zero(word)));
+            {
+                batch->getData().push_back(static_cast<T>(begin + word_index * BITSET_WORD_BITS + std::countr_zero(word)));
+                if (batch->size() == max_rows)
+                {
+                    callback(std::move(batch));
+                    batch = ColumnType::create();
+                    batch->getData().reserve(max_rows);
+                }
+            }
         }
+        if (!batch->empty())
+            callback(std::move(batch));
         return true;
     });
     if (!supported)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Dense bitset runtime filter has key type {}", filter_column_target_type->getName());
 
-    result->insertRangeFrom(*pending_keys, 0, pending_keys->size());
-    return result;
+    for (size_t offset = 0; offset < pending_keys->size(); offset += max_rows)
+        callback(pending_keys->cut(offset, std::min(max_rows, pending_keys->size() - offset)));
+}
+
+UInt64 DenseBitsetRuntimeFilter::countDistinctKeys()
+{
+    if (!has_keys)
+        return 0;
+    setPendingBits();
+    UInt64 keys = 0;
+    for (const UInt64 word : words)
+        keys += std::popcount(word);
+    return keys;
 }
 
 bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
@@ -967,7 +975,7 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 
     if (auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter_))
     {
-        if (bitset_filter->insert(values, denseBitsetMaxBytes(bitset_filter->getInsertedKeyRows() + values->size())))
+        if (bitset_filter->insert(values, denseBitsetMaxBytes()))
             return;
 
         /// The key range no longer fits the allowance. The recorded keys move from the bits to an
@@ -1056,13 +1064,12 @@ void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source
             [&](const ExactFilter & source_exact_filter) { insert(source_exact_filter.getValuesColumn(), filter); },
             [&](const DenseBitsetRuntimeFilter & source_bitset_filter)
             {
-                const UInt64 source_key_rows = source_bitset_filter.getInsertedKeyRows();
-                if (const auto * exact_filter = std::get_if<ExactFilter>(&filter))
+                if (const auto * exact_filter = std::get_if<ExactFilter>(&filter); exact_filter && dense_bitset_allowed)
                 {
                     /// The source holds more keys than an exact set may: continue from its keys and add ours.
                     ColumnPtr own_values = exact_filter->getValuesColumn();
                     DenseBitsetRuntimeFilter merged(filter_column_target_type);
-                    if (merged.mergeFrom(source_bitset_filter, denseBitsetMaxBytes(source_key_rows)))
+                    if (merged.mergeFrom(source_bitset_filter, denseBitsetMaxBytes()))
                     {
                         filter.emplace<DenseBitsetRuntimeFilter>(std::move(merged));
                         insert(std::move(own_values), filter);
@@ -1071,13 +1078,14 @@ void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source
                 }
                 else if (auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter))
                 {
-                    if (bitset_filter->mergeFrom(
-                            source_bitset_filter, denseBitsetMaxBytes(bitset_filter->getInsertedKeyRows() + source_key_rows)))
+                    if (bitset_filter->mergeFrom(source_bitset_filter, denseBitsetMaxBytes()))
                         return;
                 }
                 /// Otherwise the keys take the ordinary insert path, which moves the keys of this filter to an
                 /// approximate set first if the range of all keys does not fit the allowance.
-                insert(source_bitset_filter.getValuesColumn(), filter);
+                if (std::holds_alternative<KeySetDropped>(filter))
+                    return;
+                source_bitset_filter.forEachValuesBatch(DEFAULT_BLOCK_SIZE, [&](ColumnPtr batch) { insert(std::move(batch), filter); });
             },
             [&](const ApproximateSetRuntimeFilter & source_approximate_filter)
             {
@@ -1100,13 +1108,7 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         return approximate_filter;
     if (std::holds_alternative<KeySetDropped>(filter_))
         return nullptr;
-
-    ColumnPtr values;
-    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_))
-        values = exact_filter->getValuesColumn();
-    else if (const auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter_))
-        values = bitset_filter->getValuesColumn();
-    else
+    if (!std::holds_alternative<ExactFilter>(filter_) && !std::holds_alternative<DenseBitsetRuntimeFilter>(filter_))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
 
     /// Only a filter that stays in one pipeline grows its bloom from statistics. A transported
@@ -1136,9 +1138,29 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         }
     }
 
-    auto & approximate_filter
-        = filter_.emplace<ApproximateSetRuntimeFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions);
-    approximate_filter.insert(values);
+    /// A dense bitset knows its distinct keys exactly, so a Bloom filter that they alone would saturate is not built.
+    if (auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter_))
+    {
+        const UInt64 distinct_keys = bitset_filter->countDistinctKeys();
+        if (estimateRuntimeBloomFilterSetBitsRatio(
+                static_cast<Float64>(distinct_keys),
+                RuntimeBloomFilterParameters{grown_bloom_filter_bytes, bloom_filter_hash_functions})
+            > max_ratio_of_set_bits_in_bloom_filter)
+        {
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
+            dropKeySet(filter_);
+            return nullptr;
+        }
+    }
+
+    /// The previous representation is moved out first: emplacing the Bloom filter destroys it.
+    Filter previous = std::move(filter_);
+    auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions);
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&previous))
+        approximate_filter.insert(exact_filter->getValuesColumn());
+    else
+        std::get<DenseBitsetRuntimeFilter>(previous).forEachValuesBatch(
+            DEFAULT_BLOCK_SIZE, [&](ColumnPtr batch) { approximate_filter.insert(std::move(batch)); });
     return &approximate_filter;
 }
 
@@ -1161,7 +1183,7 @@ bool AdaptiveSetRuntimeFilter::trySwitchToDenseBitsetFilter(Filter & filter_)
 
     const ColumnPtr values = exact_filter->getValuesColumn();
     DenseBitsetRuntimeFilter bitset_filter(filter_column_target_type);
-    const UInt64 max_bytes = denseBitsetMaxBytes(values->size());
+    const UInt64 max_bytes = denseBitsetMaxBytes();
     if (!bitset_filter.insert(values, max_bytes) || bitset_filter.empty())
         return false;
 
@@ -1171,27 +1193,18 @@ bool AdaptiveSetRuntimeFilter::trySwitchToDenseBitsetFilter(Filter & filter_)
     return true;
 }
 
-UInt64 AdaptiveSetRuntimeFilter::denseBitsetMaxBytes(UInt64 observed_key_rows) const
+UInt64 AdaptiveSetRuntimeFilter::denseBitsetMaxBytes() const
 {
-    /// The bitset may use more memory than the Bloom filter it replaces, because what it saves is paid
-    /// per probe row: no hashing, one load, and no false positives. A surrogate key is usually sparse,
-    /// for example TPC-H `l_orderkey` has 15M values over a range of 60M, so a bitset no larger than the
-    /// keys themselves would be rejected exactly for the large probe sides where it pays off most. The
-    /// allowance is a multiple of `join_runtime_bloom_filter_bytes`, so lowering that setting lowers it.
-    /// It is raised when the keys alone would take more, because then the bitset is also the smaller
-    /// exact representation, and it is always capped.
+    /// The bitset may take more memory than the Bloom filter it replaces, because it saves per probe row. The
+    /// allowance follows `join_runtime_bloom_filter_bytes`, and is raised only by the distinct keys of the
+    /// statistics, never by the build rows, which count duplicate keys.
     static constexpr UInt64 MAX_DENSE_BITSET_BYTES = 32 * 1024 * 1024;
     static constexpr UInt64 DENSE_BITSET_BYTES_PER_BLOOM_FILTER_BYTE = 16;
     static constexpr UInt64 MAX_TRUSTED_DISTINCT_KEYS_HINT = 1'000'000'000;
 
-    /// The observed key rows bound the distinct keys from above and are always known. The statistics
-    /// hint raises the count only if it counts the distinct values of this complete filter key.
-    UInt64 keys = observed_key_rows;
-    if (distinct_keys_hint && distinct_keys_hint_matches_filter_key && *distinct_keys_hint <= MAX_TRUSTED_DISTINCT_KEYS_HINT)
-        keys = std::max(keys, *distinct_keys_hint);
-
     UInt64 allowance = std::min(bloom_filter_bytes, MAX_DENSE_BITSET_BYTES) * DENSE_BITSET_BYTES_PER_BLOOM_FILTER_BYTE;
-    allowance = std::max(allowance, keys * filter_column_target_type->getSizeOfValueInMemory());
+    if (distinct_keys_hint && distinct_keys_hint_matches_filter_key && *distinct_keys_hint <= MAX_TRUSTED_DISTINCT_KEYS_HINT)
+        allowance = std::max(allowance, *distinct_keys_hint * filter_column_target_type->getSizeOfValueInMemory());
     return std::min(allowance, MAX_DENSE_BITSET_BYTES);
 }
 
@@ -1219,10 +1232,9 @@ void AdaptiveSetRuntimeFilter::serialize(WriteBuffer & out)
         writeFieldBinary(range->right, out);
     }
 
-    /// A transported partial never has a dense bitset (see `boundExactSetByKeyBytes`), and the wire format
-    /// has none. A local filter sends its keys as the approximate set that the bitset replaced.
+    /// A transported partial never builds a dense bitset (see `boundExactSetByKeyBytes`), and the wire format has none.
     if (std::holds_alternative<DenseBitsetRuntimeFilter>(filter))
-        switchToApproximateFilter(filter);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize a runtime filter with a dense bitset");
 
     if (const auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter))
     {
