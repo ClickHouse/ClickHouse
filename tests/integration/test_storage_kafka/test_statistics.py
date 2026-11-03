@@ -79,11 +79,15 @@ def test_statistics_enabled_by_default(kafka_cluster):
     for a known librdkafka property), and StorageKafka2 used to override even an explicit value."""
     topic_name = "topic_statistics_default"
 
+    # Use distinct consumer groups: the old engine subscribes and commits offsets to the broker for its
+    # group; if both engines shared one group, the old engine's commits would move the start offset of the
+    # Keeper-backed engine (assign() without an explicit offset falls back to the broker-committed one
+    # before auto.offset.reset), making which messages the second engine sees timing-dependent.
     old_engine_table = k.generate_old_create_table_query(
-        "kafka_old", "a String", topic_list=topic_name, format="LineAsString"
+        "kafka_old", "a String", topic_list=topic_name, consumer_group="statistics_old_engine", format="LineAsString"
     )
     new_engine_table = k.generate_new_create_table_query(
-        "kafka_new", "a String", topic_list=topic_name, format="LineAsString"
+        "kafka_new", "a String", topic_list=topic_name, consumer_group="statistics_new_engine", format="LineAsString"
     )
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
