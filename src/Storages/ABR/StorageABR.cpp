@@ -9,6 +9,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -82,6 +83,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_TABLE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -1003,6 +1005,18 @@ void StorageABR::read(
             "where they cannot be applied. Define them on the underlying tables instead",
             getStorageID().getNameForLogs());
 
+    /// `ABR` runs the whole query on a source table. As the left table of a JOIN, it runs the whole query, which the planner expects.
+    /// On the right side of a JOIN, the planner only expects the columns of this table, but `ABR` would still run the whole JOIN
+    /// query and return the wrong columns.
+    if (query_info.query_tree && query_info.table_expression
+        && extractLeftTableExpression(query_info.query_tree->as<const QueryNode &>().getJoinTreeNodeTyped()).get()
+            != query_info.table_expression.get())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} with the `ABR` engine can only be read as the leftmost table of a JOIN. Read it through a subquery "
+            "with a condition on its time column instead: `JOIN (SELECT ... FROM {} WHERE {} >= ...)`",
+            getStorageID().getNameForLogs(), getStorageID().getFullTableName(), time_column);
+
     const size_t last_table_idx = getLastCandidateTableIndex(context);
 
     /// The source tables are resolved once, so that the table is chosen and read from the same tables,
@@ -1114,6 +1128,8 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 - `ABR` is read-only. `INSERT`, `ALTER` and mutations must target the underlying tables directly.
 - All underlying tables must share an identical column set.
 - `ABR` does not support row policies directly. Define them on the underlying tables instead.
+- An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
+  condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
 )DOCS_MD",
             .syntax = "ENGINE = ABR(table_prefix, sample_intervals, retention_expression)",
             .examples = {{
