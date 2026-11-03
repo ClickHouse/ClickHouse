@@ -77,6 +77,15 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT formatQuerySingleLine('SELECT * FROM \`db.pv\`(p = 1)');
 "
 
+echo 'a keyword part stays quoted and parses back'
+${CLICKHOUSE_CLIENT} -q "
+    SELECT formatQuerySingleLine(q) AS f, formatQuerySingleLine(f) = f
+    FROM (SELECT arrayJoin([
+        'SELECT * FROM \`null\`.pv(p = 1)', 'SELECT 1 IN \`null\`.pv(1)',
+        'SELECT * FROM \`not\`.pv(p = 1)', 'SELECT 1 IN \`not\`.pv(1)',
+        'SELECT 1 IN \`partition\`.pv(1)']) AS q);
+"
+
 # This is the query the analyzer sends to other servers, for example for a subquery in IN.
 echo 'the analyzer writes the stored spelling as two parts'
 ${CLICKHOUSE_CLIENT} -q "SELECT countIf(explain LIKE '%FROM ${a}.pv(p = 1)%') FROM (EXPLAIN QUERY TREE dump_ast = 1 SELECT * FROM \`${a}.pv\`(p = 1))"

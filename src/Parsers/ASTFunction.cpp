@@ -24,7 +24,9 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Poco/String.h>
 
 
 using namespace std::literals;
@@ -541,7 +543,9 @@ static bool functionNameNeedsQuoting(const String & name, const ASTPtr & argumen
 }
 
 /// A compound name (`db.view(...)`) is written part by part: one quoted `db.view` token parses back as a one-part name.
-static void writeFunctionName(WriteBuffer & ostr, const String & name, bool is_compound_name, const ASTPtr & arguments)
+/// A keyword part is quoted: `1 IN partition.pv(1)` does not parse.
+static void writeFunctionName(
+    WriteBuffer & ostr, const IAST::FormatSettings & settings, const String & name, bool is_compound_name, const ASTPtr & arguments)
 {
     if (!is_compound_name)
     {
@@ -549,11 +553,13 @@ static void writeFunctionName(WriteBuffer & ostr, const String & name, bool is_c
         return;
     }
 
+    const auto & keywords = getKeyWordSet();
     std::string_view rest = name;
     while (true)
     {
         const size_t dot = rest.find('.');
-        ostr << backQuoteIfNeed(rest.substr(0, dot));
+        const String part(rest.substr(0, dot));
+        settings.writeIdentifier(ostr, part, /*ambiguous=*/keywords.contains(Poco::toUpper(part)));
         if (dot == std::string_view::npos)
             break;
         ostr << '.';
@@ -583,7 +589,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
         if (!name.empty())
-            writeFunctionName(ostr, name, isCompoundName(), arguments);
+            writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -1096,7 +1102,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     if (is_plain_not_call)
         ostr << name;
     else if (!name.empty())
-        writeFunctionName(ostr, name, isCompoundName(), arguments);
+        writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
 
     SecretArgumentsResult secret_arguments;
     if (arguments && !settings.show_secrets)
