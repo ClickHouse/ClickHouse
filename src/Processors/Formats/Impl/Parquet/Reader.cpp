@@ -443,17 +443,35 @@ std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(const RowGroup
 {
     if (!row_group_selection.byte_range.has_value())
         return row_group_selection.row_group_ids;
+    ensureColumnChunks({0});
+    return selectRowGroups(*file_footer, row_group_selection, column_chunks[0].get());
+}
+
+std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(
+    const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column)
+{
+    if (!row_group_selection.byte_range.has_value())
+        return row_group_selection.row_group_ids;
+
+    std::vector<FileColumnChunks> parsed;
+    if (!first_column)
+    {
+        deserializeColumnChunks(footer.serialized.data(), footer.serialized.size(), footer.column_chunk_offsets, {0}, parsed);
+        const bool written_by_old_duckdb = footer.metadata.created_by == "DuckDB";
+        for (auto & column : parsed[0].chunks)
+            fixUpColumnChunk(column, written_by_old_duckdb);
+        first_column = &parsed[0];
+    }
 
     const auto [range_begin, range_size] = *row_group_selection.byte_range;
     std::unordered_set<UInt64> selected;
-    ensureColumnChunks({0});
-    for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
+    for (size_t row_group_idx = 0; row_group_idx < footer.metadata.row_groups.size(); ++row_group_idx)
     {
         if (row_group_selection.row_group_ids.has_value() && !row_group_selection.row_group_ids->contains(row_group_idx))
             continue;
-        if (numColumnChunks(row_group_idx) == 0)
+        if (footer.numColumnChunks(row_group_idx) == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
-        const auto & column = column_chunks[0]->chunks[row_group_idx].meta_data;
+        const auto & column = first_column->chunks[row_group_idx].meta_data;
         Int64 offset = column.data_page_offset;
         if (column.__isset.dictionary_page_offset && column.dictionary_page_offset > 0 && column.dictionary_page_offset < offset)
             offset = column.dictionary_page_offset;

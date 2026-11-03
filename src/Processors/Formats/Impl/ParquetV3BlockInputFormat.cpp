@@ -395,10 +395,30 @@ Chunk ParquetV3BlockInputFormat::read()
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         auto footer = getFileFooter(temp_prefetcher);
 
+        size_t num_rows = size_t(footer->metadata.num_rows);
+        size_t first_row = 0;
+        if (const auto selected_row_groups = Parquet::Reader::selectRowGroups(*footer, rowGroupSelection(), nullptr))
+        {
+            num_rows = 0;
+            std::optional<size_t> first_selected_row;
+            size_t row = 0;
+            for (size_t row_group_idx = 0; row_group_idx < footer->metadata.row_groups.size(); ++row_group_idx)
+            {
+                const size_t row_group_rows = size_t(footer->metadata.row_groups[row_group_idx].num_rows);
+                if (selected_row_groups->contains(row_group_idx))
+                {
+                    if (!first_selected_row)
+                        first_selected_row = row;
+                    num_rows += row_group_rows;
+                }
+                row += row_group_rows;
+            }
+            first_row = first_selected_row.value_or(0);
+        }
 
-        auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
+        auto chunk = getChunkForCount(num_rows);
         if (format_filter_info && format_filter_info->need_row_numbers)
-            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(first_row));
 
         reported_count = true;
         return chunk;
@@ -709,7 +729,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t b
             bucket_begin = split_offsets[i];
         }
     }
-    result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, file_size - bucket_begin));
+    result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, std::numeric_limits<UInt64>::max() - bucket_begin));
     return result;
 }
 

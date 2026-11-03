@@ -680,6 +680,8 @@ struct Reader
     const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
     size_t numColumnChunks(size_t row_group_idx) const;
     std::optional<std::unordered_set<UInt64>> selectRowGroups(const RowGroupSelection & row_group_selection);
+    static std::optional<std::unordered_set<UInt64>> selectRowGroups(
+        const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column);
 
     struct KeyConditionColumnRanges
     {

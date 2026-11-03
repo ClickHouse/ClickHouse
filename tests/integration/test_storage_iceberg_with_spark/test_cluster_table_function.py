@@ -375,7 +375,7 @@ def test_cluster_table_function_bucket_split_by_split_offsets(started_cluster_ic
     )
     spark.range(200000).selectExpr("id", "cast(id AS STRING) AS s").coalesce(1).writeTo(TABLE_NAME).append()
 
-    split_offsets = spark.sql(f"SELECT split_offsets FROM {TABLE_NAME}.files").collect()
+    split_offsets = spark.sql(f"SELECT split_offsets FROM default.{TABLE_NAME}.files").collect()
     assert len(split_offsets) == 1
     assert len(split_offsets[0].split_offsets) > 1
 
@@ -408,6 +408,17 @@ def test_cluster_table_function_bucket_split_by_split_offsets(started_cluster_ic
                 },
             )
             == expected
+        )
+        assert (
+            instance.query(
+                f"SELECT count() FROM {table_function_expr_cluster}",
+                settings={
+                    "cluster_table_function_split_granularity": "bucket",
+                    "cluster_table_function_buckets_batch_size": batch_size,
+                    "cluster_table_function_split_by_split_offsets": 1,
+                },
+            )
+            == "200000\n"
         )
 
     assert instance.contains_in_log(f"{TABLE_NAME}/data/.*\\.parquet_b[0-9]*_[0-9]*")
