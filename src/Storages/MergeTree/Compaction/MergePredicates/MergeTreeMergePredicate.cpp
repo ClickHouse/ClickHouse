@@ -248,4 +248,26 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(PartsRangeView rang
     return DB::getPatchesToApplyOnMerge(patches_allocated_before_snapshot, range, next_version);
 }
 
+std::optional<Int64> MergeTreeMergePredicate::firstPatchNotAppliedAfter(
+    const String & partition_id, Int64 data_version, const MergeTreeData::DataPartsVector & applied) const
+{
+    auto it = patches_by_partition.find(partition_id);
+    if (it == patches_by_partition.end())
+        return std::nullopt;
+
+    std::optional<Int64> result;
+    for (const auto & patch : it->second)
+    {
+        Int64 patch_version = patch.getDataVersion();
+        if (patch_version <= data_version || (result && patch_version >= *result))
+            continue;
+
+        bool is_applied = std::ranges::any_of(applied, [&](const auto & part) { return part->info.getDataVersion() == patch_version; });
+        if (!is_applied)
+            result = patch_version;
+    }
+
+    return result;
+}
+
 }

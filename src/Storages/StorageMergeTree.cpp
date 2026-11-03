@@ -2071,16 +2071,23 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// `lock` is `currently_processing_in_background_mutex`, the same one `alter` publishes
             /// the new metadata and registers the rename mutation under, so the mutations read here
             /// match the `metadata_snapshot` this merge writes its result with.
+            const auto & result_partition_id = future_part->part_info.getPartitionId();
+            Int64 sources_data_version = future_part->part_info.getDataVersion();
             auto mutation_version = getMutationVersionForMergedPart(
-                future_part->part_info.getDataVersion(), future_part->part_info.getPartitionId(), merge_predicate->getReservations(), lock);
+                sources_data_version,
+                result_partition_id,
+                merge_predicate->getReservations(),
+                merge_predicate->firstPatchNotAppliedAfter(result_partition_id, sources_data_version, future_part->patch_parts),
+                lock);
 
             if (!mutation_version)
                 return std::unexpected(SelectMergeFailure{
                     .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                     .explanation = PreformattedMessage::create(
                         "Merging {} would materialize a pending RENAME COLUMN that the result part cannot record, "
-                        "because an earlier mutation is not materialized by the merge, or an earlier mutation or lightweight update "
-                        "version is allocated but not visible yet", future_part->name),
+                        "because an earlier mutation is not materialized by the merge, an earlier mutation or lightweight update "
+                        "version is allocated but not visible yet, or an earlier lightweight update is not applied by the merge",
+                        future_part->name),
                 });
 
             if (*mutation_version > future_part->part_info.getDataVersion())
@@ -2956,6 +2963,7 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
     Int64 sources_data_version,
     const String & partition_id,
     const CommittingBlocksSnapshot & reservations,
+    std::optional<Int64> first_unapplied_patch,
     std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
     auto first_pending = current_mutations_by_version.upper_bound(sources_data_version);
@@ -2977,10 +2985,18 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
         return sources_data_version;
 
     /// A reservation above the sources' data version bounds the recorded version: claiming one at or above
-    /// it would leave the reservation's own effect unapplied once it becomes visible.
-    auto record_end_it = current_mutations_by_version.end();
+    /// it would leave the reservation's own effect unapplied once it becomes visible. A committed patch the
+    /// merge does not apply bounds it the same way: the merged part would count as updated, and the patch,
+    /// below its version, would never apply to it. The mutation that materializes the patch later also
+    /// re-applies the metadata mutations the merge left unrecorded, and `DROP COLUMN` twice is a no-op.
+    std::optional<Int64> record_bound = first_unapplied_patch;
     if (auto reservation = reservations.firstReservationAfter(sources_data_version))
-        record_end_it = current_mutations_by_version.lower_bound(static_cast<UInt64>(reservation->number));
+        if (!record_bound || reservation->number < *record_bound)
+            record_bound = reservation->number;
+
+    auto record_end_it = current_mutations_by_version.end();
+    if (record_bound)
+        record_end_it = current_mutations_by_version.lower_bound(static_cast<UInt64>(*record_bound));
 
     Int64 version = sources_data_version;
 

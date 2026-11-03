@@ -19,6 +19,12 @@ public:
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
     PartsRange getPatchesToApplyOnMerge(PartsRangeView range) const override;
 
+    /// The lowest data version above `data_version` of a patch part of `partition_id` that `applied`
+    /// does not contain, or `nullopt`. The merged part must record a version below it: at or above,
+    /// the patch would count as applied to rows it never reached.
+    std::optional<Int64> firstPatchNotAppliedAfter(
+        const String & partition_id, Int64 data_version, const MergeTreeData::DataPartsVector & applied) const;
+
     /// The block numbers allocated but not visible yet, and the last allocated one, as of construction.
     const CommittingBlocksSnapshot & getReservations() const { return reservations; }
 
