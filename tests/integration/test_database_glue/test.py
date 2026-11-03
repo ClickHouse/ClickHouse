@@ -2776,6 +2776,46 @@ def test_glue_create_registers_columns(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+@pytest.mark.parametrize("case", ["create", "insert_after_wipe"])
+def test_glue_registers_optional_geometry_readably(started_cluster, case):
+    # An optional Iceberg `geometry` field, which a ClickHouse `Geometry` column is, reads back from its Glue column
+    # as `Geometry`, a type that cannot be inside `Nullable`.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"geo_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_geo_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    geo_settings = {"allow_geo_types_in_iceberg": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    node.query(
+        f"CREATE TABLE {table_ref} (id Int64, g Geometry) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{namespace}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings={"allow_database_glue_catalog": 1, "write_full_path_in_iceberg_metadata": 1, **geo_settings},
+    )
+    if case == "insert_after_wipe":
+        glue_table = get_glue_table(started_cluster, namespace, table_name)
+        glue_table["StorageDescriptor"]["Columns"] = []
+        put_glue_table(started_cluster, namespace, glue_table)
+
+    node.query(
+        f"INSERT INTO {table_ref} SELECT 1, readWkt('POINT(1 2)') UNION ALL SELECT 2, readWkt('LINESTRING(0 0, 1 1)')",
+        settings={**GLUE_WRITE_SETTINGS, **geo_settings},
+    )
+    columns = get_glue_table(started_cluster, namespace, table_name)["StorageDescriptor"]["Columns"]
+    assert [(c["Name"], c["Type"], c["Parameters"]["iceberg.field.optional"]) for c in columns] == [
+        ("id", "bigint", "false"),
+        ("g", "geometry", "true"),
+    ], columns
+    assert (
+        node.query(f"SELECT id, variantType(g) FROM {table_ref} ORDER BY id", settings=geo_settings)
+        == "1\tPoint\n2\tLineString\n"
+    )
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 @pytest.mark.parametrize("case", ["comments", "long_name", "nested_name", "nested_delimiter"])
 def test_glue_update_skips_column_text_glue_refuses(started_cluster, case):
     # Glue refuses a column name, comment or type longer than its limit or with a control character other than tab,
