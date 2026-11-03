@@ -66,12 +66,13 @@ DROP TABLE t_result_alias;
 
 DROP TABLE IF EXISTS t_recompute_capture;
 CREATE TABLE t_recompute_capture (d Date, k UInt32, q String, w String DEFAULT 'D' TTL d + INTERVAL 1 DAY,
-    b String ALIAS concat(q, w), a String ALIAS arrayMap(q -> concat(q, b), ['1'])[1], m String MATERIALIZED a)
+    b String ALIAS concat(q, w), a String ALIAS arrayMap(q -> concat(q, b), ['1'])[1], m String MATERIALIZED a,
+    c String ALIAS concat((q AS z), z, w), m2 String MATERIALIZED arrayMap(z -> concat(z, c), ['1'])[1])
     ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_recompute_capture (d, k, q, w) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number),
     'stored' FROM numbers(100);
 OPTIMIZE TABLE t_recompute_capture FINAL;
-SELECT 'recompute capture', d < '2050-01-01' AS expired, countIf(w = 'D'), countIf(m = concat('1', q, w)), count()
+SELECT 'recompute capture', d < '2050-01-01' AS expired, countIf(w = 'D'), countIf(m = concat('1', q, w) AND m2 = concat('1', q, q, w)), count()
     FROM t_recompute_capture GROUP BY expired ORDER BY expired;
 DROP TABLE t_recompute_capture;
 
