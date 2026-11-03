@@ -9,8 +9,9 @@ CREATE TABLE t_rf_left (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_rf_right (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_rf_left_pair (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_rf_right_pair (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_rf_left SELECT number FROM numbers(100000);
-INSERT INTO t_rf_right SELECT number * 2 FROM numbers(2000000);
+-- The keys are spread over a range wider than a dense bitset covers, so the runtime filter on `k` is a Bloom filter.
+INSERT INTO t_rf_left SELECT number * 1000 FROM numbers(100000);
+INSERT INTO t_rf_right SELECT number * 2000 FROM numbers(2000000);
 INSERT INTO t_rf_left_pair SELECT number, 0 FROM numbers(100000);
 -- Many distinct pairs, but only 100000 distinct values of `a` and 20 of `b`.
 INSERT INTO t_rf_right_pair SELECT number % 100000, intDiv(number, 100000) FROM numbers(2000000);

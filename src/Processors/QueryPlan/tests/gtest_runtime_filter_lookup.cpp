@@ -17,6 +17,7 @@
 #include <array>
 #include <barrier>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -179,6 +180,44 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     source.enableIndexAnalysis();
+    /// The key range is too wide for a dense bitset, so the keys go to a Bloom filter, whose saturation is predicted.
+    source.insert(makeUInt64Column({3, 5'000'000'000}));
+    source.finishInsert();
+
+    destination.merge(source);
+    destination.finishInsert();
+
+    EXPECT_FALSE(destination.getRecordedKeyValues());
+    auto range = destination.getRecordedKeyRanges();
+    ASSERT_TRUE(range);
+    EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
+    EXPECT_EQ(range->right.safeGet<UInt64>(), 5'000'000'000);
+    expectMask(destination.find(makeUInt64ColumnWithType({2, 4}, type)), {1, 1});
+    EXPECT_EQ(destination.getStats().rows_checked.load(), 0);
+    EXPECT_EQ(destination.getStats().rows_skipped.load(), 2);
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetReplacesPredictedSaturatedBloomFilter)
+{
+    /// The same filters as above, but the keys fit a dense bitset: the filter stays exact instead of being dropped.
+    const auto type = makeUInt64Type();
+    const auto make_filter = [&](size_t filters_to_merge)
+    {
+        return RuntimeFilter(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(
+                type,
+                makeGeometry(1_KiB, 1, 3, 0.05),
+                /*distinct_keys_hint_=*/2'000'000,
+                /*distinct_keys_hint_matches_filter_key_=*/true));
+    };
+    RuntimeFilter destination = make_filter(1);
+    destination.enableIndexAnalysis();
+    destination.insert(makeUInt64Column({1}));
+
+    RuntimeFilter source = make_filter(0);
+    source.enableIndexAnalysis();
     source.insert(makeUInt64Column({3, 5}));
     source.finishInsert();
 
@@ -190,9 +229,86 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
     ASSERT_TRUE(range);
     EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
     EXPECT_EQ(range->right.safeGet<UInt64>(), 5);
-    expectMask(destination.find(makeUInt64ColumnWithType({2, 4}, type)), {1, 1});
-    EXPECT_EQ(destination.getStats().rows_checked.load(), 0);
-    EXPECT_EQ(destination.getStats().rows_skipped.load(), 2);
+    expectMask(destination.find(makeUInt64ColumnWithType({0, 1, 2, 3, 4, 5, 6, 64, 1000}, type)), {0, 1, 0, 1, 0, 1, 0, 0, 0});
+    EXPECT_EQ(destination.getStats().rows_checked.load(), 9);
+    EXPECT_EQ(destination.getStats().rows_passed.load(), 3);
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetMergesPartialFiltersInAnyRepresentation)
+{
+    /// Partial filters of several build streams: still exact, a bitset that keeps sparse keys as values,
+    /// and a bitset over dense keys. Every merge order gives the exact union.
+    const auto type = makeUInt64Type();
+    const auto make_filter = [&](size_t filters_to_merge)
+    {
+        return std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(1_KiB, 2, 3, 0.7), std::nullopt, false));
+    };
+    const std::vector<std::vector<UInt64>> parts = {{7}, {1000, 100000, 300000}, {}, {64, 65, 66, 67, 68, 69, 70, 71, 72}};
+    for (size_t first = 0; first < parts.size(); ++first)
+    {
+        auto destination = make_filter(parts.size() - 1);
+        auto column = ColumnUInt64::create();
+        for (const auto value : parts[first])
+            column->insertValue(value);
+        destination->insert(std::move(column));
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            if (i == first)
+                continue;
+            auto source = make_filter(0);
+            auto source_column = ColumnUInt64::create();
+            for (const auto value : parts[i])
+                source_column->insertValue(value);
+            source->insert(std::move(source_column));
+            source->finishInsert();
+            destination->merge(*source);
+        }
+        destination->finishInsert();
+        expectMask(
+            destination->find(makeUInt64ColumnWithType({7, 8, 63, 64, 72, 73, 1000, 1001, 100000, 300000, 299999, 5}, type)),
+            {1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0});
+    }
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetMovesKeysToBloomFilterWhenTheRangeOutgrowsTheAllowance)
+{
+    /// 16 x 1 KiB of bits cover 131072 values.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_KiB, 2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({10, 20, 30}));
+    filter.insert(makeUInt64Column({131000}));
+    filter.insert(makeUInt64Column({200000}));
+    filter.finishInsert();
+    /// No key is lost; other values may pass the Bloom filter.
+    expectMask(filter.find(makeUInt64ColumnWithType({10, 20, 30, 131000, 200000}, type)), {1, 1, 1, 1, 1});
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetHandlesSignedKeys)
+{
+    tryRegisterFunctions();
+    const auto type = std::make_shared<DataTypeInt64>();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_KiB, 2, 3, 1.0), std::nullopt, false));
+    auto build = ColumnInt64::create();
+    for (const Int64 value : std::initializer_list<Int64>{-1000, -65, -64, -1, 0, 63, 5000})
+        build->insertValue(value);
+    filter.insert(std::move(build));
+    filter.finishInsert();
+
+    auto probe = ColumnInt64::create();
+    for (const Int64 value : std::initializer_list<Int64>{
+             -1001, -1000, -66, -65, -64, -63, -2, -1, 0, 1, 63, 64, 5000, 5001,
+             std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max()})
+        probe->insertValue(value);
+    expectMask(filter.find(ColumnWithTypeAndName(std::move(probe), type, "k")), {0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0});
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)

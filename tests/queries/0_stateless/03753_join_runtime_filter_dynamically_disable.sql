@@ -91,8 +91,9 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
 
 
 -- Too many rows in bloom filter
+-- One key far from the others makes the key range wider than a dense bitset covers, so the runtime filter is a saturated Bloom filter.
 SELECT count()
-FROM customer, numbers(2000) AS n
+FROM customer, (SELECT if(number = 1999, 2000000000, number) AS number FROM numbers(2000)) AS n
 WHERE
     c_nationkey = n.number::Int32
 SETTINGS join_runtime_filter_exact_values_limit=1, join_runtime_bloom_filter_bytes=100, max_block_size=10, max_threads=1, log_comment='Q4';
