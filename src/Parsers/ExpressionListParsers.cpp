@@ -166,11 +166,12 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /* Rewrite in AST:
      *  = ANY --> IN
      * != ALL --> NOT IN
-     *  = ALL --> arrayMap((_rhs, _lhs) -> ifNull(tupleElement(_rhs, 1), 1) OR _lhs IN tupleElement(_rhs, 2), [SQ], [x])[1]
+     *  = ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR (x = tupleElement(_a, 2) AND isNotNull(tupleElement(_a, 2)))
      *             where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
      * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
      * <, <=, >, >= ANY --> comparison with (SELECT min(*) / max(*) FROM subquery)
-     * <, <=, >, >= ALL --> tuple comparison with (SELECT (emptiness flag, min(*) / max(*)) FROM subquery)
+     * <, <=, >, >= ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x op tupleElement(_a, 2)
+     *             where SQ = (SELECT (count(*) = 0, min(*) / max(*)) FROM subquery)
     **/
 
     auto * function = assert_cast<ASTFunction *>(ast.get());
@@ -224,14 +225,10 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /// pins this.
     const bool vacuous_truth = type == SubqueryFunctionType::ALL;
 
-    /// For `<`, `<=` the flag is TRUE for an empty right-hand side, for `>`, `>=` it is TRUE for a non-empty one,
-    /// see the tuple comparison below. For `= ALL` the flag is TRUE for an empty right-hand side.
-    const bool flag_is_empty = function_equals || operator_name == "less" || operator_name == "lessOrEquals";
-
     ASTPtr projection = aggregate_function;
     if (vacuous_truth)
     {
-        auto flag = makeASTFunction(flag_is_empty ? "equals" : "notEquals",
+        auto flag = makeASTFunction("equals",
             makeASTFunction("count", make_intrusive<ASTAsterisk>()), make_intrusive<ASTLiteral>(UInt64{0}));
         projection = makeASTFunction("tuple", std::move(flag), aggregate_function);
     }
@@ -267,80 +264,65 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         return true;
     }
 
-    /// The right-hand side (SQ below) and the left-hand side `x` must each occur exactly once in the result:
+    /// x op ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x op tupleElement(_a, 2)
+    ///     where SQ = (SELECT (count(*) = 0, aggregate(*)) FROM subquery), for `<`, `<=`, `>`, `>=`
+    /// x = ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR (x = tupleElement(_a, 2) AND isNotNull(tupleElement(_a, 2)))
+    ///     where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
+    ///
+    /// The scalar subquery SQ occurs in the result only once, under a unique alias `_a`, and the other places refer
+    /// to it by that alias. So:
     /// - The right-hand side is evaluated once, so even if it is non-deterministic, the emptiness flag and the
     ///   compared value observe the same evaluation.
-    /// - The rewritten expression does not copy any of its operands, so its size is linear in the size of the
-    ///   original one. With copies, nested `ALL` quantifiers (`x = ALL (SELECT y = ALL (...))`) would duplicate
-    ///   the already rewritten inner expressions on every level, and the query would grow exponentially with
-    ///   the nesting depth.
+    /// - The rewritten expression does not copy any of its operands, so the parsed query is linear in the size of
+    ///   the original one, and `max_ast_elements` is not exceeded by nested `ALL` quantifiers
+    ///   (`x = ALL (SELECT y = ALL (...))`). Note that the analyzer still expands every reference to an alias
+    ///   with a copy of the aliased expression, so deeply nested quantifiers are analyzed with a cost that grows
+    ///   with the nesting depth (bounded by `max_expanded_ast_elements`); the scalar subqueries themselves are
+    ///   evaluated once, as the copies have the same hash.
+    /// - SQ is evaluated to a constant, and so are its elements. The comparison of `x` with a constant keeps the
+    ///   type conversions of a comparison with a constant (e.g. of a `String` with a number, or of a `Date` with
+    ///   a `String`), and it stays visible to the primary key analysis, while the constant emptiness flag folds
+    ///   the disjunction.
     ///
     /// The aggregation over an empty set may produce no row at all (`empty_result_for_aggregation_by_empty_set = 1`,
     /// or a correlated subquery for a missing group). Then the scalar subquery is NULL, and that also means that
-    /// the right-hand side is empty.
+    /// the right-hand side is empty, hence `ifNull(..., 1)`.
+    ///
+    /// For `= ALL`, `singleValueOrNull` gives NULL when the subquery returns several distinct values or a NULL, and
+    /// then the result is FALSE, as for the former `x IN (SELECT singleValueOrNull(*) FROM subquery)`, not NULL:
+    /// this is what `isNotNull` is for.
+    ///
+    /// The alias is derived from the hash of SQ, so different subqueries get different aliases, and identical
+    /// subqueries, which may share an alias, also share the value.
     auto & arguments = ast->children[0]->children;
     auto lhs = arguments[0];
 
-    if (!function_equals)
+    const auto hash = new_subquery->getTreeHash(/*ignore_aliases=*/ false);
+    const String alias = fmt::format("_all_subquery_{}_{}", hash.low64, hash.high64);
+    new_subquery->setAlias(alias);
+
+    auto rhs_element = [&](UInt64 index) -> ASTPtr
     {
-        /// x < ALL subquery --> (0, x) < ifNull(SQ, (1, NULL))
-        ///     where SQ = (SELECT (count(*) = 0, min(*)) FROM subquery)
-        /// x > ALL subquery --> (1, x) > ifNull(SQ, (0, NULL))
-        ///     where SQ = (SELECT (count(*) != 0, max(*)) FROM subquery)
-        /// and the same for `<=` and `>=`. Tuples are compared lexicographically: the first elements differ
-        /// exactly when the right-hand side is empty, and then the result is TRUE whatever `x` is; otherwise the
-        /// result is the comparison of `x` with the aggregate, as before. The scalar subquery stays a constant,
-        /// so the comparison keeps the conversions that a comparison with a constant allows, e.g. of a `Date`
-        /// with a `String`.
-        const UInt64 lhs_flag = flag_is_empty ? 0 : 1;
-        const UInt64 missing_row_flag = flag_is_empty ? 1 : 0;
-        auto missing_row = makeASTFunction("tuple", make_intrusive<ASTLiteral>(missing_row_flag), make_intrusive<ASTLiteral>(Field{}));
-
-        arguments[0] = makeASTFunction("tuple", make_intrusive<ASTLiteral>(lhs_flag), std::move(lhs));
-        arguments[1] = makeASTFunction("ifNull", std::move(new_subquery), std::move(missing_row));
-        return true;
-    }
-
-    /// x = ALL subquery --> arrayMap((_rhs, _lhs) -> ifNull(tupleElement(_rhs, 1), 1) OR _lhs IN tupleElement(_rhs, 2), [SQ], [x])[1]
-    ///     where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
-    ///
-    /// Unlike the order comparisons, the emptiness check and the membership test cannot be combined into one
-    /// comparison, so the tuple is taken apart inside a lambda, where its parts can be used several times. `x` is
-    /// passed as an argument of the lambda as well, so it is not moved into the lambda body: it may contain
-    /// aggregate or window functions, or `arrayJoin`.
-    ///
-    /// For `= ALL` this replaces the former `IN (SELECT singleValueOrNull(*) FROM subquery)` carrier with a
-    /// scalar subquery, the same carrier that `<`, `<=`, `>`, `>= ALL` have always used. The comparison itself
-    /// stays the one-element `in`, not `equals`: when the subquery returns several distinct values or a NULL,
-    /// `singleValueOrNull` gives NULL, and `x IN NULL` is FALSE (under the default `transform_null_in = 0`)
-    /// exactly as before, while `x = NULL` would be NULL. Inside the lambda the right-hand side of `in` is not a
-    /// constant, and the analyzer compares `x` with the single value, converting it to a common type the same way
-    /// as for a constant set, so e.g. a `Date` is still comparable with a `String`. The emptiness check and the compared value must come
-    /// from one evaluation, and an `IN` set cannot carry the emptiness flag. As a consequence the right-hand side
-    /// is evaluated once on the initiator, so the result of a distributed query no longer depends on
-    /// `distributed_product_mode = 'local'` or the `IN`-specific distributed settings: every shard compares
-    /// against the global value, which is what `ALL` means.
-    static constexpr auto rhs_name = "_rhs";
-    static constexpr auto lhs_name = "_lhs";
+        return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(alias), make_intrusive<ASTLiteral>(index));
+    };
 
     auto is_empty = makeASTFunction("ifNull",
-        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(rhs_name), make_intrusive<ASTLiteral>(UInt64{1})),
+        makeASTFunction("tupleElement", std::move(new_subquery), make_intrusive<ASTLiteral>(UInt64{1})),
         make_intrusive<ASTLiteral>(UInt64{1}));
-    auto comparison = makeASTFunction("in",
-        make_intrusive<ASTIdentifier>(lhs_name),
-        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(rhs_name), make_intrusive<ASTLiteral>(UInt64{2})));
-    auto lambda = makeASTLambda({rhs_name, lhs_name}, makeASTFunction("or", std::move(is_empty), std::move(comparison)));
 
-    auto array_map = makeASTFunction("arrayMap",
-        std::move(lambda),
-        makeASTFunction("array", std::move(new_subquery)),
-        makeASTFunction("array", std::move(lhs)));
+    ASTPtr comparison;
+    if (function_equals)
+        comparison = makeASTFunction("and",
+            makeASTFunction("equals", std::move(lhs), rhs_element(2)),
+            makeASTFunction("isNotNull", rhs_element(2)));
+    else
+        comparison = makeASTFunction(operator_name, std::move(lhs), rhs_element(2));
 
-    /// Mutate ast in place to become: arrayElement(arrayMap(...), 1)
+    /// Mutate ast in place to become: or(is_empty, comparison)
     auto * result = assert_cast<ASTFunction *>(ast.get());
-    result->name = "arrayElement";
+    result->name = "or";
     result->arguments = make_intrusive<ASTExpressionList>();
-    result->arguments->children = {std::move(array_map), make_intrusive<ASTLiteral>(UInt64{1})};
+    result->arguments->children = {std::move(is_empty), std::move(comparison)};
     result->children = {result->arguments};
 
     return true;
