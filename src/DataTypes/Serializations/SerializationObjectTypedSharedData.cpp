@@ -584,7 +584,9 @@ bool SerializationObjectTypedSharedData::insertPathFromCache(
     settings.path.pop_back();
     if (!cached)
         return false;
-    insertDataFromCachedColumn(column, cached->first, cached->second);
+    const auto & [cached_column, num_read_rows] = *cached;
+    chassert(&column != cached_column.get());
+    insertRangeFromDecoded(column, *cached_column, cached_column->size() - num_read_rows, num_read_rows);
     return true;
 }
 

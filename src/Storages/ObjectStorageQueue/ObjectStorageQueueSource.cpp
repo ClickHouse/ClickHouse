@@ -2303,6 +2303,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 nullptr,
                 /* need_only_count */ false,
                 /* top_k_query_condition_cache_key */ nullptr,
+                /* prefetch_input_format */ false,
                 iterator_consumed);
 
             if (!reader)
